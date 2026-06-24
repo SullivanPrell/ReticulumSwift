@@ -34,7 +34,8 @@ let package = Package(
         // Currently ships: macOS arm64, iOS arm64, iOS-Simulator arm64.
         .binaryTarget(
             name: "CI2PD",
-            path: "Resources/CI2PD.xcframework"
+            url: "https://github.com/SullivanPrell/ReticulumSwift/releases/download/ci2pd-2.60.0/CI2PD.xcframework.zip",
+            checksum: "b597ce0735da422bc5bb135091bae4633c24c5ef8a2e36faa25ad2fc4ebb41c4"
         ),
         // CI2PDCShims: the `CI2PD` Clang module (capi.h / capi_client.h + module.modulemap)
         // as an ordinary headers-only C target — deliberately *separate* from the `CI2PD`
