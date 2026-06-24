@@ -11,25 +11,28 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# i2pd source tree. It is NOT bundled with this repo — clone it yourself:
-#   git clone https://github.com/PurpleI2P/i2pd
-# then point I2PD_SRC at it, e.g.:
-#   I2PD_SRC=/path/to/i2pd bash build_ci2pd_ios.sh
-# Defaults to ./i2pd next to this script.
-I2PD_SRC="${I2PD_SRC:-$SCRIPT_DIR/i2pd}"
-if [ ! -d "${I2PD_SRC}" ]; then
-    echo "error: i2pd source not found at '${I2PD_SRC}'." >&2
-    echo "       Clone https://github.com/PurpleI2P/i2pd and set I2PD_SRC=/path/to/i2pd" >&2
-    exit 1
-fi
-I2PD_SRC="$(realpath "${I2PD_SRC}")"
 XCFW="$SCRIPT_DIR/Resources/CI2PD.xcframework"
-BUILD_ROOT="/tmp/ci2pd_build"
+BUILD_ROOT="${BUILD_ROOT:-/tmp/ci2pd_build}"
+mkdir -p "${BUILD_ROOT}"
 
+# Pinned upstream versions (this is a deliberate, reviewed pin — NOT auto-tracked).
+I2PD_VERSION="${I2PD_VERSION:-2.60.0}"
 OPENSSL_VERSION="3.3.2"
 BOOST_VERSION="1.90.0"
 BOOST_UNDERSCORE="boost_1_90_0"
 IOS_MIN="16.0"
+MACOS_MIN="13.0"
+
+# i2pd source. Not bundled with this repo — by default we clone the pinned tag.
+# Override with a local checkout: I2PD_SRC=/path/to/i2pd bash build_ci2pd_ios.sh
+if [ -z "${I2PD_SRC:-}" ]; then
+    I2PD_SRC="${BUILD_ROOT}/i2pd-${I2PD_VERSION}"
+    if [ ! -d "${I2PD_SRC}" ]; then
+        echo "==> cloning i2pd ${I2PD_VERSION}"
+        git clone --depth 1 --branch "${I2PD_VERSION}" https://github.com/PurpleI2P/i2pd "${I2PD_SRC}"
+    fi
+fi
+I2PD_SRC="$(realpath "${I2PD_SRC}")"
 
 IPHONEOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 IPHONE_SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
@@ -267,13 +270,68 @@ build_i2pd() {
 }
 
 # -----------------------------------------------------------------------------
-# 4. Rebuild xcframework (preserve macOS slice, add iOS slices)
+# 3b. Build i2pd for macOS arm64 (native). OpenSSL + Boost come from Homebrew —
+#     this mirrors how the original macОS slice was produced. i2pd itself is the
+#     pinned 2.60.0 source, same as the iOS slices. Run `brew install boost
+#     openssl@3` first (the CI workflow does this).
+# -----------------------------------------------------------------------------
+
+build_i2pd_macos() {
+    local OUT="${BUILD_ROOT}/i2pd-mac"
+    if [ -d "${OUT}" ] && [ -f "${OUT}/libCI2PD.a" ]; then
+        echo "==> i2pd (macos) already built - skipping"; return
+    fi
+    local OPENSSL_DIR BOOST_DIR
+    OPENSSL_DIR="$(brew --prefix openssl@3)"
+    BOOST_DIR="$(brew --prefix boost)"
+    echo "==> Building i2pd for macOS arm64 (Homebrew OpenSSL/Boost) ..."
+    rm -rf "${OUT}/cmake"; mkdir -p "${OUT}/cmake"
+    pushd "${OUT}/cmake" > /dev/null
+    "${CMAKE}" "${I2PD_SRC}/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_MIN}" \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DWITH_LIBRARY=ON -DWITH_BINARY=OFF -DWITH_STATIC=ON \
+        -DWITH_UPNP=OFF -DBUILD_TESTING=OFF \
+        -DOPENSSL_ROOT_DIR="${OPENSSL_DIR}" \
+        -DOPENSSL_USE_STATIC_LIBS=ON \
+        -DBOOST_ROOT="${BOOST_DIR}" \
+        -DBoost_USE_STATIC_LIBS=ON
+    "${CMAKE}" --build . --config Release "-j${NCPU}"
+    popd > /dev/null
+
+    echo "==> Compiling C API wrapper for macOS ..."
+    local CXXFLAGS="-target arm64-apple-macos${MACOS_MIN} -mmacosx-version-min=${MACOS_MIN} -std=c++17 -DMAC_OSX"
+    local SHIMS_INC="${SCRIPT_DIR}/Sources/CI2PDCShims/include"
+    local INC="-I${I2PD_SRC}/libi2pd -I${I2PD_SRC}/libi2pd_client -I${I2PD_SRC}/i18n -I${SHIMS_INC} -I${BOOST_DIR}/include -I${OPENSSL_DIR}/include"
+    "${CLANGXX}" ${CXXFLAGS} ${INC} -c "${I2PD_SRC}/libi2pd_wrapper/capi.cpp"        -o "${OUT}/capi.cpp.o"
+    "${CLANGXX}" ${CXXFLAGS} ${INC} -c "${I2PD_SRC}/libi2pd_wrapper/capi_client.cpp" -o "${OUT}/capi_client.cpp.o"
+
+    echo "==> Merging objects into libCI2PD.a for macOS ..."
+    "${LIBTOOL_TOOL}" -static \
+        "${OUT}/cmake/libi2pd.a" \
+        "${OUT}/cmake/libi2pdclient.a" \
+        "${OUT}/cmake/libi2pdlang.a" \
+        "${OPENSSL_DIR}/lib/libssl.a" \
+        "${OPENSSL_DIR}/lib/libcrypto.a" \
+        "${BOOST_DIR}/lib/libboost_filesystem.a" \
+        "${BOOST_DIR}/lib/libboost_program_options.a" \
+        "${OUT}/capi.cpp.o" \
+        "${OUT}/capi_client.cpp.o" \
+        -o "${OUT}/libCI2PD.a"
+    "${RANLIB}" "${OUT}/libCI2PD.a"
+    echo "==> i2pd (macos) done: $(du -sh "${OUT}/libCI2PD.a" | cut -f1)"
+}
+
+# -----------------------------------------------------------------------------
+# 4. Rebuild xcframework (macOS + iOS + iOS-simulator, all built from source)
 # -----------------------------------------------------------------------------
 
 rebuild_xcframework() {
     local IOS_LIB="${BUILD_ROOT}/i2pd-ios/libCI2PD.a"
     local SIM_LIB="${BUILD_ROOT}/i2pd-sim/libCI2PD.a"
-    local MACOS_LIB="${XCFW}/macos-arm64/libCI2PD.a"
+    local MACOS_LIB="${BUILD_ROOT}/i2pd-mac/libCI2PD.a"
 
     # CI2PD.xcframework is deliberately headerless: headers are provided by the
     # separate CI2PDCShims SPM target (capi.h + capi_client.h + module.modulemap).
@@ -320,16 +378,25 @@ build_boost sim "arm64-apple-ios${IOS_MIN}-simulator"  "${IPHONE_SIM_SDK}"
 
 echo ""
 echo "======================================================"
-echo " Phase 3 - i2pd"
+echo " Phase 3 - i2pd (iOS device + simulator, then macOS)"
 echo "======================================================"
 build_i2pd ios "arm64-apple-ios${IOS_MIN}"            "${IPHONEOS_SDK}"
 build_i2pd sim "arm64-apple-ios${IOS_MIN}-simulator"  "${IPHONE_SIM_SDK}"
+build_i2pd_macos
 
 echo ""
 echo "======================================================"
 echo " Phase 4 - xcframework"
 echo "======================================================"
 rebuild_xcframework
+
+echo ""
+echo "======================================================"
+echo " Phase 5 - package (zip + SwiftPM checksum)"
+echo "======================================================"
+( cd "${SCRIPT_DIR}/Resources" && rm -f CI2PD.xcframework.zip && zip -q -r -y CI2PD.xcframework.zip CI2PD.xcframework )
+echo "==> CI2PD.xcframework.zip ready:"
+swift package compute-checksum "${SCRIPT_DIR}/Resources/CI2PD.xcframework.zip"
 
 echo ""
 echo "Done."

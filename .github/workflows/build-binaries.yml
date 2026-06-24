@@ -1,0 +1,76 @@
+name: Build binaries
+
+# Manually triggered, pinned-version build of the embedded i2pd (CI2PD)
+# xcframework. Cross-compiles OpenSSL + Boost + i2pd for iOS device & simulator
+# from pinned source, builds the macOS slice natively (Homebrew OpenSSL/Boost),
+# publishes the xcframework as a Release asset, then opens a PR pointing
+# Package.swift at the release URL (checksummed) and removing the committed
+# binary. NOT scheduled — bumping i2pd is deliberate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      i2pd_version:
+        description: i2pd git tag to build
+        default: "2.60.0"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Homebrew deps (for the native macOS slice)
+        run: brew install boost openssl@3
+
+      - name: Cache cross-compiled OpenSSL/Boost/i2pd
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ci2pd_build
+          key: ci2pd-${{ inputs.i2pd_version }}-boost1.90.0-openssl3.3.2
+
+      - name: Build CI2PD.xcframework
+        run: |
+          I2PD_VERSION="${{ inputs.i2pd_version }}" \
+          BUILD_ROOT="${{ runner.temp }}/ci2pd_build" \
+          bash build_ci2pd_ios.sh
+
+      - name: Compute checksum
+        id: sum
+        run: echo "ci2pd=$(swift package compute-checksum Resources/CI2PD.xcframework.zip)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ci2pd-${{ inputs.i2pd_version }}" Resources/CI2PD.xcframework.zip \
+            --title "i2pd (CI2PD) ${{ inputs.i2pd_version }}" \
+            --notes "Embedded i2pd xcframework (BSD-3; bundles Boost + OpenSSL). sha256: ${{ steps.sum.outputs.ci2pd }}" \
+          || gh release upload "ci2pd-${{ inputs.i2pd_version }}" Resources/CI2PD.xcframework.zip --clobber
+
+      - name: Point Package.swift at the release and drop the committed binary
+        run: |
+          REPO="${{ github.repository }}"
+          python3 scripts/set-binary-target.py CI2PD \
+            "https://github.com/$REPO/releases/download/ci2pd-${{ inputs.i2pd_version }}/CI2PD.xcframework.zip" \
+            "${{ steps.sum.outputs.ci2pd }}"
+          git rm -r --quiet --ignore-unmatch Resources/CI2PD.xcframework
+          rm -f Resources/CI2PD.xcframework.zip
+          grep -q 'Resources/\*.xcframework' .gitignore \
+            || printf '\n# CI2PD is fetched from Releases via binaryTarget(url:).\nResources/*.xcframework/\nResources/*.xcframework.zip\n' >> .gitignore
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: binaries/ci2pd-${{ inputs.i2pd_version }}
+          title: "Fetch i2pd (CI2PD) ${{ inputs.i2pd_version }} from Releases"
+          commit-message: "build: fetch CI2PD binary from Releases (out of git)"
+          body: |
+            Built **i2pd ${{ inputs.i2pd_version }}** (macOS + iOS + iOS-sim) from source,
+            published it as a Release asset, switched `Package.swift` to
+            `binaryTarget(url:checksum:)`, and removed the committed ~83 MB binary.
+
+            - CI2PD sha256: `${{ steps.sum.outputs.ci2pd }}`

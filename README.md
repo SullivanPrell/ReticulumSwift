@@ -72,8 +72,9 @@ See [docs/INTERFACES.md](docs/INTERFACES.md) for configuration of each.
 
 - Swift 5.9+ (Xcode 15+ on Apple platforms)
 - iOS 16+ / macOS 13+ / tvOS 16+ / watchOS 9+
-- ~90 MB of prebuilt binaries (the embedded i2pd library) are committed to the
-  repo, so a normal `git clone` is all you need — no extra tooling required.
+- The embedded i2pd binary is fetched automatically by SwiftPM from a GitHub
+  Release (a checksummed `binaryTarget`), built from pinned source by the
+  *Build binaries* workflow — a normal `git clone` + `swift build` is all you need.
 
 ## Installation
 

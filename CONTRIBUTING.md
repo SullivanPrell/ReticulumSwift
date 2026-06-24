@@ -49,27 +49,32 @@ Unit tests assert against captured Python wire bytes. For end-to-end interop, ru
 a Python `rnsd` and a Swift `rnsd` on the same network — see
 [docs/INTEROP.md](docs/INTEROP.md).
 
-## Rebuilding CI2PD
+## The CI2PD (i2pd) binary
 
-The I2P interface uses a prebuilt static library of the i2pd daemon, shipped in
-`Resources/CI2PD.xcframework` (committed directly). It contains macOS-arm64, iOS-arm64,
-and iOS-simulator-arm64 slices.
+The I2P interface uses a prebuilt static library of the i2pd daemon
+(`CI2PD.xcframework`: macOS-arm64, iOS-arm64, iOS-simulator-arm64). It is **not
+committed to git** — it is built from **pinned source** and published as a
+GitHub **Release** asset, then consumed via `binaryTarget(url:checksum:)` in
+`Package.swift`. Pinned versions: **i2pd 2.60.0**, Boost 1.90.0, OpenSSL 3.3.2.
 
-You only need to rebuild it if you are bumping i2pd, OpenSSL, or Boost. The
-i2pd source is **not** bundled — clone it yourself, then run the build script:
+### Bumping the version (the easy way)
+
+Run the **Build binaries** workflow (Actions ▸ *Build binaries* ▸ *Run workflow*,
+or `gh workflow run build-binaries.yml -f i2pd_version=<tag>`). It builds all
+three slices from source, publishes a `ci2pd-<version>` release, and opens a PR
+that updates the `binaryTarget` url + checksum. Review and merge it.
+
+### Building locally
 
 ```sh
-git clone https://github.com/PurpleI2P/i2pd
-I2PD_SRC="$(pwd)/i2pd" bash build_ci2pd_ios.sh
+bash build_ci2pd_ios.sh        # clones the pinned i2pd tag; override with I2PD_SRC=/path
 ```
 
-The script downloads and cross-compiles OpenSSL and Boost for the iOS SDKs,
-builds i2pd as a merged static library, and reassembles the xcframework
-(preserving the macOS slice). Build artifacts land in `/tmp/ci2pd_build`
-(~3 GB, safe to delete). Prerequisites: Xcode with the iOS SDK, Homebrew `cmake`
-(Homebrew's still ships `FindBoost.cmake`), and internet access for source
-downloads. After it finishes, run `swift build` and `swift test` to confirm no
-regressions, and commit the regenerated binary.
+The script cross-compiles OpenSSL + Boost + i2pd for the iOS SDKs from pinned
+source, builds the macOS slice natively (Homebrew `boost` + `openssl@3`), and
+assembles + zips the xcframework, printing its SwiftPM checksum. Build artifacts
+land in `/tmp/ci2pd_build` (~3 GB, safe to delete). Prerequisites: Xcode with the
+iOS SDK, Homebrew `cmake`, `boost`, and `openssl@3`.
 
 See [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md) for the licenses of the components
 the binary embeds.

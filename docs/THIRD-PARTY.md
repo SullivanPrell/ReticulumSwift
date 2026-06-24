@@ -14,7 +14,12 @@ statically links are reproduced below.
 
 ---
 
-## i2pd (`Resources/CI2PD.xcframework`)
+## i2pd (`CI2PD.xcframework`, fetched from Releases)
+
+> **Pinned versions:** i2pd **2.60.0**, statically linking Boost **1.90.0** and
+> OpenSSL **3.3.2**. Built by the *Build binaries* workflow and distributed as a
+> Release asset (not committed to git).
+
 
 **i2pd** — Copyright (c) 2013-2026, The PurpleI2P Project — BSD 3-Clause License
 https://github.com/PurpleI2P/i2pd
