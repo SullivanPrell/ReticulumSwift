@@ -290,9 +290,10 @@ build_i2pd_macos() {
     if [ -d "${OUT}" ] && [ -f "${OUT}/libCI2PD.a" ]; then
         echo "==> i2pd (macos) already built - skipping"; return
     fi
-    local OPENSSL_DIR BOOST_DIR
+    local OPENSSL_DIR BOOST_DIR MACOS_SDK
     OPENSSL_DIR="$(brew --prefix openssl@3)"
     BOOST_DIR="$(brew --prefix boost)"
+    MACOS_SDK="$(xcrun --sdk macosx --show-sdk-path)"
     echo "==> Building i2pd for macOS arm64 (Homebrew OpenSSL/Boost) ..."
     rm -rf "${OUT}/cmake"; mkdir -p "${OUT}/cmake"
     pushd "${OUT}/cmake" > /dev/null
@@ -306,12 +307,13 @@ build_i2pd_macos() {
         -DOPENSSL_ROOT_DIR="${OPENSSL_DIR}" \
         -DOPENSSL_USE_STATIC_LIBS=ON \
         -DBOOST_ROOT="${BOOST_DIR}" \
-        -DBoost_USE_STATIC_LIBS=ON
+        -DBoost_USE_STATIC_LIBS=ON \
+        -DZLIB_INCLUDE_DIR="${MACOS_SDK}/usr/include" \
+        -DZLIB_LIBRARY="${MACOS_SDK}/usr/lib/libz.tbd"
     "${CMAKE}" --build . --config Release "-j${NCPU}"
     popd > /dev/null
 
     echo "==> Compiling C API wrapper for macOS ..."
-    local MACOS_SDK; MACOS_SDK="$(xcrun --sdk macosx --show-sdk-path)"
     local CXXFLAGS="-target arm64-apple-macos${MACOS_MIN} -isysroot ${MACOS_SDK} -mmacosx-version-min=${MACOS_MIN} -std=c++17 -DMAC_OSX"
     local SHIMS_INC="${SCRIPT_DIR}/Sources/CI2PDCShims/include"
     local INC="-I${I2PD_SRC}/libi2pd -I${I2PD_SRC}/libi2pd_client -I${I2PD_SRC}/i18n -I${SHIMS_INC} -I${BOOST_DIR}/include -I${OPENSSL_DIR}/include"
