@@ -23,13 +23,18 @@ BOOST_UNDERSCORE="boost_1_90_0"
 IOS_MIN="16.0"
 MACOS_MIN="13.0"
 
-# i2pd source. Not bundled with this repo — by default we clone the pinned tag.
+# i2pd source. Not bundled with this repo — by default we clone a pinned commit.
+# `capi_client.cpp` (C_StartClientServices / C_StopClientServices, required by the
+# Swift I2P interface) landed AFTER the 2.60.0 release tag, so we pin the exact
+# post-release commit instead of the bare tag.
 # Override with a local checkout: I2PD_SRC=/path/to/i2pd bash build_ci2pd_ios.sh
+I2PD_COMMIT="${I2PD_COMMIT:-af6d1442fdd661a23ea960837e0e206c589747ba}"
 if [ -z "${I2PD_SRC:-}" ]; then
-    I2PD_SRC="${BUILD_ROOT}/i2pd-${I2PD_VERSION}"
+    I2PD_SRC="${BUILD_ROOT}/i2pd-${I2PD_COMMIT}"
     if [ ! -d "${I2PD_SRC}" ]; then
-        echo "==> cloning i2pd ${I2PD_VERSION}"
-        git clone --depth 1 --branch "${I2PD_VERSION}" https://github.com/PurpleI2P/i2pd "${I2PD_SRC}"
+        echo "==> cloning i2pd @ ${I2PD_COMMIT} (v${I2PD_VERSION}+)"
+        git clone https://github.com/PurpleI2P/i2pd "${I2PD_SRC}"
+        git -C "${I2PD_SRC}" checkout --quiet "${I2PD_COMMIT}"
     fi
 fi
 I2PD_SRC="$(realpath "${I2PD_SRC}")"
