@@ -307,7 +307,8 @@ build_i2pd_macos() {
     popd > /dev/null
 
     echo "==> Compiling C API wrapper for macOS ..."
-    local CXXFLAGS="-target arm64-apple-macos${MACOS_MIN} -mmacosx-version-min=${MACOS_MIN} -std=c++17 -DMAC_OSX"
+    local MACOS_SDK; MACOS_SDK="$(xcrun --sdk macosx --show-sdk-path)"
+    local CXXFLAGS="-target arm64-apple-macos${MACOS_MIN} -isysroot ${MACOS_SDK} -mmacosx-version-min=${MACOS_MIN} -std=c++17 -DMAC_OSX"
     local SHIMS_INC="${SCRIPT_DIR}/Sources/CI2PDCShims/include"
     local INC="-I${I2PD_SRC}/libi2pd -I${I2PD_SRC}/libi2pd_client -I${I2PD_SRC}/i18n -I${SHIMS_INC} -I${BOOST_DIR}/include -I${OPENSSL_DIR}/include"
     "${CLANGXX}" ${CXXFLAGS} ${INC} -c "${I2PD_SRC}/libi2pd_wrapper/capi.cpp"        -o "${OUT}/capi.cpp.o"
