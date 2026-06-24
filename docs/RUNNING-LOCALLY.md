@@ -18,7 +18,7 @@ talks to other nodes — including Python ones.
 ```sh
 swift build                 # debug build
 swift build -c release      # optimized
-swift test                  # 2145 tests, 0 failures
+swift test                  # runs the full test suite
 ```
 
 > Hitting `SwiftShims` module-cache errors? `rm -rf .build && swift test`.

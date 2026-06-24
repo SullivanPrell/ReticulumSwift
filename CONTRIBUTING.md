@@ -11,8 +11,7 @@ Swift tests pass.
   The reference implementation (<https://github.com/markqvist/Reticulum>) is the
   source of truth; new wire-level behavior should be checked against captured
   Python bytes where possible.
-- **Zero regressions.** `swift test` must pass (2145 tests, 0 failures) before any
-  commit.
+- **No regressions.** The full `swift test` suite must pass before any commit.
 - **No new crypto dependencies.** All cryptography goes through Apple CryptoKit
   (Curve25519, HMAC-SHA256, HKDF, SHA-256/512) and CommonCrypto (AES-CBC).
 

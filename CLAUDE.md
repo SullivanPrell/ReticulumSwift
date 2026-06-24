@@ -1,13 +1,13 @@
 # ReticulumSwift
 
 Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.3.0).
-Target: 100% wire + API parity so a Swift node interoperates with Python nodes.
+Target: wire + API compatibility so a Swift node interoperates with Python nodes.
 
 ## Build & Test
 
 ```bash
 swift build
-swift test                          # 2119 tests, 0 failures
+swift test                          # runs the full test suite
 swift test --filter <SuiteName>     # e.g. WireGoldenBytesTests
 
 # If you see SwiftShims module cache errors:
@@ -94,8 +94,9 @@ Sources/ReticulumSwift/
 
 ## Parity Status
 
-**At parity with Python Reticulum 1.3.0.** All core layers and every standard
-interface are implemented. 2145 tests, 0 failures. See [CHANGELOG.md](CHANGELOG.md).
+Implements the full Reticulum 1.3.0 protocol — all core layers and every standard
+interface — wire-compatible with the Python reference. ~78% line coverage across
+2,145 tests. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Conventions
 

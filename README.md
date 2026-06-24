@@ -6,7 +6,8 @@ for Apple platforms.
 
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2016%2B%20%7C%20macOS%2013%2B%20%7C%20tvOS%2016%2B%20%7C%20watchOS%209%2B-blue)](#requirements)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange)](https://swift.org)
-[![Tests](https://img.shields.io/badge/tests-2145%20passing-brightgreen)](#testing)
+[![CI](https://github.com/SullivanPrell/ReticulumSwift/actions/workflows/ci.yml/badge.svg)](https://github.com/SullivanPrell/ReticulumSwift/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-78%25-green)](#testing)
 [![License](https://img.shields.io/badge/license-Reticulum-lightgrey)](LICENSE)
 
 Reticulum is a cryptography-based networking stack for building local and wide-area
@@ -41,8 +42,9 @@ The goal of the stack is a complete iOS/macOS Reticulum experience — think
 
 ## Status
 
-**At parity with Python Reticulum 1.3.0.** All core protocol layers and every
-standard interface are implemented and covered by tests.
+ReticulumSwift implements the full Reticulum 1.3.0 protocol — all core layers and
+every standard interface — and is wire-compatible with the Python reference
+implementation.
 
 | Layer | State |
 |-------|-------|
@@ -55,8 +57,9 @@ standard interface are implemented and covered by tests.
 | IFAC (deterministic Ed25519) | ✅ wire-compatible |
 | `rnsd` daemon + RPC + shared instance | ✅ config-compatible |
 
-**2145 unit tests, 0 failures.** Interoperability with Python is exercised by a
-separate live Python↔Swift test suite; see [docs/INTEROP.md](docs/INTEROP.md).
+Behavior is covered by an extensive XCTest suite (2,145 tests, ~78% line
+coverage), and wire compatibility is verified against Python RNS by a live
+interoperability suite — see [docs/INTEROP.md](docs/INTEROP.md).
 
 ### Interfaces
 

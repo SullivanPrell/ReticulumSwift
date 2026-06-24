@@ -25,4 +25,5 @@ Python reference implementation (RNS 1.3.0).
 - **`rnsd`** — a Reticulum daemon executable, config-compatible with Python's.
 - **IFAC** — deterministic Ed25519, wire-compatible with Python's pure25519.
 
-2145 unit tests, 0 failures.
+Covered by 2,145 unit tests (~78% line coverage) plus a live Python↔Swift
+interoperability suite.
