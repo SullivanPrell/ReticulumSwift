@@ -1,0 +1,13 @@
+# The embedded i2pd static libraries are committed directly (NOT via Git LFS),
+# so the package resolves correctly when consumed as a SwiftPM binary dependency.
+*.a binary
+
+# Treat xcframework metadata as text (small, diffable).
+*.plist text
+*.modulemap text
+*.h text
+
+# Normalize line endings for source.
+*.swift text eol=lf
+*.md text eol=lf
+*.sh text eol=lf

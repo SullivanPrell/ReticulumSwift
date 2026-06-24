@@ -1,0 +1,12 @@
+.DS_Store
+.build/
+build/
+.swiftpm/
+Packages/
+# Internal parity / planning log — not part of the public package.
+tasks/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+.netrc
+.claude/

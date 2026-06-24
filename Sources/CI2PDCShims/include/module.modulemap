@@ -1,0 +1,5 @@
+module CI2PD {
+    header "capi.h"
+    header "capi_client.h"
+    export *
+}

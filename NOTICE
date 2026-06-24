@@ -1,0 +1,26 @@
+ReticulumSwift
+Copyright (c) 2026 ReticulumSwift contributors
+
+This product is a Swift port of the Reticulum Network Stack and is a
+derivative work of the original Python implementation:
+
+  Reticulum — Copyright (c) 2016-2026 Mark Qvist
+  https://github.com/markqvist/Reticulum
+
+ReticulumSwift is distributed under the Reticulum License (see LICENSE),
+the same license used by the upstream project.
+
+------------------------------------------------------------------------
+Bundled third-party components
+------------------------------------------------------------------------
+
+This distribution includes a prebuilt static library of the i2pd daemon
+(Resources/CI2PD.xcframework), used to provide the I2P interface:
+
+  i2pd — Copyright (c) 2013-2026, The PurpleI2P Project
+  BSD 3-Clause License
+  https://github.com/PurpleI2P/i2pd
+
+The full text of the i2pd license is reproduced in docs/THIRD-PARTY.md.
+The CI2PD binary also statically links Boost and OpenSSL; see
+docs/THIRD-PARTY.md for their license references.
