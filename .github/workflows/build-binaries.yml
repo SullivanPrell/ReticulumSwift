@@ -58,7 +58,7 @@ jobs:
           python3 scripts/set-binary-target.py CI2PD \
             "https://github.com/$REPO/releases/download/ci2pd-${{ inputs.i2pd_version }}/CI2PD.xcframework.zip" \
             "${{ steps.sum.outputs.ci2pd }}"
-          git rm -r --quiet --ignore-unmatch Resources/CI2PD.xcframework
+          git rm -rf --quiet --ignore-unmatch Resources/CI2PD.xcframework
           rm -f Resources/CI2PD.xcframework.zip
           grep -q 'Resources/\*.xcframework' .gitignore \
             || printf '\n# CI2PD is fetched from Releases via binaryTarget(url:).\nResources/*.xcframework/\nResources/*.xcframework.zip\n' >> .gitignore
