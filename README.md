@@ -1,5 +1,12 @@
 # ReticulumSwift
 
+> **Reticulum is the work of [Mark Qvist](https://github.com/markqvist).** This is an
+> independent, community Swift implementation of his protocol — **not an official
+> Reticulum project**. The canonical project, protocol specification, and reference
+> (Python) implementation live at **[github.com/markqvist/Reticulum](https://github.com/markqvist/Reticulum)**;
+> please look there first to understand Reticulum itself. ReticulumSwift exists to bring
+> that same network, wire-for-wire, to Apple platforms.
+
 A from-scratch Swift implementation of the [Reticulum Network Stack](https://reticulum.network) —
 wire-compatible with the Python reference implementation, with first-class support
 for Apple platforms.
