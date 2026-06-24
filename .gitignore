@@ -10,3 +10,7 @@ tasks/
 DerivedData/
 .netrc
 .claude/
+
+# CI2PD is fetched from Releases via binaryTarget(url:).
+Resources/*.xcframework/
+Resources/*.xcframework.zip
