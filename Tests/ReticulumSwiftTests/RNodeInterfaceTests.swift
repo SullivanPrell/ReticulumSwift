@@ -965,7 +965,10 @@ final class RNodeProcessIncomingChtmTests: XCTestCase {
         let crs: UInt8   = 214            // 57 dBm
         let nfl: UInt8   = 160            // 3 dBm
         let ntf: UInt8   = 0xFF           // no interference
-        mock.inject([0xC0, 0x25] + ats + atl + cus + cul + [crs, nfl, ntf] + [0xC0])
+        var frame: [UInt8] = [0xC0, 0x25]
+        frame += ats; frame += atl; frame += cus; frame += cul
+        frame += [crs, nfl, ntf]; frame.append(0xC0)
+        mock.inject(frame)
         XCTAssertEqual(iface.rAirtimeShort,      5.0,  accuracy: 0.01)
         XCTAssertEqual(iface.rAirtimeLong,       10.0, accuracy: 0.01)
         XCTAssertEqual(iface.rChannelLoadShort,  2.0,  accuracy: 0.01)
@@ -986,7 +989,10 @@ final class RNodeProcessIncomingChtmTests: XCTestCase {
         let crs: UInt8   = 157  // 0 dBm
         let nfl: UInt8   = 157  // 0 dBm
         let ntf: UInt8   = 200  // 43 dBm
-        mock.inject([0xC0, 0x25] + ats + atl + cus + cul + [crs, nfl, ntf] + [0xC0])
+        var frame: [UInt8] = [0xC0, 0x25]
+        frame += ats; frame += atl; frame += cus; frame += cul
+        frame += [crs, nfl, ntf]; frame.append(0xC0)
+        mock.inject(frame)
         XCTAssertEqual(iface.rInterference!, 200 - 157)  // = 43
     }
 }
