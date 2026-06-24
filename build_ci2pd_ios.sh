@@ -38,6 +38,10 @@ if [ -z "${I2PD_SRC:-}" ]; then
     fi
 fi
 I2PD_SRC="$(realpath "${I2PD_SRC}")"
+# capi_client.cpp (C_StartClientServices / C_StopClientServices) is a custom
+# client-services wrapper maintained in THIS repo — NOT part of upstream i2pd.
+# It is compiled from build-support/ against the i2pd headers.
+CAPI_CLIENT_SRC="${SCRIPT_DIR}/build-support/capi_client.cpp"
 
 IPHONEOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 IPHONE_SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
@@ -250,7 +254,7 @@ build_i2pd() {
         -o "${OUT}/capi.cpp.o"
 
     "${CLANGXX}" ${CXXFLAGS} ${INC} \
-        -c "${I2PD_SRC}/libi2pd_wrapper/capi_client.cpp" \
+        -c "${CAPI_CLIENT_SRC}" \
         -o "${OUT}/capi_client.cpp.o"
 
     echo "==> Merging all objects into libCI2PD.a for ${PLATFORM} ..."
@@ -312,7 +316,7 @@ build_i2pd_macos() {
     local SHIMS_INC="${SCRIPT_DIR}/Sources/CI2PDCShims/include"
     local INC="-I${I2PD_SRC}/libi2pd -I${I2PD_SRC}/libi2pd_client -I${I2PD_SRC}/i18n -I${SHIMS_INC} -I${BOOST_DIR}/include -I${OPENSSL_DIR}/include"
     "${CLANGXX}" ${CXXFLAGS} ${INC} -c "${I2PD_SRC}/libi2pd_wrapper/capi.cpp"        -o "${OUT}/capi.cpp.o"
-    "${CLANGXX}" ${CXXFLAGS} ${INC} -c "${I2PD_SRC}/libi2pd_wrapper/capi_client.cpp" -o "${OUT}/capi_client.cpp.o"
+    "${CLANGXX}" ${CXXFLAGS} ${INC} -c "${CAPI_CLIENT_SRC}" -o "${OUT}/capi_client.cpp.o"
 
     echo "==> Merging objects into libCI2PD.a for macOS ..."
     "${LIBTOOL_TOOL}" -static \
