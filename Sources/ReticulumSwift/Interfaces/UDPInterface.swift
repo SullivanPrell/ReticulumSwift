@@ -22,6 +22,7 @@ public final class UDPInterface: Interface {
     public var inboundHandler: ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
     public var recursivePrs: Bool = false
+    public var announcesFromInternal: Bool = true
     public var ifacIdentity: Identity?
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize

@@ -272,6 +272,15 @@ public final class Transport {
     /// Per-instance propagation limit; defaults to `pathfinderM`.
     public var propagationLimit: UInt8 = UInt8(Transport.pathfinderM)
 
+    /// Per-session hop-count obfuscation delta. When non-zero, packets that
+    /// originate locally (`hops == 0`) — our own traffic and traffic relayed for
+    /// directly-connected local clients — have their hop count rewritten to this
+    /// value when injected into the wider network, hiding that they came from
+    /// here. `0` disables the feature (the default). Set to a random value in
+    /// 2...7 at startup when the `local_hops_delta` config option is enabled.
+    /// Mirrors Python's `Transport.local_hops_delta`.
+    public var localHopsDelta: UInt8 = 0
+
     /// 16-byte random instance id. Generated on first access, but can be
     /// overridden before `start()` to restore a persisted identity across
     /// restarts. Matches `Transport.identity.hash` semantics in Python.
@@ -409,9 +418,19 @@ public final class Transport {
     public var blackholeUpdater: BlackholeUpdater?
 
     // MARK: - Transport identity
-    // The transport's own persistent Identity, used for SINGLE management/probe destinations.
-    // Mirrors Python's `Transport.identity`.
+    // The transport's own Identity, used for SINGLE management/probe destinations
+    // and as the transport instance ID on the wire. Mirrors Python's
+    // `Transport.identity`. For a non-transport node (unless
+    // `static_transport_identity` is set) this is a fresh ephemeral identity
+    // generated at startup — see `internalIdentity` for the persistent one.
     public var transportIdentity: Identity?
+
+    // The persistent on-disk transport identity. Equals `transportIdentity`
+    // except when an ephemeral transport identity is in use, in which case this
+    // retains the stable identity (used e.g. to derive the RPC auth key so it
+    // stays constant across runs). Mirrors Python's `Transport._identity` /
+    // `Transport.internal_identity()`.
+    public var internalIdentity: Identity?
 
     // MARK: - Management destinations
     public private(set) var probeDestination: Destination?
@@ -592,6 +611,54 @@ public final class Transport {
     /// Mirrors Python `Transport.interface_to_shared_instance(interface)`.
     public func interfaceToSharedInstance(_ interface: any Interface) -> Bool {
         `interface` is LocalInterface
+    }
+
+    /// Whether the local hop-count obfuscation delta should be applied when
+    /// transmitting `packet` out over `interface`. True only for our own freshly
+    /// originated packets (`hops == 0`) that are addressed to real (single/link)
+    /// destinations and leave over a non-local, non-shared-instance interface,
+    /// while the feature is enabled and we're not behind a shared instance.
+    /// Mirrors Python `Transport.should_apply_delta(packet, interface)`.
+    func shouldApplyDelta(_ packet: Packet, interface: any Interface) -> Bool {
+        return !isConnectedToSharedInstance
+            && packet.hops == 0
+            && localHopsDelta != 0
+            && packet.destinationType != .plain
+            && packet.destinationType != .group
+            && !isLocalClientInterface(interface)
+            && !interfaceToSharedInstance(interface)
+    }
+
+    /// Return a copy of `packet` with its hop count rewritten to `hops`. When
+    /// `transportInsert` is true, also promote it to a HEADER_2 transport packet
+    /// carrying this instance's transport id (used when obfuscating a locally
+    /// originated HEADER_1 announce as it is injected into transport).
+    /// Mirrors Python `Transport.mangle_hops(raw, hops, transport_insert)`.
+    func mangleHops(_ packet: Packet, hops: UInt8, transportInsert: Bool = false) -> Packet {
+        var p = packet
+        p.hops = hops
+        if transportInsert {
+            p.headerType    = .type2
+            p.transportType = .transport
+            p.transportID   = transportInstanceID
+        }
+        return p
+    }
+
+    /// Hop count to stamp when relaying `packet` (received on `sourceInterface`)
+    /// onward. Normally the received hop count + 1, but obfuscated to
+    /// `localHopsDelta` when the packet came from a directly-connected local
+    /// client and is NOT staying within the local-client domain (and the feature
+    /// is enabled). `staysLocal` is the site-specific "don't obfuscate" condition
+    /// (`instance_local_link` for link traffic, `proof_for_local_client` for
+    /// proofs, `to_local_client` for data). Mirrors the
+    /// `packet.hops if not from_local_client or <staysLocal> or local_hops_delta == 0
+    /// else local_hops_delta` idiom in Python `Transport.inbound()`.
+    func relayHops(_ packet: Packet, from sourceInterface: any Interface, staysLocal: Bool) -> UInt8 {
+        if localHopsDelta != 0, isLocalClientInterface(sourceInterface), !staysLocal {
+            return localHopsDelta
+        }
+        return packet.hops &+ 1
     }
 
     /// Clear transient in-memory queues (held announces, receipts, reverse table).
@@ -907,6 +974,11 @@ public final class Transport {
     ///
     /// Mirrors Python's `Interface.hold_announce(packet)`.
     public func holdAnnounce(_ packet: Packet, destinationHash: Data, on interface: any Interface) {
+        // Don't hold announces that are already at (or one below) the maximum
+        // propagation distance — replaying them later would push them past the
+        // hop limit, so they'd be dropped anyway. Python (RNS 1.3.8):
+        //   if announce_packet.hops >= RNS.Transport.PATHFINDER_M-1: return
+        guard Int(packet.hops) < Transport.pathfinderM - 1 else { return }
         let key = ObjectIdentifier(interface)
         guard var state = ingressStates[key] else { return }
         if state.heldAnnounces[destinationHash] != nil {
@@ -1899,7 +1971,9 @@ public final class Transport {
             if let restrict = entry.attachedInterfaceName, iface.name != restrict { continue }
             guard Transport.shouldForwardAnnounce(
                 outboundMode: iface.mode,
-                nextHopMode: entry.receivingInterfaceMode
+                nextHopMode: entry.receivingInterfaceMode,
+                localDestination: false,
+                announcesFromInternal: iface.announcesFromInternal
             ) else { continue }
             queueLock.lock()
             if announceQueues[iface.name] == nil { announceQueues[iface.name] = AnnounceQueue() }
@@ -2089,7 +2163,9 @@ public final class Transport {
                 $0.name == path.nextHopInterfaceName && $0.isOnline
             }) else {
                 // Path exists but interface is offline — broadcast as fallback.
-                for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint { try? iface.send(packet) }
+                for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
+                    try? iface.send(deltaMangled(packet, for: iface))
+                }
                 return receipt
             }
             var routed = packet
@@ -2104,6 +2180,8 @@ public final class Transport {
                 routed.headerType = .type2
                 routed.transportID = nhID
             }
+            // Local hop-count obfuscation: hide that this packet originated here.
+            if shouldApplyDelta(packet, interface: outbound) { routed.hops = localHopsDelta }
             try outbound.send(routed)
             // Update path timestamp on successful send (mirrors Python's path_entry[IDX_PT_TIMESTAMP]).
             lock.lock()
@@ -2113,9 +2191,22 @@ public final class Transport {
             }
             lock.unlock()
         } else {
-            for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint { try? iface.send(packet) }
+            for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
+                try? iface.send(deltaMangled(packet, for: iface))
+            }
         }
         return receipt
+    }
+
+    /// If local hop-count obfuscation applies to `packet` on `iface`, return an
+    /// obfuscated copy (hops → `localHopsDelta`, with transport-header insertion
+    /// for HEADER_1 announces); otherwise return `packet` unchanged. Mirrors the
+    /// per-interface `should_apply_delta` / `mangle_hops` branch in Python
+    /// `Transport.outbound()`'s broadcast loop.
+    private func deltaMangled(_ packet: Packet, for iface: any Interface) -> Packet {
+        guard shouldApplyDelta(packet, interface: iface) else { return packet }
+        let insert = packet.packetType == .announce && packet.headerType == .type1
+        return mangleHops(packet, hops: localHopsDelta, transportInsert: insert)
     }
 
     /// Broadcast on every online routing-endpoint interface *except* the one specified.
@@ -2314,7 +2405,11 @@ public final class Transport {
         lock.lock(); linkRoutes[linkID] = route; lock.unlock()
 
         var forwarded = packet
-        forwarded.hops = packet.hops &+ 1
+        // instance_local_link: a link whose both ends are local clients of this
+        // instance stays local, so keep real hops; otherwise obfuscate a link
+        // request relayed on behalf of a local client. Python inbound() line 1731.
+        let instanceLocalLink = isLocalClientInterface(interface) && isLocalClientInterface(outbound)
+        forwarded.hops = relayHops(packet, from: interface, staysLocal: instanceLocalLink)
 
         // If the incoming LINKREQUEST is HEADER_2 addressed to us as relay, we
         // must convert it before forwarding. Mirrors Python Transport lines 1565–1576:
@@ -2462,7 +2557,14 @@ public final class Transport {
             $0.name == outboundName && $0.isOnline
         }) else { return }
         var forwarded = packet
-        forwarded.hops = packet.hops &+ 1
+        // instance_local_link: both sides of this link are local clients, so the
+        // traffic never leaves the local-client domain and must keep its real
+        // hop count even under local hop-count obfuscation.
+        let initIface = interfaces.first { $0.name == route!.initiatorSideInterfaceName }
+        let respIface = interfaces.first { $0.name == route!.responderSideInterfaceName }
+        let instanceLocalLink = (initIface.map(isLocalClientInterface) ?? false)
+                             && (respIface.map(isLocalClientInterface) ?? false)
+        forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: instanceLocalLink)
         try? outbound.send(forwarded)
         route!.lastHeard = Date()
         lock.lock(); linkRoutes[packet.destinationHash] = route; lock.unlock()
@@ -2483,7 +2585,10 @@ public final class Transport {
             // came from the direction of the destination, not the source).
             if (interface as AnyObject) === (outboundIface as AnyObject) {
                 var forwarded = packet
-                forwarded.hops = packet.hops &+ 1
+                // proof_for_local_client: the proof is headed back to a local
+                // client, so it stays in the local domain — keep its real hops.
+                let proofForLocalClient = isLocalClientInterface(receiveIface)
+                forwarded.hops = relayHops(packet, from: interface, staysLocal: proofForLocalClient)
                 try? receiveIface.send(forwarded)
             }
             // Don't stop here — also try to match against local receipts below
@@ -2736,7 +2841,9 @@ public final class Transport {
                     //   are forwarded freely (including to AP and BOUNDARY interfaces).
                     guard Transport.shouldForwardAnnounce(
                         outboundMode: iface.mode,
-                        nextHopMode: interface.mode
+                        nextHopMode: interface.mode,
+                        localDestination: false,
+                        announcesFromInternal: iface.announcesFromInternal
                     ) else { continue }
                     queueLock.lock()
                     if announceQueues[iface.name] == nil {
@@ -3152,47 +3259,66 @@ public final class Transport {
 
     /// Decide whether a relayed announce should be transmitted on an outbound interface.
     ///
-    /// Mirrors Python `Transport.outbound()` announce-mode filtering
-    /// (the `if packet.attached_interface == None:` block for ANNOUNCE packets).
+    /// Mirrors Python `Transport.outbound()` announce-mode filtering as reworked
+    /// in RNS 1.3.7 (the `if packet.attached_interface == None:` block for
+    /// ANNOUNCE packets).
+    ///
+    /// Parameters:
+    /// - `outboundMode`: mode of the interface we're considering transmitting on.
+    /// - `nextHopMode`: mode of the next-hop interface toward the announce's
+    ///   source (the interface it arrived on). `nil` means Python's
+    ///   `from_interface == None` — no known next hop.
+    /// - `localDestination`: true when the announce's destination is registered
+    ///   locally (Python's `destinations_map` lookup). Instance-local
+    ///   destinations bypass the roaming/boundary/internal mode blocks.
+    /// - `announcesFromInternal`: the outbound interface's
+    ///   `announces_from_internal` setting.
     ///
     /// Rules (checked on the **outbound** interface, not the receiving interface):
     ///
-    /// - **AP outbound**: always block — AP-mode interfaces are "last-mile" for
-    ///   clients and do not receive backbone announce traffic.
-    ///
-    /// - **ROAMING outbound**: block when the next-hop interface (i.e., the interface
-    ///   the announce was *received on*) is ROAMING or BOUNDARY.  Prevents
-    ///   roaming-segment announces from ping-ponging between roaming interfaces.
-    ///
-    /// - **BOUNDARY outbound**: block when the next-hop interface is ROAMING.
-    ///   Prevents roaming traffic from crossing boundary interfaces.
-    ///
-    /// - **All other outbound modes** (FULL, GATEWAY, POINT_TO_POINT): always allow.
-    ///
-    /// `nextHopMode` is the mode of the interface the announce arrived on.
-    /// For a freshly-received announce the receive interface IS the next-hop toward
-    /// the source, so pass `receivingInterface.mode`.
+    /// - **No next hop** (and not local): block — nowhere to attribute the announce.
+    /// - **`announces_from_internal == false` + internal next hop** (and not
+    ///   local): block relaying announces that came in from an internal interface.
+    /// - **AP outbound**: always block — AP-mode interfaces are "last-mile".
+    /// - **INTERNAL outbound** (not local): block when the next hop is BOUNDARY.
+    ///   (RNS 1.3.7 no longer blocks a roaming next hop here.)
+    /// - **ROAMING outbound**: allow if local; else block when the next hop is
+    ///   ROAMING or BOUNDARY.
+    /// - **BOUNDARY outbound**: allow if local; else block when the next hop is ROAMING.
+    /// - **All other outbound modes** (FULL, GATEWAY, POINT_TO_POINT): allow.
     public static func shouldForwardAnnounce(
         outboundMode: InterfaceMode,
-        nextHopMode: InterfaceMode
+        nextHopMode: InterfaceMode?,
+        localDestination: Bool = false,
+        announcesFromInternal: Bool = true
     ) -> Bool {
+        // Top-level guards — only apply when the destination is not instance-local.
+        if !localDestination && nextHopMode == nil { return false }
+        if !localDestination && !announcesFromInternal && nextHopMode == .internal { return false }
+
         switch outboundMode {
         case .accessPoint:
             // AP outbound is never used for relayed announces.
             return false
-        case .roaming:
-            // Block if next-hop came from another roaming or boundary segment.
-            return nextHopMode != .roaming && nextHopMode != .boundary
         case .internal:
-            // RNS 1.3.6 MODE_INTERNAL: block announce broadcast when the
-            // next-hop interface toward the source is roaming or boundary.
-            // (Python also blocks when the next hop is unknown/has no mode;
-            // in the announce-relay path the next hop is the receiving
-            // interface, which always has a mode, so that case can't arise here.)
-            return nextHopMode != .roaming && nextHopMode != .boundary
+            // RNS 1.3.7 MODE_INTERNAL: for non-local destinations, block only
+            // when the next-hop interface toward the source is boundary.
+            if !localDestination {
+                guard let nhm = nextHopMode else { return false }
+                if nhm == .boundary { return false }
+            }
+            return true
+        case .roaming:
+            // Instance-local destinations always allowed.
+            if localDestination { return true }
+            guard let nhm = nextHopMode else { return false }
+            // Block if next-hop came from another roaming or boundary segment.
+            return nhm != .roaming && nhm != .boundary
         case .boundary:
+            if localDestination { return true }
+            guard let nhm = nextHopMode else { return false }
             // Block only if next-hop is roaming (boundary-to-boundary is fine).
-            return nextHopMode != .roaming
+            return nhm != .roaming
         default:
             // FULL, GATEWAY, POINT_TO_POINT — forward freely.
             return true
@@ -3290,7 +3416,11 @@ public final class Transport {
         }) else { return }
         guard outbound !== sourceInterface else { return }   // never bounce
         var forwarded = packet
-        forwarded.hops = packet.hops &+ 1
+        // to_local_client: a directly reachable destination (path.hops == 0) is a
+        // local client, so relayed data staying local keeps its real hop count;
+        // otherwise obfuscate hops for data relayed on behalf of a local client.
+        // Python: `if local_hops_delta != 0 and from_local_client and not to_local_client`.
+        forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: path.hops == 0)
         // Mirror Python's in-transport DATA rewrite (Transport.inbound, the
         // `transport_id == Transport.identity.hash` branch):
         //   • remaining_hops > 1  (Swift path.hops > 0): keep HEADER_2 and

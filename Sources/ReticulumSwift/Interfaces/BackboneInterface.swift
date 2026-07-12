@@ -45,6 +45,7 @@ public final class BackboneInterface: Interface {
     public var inboundHandler: ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
     public var recursivePrs: Bool = false
+    public var announcesFromInternal: Bool = true
 
     // MARK: - IFAC (Interface Access Code)
     //

@@ -199,6 +199,16 @@ final class LinkParityTests: XCTestCase {
         if let rtt = bLink.rtt { XCTAssertGreaterThan(rtt, 0) }
     }
 
+    /// RNS 1.3.8 (commit b7068888): the responder must also record the link's
+    /// hop count, taken from the incoming RTT packet. In a direct loopback the
+    /// RTT packet arrives with hops == 0, so expectedHops must be 0 (not nil).
+    func testReceiveRTTSetsExpectedHopsOnResponder() throws {
+        let (_, bLink, aT, bT) = try establishLink()
+        _ = (aT, bT)
+        XCTAssertEqual(bLink.expectedHops, 0,
+            "Responder expectedHops must be set from the RTT packet's hop count (0 for direct loopback)")
+    }
+
     /// The responder's rtt must be ≥ the time from requestTime to link activation.
     /// This validates the `max` picks the larger of measured vs reported.
     func testReceiveRTTIsAtLeastMeasuredRoundTrip() throws {

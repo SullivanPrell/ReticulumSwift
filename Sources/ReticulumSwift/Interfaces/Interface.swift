@@ -119,6 +119,12 @@ public protocol Interface: AnyObject {
     /// `Interface.recursive_prs`. Defaults to `false`.
     var recursivePrs: Bool { get set }
 
+    /// When false, a relayed announce whose next hop toward the source is an
+    /// `internal`-mode interface is blocked from being broadcast on this
+    /// interface. Mirrors Python's RNS 1.3.7 `Interface.announces_from_internal`.
+    /// Defaults to `true`.
+    var announcesFromInternal: Bool { get set }
+
     /// Called by Transport when an outbound packet is ready for the wire.
     func send(_ packet: Packet) throws
 
@@ -211,6 +217,10 @@ public extension Interface {
     }
     var recursivePrs: Bool {
         get { false }
+        set { }
+    }
+    var announcesFromInternal: Bool {
+        get { true }
         set { }
     }
 

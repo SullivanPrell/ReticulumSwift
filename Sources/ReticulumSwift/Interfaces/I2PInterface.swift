@@ -39,6 +39,7 @@ public final class I2PInterface: Interface {
     // Mode
     public var mode: InterfaceMode = .full
     public var recursivePrs: Bool = false
+    public var announcesFromInternal: Bool = true
 
     // Tunnel
     public var wantsTunnel: Bool   = false

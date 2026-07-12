@@ -30,8 +30,10 @@ final class RNS136InterfaceFeatureTests: XCTestCase {
         XCTAssertEqual(InterfaceMode.internal.rawValue, 0x07)
     }
 
-    func testInternalModeSuppressesAnnounceToRoamingOrBoundaryNextHop() {
-        XCTAssertFalse(Transport.shouldForwardAnnounce(outboundMode: .internal, nextHopMode: .roaming))
+    func testInternalModeSuppressesAnnounceToBoundaryNextHop() {
+        // RNS 1.3.7: internal outbound now blocks ONLY a boundary next hop
+        // (roaming is no longer blocked — see RNS137AnnouncePropagationTests).
+        XCTAssertTrue(Transport.shouldForwardAnnounce(outboundMode: .internal, nextHopMode: .roaming))
         XCTAssertFalse(Transport.shouldForwardAnnounce(outboundMode: .internal, nextHopMode: .boundary))
     }
 

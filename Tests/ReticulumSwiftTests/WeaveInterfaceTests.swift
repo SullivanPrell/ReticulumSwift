@@ -74,6 +74,8 @@ final class WeaveInterfaceTests: XCTestCase {
         XCTAssertEqual(WeaveEvt.etMsg,         0x0000)
         XCTAssertEqual(WeaveEvt.etSystemBoot,  0x0001)
         XCTAssertEqual(WeaveEvt.etCoreInit,    0x0002)
+        // RNS 1.3.8 (commit dd3ddb9d): board hardware initialization event.
+        XCTAssertEqual(WeaveEvt.etBoardInit,   0x0003)
     }
 
     func testWeaveEvtDriverEvents() {

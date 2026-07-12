@@ -29,6 +29,16 @@ public struct ReticulumConfig {
 
     public struct ReticulumSection {
         public var enableTransport: Bool = false
+        /// When true, a non-transport node keeps using its persistent identity
+        /// as the transport identity instead of a fresh ephemeral one.
+        /// Mirrors Python's `static_transport_identity = No` (RNS 1.3.7).
+        public var staticTransportIdentity: Bool = false
+        /// When true, this instance obfuscates the hop count of packets that
+        /// originate locally (its own traffic and directly-connected local
+        /// clients) by replacing `hops == 0` with a random per-session delta
+        /// when injecting them into the wider network. Privacy hardening for
+        /// shared/transport instances. Mirrors Python's `local_hops_delta = No`.
+        public var localHopsDelta: Bool = false
         public var shareInstance: Bool = true
         public var panicOnInterfaceError: Bool = false
         /// Whether the probe destination is enabled.
@@ -165,6 +175,10 @@ public struct ReticulumConfig {
                 switch key {
                 case "enable_transport":
                     cfg.reticulum.enableTransport = parseBool(value) ?? false
+                case "static_transport_identity":
+                    cfg.reticulum.staticTransportIdentity = parseBool(value) ?? false
+                case "local_hops_delta":
+                    cfg.reticulum.localHopsDelta = parseBool(value) ?? false
                 case "share_instance":
                     cfg.reticulum.shareInstance = parseBool(value) ?? true
                 case "panic_on_interface_error":

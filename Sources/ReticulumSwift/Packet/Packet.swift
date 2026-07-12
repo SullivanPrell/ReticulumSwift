@@ -172,6 +172,12 @@ public struct Packet: Equatable {
         let flags = raw[raw.startIndex]
         let hops = raw[raw.startIndex + 1]
 
+        // Reject packets whose hop count has reached or exceeded the maximum
+        // propagation distance — a valid packet can never legitimately carry
+        // hops >= PATHFINDER_M, so such a value indicates a corrupt/malformed
+        // header. Python (RNS 1.3.8): raise ValueError(f"Invalid hop count {hops}").
+        guard Int(hops) < Transport.pathfinderM else { throw UnpackError.malformed }
+
         guard
             let headerType = HeaderType(rawValue: (flags & 0b0100_0000) >> 6),
             let contextFlag = ContextFlag(rawValue: (flags & 0b0010_0000) >> 5),

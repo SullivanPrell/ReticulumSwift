@@ -54,6 +54,7 @@ public enum WeaveEvt {
     public static let etMsg:                     UInt16 = 0x0000
     public static let etSystemBoot:              UInt16 = 0x0001
     public static let etCoreInit:                UInt16 = 0x0002
+    public static let etBoardInit:               UInt16 = 0x0003   // Python (RNS 1.3.8): ET_BOARD_INIT
     public static let etDrvUartInit:             UInt16 = 0x1000
     public static let etDrvUsbCdcInit:           UInt16 = 0x1010
     public static let etDrvUsbCdcHostAvail:      UInt16 = 0x1011

@@ -531,11 +531,14 @@ loglevel = 4
     /// Start the RPC server on the specified port.
     /// Python: `self.rpc_listener = multiprocessing.connection.Listener(...)`
     public func startRPC(port: UInt16) throws {
-        guard let identity = transport.transportIdentity,
+        // Derive the auth key from the persistent (internal) identity so it stays
+        // stable across runs even when an ephemeral transport identity is in use.
+        // Mirrors Python's `rpc_key = full_hash(Transport.internal_identity().get_private_key())`.
+        guard let identity = transport.internalIdentity ?? transport.transportIdentity,
               let privBytes = identity.getPrivateKey() else {
             throw ReticulumError.missingIdentity
         }
-        
+
         let authkey = Identity.fullHash(privBytes)
         let server = RPCServer(port: port, authkey: authkey)
         server.transport = transport
@@ -578,17 +581,36 @@ loglevel = 4
             }
         }
 
-        // Load or create transport identity (full 64-byte private key).
+        // Load or create the persistent transport identity (full 64-byte private key).
         // Mirrors Python's Transport.identity loaded from `transport_identity`.
-        let transportIdentity: Identity
+        let persistentIdentity: Identity
         if let loaded = try? Identity.read(fromFile: transportIDURL) {
-            transportIdentity = loaded
+            persistentIdentity = loaded
         } else {
+            persistentIdentity = Identity()
+            try? persistentIdentity.write(toFile: transportIDURL)
+        }
+        // Keep the persistent identity as `internalIdentity` (Python's
+        // `Transport._identity`). Non-transport nodes then run behind a fresh
+        // ephemeral transport identity for privacy, unless
+        // `static_transport_identity` is configured. Mirrors RNS 1.3.7
+        // `Transport.start()`.
+        transport.internalIdentity = persistentIdentity
+        let transportIdentity: Identity
+        if !transport.transportEnabled && !(config?.reticulum.staticTransportIdentity ?? false) {
             transportIdentity = Identity()
-            try? transportIdentity.write(toFile: transportIDURL)
+        } else {
+            transportIdentity = persistentIdentity
         }
         transport.transportIdentity = transportIdentity
         transport.transportInstanceID = transportIdentity.hash
+
+        // When local hop-count obfuscation is enabled, pick a random per-session
+        // delta in 2...7. Mirrors Python: `if RNS.Reticulum.local_hops_delta():
+        // Transport.local_hops_delta = (ord(os.urandom(1))%6)+2`.
+        if config?.reticulum.localHopsDelta ?? false {
+            transport.localHopsDelta = UInt8.random(in: 2...7)
+        }
 
         transport.ratchetsDirectory = configuration.storagePath
             .appendingPathComponent("ratchets")

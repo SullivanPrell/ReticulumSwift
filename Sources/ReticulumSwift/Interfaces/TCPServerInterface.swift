@@ -31,6 +31,7 @@ public final class TCPServerInterface: Interface {
     public var inboundHandler: ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
     public var recursivePrs: Bool = false
+    public var announcesFromInternal: Bool = true
 
     /// Called by Transport when a new client connects. Transport registers the sub-interface.
     public var onClientConnected: ((any Interface) -> Void)?

@@ -43,6 +43,7 @@ public final class AutoInterface: Interface {
     public var inboundHandler: ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
     public var recursivePrs: Bool = false
+    public var announcesFromInternal: Bool = true
 
     public private(set) var rxBytes: Int = 0
     public private(set) var txBytes: Int = 0

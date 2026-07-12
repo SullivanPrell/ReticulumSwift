@@ -242,6 +242,13 @@ public final class Link {
     public var requestTime: Date?
     public var establishedAt: Date?
 
+    /// Hop count to the link's far end, available on both initiator and
+    /// responder. On the initiator it is the path-table hop count to the
+    /// destination; on the responder it is the hop count of the incoming RTT
+    /// packet. Mirrors Python `Link.expected_hops` (RNS 1.3.8 made this
+    /// available on the responder side as well). `nil` until known.
+    public var expectedHops: Int?
+
     /// Establishment timeout. Defaults to `establishmentTimeoutPerHop`
     /// seconds; scaled up by hop count when the path is known.
     public var establishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
@@ -561,6 +568,9 @@ public final class Link {
         //   self.establishment_timeout  = RNS.Reticulum.get_instance().get_first_hop_timeout(destination.hash)
         //   self.establishment_timeout += Link.ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, hops_to(destination.hash))
         let hops = transport.hopsTo(destination.hash) ?? 1
+        // Record hop distance to the destination on the initiator side.
+        // Python: self.expected_hops = RNS.Transport.hops_to(self.destination.hash)
+        link.expectedHops = transport.hopsTo(destination.hash).map(Int.init)
         let fht  = transport.firstHopTimeout(for: destination.hash)
         link.establishmentTimeout = fht + Link.establishmentTimeoutPerHop * TimeInterval(max(1, hops))
         transport.register(link: link)
@@ -821,6 +831,9 @@ public final class Link {
         }
         self.status = .active
         self.establishedAt = Date()
+        // Record the hop count of the RTT packet so the responder also knows the
+        // link's hop distance. Python (RNS 1.3.8): self.expected_hops = packet.hops
+        self.expectedHops = Int(packet.hops)
         onEstablished?(self)
     }
 
