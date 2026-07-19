@@ -98,6 +98,15 @@ public final class RequestReceipt {
         get { stateLock.lock(); defer { stateLock.unlock() }; return _onProgress }
         set { stateLock.lock(); _onProgress = newValue; stateLock.unlock() }
     }
+    private var _onConclude: (() -> Void)?
+    /// Fires EXACTLY ONCE when the receipt concludes (ready OR failed), OUTSIDE
+    /// `stateLock`. Link wires this to evict the receipt from `pendingRequests` so
+    /// timed-out / failed requests are removed too (not only successful ones),
+    /// bounding the dictionary. Wire-neutral: no packet is sent on conclusion.
+    var onConclude: (() -> Void)? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _onConclude }
+        set { stateLock.lock(); _onConclude = newValue; stateLock.unlock() }
+    }
 
     public init(requestID: Data, path: String, requestSize: Int, timeout: TimeInterval? = nil) {
         self.requestID = requestID
@@ -146,8 +155,10 @@ public final class RequestReceipt {
         _progress = 1.0
         _status = .ready(data)
         let cb = _onResponse
+        let conclude = _onConclude
         stateLock.unlock()
         cb?(data, self)
+        conclude?()
     }
 
     func fail(_ reason: String) {
@@ -163,8 +174,10 @@ public final class RequestReceipt {
         _concludedAt = Date()
         _status = .failed(reason: reason)
         let cb = _onFailed
+        let conclude = _onConclude
         stateLock.unlock()
         cb?(reason, self)
+        conclude?()
     }
 
     private func timeoutFired() {
@@ -296,8 +309,10 @@ extension Link {
             if let cb = failedCallback    { receipt.onFailed = cb }
             if let cb = progressCallback  { receipt.onProgress = cb }
 
-            // Store before sending — response may arrive synchronously.
-            pendingRequests[requestID] = receipt
+            // Store before sending — response may arrive synchronously. Evict on
+            // conclusion (success OR timeout/failure) so the dictionary stays bounded.
+            receipt.onConclude = { [weak self] in self?.evictPendingRequest(requestID) }
+            stateLock.lock(); pendingRequests[requestID] = receipt; stateLock.unlock()
 
             try sendPrebuiltPacket(requestPacket)
 
@@ -319,7 +334,8 @@ extension Link {
             if let cb = failedCallback    { receipt.onFailed = cb }
             if let cb = progressCallback  { receipt.onProgress = cb }
 
-            pendingRequests[requestID] = receipt
+            receipt.onConclude = { [weak self] in self?.evictPendingRequest(requestID) }
+            stateLock.lock(); pendingRequests[requestID] = receipt; stateLock.unlock()
 
             let rt = ResourceTransfer(link: self)
             rt.onFailed = { [weak receipt] _, _ in
@@ -421,7 +437,8 @@ extension Link {
         guard case .array(let parts) = (try? MsgPack.decode(data)) ?? .nil,
               parts.count >= 2,
               case .bytes(let requestID) = parts[0] else { return }
-        guard let receipt = pendingRequests.removeValue(forKey: requestID) else { return }
+        stateLock.lock(); let receipt = pendingRequests.removeValue(forKey: requestID); stateLock.unlock()
+        guard let receipt else { return }
         // Response data may be any msgpack value (Python sends native objects; old Swift sent bytes).
         // Re-encode as bytes so callbacks receive a consistent Data payload to decode.
         let responseData: Data

@@ -364,11 +364,43 @@ public final class Link {
     private var token: Token?
     private var watchdogTimer: DispatchSourceTimer?
 
-    // Request/response dispatch — populated by Link.request.
+    /// Serializes ALL mutable Link state (the session state machine, traffic
+    /// counters/timestamps, the resource queues, `pendingRequests` and the lazy
+    /// channel). Non-recursive, and applied with strict snapshot-under-lock /
+    /// act-outside: it is NEVER held across a `transport.*` call, a user callback,
+    /// a `ResourceTransfer`/`Channel` method, `encrypt`/`decrypt`, or `close`/
+    /// `teardown`/`sendKeepalive`. Because the Transport receive path always drops
+    /// its own lock before calling into a Link (verified in Transport), the safe
+    /// ordering is Transport.lock > Link.stateLock and it is never inverted.
+    let stateLock = NSLock()
+
+    // Request/response dispatch — populated by Link.request. Guarded by `stateLock`.
     var pendingRequests: [Data: RequestReceipt] = [:]
 
-    /// Channel attached to this link (lazy; created by `getChannel()`).
+    /// Channel attached to this link (lazy; created by `getChannel()`). Guarded by `stateLock`.
     private var _channel: Channel?
+
+    // MARK: - Resource-queue snapshots (copy-under-lock, iterate the copy)
+
+    /// Copy of the incoming-resource queue taken under `stateLock`. Callers iterate
+    /// the COPY so a `ResourceTransfer` callback that re-enters
+    /// `register/unregisterIncomingResource` cannot mutate the array mid-iteration.
+    private func snapshotIncomingResources() -> [ResourceTransfer] {
+        stateLock.lock(); defer { stateLock.unlock() }; return incomingResources
+    }
+    private func snapshotOutgoingResources() -> [ResourceTransfer] {
+        stateLock.lock(); defer { stateLock.unlock() }; return outgoingResources
+    }
+    private func incomingResourcesIsEmpty() -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }; return incomingResources.isEmpty
+    }
+
+    /// Remove a concluded/timed-out request receipt from `pendingRequests`. Wired to
+    /// `RequestReceipt.onConclude` so timed-out and failed receipts are evicted (not
+    /// only successful ones) — bounding the dictionary. Idempotent.
+    func evictPendingRequest(_ requestID: Data) {
+        stateLock.lock(); _ = pendingRequests.removeValue(forKey: requestID); stateLock.unlock()
+    }
 
     // MARK: - Resource strategy (mirrors Python Link.resource_strategy)
 
@@ -435,16 +467,16 @@ public final class Link {
     }
 
     func registerOutgoingResource(_ rt: ResourceTransfer) {
-        outgoingResources.append(rt)
+        stateLock.lock(); outgoingResources.append(rt); stateLock.unlock()
     }
     func unregisterOutgoingResource(_ rt: ResourceTransfer) {
-        outgoingResources.removeAll { $0 === rt }
+        stateLock.lock(); outgoingResources.removeAll { $0 === rt }; stateLock.unlock()
     }
     func registerIncomingResource(_ rt: ResourceTransfer) {
-        incomingResources.append(rt)
+        stateLock.lock(); incomingResources.append(rt); stateLock.unlock()
     }
     func unregisterIncomingResource(_ rt: ResourceTransfer) {
-        incomingResources.removeAll { $0 === rt }
+        stateLock.lock(); incomingResources.removeAll { $0 === rt }; stateLock.unlock()
     }
 
     private var lastResourceWindow_: Int? = nil
@@ -452,36 +484,46 @@ public final class Link {
 
     /// Returns whether the given resource is in the incoming queue. Mirrors Python `Link.has_incoming_resource()`.
     public func hasIncomingResource(_ rt: ResourceTransfer) -> Bool {
-        incomingResources.contains { $0 === rt }
+        stateLock.lock(); defer { stateLock.unlock() }
+        return incomingResources.contains { $0 === rt }
     }
 
     /// Returns the window size of the last completed incoming resource. Mirrors Python `Link.get_last_resource_window()`.
-    public func getLastResourceWindow() -> Int? { lastResourceWindow_ }
+    public func getLastResourceWindow() -> Int? {
+        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceWindow_
+    }
 
     /// Returns the EIFR of the last completed incoming resource. Mirrors Python `Link.get_last_resource_eifr()`.
-    public func getLastResourceEifr() -> Double? { lastResourceEifr_ }
+    public func getLastResourceEifr() -> Double? {
+        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceEifr_
+    }
 
     /// Removes the resource from the outgoing queue. Mirrors Python `Link.cancel_outgoing_resource()`.
     public func cancelOutgoingResource(_ rt: ResourceTransfer) {
-        outgoingResources.removeAll { $0 === rt }
+        stateLock.lock(); outgoingResources.removeAll { $0 === rt }; stateLock.unlock()
     }
 
     /// Removes the resource from the incoming queue. Mirrors Python `Link.cancel_incoming_resource()`.
     public func cancelIncomingResource(_ rt: ResourceTransfer) {
-        incomingResources.removeAll { $0 === rt }
+        stateLock.lock(); incomingResources.removeAll { $0 === rt }; stateLock.unlock()
     }
 
     /// Returns true if there are no outgoing resources pending. Mirrors Python `Link.ready_for_new_resource()`.
-    public func readyForNewResource() -> Bool { outgoingResources.isEmpty }
+    public func readyForNewResource() -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }; return outgoingResources.isEmpty
+    }
 
     /// Called by ResourceTransfer when an incoming resource concludes — records window and EIFR.
     func recordIncomingResourceConclusion(window: Int, eifr: Double?) {
-        lastResourceWindow_ = window
-        lastResourceEifr_ = eifr
+        stateLock.lock(); lastResourceWindow_ = window; lastResourceEifr_ = eifr; stateLock.unlock()
     }
 
-    func testSetLastResourceWindow(_ w: Int) { lastResourceWindow_ = w }
-    func testSetLastResourceEifr(_ e: Double) { lastResourceEifr_ = e }
+    func testSetLastResourceWindow(_ w: Int) {
+        stateLock.lock(); lastResourceWindow_ = w; stateLock.unlock()
+    }
+    func testSetLastResourceEifr(_ e: Double) {
+        stateLock.lock(); lastResourceEifr_ = e; stateLock.unlock()
+    }
 
     /// Send pre-encrypted resource segment data without applying link-level
     /// encryption (matches Python: "A resource takes care of encryption by itself").
@@ -517,7 +559,10 @@ public final class Link {
     /// Returns the Channel for this link, creating one if needed.
     /// Matches Python's `Link.get_channel()`.
     public func getChannel() -> Channel {
+        stateLock.lock(); defer { stateLock.unlock() }
         if let ch = _channel { return ch }
+        // LinkChannelOutlet holds a weak link, and Channel's initializer does not
+        // call back into Link/Transport, so constructing under the lock is safe.
         let outlet = LinkChannelOutlet(link: self)
         let ch = Channel(outlet: outlet)
         _channel = ch
@@ -1140,7 +1185,7 @@ public final class Link {
             lastInbound = Date()
             rx += 1; rxBytes += packet.data.count
             let data = packet.data
-            for rt in incomingResources { rt.receivePart(data) }
+            for rt in snapshotIncomingResources() { rt.receivePart(data) }
             return
         }
 
@@ -1150,7 +1195,7 @@ public final class Link {
             let proofData = packet.data
             guard proofData.count >= Constants.hashLength else { return }
             let resourceHash = proofData.prefix(Constants.hashLength)
-            for rt in outgoingResources where rt.resourceHash == Data(resourceHash) {
+            for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
                 rt.validateProof(proofData)
             }
             return
@@ -1168,7 +1213,8 @@ public final class Link {
             handleKeepalive(plaintext)
             // Keepalives do NOT update lastData (matches Python had_outbound(is_keepalive=True))
         case .channel:
-            _channel?.receive(plaintext)
+            stateLock.lock(); let ch = _channel; stateLock.unlock()
+            ch?.receive(plaintext)
         case .linkIdentify:
             handleRemoteIdentify(plaintext)
         case .resourceAdvertisement:
@@ -1186,9 +1232,9 @@ public final class Link {
                 } else if adv.isResponse, let reqID = adv.requestID {
                     // Incoming response via Resource — route to pending request.
                     handleIncomingResponseResource(adv: adv, rawAdv: plaintext, requestID: reqID)
-                } else if !incomingResources.isEmpty {
+                } else if !incomingResourcesIsEmpty() {
                     // Pre-registered receivers (via bindAsReceiver) take priority.
-                    for rt in incomingResources { rt.receiveAdvertisement(plaintext) }
+                    for rt in snapshotIncomingResources() { rt.receiveAdvertisement(plaintext) }
                 } else {
                     // No pre-registered receiver — apply resource strategy.
                     switch resourceStrategy {
@@ -1210,8 +1256,8 @@ public final class Link {
                 // garbage on an authenticated link is treated as a hard error. Mirrors
                 // Python's try/except-teardown around RESOURCE_ADV handling (commit 3a36c367),
                 // paired with the ResourceAdvertisement transfer-size cap.
-                if !incomingResources.isEmpty {
-                    for rt in incomingResources { rt.receiveAdvertisement(plaintext) }
+                if !incomingResourcesIsEmpty() {
+                    for rt in snapshotIncomingResources() { rt.receiveAdvertisement(plaintext) }
                 } else {
                     Reticulum.log("Invalid resource advertisement on \(self), tearing down link", level: .debug)
                     try? teardown()
@@ -1224,25 +1270,25 @@ public final class Link {
                 : 1
             guard reqData.count > hashStart + Constants.hashLength else { break }
             let resourceHash = reqData[hashStart ..< hashStart + Constants.hashLength]
-            for rt in outgoingResources where rt.resourceHash == Data(resourceHash) {
+            for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
                 rt.handleRequest(reqData)
             }
         case .resourceHashmapUpdate:
             guard plaintext.count >= Constants.hashLength else { break }
             let resourceHash = plaintext.prefix(Constants.hashLength)
-            for rt in incomingResources where rt.resourceHash == Data(resourceHash) {
+            for rt in snapshotIncomingResources() where rt.resourceHash == Data(resourceHash) {
                 rt.handleHashmapUpdate(plaintext)
             }
         case .resourceInitiatorCancel:
             guard plaintext.count >= Constants.hashLength else { break }
             let resourceHash = plaintext.prefix(Constants.hashLength)
-            for rt in incomingResources where rt.resourceHash == Data(resourceHash) {
+            for rt in snapshotIncomingResources() where rt.resourceHash == Data(resourceHash) {
                 rt.cancel(reason: "initiator cancelled")
             }
         case .resourceReceiverCancel:
             guard plaintext.count >= Constants.hashLength else { break }
             let resourceHash = plaintext.prefix(Constants.hashLength)
-            for rt in outgoingResources where rt.resourceHash == Data(resourceHash) {
+            for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
                 rt.reject()
             }
         case .request:
@@ -1312,11 +1358,12 @@ public final class Link {
     }
 
     private func handleIncomingResponseResource(adv: ResourceAdvertisement, rawAdv: Data, requestID: Data) {
-        guard let receipt = pendingRequests[requestID] else { return }
+        stateLock.lock(); let receipt = pendingRequests[requestID]; stateLock.unlock()
+        guard let receipt else { return }
         let rt = ResourceTransfer(link: self)
         rt.onAssembledInternal = { [weak self, weak receipt] payload, _ in
             guard let self, let receipt else { return }
-            self.pendingRequests.removeValue(forKey: requestID)
+            self.evictPendingRequest(requestID)
             receipt.deliverReady(payload)
         }
         registerIncomingResource(rt)
