@@ -149,6 +149,21 @@ final class AnnounceCapTests: XCTestCase {
 
     // MARK: - Helpers
 
+    func testQueueHoldsFarMoreThan16Announces() {
+        // Regression: the per-interface cap was 16, silently dropping forwarded
+        // announces on any network with more than ~16 destinations announcing in
+        // one rate-limit window. Python allows MAX_QUEUED_ANNOUNCES = 16384.
+        let queue = AnnounceQueue()
+        let bitrate = 9600  // low rate → everything after the first queues
+        let now = 0.0
+        for d in 0..<100 {
+            _ = queue.shouldTransmit(packet: makeAnnounce(hops: 0, dest: UInt8(d)),
+                                     now: now, bitrate: bitrate, emitted: 0)
+        }
+        XCTAssertEqual(queue.count, 99,
+            "queue must hold all distinct queued announces (99 after the first transmits), not cap at 16")
+    }
+
     private func makeAnnounce(hops: UInt8, dest: UInt8) -> Packet {
         Packet(
             headerType: .type1, contextFlag: .unset, transportType: .broadcast,
