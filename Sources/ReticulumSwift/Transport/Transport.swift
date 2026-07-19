@@ -2697,13 +2697,22 @@ public final class Transport {
             // multiple times, so that the same announce received via different paths
             // can update the path table with the better (fewer hops) path.
             if alreadySeen {
-                // Only re-process if the incoming path is better than what we already have.
+                // Only re-process if the incoming path is strictly better (fewer
+                // hops) than what we have — OR the current path has been marked
+                // unresponsive, in which case Python allows the SAME announce
+                // (same random blob) arriving via an alternate, longer route to
+                // revive the path (D2; handled by the more-hops/equal-emission
+                // branch in the freshness ladder below, which intentionally skips
+                // the blob check). Without this unresponsive exception the
+                // early-return would swallow the reviving announce before the
+                // ladder ever runs.
                 let existingHops = paths[decoded.destinationHash]?.hops ?? UInt8.max
-                if packet.hops >= existingHops {
+                let unresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
+                if packet.hops >= existingHops, !unresponsive {
                     lock.unlock()
-                    return  // Already seen and not a better path
+                    return  // Already seen, not a better path, and path is responsive
                 }
-                // Better path — fall through to update
+                // Better path (or reviving an unresponsive one) — fall through.
             }
             lock.unlock()
 
@@ -2768,29 +2777,57 @@ public final class Transport {
             let isUnresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
             let existingBlobs = paths[decoded.destinationHash]?.randomBlobs ?? []
             if let existing = paths[decoded.destinationHash] {
-                if let randomBlob, existing.randomBlobs.contains(randomBlob) {
-                    // Replay/loop guard: we've already heard this exact announce
-                    // (same random blob). Mirrors Python's `if not random_blob in
-                    // random_blobs` condition, present in every should_add branch —
-                    // blocks announce-replay path forging and network loops.
-                    shouldUpdate = false
-                } else if packet.hops < existing.hops {
-                    shouldUpdate = true  // fewer hops → always better
-                } else if packet.hops == existing.hops {
-                    shouldUpdate = true  // same hops → accept (newer timestamp)
+                // Path-table freshness gate — a faithful port of Python's
+                // `should_add` ladder (Transport.inbound, Transport.py:1801-1875).
+                //
+                // The critical invariant the previous "fewer hops always wins"
+                // logic violated: an announce may only replace an existing path
+                // when it is genuinely NEWER — its emission timestamp must exceed
+                // `path_timebase`, the MAX emission across every random blob we've
+                // recorded for that path — or it is the same announce arriving to
+                // revive a path we previously marked unresponsive. Emission
+                // timestamps are second-resolution (5-byte unix seconds in the
+                // announce's random hash), so two announces made in the same second
+                // tie and neither displaces the other; path convergence to a
+                // shorter route therefore happens across successive (later)
+                // announces, not within a single announce flood. Accepting a
+                // stale/replayed/reordered announce here — which the old ladder did
+                // — degrades paths network-wide and enables path forgery once the
+                // 64-blob replay window rolls over.
+                //
+                // Python's `path_announce_emitted` loop (1834-1838) takes the max
+                // over blobs with an early break; that yields the same >/==/<
+                // ordering against `announce_emitted` as the full max, so the
+                // existing `timebaseFromRandomBlobs` helper is exact here.
+                let pathTimebase = Transport.timebaseFromRandomBlobs(existing.randomBlobs)
+                let blobSeen = randomBlob.map { existing.randomBlobs.contains($0) } ?? false
+                if packet.hops <= existing.hops {
+                    // Fewer-or-equal hops (Python 1814-1825): accept only a fresh,
+                    // previously-unheard announce that is more recently emitted.
+                    shouldUpdate = !blobSeen && emittedAt > pathTimebase
                 } else if existing.isExpired {
-                    shouldUpdate = true  // expired path → accept any announce
-                } else if emittedAt > existing.announceEmittedAt {
-                    shouldUpdate = true  // more recent source announce → accept even if more hops
-                } else if isUnresponsive {
-                    // Mirrors Python: "if path_is_unresponsive: should_add = True"
-                    // Allow updating unresponsive paths with any new announce.
-                    shouldUpdate = true
+                    // More hops, but the path has expired (Python 1842-1853):
+                    // accept any announce we haven't already heard.
+                    shouldUpdate = !blobSeen
+                } else if emittedAt > pathTimebase {
+                    // More hops, not expired, but more recently emitted
+                    // (Python 1858-1864): accept if unheard.
+                    shouldUpdate = !blobSeen
+                } else if emittedAt == pathTimebase {
+                    // More hops, same emission (Python 1870-1875): only replace to
+                    // revive an unresponsive path. No blob check here — Python
+                    // deliberately allows the SAME announce (same blob, arriving via
+                    // an alternate longer route) to take over when the shorter path
+                    // has gone dead. Pairs with the unresponsive exception in the
+                    // duplicate early-return above (D2).
+                    shouldUpdate = isUnresponsive
                 } else {
+                    // More hops and strictly older emission: ignore (Python's
+                    // implicit else — should_add stays False).
                     shouldUpdate = false
                 }
             } else {
-                shouldUpdate = true  // no existing path
+                shouldUpdate = true  // no existing path (Python 1877-1880)
             }
             if shouldUpdate {
                 // Cache the announce packet to disk so the path table survives restarts.
@@ -3131,7 +3168,14 @@ public final class Transport {
         // as the relay, or peers will route traffic to a node that just drops it.
         // Key off the path table (a real known route), mirroring Python's
         // `destination_hash in path_table`, not merely an overheard cached announce.
-        if (transportEnabled || fromLocal), let entry = pathEntry, let cached = cachedAnnounce {
+        if (transportEnabled || fromLocal), let entry = pathEntry {
+            // We have a known path to the destination — this is the branch Python
+            // selects on `destination_hash in path_table` (Transport.py:2969). If
+            // the cached announce packet has since been evicted, Python logs and
+            // simply does NOT answer (get_cached_packet == None, 2974-2975); it
+            // does not fall through to the forward branches. Mirror that: return
+            // without answering rather than dropping into recursive discovery.
+            guard let cached = cachedAnnounce else { return }
             // Suppress answer when the next hop along the path IS the requestor
             // (would create a routing loop). Mirrors Python's requestor_transport_id check.
             if let rID = requestorTransportID,

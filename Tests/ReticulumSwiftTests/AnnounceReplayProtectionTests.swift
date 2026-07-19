@@ -52,13 +52,16 @@ final class AnnounceReplayProtectionTests: XCTestCase {
         let dest = try Destination(identity: id, direction: .in, kind: .single,
                                    appName: "test", aspects: ["fresh"])
 
-        let first = try Announce.make(for: dest)
+        let t0 = Date().timeIntervalSince1970
+        let first = try Announce.make(for: dest, timestamp: t0)
         iface1.inboundHandler?(first, iface1)
         XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "iface1")
 
         // A genuinely new announce (fresh random blob) from the same source on
-        // iface2 is a legitimate re-announce / move and MUST update the path.
-        let second = try Announce.make(for: dest)
+        // iface2 is a legitimate re-announce / move and MUST update the path. It is
+        // emitted later, so it carries a strictly newer timestamp (the freshness
+        // gate would tie a same-second announce and keep the first-heard path).
+        let second = try Announce.make(for: dest, timestamp: t0 + 2)
         iface2.inboundHandler?(second, iface2)
         XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "iface2",
             "a fresh announce with a new random blob must still update the path")
