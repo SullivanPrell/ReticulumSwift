@@ -401,7 +401,8 @@ extension Link {
         case .all:
             break
         case .list:
-            guard let remoteHash = remoteIdentity?.hash,
+            stateLock.lock(); let rid = remoteIdentity; stateLock.unlock()
+            guard let remoteHash = rid?.hash,
                   entry.allowedHashes.contains(remoteHash) else { return }
         }
 
