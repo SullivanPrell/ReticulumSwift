@@ -295,7 +295,32 @@ public final class WeaveDevice {
 
     // MARK: - Endpoint registry
 
-    public private(set) var endpoints: [Data: WeaveEndpoint] = [:]
+    /// Serializes every access to `_endpoints`.
+    ///
+    /// The registry is mutated from the WDCL receive thread (`endpointAlive` /
+    /// `endpointVia`, reached via `incomingFrame`) and both read and pruned
+    /// from the periodic jobs thread (`WeaveInterface.peerJobs` →
+    /// `pruneEndpoints`). Those run on *different* threads — the Python
+    /// reference gets away with it under the GIL, but Swift has none, so an
+    /// unsynchronized `Dictionary` here races and can crash ("Fatal error:
+    /// Duplicate keys" / heap corruption). Every touch of `_endpoints` funnels
+    /// through this lock.
+    private let endpointsLock = NSLock()
+
+    /// Backing store for the endpoint registry. Never touch directly — go
+    /// through `endpoints` (reads) or the locked mutators below (writes).
+    private var _endpoints: [Data: WeaveEndpoint] = [:]
+
+    /// Snapshot of the endpoint registry, copied under `endpointsLock`.
+    ///
+    /// The returned dictionary is the caller's own value; the `WeaveEndpoint`
+    /// instances it holds are never mutated in place after being inserted
+    /// (see `endpointAlive` / `endpointVia`), so reading their fields off a
+    /// snapshot is race-free even while the receive/jobs threads keep working.
+    public var endpoints: [Data: WeaveEndpoint] {
+        endpointsLock.lock(); defer { endpointsLock.unlock() }
+        return _endpoints
+    }
 
     // MARK: - Stats
 
@@ -355,20 +380,63 @@ public final class WeaveDevice {
 
     /// Record that `endpointID` is alive and notify the parent interface.
     /// Python: `WeaveDevice.endpoint_alive(endpoint_id)`
+    ///
+    /// A refresh installs a *fresh* `WeaveEndpoint` rather than mutating the
+    /// existing one in place: any snapshot handed out by `endpoints` keeps
+    /// pointing at the old, now-immutable instance, so a concurrent reader
+    /// never races our field write. The `rnsInterface` callback runs after
+    /// the lock is released to avoid holding it across foreign code.
     public func endpointAlive(endpointID: Data) {
-        if endpoints[endpointID] == nil {
-            endpoints[endpointID] = WeaveEndpoint(endpointAddr: endpointID)
+        endpointsLock.lock()
+        if let existing = _endpoints[endpointID] {
+            let refreshed = WeaveEndpoint(endpointAddr: endpointID)
+            refreshed.viaSwitchID = existing.viaSwitchID   // carry the known route forward
+            _endpoints[endpointID] = refreshed
         } else {
-            endpoints[endpointID]?.lastSeen = Date()
+            _endpoints[endpointID] = WeaveEndpoint(endpointAddr: endpointID)
         }
+        endpointsLock.unlock()
         rnsInterface?.addPeer(endpointAddr: endpointID)
     }
 
     /// Record the via-switch route for `endpointID`.
     /// Python: `WeaveDevice.endpoint_via(endpoint_id, via_switch_id)`
+    ///
+    /// Like `endpointAlive`, this replaces the record instead of mutating it
+    /// in place, keeping previously handed-out snapshots immutable.
     public func endpointVia(endpointID: Data, viaSwitchID: Data) {
-        endpoints[endpointID]?.viaSwitchID = viaSwitchID
+        endpointsLock.lock()
+        if let existing = _endpoints[endpointID] {
+            let updated = WeaveEndpoint(endpointAddr: endpointID)
+            updated.lastSeen    = existing.lastSeen        // preserve liveness timestamp
+            updated.viaSwitchID = viaSwitchID
+            _endpoints[endpointID] = updated
+        }
+        endpointsLock.unlock()
         rnsInterface?.endpointVia(endpointAddr: endpointID, viaSwitchID: viaSwitchID)
+    }
+
+    /// Drop endpoints last heard from more than `timeout` seconds before `now`.
+    ///
+    /// The registry is otherwise append-only — the Python reference never
+    /// prunes `WeaveDevice.endpoints`, so on a long-lived link it grows
+    /// unbounded as endpoints come and go. `WeaveInterface.peerJobs()` calls
+    /// this on the same `PEERING_TIMEOUT` it uses to expire peers, so the
+    /// device registry and the interface peer table stay in lock-step.
+    ///
+    /// Internally synchronized (via `endpointsLock`), so it is safe to invoke
+    /// from the jobs thread while the WDCL receive thread keeps learning
+    /// endpoints. Wire-neutral: this touches only local bookkeeping.
+    ///
+    /// - Returns: the endpoint addresses that were removed.
+    @discardableResult
+    public func pruneEndpoints(olderThan timeout: TimeInterval, now: Date = Date()) -> [Data] {
+        endpointsLock.lock(); defer { endpointsLock.unlock() }
+        let expired = _endpoints.compactMap { addr, endpoint in
+            now.timeIntervalSince(endpoint.lastSeen) > timeout ? addr : nil
+        }
+        for addr in expired { _endpoints.removeValue(forKey: addr) }
+        return expired
     }
 
     /// An RNS packet arrived from `source` — deliver it to the interface.
@@ -674,6 +742,13 @@ public final class WeaveInterface: Interface {
             }
             peers.removeValue(forKey: addr)
         }
+
+        // Prune the device's endpoint registry on the same timeout and `now`,
+        // so it stays in lock-step with the peer table instead of growing
+        // unbounded. `pruneEndpoints` is internally synchronized, so this is
+        // safe to call from the jobs thread while the WDCL receive thread is
+        // still learning endpoints.
+        device.pruneEndpoints(olderThan: WeaveInterface.peeringTimeout, now: now)
     }
 }
 
