@@ -79,7 +79,9 @@ final class AnnounceRateLimitTests: XCTestCase {
             now: 1_000, bitrate: 9600, emitted: 999
         )
         for i in 1..<(AnnounceQueue.maxQueued + 5) {
-            let d = Data([UInt8(i)] + Array(repeating: 0, count: 15))
+            // Encode i across two bytes so distinct destinations remain distinct
+            // for large maxQueued values (16384) without overflowing UInt8.
+            let d = Data([UInt8(i & 0xFF), UInt8((i >> 8) & 0xFF)] + Array(repeating: 0, count: 14))
             _ = q.shouldTransmit(
                 packet: Packet(destinationType: .single, packetType: .announce,
                                destinationHash: d, data: Data(count: 10)),

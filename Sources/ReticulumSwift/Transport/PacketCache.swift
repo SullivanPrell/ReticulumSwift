@@ -63,9 +63,15 @@ extension Transport {
         guard let dir = announcesDirectory else { return }
         guard FileManager.default.fileExists(atPath: dir.path) else { return }
 
+        // Snapshot the routing tables under `lock`, then compute the referenced
+        // set and do the (slow) directory scan outside the lock.
+        lock.lock()
+        let pathsSnapshot = paths
+        let tunnelsSnapshot = tunnels
+        lock.unlock()
         // Collect all hashes referenced by active paths and tunnels.
-        let activeHashes = Set(paths.values.compactMap { $0.cachedAnnounceHash?.hexString })
-        let tunnelHashes = Set(tunnels.values.flatMap { $0.paths.values }
+        let activeHashes = Set(pathsSnapshot.values.compactMap { $0.cachedAnnounceHash?.hexString })
+        let tunnelHashes = Set(tunnelsSnapshot.values.flatMap { $0.paths.values }
             .compactMap { $0.cachedAnnounceHash?.hexString })
         let referenced = activeHashes.union(tunnelHashes)
 
@@ -90,8 +96,11 @@ extension Transport {
     @discardableResult
     public func cacheRequestPacket(_ packet: Packet) -> Bool {
         guard packet.data.count == Constants.fullHashLength else { return false }
+        lock.lock()
+        let firstIface = interfaces.first
+        lock.unlock()
         guard let cached = try? getCachedAnnounce(hash: packet.data),
-              let iface = interfaces.first else { return false }
+              let iface = firstIface else { return false }
         handleIncoming(packet: cached, from: iface)
         return true
     }

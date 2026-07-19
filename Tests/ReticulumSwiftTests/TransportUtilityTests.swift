@@ -44,23 +44,52 @@ final class TransportUtilityTests: XCTestCase {
     }
 
     // MARK: - isLocalClientInterface / fromLocalClient / interfaceToSharedInstance
+    //
+    // Semantics mirror Python RNS exactly (Transport.is_local_client_interface /
+    // interface_to_shared_instance):
+    //   * is_local_client_interface  → the SERVER side: an interface serving a
+    //     locally-connected shared-instance client. In Swift that is a
+    //     `LocalClientServingInterface` (e.g. PosixTCPServer on port 37428).
+    //   * interface_to_shared_instance → the CLIENT side: this node's own
+    //     connection *to* a shared instance. In Swift that is `LocalInterface`.
+    // A `LocalInterface` is therefore NOT a local-client interface (it is the
+    // client end), and a serving interface is NOT an interface-to-shared-instance.
 
-    func testLocalInterfaceIsLocalClient() {
+    /// Minimal stand-in for PosixTCPServer's serving role.
+    private final class MockServingInterface: Interface, LocalClientServingInterface {
+        var name: String
+        var bitrate: Int = 0
+        var isOnline: Bool = true
+        var clientCount: Int
+        var inboundHandler: ((Packet, any Interface) -> Void)?
+        init(name: String, clientCount: Int = 1) { self.name = name; self.clientCount = clientCount }
+        func start() throws {}
+        func stop() {}
+        func send(_ packet: Packet) throws {}
+    }
+
+    func testServingInterfaceIsLocalClient() {
+        let transport = Transport()
+        let iface = MockServingInterface(name: "SharedInstance[37428]")
+        XCTAssertTrue(transport.isLocalClientInterface(iface),
+                      "A LocalClientServingInterface (the server side) IS a local-client interface")
+        XCTAssertTrue(transport.fromLocalClient(interface: iface))
+    }
+
+    func testLocalInterfaceIsNotLocalClient() {
+        // A LocalInterface is this node's connection TO a shared instance (client
+        // side), which Python classifies as interface_to_shared_instance, NOT as a
+        // local-client interface.
         let transport = Transport()
         let iface = LocalInterface(name: "lo0test")
-        XCTAssertTrue(transport.isLocalClientInterface(iface))
+        XCTAssertFalse(transport.isLocalClientInterface(iface))
+        XCTAssertFalse(transport.fromLocalClient(interface: iface))
     }
 
     func testUDPInterfaceIsNotLocalClient() {
         let transport = Transport()
         let iface = UDPInterface(name: "udp0")
         XCTAssertFalse(transport.isLocalClientInterface(iface))
-    }
-
-    func testFromLocalClientWithLocalInterface() {
-        let transport = Transport()
-        let iface = LocalInterface(name: "lo0fromLocal")
-        XCTAssertTrue(transport.fromLocalClient(interface: iface))
     }
 
     func testInterfaceToSharedInstanceLocalInterface() {
@@ -72,6 +101,12 @@ final class TransportUtilityTests: XCTestCase {
     func testInterfaceToSharedInstanceUDP() {
         let transport = Transport()
         let iface = UDPInterface(name: "udp0shared")
+        XCTAssertFalse(transport.interfaceToSharedInstance(iface))
+    }
+
+    func testServingInterfaceIsNotInterfaceToSharedInstance() {
+        let transport = Transport()
+        let iface = MockServingInterface(name: "SharedInstance[37428]")
         XCTAssertFalse(transport.interfaceToSharedInstance(iface))
     }
 

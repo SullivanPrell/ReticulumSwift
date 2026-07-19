@@ -41,14 +41,17 @@ final class PathUpdateLogicTests: XCTestCase {
         let dest = try Destination(identity: id, direction: .in, kind: .single,
                                    appName: "test", aspects: ["prio"])
 
-        let packet = try Announce.make(for: dest)
+        let t0 = Date().timeIntervalSince1970
+        let packet = try Announce.make(for: dest, timestamp: t0)
 
         // First: 3-hop announce
         deliverAnnounce(packet: packet, hops: 3, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 3, "initial path should be 3 hops")
 
-        // Second: 1-hop announce (better path) — must be different announce (different random hash)
-        let packet2 = try Announce.make(for: dest)
+        // Second: 1-hop announce (better path) — must be a different, later announce
+        // (different random hash + strictly newer emission second; a same-second
+        // fewer-hop announce ties under the freshness gate and does not replace).
+        let packet2 = try Announce.make(for: dest, timestamp: t0 + 2)
         deliverAnnounce(packet: packet2, hops: 1, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 1, "1-hop path should replace 3-hop path")
     }

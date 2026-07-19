@@ -50,11 +50,15 @@ final class AnnounceForwardDedupTests: XCTestCase {
         let dest = try Destination(identity: id, direction: .in, kind: .single,
                                    appName: "test", aspects: ["reannounce"])
 
-        inbound.inboundHandler?(try Announce.make(for: dest), inbound)
+        let t0 = Date().timeIntervalSince1970
+        inbound.inboundHandler?(try Announce.make(for: dest, timestamp: t0), inbound)
         XCTAssertEqual(outbound.sent.count, 1)
 
-        // A genuinely new announce (fresh random blob) is forwarded again.
-        inbound.inboundHandler?(try Announce.make(for: dest), inbound)
+        // A genuinely new announce (fresh random blob) is forwarded again. A real
+        // re-announce is emitted later, so it carries a strictly newer timestamp;
+        // the freshness gate ties same-second announces, so an emission bump is
+        // what distinguishes a genuine re-announce from a replayed duplicate.
+        inbound.inboundHandler?(try Announce.make(for: dest, timestamp: t0 + 2), inbound)
         XCTAssertEqual(outbound.sent.count, 2, "a fresh re-announce should be forwarded again")
     }
 }

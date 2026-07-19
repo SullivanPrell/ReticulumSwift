@@ -16,7 +16,11 @@ final class AnnounceQueue {
         var enqueuedAt: TimeInterval
     }
 
-    static let maxQueued: Int = 16    // per-interface cap (Python uses 16384 globally)
+    /// Per-interface backlog cap. Matches Python's `Reticulum.MAX_QUEUED_ANNOUNCES
+    /// = 16384`. The previous value of 16 silently dropped forwarded announces on
+    /// any network with more than ~16 destinations announcing within one
+    /// rate-limit window, which manifested as peers "not seeing" announces.
+    static let maxQueued: Int = 16384
     /// Maximum lifetime for a queued announce in seconds.
     /// Mirrors Python's `Reticulum.QUEUED_ANNOUNCE_LIFE = 60*60*24`.
     static let maxQueuedLifetime: TimeInterval = 86400
@@ -31,7 +35,18 @@ final class AnnounceQueue {
     static var jitterMultiplierOverride: Double? = nil
 
     private(set) var entries: [Entry] = []
+    /// Destination hashes currently queued, for O(1) duplicate detection. Kept in
+    /// sync with `entries` — required now that `maxQueued` is 16384, where an
+    /// O(n) linear dedup scan per enqueue would be O(n²) to fill the queue.
+    private var queuedDests: Set<Data> = []
     var allowedAt: TimeInterval = 0   // wall clock when next announce may go out
+
+    /// Guards `entries`, `queuedDests`, and `allowedAt`. The Transport fetches a
+    /// queue object (under its own `queueLock`), releases that lock, then calls
+    /// `shouldTransmit`/`drain` here — so the same queue is mutated concurrently
+    /// by the inbound thread and the jobs-timer thread. Self-contained leaf lock:
+    /// the bodies below make no callouts, so it never nests with any other lock.
+    private let lock = NSLock()
 
     init() {}
 
@@ -50,6 +65,7 @@ final class AnnounceQueue {
     ) -> Bool {
         // Zero/unknown bitrate: transmit immediately without rate limiting.
         guard bitrate > 0 else { return true }
+        lock.lock(); defer { lock.unlock() }
 
         let hasQueued = !entries.isEmpty
         if !hasQueued && now >= allowedAt {
@@ -75,22 +91,31 @@ final class AnnounceQueue {
     }
 
     /// Add or replace an entry, keeping the queue bounded and deduped.
+    /// Caller must hold `lock` (called only from `shouldTransmit`).
     private func enqueue(_ entry: Entry) {
-        guard entries.count < AnnounceQueue.maxQueued else { return }
-        if let idx = entries.firstIndex(where: { $0.destinationHash == entry.destinationHash }) {
-            // Keep the fresher announce for this destination.
-            if entry.emitted > entries[idx].emitted { entries[idx] = entry }
-        } else {
-            entries.append(entry)
+        if queuedDests.contains(entry.destinationHash) {
+            // Duplicate destination already queued — keep the fresher announce.
+            // Rare path (only when the same destination re-queues), so the linear
+            // scan to find it is acceptable.
+            if let idx = entries.firstIndex(where: { $0.destinationHash == entry.destinationHash }),
+               entry.emitted > entries[idx].emitted {
+                entries[idx] = entry
+            }
+            return
         }
+        guard entries.count < AnnounceQueue.maxQueued else { return }
+        entries.append(entry)
+        queuedDests.insert(entry.destinationHash)
     }
 
     /// Drain entries that are now within their transmission window.
     /// Returns packets that should be sent now, updating `allowedAt`.
     func drain(now: TimeInterval, bitrate: Int) -> [Packet] {
+        lock.lock(); defer { lock.unlock() }
         guard bitrate > 0 else {
             let all = entries.map { $0.raw }
             entries.removeAll()
+            queuedDests.removeAll()
             return all
         }
         // Prioritize announces with fewer hops (mirrors Python's announce prioritization:
@@ -100,6 +125,7 @@ final class AnnounceQueue {
         var out: [Packet] = []
         while !entries.isEmpty && now >= allowedAt {
             let e = entries.removeFirst()
+            queuedDests.remove(e.destinationHash)
             let txTime = Double(e.raw.rawByteCount) * 8.0 / Double(bitrate)
             let capWindow = txTime / AnnounceQueue.announceCap
             let jitter = (AnnounceQueue.jitterMultiplierOverride ?? Double.random(in: 0...1)) * capWindow
@@ -109,6 +135,6 @@ final class AnnounceQueue {
         return out
     }
 
-    var isEmpty: Bool { entries.isEmpty }
-    var count: Int { entries.count }
+    var isEmpty: Bool { lock.lock(); defer { lock.unlock() }; return entries.isEmpty }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return entries.count }
 }

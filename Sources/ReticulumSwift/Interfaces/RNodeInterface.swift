@@ -171,12 +171,24 @@ public enum KISS {
         private var pendingEscape = false
         private var buffer        = Data()
 
+        /// Hard cap on an in-progress KISS frame. Far above any real RNode frame
+        /// (MTU ~500 plus KISS escaping), so valid frames are never affected; it
+        /// only bounds a garbage/malicious stream that never emits a closing FEND,
+        /// which would otherwise grow `buffer` without limit.
+        static let maxFrameBytes = 8192
+
         public init() {}
 
         /// Returns decoded `(command, payload)` pairs for each complete frame.
         public func feed(_ bytes: Data) -> [(command: UInt8, data: Data)] {
             var frames: [(UInt8, Data)] = []
             for byte in bytes {
+                if buffer.count > FrameDecoder.maxFrameBytes {
+                    // Runaway/unterminated frame — discard and resynchronise.
+                    buffer.removeAll(keepingCapacity: false)
+                    inFrame = false
+                    pendingEscape = false
+                }
                 if byte == fend {
                     if inFrame && !buffer.isEmpty {
                         let cmd     = buffer[buffer.startIndex]
@@ -560,14 +572,14 @@ public final class RNodeInterface: Interface {
 
     // MARK: – Error handling
 
+    /// Record a hardware error code. All known codes and unknown ones are
+    /// recorded identically. Bounded to the most recent `maxHwErrors` so a
+    /// misbehaving/hostile RNode can't grow the list without limit.
+    private static let maxHwErrors = 256
     private func handleError(_ code: UInt8) {
-        switch code {
-        case KISS.errorMemoryLow:
-            hwErrors.append(code)
-        case KISS.errorModemTimeout:
-            hwErrors.append(code)
-        default:
-            hwErrors.append(code)
+        hwErrors.append(code)
+        if hwErrors.count > RNodeInterface.maxHwErrors {
+            hwErrors.removeFirst(hwErrors.count - RNodeInterface.maxHwErrors)
         }
     }
 

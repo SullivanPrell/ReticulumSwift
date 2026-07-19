@@ -12,7 +12,7 @@ import Darwin
 ///
 /// Used only for the shared-instance port (37428). All other server interfaces
 /// can continue to use `TCPServerInterface` + `NWListener`.
-public final class PosixTCPServer: Interface {
+public final class PosixTCPServer: Interface, LocalClientServingInterface {
     public let name: String
     public let port: UInt16
     public private(set) var bitrate: Int = 1_000_000_000
@@ -20,6 +20,14 @@ public final class PosixTCPServer: Interface {
 
     public let hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
+
+    // Not a mesh routing endpoint: `send()` already fans out to every attached
+    // local client directly, and local-client delivery is handled by
+    // Transport's dedicated `localClientServingInterfaces` announce forward
+    // (independent of transportEnabled). Excluding it here mirrors
+    // TCPServerInterface's listener/spawned-client split and prevents
+    // double-delivery to local clients when transportEnabled is also true.
+    public var isRoutingEndpoint: Bool { false }
 
     public var inboundHandler: ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
@@ -33,6 +41,10 @@ public final class PosixTCPServer: Interface {
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
     private let queue: DispatchQueue
+    /// Serial queue that all inbound frame deliveries funnel through, so the
+    /// shared `rxBytes` counter and the (non-thread-safe) inbound handler are
+    /// never invoked concurrently by multiple client connections.
+    private let deliveryQueue = DispatchQueue(label: "ReticulumSwift.PosixTCPServer.delivery")
     private let lock = NSLock()
     private var clients: [PosixClient] = []
 
@@ -137,11 +149,15 @@ public final class PosixTCPServer: Interface {
             queue: DispatchQueue(label: "ReticulumSwift.PosixTCPServer.client", target: queue),
             onFrame: { [weak self] data in
                 guard let self else { return }
-                self.rxBytes += data.count
-                if let h = self.rawInboundHandler {
-                    h(data, self)
-                } else if let p = try? Packet.unpack(data) {
-                    self.inboundHandler?(p, self)
+                // Funnel every client's delivery through one serial queue so the
+                // shared counter and inbound handler never run concurrently.
+                self.deliveryQueue.async {
+                    self.rxBytes += data.count
+                    if let h = self.rawInboundHandler {
+                        h(data, self)
+                    } else if let p = try? Packet.unpack(data) {
+                        self.inboundHandler?(p, self)
+                    }
                 }
             },
             onClose: { [weak self] c in

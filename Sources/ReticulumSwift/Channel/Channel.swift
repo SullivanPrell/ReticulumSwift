@@ -352,35 +352,46 @@ public final class Channel {
     public func receive(_ raw: Data) {
         do {
             let envelope = Envelope(outlet: outlet, raw: raw)
-            lock.lock()
-            let msg = try envelope.unpack(messageFactories: messageFactories)
 
+            // Unpack BEFORE taking the lock. `unpack` is fallible (unknown msgtype,
+            // short frame, decompression failure — all remotely triggerable) and
+            // only reads the registry-stable `messageFactories` while mutating the
+            // envelope's own local state. Decoding outside the lock guarantees a
+            // malformed or unknown frame can NEVER unwind to the catch with the
+            // Channel's non-recursive lock still held — previously that leaked the
+            // lock permanently, deadlocking every subsequent send/receive/shutdown
+            // (a single unknown-msgtype packet from a peer was enough).
+            _ = try envelope.unpack(messageFactories: messageFactories)
+
+            lock.lock()
             // Drop stale sequences (before the current RX window).
             if _isStaleSequence(envelope.sequence) {
                 lock.unlock()
                 return
             }
-
             let isNew = _emplaceEnvelope(envelope, in: &rxRing)
             lock.unlock()
 
             guard isNew else { return }
 
-            // Deliver all contiguous envelopes from nextRxSequence onward.
-            lock.lock()
+            // Deliver all contiguous envelopes from nextRxSequence onward. A `defer`
+            // releases the lock even if an envelope's lazy unpack throws (defensive:
+            // envelopes are already unpacked above before emplacement, so the else
+            // branch is effectively unreachable, but the lock must never leak).
             var toDeliver: [MessageBase] = []
-            while true {
-                guard let idx = rxRing.firstIndex(where: { $0.sequence == nextRxSequence }) else { break }
-                let e = rxRing.remove(at: idx)
-                let m: MessageBase
-                if e.unpacked, let em = e.message { m = em } else { m = try e.unpack(messageFactories: messageFactories) }
-                nextRxSequence = UInt16((UInt32(nextRxSequence) + 1) % Channel.SEQ_MODULUS)
-                toDeliver.append(m)
+            lock.lock()
+            do {
+                defer { lock.unlock() }
+                while true {
+                    guard let idx = rxRing.firstIndex(where: { $0.sequence == nextRxSequence }) else { break }
+                    let e = rxRing.remove(at: idx)
+                    let m: MessageBase
+                    if e.unpacked, let em = e.message { m = em } else { m = try e.unpack(messageFactories: messageFactories) }
+                    nextRxSequence = UInt16((UInt32(nextRxSequence) + 1) % Channel.SEQ_MODULUS)
+                    toDeliver.append(m)
+                }
             }
-            lock.unlock()
 
-            // Silence unused variable warning; msg used only for initial unpack above.
-            _ = msg
             for m in toDeliver { _runCallbacks(m) }
 
         } catch {
@@ -562,26 +573,30 @@ public final class Channel {
 /// Adapts a Link into a ChannelOutlet. Wire-compatible with Python's
 /// RNS.Channel.LinkChannelOutlet.
 public final class LinkChannelOutlet: ChannelOutlet {
-    public let link: Link
+    // Weak: the Link strongly owns its Channel, which strongly owns this outlet.
+    // A strong back-reference here would form Link -> Channel -> outlet -> Link
+    // and leak every Link that ever created a channel (plus its Token, watchdog
+    // timer, and pending state). When the Link is gone the outlet is inert.
+    public weak var link: Link?
     private var queue = DispatchQueue(label: "rns.channel.outlet", attributes: .concurrent)
 
     public init(link: Link) { self.link = link }
 
     public func send(_ raw: Data) -> ChannelPacketHandle {
         let handle = ChannelPacketHandle(raw: raw)
-        try? link.send(raw, context: .channel)
+        try? link?.send(raw, context: .channel)
         return handle
     }
 
     public func resend(_ handle: ChannelPacketHandle) {
-        try? link.send(handle.raw, context: .channel)
+        try? link?.send(handle.raw, context: .channel)
     }
 
     public var mdu: Int { Constants.linkMdu }
 
-    public var rtt: TimeInterval { link.rtt ?? 0 }
+    public var rtt: TimeInterval { link?.rtt ?? 0 }
 
-    public var isUsable: Bool { link.status == .active }
+    public var isUsable: Bool { link?.status == .active }
 
     public func getPacketState(_ handle: ChannelPacketHandle) -> MessageState {
         switch handle.state {
@@ -591,7 +606,7 @@ public final class LinkChannelOutlet: ChannelOutlet {
         }
     }
 
-    public func timedOut() { try? link.teardown() }
+    public func timedOut() { try? link?.teardown() }
 
     public func setPacketTimeoutCallback(
         _ handle: ChannelPacketHandle,

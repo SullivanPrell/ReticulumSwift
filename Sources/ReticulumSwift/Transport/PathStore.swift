@@ -33,9 +33,16 @@ public struct PathStore: Codable {
     // MARK: - Snapshot
 
     public static func snapshot(of transport: Transport) -> PathStore {
+        // Copy the routing tables under Transport's lock, then build entries from
+        // the local snapshots (the tables are mutated on inbound/jobs threads).
+        transport.lock.lock()
+        let paths = transport.paths
+        let knownIdentities = transport.knownIdentities
+        let knownRatchets = transport.knownRatchets
+        transport.lock.unlock()
         var entries: [Entry] = []
-        for (destHash, path) in transport.paths {
-            let identityHex = transport.knownIdentities[destHash]?
+        for (destHash, path) in paths {
+            let identityHex = knownIdentities[destHash]?
                 .publicKeyBytes.hexString ?? ""
             entries.append(Entry(
                 destinationHashHex: destHash.hexString,
@@ -46,7 +53,7 @@ public struct PathStore: Codable {
                 identityHashHex: path.identityHash.hexString,
                 identityPublicKeyHex: identityHex,
                 nextHopTransportIDHex: path.nextHopTransportID?.hexString,
-                ratchetPublicKeyHex: transport.knownRatchets[destHash]?.hexString,
+                ratchetPublicKeyHex: knownRatchets[destHash]?.hexString,
                 randomBlobsHex: path.randomBlobs.isEmpty ? nil
                     : path.randomBlobs.suffix(Transport.persistRandomBlobs).map { $0.hexString }
             ))

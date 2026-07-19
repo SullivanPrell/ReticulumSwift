@@ -67,12 +67,15 @@ final class AnnounceMultiPathTests: XCTestCase {
         let dest = try Destination(identity: id, direction: .in, kind: .single,
                                    appName: "test", aspects: ["reannounce"])
 
-        var first = try Announce.make(for: dest); first.hops = 3
+        let t0 = Date().timeIntervalSince1970
+        var first = try Announce.make(for: dest, timestamp: t0); first.hops = 3
         if1.inboundHandler?(first, if1)
         XCTAssertEqual(t.hopsTo(dest.hash), 3)
 
-        // A fresh announce (new random blob) at 1 hop optimizes the path.
-        var second = try Announce.make(for: dest); second.hops = 1
+        // A fresh announce (new random blob) at 1 hop optimizes the path. A genuine
+        // re-announce is emitted later, so it carries a strictly newer timestamp —
+        // required by the freshness gate (a same-second announce would tie).
+        var second = try Announce.make(for: dest, timestamp: t0 + 2); second.hops = 1
         if2.inboundHandler?(second, if2)
         XCTAssertEqual(t.hopsTo(dest.hash), 1,
             "a fresh announce with fewer hops should update to the better path")

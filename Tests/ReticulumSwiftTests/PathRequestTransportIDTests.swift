@@ -161,6 +161,10 @@ final class PathRequestTransportIDTests: XCTestCase {
         )
         let announce = try Announce.make(for: destination, appData: nil)
         relay.cacheAnnounce(announce, forDestination: destination.hash)
+        // A path response is only sent for a KNOWN PATH (Python: dest in path_table),
+        // so seed a real path entry alongside the cached announce packet.
+        relay.injectPath(destination.hash, nextHop: Data(repeating: 0xAA, count: 16),
+                         receivedOn: relayInIface, hops: 1, announcePacketHash: nil)
 
         let pathReq = makePathRequest(destHash: destination.hash, requestorID: nil)
 
@@ -273,9 +277,13 @@ final class PathRequestTransportIDTests: XCTestCase {
         XCTAssertEqual(limitedOut.count, 0, "discovery PR must NOT be forwarded on the egress-limited interface")
     }
 
-    // MARK: - No path entry: answer normally
+    // MARK: - No path entry: stay silent (Python: answer requires dest in path_table)
 
-    func testPathResponseSentWhenNoPathEntryForRequestorCheck() throws {
+    func testNoAnswerWhenCachedAnnounceButNoPathEntry() throws {
+        // A cached announce alone is NOT a known path. Python answers a path
+        // request only when `destination_hash in Transport.path_table`
+        // (Transport.py:2969); answering from a stale cached announce with no
+        // live path would black-hole traffic to a route we cannot actually use.
         let relay = Transport()
         relay.transportEnabled = true
 
@@ -288,7 +296,7 @@ final class PathRequestTransportIDTests: XCTestCase {
             appName: "test", aspects: ["nopathentry"]
         )
         let announce = try Announce.make(for: destination, appData: nil)
-        relay.cacheAnnounce(announce, forDestination: destination.hash)
+        relay.cacheAnnounce(announce, forDestination: destination.hash)   // cache only, no path
 
         var requestorID = Data(count: 16)
         _ = requestorID.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
@@ -298,7 +306,7 @@ final class PathRequestTransportIDTests: XCTestCase {
         try requesterIface.send(pathReq)
 
         let newAnnounces = relayInIface.sent.dropFirst(countBefore).filter { $0.packetType == .announce }
-        XCTAssertEqual(newAnnounces.count, 1,
-            "relay must answer when cached announce exists but no path entry")
+        XCTAssertEqual(newAnnounces.count, 0,
+            "relay must NOT answer a path request without a known path entry")
     }
 }

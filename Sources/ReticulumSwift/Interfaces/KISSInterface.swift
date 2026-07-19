@@ -164,15 +164,17 @@ public final class KISSInterface: Interface {
         transport.setReadCallback { [weak self] data in
             self?.feedBytes(data)
         }
-        isOnline = true
+        lock.lock(); isOnline = true; lock.unlock()
         sendKISSConfig()
-        interfaceReady = true
+        lock.lock(); interfaceReady = true; lock.unlock()
     }
 
     /// Take the interface offline and close the serial port.
     public func stop() {
-        isOnline     = false
+        lock.lock()
+        isOnline       = false
         interfaceReady = false
+        lock.unlock()
         transport.close()
     }
 
@@ -241,17 +243,24 @@ public final class KISSInterface: Interface {
     ///
     /// Python: `process_outgoing(data)`
     public func processOutgoing(_ data: Data) {
-        guard isOnline else { return }
+        // Decide send-vs-enqueue atomically under `lock`: `interfaceReady` and
+        // `packetQueue` are two halves of the same flow-control state, so the
+        // read of `interfaceReady` and the enqueue must be one critical section
+        // (otherwise the CMD_READY handler racing here loses packets or double-sends).
+        lock.lock()
+        guard isOnline else { lock.unlock(); return }
         if interfaceReady {
             if flowControl {
                 interfaceReady = false
             }
+            lock.unlock()
             let framed = KISS.frame(data)
             try? transport.write(framed)
             txBytes   += data.count   // Python counts original (unframed) bytes
             txPackets += 1
         } else {
-            lock.lock(); packetQueue.append(data); lock.unlock()
+            packetQueue.append(data)
+            lock.unlock()
         }
     }
 
@@ -266,8 +275,8 @@ public final class KISSInterface: Interface {
             return
         }
         let next = packetQueue.removeFirst()
-        lock.unlock()
         interfaceReady = true
+        lock.unlock()
         processOutgoing(next)
     }
 

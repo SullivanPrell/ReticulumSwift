@@ -171,6 +171,12 @@ public final class WDCLTransport {
     private let decoder:   HDLC.FrameDecoder
     public  private(set) var isOnline: Bool = false
 
+    /// Serializes the actual serial-port writes. Every outbound path (peer
+    /// processOutgoing, discover/handshake/sendCommand) funnels through
+    /// `processOutgoing`, so guarding it here makes all writes mutually exclusive
+    /// and prevents two HDLC frames from interleaving byte-wise on the wire.
+    private let writeLock = NSLock()
+
     // Back-reference (weak to break cycle)
     private weak var device: WeaveDevice?
 
@@ -208,6 +214,7 @@ public final class WDCLTransport {
     /// Python: `WDCL.process_outgoing(data)`
     @discardableResult
     public func processOutgoing(_ data: Data) throws -> Int {
+        writeLock.lock(); defer { writeLock.unlock() }
         let framed = HDLC.frame(data)
         return try transport.write(framed)
     }

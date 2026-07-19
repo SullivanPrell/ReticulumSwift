@@ -24,13 +24,19 @@ extension Transport {
     public func blackholeIdentity(_ identityHash: Data,
                                   until: TimeInterval? = nil,
                                   reason: String? = nil) -> Bool? {
-        guard !blackholedIdentities.keys.contains(identityHash) else { return nil }
-        let entry = BlackholeEntry(
+        // Insert under blackholeLock, RELEASE it, then removeBlackholedPaths()
+        // (which re-acquires blackholeLock via its own check) — the leaf lock is
+        // non-recursive, so it must not be held across that call.
+        blackholeLock.lock()
+        guard !blackholedIdentities.keys.contains(identityHash) else {
+            blackholeLock.unlock(); return nil
+        }
+        blackholedIdentities[identityHash] = BlackholeEntry(
             source: ownerIdentity?.hash,
             until: until,
             reason: reason
         )
-        blackholedIdentities[identityHash] = entry
+        blackholeLock.unlock()
         removeBlackholedPaths()
         return true
     }
@@ -40,6 +46,7 @@ extension Transport {
     /// Mirrors Python's `Transport.unblackhole_identity(identity_hash)`.
     @discardableResult
     public func unblackholeIdentity(_ identityHash: Data) -> Bool? {
+        blackholeLock.lock(); defer { blackholeLock.unlock() }
         guard blackholedIdentities[identityHash] != nil else { return nil }
         blackholedIdentities.removeValue(forKey: identityHash)
         return true
@@ -47,16 +54,26 @@ extension Transport {
 
     /// Returns true if `identityHash` is currently blackholed.
     public func isBlackholed(_ identityHash: Data) -> Bool {
-        blackholedIdentities[identityHash] != nil
+        blackholeLock.lock(); defer { blackholeLock.unlock() }
+        return blackholedIdentities[identityHash] != nil
     }
 
     /// Remove path table entries whose associated identity is blackholed.
     /// Mirrors Python's `Transport.remove_blackholed_paths()`.
     public func removeBlackholedPaths() {
-        let toRemove = paths.keys.filter { destHash in
-            guard let identity = knownIdentities[destHash] else { return false }
-            return isBlackholed(identity.hash)
+        // Snapshot (destHash → identityHash) under `lock`, decide which are
+        // blackholed under blackholeLock, then remove under `lock` — the two
+        // locks are never held simultaneously.
+        lock.lock()
+        let candidates: [(dest: Data, identity: Data)] = paths.keys.compactMap { destHash in
+            guard let identity = knownIdentities[destHash] else { return nil }
+            return (destHash, identity.hash)
         }
+        lock.unlock()
+        blackholeLock.lock()
+        let toRemove = candidates.filter { blackholedIdentities[$0.identity] != nil }.map { $0.dest }
+        blackholeLock.unlock()
+        guard !toRemove.isEmpty else { return }
         lock.lock()
         for h in toRemove { paths.removeValue(forKey: h) }
         lock.unlock()
@@ -66,6 +83,7 @@ extension Transport {
     /// Remove expired blackhole entries (where `until` has passed).
     /// Called from the jobs loop. Mirrors Python's expiry sweep in the scheduler.
     public func sweepExpiredBlackholes(now: TimeInterval = Date().timeIntervalSince1970) {
+        blackholeLock.lock(); defer { blackholeLock.unlock() }
         let expired = blackholedIdentities.keys.filter { hash in
             if let until = blackholedIdentities[hash]?.until { return now > until }
             return false
@@ -77,8 +95,11 @@ extension Transport {
 
     /// Persist the blackhole table to a JSON file.
     public func saveBlacklist(to url: URL) throws {
+        blackholeLock.lock()
+        let snapshot = blackholedIdentities
+        blackholeLock.unlock()
         let map = Dictionary(uniqueKeysWithValues:
-            blackholedIdentities.map { (k, v) in (k.hexString, v) }
+            snapshot.map { (k, v) in (k.hexString, v) }
         )
         let data = try JSONEncoder().encode(map)
         try data.write(to: url, options: .atomic)
@@ -89,6 +110,7 @@ extension Transport {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         let data = try Data(contentsOf: url)
         let map = try JSONDecoder().decode([String: BlackholeEntry].self, from: data)
+        blackholeLock.lock(); defer { blackholeLock.unlock() }
         for (hexHash, entry) in map {
             if let hash = Data(hex: hexHash) {
                 blackholedIdentities[hash] = entry
@@ -105,7 +127,9 @@ extension Transport {
     public func persistBlacklist(toDirectory directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let ownHash = ownerIdentity?.hash
+        blackholeLock.lock()
         let local = blackholedIdentities.filter { $0.value.source == ownHash }
+        blackholeLock.unlock()
         let map = Dictionary(uniqueKeysWithValues: local.map { ($0.key.hexString, $0.value) })
         let data = try JSONEncoder().encode(map)
         let localFile = directory.appendingPathComponent("local")
@@ -148,6 +172,8 @@ extension Transport {
             guard let data = try? Data(contentsOf: fileURL),
                   let map = try? JSONDecoder().decode([String: BlackholeEntry].self, from: data)
             else { continue }
+            // File I/O is done; guard only the in-memory merge under blackholeLock.
+            blackholeLock.lock()
             for (hexHash, entry) in map {
                 guard let hash = Data(hex: hexHash),
                       hash.count == Constants.truncatedHashLength else { continue }
@@ -159,6 +185,7 @@ extension Transport {
                 let loaded = BlackholeEntry(source: src, until: entry.until, reason: entry.reason)
                 blackholedIdentities[hash] = loaded
             }
+            blackholeLock.unlock()
         }
     }
 }

@@ -753,7 +753,8 @@ loglevel = 4
     /// Returns all currently blackholed identity hashes with their entries.
     /// Mirrors Python's `Reticulum.get_blackholed_identities()`.
     public func getBlackholedIdentities() -> [Data: Transport.BlackholeEntry] {
-        transport.blackholedIdentities
+        transport.blackholeLock.lock(); defer { transport.blackholeLock.unlock() }
+        return transport.blackholedIdentities
     }
 
     /// Returns a snapshot of the current announce rate table.
