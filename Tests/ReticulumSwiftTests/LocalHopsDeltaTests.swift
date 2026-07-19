@@ -20,6 +20,19 @@ final class LocalHopsDeltaTests: XCTestCase {
         func send(_ packet: Packet) throws { sent.append(packet) }
     }
 
+    // Stands in for the shared-instance SERVER side (e.g. PosixTCPServer): the
+    // interface a directly-connected local client's traffic arrives on. This —
+    // not LocalInterface (the client side) — is what Python treats as a
+    // local-client interface (see TransportUtilityTests).
+    final class ServingInterface: Interface, LocalClientServingInterface {
+        var name: String; var bitrate: Int = 0; var isOnline: Bool = true
+        var clientCount: Int = 1
+        var inboundHandler: ((Packet, any Interface) -> Void)?
+        init(name: String) { self.name = name }
+        func start() throws {}; func stop() {}
+        func send(_ packet: Packet) throws {}
+    }
+
     private func singleDataPacket(hops: UInt8 = 0) -> Packet {
         var p = Packet(destinationType: .single, packetType: .data,
                        destinationHash: Data(repeating: 0x5A, count: Constants.truncatedHashLength),
@@ -119,15 +132,15 @@ final class LocalHopsDeltaTests: XCTestCase {
 
     func testRelayHopsObfuscatesLocalClientTrafficLeavingDomain() {
         let t = Transport(); t.localHopsDelta = 6
-        let local = LocalInterface(name: "lo-relay")
-        XCTAssertEqual(t.relayHops(singleDataPacket(hops: 2), from: local, staysLocal: false), 6,
+        let serving = ServingInterface(name: "serving-relay")
+        XCTAssertEqual(t.relayHops(singleDataPacket(hops: 2), from: serving, staysLocal: false), 6,
                        "Local-client traffic leaving the local domain is obfuscated to the delta")
     }
 
     func testRelayHopsKeepsRealHopsWhenStaysLocal() {
         let t = Transport(); t.localHopsDelta = 6
-        let local = LocalInterface(name: "lo-relay-stay")
-        XCTAssertEqual(t.relayHops(singleDataPacket(hops: 2), from: local, staysLocal: true), 3,
+        let serving = ServingInterface(name: "serving-relay-stay")
+        XCTAssertEqual(t.relayHops(singleDataPacket(hops: 2), from: serving, staysLocal: true), 3,
                        "instance_local_link / proof_for_local_client / to_local_client keeps real hops")
     }
 

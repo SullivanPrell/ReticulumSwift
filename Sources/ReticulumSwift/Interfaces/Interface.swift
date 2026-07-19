@@ -155,6 +155,18 @@ public protocol Interface: AnyObject {
     func stop()
 }
 
+/// An interface that can front multiple locally-connected shared-instance
+/// clients (rnstatus, nomadnet, MeshChatX, …). Mirrors Python's
+/// `Transport.local_client_interfaces` — a list of one per-connection
+/// `LocalClientInterface` spawned per accepted socket — collapsed here into
+/// a single object per listening server (e.g. `PosixTCPServer`) since Swift
+/// fans a whole accept-loop out from one `Interface`. `clientCount` is the
+/// number of currently attached local clients; `Transport` only treats the
+/// interface as "serving local clients" while this is greater than zero.
+public protocol LocalClientServingInterface: Interface {
+    var clientCount: Int { get }
+}
+
 /// Default implementations so existing interfaces don't need to add these.
 public extension Interface {
     /// Default `displayName`: just `name`. Sufficient for interfaces that don't

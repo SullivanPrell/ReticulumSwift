@@ -14,3 +14,5 @@ DerivedData/
 # CI2PD is fetched from Releases via binaryTarget(url:).
 Resources/*.xcframework/
 Resources/*.xcframework.zip
+
+.build-linux/

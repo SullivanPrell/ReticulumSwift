@@ -600,17 +600,37 @@ public final class Transport {
         isLocalClientInterface(iface)
     }
 
-    /// Returns true if the interface is a child of a local shared-instance interface.
-    /// In Swift, local-client interfaces are instances of LocalInterface.
-    /// Mirrors Python `Transport.is_local_client_interface(interface)`.
+    /// Returns true if the interface is one that serves a locally-connected
+    /// shared-instance client — the SERVER side. Mirrors Python
+    /// `Transport.is_local_client_interface(interface)`, which is true only for a
+    /// per-client connection whose `parent_interface.is_local_shared_instance`.
+    /// In Swift the per-client sockets are collapsed into a single
+    /// `LocalClientServingInterface` (e.g. `PosixTCPServer` on the shared-instance
+    /// port), so that protocol conformance is exactly the "local client" marker.
+    ///
+    /// NOTE: this is the opposite end from `LocalInterface`. A `LocalInterface` is
+    /// *this* node's connection *to* a shared instance (the client side) and is
+    /// therefore NOT a local-client interface — see `interfaceToSharedInstance`.
     public func isLocalClientInterface(_ interface: any Interface) -> Bool {
+        `interface` is any LocalClientServingInterface
+    }
+
+    /// Returns true if the interface is this node's own connection *to* a shared
+    /// instance (the client side). Mirrors Python
+    /// `Transport.interface_to_shared_instance(interface)` (true when the interface
+    /// has `is_connected_to_shared_instance`). In Swift that is `LocalInterface`.
+    public func interfaceToSharedInstance(_ interface: any Interface) -> Bool {
         `interface` is LocalInterface
     }
 
-    /// Returns true if the interface is itself connected to a shared instance.
-    /// Mirrors Python `Transport.interface_to_shared_instance(interface)`.
-    public func interfaceToSharedInstance(_ interface: any Interface) -> Bool {
-        `interface` is LocalInterface
+    /// Interfaces currently serving one or more locally-connected shared-instance
+    /// clients, excluding `excluded` (typically the interface the triggering
+    /// packet arrived on). Mirrors a non-empty Python `Transport.local_client_interfaces`.
+    private func localClientServingInterfaces(excluding excluded: (any Interface)?) -> [any Interface] {
+        interfaces.filter { iface in
+            guard let serving = iface as? any LocalClientServingInterface, serving.clientCount > 0 else { return false }
+            return iface !== excluded
+        }
     }
 
     /// Whether the local hop-count obfuscation delta should be applied when
@@ -2807,7 +2827,15 @@ public final class Transport {
             onAnnounceReceived?(decoded, interface)
             dispatchAnnounceHandlers(decoded)
 
-            // Relay onto other interfaces if we're a transport-enabled node.
+            // Relay onto other interfaces if we're a transport-enabled node OR
+            // the announce was originated by a directly-connected local client.
+            // The local-client alternative mirrors Python's
+            // `if (transport_enabled or is_from_local_client) and context !=
+            // PATH_RESPONSE:` (Transport.py:1935): a shared instance running with
+            // enable_transport = No must still propagate its own clients'
+            // announces to the mesh, otherwise no peer ever learns the client's
+            // destination.
+            //
             // Forward ONLY when the announce also updated the path table — this
             // mirrors Python, where the announce-table insert (and thus the
             // rebroadcast) lives inside `if should_add:`. Because SINGLE
@@ -2819,8 +2847,9 @@ public final class Transport {
             // "if context != PATH_RESPONSE: forward to other interfaces").
             // Each outbound interface is rate-limited; announces that exceed
             // the cap are queued for deferred transmission.
+            let fromLocalClient = fromLocalClient(interface: interface)
             if shouldUpdate,
-               transportEnabled,
+               transportEnabled || fromLocalClient,
                !decoded.isPathResponse,
                packet.hops < propagationLimit,
                interfaces.contains(where: { $0.isRoutingEndpoint }) {
@@ -2881,6 +2910,25 @@ public final class Transport {
                     receivingInterfaceMode: interface.mode
                 )
                 lock.unlock()
+            }
+
+            // If we have any local shared-instance clients connected, retransmit
+            // the announce to them immediately — independent of `transportEnabled`
+            // and regardless of path-response context. Mirrors Python's
+            // "if (len(Transport.local_client_interfaces)): ... new_announce.send()"
+            // block: apps sharing this daemon's connection (nomadnet, rnstatus,
+            // MeshChatX, …) must see every announce the daemon overhears, even
+            // when this instance is not itself acting as a mesh transport/relay
+            // node. Unlike the mesh-relay forward above, hops is passed through
+            // unchanged (Python: `new_announce.hops = packet.hops`).
+            let localTargets = localClientServingInterfaces(excluding: interface)
+            if shouldUpdate, !localTargets.isEmpty {
+                var localForward = packet
+                localForward.headerType = .type2
+                localForward.transportID = transportInstanceID
+                for iface in localTargets {
+                    try? iface.send(localForward)
+                }
             }
         } catch {
             // Malformed or unsigned announce — drop silently as RNS does.
