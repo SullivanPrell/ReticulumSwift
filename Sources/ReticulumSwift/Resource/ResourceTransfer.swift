@@ -511,6 +511,19 @@ public final class ResourceTransfer {
         isReceiver = true
         advertisement = adv
         resourceHash = adv.resourceHash
+        // Bound the advertised part count before it sizes the `parts`/`hashmap`
+        // arrays. `partCount` (the wire "n" field) is attacker-controlled; a
+        // hostile advertisement could declare a near-UInt64 count and force an
+        // astronomical allocation (OOM/trap DoS) even over an authenticated link.
+        // The transfer size `t` is already capped at 3*maxEfficientSize by
+        // ResourceAdvertisement.unpack, and every part carries at least one byte of
+        // the transfer, so a legitimate `n` can never exceed `t`. (Python never
+        // trusts `n` at all — it derives total_parts = ceil(size/sdu); this bound
+        // is the wire-neutral equivalent that still accepts every valid transfer.)
+        guard adv.partCount <= adv.transferSize else {
+            fail("advertised part count exceeds transfer size")
+            return
+        }
         totalParts = Int(adv.partCount)
 
         // Build hashmap array from advertisement bytes.
@@ -608,7 +621,21 @@ public final class ResourceTransfer {
 
         let segLen = ResourceAdvertisement.hashmapMaxLength
         var offset = 0
-        var i = Int(segIdx) * segLen
+        // `segIdx` is an attacker-controlled msgpack uint. The original
+        // `Int(segIdx) * segLen` traps twice: the UInt64→Int narrowing crashes for
+        // values > Int.max, and the multiply can overflow Int. Compute the start
+        // index with overflow-safe arithmetic; any value that doesn't fit or whose
+        // product overflows is out of range and clamped past the end, so the loop's
+        // existing `i < totalParts` guard makes it a no-op instead of crashing.
+        // Wire-neutral: for a valid (small) segment index the result is identical.
+        let start: Int
+        if let s = Int(exactly: segIdx) {
+            let (product, overflow) = s.multipliedReportingOverflow(by: segLen)
+            start = overflow ? totalParts : product
+        } else {
+            start = totalParts
+        }
+        var i = start
         while offset + ResourceTransfer.mapHashLength <= hmap.count, i < totalParts {
             if hashmap[i] == nil {
                 hashmap[i] = Data(hmap[offset ..< offset + ResourceTransfer.mapHashLength])

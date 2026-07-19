@@ -182,6 +182,41 @@ final class ChannelTests: XCTestCase {
         XCTAssertFalse(handlerCalled)
     }
 
+    /// Regression: receive() previously held `lock` across the throwing
+    /// `envelope.unpack`, so an unknown-msgtype or short frame leaked the
+    /// non-recursive lock and permanently deadlocked the channel (every later
+    /// send/receive/shutdown blocked). A single mismatched peer packet was enough.
+    /// After the fix the channel must stay fully usable after malformed frames.
+    func testMalformedFrameDoesNotDeadlockChannel() throws {
+        let outlet = MockChannelOutlet()
+        let channel = Channel(outlet: outlet)
+        try channel.registerMessageType(PingMessage.self)
+
+        var delivered: UInt8?
+        let exp = expectation(description: "valid message delivered after malformed frames")
+        channel.addMessageHandler { msg in
+            guard let ping = msg as? PingMessage else { return false }
+            delivered = ping.value
+            exp.fulfill()
+            return true
+        }
+
+        // Drive the receives off the test thread so that a regression (the lock
+        // leaked across the throwing unpack) surfaces as a wait timeout rather
+        // than an indefinite same-thread NSLock hang.
+        DispatchQueue.global().async {
+            // Unknown msgtype 0x0099 (not registered) → unpack throws, dropped.
+            channel.receive(Data([0x00, 0x99, 0x00, 0x00, 0x00, 0x01, 0x42]))
+            // Short frame (<6 bytes) → unpack throws (invalidMsgType), dropped.
+            channel.receive(Data([0x00, 0x01]))
+            // Valid PingMessage at seq 0 → must still be delivered.
+            channel.receive(Data([0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0xAB]))
+        }
+
+        wait(for: [exp], timeout: 2.0)
+        XCTAssertEqual(delivered, 0xAB, "channel must remain usable after malformed frames")
+    }
+
     func testSystemReservedTypeCannotBeRegisteredByUser() throws {
         let outlet = MockChannelOutlet()
         let channel = Channel(outlet: outlet)

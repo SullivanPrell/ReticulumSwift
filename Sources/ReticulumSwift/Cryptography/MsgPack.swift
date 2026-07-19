@@ -254,14 +254,24 @@ public enum MsgPack {
 
     private static func readArray(count: Int, data: Data, cursor: inout Int) throws -> Value {
         var values: [Value] = []
-        values.reserveCapacity(count)
+        // Bound the pre-allocation by the bytes actually remaining: every array
+        // element occupies at least one wire byte, so a legitimate `count` can
+        // never exceed the remaining byte count. Without this bound, a tiny packet
+        // carrying a 32-bit length (~4e9) forces a multi-gigabyte reserveCapacity
+        // and crashes the process. Wire-neutral: valid data still reserves enough,
+        // and the loop reads exactly `count` elements — throwing .truncated as soon
+        // as the bytes run out, so a malformed count can't spin either.
+        values.reserveCapacity(min(count, max(0, data.endIndex - cursor)))
         for _ in 0..<count { values.append(try read(data, cursor: &cursor)) }
         return .array(values)
     }
 
     private static func readMap(count: Int, data: Data, cursor: inout Int) throws -> Value {
         var pairs: [(Value, Value)] = []
-        pairs.reserveCapacity(count)
+        // Bound the pre-allocation by remaining bytes (each pair is at least two
+        // wire bytes, so remaining-bytes is a safe upper bound). Prevents the same
+        // reserveCapacity allocation-DoS as readArray. Wire-neutral.
+        pairs.reserveCapacity(min(count, max(0, data.endIndex - cursor)))
         for _ in 0..<count {
             let k = try read(data, cursor: &cursor)
             let v = try read(data, cursor: &cursor)
