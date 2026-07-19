@@ -33,6 +33,12 @@ public final class UDPInterface: Interface {
     private var listener: NWListener?
     private var connection: NWConnection?
     private let queue: DispatchQueue
+    /// Inbound connections accepted by the listener. Retained so stop() can
+    /// cancel them (otherwise every inbound peer leaks its connection + receive
+    /// loop) and pruned when their receive loop ends. Guarded by `connLock`
+    /// (newConnectionHandler runs on `queue`, stop() on the caller thread).
+    private var inboundConnections: [NWConnection] = []
+    private let connLock = NSLock()
 
     /// Python `UDPInterface.__str__` returns `"UDPInterface[<name>/<ip>:<port>]"`.
     public var displayName: String {
@@ -58,8 +64,12 @@ public final class UDPInterface: Interface {
         if let listenPort, let port = NWEndpoint.Port(rawValue: listenPort) {
             let listener = try NWListener(using: .udp, on: port)
             listener.newConnectionHandler = { [weak self] conn in
-                conn.start(queue: self?.queue ?? .main)
-                self?.beginReceiveLoop(on: conn)
+                guard let self else { conn.cancel(); return }
+                self.connLock.lock()
+                self.inboundConnections.append(conn)
+                self.connLock.unlock()
+                conn.start(queue: self.queue)
+                self.beginReceiveLoop(on: conn)
             }
             listener.start(queue: queue)
             self.listener = listener
@@ -80,6 +90,11 @@ public final class UDPInterface: Interface {
     public func stop() {
         listener?.cancel(); listener = nil
         connection?.cancel(); connection = nil
+        connLock.lock()
+        let inbound = inboundConnections
+        inboundConnections.removeAll()
+        connLock.unlock()
+        for c in inbound { c.cancel() }
         isOnline = false
     }
 
@@ -101,7 +116,16 @@ public final class UDPInterface: Interface {
                     self.inboundHandler?(packet, self)
                 }
             }
-            if error == nil { self.beginReceiveLoop(on: conn) }
+            if error == nil {
+                self.beginReceiveLoop(on: conn)
+            } else {
+                // Receive loop ended — drop and cancel this inbound connection
+                // so it doesn't accumulate.
+                self.connLock.lock()
+                self.inboundConnections.removeAll { $0 === conn }
+                self.connLock.unlock()
+                conn.cancel()
+            }
         }
     }
 }

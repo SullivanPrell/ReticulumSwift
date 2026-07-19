@@ -166,7 +166,6 @@ public final class ResourceTransfer {
     private var mapHashes: [Data] = []
     private var randomHash: Data = Data()
     private var expectedProof: Data = Data()
-    private var reqHashlist: Set<Data> = []
     /// Set of map-hashes for segments that have been sent at least once.
     private var sentMapHashes: Set<Data> = []
     /// Lower bound of the sender's part-search window, advanced as the receiver pulls
@@ -188,7 +187,6 @@ public final class ResourceTransfer {
 
     private var parts: [Data?] = []
     private var hashmap: [Data?] = []
-    private var hashmapHeight: Int = 0
     private var consecutiveCompletedHeight: Int = -1
     private var window: Int = windowInitial
     private var outstandingParts: Int = 0
@@ -538,7 +536,6 @@ public final class ResourceTransfer {
         while hashmap.count < totalParts {
             hashmap.append(nil)
         }
-        hashmapHeight = hashmap.count
 
         parts = [Data?](repeating: nil, count: totalParts)
         consecutiveCompletedHeight = -1
@@ -639,7 +636,6 @@ public final class ResourceTransfer {
         while offset + ResourceTransfer.mapHashLength <= hmap.count, i < totalParts {
             if hashmap[i] == nil {
                 hashmap[i] = Data(hmap[offset ..< offset + ResourceTransfer.mapHashLength])
-                hashmapHeight = i + 1
             }
             offset += ResourceTransfer.mapHashLength
             i += 1

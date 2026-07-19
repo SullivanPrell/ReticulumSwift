@@ -74,8 +74,11 @@ public final class BackboneInterface: Interface {
     private let queue: DispatchQueue
     private let decoder = HDLC.FrameDecoder()
     private var reconnectAttempts: Int = 0
+    /// True between scheduling a reconnect and it firing, so overlapping failure
+    /// signals collapse to a single reconnect loop. Guarded by `stateLock`.
+    private var reconnectPending: Bool = false
 
-    /// Guards `_isStopped`, `connection`, and `reconnectAttempts`, which are
+    /// Guards `_isStopped`, `connection`, `reconnectAttempts`, and `reconnectPending`, which are
     /// touched from the caller thread (start/stop/send) and the interface's
     /// serial queue (openConnection/stateUpdate/scheduleReconnect/receive). See
     /// the LocalInterface note: without it a queued reconnect can assign
@@ -188,7 +191,10 @@ public final class BackboneInterface: Interface {
 
     private func scheduleReconnect() {
         stateLock.lock()
-        if _isStopped { stateLock.unlock(); return }
+        // A single disconnect can trigger both the .failed state handler and the
+        // receive-error callback; `reconnectPending` collapses them so only ONE
+        // reconnect loop is scheduled (was: two concurrent overlapping loops).
+        if _isStopped || reconnectPending { stateLock.unlock(); return }
         let attempts = reconnectAttempts
         if let maxTries = maxReconnectTries, attempts >= maxTries {
             stateLock.unlock()
@@ -197,13 +203,19 @@ public final class BackboneInterface: Interface {
             return
         }
         reconnectAttempts = attempts + 1
+        reconnectPending = true
         let attempt = reconnectAttempts
         stateLock.unlock()
         Reticulum.log("BackboneInterface \(name) scheduling reconnect in \(reconnectWait)s (attempt \(attempt))",
                       level: .verbose)
 
         queue.asyncAfter(deadline: .now() + reconnectWait) { [weak self] in
-            guard let self, !self.isStopped else { return }
+            guard let self else { return }
+            self.stateLock.lock()
+            self.reconnectPending = false
+            let stopped = self._isStopped
+            self.stateLock.unlock()
+            guard !stopped else { return }
             self.openConnection()
         }
     }

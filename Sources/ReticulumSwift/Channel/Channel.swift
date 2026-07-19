@@ -573,26 +573,30 @@ public final class Channel {
 /// Adapts a Link into a ChannelOutlet. Wire-compatible with Python's
 /// RNS.Channel.LinkChannelOutlet.
 public final class LinkChannelOutlet: ChannelOutlet {
-    public let link: Link
+    // Weak: the Link strongly owns its Channel, which strongly owns this outlet.
+    // A strong back-reference here would form Link -> Channel -> outlet -> Link
+    // and leak every Link that ever created a channel (plus its Token, watchdog
+    // timer, and pending state). When the Link is gone the outlet is inert.
+    public weak var link: Link?
     private var queue = DispatchQueue(label: "rns.channel.outlet", attributes: .concurrent)
 
     public init(link: Link) { self.link = link }
 
     public func send(_ raw: Data) -> ChannelPacketHandle {
         let handle = ChannelPacketHandle(raw: raw)
-        try? link.send(raw, context: .channel)
+        try? link?.send(raw, context: .channel)
         return handle
     }
 
     public func resend(_ handle: ChannelPacketHandle) {
-        try? link.send(handle.raw, context: .channel)
+        try? link?.send(handle.raw, context: .channel)
     }
 
     public var mdu: Int { Constants.linkMdu }
 
-    public var rtt: TimeInterval { link.rtt ?? 0 }
+    public var rtt: TimeInterval { link?.rtt ?? 0 }
 
-    public var isUsable: Bool { link.status == .active }
+    public var isUsable: Bool { link?.status == .active }
 
     public func getPacketState(_ handle: ChannelPacketHandle) -> MessageState {
         switch handle.state {
@@ -602,7 +606,7 @@ public final class LinkChannelOutlet: ChannelOutlet {
         }
     }
 
-    public func timedOut() { try? link.teardown() }
+    public func timedOut() { try? link?.teardown() }
 
     public func setPacketTimeoutCallback(
         _ handle: ChannelPacketHandle,

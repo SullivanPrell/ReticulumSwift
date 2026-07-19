@@ -183,9 +183,6 @@ public final class RNodeMultiInterface: Interface {
     /// Interface types reported by CMD_INTERFACES (from device detect response)
     public private(set) var subInterfaceTypes: [String] = []
 
-    // MARK: – Command buffer state (for multi-byte response parsing)
-
-    private var cmdBuffer: Data = Data()
 
     // MARK: – Errors
 

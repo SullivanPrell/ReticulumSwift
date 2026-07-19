@@ -572,14 +572,14 @@ public final class RNodeInterface: Interface {
 
     // MARK: – Error handling
 
+    /// Record a hardware error code. All known codes and unknown ones are
+    /// recorded identically. Bounded to the most recent `maxHwErrors` so a
+    /// misbehaving/hostile RNode can't grow the list without limit.
+    private static let maxHwErrors = 256
     private func handleError(_ code: UInt8) {
-        switch code {
-        case KISS.errorMemoryLow:
-            hwErrors.append(code)
-        case KISS.errorModemTimeout:
-            hwErrors.append(code)
-        default:
-            hwErrors.append(code)
+        hwErrors.append(code)
+        if hwErrors.count > RNodeInterface.maxHwErrors {
+            hwErrors.removeFirst(hwErrors.count - RNodeInterface.maxHwErrors)
         }
     }
 
