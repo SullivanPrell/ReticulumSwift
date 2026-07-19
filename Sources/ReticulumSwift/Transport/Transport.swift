@@ -2156,6 +2156,14 @@ public final class Transport {
             // stops cachedAnnounces from growing unbounded alongside path expiry.)
             cachedAnnounces.removeValue(forKey: dh)
         }
+        // Drop the parallel responsiveness state for expired paths too (under its
+        // own lock; order is lock > pathStatesLock). Otherwise pathStates grows
+        // unbounded alongside path churn.
+        if !expired.isEmpty {
+            pathStatesLock.lock()
+            for dh in expired { pathStates.removeValue(forKey: dh) }
+            pathStatesLock.unlock()
+        }
     }
 
     /// Expire the path for a specific destination immediately.

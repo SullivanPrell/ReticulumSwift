@@ -503,6 +503,9 @@ public final class RNodeMultiInterface: Interface {
 
     /// Python: CMD_INTERFACES — each pair of bytes is [vport, interface_type]
     private func processInterfacesPayload(_ payload: Data) {
+        // Rebuild from scratch each CMD_INTERFACES frame — otherwise repeated
+        // detect()/reconnect cycles accumulate stale entries without bound.
+        subInterfaceTypes.removeAll(keepingCapacity: true)
         var i = payload.startIndex
         while i + 1 < payload.endIndex {
             // Python: command_buffer[0] is vport (ignored), command_buffer[1] is type
