@@ -11,6 +11,22 @@ import Foundation
 /// - RESOURCE_PRF proof is a PROOF type packet, sent without link encryption.
 /// - All other resource control packets (ADV, REQ, HMU, ICL, RCL) are
 ///   link-encrypted like normal DATA packets.
+///
+/// ## Thread safety
+///
+/// All mutable transfer state is guarded by a single non-recursive `stateLock`
+/// (a strict LEAF in the Transport lock hierarchy). The watchdog fires on a
+/// dedicated serial queue while the Link receive thread and app/API threads
+/// also drive the transfer, so every field mutation happens under `stateLock`
+/// using **snapshot-under-lock / act-outside**: the lock is taken only to read
+/// or mutate fields, and is ALWAYS released before any `link.*` call, callback,
+/// `Resource` construction, or watchdog start/stop (all of which are callouts
+/// that could re-enter this object or acquire another lock). Terminal
+/// transitions (`.complete`/`.failed`/`.rejected`) are one-shot check-and-set
+/// under the lock via `beginTerminalLocked(_:)`, and the paired callback fires
+/// exactly once, outside the lock. This mirrors the discipline already used by
+/// `RequestReceipt` and never holds `stateLock` across a callout (the
+/// callout-under-lock pattern that previously deadlocked `Channel`).
 public final class ResourceTransfer {
 
     public enum Status: Equatable {
@@ -58,8 +74,30 @@ public final class ResourceTransfer {
     // MARK: - Public state
 
     public let link: Link
-    public private(set) var status: Status = .idle
-    public private(set) var advertisement: ResourceAdvertisement?
+
+    /// Serializes ALL mutable transfer state. A strict LEAF lock: it is NEVER
+    /// held across any `link.*` call, callback, `Resource` init, or watchdog
+    /// start/stop. Non-recursive — internal code holding it must use the `_`-backed
+    /// fields (`_status`/`_advertisement`/…) and must never call a self-locking
+    /// method (`sendRequest`/`assemble`/`fail`/`cancel`/`sendSegment`) while held.
+    private let stateLock = NSLock()
+
+    private var _status: Status = .idle
+    /// Current transfer status. Reads/writes are serialized by `stateLock`.
+    /// Torn reads of this enum (its `.failed` case carries a `String`) could
+    /// crash — not merely garble — so external access goes through the lock.
+    public private(set) var status: Status {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _status }
+        set { stateLock.lock(); _status = newValue; stateLock.unlock() }
+    }
+
+    private var _advertisement: ResourceAdvertisement?
+    /// The resource advertisement (nil until sent/received). Lock-guarded: a torn
+    /// read of this optional class reference would be an ARC use-after-free.
+    public private(set) var advertisement: ResourceAdvertisement? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _advertisement }
+        set { stateLock.lock(); _advertisement = newValue; stateLock.unlock() }
+    }
 
     /// True when this transfer is the RECEIVER of an incoming resource (set once an
     /// advertisement is received). Senders leave this false. Mirrors the inverse of
@@ -71,8 +109,13 @@ public final class ResourceTransfer {
     /// Used to compute `link.expectedRate` on completion. Mirrors Python `Resource.started_transferring`.
     private var startedTransferring: Date?
 
+    private var _resourceHash: Data = Data()
     /// Full 32-byte SHA256 resource hash. Set after send() or receiveAdvertisement().
-    public private(set) var resourceHash: Data = Data()
+    /// Lock-guarded for safe concurrent reads from the public getter.
+    public private(set) var resourceHash: Data {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _resourceHash }
+        set { stateLock.lock(); _resourceHash = newValue; stateLock.unlock() }
+    }
 
     public var onComplete: ((ResourceTransfer) -> Void)?
     public var onFailed: ((ResourceTransfer, Status) -> Void)?
@@ -84,7 +127,8 @@ public final class ResourceTransfer {
     /// Transfer progress as a value from 0.0 to 1.0.
     /// Mirrors Python's `Resource.get_progress()`.
     public var progress: Double {
-        if case .complete = status { return 1.0 }
+        stateLock.lock(); defer { stateLock.unlock() }
+        if case .complete = _status { return 1.0 }
         if totalParts == 0 { return 0.0 }
         return min(1.0, Double(receivedCount) / Double(totalParts))
     }
@@ -99,7 +143,10 @@ public final class ResourceTransfer {
 
     /// The number of parts the resource is transferred in.
     /// Mirrors Python's `Resource.get_parts()`.
-    public var partCount: Int { totalParts > 0 ? totalParts : encryptedSegments.count }
+    public var partCount: Int {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return totalParts > 0 ? totalParts : encryptedSegments.count
+    }
 
     /// The number of segments the resource is divided into.
     /// Mirrors Python's `Resource.get_segments()`.
@@ -146,9 +193,14 @@ public final class ResourceTransfer {
     /// before calling the public callbacks. Set by Link.receive().
     var onAssembledInternal: ((Data, ResourceTransfer) -> Void)?
 
+    private var _receivedMetadata: Data?
     /// Set on the receiver side after successful assembly when the sender included metadata.
     /// The bytes are the raw pre-packed metadata (without the 3-byte size prefix).
-    public private(set) var receivedMetadata: Data?
+    /// Lock-guarded for safe concurrent reads.
+    public private(set) var receivedMetadata: Data? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _receivedMetadata }
+        set { stateLock.lock(); _receivedMetadata = newValue; stateLock.unlock() }
+    }
 
     // MARK: - Multi-segment receiver state
     // Mirrors Python's segmented resource protocol (total_segments > 1).
@@ -221,27 +273,33 @@ public final class ResourceTransfer {
         let t = DispatchSource.makeTimerSource(queue: ResourceTransfer.watchdogQueue)
         t.schedule(deadline: .now() + retryTimeout, repeating: retryTimeout)
         t.setEventHandler { [weak self] in self?.watchdogTick() }
+        stateLock.lock(); watchdogTimer = t; stateLock.unlock()
         t.resume()
-        watchdogTimer = t
     }
 
     private func stopWatchdog() {
-        watchdogTimer?.cancel()
-        watchdogTimer = nil
+        stateLock.lock(); let t = watchdogTimer; watchdogTimer = nil; stateLock.unlock()
+        t?.cancel()
     }
 
     private func watchdogTick() {
-        guard !status.isTerminal else { stopWatchdog(); return }
+        stateLock.lock()
+        if _status.isTerminal { stateLock.unlock(); stopWatchdog(); return }
         let sinceActivity = Date().timeIntervalSince(lastActivity)
-        guard sinceActivity >= retryTimeout else { return }
+        guard sinceActivity >= retryTimeout else { stateLock.unlock(); return }
 
         if retriesLeft > 0 {
             retriesLeft -= 1
             lastActivity = Date()
-            switch status {
+            let snapStatus = _status
+            let adv = _advertisement
+            stateLock.unlock()
+
+            // ACT OUTSIDE LOCK — every branch below calls into Link.
+            switch snapStatus {
             case .advertised:
                 // No REQ received — retransmit ADV.
-                if let adv = advertisement { try? link.send(adv.pack(), context: .resourceAdvertisement) }
+                if let adv { try? link.send(adv.pack(), context: .resourceAdvertisement) }
             case .transferring:
                 // Receiver: outstanding parts not received — resend REQ.
                 sendRequest()
@@ -252,6 +310,7 @@ public final class ResourceTransfer {
                 break
             }
         } else {
+            stateLock.unlock()
             fail("watchdog timeout")
         }
     }
@@ -284,6 +343,7 @@ public final class ResourceTransfer {
                 chunks.append(payload[offset ..< end])
                 offset = end
             }
+            stateLock.lock()
             pendingSegments = Array(chunks.dropFirst())
             segmentIndex = 1
             totalSegments = chunks.count
@@ -292,6 +352,7 @@ public final class ResourceTransfer {
             segmentIsRequest = isRequest
             segmentIsResponse = isResponse
             segmentAutoCompress = autoCompress
+            stateLock.unlock()
 
             // Compute original_hash from the first segment's resource hash
             // (will be set after resource init). Use first segment to start.
@@ -311,16 +372,26 @@ public final class ResourceTransfer {
         payload: Data, metadata: Data?, segmentSize: Int,
         requestID: Data?, isRequest: Bool, isResponse: Bool, autoCompress: Bool = true
     ) throws {
+        // Resource construction is a callout (reads link state, performs crypto) —
+        // build it OUTSIDE the lock.
         let resource = try Resource(link: link, payload: payload, metadata: metadata,
                                     segmentSize: segmentSize, autoCompress: autoCompress)
+
+        stateLock.lock()
         encryptedSegments = resource.encryptedSegments
         mapHashes = resource.mapHashes
         randomHash = resource.randomHash
-        resourceHash = resource.resourceHash
+        _resourceHash = resource.resourceHash
         expectedProof = resource.expectedProof
-
         // For segment 1, set overallOriginalHash = first segment's resource hash.
         if segmentIndex == 1 { overallOriginalHash = resource.resourceHash }
+        let segIdxSnapshot = segmentIndex
+        let totalSegSnapshot = totalSegments
+        let overallHashSnapshot = overallOriginalHash
+        let reqIDSnapshot = requestID ?? segmentRequestID
+        let isReqSnapshot = isRequest || segmentIsRequest
+        let isRespSnapshot = isResponse || segmentIsResponse
+        stateLock.unlock()
 
         let adv = ResourceAdvertisement(
             transferSize: UInt64(resource.transferSize),
@@ -328,24 +399,27 @@ public final class ResourceTransfer {
             partCount: UInt64(resource.partCount),
             resourceHash: resource.resourceHash,
             randomHash: resource.randomHash,
-            originalHash: overallOriginalHash,
-            segmentIndex: UInt64(segmentIndex),
-            totalSegments: UInt64(totalSegments),
-            requestID: requestID ?? segmentRequestID,
+            originalHash: overallHashSnapshot,
+            segmentIndex: UInt64(segIdxSnapshot),
+            totalSegments: UInt64(totalSegSnapshot),
+            requestID: reqIDSnapshot,
             hashmap: resource.mapHashes.reduce(Data(), +),
             encrypted: true,
             compressed: resource.isCompressed,
-            split: totalSegments > 1,
-            isRequest: isRequest || segmentIsRequest,
-            isResponse: isResponse || segmentIsResponse,
+            split: totalSegSnapshot > 1,
+            isRequest: isReqSnapshot,
+            isResponse: isRespSnapshot,
             hasMetadata: resource.hasMetadata
         )
-        advertisement = adv
 
-        link.registerOutgoingResource(self)
-        status = .advertised
+        stateLock.lock()
+        _advertisement = adv
+        _status = .advertised
         retriesLeft = maxAdvRetries
         lastActivity = Date()
+        stateLock.unlock()
+
+        link.registerOutgoingResource(self)
         guard ensureLinkActive() else { return }
         try link.send(adv.pack(), context: .resourceAdvertisement)
         startWatchdog()
@@ -353,7 +427,6 @@ public final class ResourceTransfer {
 
     /// Called by Link when a RESOURCE_REQ arrives for our resource hash.
     internal func handleRequest(_ data: Data) {
-        guard status == .advertised || status == .transferring || status == .awaitingProof else { return }
         guard !data.isEmpty else { return }
 
         let wantsMoreHashmap = data[0] == ResourceTransfer.hashmapIsExhausted
@@ -368,8 +441,12 @@ public final class ResourceTransfer {
             i += ResourceTransfer.mapHashLength
         }
 
-        if status != .transferring {
-            status = .transferring
+        stateLock.lock()
+        guard _status == .advertised || _status == .transferring || _status == .awaitingProof else {
+            stateLock.unlock(); return
+        }
+        if _status != .transferring {
+            _status = .transferring
             if startedTransferring == nil { startedTransferring = Date() }
         }
         lastActivity = Date()
@@ -379,17 +456,25 @@ public final class ResourceTransfer {
         // around the receiver's consecutive height. A windowed search ensures the
         // correct part is sent even when a 4-byte map-hash collides with a distant
         // part elsewhere in the resource. Mirrors Python `Resource.request`.
+        //
+        // Snapshot the exact byte payloads to send (NOT indices) under the lock so a
+        // concurrent multi-segment advance can't swap `encryptedSegments` out from
+        // under the send loop.
+        var partsToSend: [Data] = []
         let sendStart = min(receiverMinConsecutiveHeight, mapHashes.count)
         let sendEnd = min(receiverMinConsecutiveHeight + ResourceAdvertisement.collisionGuardSize, mapHashes.count)
         for idx in sendStart ..< sendEnd {
             let mapHash = mapHashes[idx]
             if requestedHashes.contains(mapHash) {
-                try? link.sendResourcePart(encryptedSegments[idx])
+                partsToSend.append(encryptedSegments[idx])
                 sentMapHashes.insert(mapHash)
             }
         }
 
-        // If the receiver exhausted its known hashmap, send the next HMU segment.
+        // If the receiver exhausted its known hashmap, compute the next HMU segment
+        // (or a cancellation) under the lock — but SEND it outside.
+        var hmuPayload: Data? = nil
+        var cancelReason: String? = nil
         if wantsMoreHashmap, data.count >= 1 + ResourceTransfer.mapHashLength {
             let lastMapHash = Data(data[1 ..< 1 + ResourceTransfer.mapHashLength])
 
@@ -405,37 +490,50 @@ public final class ResourceTransfer {
             receiverMinConsecutiveHeight = max(partIndex - 1 - ResourceTransfer.windowMaxFast, 0)
 
             let hml = ResourceAdvertisement.hashmapMaxLength
-            guard partIndex % hml == 0 else {
+            if partIndex % hml != 0 {
                 // Next segment is not aligned to a HASHMAP_MAX_LEN boundary — the
                 // receiver's request is out of sequence. Abort, as Python does.
-                cancel(reason: "resource sequencing error")
-                return
+                cancelReason = "resource sequencing error"
+            } else {
+                let segment = partIndex / hml
+                let hashmapStart = segment * hml
+                let hashmapEnd = min((segment + 1) * hml, mapHashes.count)
+                if hashmapStart >= hashmapEnd {
+                    // Degenerate/empty HMU request — abort rather than silently skip.
+                    // Mirrors Python `request()` (`if not hashmap: cancel()`).
+                    cancelReason = "resource HMU error"
+                } else {
+                    let hmuHashmap = mapHashes[hashmapStart ..< hashmapEnd].reduce(Data(), +)
+                    hmuPayload = _resourceHash + MsgPack.encode(.array([
+                        .uint(UInt64(segment)),
+                        .bytes(hmuHashmap)
+                    ]))
+                }
             }
-            let segment = partIndex / hml
-            let hashmapStart = segment * hml
-            let hashmapEnd = min((segment + 1) * hml, mapHashes.count)
-            guard hashmapStart < hashmapEnd else {
-                // Degenerate/empty HMU request — abort rather than silently skip.
-                // Mirrors Python `request()` (`if not hashmap: cancel()`).
-                cancel(reason: "resource HMU error")
-                return
-            }
-            let hmuHashmap = mapHashes[hashmapStart ..< hashmapEnd].reduce(Data(), +)
-            let hmuPayload = resourceHash + MsgPack.encode(.array([
-                .uint(UInt64(segment)),
-                .bytes(hmuHashmap)
-            ]))
+        }
+        stateLock.unlock()
+
+        // ACT OUTSIDE LOCK — preserve the original send order: parts, then HMU
+        // (or, on a sequencing error, cancel and return before advancing state).
+        for part in partsToSend {
+            try? link.sendResourcePart(part)
+        }
+        if let cancelReason {
+            cancel(reason: cancelReason)
+            return
+        }
+        if let hmuPayload {
             guard ensureLinkActive() else { return }
             try? link.send(hmuPayload, context: .resourceHashmapUpdate)
         }
 
         // If proof already arrived (loopback) leave the completed status alone.
-        guard status != .complete, status != .rejected else { return }
-
         // Advance to awaitingProof once every segment has been sent at least once.
-        if sentMapHashes.count == mapHashes.count {
-            status = .awaitingProof
+        stateLock.lock()
+        if _status != .complete, _status != .rejected, sentMapHashes.count == mapHashes.count {
+            _status = .awaitingProof
         }
+        stateLock.unlock()
     }
 
     /// Called by Link when a RESOURCE_PRF proof arrives for our resource hash.
@@ -446,33 +544,54 @@ public final class ResourceTransfer {
             return
         }
         let receivedProof = proofData.suffix(Constants.hashLength)
-        guard Data(receivedProof) == expectedProof else {
+        stateLock.lock(); let expected = expectedProof; stateLock.unlock()
+        guard Data(receivedProof) == expected else {
             fail("proof mismatch")
             return
         }
+
+        // Snapshot conclusion / segment-advance state under the lock; act outside.
+        stateLock.lock()
+        let started = startedTransferring
+        let advDataSize = Int(_advertisement?.dataSize ?? 0)
+        let hasMoreSegments = !pendingSegments.isEmpty
+        var nextSegment: Data? = nil
+        var nextReqID: Data? = nil
+        var nextIsRequest = false
+        var nextIsResponse = false
+        var nextAutoCompress = true
+        if hasMoreSegments {
+            nextSegment = pendingSegments.removeFirst()
+            segmentIndex += 1
+            nextReqID = segmentRequestID
+            nextIsRequest = segmentIsRequest
+            nextIsResponse = segmentIsResponse
+            nextAutoCompress = segmentAutoCompress
+        }
+        stateLock.unlock()
+
+        // ACT OUTSIDE LOCK.
         stopWatchdog()
         link.unregisterOutgoingResource(self)
 
         // Update link expected rate (mirrors Python Link.resource_concluded).
-        if let started = startedTransferring {
+        if let started {
             let duration = Date().timeIntervalSince(started)
-            link.resourceConcluded(dataSize: Int(advertisement?.dataSize ?? 0), duration: duration)
+            link.resourceConcluded(dataSize: advDataSize, duration: duration)
         }
 
         // Multi-segment: if more segments remain, advance and advertise next.
-        if !pendingSegments.isEmpty {
-            let next = pendingSegments.removeFirst()
-            segmentIndex += 1
-            status = .idle
+        if hasMoreSegments, let next = nextSegment {
+            stateLock.lock(); _status = .idle; stateLock.unlock()
             do {
                 try sendSegment(
                     payload: next,
                     metadata: nil,  // metadata only on first segment
                     segmentSize: Constants.mdu,
-                    requestID: segmentRequestID,
-                    isRequest: segmentIsRequest,
-                    isResponse: segmentIsResponse,
-                    autoCompress: segmentAutoCompress
+                    requestID: nextReqID,
+                    isRequest: nextIsRequest,
+                    isResponse: nextIsResponse,
+                    autoCompress: nextAutoCompress
                 )
             } catch {
                 fail("multi-segment next: \(error)")
@@ -480,16 +599,15 @@ public final class ResourceTransfer {
             return
         }
 
-        status = .complete
+        stateLock.lock(); _status = .complete; stateLock.unlock()
         onComplete?(self)
     }
 
     internal func reject() {
-        status = .rejected
+        stateLock.lock(); _status = .rejected; stateLock.unlock()
         stopWatchdog()
         link.unregisterOutgoingResource(self)
-        let s = Status.rejected
-        onFailed?(self, s)
+        onFailed?(self, .rejected)
     }
 
     // MARK: - Receiver
@@ -506,9 +624,6 @@ public final class ResourceTransfer {
             fail("unparseable advertisement")
             return
         }
-        isReceiver = true
-        advertisement = adv
-        resourceHash = adv.resourceHash
         // Bound the advertised part count before it sizes the `parts`/`hashmap`
         // arrays. `partCount` (the wire "n" field) is attacker-controlled; a
         // hostile advertisement could declare a near-UInt64 count and force an
@@ -522,6 +637,11 @@ public final class ResourceTransfer {
             fail("advertised part count exceeds transfer size")
             return
         }
+
+        stateLock.lock()
+        isReceiver = true
+        _advertisement = adv
+        _resourceHash = adv.resourceHash
         totalParts = Int(adv.partCount)
 
         // Build hashmap array from advertisement bytes.
@@ -543,21 +663,24 @@ public final class ResourceTransfer {
         window = ResourceTransfer.windowInitial
         outstandingParts = 0
         waitingForHMU = false
-        status = .transferring
+        _status = .transferring
         retriesLeft = maxRetries
         lastActivity = Date()
         if startedTransferring == nil { startedTransferring = Date() }
+        stateLock.unlock()
+
         startWatchdog()
         sendRequest()
     }
 
     /// Called by Link for each inbound RESOURCE data part (raw pre-encrypted bytes).
     internal func receivePart(_ data: Data) {
-        guard status == .transferring else { return }
+        stateLock.lock()
+        guard _status == .transferring else { stateLock.unlock(); return }
         lastActivity = Date()
         retriesLeft = maxRetries
 
-        let partHash = Hashes.fullHash(data + randomHashForReceiver()).prefix(ResourceTransfer.mapHashLength)
+        let partHash = Hashes.fullHash(data + randomHashForReceiverLocked()).prefix(ResourceTransfer.mapHashLength)
         let partHashData = Data(partHash)
 
         // Match the part against the window of known hashmap entries.
@@ -584,24 +707,24 @@ public final class ResourceTransfer {
             break
         }
 
-        if receivedCount == totalParts {
-            assemble()
-            return
-        }
-
-        if outstandingParts == 0 {
+        let doAssemble = (receivedCount == totalParts)
+        var doSendRequest = false
+        if !doAssemble, outstandingParts == 0 {
             if window < ResourceTransfer.windowMax { window += 1 }
+            doSendRequest = true
+        }
+        stateLock.unlock()
+
+        // ACT OUTSIDE LOCK (assemble/sendRequest do their own locking + callouts).
+        if doAssemble {
+            assemble()
+        } else if doSendRequest {
             sendRequest()
         }
     }
 
     /// Called by Link when a RESOURCE_HMU arrives (decrypted plaintext starting with resourceHash).
     internal func handleHashmapUpdate(_ data: Data) {
-        guard status == .transferring else { return }
-        // Only process a hashmap update we actually requested; unsolicited or
-        // duplicate HMUs are ignored. Mirrors Python `hashmap_update_packet`
-        // gating on `self.waiting_for_hmu` (commit 3a36c367).
-        guard waitingForHMU else { return }
         guard data.count > Constants.hashLength else { return }
         let payload = data.dropFirst(Constants.hashLength)
         guard case .array(let arr) = (try? MsgPack.decode(Data(payload))),
@@ -609,9 +732,17 @@ public final class ResourceTransfer {
               case .uint(let segIdx) = arr[0],
               case .bytes(let hmap) = arr[1] else { return }
 
+        stateLock.lock()
+        guard _status == .transferring else { stateLock.unlock(); return }
+        // Only process a hashmap update we actually requested; unsolicited or
+        // duplicate HMUs are ignored. Mirrors Python `hashmap_update_packet`
+        // gating on `self.waiting_for_hmu` (commit 3a36c367).
+        guard waitingForHMU else { stateLock.unlock(); return }
+
         // An HMU carrying fewer than one full map-hash is invalid — abort the
         // transfer. Mirrors Python `hashmap_update` (`if hashes < 1: cancel()`).
         guard hmap.count >= ResourceTransfer.mapHashLength else {
+            stateLock.unlock()
             cancel(reason: "invalid HMU received")
             return
         }
@@ -642,6 +773,7 @@ public final class ResourceTransfer {
         }
 
         waitingForHMU = false
+        stateLock.unlock()
         sendRequest()
     }
 
@@ -657,12 +789,14 @@ public final class ResourceTransfer {
 
     // MARK: - Private receiver helpers
 
-    private func randomHashForReceiver() -> Data {
-        advertisement?.randomHash ?? Data()
+    /// Caller MUST hold `stateLock`.
+    private func randomHashForReceiverLocked() -> Data {
+        _advertisement?.randomHash ?? Data()
     }
 
     private func sendRequest() {
-        guard !waitingForHMU else { return }
+        stateLock.lock()
+        guard !waitingForHMU else { stateLock.unlock(); return }
         outstandingParts = 0
         var requestedHashes = Data()
         var hashmapExhausted = false
@@ -701,22 +835,29 @@ public final class ResourceTransfer {
         } else {
             reqData.append(ResourceTransfer.hashmapIsNotExhausted)
         }
-        reqData.append(contentsOf: resourceHash)
+        reqData.append(contentsOf: _resourceHash)
         reqData.append(contentsOf: requestedHashes)
+        stateLock.unlock()
 
         guard ensureLinkActive() else { return }
         try? link.send(reqData, context: .resourceRequest)
     }
 
     private func assemble() {
-        status = .transferring
+        stateLock.lock()
+        _status = .transferring
         let allParts = parts.compactMap { $0 }
-        guard allParts.count == totalParts, let adv = advertisement else {
+        let totalPartsSnapshot = totalParts
+        let adv = _advertisement
+        stateLock.unlock()
+
+        guard allParts.count == totalPartsSnapshot, let adv else {
             fail("assembly: missing parts")
             return
         }
 
-        // Inline assembly with specific failure diagnostics.
+        // Inline assembly with specific failure diagnostics. Decrypt, decompress and
+        // hash-verify are pure/callout work — done OUTSIDE the lock.
         let encryptedStream = allParts.reduce(Data(), +)
         let decrypted: Data
         do {
@@ -760,7 +901,6 @@ public final class ResourceTransfer {
             result = Resource.AssemblyResult(payload: assembledPlaintext, metadata: nil)
         }
 
-        receivedMetadata = result.metadata
         let plaintext = result.payload
 
         let segIdx = Int(adv.segmentIndex)
@@ -770,11 +910,14 @@ public final class ResourceTransfer {
             // More segments to come.
             // Accumulate bytes BEFORE sending proof so we're ready when the
             // next ADV arrives synchronously (loopback interfaces cascade instantly).
+            stateLock.lock()
+            _receivedMetadata = result.metadata
             segmentBuffer.append(plaintext)
             originalHash = Data(adv.originalHash)
             // Preserve metadata from segment 1 (subsequent segments have no metadata).
             if result.metadata != nil { multiSegmentMetadata = result.metadata }
-            status = .idle
+            _status = .idle
+            stateLock.unlock()
             stopWatchdog()
             // Stay registered in incomingResources so the next ADV is dispatched
             // to this object directly — do NOT unregister + re-register since that
@@ -805,15 +948,18 @@ public final class ResourceTransfer {
         }
 
         // All segments received — concatenate and deliver.
+        stateLock.lock()
+        _receivedMetadata = result.metadata
         segmentBuffer.append(plaintext)
         let fullPayload = segmentBuffer.reduce(Data(), +)
         segmentBuffer.removeAll()
-
         // Use metadata from segment 1 if this was a multi-segment transfer.
         if multiSegmentMetadata != nil {
-            receivedMetadata = multiSegmentMetadata
+            _receivedMetadata = multiSegmentMetadata
             multiSegmentMetadata = nil
         }
+        let startedSnapshot = startedTransferring
+        stateLock.unlock()
 
         // Proof must be computed over the FULL encoded data (transferData),
         // which includes the metadata prefix when hasMetadata=true.
@@ -849,12 +995,12 @@ public final class ResourceTransfer {
         }
 
         // Update link expected rate (mirrors Python Link.resource_concluded).
-        if let started = startedTransferring {
+        if let started = startedSnapshot {
             let duration = Date().timeIntervalSince(started)
             link.resourceConcluded(dataSize: Int(adv.dataSize), duration: duration)
         }
 
-        status = .complete
+        stateLock.lock(); _status = .complete; stateLock.unlock()
         stopWatchdog()
         link.unregisterIncomingResource(self)
         onComplete?(self)
@@ -873,24 +1019,31 @@ public final class ResourceTransfer {
     }
 
     private func fail(_ reason: String) {
-        guard case .failed = status else {
-            let s = Status.failed(reason: reason)
-            status = s
-            stopWatchdog()
-            // Notify the peer that this transfer is being aborted so it concludes
-            // promptly instead of waiting for its own watchdog timeout. A receiver
-            // sends RESOURCE_RCL, a sender sends RESOURCE_ICL — mirrors Python
-            // Resource.cancel() (the RCL branch was added in commit bb289744; the
-            // ICL branch is long-standing). Only emitted while the link is active
-            // and the resource hash is known.
-            if link.status == .active, !resourceHash.isEmpty {
-                let cancelContext: Packet.Context = isReceiver ? .resourceReceiverCancel : .resourceInitiatorCancel
-                try? link.send(resourceHash, context: cancelContext)
-            }
-            link.unregisterOutgoingResource(self)
-            link.unregisterIncomingResource(self)
-            onFailed?(self, s)
-            return
+        let s = Status.failed(reason: reason)
+        stateLock.lock()
+        // Idempotent ONLY against re-failing: fail() overrides any other state
+        // (including a prior .complete/.rejected), exactly as the original did —
+        // the ResourceCancel/LinkDrop tests rely on cancel-after-reject → .failed.
+        // The lock adds atomicity; it does not change the state-machine semantics.
+        if case .failed = _status { stateLock.unlock(); return }
+        _status = s
+        let receiver = isReceiver
+        let rhash = _resourceHash
+        stateLock.unlock()
+
+        stopWatchdog()
+        // Notify the peer that this transfer is being aborted so it concludes
+        // promptly instead of waiting for its own watchdog timeout. A receiver
+        // sends RESOURCE_RCL, a sender sends RESOURCE_ICL — mirrors Python
+        // Resource.cancel() (the RCL branch was added in commit bb289744; the
+        // ICL branch is long-standing). Only emitted while the link is active
+        // and the resource hash is known.
+        if link.status == .active, !rhash.isEmpty {
+            let cancelContext: Packet.Context = receiver ? .resourceReceiverCancel : .resourceInitiatorCancel
+            try? link.send(rhash, context: cancelContext)
         }
+        link.unregisterOutgoingResource(self)
+        link.unregisterIncomingResource(self)
+        onFailed?(self, s)
     }
 }
