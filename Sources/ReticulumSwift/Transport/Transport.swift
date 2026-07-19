@@ -1453,6 +1453,23 @@ public final class Transport {
     // MARK: - Lifecycle
 
     public func register(interface: Interface) {
+        // register()/deregister() run on network-callback threads (TCP-server
+        // accept, I2P peer up/down) and — under stress — can target the SAME
+        // interface concurrently. Everything that mutates Transport-owned state
+        // OR the interface's Transport-owned callbacks is done under `lock` so
+        // two register()s (or a register racing a deregister) cannot interleave.
+        // Without this, the `inboundHandler`/`rawInboundHandler` closure pointers
+        // are torn by concurrent writes (an ARC refcount race that corrupts the
+        // heap and surfaces as unrelated "Duplicate keys" dictionary traps), and
+        // the per-interface bookkeeping dicts can be left with orphaned entries.
+        //
+        // `lock` is the outer lock; the per-interface leaf locks are acquired
+        // nested inside it (global order: lock > ingressLock > trackersLock,
+        // lock > metricsLock). No leaf-lock holder ever acquires `lock`, so this
+        // introduces no cycle. `synthesizeTunnel` is the one callout — snapshot
+        // its trigger under `lock`, then run it after releasing (act-outside).
+        let key = ObjectIdentifier(interface)
+        lock.lock()
         // Raw-bytes handler used by real interfaces — verifies IFAC, parses packet.
         interface.rawInboundHandler = { [weak self] rawBytes, sourceInterface in
             guard let self else { return }
@@ -1489,14 +1506,7 @@ public final class Transport {
                 self?.deregister(interface: peerIface)
             }
         }
-        // register()/deregister() run on network-callback threads (TCP-server
-        // accept, I2P peer up/down) concurrently with the jobs timer and inbound
-        // handlers that iterate these collections. Guard each under its own lock
-        // (no two held at once; `synthesizeTunnel` runs outside all of them).
-        let key = ObjectIdentifier(interface)
-        lock.lock()
         interfaces.append(interface)
-        lock.unlock()
         // Create a frequency tracker for this interface.
         trackersLock.lock()
         ifaceFreqTrackers[key] = InterfaceFreqTracker()
@@ -1505,8 +1515,10 @@ public final class Transport {
         ingressLock.lock()
         ingressStates[key] = IngressControlState()
         ingressLock.unlock()
-        // Synthesize a tunnel for interfaces that request it.
-        if interface.wantsTunnel {
+        let wantsTunnel = interface.wantsTunnel
+        lock.unlock()
+        // Synthesize a tunnel for interfaces that request it (outside all locks).
+        if wantsTunnel {
             synthesizeTunnel(interface)
         }
     }
@@ -1514,10 +1526,13 @@ public final class Transport {
     /// Remove an interface from the transport. Cleans up all per-interface state.
     /// Mirrors Python `Transport.remove_interface()` added in e7a317f0.
     public func deregister(interface iface: any Interface) {
+        // Held under `lock` for the whole body so it is atomic with respect to a
+        // concurrent register() of the same interface (see register() for the
+        // lock-hierarchy rationale). The per-interface leaf locks are acquired
+        // nested inside `lock`.
         let key = ObjectIdentifier(iface)
         lock.lock()
         interfaces.removeAll { $0 === iface }
-        lock.unlock()
         trackersLock.lock()
         ifaceFreqTrackers.removeValue(forKey: key)
         trackersLock.unlock()
@@ -1529,6 +1544,7 @@ public final class Transport {
         ifaceCurrentRxSpeed.removeValue(forKey: key)
         ifaceCurrentTxSpeed.removeValue(forKey: key)
         metricsLock.unlock()
+        lock.unlock()
     }
 
     /// Derive IFAC credentials from a network name and/or access key and attach
