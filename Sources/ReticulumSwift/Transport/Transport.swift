@@ -2400,8 +2400,18 @@ public final class Transport {
 
         // Not for us — forward toward the responder if we know a path, and
         // remember the link's two-sided routing so the proof/RTT/close
-        // packets that come back addressed to link_id can be steered.
-        guard transportEnabled, let path else { return }
+        // packets that come back addressed to link_id can be steered. As with
+        // DATA relay, a non-transport shared instance still relays link requests
+        // to/from a directly-connected local client (Python `transport_enabled or
+        // from_local_client or for_local_client_link`, Transport.py:1573).
+        let fromLocalLR = fromLocalClient(interface: interface)
+        let forLocalLR: Bool = {
+            guard let p = path, p.hops == 0,
+                  let nh = interfaces.first(where: { $0.name == p.nextHopInterfaceName })
+            else { return false }
+            return isLocalClientInterface(nh)
+        }()
+        guard transportEnabled || fromLocalLR || forLocalLR, let path else { return }
         guard packet.hops < propagationLimit else { return }
         guard let outbound = interfaces.first(where: {
             $0.name == path.nextHopInterfaceName && $0.isOnline
@@ -2558,12 +2568,19 @@ public final class Transport {
     }
 
     private func forwardLinkTraffic(_ packet: Packet, from sourceInterface: Interface) {
-        guard transportEnabled else { return }
         guard packet.hops < propagationLimit else { return }
         lock.lock()
         var route = linkRoutes[packet.destinationHash]
         lock.unlock()
         guard route != nil else { return }
+        let initIface = interfaces.first { $0.name == route!.initiatorSideInterfaceName }
+        let respIface = interfaces.first { $0.name == route!.responderSideInterfaceName }
+        // A non-transport shared instance still relays link traffic when either
+        // side of the link is a directly-connected local client (Python's
+        // for_local_client_link, Transport.py:1573).
+        let touchesLocalClient = (initIface.map(isLocalClientInterface) ?? false)
+                              || (respIface.map(isLocalClientInterface) ?? false)
+        guard transportEnabled || touchesLocalClient else { return }
         // Steer to the side that didn't deliver the packet.
         let outboundName: String
         if sourceInterface.name == route!.initiatorSideInterfaceName {
@@ -2580,8 +2597,6 @@ public final class Transport {
         // instance_local_link: both sides of this link are local clients, so the
         // traffic never leaves the local-client domain and must keep its real
         // hop count even under local hop-count obfuscation.
-        let initIface = interfaces.first { $0.name == route!.initiatorSideInterfaceName }
-        let respIface = interfaces.first { $0.name == route!.responderSideInterfaceName }
         let instanceLocalLink = (initIface.map(isLocalClientInterface) ?? false)
                              && (respIface.map(isLocalClientInterface) ?? false)
         forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: instanceLocalLink)
@@ -2972,11 +2987,24 @@ public final class Transport {
             return
         }
 
-        // No local destination — relay if we're transport-enabled and we
-        // know a path. Only SINGLE packets are transported over multiple hops.
-        // PLAIN and GROUP packets are local-only (not forwarded).
+        // No local destination — relay if we're transport-enabled, OR the packet
+        // is to/from a directly-connected local (shared-instance) client. The
+        // local-client clauses mirror Python's inbound gate
+        // `transport_enabled or from_local_client or for_local_client`
+        // (Transport.py:1573): a non-transport shared instance must still carry
+        // its clients' traffic — outbound from a client to the mesh
+        // (from_local_client) and inbound from the mesh to a client whose
+        // destination is one hop away over the serving interface (for_local_client).
+        // Only SINGLE packets are transported; PLAIN/GROUP are local-only and
         // LINK-typed packets are routed by their own dispatchers.
-        guard transportEnabled,
+        let fromLocal = fromLocalClient(interface: interface)
+        let forLocal: Bool = {
+            guard let p = path, p.hops == 0,
+                  let nextHop = interfaces.first(where: { $0.name == p.nextHopInterfaceName })
+            else { return false }
+            return isLocalClientInterface(nextHop)
+        }()
+        guard transportEnabled || fromLocal || forLocal,
               packet.destinationType == .single else { return }
         guard let path else { return }
         forward(packet, from: interface, path: path)
