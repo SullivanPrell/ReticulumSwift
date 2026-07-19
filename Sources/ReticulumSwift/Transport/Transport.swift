@@ -549,6 +549,7 @@ public final class Transport {
     /// The live `Interface` object for the next hop, or nil.
     public func nextHopInterface(for destinationHash: Data) -> (any Interface)? {
         guard let name = nextHopInterfaceName(for: destinationHash) else { return nil }
+        lock.lock(); defer { lock.unlock() }
         return interfaces.first { $0.name == name }
     }
 
@@ -1998,7 +1999,12 @@ public final class Transport {
         sampleInterfaceSpeeds()
         sweepExpiredBlackholes()
         // Process held announces for each interface (mirrors Python's per-interface job loop).
-        for iface in interfaces { processHeldAnnounces(for: iface) }
+        // Snapshot under `lock` — register/deregister mutate `interfaces` on
+        // network-callback threads while this jobs loop runs.
+        lock.lock()
+        let heldSnapshot = interfaces
+        lock.unlock()
+        for iface in heldSnapshot { processHeldAnnounces(for: iface) }
         // Periodically clean known destinations (mirrors Python commit b408699e:
         // periodically clean known destinations based on local relevance).
         // Throttled to once per `knownDestinationsCleanInterval` because the
