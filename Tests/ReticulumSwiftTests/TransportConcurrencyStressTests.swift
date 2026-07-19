@@ -68,4 +68,37 @@ final class TransportConcurrencyStressTests: XCTestCase {
         // means the lock graph is acyclic on these paths.
         wait(for: [done], timeout: 60)
     }
+
+    /// Directly targets the register()/deregister() atomicity fix by hammering
+    /// register and deregister of the *same* interface from many threads at once.
+    /// Before the fix, register() assigned the ARC-refcounted closure pointers
+    /// `interface.rawInboundHandler`/`inboundHandler` OUTSIDE `lock`, so two
+    /// concurrent register()s tore those pointers (a refcount race that corrupts
+    /// the heap and surfaced as an unrelated "Duplicate keys" dictionary trap),
+    /// and a register() could interleave with a deregister() of the same iface.
+    /// With the whole register()/deregister() body under `lock`, this must be
+    /// clean under `--sanitize=thread` (a torn write CRASHES; a lock-order
+    /// inversion TIMES OUT).
+    func testConcurrentSameInterfaceRegisterDeregisterIsRaceFree() {
+        let transport = Transport()
+        let iface = StressIface(name: "shared")
+
+        let done = expectation(description: "same-iface churn complete")
+        let workers = 8
+        let iterations = 2000
+
+        DispatchQueue.global().async {
+            DispatchQueue.concurrentPerform(iterations: workers) { w in
+                for i in 0..<iterations {
+                    switch (w &+ i) % 3 {
+                    case 0:  transport.register(interface: iface)     // writes closures + dicts under lock
+                    case 1:  transport.deregister(interface: iface)   // removes all per-iface state under lock
+                    default: _ = transport.getInterfaceStats()        // snapshots interfaces under lock
+                    }
+                }
+            }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 60)
+    }
 }
