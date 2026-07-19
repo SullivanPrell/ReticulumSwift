@@ -3095,41 +3095,57 @@ public final class Transport {
             return
         }
 
-        if var cachedAnnounce {
+        let fromLocal = fromLocalClient(interface: interface)
+
+        // Branch 2 (Python Transport.py:2969): answer from a KNOWN PATH — but only
+        // if we are a transport node OR the request came from a local client. A
+        // plain non-transport endpoint must NOT answer path requests naming itself
+        // as the relay, or peers will route traffic to a node that just drops it.
+        // Key off the path table (a real known route), mirroring Python's
+        // `destination_hash in path_table`, not merely an overheard cached announce.
+        if (transportEnabled || fromLocal), let entry = pathEntry, let cached = cachedAnnounce {
             // Suppress answer when the next hop along the path IS the requestor
             // (would create a routing loop). Mirrors Python's requestor_transport_id check.
             if let rID = requestorTransportID,
-               let entry = pathEntry,
                let nhID = entry.nextHopTransportID,
                nhID == rID {
-                // Requestor IS the next hop — don't send a response.
                 return
             }
-            cachedAnnounce.context = .pathResponse
-            // Python stores announce_hops = packet.hops AFTER inbound +1. Swift doesn't
-            // do an inbound increment, so `cachedAnnounce.hops` = raw wire hops (e.g. 0).
-            // Mimic Python: set hops = stored path hops + 1 so the recipient computes the
-            // correct hops_to and expected_proof_hops for link establishment.
-            if let entry = pathEntry {
-                cachedAnnounce.hops = entry.hops &+ 1
-            }
-            // Python always sends path responses as HEADER_2 with the relay's transport_id
-            // (mirrors Python: header_type=HEADER_2, transport_type=TRANSPORT,
-            //  transport_id=Transport.identity.hash).
-            // This ensures the requester stores `received_from = transportInstanceID`
-            // in its path table, so outbound packets are correctly addressed to us.
-            cachedAnnounce.headerType = .type2
-            cachedAnnounce.transportType = .transport
-            cachedAnnounce.transportID = transportInstanceID
-            try? interface.send(cachedAnnounce)
+            var response = cached
+            response.context = .pathResponse
+            // Python stores announce_hops = packet.hops AFTER its inbound +1. Swift
+            // does no inbound increment, so mimic it: hops = stored path hops + 1, so
+            // the requester computes the correct hops_to / expected_proof_hops.
+            response.hops = entry.hops &+ 1
+            // Path responses are always HEADER_2 carrying this instance's transport_id
+            // so the requester stores received_from = us and addresses traffic here.
+            response.headerType = .type2
+            response.transportType = .transport
+            response.transportID = transportInstanceID
+            try? interface.send(response)
             return
         }
 
-        // No cached announce and no local destination.
-        // If transport is enabled and the incoming interface mode is in DISCOVER_PATHS_FOR,
-        // forward the path request on all other interfaces to attempt discovery.
-        // Mirrors Python's `should_search_for_unknown` / discovery_path_requests logic.
-        // For all other modes (full, point-to-point, boundary) the request is silently ignored.
+        // Branch 3 (Python Transport.py:3032): the request is from a local client
+        // and we could not answer it ourselves — forward it to the mesh on every
+        // other interface (one shared random tag) so an upstream transport can
+        // resolve it. Runs regardless of transportEnabled: carrying its clients'
+        // path requests onto the network is the whole point of a shared instance.
+        if fromLocal {
+            var requestTag = Data(count: Constants.truncatedHashLength)
+            _ = requestTag.withUnsafeMutableBytes {
+                SecRandomCopyBytes(kSecRandomDefault, Constants.truncatedHashLength, $0.baseAddress!)
+            }
+            for iface in interfaces where iface !== interface && iface.isOnline {
+                try? requestPath(for: target, onInterface: iface, tag: requestTag)
+            }
+            return
+        }
+
+        // Branch 4 (Python Transport.py:3041): transport-enabled recursive
+        // discovery for an unknown destination. The incoming tag is reused on the
+        // forwarded requests so cross-hop dedup / loop prevention works.
+        // For non-discovering interface modes the request is silently ignored.
         // RNS 1.3.6: `recursive_prs` forces discovery regardless of interface mode.
         let shouldDiscover = transportEnabled
             && (interface.recursivePrs || InterfaceMode.discoverPathsFor.contains(interface.mode))
@@ -3137,8 +3153,16 @@ public final class Transport {
             let now = Date().timeIntervalSince1970
             for iface in interfaces where iface !== interface && iface.isOnline && iface.isRoutingEndpoint {
                 if shouldEgressLimitPR(on: iface, now: now) { continue }
-                try? requestPath(for: target, onInterface: iface)
+                try? requestPath(for: target, onInterface: iface, tag: tag)
             }
+            return
+        }
+
+        // Branch 5 (Python Transport.py:3069): we are not the client's origin, but
+        // we serve local clients — forward the request down to them so a connected
+        // client that owns the destination can answer.
+        for iface in localClientServingInterfaces(excluding: interface) {
+            try? requestPath(for: target, onInterface: iface)
         }
     }
 
