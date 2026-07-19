@@ -398,6 +398,13 @@ public struct ResourceAdvertisement: Equatable {
             isResponse:  (f & 0x10) != 0,
             hasMetadata: (f & 0x20) != 0
         )
+        // Sanity cap against corrupt/hostile advertisements: a single transfer's
+        // declared size cannot legitimately exceed 3× the max efficient (segment)
+        // size. Mirrors Python ResourceAdvertisement.unpack (commit 3a36c367):
+        // `if adv.t > Resource.MAX_EFFICIENT_SIZE*3: raise ValueError("Invalid transfer size")`.
+        guard adv.transferSize <= UInt64(ResourceTransfer.maxEfficientSize * 3) else {
+            throw MsgPack.Error.typeMismatch
+        }
         return adv
     }
 }

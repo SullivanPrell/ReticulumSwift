@@ -61,6 +61,12 @@ public final class ResourceTransfer {
     public private(set) var status: Status = .idle
     public private(set) var advertisement: ResourceAdvertisement?
 
+    /// True when this transfer is the RECEIVER of an incoming resource (set once an
+    /// advertisement is received). Senders leave this false. Mirrors the inverse of
+    /// Python's `Resource.initiator`: on cancel a receiver emits RESOURCE_RCL while a
+    /// sender emits RESOURCE_ICL.
+    private var isReceiver: Bool = false
+
     /// Wall-clock time when data transfer began (first REQ sent/received).
     /// Used to compute `link.expectedRate` on completion. Mirrors Python `Resource.started_transferring`.
     private var startedTransferring: Date?
@@ -342,6 +348,7 @@ public final class ResourceTransfer {
         status = .advertised
         retriesLeft = maxAdvRetries
         lastActivity = Date()
+        guard ensureLinkActive() else { return }
         try link.send(adv.pack(), context: .resourceAdvertisement)
         startWatchdog()
     }
@@ -409,14 +416,19 @@ public final class ResourceTransfer {
             let segment = partIndex / hml
             let hashmapStart = segment * hml
             let hashmapEnd = min((segment + 1) * hml, mapHashes.count)
-            if hashmapStart < hashmapEnd {
-                let hmuHashmap = mapHashes[hashmapStart ..< hashmapEnd].reduce(Data(), +)
-                let hmuPayload = resourceHash + MsgPack.encode(.array([
-                    .uint(UInt64(segment)),
-                    .bytes(hmuHashmap)
-                ]))
-                try? link.send(hmuPayload, context: .resourceHashmapUpdate)
+            guard hashmapStart < hashmapEnd else {
+                // Degenerate/empty HMU request — abort rather than silently skip.
+                // Mirrors Python `request()` (`if not hashmap: cancel()`).
+                cancel(reason: "resource HMU error")
+                return
             }
+            let hmuHashmap = mapHashes[hashmapStart ..< hashmapEnd].reduce(Data(), +)
+            let hmuPayload = resourceHash + MsgPack.encode(.array([
+                .uint(UInt64(segment)),
+                .bytes(hmuHashmap)
+            ]))
+            guard ensureLinkActive() else { return }
+            try? link.send(hmuPayload, context: .resourceHashmapUpdate)
         }
 
         // If proof already arrived (loopback) leave the completed status alone.
@@ -496,6 +508,7 @@ public final class ResourceTransfer {
             fail("unparseable advertisement")
             return
         }
+        isReceiver = true
         advertisement = adv
         resourceHash = adv.resourceHash
         totalParts = Int(adv.partCount)
@@ -575,12 +588,23 @@ public final class ResourceTransfer {
     /// Called by Link when a RESOURCE_HMU arrives (decrypted plaintext starting with resourceHash).
     internal func handleHashmapUpdate(_ data: Data) {
         guard status == .transferring else { return }
+        // Only process a hashmap update we actually requested; unsolicited or
+        // duplicate HMUs are ignored. Mirrors Python `hashmap_update_packet`
+        // gating on `self.waiting_for_hmu` (commit 3a36c367).
+        guard waitingForHMU else { return }
         guard data.count > Constants.hashLength else { return }
         let payload = data.dropFirst(Constants.hashLength)
         guard case .array(let arr) = (try? MsgPack.decode(Data(payload))),
               arr.count >= 2,
               case .uint(let segIdx) = arr[0],
               case .bytes(let hmap) = arr[1] else { return }
+
+        // An HMU carrying fewer than one full map-hash is invalid — abort the
+        // transfer. Mirrors Python `hashmap_update` (`if hashes < 1: cancel()`).
+        guard hmap.count >= ResourceTransfer.mapHashLength else {
+            cancel(reason: "invalid HMU received")
+            return
+        }
 
         let segLen = ResourceAdvertisement.hashmapMaxLength
         var offset = 0
@@ -657,6 +681,7 @@ public final class ResourceTransfer {
         reqData.append(contentsOf: resourceHash)
         reqData.append(contentsOf: requestedHashes)
 
+        guard ensureLinkActive() else { return }
         try? link.send(reqData, context: .resourceRequest)
     }
 
@@ -812,11 +837,33 @@ public final class ResourceTransfer {
         onComplete?(self)
     }
 
+    /// Aborts the transfer (via `fail`) when the link is no longer active, before
+    /// attempting a send. Mirrors Python `Resource.ensure_link()` (commit 3a36c367).
+    /// Returns `true` when the link is usable.
+    @discardableResult
+    private func ensureLinkActive() -> Bool {
+        if link.status != .active {
+            fail("invalid link state, aborting transfer")
+            return false
+        }
+        return true
+    }
+
     private func fail(_ reason: String) {
         guard case .failed = status else {
             let s = Status.failed(reason: reason)
             status = s
             stopWatchdog()
+            // Notify the peer that this transfer is being aborted so it concludes
+            // promptly instead of waiting for its own watchdog timeout. A receiver
+            // sends RESOURCE_RCL, a sender sends RESOURCE_ICL — mirrors Python
+            // Resource.cancel() (the RCL branch was added in commit bb289744; the
+            // ICL branch is long-standing). Only emitted while the link is active
+            // and the resource hash is known.
+            if link.status == .active, !resourceHash.isEmpty {
+                let cancelContext: Packet.Context = isReceiver ? .resourceReceiverCancel : .resourceInitiatorCancel
+                try? link.send(resourceHash, context: cancelContext)
+            }
             link.unregisterOutgoingResource(self)
             link.unregisterIncomingResource(self)
             onFailed?(self, s)

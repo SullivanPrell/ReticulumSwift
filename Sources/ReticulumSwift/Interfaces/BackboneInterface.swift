@@ -190,7 +190,7 @@ public final class BackboneInterface: Interface {
             guard let self, !self.isStopped else { return }
 
             if let data, !data.isEmpty {
-                let frames = self.decoder.feed(data)
+                let frames = self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize)
                 for frame in frames {
                     self.rxBytes += frame.count
                     if let h = self.rawInboundHandler {

@@ -51,8 +51,13 @@ final class ReticulumLogTests: XCTestCase {
     func testLogDebugRawValue() {
         XCTAssertEqual(Reticulum.logDebug.rawValue, 6)
     }
+    func testLogPathingRawValue() {
+        // Python: RNS.LOG_PATHING = 7 (inserted between DEBUG and EXTREME)
+        XCTAssertEqual(Reticulum.logPathing.rawValue, 7)
+    }
     func testLogExtremeRawValue() {
-        XCTAssertEqual(Reticulum.logExtreme.rawValue, 7)
+        // Python: RNS.LOG_EXTREME = 8 (shifted from 7 when LOG_PATHING was added)
+        XCTAssertEqual(Reticulum.logExtreme.rawValue, 8)
     }
 
     // MARK: - Routing through logHandler
@@ -109,7 +114,8 @@ final class ReticulumLogTests: XCTestCase {
         XCTAssertLessThan(Reticulum.logNotice, Reticulum.logInfo)
         XCTAssertLessThan(Reticulum.logInfo, Reticulum.logVerbose)
         XCTAssertLessThan(Reticulum.logVerbose, Reticulum.logDebug)
-        XCTAssertLessThan(Reticulum.logDebug, Reticulum.logExtreme)
+        XCTAssertLessThan(Reticulum.logDebug, Reticulum.logPathing)
+        XCTAssertLessThan(Reticulum.logPathing, Reticulum.logExtreme)
     }
 }
 
