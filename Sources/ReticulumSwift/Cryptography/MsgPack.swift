@@ -177,7 +177,15 @@ public enum MsgPack {
         return value
     }
 
-    private static func read(_ data: Data, cursor: inout Int) throws -> Value {
+    /// Maximum msgpack nesting depth. Legitimate Reticulum payloads are shallow
+    /// (a few levels at most); bounding recursion means a maliciously deeply
+    /// nested wire payload (e.g. thousands of nested 1-element arrays in a tiny
+    /// packet) can't overflow the stack and crash the process. Wire-neutral: no
+    /// valid packet approaches this depth.
+    private static let maxDepth = 64
+
+    private static func read(_ data: Data, cursor: inout Int, depth: Int = 0) throws -> Value {
+        guard depth <= MsgPack.maxDepth else { throw Error.truncated }
         guard cursor < data.endIndex else { throw Error.truncated }
         let tag = data[cursor]; cursor += 1
 
@@ -185,9 +193,9 @@ public enum MsgPack {
         case 0x00...0x7F: return .uint(UInt64(tag))
         case 0xE0...0xFF: return .int(Int64(Int8(bitPattern: tag)))
         case 0x80...0x8F:
-            return try readMap(count: Int(tag & 0x0F), data: data, cursor: &cursor)
+            return try readMap(count: Int(tag & 0x0F), data: data, cursor: &cursor, depth: depth)
         case 0x90...0x9F:
-            return try readArray(count: Int(tag & 0x0F), data: data, cursor: &cursor)
+            return try readArray(count: Int(tag & 0x0F), data: data, cursor: &cursor, depth: depth)
         case 0xA0...0xBF:
             return try readString(byteCount: Int(tag & 0x1F), data: data, cursor: &cursor)
         case 0xC0: return .nil
@@ -220,10 +228,10 @@ public enum MsgPack {
         case 0xD9: return try readString(byteCount: Int(try readUInt(8, data, &cursor)), data: data, cursor: &cursor)
         case 0xDA: return try readString(byteCount: Int(try readUInt(16, data, &cursor)), data: data, cursor: &cursor)
         case 0xDB: return try readString(byteCount: Int(try readUInt(32, data, &cursor)), data: data, cursor: &cursor)
-        case 0xDC: return try readArray(count: Int(try readUInt(16, data, &cursor)), data: data, cursor: &cursor)
-        case 0xDD: return try readArray(count: Int(try readUInt(32, data, &cursor)), data: data, cursor: &cursor)
-        case 0xDE: return try readMap(count: Int(try readUInt(16, data, &cursor)), data: data, cursor: &cursor)
-        case 0xDF: return try readMap(count: Int(try readUInt(32, data, &cursor)), data: data, cursor: &cursor)
+        case 0xDC: return try readArray(count: Int(try readUInt(16, data, &cursor)), data: data, cursor: &cursor, depth: depth)
+        case 0xDD: return try readArray(count: Int(try readUInt(32, data, &cursor)), data: data, cursor: &cursor, depth: depth)
+        case 0xDE: return try readMap(count: Int(try readUInt(16, data, &cursor)), data: data, cursor: &cursor, depth: depth)
+        case 0xDF: return try readMap(count: Int(try readUInt(32, data, &cursor)), data: data, cursor: &cursor, depth: depth)
         default:
             throw Error.unsupportedType(tag)
         }
@@ -252,7 +260,7 @@ public enum MsgPack {
         return .bytes(slice)
     }
 
-    private static func readArray(count: Int, data: Data, cursor: inout Int) throws -> Value {
+    private static func readArray(count: Int, data: Data, cursor: inout Int, depth: Int) throws -> Value {
         var values: [Value] = []
         // Bound the pre-allocation by the bytes actually remaining: every array
         // element occupies at least one wire byte, so a legitimate `count` can
@@ -262,19 +270,19 @@ public enum MsgPack {
         // and the loop reads exactly `count` elements — throwing .truncated as soon
         // as the bytes run out, so a malformed count can't spin either.
         values.reserveCapacity(min(count, max(0, data.endIndex - cursor)))
-        for _ in 0..<count { values.append(try read(data, cursor: &cursor)) }
+        for _ in 0..<count { values.append(try read(data, cursor: &cursor, depth: depth + 1)) }
         return .array(values)
     }
 
-    private static func readMap(count: Int, data: Data, cursor: inout Int) throws -> Value {
+    private static func readMap(count: Int, data: Data, cursor: inout Int, depth: Int) throws -> Value {
         var pairs: [(Value, Value)] = []
         // Bound the pre-allocation by remaining bytes (each pair is at least two
         // wire bytes, so remaining-bytes is a safe upper bound). Prevents the same
         // reserveCapacity allocation-DoS as readArray. Wire-neutral.
         pairs.reserveCapacity(min(count, max(0, data.endIndex - cursor)))
         for _ in 0..<count {
-            let k = try read(data, cursor: &cursor)
-            let v = try read(data, cursor: &cursor)
+            let k = try read(data, cursor: &cursor, depth: depth + 1)
+            let v = try read(data, cursor: &cursor, depth: depth + 1)
             pairs.append((k, v))
         }
         return .map(pairs)

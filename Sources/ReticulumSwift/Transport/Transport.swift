@@ -1917,6 +1917,7 @@ public final class Transport {
         sweepExpiredReceipts()
         sweepKnownRatchets()
         sweepReverseTable()
+        sweepLinkRoutes()
         processAnnounceRetries()
         drainAnnounceQueues()
         sampleInterfaceSpeeds()
@@ -2047,13 +2048,33 @@ public final class Transport {
         reverseTableLock.unlock()
     }
 
+    /// Drop link-relay routes whose last activity is older than the link timeout.
+    /// Mirrors Python's `link_table` cull in `Transport.jobs()` (LINK_TIMEOUT =
+    /// STALE_TIME * 1.25). Without this a transport relay accumulates one permanent
+    /// `linkRoutes` entry per link it ever forwarded — an unbounded memory leak over
+    /// days/weeks. `lastHeard` is refreshed on every forwarded link packet
+    /// (including keepalives), so a live relayed link is never swept. Wire-neutral.
+    private func sweepLinkRoutes(now: Date = Date()) {
+        let maxAge = Link.staleTime * 1.25
+        lock.lock(); defer { lock.unlock() }
+        linkRoutes = linkRoutes.filter { now.timeIntervalSince($0.value.lastHeard) < maxAge }
+    }
+
     // MARK: - Path expiry
 
     /// Remove paths whose `expires` timestamp has passed.
     /// Mirrors Python's path table expiry in `Transport.jobs()`.
     public func sweepExpiredPaths(now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
-        paths = paths.filter { !$0.value.isExpired }
+        let expired = paths.compactMap { $0.value.isExpired ? $0.key : nil }
+        for dh in expired {
+            paths.removeValue(forKey: dh)
+            // Drop the parallel cached announce so it can't outlive its path.
+            // (An orphaned cachedAnnounce is never served — handlePathRequest
+            // requires a live path entry — so dropping it is wire-neutral, and it
+            // stops cachedAnnounces from growing unbounded alongside path expiry.)
+            cachedAnnounces.removeValue(forKey: dh)
+        }
     }
 
     /// Expire the path for a specific destination immediately.

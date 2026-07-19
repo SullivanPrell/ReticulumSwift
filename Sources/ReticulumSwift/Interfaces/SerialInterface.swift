@@ -168,7 +168,10 @@ public final class SerialInterface: Interface {
     /// HDLC frames are extracted; each complete frame is delivered to
     /// `rawInboundHandler` (IFAC path) or parsed and sent to `inboundHandler`.
     public func feedBytes(_ data: Data) {
-        let frames = decoder.feed(data)
+        // Pass the hardware MTU / IFAC size so the HDLC decoder bounds its receive
+        // buffer (as the TCP/Backbone interfaces already do). Without this an
+        // unterminated or garbage frame grows the decoder buffer without limit.
+        let frames = decoder.feed(data, hwMtu: hwMtu, ifacSize: ifacSize)
         for frame in frames {
             rxBytes   += frame.count  // Python counts payload bytes
             rxPackets += 1
