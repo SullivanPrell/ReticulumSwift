@@ -402,6 +402,64 @@ final class WeaveInterfaceTests: XCTestCase {
         XCTAssertEqual(dev.endpoints[epID]?.viaSwitchID, swID)
     }
 
+    // MARK: - WeaveDevice.pruneEndpoints
+
+    func testPruneEndpointsRemovesOnlyStale() {
+        let dev   = WeaveDevice()
+        let stale = Data(repeating: 0x11, count: 8)
+        let fresh = Data(repeating: 0x22, count: 8)
+        dev.endpointAlive(endpointID: stale)
+        dev.endpointAlive(endpointID: fresh)
+        XCTAssertEqual(dev.endpoints.count, 2)
+
+        // Back-date `stale` beyond the timeout (mirrors how the peer-timeout
+        // tests back-date peers[...].lastSeen).
+        dev.endpoints[stale]?.lastSeen =
+            Date(timeIntervalSinceNow: -(WeaveInterface.peeringTimeout + 5))
+
+        let removed = dev.pruneEndpoints(olderThan: WeaveInterface.peeringTimeout)
+
+        XCTAssertEqual(removed, [stale])
+        XCTAssertNil(dev.endpoints[stale])
+        XCTAssertNotNil(dev.endpoints[fresh])
+        XCTAssertEqual(dev.endpoints.count, 1)
+    }
+
+    func testPruneEndpointsKeepsFreshEndpoints() {
+        let dev  = WeaveDevice()
+        let epID = Data(repeating: 0x33, count: 8)
+        dev.endpointAlive(endpointID: epID)
+
+        // Nothing is older than the timeout → nothing pruned.
+        let removed = dev.pruneEndpoints(olderThan: WeaveInterface.peeringTimeout)
+
+        XCTAssertTrue(removed.isEmpty)
+        XCTAssertNotNil(dev.endpoints[epID])
+    }
+
+    func testPeerJobsPrunesStaleDeviceEndpoints() throws {
+        let iface = WeaveInterface(name: "W0", port: "/dev/null",
+                                   transport: MockWeaveTransport())
+        try iface.start()
+
+        let epID = Data(repeating: 0x44, count: 8)
+        // Learning an endpoint records it on the device *and* spawns a peer.
+        iface.device.endpointAlive(endpointID: epID)
+        XCTAssertNotNil(iface.device.endpoints[epID])
+        XCTAssertEqual(iface.peerCount, 1)
+
+        // Back-date both registries beyond the timeout.
+        let stale = Date(timeIntervalSinceNow: -(WeaveInterface.peeringTimeout + 1))
+        iface.device.endpoints[epID]?.lastSeen = stale
+        iface.peers[epID]?.lastSeen            = stale
+
+        iface.peerJobs()
+
+        // peerJobs prunes the device endpoint registry, not just the peer table.
+        XCTAssertNil(iface.device.endpoints[epID])
+        XCTAssertEqual(iface.peerCount, 0)
+    }
+
     func testHandleLogCpuStat() {
         let dev = WeaveDevice()
         dev.handleLog(WeaveLogFrame(timestamp: 0, level: 0,
