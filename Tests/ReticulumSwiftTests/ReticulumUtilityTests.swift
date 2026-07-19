@@ -66,7 +66,7 @@ final class ReticulumUtilityTests: XCTestCase {
 
         Reticulum.globalLogLevel = .notice  // 3
         XCTAssertFalse(Reticulum.sl(level: .debug),   "debug (6) > notice (3) → should not log")
-        XCTAssertFalse(Reticulum.sl(level: .extreme), "extreme (7) > notice (3) → should not log")
+        XCTAssertFalse(Reticulum.sl(level: .extreme), "extreme (8) > notice (3) → should not log")
     }
 
     func testSlDefaultLevelIsNotice() {
@@ -131,5 +131,9 @@ final class ReticulumUtilityTests: XCTestCase {
     func testLoglevelNameExtreme() {
         // Python uses "[Extra]" for LOG_EXTREME
         XCTAssertEqual(Reticulum.loglevelname(.extreme), "[Extra]   ")
+    }
+    func testLoglevelNamePathing() {
+        // Python: loglevelname(LOG_PATHING) == "[Pathing] "
+        XCTAssertEqual(Reticulum.loglevelname(.pathing), "[Pathing] ")
     }
 }

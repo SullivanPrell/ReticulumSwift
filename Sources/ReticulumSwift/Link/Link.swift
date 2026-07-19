@@ -1172,10 +1172,17 @@ public final class Link {
         case .linkIdentify:
             handleRemoteIdentify(plaintext)
         case .resourceAdvertisement:
-            if let adv = try? ResourceAdvertisement.unpack(plaintext) {
+            do {
+                let adv = try ResourceAdvertisement.unpack(plaintext)
                 if adv.isRequest {
-                    // Incoming request via Resource — create a dedicated receiver.
-                    handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
+                    // Incoming request via Resource — only accept when the destination
+                    // actually has request handlers registered; otherwise the whole
+                    // request resource would be downloaded and then dropped with no
+                    // handler to dispatch it. Mirrors Python Link.py `if self.destination.request_handlers`
+                    // (commit 3a36c367).
+                    if !destination.requestHandlers.isEmpty {
+                        handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
+                    }
                 } else if adv.isResponse, let reqID = adv.requestID {
                     // Incoming response via Resource — route to pending request.
                     handleIncomingResponseResource(adv: adv, rawAdv: plaintext, requestID: reqID)
@@ -1197,8 +1204,18 @@ public final class Link {
                         }
                     }
                 }
-            } else {
-                for rt in incomingResources { rt.receiveAdvertisement(plaintext) }
+            } catch {
+                // Malformed / invalid resource advertisement on an authenticated link.
+                // Forward to any pre-registered receiver; otherwise tear the link down —
+                // garbage on an authenticated link is treated as a hard error. Mirrors
+                // Python's try/except-teardown around RESOURCE_ADV handling (commit 3a36c367),
+                // paired with the ResourceAdvertisement transfer-size cap.
+                if !incomingResources.isEmpty {
+                    for rt in incomingResources { rt.receiveAdvertisement(plaintext) }
+                } else {
+                    Reticulum.log("Invalid resource advertisement on \(self), tearing down link", level: .debug)
+                    try? teardown()
+                }
             }
         case .resourceRequest:
             let reqData = plaintext
@@ -1326,6 +1343,11 @@ public final class Link {
             try? teardown()
             return
         }
+        // Link identify is applied at most once: an already-established remote
+        // identity is never overwritten and the callback fires only on the first
+        // valid identify. Mirrors Python Link.py guard `if self.__remote_identity == None`
+        // (commit bb289744), preventing a peer from re-identifying over an active link.
+        guard remoteIdentity == nil else { return }
         remoteIdentity = identity
         onRemoteIdentified?(self, identity)
     }
@@ -1410,6 +1432,11 @@ public final class Link {
     /// The packet body is `encrypt(link_id)` — the peer verifies the
     /// plaintext matches its own link id before honoring the close.
     public func teardown() throws {
+        // Idempotency: a link that is already closed does not re-run close()
+        // (which would re-fire onClosed and re-unregister) nor re-emit a
+        // LINKCLOSE packet. Mirrors Python Link.py `if self.status == Link.CLOSED: return`
+        // (commit bb289744).
+        if status == .closed { return }
         guard let linkID, let transport else {
             if teardownReason == nil { teardownReason = .initiatorClosed }
             close()

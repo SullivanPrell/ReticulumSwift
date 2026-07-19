@@ -6,7 +6,7 @@ public final class Reticulum {
     public static let version = "0.1.0"
 
     public enum LogLevel: Int, Comparable, Sendable {
-        case none = -1, critical = 0, error, warning, notice, info, verbose, debug, extreme
+        case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme
         public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
@@ -26,7 +26,9 @@ public final class Reticulum {
     public static let logVerbose: LogLevel = .verbose
     /// Python: `RNS.LOG_DEBUG = 6`
     public static let logDebug: LogLevel = .debug
-    /// Python: `RNS.LOG_EXTREME = 7`
+    /// Python: `RNS.LOG_PATHING = 7`
+    public static let logPathing: LogLevel = .pathing
+    /// Python: `RNS.LOG_EXTREME = 8`
     public static let logExtreme: LogLevel = .extreme
 
     // MARK: - Logging
@@ -63,6 +65,7 @@ public final class Reticulum {
             case .info:      prefix = "[INFO]"
             case .verbose:   prefix = "[VERBOSE]"
             case .debug:     prefix = "[DEBUG]"
+            case .pathing:   prefix = "[PATHING]"
             case .extreme:   prefix = "[EXTREME]"
             case .none:      prefix = "[NONE]"
             }
@@ -427,7 +430,8 @@ loglevel = 4
         case .info:     return "[Info]    "
         case .verbose:  return "[Verbose] "
         case .debug:    return "[Debug]   "
-        case .extreme:  return "[Extra]   "   // Python uses "[Extra]" for LOG_EXTREME
+        case .pathing:  return "[Pathing] "   // Python LOG_PATHING = 7
+        case .extreme:  return "[Extra]   "   // Python uses "[Extra]" for LOG_EXTREME (now 8)
         case .none:     return "[None]    "
         }
     }

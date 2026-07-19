@@ -135,6 +135,7 @@ public final class TCPServerInterface: Interface {
         let spawned = SpawnedClient(
             conn: conn,
             queue: DispatchQueue(label: "ReticulumSwift.TCPServerInterface.\(name).\(clientIndex)", target: queue),
+            hwMtu: hwMtu, ifacSize: ifacSize,
             onFrame: { [weak clientIface] frame in
                 guard let ci = clientIface else { return }
                 ci.rxBytes += frame.count
@@ -240,12 +241,18 @@ final class SpawnedClient {
     private let onFrame: (Data) -> Void
     private let onClose: (SpawnedClient) -> Void
     private let decoder = HDLC.FrameDecoder()
+    /// Received-frame length bounds (Python TCPInterface HW_MTU + ifac_size).
+    private let hwMtu: Int?
+    private let ifacSize: Int
 
     init(conn: NWConnection, queue: DispatchQueue,
+         hwMtu: Int? = 262_144, ifacSize: Int = 0,
          onFrame: @escaping (Data) -> Void,
          onClose: @escaping (SpawnedClient) -> Void) {
         self.conn = conn
         self.queue = queue
+        self.hwMtu = hwMtu
+        self.ifacSize = ifacSize
         self.onFrame = onFrame
         self.onClose = onClose
     }
@@ -277,7 +284,7 @@ final class SpawnedClient {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
             guard let self else { return }
             if let data, !data.isEmpty {
-                for frame in self.decoder.feed(data) {
+                for frame in self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize) {
                     self.onFrame(frame)
                 }
             }

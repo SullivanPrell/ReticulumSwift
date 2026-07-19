@@ -58,13 +58,34 @@ public enum HDLC {
 
         public init() {}
 
-        public func feed(_ bytes: Data) -> [Data] {
+        /// Feed received bytes and return any complete frames.
+        ///
+        /// When `hwMtu` is supplied, two received-side safeguards from Python's
+        /// `TCPInterface.check_frame_len` / read-loop (RNS 1.3.9, commit a5ed0a43)
+        /// are applied:
+        ///  - a completed frame longer than `hwMtu + ifacSize` is dropped
+        ///    (oversized frames that the interface cannot legitimately carry);
+        ///  - an in-frame buffer that grows past `2 * hwMtu` without a closing
+        ///    FLAG is discarded, bounding memory against an unterminated/garbage
+        ///    partial frame.
+        ///
+        /// Passing `hwMtu == nil` (the default) preserves the original unbounded
+        /// behavior. These bounds never affect the bytes sent on the wire; a
+        /// compliant peer never emits a frame that violates them.
+        public func feed(_ bytes: Data, hwMtu: Int? = nil, ifacSize: Int = 0) -> [Data] {
             var frames: [Data] = []
             for byte in bytes {
                 if byte == HDLC.flag {
                     if inFrame {
                         if !buffer.isEmpty {
-                            frames.append(HDLC.unescape(buffer))
+                            let frame = HDLC.unescape(buffer)
+                            if let hwMtu, frame.count > hwMtu + ifacSize {
+                                // Oversized frame — drop it (Python check_frame_len
+                                // upper bound). Small frames are still emitted and
+                                // rejected downstream by Packet.unpack.
+                            } else {
+                                frames.append(frame)
+                            }
                         }
                         buffer.removeAll(keepingCapacity: true)
                         inFrame = false
@@ -73,6 +94,11 @@ public enum HDLC {
                     }
                 } else if inFrame {
                     buffer.append(byte)
+                    // Bound a runaway/unterminated partial frame.
+                    if let hwMtu, buffer.count > hwMtu * 2 {
+                        buffer.removeAll(keepingCapacity: true)
+                        inFrame = false
+                    }
                 }
             }
             return frames

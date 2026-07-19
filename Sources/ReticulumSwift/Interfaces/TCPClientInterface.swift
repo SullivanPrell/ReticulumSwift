@@ -88,7 +88,7 @@ public final class TCPClientInterface: Interface {
         connection?.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
             guard let self else { return }
             if let data, !data.isEmpty {
-                let frames = self.decoder.feed(data)
+                let frames = self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize)
                 for frame in frames {
                     self.rxBytes += frame.count   // Python counts unframed payload bytes
                     if let h = self.rawInboundHandler {
