@@ -344,10 +344,19 @@ public final class Transport {
     /// Per-interface announce and path-request frequency tracker.
     /// Mirrors Python's Interface.ia_freq_deque etc.
     private var ifaceFreqTrackers: [ObjectIdentifier: InterfaceFreqTracker] = [:]
+    /// Guards the `ifaceFreqTrackers` dictionary (not the trackers themselves —
+    /// each `InterfaceFreqTracker` is internally synchronized). Held alone; a
+    /// holder snapshots the tracker reference and releases before calling into it.
+    private let trackersLock = NSLock()
 
     /// Per-interface ingress burst control state.
     /// Mirrors Python's per-interface ic_burst_active, held_announces, etc.
     private var ingressStates: [ObjectIdentifier: IngressControlState] = [:]
+    /// Guards `ingressStates`. A leaf lock: `processHeldAnnounces` re-enters
+    /// `handleIncoming` (which takes `lock`), so a holder MUST snapshot/select
+    /// under this lock, release it, then make the reentrant call — never held
+    /// across a callout, and never acquires `lock` while held.
+    private let ingressLock = NSLock()
 
     /// Root directory for the on-disk packet cache (announce sub-cache).
     /// Mirrors Python's `RNS.Reticulum.cachepath`.
@@ -357,6 +366,18 @@ public final class Transport {
     /// Blackholed identities: identity hash → BlackholeEntry.
     /// Mirrors Python's `Transport.blackholed_identities` dict.
     public var blackholedIdentities: [Data: BlackholeEntry] = [:]
+    /// Guards `blackholedIdentities`. Leaf lock — held alone, never across a
+    /// callout, never acquires `lock` while held (when both a paths read and a
+    /// blackhole read are needed, `lock` is taken and released first).
+    let blackholeLock = NSLock()
+
+    /// Guards the pure-metrics bookkeeping that is touched from inbound/outbound
+    /// threads and the jobs timer with no relation to routing decisions:
+    /// `trafficRxBytes`, `trafficTxBytes`, the packet PHY caches, the per-interface
+    /// speed sample/current maps, the aggregate `speedRx`/`speedTx`, and the
+    /// announce rate table. Leaf lock: never held across a callout, and no holder
+    /// acquires `lock`. If both are ever needed, `lock` is the outer lock.
+    private let metricsLock = NSLock()
 
     /// Cumulative bytes received across all interfaces (inbound).
     /// Mirrors Python's `Transport.traffic_rxb`.
@@ -684,9 +705,9 @@ public final class Transport {
     /// Clear transient in-memory queues (held announces, receipts, reverse table).
     /// Mirrors Python `Transport.void_queues()`.
     public func voidQueues() {
-        lock.lock()
+        ingressLock.lock()
         for key in ingressStates.keys { ingressStates[key]?.heldAnnounces = [:] }
-        lock.unlock()
+        ingressLock.unlock()
         receiptsLock.lock()
         receipts.removeAll()
         receiptsLock.unlock()
@@ -749,7 +770,7 @@ public final class Transport {
 
     /// Returns aggregate transport-level traffic statistics.
     public func getTransportStats() -> TransportStats {
-        lock.lock(); defer { lock.unlock() }
+        metricsLock.lock(); defer { metricsLock.unlock() }
         return TransportStats(
             trafficRxBytes: trafficRxBytes,
             trafficTxBytes: trafficTxBytes,
@@ -763,8 +784,10 @@ public final class Transport {
     public func getInterfaceStats() -> [InterfaceStats] {
         lock.lock()
         let snapshot = interfaces
-        let trackers = ifaceFreqTrackers
         lock.unlock()
+        trackersLock.lock()
+        let trackers = ifaceFreqTrackers
+        trackersLock.unlock()
         return snapshot.map { iface in
             let tracker = trackers[ObjectIdentifier(iface)]
             return InterfaceStats(
@@ -796,6 +819,7 @@ public final class Transport {
                                        interface: any Interface,
                                        now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard let target = interface.announceRateTarget else { return false }
+        metricsLock.lock(); defer { metricsLock.unlock() }
 
         if announceRateTable[destinationHash] == nil {
             // First announce — seed the entry, never blocked.
@@ -838,7 +862,8 @@ public final class Transport {
 
     /// Test helper: number of timestamps stored for `destinationHash` in the rate table.
     public func announceRateTimestampCount(for destinationHash: Data) -> Int {
-        announceRateTable[destinationHash]?.timestamps.count ?? 0
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return announceRateTable[destinationHash]?.timestamps.count ?? 0
     }
 
     /// Snapshot of a rate table entry for external consumption.
@@ -854,7 +879,7 @@ public final class Transport {
     /// Returns a snapshot of the current announce rate table.
     /// Mirrors Python's `Reticulum.get_rate_table()`.
     public func getRateTable() -> [RateTableEntry] {
-        lock.lock(); defer { lock.unlock() }
+        metricsLock.lock(); defer { metricsLock.unlock() }
         return announceRateTable.map { (hash, entry) in
             RateTableEntry(
                 destinationHash: hash,
@@ -878,7 +903,7 @@ public final class Transport {
     }
 
     public func testInjectRateEntry(for destinationHash: Data, last: TimeInterval) {
-        lock.lock(); defer { lock.unlock() }
+        metricsLock.lock(); defer { metricsLock.unlock() }
         announceRateTable[destinationHash] = AnnounceRateEntry(
             last: last, violations: 0, blockedUntil: 0, timestamps: [last]
         )
@@ -909,8 +934,11 @@ public final class Transport {
                                    now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard interface.ingressControl else { return false }
         let key = ObjectIdentifier(interface)
+        // Lock order: ingressLock > trackersLock > tracker's own lock. The
+        // read-modify-write on `state` is held under ingressLock throughout.
+        ingressLock.lock(); defer { ingressLock.unlock() }
         guard var state = ingressStates[key],
-              let tracker = ifaceFreqTrackers[key] else { return false }
+              let tracker = tracker(for: interface) else { return false }
 
         let age = now - interface.createdAt.timeIntervalSince1970
         let threshold = age < IngressControlState.icNewTime
@@ -946,8 +974,9 @@ public final class Transport {
                                      now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard interface.ingressControl else { return false }
         let key = ObjectIdentifier(interface)
+        ingressLock.lock(); defer { ingressLock.unlock() }
         guard var state = ingressStates[key],
-              let tracker = ifaceFreqTrackers[key] else { return false }
+              let tracker = tracker(for: interface) else { return false }
 
         let age = now - interface.createdAt.timeIntervalSince1970
         let threshold = age < IngressControlState.icNewTime
@@ -979,8 +1008,7 @@ public final class Transport {
     public func shouldEgressLimitPR(on interface: any Interface,
                                     now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard interface.egressControl else { return false }
-        let key = ObjectIdentifier(interface)
-        guard let tracker = ifaceFreqTrackers[key] else { return false }
+        guard let tracker = tracker(for: interface) else { return false }
         let freq = tracker.outgoingPathRequestFrequency(now: now)
         if freq > interface.ecPrFreq {
             return tracker.outgoingPathRequestSampleCount >= InterfaceFreqTracker.minSamples
@@ -1000,6 +1028,7 @@ public final class Transport {
         //   if announce_packet.hops >= RNS.Transport.PATHFINDER_M-1: return
         guard Int(packet.hops) < Transport.pathfinderM - 1 else { return }
         let key = ObjectIdentifier(interface)
+        ingressLock.lock(); defer { ingressLock.unlock() }
         guard var state = ingressStates[key] else { return }
         if state.heldAnnounces[destinationHash] != nil {
             // Overwrite existing held announce for same destination (most recent wins).
@@ -1018,40 +1047,48 @@ public final class Transport {
     public func processHeldAnnounces(for interface: any Interface,
                                      now: TimeInterval = Date().timeIntervalSince1970) -> Packet? {
         let key = ObjectIdentifier(interface)
-        guard var state = ingressStates[key] else { return nil }
-        guard !state.heldAnnounces.isEmpty, now > state.heldRelease else { return nil }
+        // Do the whole select-and-remove under ingressLock, then RELEASE it before
+        // re-injecting: handleIncoming re-enters the transport (and takes `lock` /
+        // ingressLock again), so holding ingressLock across it would deadlock.
+        var released: Packet? = nil
+        ingressLock.lock()
+        if var state = ingressStates[key],
+           !state.heldAnnounces.isEmpty, now > state.heldRelease {
+            // Check current frequency is below threshold before releasing.
+            let age = now - interface.createdAt.timeIntervalSince1970
+            let threshold = age < IngressControlState.icNewTime
+                ? IngressControlState.icBurstFreqNew
+                : IngressControlState.icBurstFreq
+            let freq = tracker(for: interface)?.incomingAnnounceFrequency(now: now) ?? 0
+            if freq < threshold,
+               // Select lowest-hop held announce (mirrors Python's min-hops selection).
+               let (bestHash, bestPacket) = state.heldAnnounces
+                   .min(by: { $0.value.hops < $1.value.hops }) {
+                state.heldAnnounces.removeValue(forKey: bestHash)
+                state.heldRelease = now + IngressControlState.icHeldReleaseInterval
+                ingressStates[key] = state
+                released = bestPacket
+            }
+        }
+        ingressLock.unlock()
 
-        // Check current frequency is below threshold before releasing.
-        let tracker = ifaceFreqTrackers[key]
-        let age = now - interface.createdAt.timeIntervalSince1970
-        let threshold = age < IngressControlState.icNewTime
-            ? IngressControlState.icBurstFreqNew
-            : IngressControlState.icBurstFreq
-        let freq = tracker?.incomingAnnounceFrequency(now: now) ?? 0
-        guard freq < threshold else { return nil }
-
-        // Select lowest-hop held announce (mirrors Python's min-hops selection).
-        guard let (bestHash, bestPacket) = state.heldAnnounces
-            .min(by: { $0.value.hops < $1.value.hops }) else { return nil }
-
-        state.heldAnnounces.removeValue(forKey: bestHash)
-        state.heldRelease = now + IngressControlState.icHeldReleaseInterval
-        ingressStates[key] = state
-
-        // Re-inject the packet into the transport pipeline.
-        handleIncoming(packet: bestPacket, from: interface)
-        return bestPacket
+        // Re-inject the packet into the transport pipeline (outside ingressLock).
+        if let released {
+            handleIncoming(packet: released, from: interface)
+        }
+        return released
     }
 
     /// Number of held announces on `interface`. Test helper.
     public func heldAnnounceCount(for interface: any Interface) -> Int {
-        ingressStates[ObjectIdentifier(interface)]?.heldAnnounces.count ?? 0
+        ingressLock.lock(); defer { ingressLock.unlock() }
+        return ingressStates[ObjectIdentifier(interface)]?.heldAnnounces.count ?? 0
     }
 
     /// Returns the ingress control state for `interface`, or nil if not yet created.
     /// Mirrors Python's per-interface `ic_burst_active` etc. fields.
     public func ingressState(for interface: any Interface) -> IngressControlState? {
-        lock.lock(); defer { lock.unlock() }
+        ingressLock.lock(); defer { ingressLock.unlock() }
         return ingressStates[ObjectIdentifier(interface)]
     }
 
@@ -1059,12 +1096,13 @@ public final class Transport {
     /// Mirrors Python's `len(interface.announce_queue)`.
     public func announceQueueCount(for interface: any Interface) -> Int? {
         queueLock.lock(); defer { queueLock.unlock() }
-        return announceQueues[interface.name]?.entries.count
+        return announceQueues[interface.name]?.count
     }
 
     /// Force-set the `heldRelease` timestamp for `interface`. Test helper.
     public func forceHeldRelease(for interface: any Interface, to timestamp: TimeInterval) {
         let key = ObjectIdentifier(interface)
+        ingressLock.lock(); defer { ingressLock.unlock() }
         guard var state = ingressStates[key] else { return }
         state.heldRelease = timestamp
         ingressStates[key] = state
@@ -1078,9 +1116,14 @@ public final class Transport {
     ///
     /// - Parameter now: Injection point for testing; defaults to `Date().timeIntervalSince1970`.
     public func sampleInterfaceSpeeds(now: TimeInterval = Date().timeIntervalSince1970) {
+        // Snapshot the interface list under `lock`, then mutate all speed/traffic
+        // metrics under `metricsLock` (never both held at once).
+        lock.lock()
+        let snapshot = interfaces
+        lock.unlock()
+        metricsLock.lock(); defer { metricsLock.unlock() }
         var totalRxSpeed: Double = 0
         var totalTxSpeed: Double = 0
-        let snapshot = interfaces
         for iface in snapshot {
             let key = ObjectIdentifier(iface)
             let currentRx = iface.rxBytes
@@ -1110,13 +1153,15 @@ public final class Transport {
     /// Current RX speed for `interface` in bits/sec.
     /// Mirrors Python's `Interface.current_rx_speed`.
     public func currentRxSpeed(for interface: any Interface) -> Double {
-        ifaceCurrentRxSpeed[ObjectIdentifier(interface)] ?? 0
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return ifaceCurrentRxSpeed[ObjectIdentifier(interface)] ?? 0
     }
 
     /// Current TX speed for `interface` in bits/sec.
     /// Mirrors Python's `Interface.current_tx_speed`.
     public func currentTxSpeed(for interface: any Interface) -> Double {
-        ifaceCurrentTxSpeed[ObjectIdentifier(interface)] ?? 0
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return ifaceCurrentTxSpeed[ObjectIdentifier(interface)] ?? 0
     }
 
     // MARK: - Interface frequency notifications (mirrors Python Interface.received_announce / sent_announce etc.)
@@ -1124,62 +1169,70 @@ public final class Transport {
     /// Notify that an announce was received on `interface`.
     /// Mirrors Python's `interface.received_announce()` call in `Transport.inbound`.
     public func notifyIncomingAnnounce(on interface: any Interface) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordIncomingAnnounce()
+        tracker(for: interface)?.recordIncomingAnnounce()
     }
 
     /// Overload accepting an explicit timestamp — used by tests and internally.
     public func notifyIncomingAnnounce(on interface: any Interface, at t: TimeInterval) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordIncomingAnnounce(at: t)
+        tracker(for: interface)?.recordIncomingAnnounce(at: t)
     }
 
     /// Notify that an announce was sent out on `interface`.
     /// Mirrors Python's `interface.sent_announce()` call in `Transport.outbound`.
     public func notifyOutgoingAnnounce(on interface: any Interface) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordOutgoingAnnounce()
+        tracker(for: interface)?.recordOutgoingAnnounce()
     }
 
     public func notifyOutgoingAnnounce(on interface: any Interface, at t: TimeInterval) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordOutgoingAnnounce(at: t)
+        tracker(for: interface)?.recordOutgoingAnnounce(at: t)
     }
 
     /// Notify that a path request was received on `interface`.
     /// Mirrors Python's `interface.received_path_request()` call.
     public func notifyIncomingPathRequest(on interface: any Interface) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordIncomingPathRequest()
+        tracker(for: interface)?.recordIncomingPathRequest()
     }
 
     public func notifyIncomingPathRequest(on interface: any Interface, at t: TimeInterval) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordIncomingPathRequest(at: t)
+        tracker(for: interface)?.recordIncomingPathRequest(at: t)
     }
 
     /// Notify that a path request was sent out on `interface`.
     /// Mirrors Python's `interface.sent_path_request()` call.
     public func notifyOutgoingPathRequest(on interface: any Interface) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordOutgoingPathRequest()
+        tracker(for: interface)?.recordOutgoingPathRequest()
     }
 
     public func notifyOutgoingPathRequest(on interface: any Interface, at t: TimeInterval) {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.recordOutgoingPathRequest(at: t)
+        tracker(for: interface)?.recordOutgoingPathRequest(at: t)
     }
 
     /// Incoming announce frequency (Hz) for the given interface.
     public func incomingAnnounceFrequency(for interface: any Interface) -> Double {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.incomingAnnounceFrequency() ?? 0
+        tracker(for: interface)?.incomingAnnounceFrequency() ?? 0
     }
 
     /// Outgoing announce frequency (Hz) for the given interface.
     public func outgoingAnnounceFrequency(for interface: any Interface) -> Double {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.outgoingAnnounceFrequency() ?? 0
+        tracker(for: interface)?.outgoingAnnounceFrequency() ?? 0
     }
 
     /// Incoming path-request frequency (Hz) for the given interface.
     public func incomingPathRequestFrequency(for interface: any Interface) -> Double {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.incomingPathRequestFrequency() ?? 0
+        tracker(for: interface)?.incomingPathRequestFrequency() ?? 0
     }
 
     /// Outgoing path-request frequency (Hz) for the given interface.
     public func outgoingPathRequestFrequency(for interface: any Interface) -> Double {
-        ifaceFreqTrackers[ObjectIdentifier(interface)]?.outgoingPathRequestFrequency() ?? 0
+        tracker(for: interface)?.outgoingPathRequestFrequency() ?? 0
+    }
+
+    /// Look up the frequency tracker for `interface` under `trackersLock`, then
+    /// release the lock before the caller touches the (internally-synchronized)
+    /// tracker — so `trackersLock` is never held across a callout.
+    private func tracker(for interface: any Interface) -> InterfaceFreqTracker? {
+        trackersLock.lock(); defer { trackersLock.unlock() }
+        return ifaceFreqTrackers[ObjectIdentifier(interface)]
     }
 
     // MARK: - Management utilities
@@ -1228,19 +1281,22 @@ public final class Transport {
     /// Returns the cached RSSI for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_rssi(packet_hash)`.
     public func getPacketRssi(packetHash: Data) -> Float? {
-        packetRssiCache.last(where: { $0.hash == packetHash })?.rssi
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return packetRssiCache.last(where: { $0.hash == packetHash })?.rssi
     }
 
     /// Returns the cached SNR for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_snr(packet_hash)`.
     public func getPacketSnr(packetHash: Data) -> Float? {
-        packetSnrCache.last(where: { $0.hash == packetHash })?.snr
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return packetSnrCache.last(where: { $0.hash == packetHash })?.snr
     }
 
     /// Returns the cached quality for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_q(packet_hash)`.
     public func getPacketQ(packetHash: Data) -> Float? {
-        packetQCache.last(where: { $0.hash == packetHash })?.quality
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return packetQCache.last(where: { $0.hash == packetHash })?.quality
     }
 
     // MARK: - Path responsiveness
@@ -1432,11 +1488,22 @@ public final class Transport {
                 self?.deregister(interface: peerIface)
             }
         }
+        // register()/deregister() run on network-callback threads (TCP-server
+        // accept, I2P peer up/down) concurrently with the jobs timer and inbound
+        // handlers that iterate these collections. Guard each under its own lock
+        // (no two held at once; `synthesizeTunnel` runs outside all of them).
+        let key = ObjectIdentifier(interface)
+        lock.lock()
         interfaces.append(interface)
+        lock.unlock()
         // Create a frequency tracker for this interface.
-        ifaceFreqTrackers[ObjectIdentifier(interface)] = InterfaceFreqTracker()
+        trackersLock.lock()
+        ifaceFreqTrackers[key] = InterfaceFreqTracker()
+        trackersLock.unlock()
         // Create ingress burst control state for this interface.
-        ingressStates[ObjectIdentifier(interface)] = IngressControlState()
+        ingressLock.lock()
+        ingressStates[key] = IngressControlState()
+        ingressLock.unlock()
         // Synthesize a tunnel for interfaces that request it.
         if interface.wantsTunnel {
             synthesizeTunnel(interface)
@@ -1446,13 +1513,21 @@ public final class Transport {
     /// Remove an interface from the transport. Cleans up all per-interface state.
     /// Mirrors Python `Transport.remove_interface()` added in e7a317f0.
     public func deregister(interface iface: any Interface) {
-        interfaces.removeAll { $0 === iface }
         let key = ObjectIdentifier(iface)
+        lock.lock()
+        interfaces.removeAll { $0 === iface }
+        lock.unlock()
+        trackersLock.lock()
         ifaceFreqTrackers.removeValue(forKey: key)
+        trackersLock.unlock()
+        ingressLock.lock()
         ingressStates.removeValue(forKey: key)
+        ingressLock.unlock()
+        metricsLock.lock()
         ifaceSpeedSamples.removeValue(forKey: key)
         ifaceCurrentRxSpeed.removeValue(forKey: key)
         ifaceCurrentTxSpeed.removeValue(forKey: key)
+        metricsLock.unlock()
     }
 
     /// Derive IFAC credentials from a network name and/or access key and attach
@@ -2317,14 +2392,18 @@ public final class Transport {
     }()
 
     func handleIncoming(packet: Packet, from interface: Interface) {
-        // Count inbound traffic bytes. Mirrors Python `Transport.traffic_rxb` accumulation.
-        // We count per-packet here (unlike Python which samples interface diffs) so the counter
-        // is immediately accurate without waiting for the jobs loop.
-        if let raw = try? packet.pack() { trafficRxBytes += raw.count }
-
-        // Cache packet PHY stats (RSSI/SNR/quality) for the truncated packet hash.
-        // Uses truncated hash (16 bytes) to match Python's packet.packet_hash semantics.
-        if let pktHash = try? packet.truncatedPacketHash() {
+        // Count inbound traffic bytes + cache packet PHY stats under `metricsLock`.
+        // handleIncoming runs concurrently for every inbound frame across
+        // interfaces, so these counter/array mutations must be serialized. The
+        // packet pack/hash work is done first (outside the lock) so the lock is
+        // held only for the mutations. `lock` is NOT held here.
+        // Mirrors Python `Transport.traffic_rxb` accumulation and the
+        // local_client_rssi/snr/q caches (LOCAL_CLIENT_CACHE_MAXSIZE = 512).
+        let rawByteCount = (try? packet.pack())?.count
+        let pktHash = try? packet.truncatedPacketHash()
+        metricsLock.lock()
+        if let n = rawByteCount { trafficRxBytes += n }
+        if let pktHash {
             if let rssi = packet.rssi {
                 packetRssiCache.append((hash: pktHash, rssi: rssi))
                 if packetRssiCache.count > Transport.localClientCacheMaxSize { packetRssiCache.removeFirst() }
@@ -2338,6 +2417,7 @@ public final class Transport {
                 if packetQCache.count > Transport.localClientCacheMaxSize { packetQCache.removeFirst() }
             }
         }
+        metricsLock.unlock()
 
         // Drop duplicate or replayed packets. Link handshake packets
         // (LRR and LRPROOF) are exempt so retransmissions work.
@@ -2728,7 +2808,12 @@ public final class Transport {
                 // early-return would swallow the reviving announce before the
                 // ladder ever runs.
                 let existingHops = paths[decoded.destinationHash]?.hops ?? UInt8.max
+                // pathStates is guarded by pathStatesLock everywhere (mark*/
+                // pathIsUnresponsive); read it under that lock even while holding
+                // `lock` (order: lock > pathStatesLock, a pure leaf).
+                pathStatesLock.lock()
                 let unresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
+                pathStatesLock.unlock()
                 if packet.hops >= existingHops, !unresponsive {
                     lock.unlock()
                     return  // Already seen, not a better path, and path is responsive
@@ -2795,7 +2880,9 @@ public final class Transport {
             //    (the existing path's source may have moved or the old path is stale).
             // 5. Update if the existing path is expired.
             let shouldUpdate: Bool
+            pathStatesLock.lock()
             let isUnresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
+            pathStatesLock.unlock()
             let existingBlobs = paths[decoded.destinationHash]?.randomBlobs ?? []
             if let existing = paths[decoded.destinationHash] {
                 // Path-table freshness gate — a faithful port of Python's
@@ -2873,7 +2960,9 @@ public final class Transport {
                 lock.lock()
                 // Reset responsiveness state when path is updated with fresh announce.
                 // Mirrors Python: Transport.mark_path_unknown_state(destination_hash)
+                pathStatesLock.lock()
                 pathStates[decoded.destinationHash] = Transport.stateUnknown
+                pathStatesLock.unlock()
             }
             // Attach app_data to the identity so callers can retrieve it via
             // Identity.recallAppData / Transport.recallAppData.  Python stores this in
@@ -3524,8 +3613,11 @@ public final class Transport {
         queueLock.lock()
         let snapshot = announceQueues
         queueLock.unlock()
+        lock.lock()
+        let ifaceSnapshot = interfaces
+        lock.unlock()
         for (name, queue) in snapshot {
-            guard let iface = interfaces.first(where: { $0.name == name && $0.isOnline }) else {
+            guard let iface = ifaceSnapshot.first(where: { $0.name == name && $0.isOnline }) else {
                 continue
             }
             let packets = queue.drain(now: now, bitrate: iface.bitrate)

@@ -290,14 +290,17 @@ public final class RPCServer {
 
         case "blackholed_identities":
             guard let t = transport else { return msgpack(.map([])) }
-            let pairs: [(MsgPack.Value, MsgPack.Value)] = t.blackholedIdentities.keys.map {
+            t.blackholeLock.lock()
+            let keys = Array(t.blackholedIdentities.keys)
+            t.blackholeLock.unlock()
+            let pairs: [(MsgPack.Value, MsgPack.Value)] = keys.map {
                 (.bytes($0), .bool(true))
             }
             return msgpack(.map(pairs))
 
         case "is_blackholed":
             if let t = transport, let hash = binValue(kv["identity_hash"]) {
-                return msgpack(.bool(t.blackholedIdentities[hash] != nil))
+                return msgpack(.bool(t.isBlackholed(hash)))
             }
             return msgpack(.bool(false))
 

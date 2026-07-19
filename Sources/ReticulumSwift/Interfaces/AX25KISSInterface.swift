@@ -200,14 +200,16 @@ public final class AX25KISSInterface: Interface {
         transport.setReadCallback { [weak self] data in
             self?.feedBytes(data)
         }
-        isOnline = true
+        lock.lock(); isOnline = true; lock.unlock()
         sendKISSConfig()
-        interfaceReady = true
+        lock.lock(); interfaceReady = true; lock.unlock()
     }
 
     public func stop() {
+        lock.lock()
         isOnline       = false
         interfaceReady = false
+        lock.unlock()
         transport.close()
     }
 
@@ -260,9 +262,13 @@ public final class AX25KISSInterface: Interface {
     ///
     /// Python: `process_outgoing(data)` — builds AX.25 UI frame then KISS-escapes.
     public func processOutgoing(_ data: Data) {
-        guard isOnline else { return }
+        // Decide send-vs-enqueue atomically under `lock` (see KISSInterface):
+        // `interfaceReady` and `packetQueue` are one flow-control state.
+        lock.lock()
+        guard isOnline else { lock.unlock(); return }
         if interfaceReady {
             if flowControl { interfaceReady = false }
+            lock.unlock()
 
             // Build AX.25 address field
             let dstAddr = AX25.encodeAddress(callsign: AX25.dstCallsign,
@@ -285,7 +291,8 @@ public final class AX25KISSInterface: Interface {
             txBytes   += data.count   // Python counts original payload
             txPackets += 1
         } else {
-            lock.lock(); packetQueue.append(data); lock.unlock()
+            packetQueue.append(data)
+            lock.unlock()
         }
     }
 
@@ -297,8 +304,8 @@ public final class AX25KISSInterface: Interface {
             return
         }
         let next = packetQueue.removeFirst()
-        lock.unlock()
         interfaceReady = true
+        lock.unlock()
         processOutgoing(next)
     }
 

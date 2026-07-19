@@ -41,6 +41,13 @@ final class AnnounceQueue {
     private var queuedDests: Set<Data> = []
     var allowedAt: TimeInterval = 0   // wall clock when next announce may go out
 
+    /// Guards `entries`, `queuedDests`, and `allowedAt`. The Transport fetches a
+    /// queue object (under its own `queueLock`), releases that lock, then calls
+    /// `shouldTransmit`/`drain` here — so the same queue is mutated concurrently
+    /// by the inbound thread and the jobs-timer thread. Self-contained leaf lock:
+    /// the bodies below make no callouts, so it never nests with any other lock.
+    private let lock = NSLock()
+
     init() {}
 
     /// Attempt to transmit `packet` now. If the interface is rate-limited,
@@ -58,6 +65,7 @@ final class AnnounceQueue {
     ) -> Bool {
         // Zero/unknown bitrate: transmit immediately without rate limiting.
         guard bitrate > 0 else { return true }
+        lock.lock(); defer { lock.unlock() }
 
         let hasQueued = !entries.isEmpty
         if !hasQueued && now >= allowedAt {
@@ -83,6 +91,7 @@ final class AnnounceQueue {
     }
 
     /// Add or replace an entry, keeping the queue bounded and deduped.
+    /// Caller must hold `lock` (called only from `shouldTransmit`).
     private func enqueue(_ entry: Entry) {
         if queuedDests.contains(entry.destinationHash) {
             // Duplicate destination already queued — keep the fresher announce.
@@ -102,6 +111,7 @@ final class AnnounceQueue {
     /// Drain entries that are now within their transmission window.
     /// Returns packets that should be sent now, updating `allowedAt`.
     func drain(now: TimeInterval, bitrate: Int) -> [Packet] {
+        lock.lock(); defer { lock.unlock() }
         guard bitrate > 0 else {
             let all = entries.map { $0.raw }
             entries.removeAll()
@@ -125,6 +135,6 @@ final class AnnounceQueue {
         return out
     }
 
-    var isEmpty: Bool { entries.isEmpty }
-    var count: Int { entries.count }
+    var isEmpty: Bool { lock.lock(); defer { lock.unlock() }; return entries.isEmpty }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return entries.count }
 }

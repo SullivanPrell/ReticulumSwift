@@ -41,15 +41,37 @@ public final class PacketReceipt {
     /// (public key only), looked up from `Transport.knownIdentities`.
     public var peerIdentity: Identity?
 
+    /// Guards `status`, `proved`, `concludedAt`, and the two callbacks so that
+    /// the terminal-state transition is check-and-set atomic. Without this,
+    /// `checkTimeout()` (jobs thread, under Transport.receiptsLock) races
+    /// `validateExplicit/ImplicitProof` (receive thread) over `status`, allowing
+    /// both a delivery and a timeout callback to fire. Self-contained: callbacks
+    /// are always invoked OUTSIDE this lock, so it never nests with any other.
+    private let stateLock = NSLock()
+
     /// Fires when the receipt is proved/delivered. If the proof already
     /// arrived before this callback was set (synchronous loopback), it
     /// is replayed immediately on assignment.
+    private var _onDelivery: ((PacketReceipt) -> Void)?
     public var onDelivery: ((PacketReceipt) -> Void)? {
-        didSet {
-            if status == .delivered { onDelivery?(self) }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _onDelivery }
+        set {
+            // Set the callback and decide whether to replay atomically, then
+            // fire outside the lock. This closes the window where a concurrent
+            // markDelivered() and this assignment could each miss the other and
+            // drop the callback entirely.
+            stateLock.lock()
+            _onDelivery = newValue
+            let replay = (status == .delivered)
+            stateLock.unlock()
+            if replay { newValue?(self) }
         }
     }
-    public var onTimeout: ((PacketReceipt) -> Void)?
+    private var _onTimeout: ((PacketReceipt) -> Void)?
+    public var onTimeout: ((PacketReceipt) -> Void)? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _onTimeout }
+        set { stateLock.lock(); _onTimeout = newValue; stateLock.unlock() }
+    }
 
     // MARK: - Init
 
@@ -77,16 +99,18 @@ public final class PacketReceipt {
     /// Check whether the receipt has timed out. Called periodically by
     /// the Transport jobs loop. Matches Python's `PacketReceipt.check_timeout`.
     func checkTimeout() {
-        guard status == .sent else { return }
-        guard isTimedOut else { return }
+        stateLock.lock()
+        guard status == .sent, isTimedOut else { stateLock.unlock(); return }
         concludedAt = Date()
         status = timeout < 0 ? .culled : .failed
-        let cb = onTimeout
-        onTimeout = nil
+        let cb = _onTimeout
+        _onTimeout = nil
+        stateLock.unlock()
         DispatchQueue.global(qos: .utility).async { cb?(self) }
     }
 
     func cull() {
+        stateLock.lock(); defer { stateLock.unlock() }
         guard status == .sent else { return }
         concludedAt = Date()
         status = .culled
@@ -107,8 +131,7 @@ public final class PacketReceipt {
         guard proofHash == packetHash else { return false }
         guard let identity = peerIdentity else { return false }
         guard identity.validate(signature: signature, for: packetHash) else { return false }
-        markDelivered()
-        return true
+        return markDelivered()
     }
 
     /// Validate an implicit proof: just a 64-byte Ed25519 signature over the
@@ -122,17 +145,24 @@ public final class PacketReceipt {
         guard proof.count == PacketReceipt.implicitProofLength else { return false }
         guard let identity = peerIdentity else { return false }
         guard identity.validate(signature: proof, for: packetHash) else { return false }
-        markDelivered()
-        return true
+        return markDelivered()
     }
 
-    private func markDelivered() {
+    /// Atomic terminal-state commit. Returns `true` iff this call won the race
+    /// (transitioned from `.sent` to `.delivered`); a loser returns `false`
+    /// without firing a callback. The delivery callback fires outside the lock.
+    @discardableResult
+    private func markDelivered() -> Bool {
+        stateLock.lock()
+        guard status == .sent else { stateLock.unlock(); return false }
         status = .delivered
         proved = true
         concludedAt = Date()
-        let cb = onDelivery
-        onDelivery = nil
+        let cb = _onDelivery
+        _onDelivery = nil
+        stateLock.unlock()
         DispatchQueue.global(qos: .utility).async { cb?(self) }
+        return true
     }
 
     // MARK: - RTT

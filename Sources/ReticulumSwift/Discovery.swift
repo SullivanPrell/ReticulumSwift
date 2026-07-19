@@ -152,6 +152,12 @@ public final class BlackholeUpdater {
     private static func mergeList(_ data: Data, into transport: Transport, source: Data) {
         // The response is a msgpack map of { identity_hash_bytes -> entry_dict }.
         guard case .map(let entries) = (try? MsgPack.decode(data)) else { return }
+        // This runs on a Link response-callback thread, concurrently with
+        // Transport's own thread and the RPC server. Serialize the whole
+        // check-then-insert under Transport's blackhole lock (the loop body has
+        // no callouts, so holding the lock across it is deadlock-free).
+        transport.blackholeLock.lock()
+        defer { transport.blackholeLock.unlock() }
         for (k, v) in entries {
             guard case .bytes(let hashBytes) = k else { continue }
             guard transport.blackholedIdentities[hashBytes] == nil else { continue }

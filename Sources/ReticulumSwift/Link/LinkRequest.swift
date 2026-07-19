@@ -45,25 +45,59 @@ public final class RequestReceipt {
     public let path: String
     public let sentAt: Date
     public let requestSize: Int
-    public private(set) var responseSize: Int?
-    public private(set) var progress: Double = 0
-    public private(set) var concludedAt: Date?
-    public private(set) var responseConcludedAt: Date?
-    public private(set) var status: Status = .sent
+
+    /// Guards every mutable field and callback below. `timeoutFired()` runs on a
+    /// global queue while `deliverReady()`/`fail()`/`updateProgress()` run on the
+    /// receive thread; without synchronization they race on `status` (allowing
+    /// both onResponse and onFailed to fire) and a lockless read of the
+    /// `Status`-with-`Data` enum can tear. Callbacks always fire OUTSIDE this
+    /// lock, so it never nests with any other lock.
+    private let stateLock = NSLock()
+
+    private var _responseSize: Int?
+    public var responseSize: Int? { stateLock.lock(); defer { stateLock.unlock() }; return _responseSize }
+    private var _progress: Double = 0
+    public var progress: Double { stateLock.lock(); defer { stateLock.unlock() }; return _progress }
+    private var _concludedAt: Date?
+    public var concludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return _concludedAt }
+    private var _responseConcludedAt: Date?
+    public var responseConcludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return _responseConcludedAt }
+    private var _status: Status = .sent
+    public var status: Status { stateLock.lock(); defer { stateLock.unlock() }; return _status }
 
     private var timeoutItem: DispatchWorkItem?
 
+    private var _onResponse: ((Data, RequestReceipt) -> Void)?
     public var onResponse: ((Data, RequestReceipt) -> Void)? {
-        didSet {
-            if case .ready(let d) = status { onResponse?(d, self) }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _onResponse }
+        set {
+            // Replay-if-already-ready decided atomically with the assignment,
+            // then fired outside the lock (closes the lost/double-callback window).
+            stateLock.lock()
+            _onResponse = newValue
+            var replay: Data? = nil
+            if case .ready(let d) = _status { replay = d }
+            stateLock.unlock()
+            if let d = replay { newValue?(d, self) }
         }
     }
+    private var _onFailed: ((String, RequestReceipt) -> Void)?
     public var onFailed: ((String, RequestReceipt) -> Void)? {
-        didSet {
-            if case .failed(let r) = status { onFailed?(r, self) }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _onFailed }
+        set {
+            stateLock.lock()
+            _onFailed = newValue
+            var replay: String? = nil
+            if case .failed(let r) = _status { replay = r }
+            stateLock.unlock()
+            if let r = replay { newValue?(r, self) }
         }
     }
-    public var onProgress: ((Double, RequestReceipt) -> Void)?
+    private var _onProgress: ((Double, RequestReceipt) -> Void)?
+    public var onProgress: ((Double, RequestReceipt) -> Void)? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _onProgress }
+        set { stateLock.lock(); _onProgress = newValue; stateLock.unlock() }
+    }
 
     public init(requestID: Data, path: String, requestSize: Int, timeout: TimeInterval? = nil) {
         self.requestID = requestID
@@ -78,45 +112,64 @@ public final class RequestReceipt {
     }
 
     func markDelivered() {
-        guard case .sent = status else { return }
-        status = .delivered
+        stateLock.lock(); defer { stateLock.unlock() }
+        guard case .sent = _status else { return }
+        _status = .delivered
     }
 
     func updateProgress(_ p: Double) {
-        progress = p
-        status = .receiving(p)
-        onProgress?(p, self)
+        stateLock.lock()
+        // Don't move backwards out of a terminal state.
+        switch _status {
+        case .ready, .failed: stateLock.unlock(); return
+        default: break
+        }
+        _progress = p
+        _status = .receiving(p)
+        let cb = _onProgress
+        stateLock.unlock()
+        cb?(p, self)
     }
 
     func deliverReady(_ data: Data, size: Int? = nil) {
+        stateLock.lock()
+        // Only conclude once, from a non-terminal state.
+        switch _status {
+        case .ready, .failed: stateLock.unlock(); return
+        default: break
+        }
         timeoutItem?.cancel()
         timeoutItem = nil
-        responseSize = size
-        responseConcludedAt = Date()
-        concludedAt = Date()
-        progress = 1.0
-        status = .ready(data)
-        onResponse?(data, self)
+        _responseSize = size
+        _responseConcludedAt = Date()
+        _concludedAt = Date()
+        _progress = 1.0
+        _status = .ready(data)
+        let cb = _onResponse
+        stateLock.unlock()
+        cb?(data, self)
     }
 
     func fail(_ reason: String) {
+        stateLock.lock()
+        // Only conclude once, from a non-terminal state (matches Python's guard;
+        // do not overwrite a delivered .ready result with a late timeout).
+        switch _status {
+        case .ready, .failed: stateLock.unlock(); return
+        default: break
+        }
         timeoutItem?.cancel()
         timeoutItem = nil
-        concludedAt = Date()
-        let prev = status
-        status = .failed(reason: reason)
-        // Only call onFailed if we transitioned from a non-terminal state.
-        switch prev {
-        case .ready, .failed: return
-        default: onFailed?(reason, self)
-        }
+        _concludedAt = Date()
+        _status = .failed(reason: reason)
+        let cb = _onFailed
+        stateLock.unlock()
+        cb?(reason, self)
     }
 
     private func timeoutFired() {
-        switch status {
-        case .ready, .failed: return
-        default: fail("timeout")
-        }
+        // fail() itself is guarded; calling it unconditionally is safe.
+        fail("timeout")
     }
 
     /// True if the response has been fully received.
