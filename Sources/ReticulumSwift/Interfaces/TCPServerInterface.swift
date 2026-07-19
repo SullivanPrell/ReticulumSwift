@@ -52,6 +52,10 @@ public final class TCPServerInterface: Interface {
 
     private var listener: NWListener?
     private let queue: DispatchQueue
+    /// Serial queue that all spawned clients' inbound deliveries funnel through,
+    /// so multiple client connections never invoke the (non-thread-safe) inbound
+    /// handler / Transport concurrently.
+    private let deliveryQueue = DispatchQueue(label: "ReticulumSwift.TCPServerInterface.delivery")
     private let lock = NSLock()
     private var spawned: [SpawnedClient] = []
     private var clientCounter = 0
@@ -136,13 +140,18 @@ public final class TCPServerInterface: Interface {
             conn: conn,
             queue: DispatchQueue(label: "ReticulumSwift.TCPServerInterface.\(name).\(clientIndex)", target: queue),
             hwMtu: hwMtu, ifacSize: ifacSize,
-            onFrame: { [weak clientIface] frame in
-                guard let ci = clientIface else { return }
-                ci.rxBytes += frame.count
-                if let h = ci.rawInboundHandler {
-                    h(frame, ci)
-                } else if let packet = try? Packet.unpack(frame) {
-                    ci.inboundHandler?(packet, ci)
+            onFrame: { [weak self, weak clientIface] frame in
+                guard let self, clientIface != nil else { return }
+                // Serialize cross-client delivery so Transport is never entered
+                // concurrently by two connections (order preserved per client).
+                self.deliveryQueue.async { [weak clientIface] in
+                    guard let ci = clientIface else { return }
+                    ci.rxBytes += frame.count
+                    if let h = ci.rawInboundHandler {
+                        h(frame, ci)
+                    } else if let packet = try? Packet.unpack(frame) {
+                        ci.inboundHandler?(packet, ci)
+                    }
                 }
             },
             onClose: { [weak self, weak clientIface] client in

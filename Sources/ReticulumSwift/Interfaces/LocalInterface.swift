@@ -39,6 +39,14 @@ public final class LocalInterface: Interface {
     private var reconnectTimer: DispatchSourceTimer?
     private var reconnectCount: Int = 0
     private var stopped = false
+    /// Guards `stopped`, `connection`, and `reconnectTimer`, which are touched
+    /// both from the caller thread (start/stop/send) and the interface's serial
+    /// queue (connect/stateUpdate/scheduleReconnect/receive). Without it, a
+    /// reconnect scheduled on the queue can assign `connection` just after
+    /// stop() nil'd it, leaking a connection that keeps reconnecting.
+    private let stateLock = NSLock()
+
+    private var isStopped: Bool { stateLock.lock(); defer { stateLock.unlock() }; return stopped }
 
     /// Python `LocalClientInterface.__str__` returns `"LocalInterface[<port>]"`.
     /// This is used by rnstatus to filter out the client-side local interface.
@@ -56,48 +64,64 @@ public final class LocalInterface: Interface {
     }
 
     public func start() throws {
+        stateLock.lock()
         stopped = false
         reconnectCount = 0
+        stateLock.unlock()
         connect()
     }
 
     public func stop() {
+        stateLock.lock()
         stopped = true
-        reconnectTimer?.cancel()
-        reconnectTimer = nil
-        connection?.cancel()
-        connection = nil
+        let timer = reconnectTimer; reconnectTimer = nil
+        let conn = connection; connection = nil
+        stateLock.unlock()
+        timer?.cancel()
+        conn?.cancel()
         isOnline = false
     }
 
     public func send(_ packet: Packet) throws {
-        guard let connection, isOnline else { return }
+        stateLock.lock()
+        let conn = connection
+        stateLock.unlock()
+        guard let conn, isOnline else { return }
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
         txBytes += raw.count
-        connection.send(content: framed, completion: .contentProcessed { _ in })
+        conn.send(content: framed, completion: .contentProcessed { _ in })
     }
 
     private func connect() {
-        guard !stopped else { return }
         let endpoint = NWEndpoint.hostPort(
             host: NWEndpoint.Host(host),
             port: NWEndpoint.Port(rawValue: port)!
         )
+        // Re-check `stopped` and publish the new connection atomically so a
+        // concurrent stop() either wins (we bail) or cancels the connection we
+        // just assigned (the .cancelled handler then sees stopped and bails).
+        stateLock.lock()
+        guard !stopped else { stateLock.unlock(); return }
         let conn = NWConnection(to: endpoint, using: .tcp)
         connection = conn
+        stateLock.unlock()
 
         conn.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             switch state {
             case .ready:
-                self.reconnectCount = 0
+                self.stateLock.lock(); self.reconnectCount = 0; self.stateLock.unlock()
                 self.isOnline = true
                 self.beginReceiveLoop()
             case .failed, .cancelled:
                 self.isOnline = false
-                guard !self.stopped else { return }
-                if let max = self.maxReconnectTries, self.reconnectCount >= max { return }
+                self.stateLock.lock()
+                let stopped = self.stopped
+                let count = self.reconnectCount
+                self.stateLock.unlock()
+                guard !stopped else { return }
+                if let max = self.maxReconnectTries, count >= max { return }
                 self.scheduleReconnect()
             default:
                 break
@@ -107,20 +131,25 @@ public final class LocalInterface: Interface {
     }
 
     private func scheduleReconnect() {
-        reconnectCount += 1
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + reconnectWait)
         timer.setEventHandler { [weak self] in
-            guard let self, !self.stopped else { return }
+            guard let self, !self.isStopped else { return }
             self.connect()
         }
         timer.resume()
+        stateLock.lock()
+        reconnectCount += 1
         reconnectTimer?.cancel()
         reconnectTimer = timer
+        stateLock.unlock()
     }
 
     private func beginReceiveLoop() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
+        stateLock.lock()
+        let conn = connection
+        stateLock.unlock()
+        conn?.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
             guard let self else { return }
             if let data, !data.isEmpty {
                 let frames = self.decoder.feed(data)
@@ -135,7 +164,7 @@ public final class LocalInterface: Interface {
             }
             if error != nil || isComplete {
                 self.isOnline = false
-                if !self.stopped {
+                if !self.isStopped {
                     self.scheduleReconnect()
                 }
                 return

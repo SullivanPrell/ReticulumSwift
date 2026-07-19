@@ -41,6 +41,10 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
     private let queue: DispatchQueue
+    /// Serial queue that all inbound frame deliveries funnel through, so the
+    /// shared `rxBytes` counter and the (non-thread-safe) inbound handler are
+    /// never invoked concurrently by multiple client connections.
+    private let deliveryQueue = DispatchQueue(label: "ReticulumSwift.PosixTCPServer.delivery")
     private let lock = NSLock()
     private var clients: [PosixClient] = []
 
@@ -145,11 +149,15 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
             queue: DispatchQueue(label: "ReticulumSwift.PosixTCPServer.client", target: queue),
             onFrame: { [weak self] data in
                 guard let self else { return }
-                self.rxBytes += data.count
-                if let h = self.rawInboundHandler {
-                    h(data, self)
-                } else if let p = try? Packet.unpack(data) {
-                    self.inboundHandler?(p, self)
+                // Funnel every client's delivery through one serial queue so the
+                // shared counter and inbound handler never run concurrently.
+                self.deliveryQueue.async {
+                    self.rxBytes += data.count
+                    if let h = self.rawInboundHandler {
+                        h(data, self)
+                    } else if let p = try? Packet.unpack(data) {
+                        self.inboundHandler?(p, self)
+                    }
                 }
             },
             onClose: { [weak self] c in

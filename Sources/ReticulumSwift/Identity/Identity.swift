@@ -18,17 +18,35 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// Application-supplied bytes attached to the most recent announce, if any.
     public var appData: Data?
 
+    /// Guards the mutable ratchet state (`_activeRatchetPrivateKey`,
+    /// `_previousRatchets`, `_activeRatchetTime`). `Identity` is `@unchecked
+    /// Sendable`, and the same identity is used by the send path (which rotates
+    /// the ratchet) and the receive path (which reads the key pool to decrypt)
+    /// concurrently — an unsynchronized read of the `Data?`/array while rotation
+    /// writes it can tear. Self-contained leaf lock: the guarded regions make no
+    /// callouts, so it never nests with any other lock. Internal helpers suffixed
+    /// `Locked` assume the caller already holds it (the lock is non-recursive).
+    private let ratchetLock = NSLock()
+
     /// Currently-active ratchet private key (32 bytes). Set by
     /// `rotateRatchet()`; the public part is what we publish in our
     /// next announce so peers will encrypt to it (forward secrecy).
-    public private(set) var activeRatchetPrivateKey: Data?
+    private var _activeRatchetPrivateKey: Data?
+    public private(set) var activeRatchetPrivateKey: Data? {
+        get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return _activeRatchetPrivateKey }
+        set { ratchetLock.lock(); _activeRatchetPrivateKey = newValue; ratchetLock.unlock() }
+    }
 
     /// Recently-rotated ratchet privates. Inbound encrypted messages
     /// may still be addressed to a previous ratchet for a short window
     /// after rotation, so we keep a few around for decrypt fallback.
     /// Bounded by `ratchetHistoryDepth` and aged out per
     /// `ratchetExpiry`.
-    public private(set) var previousRatchets: [HistoricalRatchet] = []
+    private var _previousRatchets: [HistoricalRatchet] = []
+    public private(set) var previousRatchets: [HistoricalRatchet] {
+        get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return _previousRatchets }
+        set { ratchetLock.lock(); _previousRatchets = newValue; ratchetLock.unlock() }
+    }
     public var ratchetHistoryDepth: Int = 8
 
     /// Mirrors Python's `RNS.Identity.RATCHET_EXPIRY` (30 days). Historical
@@ -42,7 +60,11 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     /// Wall-clock time the active ratchet was generated. Nil until the
     /// first rotation.
-    public private(set) var activeRatchetTime: Date?
+    private var _activeRatchetTime: Date?
+    public private(set) var activeRatchetTime: Date? {
+        get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return _activeRatchetTime }
+        set { ratchetLock.lock(); _activeRatchetTime = newValue; ratchetLock.unlock() }
+    }
 
     public struct HistoricalRatchet: Equatable {
         public let privateKey: Data
@@ -52,7 +74,8 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// Read-only view that flattens history into `[Data]` for callers
     /// that don't care about timestamps (decrypt path, persistence).
     public var previousRatchetPrivateKeys: [Data] {
-        previousRatchets.map { $0.privateKey }
+        ratchetLock.lock(); defer { ratchetLock.unlock() }
+        return _previousRatchets.map { $0.privateKey }
     }
 
     /// Rotate the active ratchet. Generates a fresh X25519 keypair,
@@ -61,16 +84,23 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     @discardableResult
     public func rotateRatchet() -> Data {
         let prv = Curve25519.KeyAgreement.PrivateKey()
-        if let existing = activeRatchetPrivateKey {
-            previousRatchets.insert(
+        ratchetLock.lock()
+        rotateRatchetLocked(to: prv.rawRepresentation)
+        ratchetLock.unlock()
+        return prv.publicKey.rawRepresentation
+    }
+
+    /// Perform the rotation bookkeeping. Caller must hold `ratchetLock`.
+    private func rotateRatchetLocked(to newPrivate: Data) {
+        if let existing = _activeRatchetPrivateKey {
+            _previousRatchets.insert(
                 HistoricalRatchet(privateKey: existing, retiredAt: Date()),
                 at: 0
             )
         }
-        activeRatchetPrivateKey = prv.rawRepresentation
-        activeRatchetTime = Date()
-        sweepExpiredRatchets()
-        return prv.publicKey.rawRepresentation
+        _activeRatchetPrivateKey = newPrivate
+        _activeRatchetTime = Date()
+        sweepExpiredRatchetsLocked()
     }
 
     /// Rotate only if `ratchetInterval` has elapsed since the last
@@ -79,29 +109,50 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// (rotated or not), or nil if the ratchet was never initialized.
     @discardableResult
     public func rotateRatchetIfNeeded(now: Date = Date()) -> Data? {
-        guard activeRatchetPrivateKey != nil else { return nil }
-        if let last = activeRatchetTime,
-           now.timeIntervalSince(last) < ratchetInterval {
-            return activeRatchetPublicKey
+        // Whole decision + rotation under one lock hold so the check and the
+        // rotate can't interleave with another thread's rotation.
+        let publicBytes: Data?
+        ratchetLock.lock()
+        if _activeRatchetPrivateKey == nil {
+            publicBytes = nil
+        } else if let last = _activeRatchetTime, now.timeIntervalSince(last) < ratchetInterval {
+            publicBytes = activeRatchetPublicKeyLocked()
+        } else {
+            let prv = Curve25519.KeyAgreement.PrivateKey()
+            rotateRatchetLocked(to: prv.rawRepresentation)
+            publicBytes = prv.publicKey.rawRepresentation
         }
-        return rotateRatchet()
+        ratchetLock.unlock()
+        return publicBytes
     }
 
     /// Drop historical ratchets older than `ratchetExpiry`, then trim
     /// the remainder to `ratchetHistoryDepth`.
     public func sweepExpiredRatchets(now: Date = Date()) {
-        previousRatchets.removeAll {
+        ratchetLock.lock(); defer { ratchetLock.unlock() }
+        sweepExpiredRatchetsLocked(now: now)
+    }
+
+    /// Sweep body. Caller must hold `ratchetLock`.
+    private func sweepExpiredRatchetsLocked(now: Date = Date()) {
+        _previousRatchets.removeAll {
             now.timeIntervalSince($0.retiredAt) > ratchetExpiry
         }
-        if previousRatchets.count > ratchetHistoryDepth {
-            previousRatchets.removeLast(previousRatchets.count - ratchetHistoryDepth)
+        if _previousRatchets.count > ratchetHistoryDepth {
+            _previousRatchets.removeLast(_previousRatchets.count - ratchetHistoryDepth)
         }
     }
 
     /// Public bytes of the active ratchet, or nil if `rotateRatchet`
     /// has never been called.
     public var activeRatchetPublicKey: Data? {
-        guard let prvBytes = activeRatchetPrivateKey,
+        ratchetLock.lock(); defer { ratchetLock.unlock() }
+        return activeRatchetPublicKeyLocked()
+    }
+
+    /// Compute the active ratchet public key. Caller must hold `ratchetLock`.
+    private func activeRatchetPublicKeyLocked() -> Data? {
+        guard let prvBytes = _activeRatchetPrivateKey,
               let prv = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: prvBytes)
         else { return nil }
         return prv.publicKey.rawRepresentation
@@ -110,9 +161,10 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// Combined private-key pool used during decrypt: the active
     /// ratchet first (most likely match), then the history.
     public var ratchetPrivateKeyPool: [Data] {
+        ratchetLock.lock(); defer { ratchetLock.unlock() }
         var pool: [Data] = []
-        if let active = activeRatchetPrivateKey { pool.append(active) }
-        pool.append(contentsOf: previousRatchetPrivateKeys)
+        if let active = _activeRatchetPrivateKey { pool.append(active) }
+        pool.append(contentsOf: _previousRatchets.map { $0.privateKey })
         return pool
     }
 

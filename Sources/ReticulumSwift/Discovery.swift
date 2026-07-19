@@ -58,6 +58,10 @@ public final class BlackholeUpdater {
 
     // MARK: - State
     public private(set) var isRunning = false
+    /// Incremented on every start(); a job loop exits when its captured
+    /// generation no longer matches, so a stop()+start() can't leave two loops
+    /// running. Guarded by `lock`.
+    private var generation = 0
     private var lastUpdates: [Data: Date] = [:]
     private let lock = NSLock()
     private weak var transport: Transport?
@@ -72,9 +76,11 @@ public final class BlackholeUpdater {
         lock.lock()
         guard !isRunning else { lock.unlock(); return }
         isRunning = true
+        generation &+= 1
+        let myGeneration = generation
         lock.unlock()
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + Self.initialWait) { [weak self] in
-            self?.runJob()
+            self?.runJob(generation: myGeneration)
         }
     }
 
@@ -84,8 +90,15 @@ public final class BlackholeUpdater {
 
     // MARK: - Job loop
 
-    private func runJob() {
-        while isRunning {
+    private func runJob(generation myGeneration: Int) {
+        while true {
+            // Read the run flag AND this loop's generation under the lock, so a
+            // stop() (or a stop()+start() that spawned a newer loop) makes this
+            // one exit cleanly.
+            lock.lock()
+            let keepRunning = isRunning && generation == myGeneration
+            lock.unlock()
+            guard keepRunning else { return }
             tick()
             Thread.sleep(forTimeInterval: Self.jobInterval)
         }

@@ -19,7 +19,11 @@ public final class RPCServer {
     private let port: UInt16
     private let authkey: Data
     private var listener: NWListener?
-    private let queue = DispatchQueue(label: "ReticulumSwift.RPCServer", attributes: .concurrent)
+    // Serial (not .concurrent): RPC connection handlers touch the Transport,
+    // whose accessors are individually synchronized but not mutually atomic.
+    // Serializing connections keeps RPC handlers from racing each other; each is
+    // a one-shot low-volume management call, so throughput is a non-issue.
+    private let queue = DispatchQueue(label: "ReticulumSwift.RPCServer")
 
     /// Live transport reference — set by `Reticulum.startRPC` after creation.
     /// Weak to avoid a retain cycle (Transport → Reticulum → RPCServer → Transport).
@@ -372,7 +376,12 @@ public final class RPCServer {
     private func buildInterfaceStats(_ t: Transport) -> MsgPack.Value {
         let now = Date().timeIntervalSince1970
 
-        let interfaceValues: [MsgPack.Value] = t.interfaces.map { iface in
+        // Snapshot the interface list under Transport's lock (register/deregister
+        // mutate it on network-callback threads).
+        t.lock.lock()
+        let ifaces = t.interfaces
+        t.lock.unlock()
+        let interfaceValues: [MsgPack.Value] = ifaces.map { iface in
             var pairs: [(MsgPack.Value, MsgPack.Value)] = []
 
             func kv(_ k: String, _ v: MsgPack.Value) { pairs.append((.string(k), v)) }
