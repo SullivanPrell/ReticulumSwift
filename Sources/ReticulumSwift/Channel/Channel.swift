@@ -584,12 +584,23 @@ public final class LinkChannelOutlet: ChannelOutlet {
 
     public func send(_ raw: Data) -> ChannelPacketHandle {
         let handle = ChannelPacketHandle(raw: raw)
-        try? link?.send(raw, context: .channel)
+        // Send via the Link's channel path so we learn the sent packet's hash and
+        // can match the returning delivery proof (see Link.channelProofWaiters).
+        // Without this the handle would never transition to .delivered, the
+        // Channel send window (WINDOW = 2) would never drain, and the 3rd send
+        // would throw linkNotReady. See swift_devel bug 005.
+        if let hash = link?.sendChannelData(raw) {
+            link?.trackChannelProof(hash: hash, handle: handle)
+        }
         return handle
     }
 
     public func resend(_ handle: ChannelPacketHandle) {
-        try? link?.send(handle.raw, context: .channel)
+        // Retransmission re-encrypts to a fresh ciphertext (random IV) and hence a
+        // fresh packet hash, so re-register the new hash for proof matching.
+        if let hash = link?.sendChannelData(handle.raw) {
+            link?.trackChannelProof(hash: hash, handle: handle)
+        }
     }
 
     public var mdu: Int { Constants.linkMdu }

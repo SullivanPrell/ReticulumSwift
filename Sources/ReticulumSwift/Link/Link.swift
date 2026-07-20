@@ -411,6 +411,16 @@ public final class Link {
     /// Channel attached to this link (lazy; created by `getChannel()`). Guarded by `stateLock`.
     private var _channel: Channel?
 
+    /// Full packet-hash → the `ChannelPacketHandle` awaiting a delivery proof.
+    /// Populated by `sendChannelData` (via `trackChannelProof`), matched by an
+    /// inbound explicit link-data PROOF in `handleChannelProof`, and pruned on
+    /// delivery / teardown. This is the Link-layer analog of Python's
+    /// `packet.receipt` for CHANNEL packets: Transport only creates receipts for
+    /// SINGLE-destination packets, so a link/channel packet's proof is matched
+    /// and signature-validated here (against the link peer's signing key)
+    /// instead. Guarded by `stateLock`.
+    private var channelProofWaiters: [Data: ChannelPacketHandle] = [:]
+
     // MARK: - Resource-queue snapshots (copy-under-lock, iterate the copy)
 
     /// Copy of the incoming-resource queue taken under `stateLock`. Callers iterate
@@ -789,10 +799,17 @@ public final class Link {
     /// `packet.prove()` at the top of `delivery_packet`.
     public func proveInboundData() {
         stateLock.lock(); let packetHashSnap = lastReceivedDataPacketHash; stateLock.unlock()
-        guard status == .active,
-              let linkID,
-              let transport,
-              let packetHash = packetHashSnap else { return }
+        guard let packetHash = packetHashSnap else { return }
+        proveLinkPacket(packetHash)
+    }
+
+    /// Sign `packetHash` with the link's own signing key and send an explicit
+    /// PROOF (`[full hash][signature]`, unencrypted) back over the link.
+    /// Mirrors Python's `Link.prove_packet`. Used both by `proveInboundData`
+    /// (LXMF DIRECT) and by the CHANNEL receive path so the sender's Channel
+    /// can advance its send window.
+    func proveLinkPacket(_ packetHash: Data) {
+        guard status == .active, let linkID, let transport else { return }
         guard let signature = try? sigPrv.signature(for: packetHash) else { return }
         let proofData = packetHash + signature
         let proof = Packet(
@@ -804,6 +821,62 @@ public final class Link {
         )
         try? transport.send(proof, generateReceipt: false)
         recordOutbound(bytes: 0, countPacket: false, isData: false)
+    }
+
+    // MARK: - Channel packet delivery proofs (sender side)
+
+    /// Encrypt and send a CHANNEL-context data packet, returning the full packet
+    /// hash so the caller (`LinkChannelOutlet`) can match the returning delivery
+    /// proof to its `ChannelPacketHandle`. Mirrors Python's
+    /// `LinkChannelOutlet.send` → `packet.send()` (which creates a receipt), but
+    /// the delivery proof is matched at the Link layer (see `channelProofWaiters`)
+    /// because Transport receipts are only created for SINGLE-destination packets.
+    func sendChannelData(_ plaintext: Data) -> Data? {
+        guard status == .active, let linkID, let transport else { return nil }
+        guard let ciphertext = try? encrypt(plaintext) else { return nil }
+        let packet = Packet(
+            destinationType: .link,
+            packetType: .data,
+            destinationHash: linkID,
+            context: .channel,
+            data: ciphertext
+        )
+        let hash = try? packet.packetHash()
+        try? transport.send(packet, generateReceipt: false)
+        recordOutbound(bytes: ciphertext.count, countPacket: true, isData: true)
+        return hash
+    }
+
+    /// Register a channel packet's full hash so an inbound explicit PROOF can
+    /// mark its `ChannelPacketHandle` delivered. Prunes entries whose handle has
+    /// already concluded (bounds stale hashes left by retransmissions, which
+    /// re-encrypt to a fresh hash each time).
+    func trackChannelProof(hash: Data, handle: ChannelPacketHandle) {
+        stateLock.lock()
+        channelProofWaiters = channelProofWaiters.filter { $0.value.state == .sent }
+        channelProofWaiters[hash] = handle
+        stateLock.unlock()
+    }
+
+    /// Match an inbound explicit link-data PROOF (`[full hash][signature]`) to a
+    /// pending channel packet, validating the signature against the link peer's
+    /// signing key (Python `Link.validate`), and mark the handle delivered.
+    private func handleChannelProof(_ proofData: Data) {
+        guard proofData.count == Constants.fullHashLength + Constants.signatureLength else { return }
+        let hash = Data(proofData.prefix(Constants.fullHashLength))
+        let signature = Data(proofData.suffix(Constants.signatureLength))
+        stateLock.lock()
+        let peer = peerSigPub
+        let handle = channelProofWaiters[hash]
+        stateLock.unlock()
+        guard let peer, let handle else { return }
+        guard peer.isValidSignature(signature, for: hash) else { return }
+        stateLock.lock()
+        // Drop every hash pointing at this handle (the matched one plus any stale
+        // retransmission hashes) so the map stays tight.
+        for (k, v) in channelProofWaiters where v === handle { channelProofWaiters.removeValue(forKey: k) }
+        stateLock.unlock()
+        handle.markDelivered()
     }
 
     // MARK: - Init
@@ -988,6 +1061,7 @@ public final class Link {
         if _status != .failed && _status != .stale { _status = .closed }
         token = nil
         _derivedKey = nil
+        channelProofWaiters.removeAll()
         stateLock.unlock()
 
         stopWatchdog()
@@ -1291,6 +1365,19 @@ public final class Link {
             return
         }
 
+        // Explicit link-data PROOF (context .none) — proof_data is
+        // `[full hash][signature]` and is NOT link-encrypted (like RESOURCE_PRF).
+        // Sent by a peer's `prove_packet` to acknowledge a CHANNEL packet; match
+        // it to the pending `ChannelPacketHandle` so the sender's Channel window
+        // advances. Mirrors Python's Transport matching a link-DATA proof to the
+        // sending packet's receipt. Must be handled BEFORE the link-decrypt below,
+        // which would otherwise fail on the cleartext proof bytes.
+        if packet.packetType == .proof, packet.context == .none {
+            stateLock.lock(); lastInbound = Date(); stateLock.unlock()
+            handleChannelProof(packet.data)
+            return
+        }
+
         // All other packets use link-level encryption.
         let plaintext = try decrypt(packet.data)
         let now = Date()
@@ -1301,6 +1388,12 @@ public final class Link {
             handleKeepalive(plaintext)
             // Keepalives do NOT update lastData (matches Python had_outbound(is_keepalive=True))
         case .channel:
+            // Prove the channel packet back to the sender so its Channel can
+            // advance the send window (mirrors Python Link.receive CHANNEL branch:
+            // `packet.prove()`). Without this, a remote sender's window never
+            // drains and its 3rd send throws linkNotReady (WINDOW = 2). See
+            // swift_devel bug 005.
+            if let h = try? packet.packetHash() { proveLinkPacket(h) }
             stateLock.lock(); let ch = _channel; stateLock.unlock()
             ch?.receive(plaintext)
         case .linkIdentify:
