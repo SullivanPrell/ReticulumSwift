@@ -406,6 +406,14 @@ extension Link {
                   entry.allowedHashes.contains(remoteHash) else { return }
         }
 
+        // The Resource payload for an over-MDU response is the SAME envelope as the
+        // single-packet path: msgpack([request_id, response]). Mirrors Python
+        // Link.handle_request (Link.py:848-852) which resources `packed_response =
+        // umsgpack.packb([request_id, response])`, and its initiator-side
+        // response_resource_concluded (Link.py:890-904) which unpacks exactly that.
+        // (An earlier version resourced the bare response value here, so the receiver
+        // got a msgpack-wrapped / un-enveloped payload — Swift↔Swift delivered the
+        // wrong bytes and a Python fetcher's unpackb([id, resp]) threw → timeout.)
         if let native = entry.nativeHandler {
             // Native (Python-compatible) handler: response embedded directly in envelope.
             guard let responseValue = native(pathHash, rawValue, requestID, self, requestedAt) else { return }
@@ -413,9 +421,8 @@ extension Link {
             if responseBody.count <= Constants.linkMdu {
                 try? send(responseBody, context: .response)
             } else {
-                let encoded = MsgPack.encode(responseValue)
                 let rt = ResourceTransfer(link: self)
-                try? rt.send(payload: encoded, requestID: requestID, isResponse: true,
+                try? rt.send(payload: responseBody, requestID: requestID, isResponse: true,
                              autoCompress: entry.autoCompress)
             }
         } else {
@@ -426,7 +433,7 @@ extension Link {
                 try? send(responseBody, context: .response)
             } else {
                 let rt = ResourceTransfer(link: self)
-                try? rt.send(payload: response, requestID: requestID, isResponse: true,
+                try? rt.send(payload: responseBody, requestID: requestID, isResponse: true,
                              autoCompress: entry.autoCompress)
             }
         }

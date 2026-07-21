@@ -106,6 +106,52 @@ final class LinkRequestTests: XCTestCase {
         XCTAssertEqual(got, bigPayload)
     }
 
+    /// Regression for bug 011: an over-MDU RESPONSE goes back as a Resource whose
+    /// payload must be the msgpack envelope `[request_id, response]` (same as the
+    /// single-packet path), and the initiator must decode it and deliver the bare
+    /// response — mirroring Python Link.handle_request / response_resource_concluded.
+    /// A NATIVE handler (the NomadNet page path) previously resourced the bare
+    /// msgpack-encoded value and the initiator delivered it un-decoded, so the caller
+    /// received msgpack-wrapped bytes (or, cross-impl to Python, the request timed out).
+    func testLargeResponseViaResourceNativeHandler() throws {
+        let (aLink, _, bDestination) = try establishLink()
+
+        // A ~2 KB page body, well over the link MDU → response travels as a Resource.
+        let pageBytes = Data(">Large\nreticulum-mtu-regression".utf8)
+            + Data(repeating: 0x2E, count: Constants.mdu + 1500)
+        bDestination.registerNativeRequestHandler(path: "/page/large.mu", allow: .all) { _, _, _, _, _ in
+            .bytes(pageBytes)   // NomadNet nodes serve page bytes → wire value is .bytes
+        }
+
+        let received = expectation(description: "response")
+        var got: Data?
+        let receipt = try aLink.request(path: "/page/large.mu", nativeValue: .nil)
+        receipt.onResponse = { resp, _ in got = resp; received.fulfill() }
+
+        wait(for: [received], timeout: 3.0)
+        XCTAssertEqual(got, pageBytes,
+            "the initiator must receive the exact page bytes, not a msgpack-wrapped payload")
+    }
+
+    /// The bytes-handler counterpart: an over-MDU response from `registerRequestHandler`
+    /// must also round-trip byte-exact through the Resource-response path.
+    func testLargeResponseViaResourceBytesHandler() throws {
+        let (aLink, _, bDestination) = try establishLink()
+
+        let bigResponse = Data(repeating: 0x5A, count: Constants.mdu + 1200)
+        bDestination.registerRequestHandler(path: "/big", allow: .all) { _, _, _, _, _ in
+            bigResponse
+        }
+
+        let received = expectation(description: "response")
+        var got: Data?
+        let receipt = try aLink.request(path: "/big")   // tiny request, large response
+        receipt.onResponse = { resp, _ in got = resp; received.fulfill() }
+
+        wait(for: [received], timeout: 3.0)
+        XCTAssertEqual(got, bigResponse)
+    }
+
     // MARK: - Allow policy
 
     func testRequestHandlerDefaultAllowNoneBlocksRequest() throws {

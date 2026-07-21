@@ -170,7 +170,9 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     /// Matches Python `InterfaceAnnouncer.WORKBLOCK_EXPAND_ROUNDS`.
     public static let workblockExpandRounds: Int = 20
     /// Default minimum stamp value required to accept a discovery announce.
-    public static let defaultRequiredValue: Int = 14
+    /// Mirrors Python `InterfaceAnnouncer.DEFAULT_STAMP_VALUE` (bumped 14 → 16 in
+    /// RNS 1.4.0, commit be36abd8).
+    public static let defaultRequiredValue: Int = 16
 
     private static let discoverableTypes: Set<String> = [
         "BackboneInterface", "TCPServerInterface", "TCPClientInterface",

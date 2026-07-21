@@ -461,7 +461,7 @@ loglevel = 4
 
     /// Returns the required stamp value for interface discovery validation.
     /// Mirrors Python's `Reticulum.required_discovery_value()`.
-    public private(set) static var requiredDiscoveryValue_: Int = 14
+    public private(set) static var requiredDiscoveryValue_: Int = 16
     public static func requiredDiscoveryValue() -> Int { requiredDiscoveryValue_ }
 
     /// Returns whether blackhole list publishing is enabled.

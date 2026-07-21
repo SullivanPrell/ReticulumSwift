@@ -137,7 +137,19 @@ public struct Packet: Equatable {
 
     public enum PackError: Error { case missingTransportID, exceedsMTU(size: Int) }
 
-    public func pack() throws -> Data {
+    /// Build the raw wire bytes for this packet **without** enforcing the
+    /// transmit MTU cap.
+    ///
+    /// A packet's identity (its hash) and byte size must be computable
+    /// regardless of whether it fits the base `Constants.mtu` — a link packet
+    /// can legitimately exceed 500 bytes once a larger link MTU has been
+    /// negotiated via MTU discovery. Hashing, deduplication and traffic
+    /// accounting therefore use this method, never the MTU-guarded `pack()`.
+    ///
+    /// Mirrors Python, where `Packet.get_hashable_part()` slices the
+    /// already-packed `self.raw` and only `Packet.pack()` raises on
+    /// `len(self.raw) > self.MTU`.
+    public func packedBytes() throws -> Data {
         var raw = Data()
         raw.append(packedFlagsByte)
         raw.append(hops)
@@ -155,7 +167,11 @@ public struct Packet: Equatable {
 
         raw.append(context.rawValue)
         raw.append(data)
+        return raw
+    }
 
+    public func pack() throws -> Data {
+        let raw = try packedBytes()
         if raw.count > Constants.mtu { throw PackError.exceedsMTU(size: raw.count) }
         return raw
     }
@@ -225,7 +241,12 @@ public struct Packet: Equatable {
     /// regardless of header type 1 vs 2 (transport ID is excluded).
     /// Mirrors `Packet.get_hashable_part` in Python.
     public func hashablePart() throws -> Data {
-        let raw = try pack()
+        // Use packedBytes(), NOT pack(): a packet's hash is independent of the
+        // transmit MTU. Routing a link packet that legitimately exceeds the base
+        // MTU (larger negotiated link MTU) must still hash/dedup correctly on
+        // receive — pack()'s MTU guard here would throw and cause Transport's
+        // dedup (filterAndRecord) to silently drop every oversize inbound packet.
+        let raw = try packedBytes()
         var part = Data()
         part.append(raw[raw.startIndex] & 0b0000_1111)
         switch headerType {

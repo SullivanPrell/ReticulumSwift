@@ -1239,10 +1239,12 @@ public final class Link {
             // fields (rtt / lastInbound / establishedAt / requestTime) and do NOT
             // lock, so calling them while holding stateLock is safe.
             let inboundAge = noInboundFor()
+            let outboundAge = noOutboundFor()
             let ka = effectiveKeepalive
             let st = effectiveStaleTime
             if inboundAge >= st {
-                // No traffic for stale_time — tear down.
+                // No traffic for stale_time — tear down. Stale is measured on INBOUND
+                // only (matches Python's last_inbound-based check).
                 _teardownReason = .timeout
                 _status = .stale
                 stateLock.unlock()
@@ -1253,7 +1255,13 @@ public final class Link {
             }
             var shouldSendKeepalive = false
             let nextTick: TimeInterval
-            if inboundAge >= ka {
+            // Trigger a keepalive when EITHER inbound OR outbound has been idle for
+            // `keepalive`. A receive-only initiator (peer sends continuously) would
+            // otherwise never refresh its own last_outbound, so the destination tears
+            // the link down as stale despite live traffic. Mirrors Python Link.py:746
+            // (`now >= last_inbound + keepalive or now >= last_outbound + keepalive`),
+            // fixed in RNS 1.4.0 (commit e64d8150).
+            if inboundAge >= ka || outboundAge >= ka {
                 // Send a keepalive if we're the initiator and haven't sent one recently.
                 if role == .initiator,
                    now.timeIntervalSince(lastKeepalive ?? .distantPast) >= ka {
@@ -1261,7 +1269,8 @@ public final class Link {
                 }
                 nextTick = ka
             } else {
-                nextTick = max(0.5, ka - inboundAge)
+                // Next wake is when whichever timer is closest next crosses `ka`.
+                nextTick = max(0.5, ka - max(inboundAge, outboundAge))
             }
             stateLock.unlock()
             if shouldSendKeepalive { try? sendKeepalive() }
@@ -1546,7 +1555,23 @@ public final class Link {
         rt.onAssembledInternal = { [weak self, weak receipt] payload, _ in
             guard let self, let receipt else { return }
             self.evictPendingRequest(requestID)
-            receipt.deliverReady(payload)
+            // The assembled payload is the msgpack envelope [request_id, response]
+            // (same as the single-packet RESPONSE), NOT the bare response. Decode it
+            // and deliver the response value, unwrapping .bytes exactly like
+            // handleIncomingResponse. Mirrors Python response_resource_concluded
+            // (Link.py:890-904): unpackb(packed_response)[1]. A non-envelope payload
+            // (unexpected) is delivered as-is so nothing is silently lost.
+            let responseData: Data
+            if case .array(let parts) = (try? MsgPack.decode(payload)) ?? .nil,
+               parts.count >= 2 {
+                switch parts[1] {
+                case .bytes(let b): responseData = Data(b)
+                default:            responseData = MsgPack.encode(parts[1])
+                }
+            } else {
+                responseData = payload
+            }
+            receipt.deliverReady(responseData)
         }
         registerIncomingResource(rt)
         rt.receiveAdvertisement(rawAdv)
@@ -1618,8 +1643,11 @@ public final class Link {
     private func handleKeepalive(_ plaintext: Data) {
         // Initiator gets `0xFE` from the responder — nothing to do; the
         // updated `lastInbound` already reset the watchdog.
-        // Responder gets `0xFF` from the initiator and replies `0xFE`.
-        if role == .responder, plaintext == Data([0xFF]) {
+        // Responder gets `0xFF` from the initiator and replies `0xFE` — but only if
+        // it hasn't sent anything within the last `keepalive` interval. Suppressing the
+        // echo when traffic is already flowing avoids redundant keepalives. Mirrors
+        // Python Link.py:1099 (RNS 1.4.0, commit e64d8150).
+        if role == .responder, plaintext == Data([0xFF]), noOutboundFor() >= effectiveKeepalive {
             try? send(Data([0xFE]), context: .keepalive)
         }
     }

@@ -2429,7 +2429,11 @@ public final class Transport {
         // held only for the mutations. `lock` is NOT held here.
         // Mirrors Python `Transport.traffic_rxb` accumulation and the
         // local_client_rssi/snr/q caches (LOCAL_CLIENT_CACHE_MAXSIZE = 512).
-        let rawByteCount = (try? packet.pack())?.count
+        // Use packedBytes()/hashablePart-based hashing (NOT pack()): an inbound
+        // link packet may legitimately exceed the base MTU once a larger link
+        // MTU is negotiated, and pack()'s MTU guard would throw — undercounting
+        // traffic and (via filterAndRecord) dropping the packet entirely.
+        let rawByteCount = (try? packet.packedBytes())?.count
         let pktHash = try? packet.truncatedPacketHash()
         metricsLock.lock()
         if let n = rawByteCount { trafficRxBytes += n }
