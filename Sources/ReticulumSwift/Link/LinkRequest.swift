@@ -140,6 +140,31 @@ public final class RequestReceipt {
         cb?(p, self)
     }
 
+    /// The response has begun arriving as a Resource. Disarm the fixed request
+    /// timeout: from here the ResourceTransfer's own watchdog governs the
+    /// (possibly long) transfer, exactly as Python hands lifetime control to the
+    /// Resource watchdog once the RequestReceipt enters RECEIVING (Link.py
+    /// `RequestReceipt.response_resource_progress`). Without this, a response
+    /// whose Resource takes longer than the request timeout to transfer — any
+    /// real, multi-KB page over a slower/multi-hop mesh — is aborted mid-download
+    /// by `timeoutFired()` even though it is progressing normally.
+    ///
+    /// Idempotent and safe to call repeatedly; a no-op once the receipt has
+    /// concluded (ready/failed). Distinct from `updateProgress` so the request
+    /// *send* path (a large outbound request resource) is unaffected — only an
+    /// incoming response resource disarms the timeout.
+    func beginReceivingResponse() {
+        stateLock.lock()
+        switch _status {
+        case .ready, .failed: stateLock.unlock(); return
+        default: break
+        }
+        timeoutItem?.cancel()
+        timeoutItem = nil
+        _status = .receiving(_progress)
+        stateLock.unlock()
+    }
+
     func deliverReady(_ data: Data, size: Int? = nil) {
         stateLock.lock()
         // Only conclude once, from a non-terminal state.

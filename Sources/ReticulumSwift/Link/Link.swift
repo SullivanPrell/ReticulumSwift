@@ -1551,7 +1551,25 @@ public final class Link {
     private func handleIncomingResponseResource(adv: ResourceAdvertisement, rawAdv: Data, requestID: Data) {
         stateLock.lock(); let receipt = pendingRequests[requestID]; stateLock.unlock()
         guard let receipt else { return }
+        // The response is arriving as a Resource. Disarm the fixed request
+        // timeout now — a large / slow page can take far longer to transfer than
+        // the request timeout, and from here the ResourceTransfer's own watchdog
+        // governs the transfer (retries, then eventual failure). Mirrors Python
+        // RequestReceipt entering RECEIVING (Link.py response_resource_progress),
+        // which stops the request-timeout job. Without this, any response Resource
+        // still in flight at the timeout is aborted mid-download.
+        receipt.beginReceivingResponse()
         let rt = ResourceTransfer(link: self)
+        // Surface transfer progress on the receipt (keeps its status/progress in
+        // sync for any observer; wire-neutral).
+        rt.onProgress = { [weak receipt] p, _ in receipt?.updateProgress(p) }
+        // If the transfer fails (e.g. the resource watchdog gives up), conclude
+        // the receipt as failed so the caller's failedCallback fires — otherwise,
+        // with the request timeout now disarmed, the receipt would hang forever.
+        rt.onFailed = { [weak self, weak receipt] _, status in
+            self?.evictPendingRequest(requestID)
+            receipt?.fail("response resource transfer failed (\(status))")
+        }
         rt.onAssembledInternal = { [weak self, weak receipt] payload, _ in
             guard let self, let receipt else { return }
             self.evictPendingRequest(requestID)
