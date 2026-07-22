@@ -3,7 +3,23 @@ import Foundation
 /// The Reticulum stack. Owns the Transport, persistent identity storage,
 /// and lifecycle of the registered interfaces.
 public final class Reticulum {
-    public static let version = "0.1.0"
+    /// This library's own release version — the tag published to
+    /// `github.com/SullivanPrell/ReticulumSwift` and pinned by consumers (RetiOS).
+    /// Bump this on every release. This is the value surfaced in UI ("About")
+    /// and by `rnsd --version`; it is informational only and never travels on
+    /// the wire.
+    ///
+    /// Distinct from ``rnsProtocolVersion``: the two happen to share a lineage
+    /// (releases are cut to mirror the RNS version they reach parity with) but
+    /// advance independently — a patch release fixes the port without changing
+    /// the protocol it targets.
+    public static let version = "1.4.1"
+
+    /// The Python RNS release whose wire protocol and behavior this port matches.
+    /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
+    /// a single version string for both its library and its protocol). Bump only
+    /// when parity is verified against a new RNS release. Informational only.
+    public static let rnsProtocolVersion = "1.4.0"
 
     public enum LogLevel: Int, Comparable, Sendable {
         case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme
