@@ -13,7 +13,7 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently — a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.4.2"
+    public static let version = "1.4.3"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses

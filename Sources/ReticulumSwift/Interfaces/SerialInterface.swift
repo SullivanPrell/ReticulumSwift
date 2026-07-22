@@ -34,12 +34,19 @@ public final class SerialInterface: Interface {
 
     public let  name:    String
     public var  bitrate: Int
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
-    public private(set) var rxBytes:   Int = 0
-    public private(set) var txBytes:   Int = 0
-    public private(set) var rxPackets: Int = 0
-    public private(set) var txPackets: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes:   Int { counters.rxBytes }
+    public var txBytes:   Int { counters.txBytes }
+    public var rxPackets: Int { counters.rxPackets }
+    public var txPackets: Int { counters.txPackets }
 
     public var hwMtu: Int? { SerialInterface.hwMtuConstant }
 
@@ -157,8 +164,7 @@ public final class SerialInterface: Interface {
         guard isOnline else { return }
         let framed = HDLC.frame(data)
         try? transport.write(framed)
-        txBytes   += framed.count   // Python counts framed bytes
-        txPackets += 1
+        counters.addTx(bytes: framed.count)   // Python counts framed bytes
     }
 
     // MARK: - Incoming (bytes from the serial port)
@@ -173,8 +179,7 @@ public final class SerialInterface: Interface {
         // unterminated or garbage frame grows the decoder buffer without limit.
         let frames = decoder.feed(data, hwMtu: hwMtu, ifacSize: ifacSize)
         for frame in frames {
-            rxBytes   += frame.count  // Python counts payload bytes
-            rxPackets += 1
+            counters.addRx(bytes: frame.count)  // Python counts payload bytes
             rawInboundHandler?(frame, self)
         }
     }

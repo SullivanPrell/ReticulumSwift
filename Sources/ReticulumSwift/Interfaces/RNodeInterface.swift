@@ -255,7 +255,11 @@ public final class RNodeInterface: Interface {
     public var hwMtu:  Int?    { Self.hwMtuValue }
     public private(set) var bitrate: Int = 0
 
-    public var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     public var inboundHandler:    ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data,   any Interface) -> Void)?

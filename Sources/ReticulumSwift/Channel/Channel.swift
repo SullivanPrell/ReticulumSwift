@@ -50,18 +50,53 @@ public final class MessageHandlerToken {
 /// Tracks the lifecycle of one sent Channel envelope.
 public final class ChannelPacketHandle {
     public enum State { case sent, delivered, failed }
-    public private(set) var state: State = .sent
+
+    /// Written from whichever thread the outlet confirms delivery on (a link
+    /// proof callback, a timeout work item) and read from another — `Channel`
+    /// polls it via `ChannelOutlet.getPacketState`, and `Link` filters its
+    /// proof waiters on it. The writes below were already under `lock`, but
+    /// while this was a stored property every *read* still raced them.
+    ///
+    /// `lock` is a plain `NSLock` and is therefore NOT recursive: the mutators
+    /// below must go through `_state` directly, never this accessor, or they
+    /// would deadlock against the lock they already hold.
+    public var state: State {
+        lock.lock(); defer { lock.unlock() }
+        return _state
+    }
+    private var _state: State = .sent
+
     let raw: Data
-    var deliveredCallback: ((ChannelPacketHandle) -> Void)?
-    var timeoutWork: DispatchWorkItem?
+    private var deliveredCallback: ((ChannelPacketHandle) -> Void)?
+    private var timeoutWork: DispatchWorkItem?
     private let lock = NSLock()
 
     init(raw: Data) { self.raw = raw }
 
+    /// Replaces the pending timeout work item, cancelling any previous one.
+    ///
+    /// Outlets used to reach in and assign `handle.timeoutWork` directly, which
+    /// raced `markDelivered`/`markFailed` clearing the same field under `lock`
+    /// from the delivery thread. Going through the handle keeps every access on
+    /// one side of the lock.
+    func setTimeoutWork(_ work: DispatchWorkItem?) {
+        lock.lock()
+        timeoutWork?.cancel()
+        timeoutWork = work
+        lock.unlock()
+    }
+
+    /// See `setTimeoutWork` — same reasoning.
+    func setDeliveredCallback(_ callback: ((ChannelPacketHandle) -> Void)?) {
+        lock.lock()
+        deliveredCallback = callback
+        lock.unlock()
+    }
+
     func markDelivered() {
         lock.lock()
-        guard state == .sent else { lock.unlock(); return }
-        state = .delivered
+        guard _state == .sent else { lock.unlock(); return }
+        _state = .delivered
         timeoutWork?.cancel()
         timeoutWork = nil
         let cb = deliveredCallback
@@ -72,7 +107,7 @@ public final class ChannelPacketHandle {
 
     func markFailed() {
         lock.lock()
-        state = .failed
+        _state = .failed
         timeoutWork?.cancel()
         timeoutWork = nil
         deliveredCallback = nil
@@ -624,14 +659,12 @@ public final class LinkChannelOutlet: ChannelOutlet {
         timeout: TimeInterval?,
         callback: ((ChannelPacketHandle) -> Void)?
     ) {
-        handle.timeoutWork?.cancel()
-        handle.timeoutWork = nil
-        guard let timeout, let callback else { return }
+        guard let timeout, let callback else { handle.setTimeoutWork(nil); return }
         let work = DispatchWorkItem { [weak handle] in
             guard let handle else { return }
             callback(handle)
         }
-        handle.timeoutWork = work
+        handle.setTimeoutWork(work)
         queue.asyncAfter(deadline: .now() + timeout, execute: work)
     }
 
@@ -639,7 +672,7 @@ public final class LinkChannelOutlet: ChannelOutlet {
         _ handle: ChannelPacketHandle,
         callback: ((ChannelPacketHandle) -> Void)?
     ) {
-        handle.deliveredCallback = callback
+        handle.setDeliveredCallback(callback)
     }
 
     public func getPacketID(_ handle: ChannelPacketHandle) -> ObjectIdentifier? {

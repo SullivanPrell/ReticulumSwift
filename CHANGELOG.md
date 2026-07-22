@@ -3,6 +3,65 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.4.3] — Thread-safe traffic counters and packet-handle state
+
+Data races only, no wire-format or behavioural change. Every reported number is
+computed exactly as before; the difference is that reading one no longer races
+the thread writing it. Verified with `swift test --sanitize=thread` over the
+full suite.
+
+### Fixed
+
+- **Interface traffic counters raced their readers.** `rxBytes` / `txBytes` /
+  `rxPackets` / `txPackets` are written from whichever queue an interface's I/O
+  runs on — CoreBluetooth's queue for `BLEMeshInterface`, an `NWConnection` queue
+  for the TCP/UDP family, a serial read thread for `SerialInterface` — and read
+  from another (an app polls them to draw its interface list; `rnstatus`-style
+  reporting reads them from the caller's thread). `Int` is not atomic and
+  `counter += 1` is a load-modify-store, so concurrent increments silently lost
+  updates and a concurrent read could observe a torn value: undefined behaviour
+  under the Swift memory model, not merely an inaccurate statistic.
+
+  This affected **thirteen** interfaces, not one. The counters now live in a
+  single lock-guarded `InterfaceCounters` type that every interface holds, so
+  the next interface added inherits the fix instead of rediscovering the bug.
+  `I2PInterfacePeer` previously took a lock on write only, which left every
+  *reader* racing regardless — it is fixed too.
+- **`Link` traffic statistics raced their readers.** `tx` / `rx` / `txBytes` /
+  `rxBytes` were written under `stateLock` but exposed as stored properties, so
+  a reader on another thread raced every write. Now routed through the same
+  guarded counters.
+- **`Link.establishmentTimeout` and `Link.onTimeout` raced the watchdog.**
+  `Link.initiate` starts the watchdog before returning, so the watchdog thread
+  was already reading both by the time the caller assigned them on the very next
+  line — which is the normal usage pattern. Both are now guarded by `stateLock`,
+  matching how `status` and `teardownReason` already worked.
+- **`ChannelPacketHandle.state` raced its readers.** `markDelivered()` /
+  `markFailed()` wrote it under a lock, but `state` was a stored property that
+  `Channel` polls via `ChannelOutlet.getPacketState` and `Link` filters its proof
+  waiters on. Its `deliveredCallback` and `timeoutWork` were likewise assigned
+  directly by outlets while the delivery thread cleared them under the lock;
+  those now go through guarded setters.
+- **`I2PInterface` always reported zero traffic.** It declared all four counters
+  but never incremented them — the parent performs no I/O of its own, and every
+  byte moves through a dialed or accepted peer. It now sums its peers, which is
+  what the numbers were always meant to show.
+- **`Interface.isOnline` raced its readers.** Every interface flips it from its
+  own I/O queue (an `NWConnection` state handler, a CoreBluetooth callback, a
+  serial reader) while `Transport` consults it before routing and apps read it
+  for every row of an interface list. All 20 declarations across 16 files now
+  sit over a lock-guarded `LockedFlag`. Because they became *computed*
+  properties keeping the same access level, all 51 assignment sites are
+  unchanged — the setter is simply guarded now.
+
+### Known remaining race
+
+- **`RNodeInterface` radio telemetry** (`rStatRssi`, `rStatSnr`,
+  `rBatteryState`, `rFrequency`, …) is written on the radio read thread and read
+  by UI. Deferred rather than rushed: it is entangled with the radio state
+  machine, and verifying a fix needs real RNode hardware. It is also why the
+  radio-parameter readout on a connected RNode can show stale values.
+
 ## [1.4.2] — bz2 compression on by default; request-timeout fix
 
 ### Fixed

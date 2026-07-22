@@ -58,15 +58,27 @@ public final class RNodeSubInterface: Interface {
 
     // MARK: – Statistics (override Interface default extensions that return 0)
 
+    /// Lock-guarded — the parent counts traffic on this sub-channel from the
+    /// RNode read thread while the UI reads it. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
     /// Total bytes received on this sub-channel
-    public var rxBytes: Int = 0
+    public var rxBytes: Int { counters.rxBytes }
     /// Total bytes transmitted on this sub-channel
-    public var txBytes: Int = 0
+    public var txBytes: Int { counters.txBytes }
+
+    /// Counted by the parent `RNodeMultiInterface`, which owns the shared
+    /// serial link that every sub-channel multiplexes over.
+    internal func noteRx(bytes: Int) { counters.addRx(bytes: bytes) }
+    internal func noteTx(bytes: Int) { counters.addTx(bytes: bytes) }
 
     // MARK: – Interface protocol requirements
 
     /// Always online once added to a multi-interface (online management is the parent's job).
-    public var isOnline:  Bool   = true
+    private let onlineFlag = LockedFlag(true)
+    public var isOnline:  Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
     public var bitrate:   Int    = 0
 
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
@@ -150,7 +162,11 @@ public final class RNodeMultiInterface: Interface {
     public var hwMtu: Int? { Self.hwMtuValue }
     public var bitrate: Int = 0
 
-    public var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     public var inboundHandler:    ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data,   any Interface) -> Void)?
@@ -320,7 +336,7 @@ public final class RNodeMultiInterface: Interface {
         frame.append(KISS.fend)
         try transport?.write(frame)
         // Track TX bytes (unescaped original length)
-        subInterfaces[sub.index].txBytes += data.count
+        subInterfaces[sub.index].noteTx(bytes: data.count)
     }
 
     // MARK: – detect() (Python: detect())
@@ -404,7 +420,7 @@ public final class RNodeMultiInterface: Interface {
     private func dispatchInboundData(_ payload: Data, channelIndex: Int) {
         guard channelIndex < subInterfaces.count else { return }
         let sub = subInterfaces[channelIndex]
-        sub.rxBytes += payload.count
+        sub.noteRx(bytes: payload.count)
         // Pass the RNodeSubInterface instance directly — it now conforms to Interface,
         // so callers can downcast `any Interface → RNodeSubInterface` for channel ID.
         if let h = rawInboundHandler {

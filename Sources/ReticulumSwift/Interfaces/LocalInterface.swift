@@ -17,7 +17,11 @@ public final class LocalInterface: Interface {
     public let host: String
     public let port: UInt16
     public private(set) var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     public var inboundHandler: ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
@@ -25,8 +29,11 @@ public final class LocalInterface: Interface {
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
 
-    public private(set) var rxBytes: Int = 0
-    public private(set) var txBytes: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
 
     /// Seconds between reconnection attempts. Mirrors Python `LocalClientInterface.RECONNECT_WAIT = 8`.
     public var reconnectWait: TimeInterval = 8
@@ -89,7 +96,7 @@ public final class LocalInterface: Interface {
         guard let conn, isOnline else { return }
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
-        txBytes += raw.count
+        counters.addTx(bytes: raw.count)
         conn.send(content: framed, completion: .contentProcessed { _ in })
     }
 
@@ -154,7 +161,7 @@ public final class LocalInterface: Interface {
             if let data, !data.isEmpty {
                 let frames = self.decoder.feed(data)
                 for frame in frames {
-                    self.rxBytes += frame.count
+                    self.counters.addRx(bytes: frame.count)
                     if let h = self.rawInboundHandler {
                         h(frame, self)
                     } else if let packet = try? Packet.unpack(frame) {

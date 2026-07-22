@@ -34,12 +34,19 @@ public final class KISSInterface: Interface {
 
     public let  name:    String
     public var  bitrate: Int = KISSInterface.bitrateGuess
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
-    public private(set) var rxBytes:   Int = 0
-    public private(set) var txBytes:   Int = 0
-    public private(set) var rxPackets: Int = 0
-    public private(set) var txPackets: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes:   Int { counters.rxBytes }
+    public var txBytes:   Int { counters.txBytes }
+    public var rxPackets: Int { counters.rxPackets }
+    public var txPackets: Int { counters.txPackets }
 
     public var hwMtu: Int? { KISSInterface.hwMtuConstant }
 
@@ -256,8 +263,7 @@ public final class KISSInterface: Interface {
             lock.unlock()
             let framed = KISS.frame(data)
             try? transport.write(framed)
-            txBytes   += data.count   // Python counts original (unframed) bytes
-            txPackets += 1
+            counters.addTx(bytes: data.count)   // Python counts original (unframed) bytes
         } else {
             packetQueue.append(data)
             lock.unlock()
@@ -290,8 +296,7 @@ public final class KISSInterface: Interface {
         let frames = decoder.feed(data)
         for (cmd, payload) in frames {
             if cmd == KISS.cmdData {
-                rxBytes   += payload.count
-                rxPackets += 1
+                counters.addRx(bytes: payload.count)
                 rawInboundHandler?(payload, self)
             } else if cmd == KISS.cmdReady {
                 processQueue()

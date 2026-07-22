@@ -76,12 +76,19 @@ public final class AX25KISSInterface: Interface {
 
     public let  name:    String
     public var  bitrate: Int = AX25KISSInterface.bitrateGuess
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
-    public private(set) var rxBytes:   Int = 0
-    public private(set) var txBytes:   Int = 0
-    public private(set) var rxPackets: Int = 0
-    public private(set) var txPackets: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes:   Int { counters.rxBytes }
+    public var txBytes:   Int { counters.txBytes }
+    public var rxPackets: Int { counters.rxPackets }
+    public var txPackets: Int { counters.txPackets }
 
     public var hwMtu: Int? { AX25KISSInterface.hwMtuConstant }
 
@@ -288,8 +295,7 @@ public final class AX25KISSInterface: Interface {
 
             let framed = KISS.frame(ax25)
             try? transport.write(framed)
-            txBytes   += data.count   // Python counts original payload
-            txPackets += 1
+            counters.addTx(bytes: data.count)   // Python counts original payload
         } else {
             packetQueue.append(data)
             lock.unlock()
@@ -323,8 +329,7 @@ public final class AX25KISSInterface: Interface {
             if cmd == KISS.cmdData {
                 guard payload.count > AX25.headerSize else { continue }
                 let stripped = payload.dropFirst(AX25.headerSize)
-                rxBytes   += payload.count   // Python counts full payload incl. header
-                rxPackets += 1
+                counters.addRx(bytes: payload.count)   // Python counts full payload incl. header
                 rawInboundHandler?(Data(stripped), self)
             } else if cmd == KISS.cmdReady {
                 processQueue()

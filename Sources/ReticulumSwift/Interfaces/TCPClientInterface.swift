@@ -9,7 +9,11 @@ public final class TCPClientInterface: Interface {
     public let host: String
     public let port: UInt16
     public private(set) var bitrate: Int = 10_000_000
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     // Python TCPClientInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
     public let hwMtu: Int? = 262_144
@@ -24,8 +28,11 @@ public final class TCPClientInterface: Interface {
     public var recursivePrs: Bool = false
     public var announcesFromInternal: Bool = true
 
-    public private(set) var rxBytes: Int = 0
-    public private(set) var txBytes: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
 
     private var connection: NWConnection?
     private let queue: DispatchQueue
@@ -80,7 +87,7 @@ public final class TCPClientInterface: Interface {
         guard let connection, isOnline else { return }
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
-        txBytes += raw.count   // Python counts raw (unframed) bytes
+        counters.addTx(bytes: raw.count)   // Python counts raw (unframed) bytes
         connection.send(content: framed, completion: .contentProcessed { _ in })
     }
 
@@ -90,7 +97,7 @@ public final class TCPClientInterface: Interface {
             if let data, !data.isEmpty {
                 let frames = self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize)
                 for frame in frames {
-                    self.rxBytes += frame.count   // Python counts unframed payload bytes
+                    self.counters.addRx(bytes: frame.count)   // Python counts unframed payload bytes
                     if let h = self.rawInboundHandler {
                         h(frame, self)
                     } else if let packet = try? Packet.unpack(frame) {
