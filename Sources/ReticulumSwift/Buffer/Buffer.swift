@@ -15,9 +15,14 @@ public final class StreamDataMessage: MessageBase {
     public static let overhead: Int = 6 + 2
 
     /// Pluggable compressor for stream data.
-    /// Set to `BZip2Compressor()` at startup to enable bz2-compatible wire format
-    /// matching Python's `RNS.Buffer` compressed flag behavior.
-    public static var compressor: (any DataCompressor)? = nil
+    ///
+    /// Defaults to `BZip2Compressor` so a compressed chunk from a Python
+    /// `RNS.Buffer` peer (which sets the compressed flag) can be transparently
+    /// decompressed on receive. Compression on *send* stays opt-in per write
+    /// (`StreamDataMessage(compress: true)`), so installing a compressor never
+    /// changes the wire format unless a caller asks to compress. Set to `nil`
+    /// to opt out (compressed chunks from peers can no longer be decoded).
+    public static var compressor: (any DataCompressor)? = BZip2Compressor()
 
     public override class var typeID: UInt16 { SystemMessageTypes.streamData }
 

@@ -82,9 +82,12 @@ final class ResourceAccessorTests: XCTestCase {
         try sender.send(payload: payload)
         wait(for: [completed], timeout: 3.0)
 
-        XCTAssertGreaterThan(receiver.dataSize, 0, "dataSize should be populated")
         XCTAssertGreaterThan(receiver.transferSize, 0, "transferSize should be populated")
-        XCTAssertGreaterThanOrEqual(receiver.transferSize, receiver.dataSize)
+        // dataSize is the logical (uncompressed) payload size; transferSize is the
+        // encrypted wire size. The default BZip2Compressor shrinks this highly
+        // compressible payload, so transferSize < dataSize here — the accessors are
+        // independent, so assert each is populated as expected rather than ordering them.
+        XCTAssertEqual(receiver.dataSize, payload.count, "dataSize should reflect the uncompressed payload")
     }
 
     func testHashAccessor() throws {
