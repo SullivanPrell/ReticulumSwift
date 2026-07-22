@@ -14,7 +14,11 @@ public final class UDPInterface: Interface {
     public let forwardHost: String?
     public let forwardPort: UInt16?
     public private(set) var bitrate: Int = 10_000_000
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     // Python UDPInterface: HW_MTU = 1064
     public let hwMtu: Int? = 1_064
@@ -27,8 +31,11 @@ public final class UDPInterface: Interface {
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
 
-    public private(set) var rxBytes: Int = 0
-    public private(set) var txBytes: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
 
     private var listener: NWListener?
     private var connection: NWConnection?
@@ -101,7 +108,7 @@ public final class UDPInterface: Interface {
     public func send(_ packet: Packet) throws {
         guard let connection else { return }
         let raw = try packet.pack()
-        txBytes += raw.count
+        counters.addTx(bytes: raw.count)
         connection.send(content: wrapIfac(raw), completion: .contentProcessed { _ in })
     }
 
@@ -109,7 +116,7 @@ public final class UDPInterface: Interface {
         conn.receiveMessage { [weak self] data, _, _, error in
             guard let self else { return }
             if let data, !data.isEmpty {
-                self.rxBytes += data.count
+                self.counters.addRx(bytes: data.count)
                 if let h = self.rawInboundHandler {
                     h(data, self)
                 } else if let packet = try? Packet.unpack(data) {

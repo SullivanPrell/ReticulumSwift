@@ -53,7 +53,11 @@ public final class I2PInterfacePeer: Interface {
 
     public let name: String
     public var bitrate: Int = I2PInterface.bitrateGuess
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
     /// Python alias: `self.online`
     public var online: Bool { isOnline }
 
@@ -73,8 +77,16 @@ public final class I2PInterfacePeer: Interface {
     public var tunnelID:    Data?
     public var bootstrapOnly: Bool = false
 
-    public private(set) var rxBytes: Int = 0
-    public private(set) var txBytes: Int = 0
+    /// Lock-guarded — the existing `lock` serialized writers only, leaving a
+    /// reader on another thread racing every increment. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
+    // Each add() above corresponds to exactly one reassembled frame, so the
+    // packet counts are already tracked — surfacing them lets the parent
+    // `I2PInterface` report a meaningful total instead of a hardcoded 0.
+    public var rxPackets: Int { counters.rxPackets }
+    public var txPackets: Int { counters.txPackets }
 
     /// Python: `__str__` returns `"I2PInterfacePeer[<name>]"`.
     public var displayName: String { "I2PInterfacePeer[\(name)]" }
@@ -197,7 +209,7 @@ public final class I2PInterfacePeer: Interface {
 
         let framed = hdlcFrame(data)
         stream.write(framed)
-        lock.lock(); txBytes += framed.count; lock.unlock()
+        counters.addTx(bytes: framed.count)
     }
 
     // MARK: - SAM dial state machine
@@ -343,7 +355,7 @@ public final class I2PInterfacePeer: Interface {
         lock.unlock()
 
         feedBytes(data) { frame in
-            lock.lock(); rxBytes += frame.count; lock.unlock()
+            counters.addRx(bytes: frame.count)
             if let raw = rawInboundHandler {
                 raw(frame, self)
             } else if let packet = try? Packet.unpack(frame) {

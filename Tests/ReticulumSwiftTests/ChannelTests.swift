@@ -55,7 +55,7 @@ final class MockChannelOutlet: ChannelOutlet {
         _ handle: ChannelPacketHandle,
         callback: ((ChannelPacketHandle) -> Void)?
     ) {
-        handle.deliveredCallback = callback
+        handle.setDeliveredCallback(callback)
     }
 
     func getPacketID(_ handle: ChannelPacketHandle) -> ObjectIdentifier? {

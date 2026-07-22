@@ -159,13 +159,13 @@ final class BufferReadintoTests: XCTestCase {
         func getPacketState(_ h: ChannelPacketHandle) -> MessageState { h.state == .delivered ? .delivered : .sent }
         func timedOut() {}
         func setPacketTimeoutCallback(_ h: ChannelPacketHandle, timeout: TimeInterval?, callback: ((ChannelPacketHandle) -> Void)?) {
-            guard let t = timeout, let cb = callback else { h.timeoutWork?.cancel(); return }
+            guard let t = timeout, let cb = callback else { h.setTimeoutWork(nil); return }
             let work = DispatchWorkItem { cb(h) }
-            h.timeoutWork = work
+            h.setTimeoutWork(work)
             deliveryQueue.asyncAfter(deadline: .now() + t, execute: work)
         }
         func setPacketDeliveredCallback(_ h: ChannelPacketHandle, callback: ((ChannelPacketHandle) -> Void)?) {
-            h.deliveredCallback = callback
+            h.setDeliveredCallback(callback)
         }
         func getPacketID(_ h: ChannelPacketHandle) -> ObjectIdentifier? { ObjectIdentifier(h) }
     }

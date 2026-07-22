@@ -69,7 +69,11 @@ public final class BLEMeshInterface: Interface {
 
     public let name: String
     public private(set) var bitrate: Int
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     /// A Reticulum packet must fit inside one reassembled HDLC frame, and
     /// BLE links cannot negotiate arbitrarily large MTUs — so, like
@@ -81,10 +85,14 @@ public final class BLEMeshInterface: Interface {
     public var inboundHandler: ((Packet, any Interface) -> Void)?
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
 
-    public private(set) var rxBytes: Int = 0
-    public private(set) var txBytes: Int = 0
-    public private(set) var rxPackets: Int = 0
-    public private(set) var txPackets: Int = 0
+    /// Lock-guarded: `send` runs on the caller's thread while `handlePeerData`
+    /// runs on CoreBluetooth's queue and the UI polls from main. See
+    /// `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
+    public var rxPackets: Int { counters.rxPackets }
+    public var txPackets: Int { counters.txPackets }
 
     public var ifacIdentity: Identity?
     public var ifacKey: Data?
@@ -168,8 +176,7 @@ public final class BLEMeshInterface: Interface {
         guard isOnline else { return }
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
-        txBytes += raw.count    // Python convention: count unframed payload bytes
-        txPackets += 1
+        counters.addTx(bytes: raw.count)  // Python convention: unframed payload bytes
 
         peersLock.lock()
         let targets = Array(peers.keys)
@@ -209,8 +216,7 @@ public final class BLEMeshInterface: Interface {
         peersLock.unlock()
 
         for frame in frames {
-            rxBytes += frame.count   // Python convention: count unframed payload bytes
-            rxPackets += 1
+            counters.addRx(bytes: frame.count)  // Python convention: unframed payload bytes
             if let handler = rawInboundHandler {
                 handler(frame, self)
             } else if let packet = try? Packet.unpack(frame) {

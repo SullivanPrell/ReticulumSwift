@@ -27,11 +27,24 @@ public final class I2PInterface: Interface {
     public var  bitrate: Int  = I2PInterface.bitrateGuess
     public var  isOnline: Bool = false
 
-    // Traffic counters
-    public private(set) var rxBytes:   Int = 0
-    public private(set) var txBytes:   Int = 0
-    public private(set) var rxPackets: Int = 0
-    public private(set) var txPackets: Int = 0
+    // MARK: - Traffic counters
+    //
+    // The parent interface performs no I/O of its own — every byte moves
+    // through a dialed (`peerInterfaces`) or accepted (`spawned`) peer, and
+    // each peer keeps its own lock-guarded counters. These were previously
+    // plain stored properties that nothing ever incremented, so the I2P row
+    // reported 0 B in both directions no matter how much traffic the peers
+    // carried. Summing the peers is what the numbers were always meant to be.
+
+    private var allPeers: [I2PInterfacePeer] {
+        lock.lock(); defer { lock.unlock() }
+        return peerInterfaces + spawned
+    }
+
+    public var rxBytes:   Int { allPeers.reduce(0) { $0 + $1.rxBytes } }
+    public var txBytes:   Int { allPeers.reduce(0) { $0 + $1.txBytes } }
+    public var rxPackets: Int { allPeers.reduce(0) { $0 + $1.rxPackets } }
+    public var txPackets: Int { allPeers.reduce(0) { $0 + $1.txPackets } }
 
     // Hardware MTU
     public var hwMtu: Int? { I2PInterface.hwMtu }

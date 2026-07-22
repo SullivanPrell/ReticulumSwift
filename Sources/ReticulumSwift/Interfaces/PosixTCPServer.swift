@@ -16,7 +16,11 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     public let name: String
     public let port: UInt16
     public private(set) var bitrate: Int = 1_000_000_000
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     public let hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
@@ -35,8 +39,11 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
 
-    public private(set) var rxBytes: Int = 0
-    public private(set) var txBytes: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
 
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
@@ -125,7 +132,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     public func send(_ packet: Packet) throws {
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
-        txBytes += raw.count
+        counters.addTx(bytes: raw.count)
         lock.lock()
         let all = clients
         lock.unlock()
@@ -152,7 +159,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
                 // Funnel every client's delivery through one serial queue so the
                 // shared counter and inbound handler never run concurrently.
                 self.deliveryQueue.async {
-                    self.rxBytes += data.count
+                    self.counters.addRx(bytes: data.count)
                     if let h = self.rawInboundHandler {
                         h(data, self)
                     } else if let p = try? Packet.unpack(data) {

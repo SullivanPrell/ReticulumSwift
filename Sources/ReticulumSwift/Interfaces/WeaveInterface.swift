@@ -169,7 +169,11 @@ public final class WDCLTransport {
 
     private let transport: SerialPortTransport
     private let decoder:   HDLC.FrameDecoder
-    public  private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     /// Serializes the actual serial-port writes. Every outbound path (peer
     /// processOutgoing, discover/handshake/sendCommand) funnels through
@@ -575,12 +579,19 @@ public final class WeaveInterface: Interface {
     public let  name:    String
     public var  bitrate: Int = WeaveInterface.bitrateGuess
 
-    public private(set) var isOnline:  Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline:  Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
-    public private(set) var rxBytes:   Int = 0
-    public private(set) var txBytes:   Int = 0
-    public private(set) var rxPackets: Int = 0
-    public private(set) var txPackets: Int = 0
+    /// Lock-guarded — a peer accumulates into its parent's counters from the
+    /// WDCL transport queue while the UI reads them. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes:   Int { counters.rxBytes }
+    public var txBytes:   Int { counters.txBytes }
+    public var rxPackets: Int { counters.rxPackets }
+    public var txPackets: Int { counters.txPackets }
 
     public var hwMtu:           Int? { WeaveInterface.hwMtuValue }
     public var inboundHandler:  ((Packet, any Interface) -> Void)? = nil
@@ -711,10 +722,10 @@ public final class WeaveInterface: Interface {
     // MARK: - Internal helpers (used by WeaveInterfacePeer)
 
     /// Accumulate inbound statistics on behalf of a child peer.
-    internal func addRxStats(bytes: Int) { rxBytes += bytes; rxPackets += 1 }
+    internal func addRxStats(bytes: Int) { counters.addRx(bytes: bytes) }
 
     /// Accumulate outbound statistics on behalf of a child peer.
-    internal func addTxStats(bytes: Int) { txBytes += bytes; txPackets += 1 }
+    internal func addTxStats(bytes: Int) { counters.addTx(bytes: bytes) }
 
     /// Remove a peer's table entries (called from `WeaveInterfacePeer.teardown()`).
     internal func removePeerEntry(endpointAddr: Data) {
@@ -768,12 +779,19 @@ public final class WeaveInterfacePeer: Interface {
     public let  name:    String
     public var  bitrate: Int = WeaveInterface.bitrateGuess
 
-    public private(set) var isOnline: Bool = true
+    private let onlineFlag = LockedFlag(true)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
-    public private(set) var rxBytes:   Int = 0
-    public private(set) var txBytes:   Int = 0
-    public private(set) var rxPackets: Int = 0
-    public private(set) var txPackets: Int = 0
+    /// Lock-guarded — a peer accumulates into its parent's counters from the
+    /// WDCL transport queue while the UI reads them. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes:   Int { counters.rxBytes }
+    public var txBytes:   Int { counters.txBytes }
+    public var rxPackets: Int { counters.rxPackets }
+    public var txPackets: Int { counters.txPackets }
 
     public var hwMtu:             Int? { owner?.hwMtu }
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
@@ -846,8 +864,7 @@ public final class WeaveInterfacePeer: Interface {
         guard !isDuplicate else { return }
 
         owner.refreshPeer(endpointAddr: self.endpointAddr)
-        rxBytes   += data.count
-        rxPackets += 1
+        counters.addRx(bytes: data.count)
         owner.addRxStats(bytes: data.count)
         rawInboundHandler?(data, self)
     }
@@ -862,8 +879,7 @@ public final class WeaveInterfacePeer: Interface {
         owner.writeLock.lock()
         owner.device.deliverPacket(endpointAddr: endpointAddr, data: data)
         owner.writeLock.unlock()
-        txBytes   += data.count
-        txPackets += 1
+        counters.addTx(bytes: data.count)
         owner.addTxStats(bytes: data.count)
     }
 

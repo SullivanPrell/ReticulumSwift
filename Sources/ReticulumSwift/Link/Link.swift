@@ -269,7 +269,17 @@ public final class Link {
 
     /// Establishment timeout. Defaults to `establishmentTimeoutPerHop`
     /// seconds; scaled up by hop count when the path is known.
-    public var establishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
+    ///
+    /// Guarded by `stateLock`, like `status`: `Link.initiate` starts the
+    /// watchdog before returning, so the watchdog thread is already reading
+    /// this by the time the caller assigns it on the very next line. Internal
+    /// code holding the lock must use `_establishmentTimeout` — `stateLock` is
+    /// not recursive.
+    private var _establishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
+    public var establishmentTimeout: TimeInterval {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _establishmentTimeout }
+        set { stateLock.lock(); _establishmentTimeout = newValue; stateLock.unlock() }
+    }
 
     /// Fires when the link transitions to `.active`. If the link is already
     /// active when the callback is set (synchronous loopback), it replays.
@@ -279,7 +289,15 @@ public final class Link {
     public var onClosed: ((Link) -> Void)?
     public var onDataReceived: ((Data, Link) -> Void)?
     /// Called when the link times out (establishment or stale).
-    public var onTimeout: ((Link) -> Void)?
+    ///
+    /// Guarded by `stateLock` for the same reason as `establishmentTimeout` —
+    /// the watchdog takes and clears this callback while the caller that just
+    /// created the link is still installing it.
+    private var _onTimeout: ((Link) -> Void)?
+    public var onTimeout: ((Link) -> Void)? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _onTimeout }
+        set { stateLock.lock(); _onTimeout = newValue; stateLock.unlock() }
+    }
     /// Called when the remote peer reveals their identity via `identify`.
     /// Mirrors Python's `LinkCallbacks.remote_identified`.
     public var onRemoteIdentified: ((Link, Identity) -> Void)? {
@@ -324,14 +342,21 @@ public final class Link {
 
     // MARK: - Traffic statistics (mirrors Python Link.tx/rx/txbytes/rxbytes)
 
+    /// Traffic statistics are written from whichever thread drives the link's
+    /// I/O and read from another (the UI shows per-link throughput). The writes
+    /// below were already inside `stateLock`, but these were plain stored
+    /// properties — so a *reader* on another thread still raced every write.
+    /// Routing them through `InterfaceCounters` guards both sides.
+    private let counters = InterfaceCounters()
+
     /// Total outbound packet count. Mirrors Python `Link.tx`.
-    public private(set) var tx: Int = 0
+    public var tx: Int { counters.txPackets }
     /// Total inbound packet count. Mirrors Python `Link.rx`.
-    public private(set) var rx: Int = 0
+    public var rx: Int { counters.rxPackets }
     /// Total bytes transmitted (encrypted payload). Mirrors Python `Link.txbytes`.
-    public private(set) var txBytes: Int = 0
+    public var txBytes: Int { counters.txBytes }
     /// Total bytes received (encrypted payload). Mirrors Python `Link.rxbytes`.
-    public private(set) var rxBytes: Int = 0
+    public var rxBytes: Int { counters.rxBytes }
 
     /// Wall-clock of the most recent inbound encrypted packet (any
     /// context). Used by the keepalive watchdog. `nil` until the first
@@ -573,14 +598,17 @@ public final class Link {
         stateLock.lock()
         let ts = Date()
         lastOutbound = ts
-        if countPacket { tx += 1; txBytes += bytes }
         if isData { lastData = ts }
         stateLock.unlock()
+        // Outside `stateLock` — the counters carry their own lock, and taking
+        // them separately keeps the two locks from ever nesting.
+        if countPacket { counters.addTx(bytes: bytes) }
     }
 
     /// Record inbound lastInbound + rx/rxBytes under `stateLock`.
     private func recordInbound(bytes: Int, at ts: Date = Date()) {
-        stateLock.lock(); lastInbound = ts; rx += 1; rxBytes += bytes; stateLock.unlock()
+        stateLock.lock(); lastInbound = ts; stateLock.unlock()
+        counters.addRx(bytes: bytes)
     }
 
     /// Send pre-encrypted resource segment data without applying link-level
@@ -1215,11 +1243,11 @@ public final class Link {
         switch curStatus {
         case .pending, .handshake:
             let requestedAt = requestTime ?? now
-            let deadline = requestedAt.addingTimeInterval(establishmentTimeout)
+            let deadline = requestedAt.addingTimeInterval(_establishmentTimeout)
             if now >= deadline {
                 _teardownReason = .timeout
                 _status = .failed
-                let cb = onTimeout; onTimeout = nil
+                let cb = _onTimeout; _onTimeout = nil
                 stateLock.unlock()
                 stopWatchdog()
                 // Mark path unresponsive on timeout.

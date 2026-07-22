@@ -13,7 +13,11 @@ public final class TCPServerInterface: Interface {
     public let name: String
     public let port: UInt16
     public private(set) var bitrate: Int = 10_000_000
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     // Python TCPServerInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
     public let hwMtu: Int? = 262_144
@@ -38,8 +42,11 @@ public final class TCPServerInterface: Interface {
     /// Called by Transport when a client disconnects. Transport deregisters the sub-interface.
     public var onClientDisconnected: ((any Interface) -> Void)?
 
-    public var rxBytes: Int = 0
-    public var txBytes: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
 
     /// Python `TCPServerInterface.__str__` returns `"TCPInterface[Server on 0.0.0.0:<port>]"`.
     public var displayName: String { "TCPInterface[Server on 0.0.0.0:\(port)]" }
@@ -111,7 +118,7 @@ public final class TCPServerInterface: Interface {
     public func send(_ packet: Packet) throws {
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
-        if !raw.isEmpty { txBytes += raw.count }
+        if !raw.isEmpty { counters.addTx(bytes: raw.count) }
         lock.lock()
         let clients = spawned
         lock.unlock()
@@ -146,7 +153,7 @@ public final class TCPServerInterface: Interface {
                 // concurrently by two connections (order preserved per client).
                 self.deliveryQueue.async { [weak clientIface] in
                     guard let ci = clientIface else { return }
-                    ci.rxBytes += frame.count
+                    ci.noteRx(bytes: frame.count)
                     if let h = ci.rawInboundHandler {
                         h(frame, ci)
                     } else if let packet = try? Packet.unpack(frame) {
@@ -187,7 +194,11 @@ public final class TCPServerInterface: Interface {
 public final class TCPServerClientInterface: Interface {
     public let name: String
     public var bitrate: Int = 10_000_000
-    public internal(set) var isOnline: Bool = true
+    private let onlineFlag = LockedFlag(true)
+    public internal(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     public let hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
@@ -201,8 +212,16 @@ public final class TCPServerClientInterface: Interface {
     public var ifacKey: Data?
     public var ifacSize: Int
 
-    public var rxBytes: Int = 0
-    public var txBytes: Int = 0
+    /// Lock-guarded — inbound frames are counted from the parent server's
+    /// delivery queue while `send` runs on the caller's thread and the UI
+    /// reads from a third. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
+
+    /// Counts an inbound frame on behalf of the parent server, which owns the
+    /// receive path for every spawned client.
+    fileprivate func noteRx(bytes: Int) { counters.addRx(bytes: bytes) }
 
     public var displayName: String { "TCPInterface[Client on \(name)]" }
 
@@ -231,7 +250,7 @@ public final class TCPServerClientInterface: Interface {
         guard isOnline, let client = spawnedClient else { return }
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
-        if !raw.isEmpty { txBytes += raw.count }
+        if !raw.isEmpty { counters.addTx(bytes: raw.count) }
         client.send(framed)
     }
 }

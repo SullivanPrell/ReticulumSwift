@@ -34,7 +34,11 @@ public final class AutoInterface: Interface {
 
     public let name: String
     public private(set) var bitrate: Int = 10_000_000
-    public private(set) var isOnline: Bool = false
+    private let onlineFlag = LockedFlag(false)
+    public private(set) var isOnline: Bool {
+        get { onlineFlag.value }
+        set { onlineFlag.value = newValue }
+    }
 
     // Python AutoInterface: HW_MTU = 1196, FIXED_MTU = True
     public let hwMtu: Int? = 1_196
@@ -45,8 +49,11 @@ public final class AutoInterface: Interface {
     public var recursivePrs: Bool = false
     public var announcesFromInternal: Bool = true
 
-    public private(set) var rxBytes: Int = 0
-    public private(set) var txBytes: Int = 0
+    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// and status reporting read from another thread. See `InterfaceCounters`.
+    private let counters = InterfaceCounters()
+    public var rxBytes: Int { counters.rxBytes }
+    public var txBytes: Int { counters.txBytes }
     public var ifacIdentity: Identity?
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
@@ -138,7 +145,7 @@ public final class AutoInterface: Interface {
     public func send(_ packet: Packet) throws {
         guard isOnline else { return }
         let raw = wrapIfac(try packet.pack())
-        txBytes += raw.count
+        counters.addTx(bytes: raw.count)
         peersLock.lock()
         let currentPeers = peers
         peersLock.unlock()
@@ -338,7 +345,7 @@ public final class AutoInterface: Interface {
             }
             guard n > 0 else { continue }
             let raw = Data(buf[0..<n])
-            rxBytes += raw.count
+            counters.addRx(bytes: raw.count)
             if let h = rawInboundHandler {
                 h(raw, self)
             } else if let packet = try? Packet.unpack(raw) {
