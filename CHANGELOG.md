@@ -3,6 +3,23 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.4.1] — Correct the reported library version
+
+### Fixed
+
+- **`Reticulum.version` was stuck at `"0.1.0"`.** The constant was never bumped
+  past the initial value, so `rnsd --version` and RetiOS's Settings ▸ About both
+  reported "ReticulumSwift 0.1.0" despite the package being released through
+  1.4.0. It now reports the real release version. (`version` is informational
+  only — it never travels on the wire.)
+
+### Added
+
+- **`Reticulum.rnsProtocolVersion`** — the Python RNS release whose wire protocol
+  this port matches (currently `"1.4.0"`), kept distinct from the library's own
+  release `version`. Mirrors Python's single `RNS.__version__` as a parity
+  reference.
+
 ## [1.4.0] — Large link packets, response Resources & RNS 1.4.0 parity
 
 ### Fixed
