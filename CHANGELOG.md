@@ -3,6 +3,32 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.4.2] — bz2 compression on by default; request-timeout fix
+
+### Fixed
+
+- **Compressed Resources from Python peers could not be received.**
+  `Resource.compressor` defaulted to `NoCompressor`, whose `decompress` returns
+  `nil`. Python RNS bz2-compresses any resource-sized payload and sets the
+  per-resource `compressed` flag, so every compressed Resource a peer sent (large
+  NomadNet pages, large LXMF messages, RRC notices — anything over the link MDU)
+  failed to assemble and tore the link down. The default is now `BZip2Compressor`,
+  matching Python. On send, a resource is compressed only when bz2 actually
+  shrinks it (the `compressed` flag records the choice), so **the wire format is
+  unchanged** and stays compatible with every RNS implementation. `StreamDataMessage.compressor`
+  (Buffer streams) likewise defaults to `BZip2Compressor`; compression on send
+  there remains opt-in per write. Install `NoCompressor()` / `nil` to opt out.
+- **A request whose response arrived as a Resource could time out mid-transfer.**
+  A link request armed a single fixed-timeout timer that fired `fail("timeout")`
+  unconditionally at `sentAt + timeout`; when the response came back as a Resource
+  (any multi-KB payload — e.g. a real NomadNet page), the timer fired while the
+  transfer was still in flight and tore the link down. Following Python
+  (`RequestReceipt.response_resource_progress`), the request timeout is now
+  disarmed the moment the response enters RECEIVING, handing the transfer's
+  lifetime to the Resource's own watchdog. A stalled transfer still concludes the
+  receipt via the transfer's failure hook. Fixes NomadNet "pages won't load" for
+  real pages over slower / multi-hop meshes.
+
 ## [1.4.1] — Correct the reported library version
 
 ### Fixed

@@ -3,20 +3,28 @@ import XCTest
 
 /// Tests for Resource compression behavior.
 ///
-/// Note: The default compressor is `NoCompressor` (no-op) since bz2 requires
-/// an external library. This is wire-compatible — resources sent uncompressed
-/// have `compressed=false` in the advertisement, which both Python and Swift
-/// implementations can interoperate with.
-///
-/// The `Resource.compressor` can be replaced with a bz2 implementation to
-/// enable full compression parity with the Python reference.
+/// Note: The default compressor is `BZip2Compressor`, matching the Python
+/// reference (which bz2-compresses resource-sized payloads). The `compressed`
+/// flag is recorded per-resource in the advertisement, so this stays
+/// wire-compatible — a resource is only marked compressed when bz2 actually
+/// shrinks it. Install `NoCompressor()` to opt out.
 final class ResourceCompressionTests: XCTestCase {
 
-    func testNoCompressorByDefault() throws {
+    func testCompressesByDefault() throws {
         let payload = Data(repeating: 0xAA, count: 1000)
         let resource = try Resource(link: dummyLink(), payload: payload, autoCompress: true)
-        // With NoCompressor, data is always sent uncompressed
-        XCTAssertFalse(resource.isCompressed, "default NoCompressor should not compress")
+        // With the default BZip2Compressor, a highly compressible payload is
+        // sent compressed (compressed=true in the advertisement).
+        XCTAssertTrue(resource.isCompressed, "default BZip2Compressor should compress a compressible payload")
+    }
+
+    func testNoCompressorOptOut() throws {
+        let saved = Resource.compressor
+        defer { Resource.compressor = saved }
+        Resource.compressor = NoCompressor()
+        let payload = Data(repeating: 0xAA, count: 1000)
+        let resource = try Resource(link: dummyLink(), payload: payload, autoCompress: true)
+        XCTAssertFalse(resource.isCompressed, "installing NoCompressor must send uncompressed")
     }
 
     func testAutoCompressCanBeDisabled() throws {

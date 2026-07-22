@@ -154,13 +154,16 @@ final class BZip2CompressorTests: XCTestCase {
 
     // MARK: - ResourceCompressor integration
 
-    func testResourceCompressorIsNoOpByDefault() {
+    func testResourceCompressorDefaultsToBZip2() {
+        // The default is BZip2Compressor (matching Python), so a compressible
+        // payload round-trips through the default compressor. This is what lets
+        // the app receive compressed resources from Python peers out of the box.
         let c = Resource.compressor
-        let data = Data("test".utf8)
-        XCTAssertNil(c.compress(data),
-                     "default Resource.compressor (NoCompressor) must return nil")
-        XCTAssertNil(c.decompress(data),
-                     "default Resource.compressor (NoCompressor) must return nil on decompress")
+        let data = Data(repeating: 0xAA, count: 2048)
+        let compressed = c.compress(data)
+        XCTAssertNotNil(compressed, "default Resource.compressor must compress compressible data")
+        XCTAssertEqual(compressed.flatMap { c.decompress($0) }, data,
+                       "default Resource.compressor must decompress its own output")
     }
 
     func testResourceCompressorCanBeReplacedWithBZ2() {

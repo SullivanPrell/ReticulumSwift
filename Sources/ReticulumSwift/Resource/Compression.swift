@@ -43,10 +43,12 @@ public extension DataCompressor {
     }
 }
 
-/// No-op compressor. With this default, resources are sent uncompressed
-/// (the `compressed` flag in the advertisement is `false`), which is
-/// compatible with all RNS implementations. Received compressed data
-/// cannot be decompressed until a real compressor is injected.
+/// No-op compressor. When installed as `Resource.compressor`, resources are
+/// sent uncompressed (the `compressed` flag in the advertisement is `false`),
+/// which is compatible with all RNS implementations. Received compressed data
+/// cannot be decompressed while this is installed. Note this is no longer the
+/// default — `Resource.compressor` defaults to `BZip2Compressor` so compressed
+/// resources from Python peers can be received. Install this only to opt out.
 public struct NoCompressor: DataCompressor {
     public init() {}
     public func compress(_ data: Data) -> Data? { nil }
@@ -55,7 +57,18 @@ public struct NoCompressor: DataCompressor {
 
 extension Resource {
     /// The active compressor used for all new Resource transfers.
-    /// Replace with `BZip2Compressor()` to enable wire-compatible
-    /// bz2 compression matching the Python reference. Default: `NoCompressor`.
-    public static var compressor: any DataCompressor = NoCompressor()
+    ///
+    /// Defaults to `BZip2Compressor` — matching the Python reference, which
+    /// always bz2-compresses resource-sized payloads. This is required to
+    /// *receive* compressed resources from Python peers: the `compressed` flag
+    /// is carried per-resource in the advertisement, and a peer that compresses
+    /// (any Python node) sends `compressed = true`, so a receiver whose
+    /// compressor cannot decode bz2 fails to assemble the resource and tears the
+    /// link down. On send, a resource is compressed only when bz2 actually
+    /// shrinks it (and the `compressed` flag records that), so the wire format
+    /// is unchanged and remains compatible with every RNS implementation.
+    ///
+    /// Set to `NoCompressor()` to opt out (resources always sent uncompressed;
+    /// compressed resources from peers cannot be received).
+    public static var compressor: any DataCompressor = BZip2Compressor()
 }
