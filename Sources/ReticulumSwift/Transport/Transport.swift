@@ -1916,13 +1916,11 @@ public final class Transport {
                     guard let self else { return nil }
                     guard let data, case .array(let arr) = (try? MsgPack.decode(data)) ?? .nil,
                           let first = arr.first else { return nil }
-                    let stats = self.getInterfaceStats()
-                    let statsArr = MsgPack.Value.array(stats.map { s -> MsgPack.Value in
-                        .map([(.string("name"), .string(s.name)),
-                              (.string("rxb"),  .int(Int64(s.rxBytes))),
-                              (.string("txb"),  .int(Int64(s.txBytes)))])
-                    })
-                    var response: [MsgPack.Value] = [statsArr]
+                    // Python: response = [Transport.owner.get_interface_stats()], plus the
+                    // link count when data[0] is True (Transport.py:2855-2856). rnstatus then
+                    // reads the returned dict's "interfaces", "rxb", "txs", "transport_id"…
+                    // keys, so this must be the full stats payload, not a summary of it.
+                    var response: [MsgPack.Value] = [InterfaceStatsPayload.build(self)]
                     if case .bool(true) = first {
                         response.append(.int(Int64(self.getLinkCount())))
                     }

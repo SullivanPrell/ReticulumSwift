@@ -165,6 +165,57 @@ final class RemotePathHandlerShapeTests: XCTestCase {
         XCTAssertNotNil(fields["timestamps"]?.asArray)
     }
 
+    // MARK: - /status
+
+    private func invokeStatusHandler(_ transport: Transport, includeLinkStats: Bool) throws -> [MsgPack.Value] {
+        let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
+        let statusHash = Hashes.truncatedHash(Data("/status".utf8))
+        let entry = try XCTUnwrap(mgmt.requestHandlers[statusHash])
+        let request = MsgPack.encode(.array([.bool(includeLinkStats)]))
+        let response = try XCTUnwrap(entry.handler(statusHash, request, Data(), makeMinimalLink(), 0))
+        return try XCTUnwrap(MsgPack.decode(response).asArray)
+    }
+
+    func testStatusReturnsTheFullInterfaceStatsPayload() throws {
+        // Python: response.append(Transport.owner.get_interface_stats()) — the whole dict,
+        // which rnstatus then indexes by "interfaces", "rxb", "txs" and so on. Returning a
+        // summarised list of per-interface names would leave rnstatus -R with nothing to read.
+        let transport = try makeTransport()
+        let entries = try invokeStatusHandler(transport, includeLinkStats: false)
+        XCTAssertEqual(entries.count, 1, "no link count requested")
+
+        let stats = try XCTUnwrap(entries[0].asDictionary)
+        XCTAssertNotNil(stats["interfaces"]?.asArray)
+        XCTAssertNotNil(stats["rxb"])
+        XCTAssertNotNil(stats["txb"])
+        XCTAssertNotNil(stats["rxs"])
+        XCTAssertNotNil(stats["txs"])
+    }
+
+    func testStatusAppendsLinkCountWhenRequested() throws {
+        // Python: if data[0] == True: response.append(Transport.owner.get_link_count())
+        let transport = try makeTransport()
+        let entries = try invokeStatusHandler(transport, includeLinkStats: true)
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertNotNil(entries[1].asInt)
+    }
+
+    func testStatusInterfaceEntriesCarryPerInterfaceKeys() throws {
+        let transport = try makeTransport()
+        transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
+
+        let entries = try invokeStatusHandler(transport, includeLinkStats: false)
+        let stats = try XCTUnwrap(entries[0].asDictionary)
+        let interfaces = try XCTUnwrap(stats["interfaces"]?.asArray)
+        let iface = try XCTUnwrap(interfaces.first?.asDictionary)
+
+        // A representative sample of the keys rnstatus reads off each interface.
+        for key in ["name", "short_name", "hash", "type", "rxb", "txb", "status",
+                    "mode", "bitrate", "rxs", "txs", "announce_queue", "clients"] {
+            XCTAssertNotNil(iface[key], "interface stats should carry \"\(key)\"")
+        }
+    }
+
     // MARK: - Unknown commands
 
     func testUnknownCommandReturnsNil() throws {

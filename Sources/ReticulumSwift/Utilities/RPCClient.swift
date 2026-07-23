@@ -205,9 +205,10 @@ public final class RPCClient {
         return false
     }
 
-    /// Python: `drop_path(destination_hash)`.
-    public func dropPath(destinationHash: Data) throws {
-        try drop("path", extra: [("destination_hash", .bytes(destinationHash))])
+    /// Python: `drop_path(destination_hash)` — returns whether a path was actually removed.
+    @discardableResult
+    public func dropPath(destinationHash: Data) throws -> Bool {
+        try drop("path", extra: [("destination_hash", .bytes(destinationHash))]).asBool ?? false
     }
 
     /// Python: `drop_all_via(transport_hash)` — returns the number of paths dropped.
