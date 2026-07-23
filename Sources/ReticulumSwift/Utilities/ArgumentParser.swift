@@ -26,12 +26,41 @@ public struct ArgumentParser {
         case flag
         case counted
         case value(metavar: String, defaultValue: String?)
+        /// `nargs="*"` — zero or more values, collected until the next option.
+        case variadic(metavar: String)
+        /// `nargs="?"` — an optional value; `const` is stored when the flag is given bare.
+        case optionalValue(metavar: String, const: String?)
+        /// Python: `action="append"` — the option may repeat and every value is kept.
+        case appended(metavar: String)
     }
 
     private struct Declaration {
         let names: [String]
         let kind: Kind
         let help: String
+        /// `help=argparse.SUPPRESS` — parsed, but omitted from usage and the option list.
+        var hidden: Bool = false
+    }
+
+    /// A declared option, exposed so an external formatter can reproduce `argparse`'s own
+    /// help layout. Python: the fields of an `argparse.Action`.
+    public struct OptionSpec {
+        /// Every spelling, in declaration order. Python: `action.option_strings`.
+        public let names: [String]
+        /// Python: `_format_args(action, metavar)` — `nil` for `store_true`/`count`.
+        public let metavar: String?
+        /// Python: `action.nargs`.
+        public let nargs: Nargs
+        public let help: String
+        /// Python: `help == argparse.SUPPRESS`.
+        public let hidden: Bool
+
+        public enum Nargs: Equatable {
+            case none       // store_true / count
+            case one        // store
+            case optional   // nargs="?"
+            case any        // nargs="*"
+        }
     }
 
     /// Program name, used in usage output. Python: `parser.prog`.
@@ -49,21 +78,58 @@ public struct ArgumentParser {
     }
 
     /// Declare a boolean flag. Python: `action="store_true"`.
-    public mutating func flag(_ names: [String], help: String) {
-        declarations.append(Declaration(names: names, kind: .flag, help: help))
+    public mutating func flag(_ names: [String], help: String, hidden: Bool = false) {
+        declarations.append(Declaration(names: names, kind: .flag, help: help, hidden: hidden))
     }
 
     /// Declare a repeatable counting flag. Python: `action="count", default=0`.
-    public mutating func counted(_ names: [String], help: String) {
-        declarations.append(Declaration(names: names, kind: .counted, help: help))
+    public mutating func counted(_ names: [String], help: String, hidden: Bool = false) {
+        declarations.append(Declaration(names: names, kind: .counted, help: help, hidden: hidden))
     }
 
     /// Declare an option that takes one value. Python: `action="store"`.
     public mutating func option(_ names: [String], metavar: String = "VALUE",
-                                help: String, default defaultValue: String? = nil) {
+                                help: String, default defaultValue: String? = nil,
+                                hidden: Bool = false) {
         declarations.append(Declaration(names: names,
                                         kind: .value(metavar: metavar, defaultValue: defaultValue),
-                                        help: help))
+                                        help: help, hidden: hidden))
+    }
+
+    /// Declare an option collecting zero or more values. Python: `nargs="*"`.
+    ///
+    /// The empty case is meaningful and must survive to the caller: Python's bare `-e`
+    /// yields `[]`, which is *falsy*, so the operation is skipped entirely **and** does not
+    /// count toward `rnid`'s mutual-exclusion tally. ``ParsedArguments/values(_:)``
+    /// distinguishes absent (`nil`) from present-but-empty (`[]`) for exactly that reason.
+    public mutating func variadic(_ names: [String], metavar: String = "VALUE",
+                                  help: String, hidden: Bool = false) {
+        declarations.append(Declaration(names: names, kind: .variadic(metavar: metavar),
+                                        help: help, hidden: hidden))
+    }
+
+    /// Declare an option whose value is optional. Python: `nargs="?", const=…`.
+    ///
+    /// When the flag appears without a value, `const` is stored — matching argparse, where
+    /// `-a` alone yields `DEFAULT_ASPECTS`. A `nil` const stores nothing but still records
+    /// the flag as provided (``ParsedArguments/wasProvided(_:)``).
+    public mutating func optionalValue(_ names: [String], metavar: String = "VALUE",
+                                       const: String? = nil, help: String,
+                                       hidden: Bool = false) {
+        declarations.append(Declaration(names: names,
+                                        kind: .optionalValue(metavar: metavar, const: const),
+                                        help: help, hidden: hidden))
+    }
+
+    /// Declare a repeatable option whose values accumulate. Python: `action="append"`.
+    ///
+    /// Needed by `rnx -a <hash>` and `rncp --allowed <hash>`, where every occurrence
+    /// contributes an entry rather than overwriting the previous one. Unlike ``variadic``
+    /// (`nargs="*"`), each occurrence consumes exactly one value.
+    public mutating func appending(_ names: [String], metavar: String = "VALUE",
+                                   help: String, hidden: Bool = false) {
+        declarations.append(Declaration(names: names, kind: .appended(metavar: metavar),
+                                        help: help, hidden: hidden))
     }
 
     /// Declare a positional argument, for usage output and arity checking.
@@ -81,10 +147,16 @@ public struct ArgumentParser {
         var flags: Set<String> = []
         var counts: [String: Int] = [:]
         var values: [String: String] = [:]
+        var lists: [String: [String]] = [:]
+        var provided: Set<String> = []
         var positionals: [String] = []
 
         var index = 0
         var optionsTerminated = false
+
+        // argparse stops collecting `nargs="*"` values at the first token that looks like an
+        // option. A bare "-" is a stdin placeholder, not an option.
+        func looksLikeOption(_ token: String) -> Bool { token.hasPrefix("-") && token != "-" }
 
         while index < arguments.count {
             let argument = arguments[index]
@@ -119,15 +191,22 @@ public struct ArgumentParser {
                 guard let declaration = declaration(for: name) else {
                     throw ArgumentError.unrecognisedOption(name)
                 }
-                guard case .value = declaration.kind else {
+                switch declaration.kind {
+                case .value, .optionalValue:
+                    values[canonicalName(declaration)] = inlineValue
+                    provided.insert(canonicalName(declaration))
+                case .variadic, .appended:
+                    lists[canonicalName(declaration), default: []].append(inlineValue)
+                    provided.insert(canonicalName(declaration))
+                case .flag, .counted:
                     throw ArgumentError.unexpectedValue(name)
                 }
-                values[canonicalName(declaration)] = inlineValue
                 continue
             }
 
             if let declaration = declaration(for: argument) {
                 let key = canonicalName(declaration)
+                provided.insert(key)
                 switch declaration.kind {
                 case .flag:
                     flags.insert(key)
@@ -137,6 +216,24 @@ public struct ArgumentParser {
                     guard index < arguments.count else { throw ArgumentError.missingValue(argument) }
                     values[key] = arguments[index]
                     index += 1
+                case .optionalValue(_, let const):
+                    if index < arguments.count, !looksLikeOption(arguments[index]) {
+                        values[key] = arguments[index]
+                        index += 1
+                    } else if let const {
+                        values[key] = const
+                    }
+                case .appended:
+                    guard index < arguments.count else { throw ArgumentError.missingValue(argument) }
+                    lists[key, default: []].append(arguments[index])
+                    index += 1
+                case .variadic:
+                    var collected = lists[key] ?? []
+                    while index < arguments.count, !looksLikeOption(arguments[index]) {
+                        collected.append(arguments[index])
+                        index += 1
+                    }
+                    lists[key] = collected
                 }
                 continue
             }
@@ -149,16 +246,18 @@ public struct ArgumentParser {
                 if resolved.allSatisfy({ declaration in
                     guard let declaration else { return false }
                     switch declaration.kind {
-                    case .flag, .counted: return true
-                    case .value:          return false
+                    case .flag, .counted:                        return true
+                    case .value, .variadic, .optionalValue,
+                         .appended:                              return false
                     }
                 }) {
                     for declaration in resolved.compactMap({ $0 }) {
                         let key = canonicalName(declaration)
+                        provided.insert(key)
                         switch declaration.kind {
                         case .flag:    flags.insert(key)
                         case .counted: counts[key, default: 0] += 1
-                        case .value:   break
+                        case .value, .variadic, .optionalValue, .appended: break
                         }
                     }
                     continue
@@ -177,11 +276,36 @@ public struct ArgumentParser {
             }
         }
 
-        return ParsedArguments(flags: flags, counts: counts, values: values, positionals: positionals)
+        return ParsedArguments(flags: flags, counts: counts, values: values,
+                               lists: lists, provided: provided, positionals: positionals)
     }
 
     private func declaration(for name: String) -> Declaration? {
         declarations.first { $0.names.contains(name) }
+    }
+
+    /// Every declared option, for external help formatters. Python: `parser._actions`.
+    public var optionSpecs: [OptionSpec] {
+        declarations.map { declaration in
+            switch declaration.kind {
+            case .flag, .counted:
+                return OptionSpec(names: declaration.names, metavar: nil, nargs: .none,
+                                  help: declaration.help, hidden: declaration.hidden)
+            case .value(let metavar, _):
+                return OptionSpec(names: declaration.names, metavar: metavar, nargs: .one,
+                                  help: declaration.help, hidden: declaration.hidden)
+            case .optionalValue(let metavar, _):
+                return OptionSpec(names: declaration.names, metavar: metavar, nargs: .optional,
+                                  help: declaration.help, hidden: declaration.hidden)
+            case .variadic(let metavar):
+                return OptionSpec(names: declaration.names, metavar: metavar, nargs: .any,
+                                  help: declaration.help, hidden: declaration.hidden)
+            case .appended(let metavar):
+                // argparse formats an `append` option exactly like `store`: one value.
+                return OptionSpec(names: declaration.names, metavar: metavar, nargs: .one,
+                                  help: declaration.help, hidden: declaration.hidden)
+            }
+        }
     }
 
     /// The longest declared spelling, used as the lookup key so callers can ask by any alias.
@@ -212,9 +336,15 @@ public struct ArgumentParser {
         lines.append("")
         lines.append("options:")
         lines.append("  \("-h, --help".padding(toLength: 24, withPad: " ", startingAt: 0))show this help message and exit")
-        for declaration in declarations {
+        for declaration in declarations where !declaration.hidden {
             var spelling = declaration.names.joined(separator: ", ")
-            if case .value(let metavar, _) = declaration.kind { spelling += " \(metavar)" }
+            switch declaration.kind {
+            case .value(let metavar, _):        spelling += " \(metavar)"
+            case .optionalValue(let metavar, _): spelling += " [\(metavar)]"
+            case .variadic(let metavar):        spelling += " [\(metavar) ...]"
+            case .appended(let metavar):        spelling += " \(metavar)"
+            case .flag, .counted:               break
+            }
             let padded = spelling.count < 24
                 ? spelling.padding(toLength: 24, withPad: " ", startingAt: 0)
                 : spelling + "\n" + String(repeating: " ", count: 26)
@@ -231,14 +361,20 @@ public struct ParsedArguments {
     private let flags: Set<String>
     private let counts: [String: Int]
     private let values: [String: String]
+    private let lists: [String: [String]]
+    private let provided: Set<String>
 
     /// Non-option arguments, in the order they appeared.
     public let positionals: [String]
 
-    init(flags: Set<String>, counts: [String: Int], values: [String: String], positionals: [String]) {
+    init(flags: Set<String>, counts: [String: Int], values: [String: String],
+         lists: [String: [String]] = [:], provided: Set<String> = [],
+         positionals: [String]) {
         self.flags = flags
         self.counts = counts
         self.values = values
+        self.lists = lists
+        self.provided = provided
         self.positionals = positionals
     }
 
@@ -257,6 +393,16 @@ public struct ParsedArguments {
     /// The value of a `store` option parsed as `Double`, or `nil`.
     public func double(_ name: String) -> Double? { values[name].flatMap(Double.init) }
 
+    /// The values of an `nargs="*"` option.
+    ///
+    /// `nil` means the option was never given; `[]` means it was given with no values —
+    /// Python's falsy empty list, which callers must treat as "skip this operation".
+    public func values(_ name: String) -> [String]? { lists[name] }
+
+    /// Whether an option appeared on the command line at all, regardless of its value.
+    /// Needed for `nargs="?"` options declared without a `const`.
+    public func wasProvided(_ name: String) -> Bool { provided.contains(name) }
+
     /// Whether help was requested. Handled outside the declaration list, as `argparse` does.
     public var wantsHelp: Bool { flags.contains("--help") }
 }
@@ -272,6 +418,14 @@ public enum ArgumentError: Error, CustomStringConvertible, Equatable {
     case unexpectedValue(String)
     /// A required positional was not supplied. Python: "the following arguments are required".
     case missingPositional(String)
+    /// Every token `argparse` could not consume, in argv order. Python's `parse_args`
+    /// reports all leftovers in one message: "unrecognized arguments: --bogus extra".
+    /// Distinct from ``unrecognisedOption(_:)``, which names a single option and is what
+    /// ``ArgumentParser/parse(_:)`` throws as soon as it hits one.
+    case unrecognisedArguments([String])
+    /// An abbreviated long option matching more than one declaration.
+    /// Python: `allow_abbrev=True` → "ambiguous option: --ver could match --verbose, --version".
+    case ambiguousOption(String, [String])
 
     public var description: String {
         switch self {
@@ -279,6 +433,10 @@ public enum ArgumentError: Error, CustomStringConvertible, Equatable {
         case .missingValue(let name):       return "argument \(name): expected one argument"
         case .unexpectedValue(let name):    return "argument \(name): ignored explicit argument"
         case .missingPositional(let name):  return "the following arguments are required: \(name)"
+        case .unrecognisedArguments(let names):
+            return "unrecognized arguments: \(names.joined(separator: " "))"
+        case .ambiguousOption(let given, let candidates):
+            return "ambiguous option: \(given) could match \(candidates.joined(separator: ", "))"
         }
     }
 }

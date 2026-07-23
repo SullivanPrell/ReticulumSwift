@@ -1279,25 +1279,41 @@ public final class Transport {
 
     // MARK: - Packet PHY stats cache
 
+    /// Accept either hash width for a PHY-cache lookup.
+    ///
+    /// The caches are keyed by the *truncated* 16-byte packet hash, but Python keys its
+    /// equivalents by the full 32-byte `packet.packet_hash` (Transport.py:1500/1507/1514)
+    /// and a Python `rnprobe` therefore asks a Swift daemon over RPC with 32 bytes. Since
+    /// the truncated hash is by definition the first 16 bytes of the full one, narrowing
+    /// the key here makes both spellings resolve without changing what is stored.
+    private static func phyCacheKey(_ packetHash: Data) -> Data {
+        packetHash.count > Constants.truncatedHashLength
+            ? packetHash.prefix(Constants.truncatedHashLength)
+            : packetHash
+    }
+
     /// Returns the cached RSSI for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_rssi(packet_hash)`.
     public func getPacketRssi(packetHash: Data) -> Float? {
+        let key = Transport.phyCacheKey(packetHash)
         metricsLock.lock(); defer { metricsLock.unlock() }
-        return packetRssiCache.last(where: { $0.hash == packetHash })?.rssi
+        return packetRssiCache.last(where: { $0.hash == key })?.rssi
     }
 
     /// Returns the cached SNR for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_snr(packet_hash)`.
     public func getPacketSnr(packetHash: Data) -> Float? {
+        let key = Transport.phyCacheKey(packetHash)
         metricsLock.lock(); defer { metricsLock.unlock() }
-        return packetSnrCache.last(where: { $0.hash == packetHash })?.snr
+        return packetSnrCache.last(where: { $0.hash == key })?.snr
     }
 
     /// Returns the cached quality for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_q(packet_hash)`.
     public func getPacketQ(packetHash: Data) -> Float? {
+        let key = Transport.phyCacheKey(packetHash)
         metricsLock.lock(); defer { metricsLock.unlock() }
-        return packetQCache.last(where: { $0.hash == packetHash })?.quality
+        return packetQCache.last(where: { $0.hash == key })?.quality
     }
 
     // MARK: - Path responsiveness
@@ -1448,6 +1464,18 @@ public final class Transport {
         lock.lock(); defer { lock.unlock() }
         guard let ratchetPub = knownRatchets[destinationHash] else { return nil }
         return Identity.ratchetID(forPublicKey: ratchetPub)
+    }
+
+    /// The 32-byte ratchet PUBLIC key currently known for a destination, or nil.
+    ///
+    /// Mirrors Python's `Identity.get_ratchet(destination_hash)`, which is what
+    /// `Destination.encrypt` feeds to `identity.encrypt(plaintext, ratchet=…)`
+    /// (Destination.py:594-600). Distinct from ``currentRatchetID(forDestination:)``,
+    /// which returns the 10-byte *identifier* derived from this key and cannot be used
+    /// as an encryption target.
+    public func currentRatchetKey(forDestination destinationHash: Data) -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        return knownRatchets[destinationHash]
     }
 
     // MARK: - Lifecycle
@@ -1911,11 +1939,21 @@ public final class Transport {
             if let mgmt = try? Destination(identity: identity, direction: .in, kind: .single,
                                             appName: "rnstransport", aspects: ["remote", "management"]) {
                 let allowed = remoteManagementAllowed
-                mgmt.registerRequestHandler(path: "/status", allow: .list, allowedList: allowed) {
-                    [weak self] _, data, _, _, _ -> Data? in
+                // Registered as a NATIVE handler, not a bytes one: Python's rnstatus does
+                // `isinstance(request_receipt.response, list)` on the decoded value
+                // (rnstatus.py:112). A bytes handler makes `dispatchRequest` wrap the
+                // reply as `[request_id, BIN(<msgpack>)]`, Python sees `bytes`, the
+                // isinstance test fails and rnstatus reports "Could not get RNS status
+                // from remote transport instance". A Swift client would NOT catch this —
+                // `handleIncomingResponse` unwraps a .bytes payload transparently.
+                mgmt.registerNativeRequestHandler(path: "/status", allow: .list, allowedList: allowed) {
+                    [weak self] _, data, _, _, _ -> MsgPack.Value? in
                     guard let self else { return nil }
-                    guard let data, case .array(let arr) = (try? MsgPack.decode(data)) ?? .nil,
-                          let first = arr.first else { return nil }
+                    // Python also guards on `remote_identity != None` (Transport.py:2851);
+                    // here the `.list` allow policy in `Link.dispatchRequest` already
+                    // requires an identified peer whose hash is in `allowed`, so reaching
+                    // this closure implies it.
+                    guard case .array(let arr) = data, let first = arr.first else { return nil }
                     // Python: response = [Transport.owner.get_interface_stats()], plus the
                     // link count when data[0] is True (Transport.py:2855-2856). rnstatus then
                     // reads the returned dict's "interfaces", "rxb", "txs", "transport_id"…
@@ -1924,7 +1962,7 @@ public final class Transport {
                     if case .bool(true) = first {
                         response.append(.int(Int64(self.getLinkCount())))
                     }
-                    return MsgPack.encode(.array(response))
+                    return .array(response)
                 }
                 mgmt.registerRequestHandler(path: "/path", allow: .list, allowedList: allowed) {
                     [weak self] _, data, _, _, _ -> Data? in
@@ -2784,7 +2822,11 @@ public final class Transport {
             let match = receipts.first { $0.packetHash == proofHash }
             receiptsLock.unlock()
             if let match {
-                match.validateExplicitProof(proofData)
+                // Hand the inbound packet to the receipt as well: it carries the PHY
+                // metadata (rssi/snr/quality) the interface stamped on it, which is what
+                // Python's `receipt.proof_packet` exposes. Mirrors Python's
+                // `receipt.validate_proof_packet(packet)` (Transport.py:2302).
+                match.validateExplicitProof(proofData, packet: packet)
                 return
             }
         } else if proofData.count == PacketReceipt.implicitProofLength {
@@ -2794,7 +2836,7 @@ public final class Transport {
             let snapshot = receipts
             receiptsLock.unlock()
             for receipt in snapshot {
-                if receipt.validateImplicitProof(proofData) {
+                if receipt.validateImplicitProof(proofData, packet: packet) {
                     receiptsLock.lock()
                     receipts.removeAll { $0 === receipt }
                     receiptsLock.unlock()

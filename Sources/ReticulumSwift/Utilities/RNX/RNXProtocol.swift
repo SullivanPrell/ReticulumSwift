@@ -28,6 +28,14 @@ public struct RNXRequest {
     /// Optional data fed to the command's stdin.
     public var stdin: Data? = nil
 
+    /// Encode element `[1]` as a msgpack integer rather than float64.
+    ///
+    /// Python emits positive fixint 15 whenever `-w` is defaulted — `Transport.
+    /// PATH_REQUEST_TIMEOUT` is an `int` and argparse does not coerce non-string defaults
+    /// through `type=float` — and float64 only when `-w` is passed explicitly. Both are
+    /// accepted by every listener; the flag exists so the client can be byte-exact.
+    public var timeoutPacksAsInteger: Bool = false
+
     public init(command: String) {
         self.command = command
     }
@@ -119,7 +127,13 @@ public struct RNXResult {
 
 // MARK: - RNXError
 
-public enum RNXError: Error {
+public enum RNXError: Error, Equatable {
+    /// The 8-element result array was the wrong length or carried the wrong types.
+    /// Python: the `except` around the destructuring at rnx.py:452.
     case malformedResponse
+    /// Declared for source compatibility; nothing in the package throws it.
     case executionDenied
+    /// The 5-element request array was the wrong length or carried the wrong types.
+    /// Python: `data[0].decode("utf-8")` raising inside the response generator (rnx.py:156).
+    case malformedRequest
 }

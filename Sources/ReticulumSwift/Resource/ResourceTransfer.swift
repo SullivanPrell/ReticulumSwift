@@ -128,9 +128,43 @@ public final class ResourceTransfer {
     /// Mirrors Python's `Resource.get_progress()`.
     public var progress: Double {
         stateLock.lock(); defer { stateLock.unlock() }
+        return progressLocked()
+    }
+
+    /// `progress` with `stateLock` already held.
+    ///
+    /// Python's `Resource.get_progress()` branches on `self.initiator` and divides
+    /// `sent_parts` by the part count on the sending side (RNS/Resource.py:1139-1193).
+    /// Swift keeps the sender's equivalent state in `sentMapHashes` / `mapHashes`, both of
+    /// which stay empty on a receiver — so the receiver arithmetic below is untouched, and
+    /// a sender that has not advertised yet still reports 0.0.
+    private func progressLocked() -> Double {
         if case .complete = _status { return 1.0 }
+        if !isReceiver, !mapHashes.isEmpty {
+            return min(1.0, Double(sentMapHashes.count) / Double(mapHashes.count))
+        }
         if totalParts == 0 { return 0.0 }
         return min(1.0, Double(receivedCount) / Double(totalParts))
+    }
+
+    /// Number of parts this sender has transmitted at least once.
+    /// Mirrors Python `Resource.sent_parts`.
+    public var sentPartCount: Int {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return sentMapHashes.count
+    }
+
+    /// Progress within the current segment only.
+    /// Mirrors Python's `Resource.get_segment_progress()` (RNS/Resource.py:1196-1205).
+    ///
+    /// Swift's part accounting is already per-segment — `mapHashes`/`parts` are rebuilt for
+    /// each segment — so this currently equals ``progress``. It exists as a distinct name
+    /// because `rncp -P/--phy-rates` multiplies it by `transferSize` to derive the
+    /// physical-layer rate (rncp.py:331), and because a future cross-segment `progress`
+    /// must not change this one.
+    public var segmentProgress: Double {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return progressLocked()
     }
 
     /// The number of bytes needed to transfer the resource (encrypted).
@@ -170,6 +204,7 @@ public final class ResourceTransfer {
 
     /// Python-compatible getter methods (mirrors Python `Resource.get_progress()` etc.)
     public func getProgress() -> Double { progress }
+    public func getSegmentProgress() -> Double { segmentProgress }
     public func getTransferSize() -> Int { transferSize }
     public func getDataSize() -> Int { dataSize }
     public func getParts() -> Int { partCount }
@@ -714,6 +749,14 @@ public final class ResourceTransfer {
             doSendRequest = true
         }
         stateLock.unlock()
+
+        // Surface progress to observers. Mirrors Python's `Resource.__progress_callback`,
+        // which fires on every received part. Without this, `onProgress` was declared and
+        // settable but never invoked anywhere in the class, so
+        // `Link.handleIncomingResponseResource`'s `rt.onProgress = { receipt.updateProgress }`
+        // wiring was dead and `RequestReceipt.progress` stayed 0.0 for a whole download.
+        // Fired outside the lock, like every other callout here.
+        onProgress?(progress, self)
 
         // ACT OUTSIDE LOCK (assemble/sendRequest do their own locking + callouts).
         if doAssemble {

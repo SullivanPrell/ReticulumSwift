@@ -167,13 +167,17 @@ final class RemotePathHandlerShapeTests: XCTestCase {
 
     // MARK: - /status
 
+    /// `/status` is registered as a NATIVE handler, so its response is embedded in the
+    /// envelope as a msgpack value rather than a BIN blob — Python's `rnstatus` does
+    /// `isinstance(request_receipt.response, list)` and rejects the bytes form.
     private func invokeStatusHandler(_ transport: Transport, includeLinkStats: Bool) throws -> [MsgPack.Value] {
         let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
         let statusHash = Hashes.truncatedHash(Data("/status".utf8))
         let entry = try XCTUnwrap(mgmt.requestHandlers[statusHash])
-        let request = MsgPack.encode(.array([.bool(includeLinkStats)]))
-        let response = try XCTUnwrap(entry.handler(statusHash, request, Data(), makeMinimalLink(), 0))
-        return try XCTUnwrap(MsgPack.decode(response).asArray)
+        let native = try XCTUnwrap(entry.nativeHandler, "/status must use a native handler")
+        let request = MsgPack.Value.array([.bool(includeLinkStats)])
+        let response = try XCTUnwrap(native(statusHash, request, Data(), makeMinimalLink(), 0))
+        return try XCTUnwrap(response.asArray)
     }
 
     func testStatusReturnsTheFullInterfaceStatsPayload() throws {

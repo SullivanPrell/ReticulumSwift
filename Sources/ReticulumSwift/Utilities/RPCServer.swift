@@ -222,8 +222,12 @@ public final class RPCServer {
         // Python: {"unblackhole_identity": identity_hash}
         // The hash is the VALUE of the "unblackhole_identity" key.
         if let ubhKey = kv["unblackhole_identity"] {
+            // Python's rpc_loop returns the call's value verbatim (Reticulum.py:1234):
+            // True lifted, None not blackholed, False rejected. `rnpath -U` prints a
+            // different message for each, so replying .nil unconditionally would make
+            // every success read as "not blackholed" — in both directions.
             if let t = transport, let hash = binValue(ubhKey) {
-                t.unblackholeIdentity(hash)
+                return msgpack(triState(t.unblackholeIdentity(hash)))
             }
             return msgpack(.nil)
         }
@@ -245,7 +249,9 @@ public final class RPCServer {
                     guard let r = kv["reason"], case .string(let s) = r else { return nil }
                     return s
                 }()
-                t.blackholeIdentity(hash, until: until, reason: reason)
+                // Python: Reticulum.py:1230 returns the tri-state verbatim — see the
+                // unblackhole_identity note above.
+                return msgpack(triState(t.blackholeIdentity(hash, until: until, reason: reason)))
             }
             return msgpack(.nil)
         }
@@ -286,11 +292,16 @@ public final class RPCServer {
             return msgpack(.nil)
 
         case "next_hop_if_name":
+            // Python: `str(RNS.Transport.next_hop_interface(destination))` — the
+            // interface's `__str__` (Swift: `displayName`, NOT `Interface.name`), and the
+            // literal string "None" when there is no interface. A Python `rnprobe` tests
+            // the response against the *string* "None", so answering msgpack nil made it
+            // print " on None".
             if let t = transport, let hash = binValue(kv["destination_hash"]),
-               let ifName = t.nextHopInterfaceName(for: hash) {
-                return msgpack(.string(ifName))
+               let iface = t.nextHopInterface(for: hash) {
+                return msgpack(.string(iface.displayName))
             }
-            return msgpack(.nil)
+            return msgpack(.string("None"))
 
         case "first_hop_timeout":
             if let t = transport, let hash = binValue(kv["destination_hash"]) {
@@ -325,7 +336,11 @@ public final class RPCServer {
         case "packet_rssi":
             if let t = transport, let hash = binValue(kv["packet_hash"]),
                let rssi = t.getPacketRssi(packetHash: hash) {
-                return msgpack(.double(Double(rssi)))
+                // Python's RSSI is an integer (`byte - RSSI_OFFSET`, RNodeInterface.py:878)
+                // and rnprobe renders it with `str()`, so a float here would print
+                // "[RSSI -73.0 dBm]" where Python prints "[RSSI -73 dBm]". SNR and quality
+                // below stay floats, matching RNodeInterface.py:880 and :890.
+                return msgpack(.int(Int64(rssi.rounded())))
             }
             return msgpack(.nil)
 
@@ -419,6 +434,12 @@ public final class RPCServer {
     /// Encode a MsgPack value into a length-prefixed byte blob ready to send.
     private func msgpack(_ value: MsgPack.Value) -> Data {
         MsgPack.encode(value)
+    }
+
+    /// Encode Python's `True` / `None` / `False` tri-state, which the blackhole calls
+    /// return and `rnpath -B` / `-U` branch on.
+    private func triState(_ value: Bool?) -> MsgPack.Value {
+        value.map { MsgPack.Value.bool($0) } ?? .nil
     }
 
     /// Extract a binary (bytes) value from a MsgPack.Value, or nil.

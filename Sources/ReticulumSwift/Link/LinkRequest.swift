@@ -56,6 +56,27 @@ public final class RequestReceipt {
 
     private var _responseSize: Int?
     public var responseSize: Int? { stateLock.lock(); defer { stateLock.unlock() }; return _responseSize }
+    private var _responseTransferSize: Int?
+    /// Bytes actually moved on the wire to deliver the response (post-compression,
+    /// including Resource framing). Mirrors Python's
+    /// `RequestReceipt.response_transfer_size` (Link.py:1314), which `rnx` renders in its
+    /// "Receiving result — N of M" spinner.
+    public var responseTransferSize: Int? {
+        stateLock.lock(); defer { stateLock.unlock() }; return _responseTransferSize
+    }
+
+    /// Record response sizing. Mirrors Python Link.py:1027-1031, where `response_size` is
+    /// set once and `response_transfer_size` accumulates across a segmented Resource.
+    ///
+    /// - Parameter accumulate: when true, `transferSize` is added to any existing value
+    ///   (`pending_request.response_transfer_size += ...`); when false it replaces it.
+    func setResponseSizes(size: Int?, transferSize: Int?, accumulate: Bool) {
+        stateLock.lock(); defer { stateLock.unlock() }
+        if let size, _responseSize == nil { _responseSize = size }
+        if let transferSize {
+            _responseTransferSize = accumulate ? (_responseTransferSize ?? 0) + transferSize : transferSize
+        }
+    }
     private var _progress: Double = 0
     public var progress: Double { stateLock.lock(); defer { stateLock.unlock() }; return _progress }
     private var _concludedAt: Date?
@@ -174,7 +195,9 @@ public final class RequestReceipt {
         }
         timeoutItem?.cancel()
         timeoutItem = nil
-        _responseSize = size
+        // Only overwrite when a size is supplied, so a value already recorded from a
+        // response Resource advertisement survives conclusion.
+        if let size { _responseSize = size }
         _responseConcludedAt = Date()
         _concludedAt = Date()
         _progress = 1.0
@@ -479,7 +502,13 @@ extension Link {
         case .bytes(let b): responseData = Data(b)  // already bytes (old Swift encoding)
         default:            responseData = MsgPack.encode(parts[1])  // native value (Python encoding)
         }
-        receipt.deliverReady(responseData)
+        // Python: `transfer_size = len(umsgpack.packb(response_data))-2`, passed as both
+        // response_size and response_transfer_size with update_sizes=True (Link.py:998-999).
+        // Without this both stayed nil, so rnx's -d "Transferred N bytes … effective rate"
+        // line had nothing to report.
+        let transferSize = max(0, MsgPack.encode(parts[1]).count - 2)
+        receipt.setResponseSizes(size: transferSize, transferSize: transferSize, accumulate: false)
+        receipt.deliverReady(responseData, size: transferSize)
     }
 
     // MARK: - Legacy stub (kept for call-site compatibility)

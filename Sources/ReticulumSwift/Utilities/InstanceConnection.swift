@@ -89,16 +89,31 @@ public final class InstanceConnection {
     /// else:                                                     ~/.reticulum
     /// ```
     public static func resolveConfigDirectory(_ explicit: URL? = nil) -> URL {
+        // NSHomeDirectory() rather than FileManager.homeDirectoryForCurrentUser, which is
+        // unavailable outside macOS — this type lives in the library target, which has to
+        // keep compiling for iOS, tvOS and watchOS. The two resolve identically for a
+        // command-line process.
+        resolveConfigDirectory(explicit,
+                               home: URL(fileURLWithPath: NSHomeDirectory()),
+                               systemConfigDir: URL(fileURLWithPath: "/etc/reticulum"),
+                               fileManager: .default)
+    }
+
+    /// The same search order with its two fixed locations injected, so it can be exercised
+    /// against a temporary tree instead of the real `/etc` and `$HOME`.
+    ///
+    /// Python checks `os.path.isdir(dir) and os.path.isfile(dir+"/config")`; testing only for
+    /// the `config` file is equivalent, since a file cannot live inside a non-directory.
+    public static func resolveConfigDirectory(_ explicit: URL?,
+                                              home: URL,
+                                              systemConfigDir: URL,
+                                              fileManager: FileManager) -> URL {
         if let explicit { return explicit }
 
-        let fileManager = FileManager.default
-        let etc = URL(fileURLWithPath: "/etc/reticulum")
-        if fileManager.fileExists(atPath: etc.appendingPathComponent("config").path) { return etc }
+        if fileManager.fileExists(atPath: systemConfigDir.appendingPathComponent("config").path) {
+            return systemConfigDir
+        }
 
-        // NSHomeDirectory() rather than FileManager.homeDirectoryForCurrentUser, which is
-        // unavailable outside macOS — and this type lives in the library target, which has
-        // to keep compiling for iOS, tvOS and watchOS.
-        let home = URL(fileURLWithPath: NSHomeDirectory())
         let xdg = home.appendingPathComponent(".config/reticulum")
         if fileManager.fileExists(atPath: xdg.appendingPathComponent("config").path) { return xdg }
 

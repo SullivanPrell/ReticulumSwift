@@ -156,7 +156,6 @@ public enum InterfaceStatsPayload {
             (.string("txb"),        .int(Int64(tStats.trafficTxBytes))),
             (.string("rxs"),        .double(tStats.speedRx)),
             (.string("txs"),        .double(tStats.speedTx)),
-            (.string("rss"),        .nil),
         ]
 
         if t.transportEnabled, let tid = t.transportIdentity {
@@ -174,6 +173,12 @@ public enum InterfaceStatsPayload {
                 topPairs.append((.string("probe_responder"), .nil))
             }
         }
+
+        // Python emits `rss` LAST, after the optional transport block
+        // (Reticulum.py:1459-1467). `rnstatus -j` preserves dict insertion order, so the
+        // position is part of the output contract. Swift has no psutil equivalent, so the
+        // value is always nil — matching Python's `find_spec('psutil') == None` branch.
+        topPairs.append((.string("rss"), .nil))
 
         return .map(topPairs)
     }

@@ -197,7 +197,10 @@ public struct ReticulumConfig {
                     }
                 case "panic_on_interface_error":
                     cfg.reticulum.panicOnInterfaceError = parseBool(value) ?? false
-                case "allow_probes":
+                // Python's spelling is `respond_to_probes` (Reticulum.py:550-552), which is
+                // also the key documented in the example config; `allow_probes` is this
+                // port's older name. Both are accepted.
+                case "allow_probes", "respond_to_probes":
                     cfg.reticulum.allowProbes = parseBool(value) ?? false
                 case "enable_remote_management":
                     cfg.reticulum.remoteManagementEnabled = parseBool(value) ?? false
@@ -267,25 +270,13 @@ public struct ReticulumConfig {
     // MARK: - Default config text
 
     /// The default configuration file content, written when no config exists.
-    /// Mirrors Python's `__default_rns_config__`.
-    public static let defaultConfigText = """
-# This is the default Reticulum config file.
-# You should probably edit it to include any additional
-# interfaces and settings you might need.
-
-[reticulum]
-enable_transport = False
-share_instance = Yes
-
-[logging]
-loglevel = 4
-
-[interfaces]
-
-  [[Default Interface]]
-    type = AutoInterface
-    enabled = Yes
-"""
+    ///
+    /// Python: `RNS/Reticulum.py:1818+`, `__default_rns_config__` — written by
+    /// `__create_default_config()` on a first run. The byte-exact transcription lives in
+    /// ``RNSConfigTemplates/defaultConfig``, next to its SHA-256 regression test.
+    /// Previously this was a 17-line abridgement, so a config directory created by
+    /// ReticulumSwift looked nothing like one created by Python RNS.
+    public static let defaultConfigText = RNSConfigTemplates.defaultConfig
 }
 
 // MARK: - Helpers
