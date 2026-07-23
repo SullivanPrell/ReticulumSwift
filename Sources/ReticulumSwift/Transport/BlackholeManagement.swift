@@ -122,16 +122,33 @@ extension Transport {
 
     /// Save only own-sourced entries to `<directory>/local`.
     ///
-    /// Mirrors Python's `Transport.persist_blackhole()` which writes
-    /// `{identity_hash: entry}` for entries whose source is the local transport identity.
+    /// Mirrors Python's `Transport.persist_blackhole()` (`RNS/Transport.py:3550`), which
+    /// writes `umsgpack.packb({identity_hash: entry})` for entries whose source is the
+    /// local transport identity.
+    ///
+    /// The encoding is **msgpack, keyed by the raw 16-byte identity hash** — not JSON and
+    /// not hex strings. These files are a shared, cross-implementation format: an instance
+    /// publishes its `local` list for others to consume as a blackhole source, and
+    /// `reload_blackhole` on the other side feeds whatever it finds straight into
+    /// `umsgpack.unpackb`. A JSON file written here makes a Python instance raise
+    /// `TypeError: 'int' object is not iterable` on startup, because `{` decodes as the
+    /// msgpack positive fixint 123.
     public func persistBlacklist(toDirectory directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let ownHash = ownerIdentity?.hash
         blackholeLock.lock()
         let local = blackholedIdentities.filter { $0.value.source == ownHash }
         blackholeLock.unlock()
-        let map = Dictionary(uniqueKeysWithValues: local.map { ($0.key.hexString, $0.value) })
-        let data = try JSONEncoder().encode(map)
+        let pairs: [(MsgPack.Value, MsgPack.Value)] = local
+            .sorted { $0.key.hexString < $1.key.hexString }   // deterministic file bytes
+            .map { hash, entry in
+                (.bytes(hash), .map([
+                    (.string("source"), entry.source.map { .bytes($0) } ?? .nil),
+                    (.string("until"),  entry.until.map  { .double($0) } ?? .nil),
+                    (.string("reason"), entry.reason.map { .string($0) } ?? .nil),
+                ]))
+            }
+        let data = MsgPack.encode(.map(pairs))
         let localFile = directory.appendingPathComponent("local")
         let tmpFile = directory.appendingPathComponent("local.tmp")
         try data.write(to: tmpFile, options: .atomic)
@@ -169,21 +186,28 @@ extension Transport {
                 sourceHash = decoded
             }
             guard let src = sourceHash else { continue }
+            // Python: `source_list = umsgpack.unpackb(packed)`, a map keyed by the raw
+            // 16-byte identity hash. Decoding these as JSON silently yields nothing, so a
+            // Swift instance would ignore every blackhole list published by a Python one.
             guard let data = try? Data(contentsOf: fileURL),
-                  let map = try? JSONDecoder().decode([String: BlackholeEntry].self, from: data)
+                  case .map(let entries)? = try? MsgPack.decode(data)
             else { continue }
             // File I/O is done; guard only the in-memory merge under blackholeLock.
             blackholeLock.lock()
-            for (hexHash, entry) in map {
-                guard let hash = Data(hex: hexHash),
+            for (key, value) in entries {
+                guard case .bytes(let hash) = key,
                       hash.count == Constants.truncatedHashLength else { continue }
+                let fields = value.asDictionary ?? [:]
+                let until = fields["until"]?.asDouble
+                let reason = fields["reason"]?.asString
                 // Skip expired entries.
-                if let until = entry.until, now >= until { continue }
+                if let until, now >= until { continue }
                 // Don't overwrite an existing own-source entry with an external one.
                 if let existing = blackholedIdentities[hash],
                    existing.source == ownHash, src != ownHash { continue }
-                let loaded = BlackholeEntry(source: src, until: entry.until, reason: entry.reason)
-                blackholedIdentities[hash] = loaded
+                // Python overrides the file's own "source" with the identity the file
+                // came from, so a source cannot attribute a blackhole to somebody else.
+                blackholedIdentities[hash] = BlackholeEntry(source: src, until: until, reason: reason)
             }
             blackholeLock.unlock()
         }
