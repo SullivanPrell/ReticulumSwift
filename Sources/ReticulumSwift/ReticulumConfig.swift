@@ -40,6 +40,12 @@ public struct ReticulumConfig {
         /// shared/transport instances. Mirrors Python's `local_hops_delta = No`.
         public var localHopsDelta: Bool = false
         public var shareInstance: Bool = true
+        /// TCP port the shared instance serves local clients on.
+        /// Mirrors Python's `shared_instance_port = 37428`.
+        public var sharedInstancePort: UInt16 = 37428
+        /// TCP port the shared instance answers management RPC on.
+        /// Mirrors Python's `instance_control_port = 37429`.
+        public var instanceControlPort: UInt16 = 37429
         public var panicOnInterfaceError: Bool = false
         /// Whether the probe destination is enabled.
         /// Mirrors Python's `allow_probes = True`.
@@ -181,6 +187,14 @@ public struct ReticulumConfig {
                     cfg.reticulum.localHopsDelta = parseBool(value) ?? false
                 case "share_instance":
                     cfg.reticulum.shareInstance = parseBool(value) ?? true
+                case "shared_instance_port":
+                    if let port = UInt16(value.trimmingCharacters(in: .whitespaces)) {
+                        cfg.reticulum.sharedInstancePort = port
+                    }
+                case "instance_control_port":
+                    if let port = UInt16(value.trimmingCharacters(in: .whitespaces)) {
+                        cfg.reticulum.instanceControlPort = port
+                    }
                 case "panic_on_interface_error":
                     cfg.reticulum.panicOnInterfaceError = parseBool(value) ?? false
                 case "allow_probes":
