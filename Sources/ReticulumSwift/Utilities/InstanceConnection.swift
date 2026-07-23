@@ -95,7 +95,10 @@ public final class InstanceConnection {
         let etc = URL(fileURLWithPath: "/etc/reticulum")
         if fileManager.fileExists(atPath: etc.appendingPathComponent("config").path) { return etc }
 
-        let home = fileManager.homeDirectoryForCurrentUser
+        // NSHomeDirectory() rather than FileManager.homeDirectoryForCurrentUser, which is
+        // unavailable outside macOS — and this type lives in the library target, which has
+        // to keep compiling for iOS, tvOS and watchOS.
+        let home = URL(fileURLWithPath: NSHomeDirectory())
         let xdg = home.appendingPathComponent(".config/reticulum")
         if fileManager.fileExists(atPath: xdg.appendingPathComponent("config").path) { return xdg }
 
