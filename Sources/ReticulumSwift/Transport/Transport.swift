@@ -1933,29 +1933,43 @@ public final class Transport {
                     guard let self else { return nil }
                     guard let data, case .array(let arr) = (try? MsgPack.decode(data)) ?? .nil,
                           !arr.isEmpty, case .string(let command) = arr[0] else { return nil }
+                    // Python: data = [command, destination_hash, max_hops]
                     let filterHash: Data? = {
                         guard arr.count > 1, case .bytes(let b) = arr[1] else { return nil }
                         return b
                     }()
+                    let maxHops: UInt8? = {
+                        guard arr.count > 2, let hops = arr[2].asInt, hops >= 0 else { return nil }
+                        return UInt8(min(hops, 255))
+                    }()
                     switch command {
                     case "table":
-                        let table = self.getPathTable()
+                        // The entries must carry every key `get_path_table()` produces —
+                        // rnpath renders `path["interface"]` and `path["expires"]` directly,
+                        // so an abridged entry raises a KeyError on the Python side.
+                        let table = self.getPathTable(maxHops: maxHops)
                         let filtered = filterHash == nil ? table : table.filter { $0.destinationHash == filterHash }
                         let entries = filtered.map { e -> MsgPack.Value in
                             let via: MsgPack.Value = e.via.map { .bytes($0) } ?? .nil
-                            return .map([(.string("hash"), .bytes(e.destinationHash)),
-                                         (.string("hops"), .int(Int64(e.hops))),
-                                         (.string("via"),  via),
-                                         (.string("expires"), .double(e.expires.timeIntervalSince1970))])
+                            return .map([(.string("hash"),      .bytes(e.destinationHash)),
+                                         (.string("timestamp"), .double(e.lastHeard.timeIntervalSince1970)),
+                                         (.string("via"),       via),
+                                         (.string("hops"),      .int(Int64(e.hops))),
+                                         (.string("expires"),   .double(e.expires.timeIntervalSince1970)),
+                                         (.string("interface"), .string(e.interfaceName))])
                         }
                         return MsgPack.encode(.array(entries))
                     case "rates":
+                        // Likewise: rnpath computes an announce rate from
+                        // `entry["timestamps"]` and reads `entry["blocked_until"]`.
                         let rates = self.getRateTable()
                         let filtered = filterHash == nil ? rates : rates.filter { $0.destinationHash == filterHash }
                         let entries = filtered.map { r -> MsgPack.Value in
-                            .map([(.string("hash"), .bytes(r.destinationHash)),
-                                  (.string("last"), .double(r.last)),
-                                  (.string("rate_violations"), .int(Int64(r.rateViolations)))])
+                            .map([(.string("hash"),            .bytes(r.destinationHash)),
+                                  (.string("last"),            .double(r.last)),
+                                  (.string("rate_violations"), .int(Int64(r.rateViolations))),
+                                  (.string("blocked_until"),   .double(r.blockedUntil)),
+                                  (.string("timestamps"),      .array(r.timestamps.map { .double($0) }))])
                         }
                         return MsgPack.encode(.array(entries))
                     default: return nil

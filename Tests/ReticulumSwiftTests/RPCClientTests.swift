@@ -130,9 +130,39 @@ final class RPCClientTests: XCTestCase {
         XCTAssertFalse(try client.isBlackholed(identityHash: identityHash))
         try client.blackholeIdentity(identityHash, reason: "test")
         XCTAssertTrue(try client.isBlackholed(identityHash: identityHash))
-        XCTAssertTrue(try client.blackholedIdentities().contains(identityHash))
+        XCTAssertNotNil(try client.blackholedIdentities()[identityHash])
         try client.unblackholeIdentity(identityHash)
         XCTAssertFalse(try client.isBlackholed(identityHash: identityHash))
+    }
+
+    func testBlackholedIdentities_carriesFullEntry() throws {
+        // Python's Transport.blackholed_identities maps each hash to
+        // {"source", "until", "reason"}, and rnpath -b reads all three off it.
+        // Returning a bare `true` per hash would break that rendering.
+        let client = try startServer()
+        let owner = Identity()
+        try XCTUnwrap(transport).ownerIdentity = owner
+
+        let identityHash = randomHash()
+        let until = Date().timeIntervalSince1970 + 3600
+        try client.blackholeIdentity(identityHash, until: until, reason: "spamming announces")
+
+        let entry = try XCTUnwrap(try client.blackholedIdentities()[identityHash])
+        XCTAssertEqual(entry.reason, "spamming announces")
+        XCTAssertEqual(try XCTUnwrap(entry.until), until, accuracy: 0.001)
+        // Python: entry["source"] = Transport.identity.hash — rnpath compares this against
+        // its own identity to decide whether to print " by <hash>".
+        XCTAssertEqual(entry.source, owner.hash)
+    }
+
+    func testBlackholedIdentities_nilFieldsSurviveRoundTrip() throws {
+        let client = try startServer()
+        let identityHash = randomHash()
+        try client.blackholeIdentity(identityHash)
+
+        let entry = try XCTUnwrap(try client.blackholedIdentities()[identityHash])
+        XCTAssertNil(entry.until, "an indefinite blackhole carries a nil expiry")
+        XCTAssertNil(entry.reason)
     }
 
     func testDropPath_removesPath() throws {

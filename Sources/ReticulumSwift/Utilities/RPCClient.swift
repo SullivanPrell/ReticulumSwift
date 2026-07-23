@@ -180,13 +180,21 @@ public final class RPCClient {
         try get("packet_q", extra: [("packet_hash", .bytes(packetHash))]).asDouble
     }
 
-    /// Python: `get_blackholed_identities()`.
-    public func blackholedIdentities() throws -> [Data] {
-        guard case .map(let pairs) = try get("blackholed_identities") else { return [] }
-        return pairs.compactMap { key, _ in
-            if case .bytes(let hash) = key { return hash }
-            return nil
+    /// Python: `get_blackholed_identities()` — the whole `Transport.blackholed_identities`
+    /// dict, keyed by identity hash, each value carrying `source`, `until` and `reason`.
+    public func blackholedIdentities() throws -> [Data: Transport.BlackholeEntry] {
+        guard case .map(let pairs) = try get("blackholed_identities") else { return [:] }
+        var result: [Data: Transport.BlackholeEntry] = [:]
+        for (key, value) in pairs {
+            guard case .bytes(let hash) = key else { continue }
+            let fields = value.asDictionary ?? [:]
+            result[hash] = Transport.BlackholeEntry(
+                source: fields["source"]?.asData,
+                until:  fields["until"]?.asDouble,
+                reason: fields["reason"]?.asString
+            )
         }
+        return result
     }
 
     /// Python: `is_blackholed(identity_hash)`.
