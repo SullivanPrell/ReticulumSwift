@@ -306,3 +306,73 @@ public enum MsgPack {
         }
     }
 }
+
+// MARK: - Scalar accessors
+
+/// Typed readers for decoded msgpack values.
+///
+/// Python's `umsgpack.unpackb` yields plain Python scalars, so reference code can write
+/// `response["hops"]` and get an `int` regardless of which integer encoding was on the
+/// wire. These accessors give Swift callers — the RPC client, the `rn*` utilities and the
+/// rnsh/rnx message types — the same convenience without a `switch` at every use site.
+public extension MsgPack.Value {
+
+    /// Integer value, accepting both signed and unsigned encodings.
+    /// Returns `nil` for non-integer values, or for unsigned values above `Int.max`.
+    var asInt: Int? {
+        switch self {
+        case .int(let n):  return Int(n)
+        case .uint(let n): return n <= UInt64(Int.max) ? Int(n) : nil
+        default:           return nil
+        }
+    }
+
+    /// Numeric value as `Double`, accepting int, uint and float encodings.
+    var asDouble: Double? {
+        switch self {
+        case .double(let d): return d
+        case .int(let n):    return Double(n)
+        case .uint(let n):   return Double(n)
+        default:             return nil
+        }
+    }
+
+    /// String value, or `nil` if this is not a msgpack string.
+    var asString: String? {
+        if case .string(let s) = self { return s }
+        return nil
+    }
+
+    /// Binary value, or `nil` if this is not a msgpack bin.
+    var asData: Data? {
+        if case .bytes(let d) = self { return d }
+        return nil
+    }
+
+    /// Boolean value, or `nil` if this is not a msgpack bool.
+    var asBool: Bool? {
+        if case .bool(let b) = self { return b }
+        return nil
+    }
+
+    /// Array elements, or `nil` if this is not a msgpack array.
+    var asArray: [MsgPack.Value]? {
+        if case .array(let items) = self { return items }
+        return nil
+    }
+
+    /// Map flattened to a `String`-keyed dictionary, dropping any non-string keys.
+    /// This matches how every RNS RPC and request payload is actually shaped.
+    var asDictionary: [String: MsgPack.Value]? {
+        guard case .map(let pairs) = self else { return nil }
+        var result: [String: MsgPack.Value] = [:]
+        result.reserveCapacity(pairs.count)
+        for (key, value) in pairs {
+            if case .string(let name) = key { result[name] = value }
+        }
+        return result
+    }
+
+    /// Whether this value is msgpack `nil`.
+    var isNil: Bool { self == .nil }
+}

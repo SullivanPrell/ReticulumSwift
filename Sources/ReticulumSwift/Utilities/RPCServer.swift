@@ -29,10 +29,9 @@ public final class RPCServer {
     /// Weak to avoid a retain cycle (Transport → Reticulum → RPCServer → Transport).
     public weak var transport: Transport?
 
-    private static let challengePrefix = "#CHALLENGE#".data(using: .utf8)!
-    private static let welcomeMessage  = "#WELCOME#".data(using: .utf8)!
-    private static let failureMessage  = "#FAILURE#".data(using: .utf8)!
-    private static let messageLength   = 20
+    private static let challengePrefix = MultiprocessingAuth.challengePrefix
+    private static let welcomeMessage  = MultiprocessingAuth.welcomeMessage
+    private static let failureMessage  = MultiprocessingAuth.failureMessage
 
     public init(port: UInt16, authkey: Data) {
         self.port = port
@@ -69,10 +68,10 @@ public final class RPCServer {
     }
 
     private func deliverChallenge(_ conn: NWConnection) {
-        var message = Data(count: RPCServer.messageLength)
-        _ = message.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, RPCServer.messageLength, $0.baseAddress!)
-        }
+        // Modern (CPython ≥ 3.12) challenge: "{sha256}" + 40 random bytes. Legacy
+        // clients (≤ 3.11) answer this with a bare HMAC-MD5 over the whole message,
+        // which `verifyChallenge` also accepts — so one challenge serves both.
+        let message = MultiprocessingAuth.makeChallengeMessage(digest: .sha256)
         let challenge = RPCServer.challengePrefix + message
 
         sendBytes(challenge, over: conn) { [weak self] error in
@@ -81,15 +80,16 @@ public final class RPCServer {
                 conn.cancel(); return
             }
             self?.receiveBytes(from: conn) { digest, err in
-                guard let digest, err == nil else { conn.cancel(); return }
-                let expected = self?.hmacMD5(key: self!.authkey, data: message)
-                if digest == expected {
-                    self?.sendBytes(RPCServer.welcomeMessage, over: conn) { _ in
+                guard let self, let digest, err == nil else { conn.cancel(); return }
+                if MultiprocessingAuth.verifyChallenge(authkey: self.authkey,
+                                                       message: message,
+                                                       response: digest) {
+                    self.sendBytes(RPCServer.welcomeMessage, over: conn) { [weak self] _ in
                         Reticulum.log("RPC client auth OK from \(conn.endpoint)", level: .debug)
                         self?.answerChallenge(conn)
                     }
                 } else {
-                    self?.sendBytes(RPCServer.failureMessage, over: conn) { _ in
+                    self.sendBytes(RPCServer.failureMessage, over: conn) { _ in
                         Reticulum.log("RPC auth failed from \(conn.endpoint)", level: .warning)
                         conn.cancel()
                     }
@@ -107,13 +107,19 @@ public final class RPCServer {
         receiveBytes(from: conn) { [weak self] challengeMsg, err in
             guard let self, let challengeMsg, err == nil else { conn.cancel(); return }
             let prefix = RPCServer.challengePrefix
-            guard challengeMsg.count == prefix.count + RPCServer.messageLength,
+            // The client's challenge is 20 raw bytes on CPython ≤ 3.11 and
+            // "{sha256}" + 40 bytes on ≥ 3.12; accept either, and let
+            // `createResponse` pick the matching digest and reply framing.
+            guard challengeMsg.count > prefix.count,
                   challengeMsg.prefix(prefix.count) == prefix else {
                 Reticulum.log("RPC: bad client challenge (\(challengeMsg.count) bytes)", level: .warning)
                 conn.cancel(); return
             }
             let nonce = Data(challengeMsg.dropFirst(prefix.count))
-            let digest = self.hmacMD5(key: self.authkey, data: nonce)
+            guard let digest = try? MultiprocessingAuth.createResponse(authkey: self.authkey, message: nonce) else {
+                Reticulum.log("RPC: unsupported client challenge format", level: .warning)
+                conn.cancel(); return
+            }
             self.sendBytes(digest, over: conn) { [weak self] error in
                 if let error {
                     Reticulum.log("RPC: digest send failed: \(error)", level: .error)
@@ -588,11 +594,6 @@ public final class RPCServer {
             }
             conn.receive(exactly: length) { payload, _, _, error in completion(payload, error) }
         }
-    }
-
-    private func hmacMD5(key: Data, data: Data) -> Data {
-        let key = SymmetricKey(data: key)
-        return Data(HMAC<Insecure.MD5>.authenticationCode(for: data, using: key))
     }
 
     public enum RPCError: Error {

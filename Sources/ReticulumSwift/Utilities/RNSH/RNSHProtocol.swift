@@ -70,19 +70,6 @@ public enum RNSHSessionState: Int {
     case teardown    = 6
 }
 
-// MARK: - Internal MsgPack helpers
-
-extension MsgPack.Value {
-    /// Extract an Int from `.int`, `.uint`, or positive fixint values.
-    var asInt: Int? {
-        switch self {
-        case .int(let n):  return Int(n)
-        case .uint(let n): return n <= UInt64(Int.max) ? Int(n) : nil
-        default:           return nil
-        }
-    }
-}
-
 // MARK: - RNSHNoopMessage (typeID 0xac00)
 
 /// No-operation message — used as a keepalive / heartbeat.
