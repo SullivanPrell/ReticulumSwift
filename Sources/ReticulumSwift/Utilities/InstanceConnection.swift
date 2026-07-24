@@ -210,6 +210,14 @@ public final class InstanceConnection {
             // because the shared instance is the one doing all of that.
             reticulum.transport.transportEnabled = false
 
+            // Python: `is_connected_to_shared_instance = True`, which Transport reads back
+            // as `Transport.owner.is_connected_to_shared_instance`. Without it a client
+            // re-applies work the shared instance has already done: `filterAndRecord` runs
+            // the HEADER_2 transport-id filter a second time and drops packets that were
+            // forwarded *to us*, `shouldApplyDelta` re-applies the local hops delta, and
+            // rnprobe takes the standalone branch so it never reports RSSI/SNR/Link Quality.
+            reticulum.transport.isConnectedToSharedInstance = true
+
             let rpc = try? RPCClient.forInstance(storagePath: storagePath, port: controlPort)
             return InstanceConnection(reticulum: reticulum, config: config,
                                       configDirectory: configDirectory, role: .localClient,

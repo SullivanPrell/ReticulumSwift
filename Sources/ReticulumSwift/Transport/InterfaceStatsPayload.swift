@@ -39,14 +39,96 @@ public enum InterfaceStatsPayload {
 
             func kv(_ k: String, _ v: MsgPack.Value) { pairs.append((.string(k), v)) }
 
+            // The key ORDER below is Python's insertion order in `get_interface_stats`
+            // (Reticulum.py:1326-1443), not an arbitrary one. `rnstatus -j` serialises the
+            // dictionary with `json.dumps`, which preserves insertion order, so the order is
+            // part of the `-j` output contract just as the top-level `rss`-goes-last note
+            // further down records. Verified by pointing the real Python `rnstatus -j` at a
+            // Swift `rnsd` and diffing the key sequence against a Python daemon's.
+
+            // TCPServerInterface / PosixTCPServer: connected client count.
+            if let srv = iface as? TCPServerInterface {
+                kv("clients", .int(Int64(srv.clientCount)))
+            } else if let srv = iface as? PosixTCPServer {
+                kv("clients", .int(Int64(srv.clientCount)))
+            } else if let i2p = iface as? I2PInterface {
+                kv("clients", .int(Int64(i2p.clients)))
+            } else {
+                kv("clients", .nil)
+            }
+
+            // RNodeSubInterface: parent_interface_name/hash (not yet wired — RNodeSubInterface
+            // has no back-reference to the parent RNodeMultiInterface). Python emits them here,
+            // between `clients` and the I2P block; rnstatus handles their absence.
+
+            if let i2p = iface as? I2PInterface {
+                kv("i2p_connectable", .bool(i2p.connectable))
+                kv("i2p_b32",     i2p.b32.map { .string($0 + ".b32.i2p") } ?? .nil)
+                kv("tunnelstate", i2p.tunnelState.map { .string($0) } ?? .nil)
+            }
+
+            // RNodeInterface: airtime, channel load, noise, interference, then battery.
+            if let rnode = iface as? RNodeInterface {
+                kv("airtime_short",      .double(rnode.rAirtimeShort))
+                kv("airtime_long",       .double(rnode.rAirtimeLong))
+                kv("channel_load_short", .double(rnode.rChannelLoadShort))
+                kv("channel_load_long",  .double(rnode.rChannelLoadLong))
+                kv("noise_floor",        rnode.rNoiseFloor.map { .int(Int64($0)) } ?? .nil)
+                kv("interference",       rnode.rInterference.map { .int(Int64($0)) } ?? .nil)
+            }
+
+            // WeaveInterfacePeer: switch_id, via_switch_id, endpoint_id.
+            if let weave = iface as? WeaveInterfacePeer {
+                kv("switch_id",     weave.switchID.map    { .string($0.hexString) } ?? .nil)
+                kv("via_switch_id", weave.viaSwitchID.map { .string($0.hexString) } ?? .nil)
+                kv("endpoint_id",   weave.endpointID.map  { .string($0.hexString) } ?? .nil)
+            }
+
+            if let rnode = iface as? RNodeInterface,
+               rnode.getBatteryState() != RNodeInterface.batteryStateUnknown {
+                kv("battery_state",   .string(rnode.getBatteryStateString()))
+                kv("battery_percent", .int(Int64(rnode.getBatteryPercent())))
+            }
+
+            kv("bitrate", .int(Int64(iface.bitrate)))
+            kv("rxs",     .double(t.currentRxSpeed(for: iface)))
+            kv("txs",     .double(t.currentTxSpeed(for: iface)))
+
+            // IFAC fields. Python's order is signature, size, netname.
+            if let ifacIdentity = iface.ifacIdentity {
+                // Python: interface.ifac_signature = ifac_identity.sign(full_hash(ifac_key))
+                // (Reticulum.py:933). This is a signature over the key, not the key itself —
+                // rnstatus prints its last 5 bytes as the network's "Access" fingerprint, so
+                // reporting the raw key here makes a Swift node's access code differ from a
+                // Python node's on the very same IFAC network.
+                let signature: MsgPack.Value = iface.ifacKey
+                    .flatMap { key -> MsgPack.Value? in
+                        (try? ifacIdentity.sign(Identity.fullHash(key))).map { .bytes($0) }
+                    } ?? .nil
+                kv("ifac_signature", signature)
+                kv("ifac_size",      .int(Int64(iface.ifacSize)))
+            } else {
+                kv("ifac_signature", .nil)
+                kv("ifac_size",      .nil)
+            }
+            // ifac_netname is not stored in the Swift interface protocol; always nil
+            kv("ifac_netname", .nil)
+            kv("autoconnect_source", .nil)
+
+            // Python creates `announce_queue` lazily, the first time an announce is actually
+            // queued on an interface (Transport.py:1277, 2827), and emits the key only when
+            // `hasattr` succeeds. rnstatus tests `if "announce_queue" in ifstat`, so emitting
+            // it unconditionally would claim a queue that Python would not have reported.
+            if let qCount = t.announceQueueCount(for: iface) {
+                kv("announce_queue", .int(Int64(qCount)))
+            }
+
             kv("name",       .string(iface.displayName))
-            kv("short_name", .string(iface.name))
+            kv("short_name", .string(iface.statsShortName))
             kv("hash",       .bytes(Hashes.fullHash(Data(iface.displayName.utf8))))
-            kv("type",       .string(String(describing: type(of: iface))))
+            kv("type",       .string(iface.statsTypeName))
             kv("rxb",        .int(Int64(iface.rxBytes)))
             kv("txb",        .int(Int64(iface.txBytes)))
-            kv("status",     .bool(iface.isOnline))
-            kv("mode",       .int(Int64(iface.mode.rawValue)))
 
             kv("incoming_announce_frequency",  .double(t.incomingAnnounceFrequency(for: iface)))
             kv("outgoing_announce_frequency",  .double(t.outgoingAnnounceFrequency(for: iface)))
@@ -60,91 +142,16 @@ public enum InterfaceStatsPayload {
             }
             kv("announce_rate_penalty", .double(iface.announceRatePenalty))
             kv("announce_rate_grace",   .int(Int64(iface.announceRateGrace)))
+            kv("held_announces",        .int(Int64(t.heldAnnounceCount(for: iface))))
 
             let ingress = t.ingressState(for: iface)
-            kv("held_announces",     .int(Int64(t.heldAnnounceCount(for: iface))))
-            kv("burst_active",       .bool(ingress?.burstActive    ?? false))
+            kv("burst_active",       .bool(ingress?.burstActive      ?? false))
             kv("burst_activated",    .double(ingress?.burstActivated ?? 0))
-            kv("pr_burst_active",    .bool(ingress?.prBurstActive    ?? false))
+            kv("pr_burst_active",    .bool(ingress?.prBurstActive      ?? false))
             kv("pr_burst_activated", .double(ingress?.prBurstActivated ?? 0))
 
-            kv("rxs",     .double(t.currentRxSpeed(for: iface)))
-            kv("txs",     .double(t.currentTxSpeed(for: iface)))
-            kv("bitrate", .int(Int64(iface.bitrate)))
-
-            if let qCount = t.announceQueueCount(for: iface) {
-                kv("announce_queue", .int(Int64(qCount)))
-            } else {
-                kv("announce_queue", .nil)
-            }
-
-            // IFAC fields (present only when IFAC is configured)
-            if let ifacIdentity = iface.ifacIdentity {
-                kv("ifac_size",      .int(Int64(iface.ifacSize)))
-                // Python: interface.ifac_signature = ifac_identity.sign(full_hash(ifac_key))
-                // (Reticulum.py:933). This is a signature over the key, not the key itself —
-                // rnstatus prints its last 5 bytes as the network's "Access" fingerprint, so
-                // reporting the raw key here makes a Swift node's access code differ from a
-                // Python node's on the very same IFAC network.
-                let signature: MsgPack.Value = iface.ifacKey
-                    .flatMap { key -> MsgPack.Value? in
-                        (try? ifacIdentity.sign(Identity.fullHash(key))).map { .bytes($0) }
-                    } ?? .nil
-                kv("ifac_signature", signature)
-            } else {
-                kv("ifac_size",      .nil)
-                kv("ifac_signature", .nil)
-            }
-            // ifac_netname is not stored in the Swift interface protocol; always nil
-            kv("ifac_netname", .nil)
-            kv("autoconnect_source", .nil)
-
-            // --- Interface-type-specific fields (Python uses hasattr) ---
-
-            // TCPServerInterface / PosixTCPServer: connected client count
-            if let srv = iface as? TCPServerInterface {
-                kv("clients", .int(Int64(srv.clientCount)))
-            } else if let srv = iface as? PosixTCPServer {
-                kv("clients", .int(Int64(srv.clientCount)))
-            } else if let i2p = iface as? I2PInterface {
-                kv("clients", .int(Int64(i2p.clients)))
-            } else {
-                kv("clients", .nil)
-            }
-
-            // RNodeInterface: airtime, channel load, battery, noise, interference
-            if let rnode = iface as? RNodeInterface {
-                kv("airtime_short",    .double(rnode.rAirtimeShort))
-                kv("airtime_long",     .double(rnode.rAirtimeLong))
-                kv("channel_load_short", .double(rnode.rChannelLoadShort))
-                kv("channel_load_long",  .double(rnode.rChannelLoadLong))
-                kv("noise_floor",      rnode.rNoiseFloor.map { .int(Int64($0)) } ?? .nil)
-                kv("interference",     rnode.rInterference.map { .int(Int64($0)) } ?? .nil)
-                let hasValidBattery = rnode.getBatteryState() != RNodeInterface.batteryStateUnknown
-                if hasValidBattery {
-                    kv("battery_state",   .string(rnode.getBatteryStateString()))
-                    kv("battery_percent", .int(Int64(rnode.getBatteryPercent())))
-                }
-            }
-
-            // WeaveInterfacePeer: switch_id, via_switch_id, endpoint_id
-            if let weave = iface as? WeaveInterfacePeer {
-                kv("switch_id",     weave.switchID.map    { .string($0.hexString) } ?? .nil)
-                kv("via_switch_id", weave.viaSwitchID.map { .string($0.hexString) } ?? .nil)
-                kv("endpoint_id",   weave.endpointID.map  { .string($0.hexString) } ?? .nil)
-            }
-
-            // I2PInterface: i2p_b32, tunnelstate, i2p_connectable
-            if let i2p = iface as? I2PInterface {
-                kv("i2p_connectable", .bool(i2p.connectable))
-                kv("i2p_b32",     i2p.b32.map { .string($0 + ".b32.i2p") } ?? .nil)
-                kv("tunnelstate", i2p.tunnelState.map { .string($0) } ?? .nil)
-            }
-
-            // RNodeSubInterface: parent_interface_name/hash (not yet wired — RNodeSubInterface
-            // has no back-reference to the parent RNodeMultiInterface)
-            // These fields would only appear in rnstatus if we add a parentMultiInterface
-            // property to RNodeSubInterface. For now, they're omitted (rnstatus handles absence).
+            kv("status", .bool(iface.isOnline))
+            kv("mode",   .int(Int64(iface.mode.rawValue)))
 
             return .map(pairs)
         }

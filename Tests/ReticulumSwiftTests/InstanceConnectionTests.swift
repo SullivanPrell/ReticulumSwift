@@ -163,6 +163,36 @@ final class InstanceConnectionTests: XCTestCase {
         XCTAssertFalse(client.reticulum.transport.transportEnabled)
     }
 
+    func testAttach_localClient_marksTransportAsBehindASharedInstance() throws {
+        // Python: `Reticulum.is_connected_to_shared_instance = True`, which Transport reads
+        // back through `Transport.owner.is_connected_to_shared_instance`.
+        //
+        // Three behaviours hang off this flag and all of them are wrong while it is false:
+        //   - filterAndRecord re-runs the HEADER_2 transport_id filter that the shared
+        //     instance has already applied, dropping packets that were forwarded *to us*;
+        //   - shouldApplyDelta applies the local hops delta a second time;
+        //   - rnprobe takes the standalone branch and never reports RSSI/SNR/Link Quality.
+        let (shared, control) = freePortPair()
+        let directory = try makeConfigDirectory(shareInstance: true, sharedPort: shared, controlPort: control)
+
+        let instance = try attach(directory)
+        XCTAssertEqual(instance.role, .sharedInstance)
+        XCTAssertFalse(instance.reticulum.transport.isConnectedToSharedInstance,
+                       "the shared instance itself is not behind one")
+
+        let client = try attach(directory)
+        XCTAssertEqual(client.role, .localClient)
+        XCTAssertTrue(client.reticulum.transport.isConnectedToSharedInstance)
+    }
+
+    func testAttach_standalone_isNotBehindASharedInstance() throws {
+        let (shared, control) = freePortPair()
+        let directory = try makeConfigDirectory(shareInstance: false, sharedPort: shared, controlPort: control)
+        let connection = try attach(directory)
+        XCTAssertEqual(connection.role, InstanceConnection.Role.standalone)
+        XCTAssertFalse(connection.reticulum.transport.isConnectedToSharedInstance)
+    }
+
     func testAttach_localClient_getsWorkingRPCChannel() throws {
         let (shared, control) = freePortPair()
         let directory = try makeConfigDirectory(shareInstance: true, sharedPort: shared, controlPort: control)

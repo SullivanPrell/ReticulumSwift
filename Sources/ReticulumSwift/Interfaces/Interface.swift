@@ -42,6 +42,20 @@ public protocol Interface: AnyObject {
     /// Mirrors Python's `Interface.__str__`.
     var displayName: String { get }
 
+    /// The class name a Python peer expects to see for this interface, as reported in the
+    /// `type` field of the interface-stats payload (Python: `type(interface).__name__`).
+    ///
+    /// Declared here, rather than left to reflection over the Swift type, because a handful
+    /// of Swift classes are named differently from their Python counterparts. `rnstatus -d`
+    /// prints this string, and Reticulum's own config reconstruction branches on it, so a
+    /// Swift-only name reaches Python consumers as an interface kind they do not recognise.
+    var statsTypeName: String { get }
+
+    /// The `short_name` reported in the interface-stats payload (Python:
+    /// `str(interface.name)`). Overridden only where Python hardcodes a name that differs
+    /// from the one Swift uses internally to identify the interface.
+    var statsShortName: String { get }
+
     /// Cumulative bytes received (inbound). Mirrors Python Interface.rxb.
     var rxBytes: Int { get }
     /// Cumulative bytes transmitted (outbound). Mirrors Python Interface.txb.
@@ -172,6 +186,13 @@ public extension Interface {
     /// Default `displayName`: just `name`. Sufficient for interfaces that don't
     /// appear in rnstatus-style output; others override to match Python's `__str__`.
     var displayName: String { name }
+
+    /// Default: the Swift type's own name, which is what most interfaces are called in
+    /// Python too (`UDPInterface`, `TCPClientInterface`, `RNodeInterface`, …).
+    var statsTypeName: String { String(describing: type(of: self)) }
+
+    /// Default: the interface's own `name`, matching Python's `str(interface.name)`.
+    var statsShortName: String { name }
 
     /// SHA-256 hash of the display name (as UTF-8 bytes).
     /// Mirrors Python's `Interface.get_hash()` = `SHA256(str(self).encode("utf-8"))`.

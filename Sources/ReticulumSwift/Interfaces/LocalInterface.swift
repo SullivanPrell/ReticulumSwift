@@ -59,6 +59,11 @@ public final class LocalInterface: Interface {
     /// This is used by rnstatus to filter out the client-side local interface.
     public var displayName: String { "LocalInterface[\(port)]" }
 
+    /// This class is Python's `LocalClientInterface` — the client half of the shared
+    /// instance. The Swift name says "LocalInterface", which is Python's `__str__`, not its
+    /// class name, so the stats payload would otherwise publish the wrong kind.
+    public var statsTypeName: String { "LocalClientInterface" }
+
     public init(
         name: String = "LocalInterface",
         host: String = "127.0.0.1",

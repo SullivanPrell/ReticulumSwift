@@ -59,6 +59,17 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     /// Shown in rnstatus output; distinct from the client-side "LocalInterface[...]".
     public var displayName: String { "\(name)[\(port)]" }
 
+    /// This class is Python's `LocalServerInterface`; only the Swift name differs. Reported
+    /// verbatim in the stats payload, where a Python `rnstatus -d` prints it and would
+    /// otherwise show "PosixTCPServer", an interface kind that does not exist in RNS.
+    public var statsTypeName: String { "LocalServerInterface" }
+
+    /// Python hardcodes `self.name = "Reticulum"` on `LocalServerInterface`
+    /// (RNS/Interfaces/LocalInterface.py:391), while `__str__` stays "Shared Instance[…]".
+    /// Swift uses `name` to identify the interface internally, so the published short name
+    /// is set here rather than by renaming the interface.
+    public var statsShortName: String { "Reticulum" }
+
     /// Number of currently-connected clients. Used by buildInterfaceStats for rnstatus.
     public var clientCount: Int {
         lock.lock(); defer { lock.unlock() }

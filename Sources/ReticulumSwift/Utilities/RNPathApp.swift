@@ -93,6 +93,26 @@ public enum RNPathApp {
     /// Note that Python collapses several distinct causes onto the same code — a remote
     /// request that timed out, one that was rejected by the ACL, and one that legitimately
     /// returned an empty table all exit 10 with the same message. That is reproduced.
+    ///
+    /// **Known divergence — these codes actually reach the shell, and Python's do not.**
+    /// `RNS/__init__.py` defines its own `exit(code)` that ends in `os._exit(code)`, and
+    /// Reticulum registers `Reticulum.exit_handler` with `atexit`. Once the stack is up,
+    /// the hard `os._exit(0)` during teardown wins over the pending `SystemExit`, so every
+    /// `exit(1)` / `exit(20)` inside `program_setup` is discarded. Measured against RNS
+    /// 1.4.0, five runs each:
+    ///
+    /// | invocation                     | Python | here |
+    /// |--------------------------------|--------|------|
+    /// | `-b` with no blackhole data    | 0      | 20   |
+    /// | malformed destination hash     | 0      | 1    |
+    /// | `-d` with an unknown hash      | 0      | 1    |
+    /// | `-w 2` to an unreachable dest  | 0      | 1    |
+    /// | `--bogus` (argparse)           | 2      | 2    |
+    ///
+    /// argparse errors still agree because those are raised *before* the stack starts, so
+    /// nothing overrides them. The divergence is deliberate: matching Python would mean
+    /// `rnpath` could never signal failure to a script, and the codes below are the ones
+    /// its own source asks for. Reverse it here if byte-exact shell behaviour matters more.
     public enum Result: Int32, Equatable, CaseIterable {
         /// Success; also `--help`, `--version`, the no-mode help gate and Ctrl-C.
         case ok = 0

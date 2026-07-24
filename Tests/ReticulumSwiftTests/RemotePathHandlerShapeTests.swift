@@ -215,9 +215,46 @@ final class RemotePathHandlerShapeTests: XCTestCase {
 
         // A representative sample of the keys rnstatus reads off each interface.
         for key in ["name", "short_name", "hash", "type", "rxb", "txb", "status",
-                    "mode", "bitrate", "rxs", "txs", "announce_queue", "clients"] {
+                    "mode", "bitrate", "rxs", "txs", "clients"] {
             XCTAssertNotNil(iface[key], "interface stats should carry \"\(key)\"")
         }
+
+        // `announce_queue` is deliberately NOT in that list. Python creates the attribute
+        // lazily, the first time an announce is queued on an interface (Transport.py:1277),
+        // and `get_interface_stats` emits the key only when `hasattr` succeeds — so on a
+        // freshly registered interface Python omits it, and rnstatus's `if "announce_queue"
+        // in ifstat` guard is what makes that meaningful.
+        XCTAssertNil(iface["announce_queue"],
+                     "an interface that has never queued an announce must not claim a queue")
+    }
+
+    func testStatusInterfaceKeyOrderMatchesPython() throws {
+        // `rnstatus -j` serialises this dictionary with json.dumps, which preserves
+        // insertion order, so the order is part of the -j output contract. This is Python's
+        // sequence in get_interface_stats (Reticulum.py:1326-1443) for an interface with no
+        // optional blocks — checked against a live Python daemon's own -j output.
+        let transport = try makeTransport()
+        transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
+
+        let entries = try invokeStatusHandler(transport, includeLinkStats: false)
+        let stats = try XCTUnwrap(entries[0].asDictionary)
+        let interfaces = try XCTUnwrap(stats["interfaces"]?.asArray)
+        guard case .map(let pairs)? = interfaces.first else {
+            return XCTFail("interface entry should be a map")
+        }
+        let order = pairs.compactMap { $0.0.asString }
+
+        XCTAssertEqual(order, [
+            "clients", "bitrate", "rxs", "txs",
+            "ifac_signature", "ifac_size", "ifac_netname", "autoconnect_source",
+            "name", "short_name", "hash", "type", "rxb", "txb",
+            "incoming_announce_frequency", "outgoing_announce_frequency",
+            "incoming_pr_frequency", "outgoing_pr_frequency",
+            "announce_rate_target", "announce_rate_penalty", "announce_rate_grace",
+            "held_announces",
+            "burst_active", "burst_activated", "pr_burst_active", "pr_burst_activated",
+            "status", "mode",
+        ])
     }
 
     // MARK: - Unknown commands
