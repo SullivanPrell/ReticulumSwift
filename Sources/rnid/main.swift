@@ -168,9 +168,14 @@ func runRNID() -> Int32 {
     do {
         invocation = try RNIDCommandLine.parse(arguments)
     } catch {
-        // Python: argparse prints usage + the error and exits 2.
-        FileHandle.standardError.write(Data((RNIDCommandLine.helpText + "\n").utf8))
-        FileHandle.standardError.write(Data("\(RNIDCommandLine.program): error: \(error)\n".utf8))
+        // Python: argparse prints the usage block and the error, and exits 2.
+        let detail: String
+        if let error = error as? ArgumentError {
+            detail = RNIDCommandLine.makeParser().message(for: error)
+        } else {
+            detail = "\(error)"
+        }
+        FileHandle.standardError.write(Data((RNIDCommandLine.errorText(detail) + "\n").utf8))
         return 2
     }
 

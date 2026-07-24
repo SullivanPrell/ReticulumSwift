@@ -16,8 +16,10 @@ import Foundation
 /// - `--` terminating option parsing
 /// - `-h` / `--help` generating usage text
 ///
-/// Deliberately *not* supported (nothing in the utilities uses them): abbreviated long
-/// options, `nargs` other than 0 or 1, subparsers, and mutually exclusive groups.
+/// - `allow_abbrev=True` → any unambiguous prefix of a long option, including `--help`
+///
+/// Deliberately *not* supported (nothing in the utilities uses them): subparsers and
+/// mutually exclusive groups.
 public struct ArgumentParser {
 
     // MARK: - Declaration
@@ -159,7 +161,7 @@ public struct ArgumentParser {
         func looksLikeOption(_ token: String) -> Bool { token.hasPrefix("-") && token != "-" }
 
         while index < arguments.count {
-            let argument = arguments[index]
+            var argument = arguments[index]
             index += 1
 
             if optionsTerminated {
@@ -177,6 +179,11 @@ public struct ArgumentParser {
                 positionals.append(argument)
                 continue
             }
+
+            // argparse's `allow_abbrev`, which every RNS utility inherits: expand an
+            // unambiguous long-option prefix to its full spelling before anything else
+            // inspects the token, so the rest of the loop only ever sees canonical names.
+            argument = try expandingAbbreviation(argument)
 
             // argparse adds -h/--help implicitly unless the program declares them itself.
             if (argument == "-h" || argument == "--help"), declaration(for: argument) == nil {
@@ -199,7 +206,7 @@ public struct ArgumentParser {
                     lists[canonicalName(declaration), default: []].append(inlineValue)
                     provided.insert(canonicalName(declaration))
                 case .flag, .counted:
-                    throw ArgumentError.unexpectedValue(name)
+                    throw ArgumentError.unexpectedValue(canonicalName(declaration))
                 }
                 continue
             }
@@ -213,7 +220,7 @@ public struct ArgumentParser {
                 case .counted:
                     counts[key, default: 0] += 1
                 case .value:
-                    guard index < arguments.count else { throw ArgumentError.missingValue(argument) }
+                    guard index < arguments.count else { throw ArgumentError.missingValue(key) }
                     values[key] = arguments[index]
                     index += 1
                 case .optionalValue(_, let const):
@@ -224,7 +231,7 @@ public struct ArgumentParser {
                         values[key] = const
                     }
                 case .appended:
-                    guard index < arguments.count else { throw ArgumentError.missingValue(argument) }
+                    guard index < arguments.count else { throw ArgumentError.missingValue(key) }
                     lists[key, default: []].append(arguments[index])
                     index += 1
                 case .variadic:
@@ -311,6 +318,80 @@ public struct ArgumentParser {
     /// The longest declared spelling, used as the lookup key so callers can ask by any alias.
     private func canonicalName(_ declaration: Declaration) -> String {
         declaration.names.max(by: { $0.count < $1.count }) ?? declaration.names[0]
+    }
+
+    // MARK: - Long-option abbreviation
+
+    /// Every long spelling the parser will answer to, in declaration order.
+    ///
+    /// `--help` joins the pool only when the program has not declared it itself, matching
+    /// `argparse` adding its own help action in exactly that case.
+    private var abbreviatableLongNames: [String] {
+        var names = declarations.flatMap { $0.names }.filter { $0.hasPrefix("--") }
+        if declaration(for: "--help") == nil { names.append("--help") }
+        return names
+    }
+
+    /// Rewrite an abbreviated long option to its full spelling.
+    ///
+    /// Python: `argparse` defaults to `allow_abbrev=True` and none of the RNS utilities
+    /// turn it off, so `rnstatus --j` runs as `--json` and `rnprobe --si 12` as `--size 12`.
+    /// An exact match is never treated as an abbreviation, so a program declaring both
+    /// `--log` and `--logfile` can still be given `--log`.
+    ///
+    /// Any token that is not a long option, or that matches nothing, is returned untouched —
+    /// the caller then fails it the way it would have anyway.
+    private func expandingAbbreviation(_ argument: String) throws -> String {
+        guard argument.hasPrefix("--"), argument.count > 2 else { return argument }
+
+        // Split "--conf=/tmp/x" so the prefix search sees only the name.
+        let name: String
+        let suffix: String
+        if let equals = argument.firstIndex(of: "=") {
+            name = String(argument[argument.startIndex..<equals])
+            suffix = String(argument[equals...])
+        } else {
+            name = argument
+            suffix = ""
+        }
+
+        let longNames = abbreviatableLongNames
+        if longNames.contains(name) { return argument }      // exact match wins outright
+
+        let candidates = longNames.filter { $0.hasPrefix(name) }
+        switch candidates.count {
+        case 0:  return argument                             // unknown; caller reports it
+        case 1:  return candidates[0] + suffix
+        default: throw ArgumentError.ambiguousOption(name, candidates)
+        }
+    }
+
+    // MARK: - Error rendering
+
+    /// The detail `argparse` prints after `prog: error: `.
+    ///
+    /// This lives on the parser rather than on ``ArgumentError`` because only the parser
+    /// knows the declarations, and Python names a failing option by *every* one of its
+    /// spellings: `argument -s/--sort: expected one argument`, never `argument -s:`.
+    public func message(for error: ArgumentError) -> String {
+        switch error {
+        case .missingValue(let name):
+            return "argument \(spelling(for: name)): expected one argument"
+        case .unexpectedValue(let name):
+            return "argument \(spelling(for: name)): ignored explicit argument"
+        case .unrecognisedOption, .missingPositional,
+             .unrecognisedArguments, .ambiguousOption:
+            return error.description
+        }
+    }
+
+    /// An option named the way `argparse` names it: all its spellings joined with "/".
+    ///
+    /// Public because a `type=`/`choices=` conversion failure is raised by the caller, not
+    /// by ``parse(_:)``, and argparse names the option identically in those messages.
+    public func spelling(for name: String) -> String {
+        guard let declaration = declaration(for: name) else { return name }
+        return declaration.names.joined(separator: "/")
     }
 
     // MARK: - Usage
@@ -429,7 +510,8 @@ public enum ArgumentError: Error, CustomStringConvertible, Equatable {
 
     public var description: String {
         switch self {
-        case .unrecognisedOption(let name): return "unrecognized argument: \(name)"
+        // argparse always uses the plural, even when only one token was rejected.
+        case .unrecognisedOption(let name): return "unrecognized arguments: \(name)"
         case .missingValue(let name):       return "argument \(name): expected one argument"
         case .unexpectedValue(let name):    return "argument \(name): ignored explicit argument"
         case .missingPositional(let name):  return "the following arguments are required: \(name)"

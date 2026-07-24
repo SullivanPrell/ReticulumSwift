@@ -219,6 +219,8 @@ func parseOptions() -> Options {
     let parsed: ParsedArguments
     do {
         parsed = try parser.parse(Array(CommandLine.arguments.dropFirst()))
+    } catch let error as ArgumentError {
+        usageError(parser.message(for: error))
     } catch {
         usageError("\(error)")
     }

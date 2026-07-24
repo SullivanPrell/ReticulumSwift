@@ -85,9 +85,15 @@ final class RNPathAppConstantsTests: XCTestCase {
         XCTAssertEqual(RNPathApp.Result.notImplemented.rawValue, 255)
     }
 
-    func testVersionTracksTheRNSProtocolVersionNotThePackageVersion() {
-        // Python: argparse version="rnpath {RNS._version.__version__}" (rnpath.py:484).
-        XCTAssertEqual(RNPathApp.versionString, "rnpath \(Reticulum.rnsProtocolVersion)")
+    func testVersionReportsThePackageVersionLikeEveryOtherUtility() {
+        // Python: argparse version="rnpath {RNS._version.__version__}" (rnpath.py:484) —
+        // the version of the software actually running. The Swift analogue is this port's
+        // own release, and all nine utilities must answer identically, so that a version
+        // pasted into a bug report identifies one build rather than nine.
+        //
+        // Reticulum.rnsProtocolVersion is a different fact — the RNS release this build is
+        // wire-compatible with — and is deliberately NOT what --version reports.
+        XCTAssertEqual(RNPathApp.versionString, "rnpath \(Reticulum.version)")
         XCTAssertNotEqual(Reticulum.rnsProtocolVersion, Reticulum.version)
     }
 }

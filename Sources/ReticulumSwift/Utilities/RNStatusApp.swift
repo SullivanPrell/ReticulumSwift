@@ -175,6 +175,18 @@ public enum RNStatusApp {
       -v, --verbose
     """
 
+    /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
+    /// error. Taken from ``helpText`` rather than restated, so the two cannot drift.
+    public static var usageText: String {
+        helpText.components(separatedBy: "\n\n")[0]
+    }
+
+    /// The whole `argparse` error page: the usage block, then `rnstatus: error: detail`.
+    /// Written to stderr, followed by exit 2.
+    public static func errorText(_ detail: String) -> String {
+        "\(usageText)\n\(appName): error: \(detail)"
+    }
+
     // MARK: - Exit codes
 
     /// Process exit codes. Python calls `exit(n)` directly at each site.

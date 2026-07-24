@@ -44,14 +44,20 @@ func prettyHex(_ hash: Data) -> String { RNSUtilities.prettyhexrep(hash) }
 let rawArguments = Array(CommandLine.arguments.dropFirst())
 let parser = RNCopyApp.makeArgumentParser()
 
+/// Python: `parser.error(msg)` — usage block plus `rncp: error: …` on stderr, exit 2.
+func usageError(_ detail: String) -> Never {
+    let usage = RNCopyApp.helpText.components(separatedBy: "\n\n")[0]
+    FileHandle.standardError.write(Data("\(usage)\nrncp: error: \(detail)\n".utf8))
+    exit(2)
+}
+
 let arguments: ParsedArguments
 do {
     arguments = try parser.parse(rawArguments)
+} catch let error as ArgumentError {
+    usageError(parser.message(for: error))
 } catch {
-    // argparse writes usage + "prog: error: …" to stderr and exits 2.
-    FileHandle.standardError.write(Data("\(RNCopyApp.helpText.split(separator: "\n\n")[0])\n".utf8))
-    FileHandle.standardError.write(Data("rncp: error: \(error)\n".utf8))
-    exit(2)
+    usageError("\(error)")
 }
 
 if arguments.wantsHelp {
@@ -79,10 +85,21 @@ let jailArgument = arguments.value("--jail")
 let saveArgument = arguments.value("--save")
 let identityArgument = arguments.value("-i")
 let configArgument = arguments.value("--config")
-// argparse: type=int, default=-1. A non-integer value would be a parser error upstream.
-let announceInterval = Int(arguments.value("-b") ?? "-1") ?? -1
+/// argparse converts `type=`d options as it consumes them, so a value it cannot parse is a
+/// usage error — not a silently-defaulted argument.
+func converted<T>(_ name: String, typeName: String, default defaultValue: T,
+                  convert: (String) -> T?) -> T {
+    guard let raw = arguments.value(name) else { return defaultValue }
+    guard let value = convert(raw) else {
+        usageError("argument \(parser.spelling(for: name)): invalid \(typeName) value: '\(raw)'")
+    }
+    return value
+}
+
+// argparse: type=int, default=-1.
+let announceInterval = converted("-b", typeName: "int", default: -1) { Int($0) }
 // argparse: type=float, default=RNS.Transport.PATH_REQUEST_TIMEOUT.
-let timeout = Double(arguments.value("-w") ?? "") ?? Transport.pathRequestTimeout
+let timeout = converted("-w", typeName: "float", default: Transport.pathRequestTimeout) { Double($0) }
 // argparse: action="append". The shared parser has no append action, so collect by hand.
 let allowedArguments = RNCopyApp.collectRepeatedOption("-a", in: rawArguments)
 

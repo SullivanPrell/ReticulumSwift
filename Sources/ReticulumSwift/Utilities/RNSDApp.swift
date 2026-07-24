@@ -250,14 +250,16 @@ public enum RNSDApp {
                        help: parsed.wantsHelp)
     }
 
-    /// Rewrite the Swift-only `--config` aliases and expand unambiguous long-option prefixes.
+    /// Rewrite the Swift-only `--config` aliases to `--config`.
     ///
-    /// Python: `argparse`'s `allow_abbrev` defaults to `True`, so `--co`, `--conf` and
-    /// `--confi` all set `config` and `--exam` sets `exampleconfig`, while `--ver` is a hard
-    /// error because it matches both `--verbose` and `--version`. The shared ``ArgumentParser``
-    /// documents abbreviation as unsupported, so it is done here instead.
+    /// Long-option prefix abbreviation (`--conf` → `--config`, `--ver` → ambiguous) is
+    /// `argparse`'s `allow_abbrev` and is handled by ``ArgumentParser`` for every utility,
+    /// so it is deliberately absent here. Only the aliases are rnsd's own business, and
+    /// rewriting them up front is what keeps them out of `usage:` and out of the
+    /// abbreviation candidate pool.
+    ///
+    /// - Parameter specs: unused, retained so the signature stays stable for callers.
     static func normalise(_ argv: [String], specs: [OptionSpec]) throws -> [String] {
-        let longNames = specs.flatMap { $0.names }.filter { $0.hasPrefix("--") }
         var result: [String] = []
         var optionsTerminated = false
 
@@ -280,36 +282,7 @@ public enum RNSDApp {
                 result.append("--config" + String(argument[equals...]))
                 continue
             }
-            guard argument.hasPrefix("--"), argument.count > 2 else {
-                result.append(argument)
-                continue
-            }
-
-            let name: String
-            let suffix: String
-            if let equals = argument.firstIndex(of: "=") {
-                name = String(argument[argument.startIndex..<equals])
-                suffix = String(argument[equals...])
-            } else {
-                name = argument
-                suffix = ""
-            }
-
-            if longNames.contains(name) {
-                result.append(argument)       // exact match always wins over abbreviation
-                continue
-            }
-            let candidates = longNames.filter { $0.hasPrefix(name) }
-            switch candidates.count {
-            case 0:
-                result.append(argument)       // unknown; reported as unrecognized later
-            case 1:
-                result.append(candidates[0] + suffix)
-            default:
-                // Python: "rnsd: error: ambiguous option: --ver could match --verbose, --version"
-                // — candidates listed in declaration order.
-                throw ArgumentError.ambiguousOption(name, candidates)
-            }
+            result.append(argument)
         }
         return result
     }

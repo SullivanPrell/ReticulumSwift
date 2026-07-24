@@ -246,11 +246,24 @@ public enum RNPathApp {
       -v, --verbose
     """
 
+    /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
+    /// error. Taken from ``helpText`` rather than restated, so the two cannot drift.
+    public static var usageText: String {
+        helpText.components(separatedBy: "\n\n")[0]
+    }
+
+    /// The whole `argparse` error page: the usage block, then `rnpath: error: detail`.
+    /// Written to stderr, followed by exit 2.
+    public static func errorText(_ detail: String) -> String {
+        "\(usageText)\n\(appName): error: \(detail)"
+    }
+
     /// `rnpath {version}`, printed by `--version`.
     ///
-    /// Python uses `RNS._version.__version__`, so this tracks
-    /// ``Reticulum/rnsProtocolVersion`` (the RNS protocol release, "1.4.0") and **not**
-    /// `Reticulum.version` (the Swift package version). `Sources/rnsd/main.swift` uses the
-    /// latter for its own `--version`; that is not the behaviour to copy here.
-    public static var versionString: String { "\(appName) \(Reticulum.rnsProtocolVersion)" }
+    /// Python prints `RNS.__version__` — the version of the software actually running — so
+    /// the Swift analogue is ``Reticulum/version``, this port's own release, and every one
+    /// of the nine utilities reports it identically. ``Reticulum/rnsProtocolVersion`` is a
+    /// different fact (the RNS release this build is wire-compatible with) and is not what
+    /// `--version` answers.
+    public static var versionString: String { "\(appName) \(Reticulum.version)" }
 }

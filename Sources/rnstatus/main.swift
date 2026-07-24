@@ -12,12 +12,30 @@ import ReticulumSwift
 // MARK: - Argument parsing
 
 let parser = RNStatusApp.makeParser()
+
+/// Python: `parser.error(msg)` — the usage block and `rnstatus: error: …` on stderr, exit 2.
+func usageError(_ detail: String) -> Never {
+    FileHandle.standardError.write(Data((RNStatusApp.errorText(detail) + "\n").utf8))
+    exit(RNStatusApp.Result.noStatus.rawValue)
+}
+
 let arguments: ParsedArguments
 do {
     arguments = try parser.parse(Array(CommandLine.arguments.dropFirst()))
+} catch let error as ArgumentError {
+    usageError(parser.message(for: error))
 } catch {
-    FileHandle.standardError.write(Data("\(RNStatusApp.appName): \(error)\n".utf8))
-    exit(2)
+    usageError("\(error)")
+}
+
+/// Python: argparse `type=float` converts as it consumes the option, so a value it cannot
+/// parse is a usage error rather than a silently-ignored argument.
+func requiredDouble(_ name: String, default defaultValue: Double) -> Double {
+    guard let raw = arguments.value(name) else { return defaultValue }
+    guard let value = Double(raw) else {
+        usageError("argument \(parser.spelling(for: name)): invalid float value: '\(raw)'")
+    }
+    return value
 }
 
 if arguments.wantsHelp {
@@ -45,8 +63,8 @@ let detailsRequested   = arguments.flag("-D")
 let discoveredMode     = arguments.flag("--discovered") || detailsRequested
 let remoteHex          = arguments.value("-R")
 let managementIdentity = arguments.value("-i")
-let remoteTimeout      = arguments.double("-w") ?? RNStatusApp.defaultRemoteTimeout
-let monitorInterval    = arguments.double("--monitor-interval") ?? RNStatusApp.defaultMonitorInterval
+let remoteTimeout      = requiredDouble("-w", default: RNStatusApp.defaultRemoteTimeout)
+let monitorInterval    = requiredDouble("--monitor-interval", default: RNStatusApp.defaultMonitorInterval)
 let nameFilter         = arguments.positionals.first
 let configDirectory    = arguments.value("--config").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
 

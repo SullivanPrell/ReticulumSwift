@@ -207,4 +207,105 @@ final class ArgumentParserTests: XCTestCase {
         XCTAssertTrue(usage.contains("destination"))
         XCTAssertTrue(usage.contains("-h, --help"))
     }
+
+    // MARK: - Long-option abbreviation
+    //
+    // `argparse` defaults to `allow_abbrev=True`, and none of the RNS utilities turn it
+    // off, so every one of them accepts any unambiguous prefix of a long option. Verified
+    // against the installed Python tools:
+    //
+    //   rnstatus --j       →  runs, as though --json
+    //   rnprobe  --si      →  "argument -s/--size: expected one argument"
+    //   rnprobe  --v       →  "ambiguous option: --v could match --version, --verbose"
+    //   rnstatus --hel     →  prints help, exit 0
+
+    func testAbbreviation_unambiguousPrefixResolves() throws {
+        let result = try makeParser().parse(["--js"])
+        XCTAssertTrue(result.flag("--json"))
+    }
+
+    func testAbbreviation_worksForValueOptions() throws {
+        let result = try makeParser().parse(["--conf", "/tmp/x"])
+        XCTAssertEqual(result.value("--config"), "/tmp/x")
+    }
+
+    func testAbbreviation_worksWithInlineValue() throws {
+        let result = try makeParser().parse(["--conf=/tmp/x"])
+        XCTAssertEqual(result.value("--config"), "/tmp/x")
+    }
+
+    func testAbbreviation_missingValueNamesTheFullOption() {
+        XCTAssertThrowsError(try makeParser().parse(["--conf"])) { error in
+            // The error carries the option's canonical name, not the typed abbreviation.
+            XCTAssertEqual(error as? ArgumentError, .missingValue("--config"))
+        }
+    }
+
+    func testAbbreviation_exactMatchWinsOverLongerCandidates() throws {
+        // "--verbose" is also a prefix of nothing else, but the point is that an exact
+        // hit is never treated as an ambiguous prefix of itself plus a longer sibling.
+        var parser = ArgumentParser(program: "rntest", overview: "Test utility")
+        parser.flag(["--log"], help: "log")
+        parser.flag(["--logfile"], help: "logfile")
+        let result = try parser.parse(["--log"])
+        XCTAssertTrue(result.flag("--log"))
+        XCTAssertFalse(result.flag("--logfile"))
+    }
+
+    func testAbbreviation_ambiguousPrefixThrowsWithCandidatesInDeclarationOrder() {
+        var parser = ArgumentParser(program: "rntest", overview: "Test utility")
+        parser.flag(["--version"], help: "version")
+        parser.counted(["-v", "--verbose"], help: "verbose")
+        XCTAssertThrowsError(try parser.parse(["--ver"])) { error in
+            XCTAssertEqual(error as? ArgumentError,
+                           .ambiguousOption("--ver", ["--version", "--verbose"]))
+        }
+    }
+
+    func testAbbreviation_appliesToImplicitHelp() throws {
+        XCTAssertTrue(try makeParser().parse(["--hel"]).wantsHelp)
+        XCTAssertTrue(try makeParser().parse(["--h"]).wantsHelp)
+    }
+
+    func testAbbreviation_doesNotApplyToShortOptions() {
+        // argparse abbreviates long options only; "-co" is a bundle attempt, not "--config".
+        XCTAssertThrowsError(try makeParser().parse(["-co"]))
+    }
+
+    func testAbbreviation_unknownPrefixIsStillUnrecognised() {
+        XCTAssertThrowsError(try makeParser().parse(["--zzz"])) { error in
+            XCTAssertEqual(error as? ArgumentError, .unrecognisedOption("--zzz"))
+        }
+    }
+
+    // MARK: - argparse error wording
+
+    func testUnrecognisedOptionRendersAsPlural() {
+        // argparse always says "unrecognized arguments" — plural, even for a single token.
+        XCTAssertEqual(ArgumentError.unrecognisedOption("--bogus").description,
+                       "unrecognized arguments: --bogus")
+    }
+
+    func testMessageNamesAnOptionByEverySpelling() {
+        // Python: "argument -w/--timeout: expected one argument". The parser owns the
+        // declarations, so it is the only thing that can expand a name into that form.
+        let parser = makeParser()
+        XCTAssertEqual(parser.message(for: .missingValue("--timeout")),
+                       "argument -w/--timeout: expected one argument")
+        XCTAssertEqual(parser.message(for: .unexpectedValue("--json")),
+                       "argument -j/--json: ignored explicit argument")
+    }
+
+    func testMessageLeavesSingleSpellingOptionsAlone() {
+        XCTAssertEqual(makeParser().message(for: .missingValue("--config")),
+                       "argument --config: expected one argument")
+    }
+
+    func testMessagePassesThroughNonOptionErrors() {
+        let parser = makeParser()
+        XCTAssertEqual(parser.message(for: .unrecognisedOption("--bogus")),
+                       "unrecognized arguments: --bogus")
+        XCTAssertEqual(parser.message(for: .ambiguousOption("--ver", ["--version", "--verbose"])),
+                       "ambiguous option: --ver could match --version, --verbose")
+    }
 }

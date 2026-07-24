@@ -39,8 +39,14 @@ let stdoutIsTTY = isatty(FileHandle.standardOutput.fileDescriptor) != 0
 // Python wraps main() in `except KeyboardInterrupt:` → print("") then a bare exit() (code 0).
 // A DispatchSource handler is used rather than signal(2) because print()/exit() are not
 // async-signal-safe.
+//
+// The source must run on a *global* queue, not the main one. rnpath does its waiting by
+// blocking the main thread (see waitForPath below), so the main queue is never serviced and
+// a handler scheduled there would never run — while `SIG_IGN` had already disabled the
+// default terminate action, leaving the process unkillable by Ctrl-C. Verified against the
+// real tool: SIGINT to a `rnpath -w 60 <hash>` must exit 0, as Python's does.
 signal(SIGINT, SIG_IGN)
-let interruptSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+let interruptSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())
 interruptSource.setEventHandler {
     emit("")
     exit(RNPathApp.Result.ok.rawValue)
@@ -74,15 +80,19 @@ parser.counted(["-v", "--verbose"], help: "")
 parser.positional("destination", help: "hexadecimal hash of the destination", required: false)
 parser.positional("list_filter", help: "filter for remote blackhole list view", required: false)
 
+/// Python: `parser.error(msg)` — usage block plus `rnpath: error: …` on stderr, exit 2.
+func usageError(_ detail: String) -> Never {
+    emitError(RNPathApp.errorText(detail))
+    exit(RNPathApp.Result.usageError.rawValue)
+}
+
 let parsed: ParsedArguments
 do {
     parsed = try parser.parse(Array(CommandLine.arguments.dropFirst()))
+} catch let error as ArgumentError {
+    usageError(parser.message(for: error))
 } catch {
-    // argparse exits 2 on any parse error, printing usage plus a diagnostic to stderr.
-    emitError(String(RNPathApp.helpText.split(separator: "\n", omittingEmptySubsequences: false)
-                        .prefix(4).joined(separator: "\n")))
-    emitError("\(RNPathApp.appName): error: \(error)")
-    exit(RNPathApp.Result.usageError.rawValue)
+    usageError("\(error)")
 }
 
 // `-h`/`--help` is argparse's own action: the block with NO surrounding blank lines,
@@ -106,8 +116,7 @@ func requireNumber<T>(_ raw: String?, flag: String, typeName: String,
                       convert: (String) -> T?) -> T? {
     guard let raw else { return nil }
     guard let value = convert(raw) else {
-        emitError("\(RNPathApp.appName): error: argument \(flag): invalid \(typeName) value: '\(raw)'")
-        exit(RNPathApp.Result.usageError.rawValue)
+        usageError("argument \(parser.spelling(for: flag)): invalid \(typeName) value: '\(raw)'")
     }
     return value
 }
