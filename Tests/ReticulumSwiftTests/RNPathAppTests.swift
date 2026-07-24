@@ -628,7 +628,9 @@ final class RNPathModelCodecTests: XCTestCase {
         transport.register(interface: interface)
         defer { transport.deregister(interface: interface) }
 
-        let source = Transport.PathTableEntry(destinationHash: hashA, via: nil, hops: 1,
+        // `via` is non-optional: Python's path_table never stores None there, falling back
+        // to the destination's own hash for a directly-heard announce.
+        let source = Transport.PathTableEntry(destinationHash: hashA, via: hashA, hops: 1,
                                               interfaceName: "Bridge",
                                               lastHeard: Date(timeIntervalSince1970: 10),
                                               expires: Date(timeIntervalSince1970: 20))

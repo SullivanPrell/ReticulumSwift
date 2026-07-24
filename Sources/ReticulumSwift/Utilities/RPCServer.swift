@@ -396,19 +396,14 @@ public final class RPCServer {
     private func buildPathTable(_ t: Transport, maxHops: UInt8?) -> MsgPack.Value {
         let entries = t.getPathTable(maxHops: maxHops)
         let values: [MsgPack.Value] = entries.map { entry in
-            var pairs: [(MsgPack.Value, MsgPack.Value)] = [
+            .map([
                 (.string("hash"),      .bytes(entry.destinationHash)),
                 (.string("timestamp"), .double(entry.lastHeard.timeIntervalSince1970)),
+                (.string("via"),       .bytes(entry.via)),
                 (.string("hops"),      .int(Int64(entry.hops))),
                 (.string("expires"),   .double(entry.expires.timeIntervalSince1970)),
                 (.string("interface"), .string(entry.interfaceName)),
-            ]
-            if let via = entry.via {
-                pairs.append((.string("via"), .bytes(via)))
-            } else {
-                pairs.append((.string("via"), .nil))
-            }
-            return .map(pairs)
+            ])
         }
         return .array(values)
     }

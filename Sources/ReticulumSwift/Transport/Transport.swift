@@ -1242,7 +1242,12 @@ public final class Transport {
     /// Mirrors Python's `Reticulum.get_path_table(max_hops:)`.
     public struct PathTableEntry {
         public let destinationHash: Data
-        public let via: Data?
+        /// Python's `path_table[dst][1]` (`received_from`), which is **never None**:
+        /// Transport.py:1772-1796 stores `packet.transport_id` when the announce carried
+        /// one and `packet.destination_hash` when it did not. `rnpath -t` calls
+        /// `prettyhexrep(path["via"])` unguarded, so a null here is a TypeError in the
+        /// Python client, not an empty column — hence non-optional.
+        public let via: Data
         public let hops: UInt8
         public let interfaceName: String
         public let lastHeard: Date
@@ -1251,13 +1256,25 @@ public final class Transport {
 
     public func getPathTable(maxHops: UInt8? = nil) -> [PathTableEntry] {
         lock.lock(); defer { lock.unlock() }
+        // Python publishes `str(receiving_interface)` — the display name, "LocalInterface
+        // [56156]" — where a path entry stores only the interface's short config name here.
+        // Resolving at the producer means every consumer of the table (the RPC path_table,
+        // the /path request handler, and rnpath running in-process) reports the same string
+        // Python would.
+        let displayNames = Dictionary(interfaces.map { ($0.name, $0.displayName) },
+                                      uniquingKeysWith: { first, _ in first })
         return paths.values
             .filter { maxHops == nil || $0.hops <= maxHops! }
             .map { PathTableEntry(
                 destinationHash: $0.destinationHash,
-                via: $0.nextHopTransportID,
+                // `nextHopTransportID` is nil exactly when the announce carried no
+                // transport id, which is the case where Python falls back to the
+                // destination's own hash.
+                via: $0.nextHopTransportID ?? $0.destinationHash,
                 hops: $0.hops,
-                interfaceName: $0.nextHopInterfaceName,
+                // Fall back to the stored short name when nothing is registered under it —
+                // a path restored from disk can outlive the interface that heard it.
+                interfaceName: displayNames[$0.nextHopInterfaceName] ?? $0.nextHopInterfaceName,
                 lastHeard: $0.lastHeard,
                 expires: $0.expires
             )}
@@ -1986,10 +2003,9 @@ public final class Transport {
                         let table = self.getPathTable(maxHops: maxHops)
                         let filtered = filterHash == nil ? table : table.filter { $0.destinationHash == filterHash }
                         let entries = filtered.map { e -> MsgPack.Value in
-                            let via: MsgPack.Value = e.via.map { .bytes($0) } ?? .nil
-                            return .map([(.string("hash"),      .bytes(e.destinationHash)),
+                            .map([(.string("hash"),      .bytes(e.destinationHash)),
                                          (.string("timestamp"), .double(e.lastHeard.timeIntervalSince1970)),
-                                         (.string("via"),       via),
+                                         (.string("via"),       .bytes(e.via)),
                                          (.string("hops"),      .int(Int64(e.hops))),
                                          (.string("expires"),   .double(e.expires.timeIntervalSince1970)),
                                          (.string("interface"), .string(e.interfaceName))])
