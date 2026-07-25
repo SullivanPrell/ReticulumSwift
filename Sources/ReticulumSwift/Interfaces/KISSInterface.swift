@@ -19,6 +19,11 @@ public enum KISSInterfaceError: Error {
 /// `SerialPortTransport` so the interface is unit-testable without hardware.
 public final class KISSInterface: Interface {
 
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
+
     // MARK: - Class constants
 
     /// Python: `BITRATE_GUESS = 1200`

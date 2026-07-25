@@ -267,6 +267,14 @@ public final class Link {
     /// available on the responder side as well). `nil` until known.
     public var expectedHops: Int?
 
+    /// When this link's path was re-balanced from a link-request proof whose
+    /// hop count disagreed with `expectedHops`, or `nil` if it never was.
+    /// Doubles as a once-only latch: Python re-balances a given link at most
+    /// once (`if not link.rebalanced:`), so a flapping route cannot keep
+    /// rewriting the path table for the lifetime of the link.
+    /// Mirrors Python's RNS 1.4.1 `Link.rebalanced`.
+    public var rebalanced: Date?
+
     /// Establishment timeout. Defaults to `establishmentTimeoutPerHop`
     /// seconds; scaled up by hop count when the path is known.
     ///
@@ -1445,7 +1453,16 @@ public final class Link {
                     // handler to dispatch it. Mirrors Python Link.py `if self.destination.request_handlers`
                     // (commit 3a36c367).
                     if !destination.requestHandlers.isEmpty {
-                        handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
+                        // RNS 1.4.1: reject an oversized request *at advertisement
+                        // time*, before a single part is transferred. `adv.dataSize`
+                        // is the advertised plaintext size, matching Python's
+                        // `ResourceAdvertisement.read_size(packet)`.
+                        if let cap = destination.maxRequestSize, Int(adv.dataSize) > cap {
+                            Reticulum.log("Rejected request with excessive size \(adv.dataSize) B on \(self)", level: .debug)
+                            try? send(adv.resourceHash, context: .resourceReceiverCancel)
+                        } else {
+                            handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
+                        }
                     }
                 } else if adv.isResponse, let reqID = adv.requestID {
                     // Incoming response via Resource — route to pending request.
@@ -1516,6 +1533,16 @@ public final class Link {
             // context + ciphertext), not from the plaintext, so the id matches what the
             // initiator stored regardless of implementation language.
             stateLock.lock(); lastData = now; stateLock.unlock()
+            // RNS 1.4.1 `Destination.max_request_size`: drop an oversized request
+            // before unpacking its msgpack body — the point of the cap is to keep
+            // a hostile peer from making us allocate on its say-so. Python logs
+            // and silently ignores it (no rejection is sent on the packet path,
+            // unlike the Resource path below).
+            if let cap = destination.maxRequestSize, plaintext.count > cap {
+                Reticulum.log("Ignored request with excessive size \(plaintext.count) B on \(self)", level: .debug)
+                onPacketReceived?(plaintext, packet.packetType, packet.context, self)
+                break
+            }
             let reqID = (try? packet.truncatedPacketHash()) ?? Hashes.truncatedHash(plaintext)
             handleIncomingRequest(plaintext, requestID: reqID)
             onPacketReceived?(plaintext, packet.packetType, packet.context, self)
@@ -1579,6 +1606,16 @@ public final class Link {
     private func handleIncomingResponseResource(adv: ResourceAdvertisement, rawAdv: Data, requestID: Data) {
         stateLock.lock(); let receipt = pendingRequests[requestID]; stateLock.unlock()
         guard let receipt else { return }
+        // RNS 1.4.1 `max_response_size`, checked against the advertised size so an
+        // oversized response is refused before any part is transferred. Python
+        // rejects the resource AND fails the receipt — do both, in that order.
+        if let cap = receipt.maxResponseSize, Int(adv.dataSize) > cap {
+            Reticulum.log("Rejected response with excessive size \(adv.dataSize) B on \(self)", level: .debug)
+            try? send(adv.resourceHash, context: .resourceReceiverCancel)
+            evictPendingRequest(requestID)
+            receipt.responseRejected()
+            return
+        }
         // The response is arriving as a Resource. Disarm the fixed request
         // timeout now — a large / slow page can take far longer to transfer than
         // the request timeout, and from here the ResourceTransfer's own watchdog

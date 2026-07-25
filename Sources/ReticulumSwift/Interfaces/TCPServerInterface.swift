@@ -36,6 +36,10 @@ public final class TCPServerInterface: Interface {
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
     public var recursivePrs: Bool = false
     public var announcesFromInternal: Bool = true
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
 
     /// Called by Transport when a new client connects. Transport registers the sub-interface.
     public var onClientConnected: ((any Interface) -> Void)?
@@ -192,6 +196,11 @@ public final class TCPServerInterface: Interface {
 /// Mirrors Python's per-connection `TCPServerInterfaceClient` which is registered
 /// with Transport as an independent Interface.
 public final class TCPServerClientInterface: Interface {
+
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
     public let name: String
     public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(true)
@@ -237,6 +246,12 @@ public final class TCPServerClientInterface: Interface {
         self.ifacIdentity = parentServer.ifacIdentity
         self.ifacKey      = parentServer.ifacKey
         self.ifacSize     = parentServer.ifacSize
+        // Inherit routing preference from the parent server. Mirrors Python's
+        // `spawned_interface.gravity = self.gravity` in TCPServerInterface
+        // (RNS 1.4.1, commit 3ca71527) — a spawned client is the real routing
+        // endpoint, so the parent's gravity has to reach it or the whole
+        // option is inert on server-side interfaces.
+        self.gravity = parentServer.gravity
     }
 
     public func start() throws { }  // started by the parent server

@@ -3,6 +3,91 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.5.0] — RNS 1.4.1 parity: interface gravity and dynamic path re-balancing
+
+Brings the port up to Python RNS 1.4.1 (released 2026-07-24). The two headline
+features both change how paths are chosen, so a mixed Swift/Python mesh will
+converge differently than before — in the same direction Python now does.
+
+### Added
+
+- **Interface gravity.** Every interface carries an integer `gravity`
+  (default 0, negative values allowed) expressing routing preference. When an
+  announce arrives that is *the same announce* already recorded for a
+  destination — same emission timebase, equal or fewer hops — the path now
+  moves to the interface with the strictly higher gravity. Configurable per
+  interface (`gravity`) and globally (`default_gravity`), and inherited by
+  spawned child interfaces (TCP server clients, I2P peers, Weave peers), which
+  is essential because the child, not the parent, is what Transport records as
+  a path's receiving interface.
+
+  A gravity takeover deliberately does **not** reset the path's responsiveness
+  state; Python's gravity branch is the one place that omits
+  `mark_path_unknown_state`, so a working path keeps its known-good status
+  across the swap.
+- **Dynamic link path re-balancing.** A link-request proof that arrives over a
+  different number of hops than the path table predicted now corrects both
+  `Link.expectedHops` and the path table's hop count, once the proof's
+  signature has validated. A link request is the first real round-trip to a
+  destination, so its proof is the earliest trustworthy hop measurement —
+  previously the port waited for the next announce to converge. Latched by the
+  new `Link.rebalanced` timestamp so each link re-balances at most once, and
+  gated by `Transport.allowLinkPathRebalance`.
+- **`Destination.setMaxRequestSize(_:)`** caps inbound requests served by
+  registered handlers. Oversized single-packet requests are dropped before the
+  msgpack body is unpacked; oversized requests advertised as a Resource are
+  rejected at advertisement time, so nothing transfers at all.
+- **`maxResponseSize:` on `Link.request(...)`** caps the response a caller will
+  accept, with the same two enforcement points. An over-size response fails the
+  receipt (new `RequestReceipt.responseRejected()`) rather than delivering
+  truncated data.
+- **`announces_to_internal`** per-interface option. Set on the interface an
+  announce arrived over, it lets that interface's announces onto internal-mode
+  interfaces even when it is itself in boundary mode.
+- **Boundary-mode path requests.** Boundary interfaces may now trigger
+  recursive path requests, restricted to boundary and gateway peers via the new
+  `InterfaceMode.boundarySearchModes`.
+- **`autoconnect_interface_mode` / `autoconnect_interface_gravity` /
+  `autoconnect_announces_to_internal`** config options, plus `gravity` and
+  `announces_to_internal` keys in the interface-stats payload (Python's
+  `rnstatus` reads both, and sorts by gravity).
+
+### Fixed
+
+- **Ingress burst control could latch on indefinitely.** Clearing the burst
+  flag required 6 samples (`IC_BURST_MIN_SAMPLES`) in a frequency deque that a
+  *subsiding* burst never refills — so the flag could only clear if new
+  announces arrived, which is exactly what it was suppressing. It now needs 2
+  (`IC_DEQUE_MIN_SAMPLE`), matching the upstream fix.
+- **Ingress limiting released one call early.** The call that clears the burst
+  flag now still reports "limited"; Python's `return True` sits outside the
+  deactivation branch, so only the *following* call passes. Applies to both
+  announce and path-request limiting.
+- **Egress path-request limiting triggered far too easily**, using the 2-sample
+  minimum that merely makes a frequency computable instead of
+  `IC_BURST_MIN_SAMPLES` (6) — throttling ordinary discovery bursts.
+- **Channel accepted arbitrarily far-future sequence numbers**, letting a peer
+  make the receive ring buffer grow on its say-so. Sequences beyond
+  `nextRxSequence + WINDOW_MAX` are now dropped.
+- **Channel's stale-sequence wraparound test was inverted and used the wrong
+  constant** (`SEQ_MODULUS/2` instead of `WINDOW_MAX`), so near the top of the
+  sequence space it dropped legitimate wrapped-*future* frames and accepted
+  genuinely stale ones.
+- **Discovered peers were dialled as `BackboneInterface` on Apple platforms.**
+  Upstream excludes Darwin from backbone support — the client side relies on
+  polling semantics that do not hold there — so a discovered
+  Backbone/TCPServer peer must be connected as a `TCPClientInterface`. Since
+  Darwin is this port's whole target, every discovered peer was taking the
+  wrong path.
+- **Persisted interface discoveries were never re-checked against the
+  blackhole list**, so an identity blackholed after its record was written
+  stayed connectable forever. Records lacking a transport or network identity,
+  or whose network identity is not in `interface_discovery_sources`, are now
+  pruned too.
+- **Config log levels were not clamped**, so an out-of-range value silently
+  fell back to the default instead of saturating. The cap is now 8, matching
+  RNS 1.4.1 raising it from 7 so `LOG_EXTREME` is reachable from a config file.
+
 ## [1.4.3] — Thread-safe traffic counters and packet-handle state
 
 Data races only, no wire-format or behavioural change. Every reported number is

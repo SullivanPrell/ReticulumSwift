@@ -33,6 +33,13 @@ public struct IngressControlState {
     /// Interval between individual held-announce releases (seconds).
     /// Mirrors Python `Interface.IC_HELD_RELEASE_INTERVAL = 5`.
     public static let icHeldReleaseInterval: TimeInterval = 5.0
+
+    /// Minimum samples in the frequency deque before an *egress* path-request
+    /// burst may be declared. Distinct from `InterfaceFreqTracker.minSamples`
+    /// (= Python's `IC_DEQUE_MIN_SAMPLE` = 2), which governs whether a
+    /// frequency is computable at all.
+    /// Mirrors Python's `Interface.IC_BURST_MIN_SAMPLES = 6`.
+    public static let icBurstMinSamples: Int = 6
     /// Maximum number of held announces per interface.
     /// Mirrors Python `Interface.MAX_HELD_ANNOUNCES = 256`.
     public static let maxHeldAnnounces: Int = 256

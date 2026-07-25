@@ -48,6 +48,10 @@ public final class AutoInterface: Interface {
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
     public var recursivePrs: Bool = false
     public var announcesFromInternal: Bool = true
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
 
     /// Lock-guarded — written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.

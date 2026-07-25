@@ -53,6 +53,10 @@ public final class I2PInterface: Interface {
     public var mode: InterfaceMode = .full
     public var recursivePrs: Bool = false
     public var announcesFromInternal: Bool = true
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
 
     // Tunnel
     public var wantsTunnel: Bool   = false
@@ -154,6 +158,10 @@ public final class I2PInterface: Interface {
             peer.ifacIdentity  = ifacIdentity
             peer.ifacKey       = ifacKey
             peer.ifacSize      = ifacSize
+            // Spawned peers are the real routing endpoints, so the parent's
+            // routing preference has to reach them. Mirrors Python's
+            // `spawned_interface.gravity = self.gravity` (RNS 1.4.1, 3ca71527).
+            peer.gravity       = gravity
             peer.onConnected    = { [weak self] p in self?.onPeerConnected?(p) }
             peer.onDisconnected = { [weak self] p in self?.onPeerDisconnected?(p) }
             spawnedPeers.append(peer)
@@ -189,6 +197,9 @@ public final class I2PInterface: Interface {
     // MARK: - Spawned interface management (inbound peer registry)
 
     public func addSpawnedInterface(_ peer: I2PInterfacePeer) {
+        // Inbound (accepted) peers inherit routing preference from the parent
+        // just like the outbound ones spawned in `start()`.
+        peer.gravity = gravity
         lock.lock(); spawned.append(peer); lock.unlock()
     }
 

@@ -272,6 +272,12 @@ public final class Transport {
     /// Per-instance propagation limit; defaults to `pathfinderM`.
     public var propagationLimit: UInt8 = UInt8(Transport.pathfinderM)
 
+    /// Whether a link-request proof arriving with an unexpected hop count may
+    /// correct the path table (after its signature validates). RNS 1.4.1's
+    /// headline path-convergence feature. Mirrors Python's
+    /// `Transport.ALLOW_LINK_PATH_REBALANCE = True`.
+    public static var allowLinkPathRebalance = true
+
     /// Per-session hop-count obfuscation delta. When non-zero, packets that
     /// originate locally (`hops == 0`) — our own traffic and traffic relayed for
     /// directly-connected local clients — have their hop count rewritten to this
@@ -337,6 +343,9 @@ public final class Transport {
         var attachedInterfaceName: String?    // IDX_AT_ATTCHD_IF — restrict retransmit to one iface
         var receivingInterfaceName: String    // iface the announce arrived on (never echoed back)
         var receivingInterfaceMode: InterfaceMode  // for the announce-propagation filter on retry
+        // `announces_to_internal` of the receiving interface, captured alongside
+        // its mode so the retry pass filters identically to the first forward.
+        var receivingInterfaceAnnouncesToInternal: Bool?
     }
     /// Pending announce retransmissions keyed by destination hash. Guarded by `lock`.
     private var announceTable: [Data: AnnounceTableEntry] = [:]
@@ -551,6 +560,21 @@ public final class Transport {
         guard let name = nextHopInterfaceName(for: destinationHash) else { return nil }
         lock.lock(); defer { lock.unlock() }
         return interfaces.first { $0.name == name }
+    }
+
+    /// Gravity of the interface the current path for `destinationHash` was heard
+    /// on, or `nil` when there is no path or the interface is no longer
+    /// registered. Mirrors Python's
+    /// `Transport.path_table[dst][IDX_PT_RVCD_IF].gravity`, which is a live
+    /// reference to the interface object — so this resolves the interface each
+    /// time rather than snapshotting gravity into the path entry.
+    ///
+    /// **Caller must already hold `lock`.** Python's `announce_gravity == None
+    /// or current_gravity == None → should_add = False` maps onto this
+    /// returning `nil`.
+    private func currentPathGravityLocked(_ destinationHash: Data) -> Int? {
+        guard let path = paths[destinationHash] else { return nil }
+        return interfaces.first { $0.name == path.nextHopInterfaceName }?.gravity
     }
 
     // MARK: - Interface management
@@ -949,11 +973,23 @@ public final class Transport {
 
         if state.burstActive {
             // Deactivate when frequency drops below threshold AND hold period has elapsed.
+            //
+            // The deactivating call still returns `true`: in Python the
+            // `return True` sits *outside* the deactivation branch, so the call
+            // that clears the flag is itself still limited and only the next one
+            // passes. Returning false here would let one extra announce through
+            // a burst that is only just subsiding.
+            //
+            // The sample-count gate is `IC_DEQUE_MIN_SAMPLE` (2), not
+            // `IC_BURST_MIN_SAMPLES` (6) — that is RNS 1.4.1 commit 48388756,
+            // which fixed the burst flag deadlocking on indefinitely: with a 6
+            // sample requirement against a deque that a subsiding burst never
+            // refills, the flag could only ever clear if *new* announces arrived,
+            // which is precisely what it was suppressing.
             if freq < threshold && now > state.burstActivated + IngressControlState.icBurstHold {
                 if tracker.incomingAnnounceSampleCount >= InterfaceFreqTracker.minSamples {
                     state.burstActive = false
                     ingressStates[key] = state
-                    return false
                 }
             }
             return true
@@ -986,10 +1022,11 @@ public final class Transport {
         let freq = tracker.incomingPathRequestFrequency(now: now)
 
         if state.prBurstActive {
+            // As in `shouldIngressLimit`, the deactivating call itself still
+            // returns `true` — Python's `return True` is outside this branch.
             if freq < threshold && now > state.prBurstActivated + IngressControlState.icBurstHold {
                 state.prBurstActive = false
                 ingressStates[key] = state
-                return false
             }
             return true
         } else {
@@ -1012,7 +1049,11 @@ public final class Transport {
         guard let tracker = tracker(for: interface) else { return false }
         let freq = tracker.outgoingPathRequestFrequency(now: now)
         if freq > interface.ecPrFreq {
-            return tracker.outgoingPathRequestSampleCount >= InterfaceFreqTracker.minSamples
+            // Python gates egress limiting on `IC_BURST_MIN_SAMPLES` (6), not on
+            // the 2-sample minimum that merely makes a frequency computable —
+            // suppressing our own outbound path requests off two samples would
+            // throttle normal discovery bursts.
+            return tracker.outgoingPathRequestSampleCount >= IngressControlState.icBurstMinSamples
         }
         return false
     }
@@ -2091,7 +2132,8 @@ public final class Transport {
                 outboundMode: iface.mode,
                 nextHopMode: entry.receivingInterfaceMode,
                 localDestination: false,
-                announcesFromInternal: iface.announcesFromInternal
+                announcesFromInternal: iface.announcesFromInternal,
+                nextHopAnnouncesToInternal: entry.receivingInterfaceAnnouncesToInternal
             ) else { continue }
             queueLock.lock()
             if announceQueues[iface.name] == nil { announceQueues[iface.name] = AnnounceQueue() }
@@ -2648,8 +2690,20 @@ public final class Transport {
 
     private func handleLinkRequestProof(_ packet: Packet, from interface: Interface) {
         if let link = lookupLink(packet.destinationHash) {
+            // Snapshot before validateProof, which flips status away from
+            // .pending and is what Python gates re-balancing on.
+            let proofHops = Int(packet.hops)
+            let hopsDisagree = link.expectedHops.map { $0 != proofHops } ?? false
             do {
                 try link.validateProof(packet)
+                // RNS 1.4.1 path re-balancing at the link terminus. Python runs
+                // its own signature check *before* accepting the proof and only
+                // then rewrites the hop counts; `validateProof` has just done
+                // that verification and thrown on failure, so reaching here is
+                // the same guarantee — a forged proof can never move a path.
+                if Transport.allowLinkPathRebalance, hopsDisagree {
+                    rebalancePath(for: link, toHops: proofHops)
+                }
                 // Fire the transport-level callback for the initiator side.
                 // The destination's onLinkEstablished is intentionally NOT
                 // fired here — it belongs to the responder side and is wired
@@ -2671,6 +2725,34 @@ public final class Transport {
         let destHash = linkRoutes[packet.destinationHash]?.destinationHash
         lock.unlock()
         if let destHash { markDestinationUsed(destHash) }
+    }
+
+    /// Correct this link's hop expectation, and the path table entry behind it,
+    /// from a link-request proof that arrived over a different number of hops
+    /// than the path table predicted.
+    ///
+    /// This is RNS 1.4.1's dynamic path re-balancing at the link terminus
+    /// (Python `Transport.inbound`, the `for link in Transport.pending_links`
+    /// block). A link request is the first real round-trip to a destination, so
+    /// its proof is the earliest trustworthy measurement of the true hop count
+    /// — announces may have arrived over a longer route, or the topology may
+    /// have shortened since. Correcting the path table here makes every
+    /// subsequent packet to that destination use the right hop expectation
+    /// instead of waiting for the next announce.
+    ///
+    /// Latched by `link.rebalanced` so each link re-balances at most once,
+    /// matching Python's `if not link.rebalanced:` guard.
+    private func rebalancePath(for link: Link, toHops hops: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard link.rebalanced == nil else { return }
+        link.rebalanced = Date()
+        link.expectedHops = hops
+        let destinationHash = link.destination.hash
+        if var entry = paths[destinationHash], entry.hops != UInt8(truncatingIfNeeded: hops) {
+            entry.hops = UInt8(truncatingIfNeeded: hops)
+            paths[destinationHash] = entry
+        }
     }
 
     private func handleLinkRTT(_ packet: Packet, from interface: Interface) {
@@ -2848,11 +2930,25 @@ public final class Transport {
                 pathStatesLock.lock()
                 let unresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
                 pathStatesLock.unlock()
-                if packet.hops >= existingHops, !unresponsive {
+                // RNS 1.4.1 gravity: the *same* announce re-arriving on a
+                // strictly higher-gravity interface is exactly how a path is
+                // pulled onto a preferred interface, and it arrives with equal
+                // hops — so it must not be swallowed here either.
+                //
+                // Python has no hop-based early return at all: `packet_filter`
+                // returns True unconditionally for a duplicate SINGLE announce
+                // (Transport.py:1417-1425), and every duplicate reaches the
+                // `should_add` ladder. This early return is a Swift-only
+                // optimisation, so each ladder branch that can fire on a
+                // duplicate needs a matching exemption here.
+                let higherGravity = currentPathGravityLocked(decoded.destinationHash)
+                    .map { interface.gravity > $0 } ?? false
+                if packet.hops >= existingHops, !unresponsive, !higherGravity {
                     lock.unlock()
                     return  // Already seen, not a better path, and path is responsive
                 }
-                // Better path (or reviving an unresponsive one) — fall through.
+                // Better path, reviving an unresponsive one, or a gravity
+                // takeover — fall through.
             }
             lock.unlock()
 
@@ -2914,6 +3010,9 @@ public final class Transport {
             //    (the existing path's source may have moved or the old path is stale).
             // 5. Update if the existing path is expired.
             let shouldUpdate: Bool
+            // Set when the update was won purely on interface gravity, which is
+            // the one Python branch that does not call `mark_path_unknown_state`.
+            var gravitySwap = false
             pathStatesLock.lock()
             let isUnresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
             pathStatesLock.unlock()
@@ -2944,9 +3043,31 @@ public final class Transport {
                 let pathTimebase = Transport.timebaseFromRandomBlobs(existing.randomBlobs)
                 let blobSeen = randomBlob.map { existing.randomBlobs.contains($0) } ?? false
                 if packet.hops <= existing.hops {
-                    // Fewer-or-equal hops (Python 1814-1825): accept only a fresh,
-                    // previously-unheard announce that is more recently emitted.
-                    shouldUpdate = !blobSeen && emittedAt > pathTimebase
+                    // Fewer-or-equal hops (Python 1820-1844): accept a fresh,
+                    // previously-unheard announce that is more recently emitted…
+                    if !blobSeen && emittedAt > pathTimebase {
+                        shouldUpdate = true
+                    } else if emittedAt != pathTimebase {
+                        // …otherwise it is only a gravity takeover candidate when
+                        // the emission timebase matches exactly, i.e. it is
+                        // literally the same announce reaching us again by
+                        // another route (Python: `if announce_emitted !=
+                        // path_timebase: should_add = False`).
+                        shouldUpdate = false
+                    } else if let currentGravity = currentPathGravityLocked(decoded.destinationHash) {
+                        // RNS 1.4.1: the same announce arriving on an interface
+                        // with strictly higher gravity pulls the path onto that
+                        // interface. Note this deliberately does NOT mark the
+                        // path unknown — Python omits `mark_path_unknown_state`
+                        // in this branch alone, so a working path keeps its
+                        // responsiveness state across a gravity swap.
+                        shouldUpdate = interface.gravity > currentGravity
+                        gravitySwap = shouldUpdate
+                    } else {
+                        // Python: `announce_gravity == None or current_gravity
+                        // == None → should_add = False`.
+                        shouldUpdate = false
+                    }
                 } else if existing.isExpired {
                     // More hops, but the path has expired (Python 1842-1853):
                     // accept any announce we haven't already heard.
@@ -2994,9 +3115,13 @@ public final class Transport {
                 lock.lock()
                 // Reset responsiveness state when path is updated with fresh announce.
                 // Mirrors Python: Transport.mark_path_unknown_state(destination_hash)
-                pathStatesLock.lock()
-                pathStates[decoded.destinationHash] = Transport.stateUnknown
-                pathStatesLock.unlock()
+                // — except on a pure gravity takeover, where Python's branch
+                // omits that call so the known-good path keeps its state.
+                if !gravitySwap {
+                    pathStatesLock.lock()
+                    pathStates[decoded.destinationHash] = Transport.stateUnknown
+                    pathStatesLock.unlock()
+                }
             }
             // Attach app_data to the identity so callers can retrieve it via
             // Identity.recallAppData / Transport.recallAppData.  Python stores this in
@@ -3068,7 +3193,8 @@ public final class Transport {
                         outboundMode: iface.mode,
                         nextHopMode: interface.mode,
                         localDestination: false,
-                        announcesFromInternal: iface.announcesFromInternal
+                        announcesFromInternal: iface.announcesFromInternal,
+                        nextHopAnnouncesToInternal: interface.announcesToInternal
                     ) else { continue }
                     queueLock.lock()
                     if announceQueues[iface.name] == nil {
@@ -3103,7 +3229,8 @@ public final class Transport {
                     blockRebroadcasts: false,
                     attachedInterfaceName: nil,
                     receivingInterfaceName: interface.name,
-                    receivingInterfaceMode: interface.mode
+                    receivingInterfaceMode: interface.mode,
+                    receivingInterfaceAnnouncesToInternal: interface.announcesToInternal
                 )
                 lock.unlock()
             }
@@ -3363,11 +3490,34 @@ public final class Transport {
         // forwarded requests so cross-hop dedup / loop prevention works.
         // For non-discovering interface modes the request is silently ignored.
         // RNS 1.3.6: `recursive_prs` forces discovery regardless of interface mode.
-        let shouldDiscover = transportEnabled
-            && (interface.recursivePrs || InterfaceMode.discoverPathsFor.contains(interface.mode))
+        //
+        // RNS 1.4.1 additionally lets BOUNDARY-mode interfaces trigger discovery,
+        // but restricts which interfaces the recursive request may go out on:
+        // only boundary and gateway peers (`BOUNDARY_SEARCH_MODES`). Python:
+        //
+        //     elif attached_interface.mode == MODE_BOUNDARY:
+        //         should_search_for_unknown = True
+        //         search_mode_filter        = BOUNDARY_SEARCH_MODES
+        //     ...
+        //     if search_mode_filter and not interface.mode in search_mode_filter: continue
+        //
+        // The precedence matters: `recursive_prs` and `DISCOVER_PATHS_FOR` are
+        // checked first, so a boundary interface that also sets recursive_prs
+        // searches unfiltered.
+        var searchModeFilter: Set<InterfaceMode>? = nil
+        var shouldDiscover = false
+        if transportEnabled {
+            if interface.recursivePrs || InterfaceMode.discoverPathsFor.contains(interface.mode) {
+                shouldDiscover = true
+            } else if interface.mode == .boundary {
+                shouldDiscover = true
+                searchModeFilter = InterfaceMode.boundarySearchModes
+            }
+        }
         if shouldDiscover {
             let now = Date().timeIntervalSince1970
             for iface in interfaces where iface !== interface && iface.isOnline && iface.isRoutingEndpoint {
+                if let filter = searchModeFilter, !filter.contains(iface.mode) { continue }
                 if shouldEgressLimitPR(on: iface, now: now) { continue }
                 try? requestPath(for: target, onInterface: iface, tag: tag)
             }
@@ -3578,7 +3728,8 @@ public final class Transport {
         outboundMode: InterfaceMode,
         nextHopMode: InterfaceMode?,
         localDestination: Bool = false,
-        announcesFromInternal: Bool = true
+        announcesFromInternal: Bool = true,
+        nextHopAnnouncesToInternal: Bool? = nil
     ) -> Bool {
         // Top-level guards — only apply when the destination is not instance-local.
         if !localDestination && nextHopMode == nil { return false }
@@ -3593,6 +3744,13 @@ public final class Transport {
             // when the next-hop interface toward the source is boundary.
             if !localDestination {
                 guard let nhm = nextHopMode else { return false }
+                // RNS 1.4.1 `announces_to_internal`: read off the *next-hop*
+                // (source-side) interface, this opts that interface's announces
+                // into internal-mode interfaces and short-circuits the
+                // boundary block below. Python: `if
+                // from_interface.announces_to_internal == True: pass`, so only
+                // an explicit true counts — nil/false fall through.
+                if nextHopAnnouncesToInternal == true { return true }
                 if nhm == .boundary { return false }
             }
             return true

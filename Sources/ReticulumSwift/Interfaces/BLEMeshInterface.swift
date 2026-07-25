@@ -52,6 +52,11 @@ import Foundation
 /// they share the same `HDLC` + `Packet` wire format.
 public final class BLEMeshInterface: Interface {
 
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
+
     // MARK: - Tunable defaults
 
     /// Conservative throughput estimate for a BLE 5 GATT link carrying
