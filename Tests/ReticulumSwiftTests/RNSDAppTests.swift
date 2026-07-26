@@ -300,7 +300,7 @@ rnir: error: unrecognized arguments: -s
         XCTAssertEqual(RNSDApp.versionText(program: "rnpkg"), "rnpkg \(Reticulum.version)")
         // Documented divergence: Python prints RNS.__version__. Keeping this assertion here
         // means the two versions can never drift silently.
-        XCTAssertEqual(Reticulum.rnsProtocolVersion, "1.4.1")
+        XCTAssertEqual(Reticulum.rnsProtocolVersion, "1.4.2")
     }
 
     // MARK: - rnpkg's own example config

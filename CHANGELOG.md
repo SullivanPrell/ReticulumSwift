@@ -109,16 +109,55 @@ client indexes directly, so the Python side raised rather than degrading.
 - **`rnpath` could not be interrupted.** `signal(SIGINT, SIG_IGN)` disabled the default
   terminate action while the `DispatchSource` meant to replace it was scheduled on the main
   queue, which `rnpath`'s blocking wait never services — so Ctrl-C was a complete no-op.
+- **A short option's value may be attached to it.** `argparse` accepts `-s16` as `-s 16`,
+  and accepts it at the end of a bundle (`-vvs16` is verbose twice plus size 16). The
+  in-package parser only understood bundles of pure flags, so every attached value was
+  rejected as an unrecognised argument, exit 2 — across `rnprobe -s`/`-n`, `rnpath -m`/`-w`,
+  `rncp -b`, `rnx -w` and `rnstatus -w`. A cluster now resolves left to right and the first
+  value-taking option in it claims the remainder of the token, which is `argparse`'s rule.
+- **`--help` and `--version` are reached by abbreviation.** `rnprobe` scans `argv` for those
+  two before parsing, to reproduce `argparse` firing their actions the moment it reaches
+  them. The scan compared exact tokens, so `--hel` and `--vers` — both unambiguous, both
+  expanded by `allow_abbrev` — fell through to the ordinary parse and took a different code
+  path entirely, printing the help page in place of the version.
+- **`rnsd --exampleconfig` was 25 lines short of Python's.** RNS 1.4.1 added
+  `default_gravity`, `autoconnect_interface_mode`, `autoconnect_announces_to_internal` and
+  `autoconnect_interface_gravity` to `__example_rns_config__`. This blob is a document users
+  copy verbatim, so it is compared byte for byte and is identical again (15663 bytes).
+- **`interface_stats` was missing RNS 1.4.1's `gravity` and `announces_to_internal`.** Both
+  are appended after `mode`, exactly where Python emits them: `rnstatus -j` serialises the
+  dictionary in insertion order, so position is part of the contract, and Python's own
+  `rnstatus` sorts interfaces by `gravity` when the key is present.
+
+### RNS 1.4.2
+
+Audited, no port required — `rnsProtocolVersion` moves to `1.4.2` on that basis rather than
+on a changeset. The release is three core diffs against 1.4.1 plus `rnsh`, which is not
+ported:
+
+- `Transport.py:3126` began skipping offline interfaces when fanning a recursive path
+  request out. Every fan-out loop here already filtered on `isOnline`, so the port was
+  ahead of Python rather than behind. Now pinned by a test.
+- `Transport.py:1841` moved a gravity-replacement log line from `LOG_DEBUG` to
+  `LOG_PATHING`. This port does not emit that line.
+- `Discovery.py` began caching the blackholed identity set for 60 s inside
+  `list_discovered_interfaces`. Python pays an RPC round-trip to the shared instance per
+  `is_blackholed` call; here it is a dictionary lookup under a lock, so the cache would buy
+  nothing and would delay a fresh blackhole by up to a minute. Deliberately not adopted,
+  and a test now pins the immediacy that decision preserves.
 
 ### Known divergences
 
-- **`rnpath`'s exit codes reach the shell and Python's do not.** `RNS/__init__.py` defines
-  its own `exit(code)` ending in `os._exit(code)`, and the `atexit` teardown's `os._exit(0)`
-  overrides the pending `SystemExit`, so every `exit(1)` / `exit(20)` inside `program_setup`
-  is discarded — measured 0 where the source asks for 1 or 20. Matching that would mean
-  `rnpath` could never signal failure to a script, so the codes its own source asks for are
-  used instead. `argparse` errors agree exactly (exit 2), because those are raised before
-  the stack starts.
+- **Failure exit codes reach the shell here and do not in Python.** Once a Python utility
+  has started a stack, the code it asks for is discarded and the process exits 0. The cause
+  is `Reticulum.exit_handler`, registered with `atexit` (`Reticulum.py:369`): isolated by
+  unregistering it, after which the very same `sys.exit(2)` exits 2. It applies to every
+  post-stack exit in every tool — `rnstatus`'s `exit(2)` on "Could not get RNS status",
+  `rnpath`'s `exit(1)` and `exit(20)` — so `rnstatus; echo $?` reports success when the
+  status was never fetched. Matching that would mean no Swift utility could signal failure
+  to a script either, so the codes each tool's own source asks for are used instead.
+  `argparse` errors agree exactly (exit 2), because those are raised before the stack
+  starts.
 - **`--version` reports this port's release**, not the RNS protocol version it is
   wire-compatible with. All nine tools answer identically.
 - **`rnprobe`'s spinner is gated on a TTY**, where Python writes backspaces and raw glyphs

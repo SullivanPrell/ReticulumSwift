@@ -13,13 +13,30 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently — a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.5.0"
+    public static let version = "1.6.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
     /// a single version string for both its library and its protocol). Bump only
     /// when parity is verified against a new RNS release. Informational only.
-    public static let rnsProtocolVersion = "1.4.1"
+    ///
+    /// 1.4.2 required no changes here, which is why this moved without a
+    /// corresponding port. Its three core diffs against 1.4.1 are:
+    ///
+    ///  - `Transport.py:3126` — skip offline interfaces when fanning a recursive
+    ///    path request out. Every fan-out loop in this port already filtered on
+    ///    `isOnline`, so the port was ahead of Python here rather than behind.
+    ///  - `Transport.py:1841` — a gravity-replacement log line moved from
+    ///    `LOG_DEBUG` to `LOG_PATHING`. This port does not emit that line.
+    ///  - `Discovery.py` — `list_discovered_interfaces` now caches the blackholed
+    ///    identity set for 60s instead of asking per record. Python pays an RPC
+    ///    round-trip to the shared instance for each `is_blackholed` call; here it
+    ///    is a dictionary lookup under a lock (`Transport.isBlackholed`), so the
+    ///    cache would buy nothing and only make a fresh blackhole take a minute
+    ///    to apply.
+    ///
+    /// The rest of 1.4.2 is `RNS/Utilities/rnsh`, which is not ported.
+    public static let rnsProtocolVersion = "1.4.2"
 
     public enum LogLevel: Int, Comparable, Sendable {
         case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme

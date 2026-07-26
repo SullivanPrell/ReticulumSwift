@@ -1,7 +1,10 @@
 # ReticulumSwift
 
-Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.4.1).
+Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.4.2).
 Target: wire + API compatibility so a Swift node interoperates with Python nodes.
+
+Ships the library plus the nine `rn*` command-line utilities as executable products
+(`rnstatus`, `rnpath`, `rnprobe`, `rncp`, `rnid`, `rnx`, `rnsd`, `rnir`, `rnpkg`).
 
 ## Build & Test
 
@@ -10,9 +13,22 @@ swift build
 swift test                          # runs the full test suite
 swift test --filter <SuiteName>     # e.g. WireGoldenBytesTests
 
+swift build -c release              # also builds the nine rn* executables
+
 # If you see SwiftShims module cache errors:
 rm -rf .build && swift test
 ```
+
+Cross-implementation parity for the utilities lives in `../../tri-test`, which compares
+each tool against the installed Python one — CLI surface, instance-control socket, and
+file/identity round-trips:
+
+```bash
+cd ../../tri-test && RETICULUM_LOCAL_DEPS=1 make build-utilities test-utilities
+```
+
+`RETICULUM_LOCAL_DEPS=1` is what points tri-test at this working tree; without it, it
+tests the published release pinned in `tri-test/versions.env`.
 
 ## Tech Stack
 
