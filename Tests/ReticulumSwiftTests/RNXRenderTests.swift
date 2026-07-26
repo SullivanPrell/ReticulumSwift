@@ -161,8 +161,15 @@ final class RNXRenderTests: XCTestCase {
     }
 
     func testRnxPrettyTimeComponents() {
-        // Python: pretty_time(3*86400 + 4*3600 + 5*60 + 6.25)
-        XCTAssertEqual(RNXResultRenderer.rnxPrettyTime(3 * 86400 + 4 * 3600 + 5 * 60 + 6.25),
+        // Python: pretty_time(3*86400 + 4*3600 + 5*60 + 6.25).
+        // Spelled out with explicit Double terms rather than inline: as one mixed
+        // integer/floating literal expression the type checker has to weigh every
+        // numeric overload of `*` and `+` at once, which times it out on CI.
+        let days: Double = 3 * 86400
+        let hours: Double = 4 * 3600
+        let minutes: Double = 5 * 60
+        let seconds: Double = 6.25
+        XCTAssertEqual(RNXResultRenderer.rnxPrettyTime(days + hours + minutes + seconds),
                        "3d, 4h, 5m and 6.25s")
         XCTAssertEqual(RNXResultRenderer.rnxPrettyTime(3600, verbose: true), "1 hour")
         XCTAssertEqual(RNXResultRenderer.rnxPrettyTime(7200, verbose: true), "2 hours")
