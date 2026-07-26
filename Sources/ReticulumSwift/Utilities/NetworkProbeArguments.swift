@@ -125,13 +125,17 @@ public extension NetworkProbe {
             // help and exits 0 in Python too. Scanning first reproduces that.
             // Known divergence: `-s x -h` errors in argparse, because the type conversion
             // runs at the point `-s` is consumed; here it prints help.
+            let parser = makeParser()
             for token in tokens {
                 if token == "--" { break }
-                if token == "-h" || token == "--help" { return .help }
-                if token == "--version" { return .version }
+                // Honour `allow_abbrev` in the pre-scan too, so `--hel` reaches the help
+                // action and `--vers` the version action, exactly as argparse expands them.
+                // A bare `-h` (help is implicit, never spelled long here) still counts.
+                let expanded = parser.expandedLongOption(token)
+                if token == "-h" || expanded == "--help" { return .help }
+                if expanded == "--version" { return .version }
             }
 
-            let parser = makeParser()
             let parsed: ParsedArguments
             do {
                 parsed = try parser.parse(tokens)

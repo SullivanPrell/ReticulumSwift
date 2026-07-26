@@ -54,9 +54,23 @@ Supporting API:
 
 ### Fixed
 
-These are interop defects that predate the utilities: Swift produced something a Python
-client indexes directly, so the Python side raised rather than degrading.
+These are defects that predate the utilities. Most are interop faults, where Swift produced
+something a Python client indexes directly and the Python side raised rather than degrading;
+the first is a Swift-to-Swift fault that the Python tools were masking.
 
+- **A Swift local client's startup announce never reached the shared instance.**
+  `LocalInterface.start()` returned as soon as the `NWConnection` had been *started* rather
+  than once it was ready, and `send()` silently discards packets while the interface is
+  offline. Every utility announces immediately after attaching, so that announce went
+  nowhere: the daemon accepted the socket and reported "Serving: 1 program" while its path
+  table stayed empty, leaving a Swift client behind a Swift shared instance unreachable from
+  the mesh. A *Python* client on the same Swift daemon worked — its
+  `LocalClientInterface.connect()` is a blocking `socket.connect()` — which made the fault
+  look like a daemon-side forwarding gap rather than a client-side one. `start()` now waits
+  for the connection, up to `connectTimeout` (5 s), and throws
+  `ConnectionError.couldNotConnect` if it never comes up. That also makes
+  `InstanceConnection`'s documented `couldNotConnect` outcome reachable for the first time:
+  previously an initial connect could not fail, it could only come up dead.
 - **Instance-control authentication rejected CPython 3.12 and newer.** `RPCServer` only
   implemented the legacy handshake — a 20-byte challenge answered with a bare HMAC-MD5
   digest — and hard-rejected anything that was not exactly `#CHALLENGE#` plus 20 bytes.
@@ -109,6 +123,21 @@ client indexes directly, so the Python side raised rather than degrading.
 - **`rnpath` could not be interrupted.** `signal(SIGINT, SIG_IGN)` disabled the default
   terminate action while the `DispatchSource` meant to replace it was scheduled on the main
   queue, which `rnpath`'s blocking wait never services — so Ctrl-C was a complete no-op.
+- **An embedded i2pd crashed the host process at exit.** i2pd's router lives on
+  dylib-scope C++ singletons served by a dozen of its own threads, so any `exit()` that had
+  not called `I2PDaemon.stop()` first destroyed those singletons underneath live threads —
+  a reproducible SIGSEGV in `i2p::tunnel::Tunnels::Run` reading a half-destroyed
+  `i2p::transport::transports`, and a router that never flushed its netDb or dropped its
+  leaseSets. `I2PDaemon` now registers an `atexit` handler on first start, which runs
+  before the singletons' destructors (handlers fire in reverse registration order, and
+  theirs are registered at image init) and performs the ordered shutdown. Stopping
+  explicitly is still the intended path; this is the net under every path that doesn't.
+- **`I2PDaemon` treated process-global state as per-instance.** `C_InitI2P` initialises
+  singletons and `C_TerminateI2P` retires them for the life of the process, so a second
+  daemon alongside a running one silently reconfigured it, and a daemon started after any
+  stop re-initialised torn-down globals. Both are now refused up front with an error that
+  says which case it is; `I2PDaemon.isTerminatedForProcess` lets a caller check before
+  trying. The rule is factored into `I2PDaemonPhase` so it is testable without a live i2pd.
 
 ### Known divergences
 
