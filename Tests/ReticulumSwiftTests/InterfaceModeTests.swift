@@ -149,6 +149,35 @@ final class InterfaceModeTests: XCTestCase {
         XCTAssertTrue(limited, "high-frequency outgoing PRs must activate egress PR limiting")
     }
 
+    // MARK: - shouldEgressLimitPR: sample-count floor
+
+    /// Python gates egress limiting on `IC_BURST_MIN_SAMPLES` (6), not on the
+    /// 2-sample floor that merely makes a frequency computable. Five rapid path
+    /// requests already compute well above `EC_PR_FREQ` (5 Hz), so with the wrong
+    /// constant this suppresses an ordinary discovery burst — the app's own
+    /// startup path requests would be silently dropped.
+    func testShouldEgressLimitPRNeedsSixSamplesEvenAtHighFrequency() {
+        let t = Transport()
+        let iface = ModeTestInterface(name: "efew", createdAt: Date(), egressControl: true)
+        t.register(interface: iface)
+
+        // Frequency is count / (now - oldest sample), so 5 samples spread over the
+        // last half second computes as 10 Hz — double EC_PR_FREQ.
+        let base: TimeInterval = Date().timeIntervalSince1970
+        for i in 0 ..< 5 {
+            t.notifyOutgoingPathRequest(on: iface, at: base - 0.5 + Double(i) * 0.02)
+        }
+        XCTAssertFalse(t.shouldEgressLimitPR(on: iface, now: base),
+                       "fewer than IC_BURST_MIN_SAMPLES (6) samples must not egress-limit")
+
+        // The sixth sample crosses the floor, and only then does the (unchanged,
+        // already-exceeded) frequency threshold take effect — which is also what
+        // proves the five-sample case above was over the threshold all along.
+        t.notifyOutgoingPathRequest(on: iface, at: base - 0.5 + 5 * 0.02)
+        XCTAssertTrue(t.shouldEgressLimitPR(on: iface, now: base),
+                      "at IC_BURST_MIN_SAMPLES the frequency threshold takes effect")
+    }
+
     // MARK: - shouldEgressLimitPR: false when egressControl disabled
 
     func testShouldEgressLimitPRFalseWithEgressControlDisabled() {

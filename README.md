@@ -23,7 +23,7 @@ and LoRa to TCP/IP and I2P. Every destination is identified by a self-certifying
 cryptographic address; all traffic is end-to-end encrypted by default.
 
 **ReticulumSwift** ports that stack to idiomatic Swift. It is byte-for-byte
-wire-compatible with Python Reticulum (RNS 1.3.0): a Swift node and a Python node
+wire-compatible with Python Reticulum (RNS 1.4.1): a Swift node and a Python node
 interoperate on the same network, exchange announces, establish links, and transfer
 resources transparently.
 
@@ -49,7 +49,7 @@ The goal of the stack is a complete iOS/macOS Reticulum experience — think
 
 ## Status
 
-ReticulumSwift implements the full Reticulum 1.3.0 protocol — all core layers and
+ReticulumSwift implements the full Reticulum 1.4.1 protocol — all core layers and
 every standard interface — and is wire-compatible with the Python reference
 implementation.
 
@@ -64,7 +64,7 @@ implementation.
 | IFAC (deterministic Ed25519) | ✅ wire-compatible |
 | `rnsd` daemon + RPC + shared instance | ✅ config-compatible |
 
-Behavior is covered by an extensive XCTest suite (2,145 tests, ~78% line
+Behavior is covered by an extensive XCTest suite (2,358 tests, ~78% line
 coverage), and wire compatibility is verified against Python RNS by a live
 interoperability suite — see [docs/INTEROP.md](docs/INTEROP.md).
 
@@ -169,7 +169,7 @@ to the public testnet, and pairing with a Python node — see
 ## Testing
 
 ```sh
-swift test                              # 2145 tests
+swift test                              # 2358 tests
 swift test --filter <TestSuiteName>     # a single suite
 ```
 

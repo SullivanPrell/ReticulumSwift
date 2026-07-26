@@ -96,6 +96,42 @@ final class LinkCallbackAPITests: XCTestCase {
         wait(for: [started], timeout: 2.0)
     }
 
+    /// The started callback must hand the observer a transfer whose
+    /// `resourceHash` is already populated — Python calls
+    /// `link.callbacks.resource_started` from inside `Resource.accept`, after
+    /// `resource.hash = adv.h` (Resource.py:178, 224-230).
+    ///
+    /// This is load-bearing, not cosmetic: LXMF keys its inbound-transfer
+    /// registry on the hash it reads in this callback
+    /// (`incoming_delivery_resources[resource.hash] = resource`). Firing the
+    /// callback before the advertisement was parsed meant every concurrent
+    /// transfer was filed under the same empty `Data()` key — later transfers
+    /// silently evicted earlier ones, and `cancelInbound(resourceHash:)` could
+    /// never match the 32-byte hash a caller had read back off the transfer.
+    func testResourceStartedCallbackSeesPopulatedHash() throws {
+        let (aLink, bLink) = try establishLink()
+        let started = expectation(description: "resource-started")
+        bLink.setResourceStrategy(.acceptAll)
+
+        let hashLock = NSLock()
+        var observedHash: Data?
+        bLink.setResourceStartedCallback { transfer in
+            hashLock.lock(); observedHash = transfer.resourceHash; hashLock.unlock()
+            started.fulfill()
+        }
+
+        let rt = ResourceTransfer(link: aLink)
+        try rt.send(payload: Data(repeating: 0xAA, count: 100))
+        wait(for: [started], timeout: 2.0)
+
+        hashLock.lock(); let observed = observedHash; hashLock.unlock()
+        let hash = try XCTUnwrap(observed)
+        XCTAssertFalse(hash.isEmpty,
+                       "resource-started fired before the advertisement was adopted")
+        XCTAssertEqual(hash, rt.resourceHash,
+                       "receiver saw a different hash than the sender advertised")
+    }
+
     // MARK: - set_resource_concluded_callback
 
     func testSetResourceConcludedCallback() throws {

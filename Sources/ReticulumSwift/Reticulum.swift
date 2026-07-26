@@ -13,13 +13,13 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently — a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.4.3"
+    public static let version = "1.5.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
     /// a single version string for both its library and its protocol). Bump only
     /// when parity is verified against a new RNS release. Informational only.
-    public static let rnsProtocolVersion = "1.4.0"
+    public static let rnsProtocolVersion = "1.4.1"
 
     public enum LogLevel: Int, Comparable, Sendable {
         case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme
@@ -505,7 +505,10 @@ loglevel = 4
 
     /// Returns the list of network identity hashes from which interfaces are discovered.
     /// Mirrors Python's `Reticulum.interface_discovery_sources()`.
-    public private(set) static var interfaceDiscoverySources_: [Data] = []
+    /// `internal(set)`, not `private(set)`: the announce-time allowlist check in
+    /// `InterfaceAnnounceHandler` needs to be testable, and config loading (the
+    /// only production writer) already lives in this module.
+    public internal(set) static var interfaceDiscoverySources_: [Data] = []
     public static func interfaceDiscoverySources() -> [Data] { interfaceDiscoverySources_ }
 
     /// Maximum number of discovered interfaces to auto-connect to.
@@ -519,6 +522,32 @@ loglevel = 4
     /// Returns the maximum number of auto-connected discovered interfaces.
     /// Mirrors Python's `Reticulum.max_autoconnected_interfaces()`.
     public static func maxAutoconnectedInterfaces() -> Int { maxAutoconnectedInterfaces_ }
+
+    // MARK: - RNS 1.4.1 gravity / autoconnect policy
+
+    /// Configured `default_gravity`, or `nil` when unset.
+    public static var defaultGravity_: Int? = nil
+
+    /// Gravity for an interface that does not configure its own.
+    /// Mirrors Python's `Reticulum._default_gravity()`.
+    public static func defaultGravity() -> Int {
+        defaultGravity_ ?? InterfaceMode.defaultGravity
+    }
+
+    /// Configured `autoconnect_interface_mode`, or `nil` when unset.
+    /// Mirrors Python's `Reticulum.autoconnect_interface_mode()`.
+    public static var autoconnectInterfaceMode_: InterfaceMode? = nil
+    public static func autoconnectInterfaceMode() -> InterfaceMode? { autoconnectInterfaceMode_ }
+
+    /// Configured `autoconnect_interface_gravity`, or `nil` when unset.
+    /// Mirrors Python's `Reticulum.autoconnect_interface_gravity()`.
+    public static var autoconnectInterfaceGravity_: Int? = nil
+    public static func autoconnectInterfaceGravity() -> Int? { autoconnectInterfaceGravity_ }
+
+    /// Configured `autoconnect_announces_to_internal`, or `nil` when unset.
+    /// Mirrors Python's `Reticulum.autoconnect_announces_to_internal()`.
+    public static var autoconnectAnnouncesToInternal_: Bool? = nil
+    public static func autoconnectAnnouncesToInternal() -> Bool? { autoconnectAnnouncesToInternal_ }
 
     public let configuration: Configuration
     public let transport: Transport
@@ -842,9 +871,15 @@ loglevel = 4
                 if let t = ifCfg.int("max_reconnect_tries") { li.maxReconnectTries = t }
                 iface = li
 
-            case "BackboneInterface":
-                guard let host = ifCfg["target_host"],
-                      let port = ifCfg.int("target_port") else { continue }
+            case "BackboneInterface", "BackboneClientInterface":
+                // Python accepts a set of aliases for this interface family before
+                // constructing it (Reticulum.py:988-992): `remote` → `target_host`,
+                // `port` → both `listen_port` and `target_port`. Written configs —
+                // including the one RNS's own discovery emits for a backbone peer —
+                // use `remote`/`port`, so without the aliases the entry parsed to
+                // nothing and the interface was silently skipped.
+                guard let host = ifCfg["target_host"] ?? ifCfg["remote"],
+                      let port = ifCfg.int("target_port") ?? ifCfg.int("port") else { continue }
                 let bb = BackboneInterface(name: ifCfg.name, host: host, port: UInt16(port))
                 iface = bb
 
@@ -897,7 +932,18 @@ loglevel = 4
             default:
                 iface = nil
             }
-            if let iface {
+            if var iface {
+                // RNS 1.4.1 per-interface routing policy, applied before
+                // registration so Transport never sees an unconfigured
+                // interface. Resolution matches Python (Reticulum.py:771-772,
+                // 845-847, 908-936): an explicit `gravity` in the interface
+                // block wins, otherwise `default_gravity`, otherwise 0.
+                iface.gravity = ifCfg.int("gravity") ?? Reticulum.defaultGravity()
+                // `announces_to_internal` has no default — absent means Python's
+                // `None`, which is distinct from an explicit `False`.
+                if let ati = ifCfg.bool("announces_to_internal") {
+                    iface.announcesToInternal = ati
+                }
                 transport.register(interface: iface)
                 try? iface.start()
             }
@@ -1008,8 +1054,19 @@ loglevel = 4
         if cfg.reticulum.autoconnectDiscoveredInterfaces > 0 {
             Reticulum.maxAutoconnectedInterfaces_ = cfg.reticulum.autoconnectDiscoveredInterfaces
         }
-        // Log level mapping: Python 0=critical, 4=info, 7=extreme.
-        if let level = LogLevel(rawValue: cfg.logging.logLevel) {
+        // RNS 1.4.1 gravity / autoconnect policy. Each is assigned only when the
+        // key was present, so an absent option keeps the built-in default.
+        if let dg = cfg.reticulum.defaultGravity { Reticulum.defaultGravity_ = dg }
+        if let m  = cfg.reticulum.autoconnectInterfaceMode { Reticulum.autoconnectInterfaceMode_ = m }
+        if let g  = cfg.reticulum.autoconnectInterfaceGravity { Reticulum.autoconnectInterfaceGravity_ = g }
+        if let a  = cfg.reticulum.autoconnectAnnouncesToInternal { Reticulum.autoconnectAnnouncesToInternal_ = a }
+        // Log level mapping: Python 0=critical, 4=info, 8=extreme.
+        // Python saturates rather than ignoring an out-of-range value
+        // (`if loglevel > 8: loglevel = 8`, raised from 7 in RNS 1.4.1 so
+        // LOG_EXTREME is reachable from a config file at all); clamp to match,
+        // instead of silently leaving the level at its default.
+        let clamped = min(max(cfg.logging.logLevel, 0), LogLevel.extreme.rawValue)
+        if let level = LogLevel(rawValue: clamped) {
             Reticulum.globalLogLevel = level
         }
         Reticulum.logTimestamps = cfg.logging.logTimestamps

@@ -237,6 +237,28 @@ public final class Destination {
     /// Path-hash → handler entry. Path hash is `truncatedHash(path.utf8)`.
     public var requestHandlers: [Data: RequestHandlerEntry] = [:]
 
+    /// Maximum accepted size, in bytes, of an inbound request served by this
+    /// destination's registered request handlers. `nil` (the default) means
+    /// unlimited. Set it via `setMaxRequestSize(_:)`.
+    /// Mirrors Python's RNS 1.4.1 `Destination.max_request_size`.
+    public private(set) var maxRequestSize: Int?
+
+    /// Sets the maximum accepted request size for registered request handlers.
+    ///
+    /// Oversized requests are dropped before the msgpack body is unpacked — for
+    /// single-packet requests silently, and for requests advertised as a
+    /// Resource by rejecting the advertisement so the sender stops immediately
+    /// rather than transferring the whole payload first.
+    ///
+    /// Mirrors Python's `Destination.set_max_request_size`, including its
+    /// validation: a non-integer value is a type error, a negative one a range
+    /// error.
+    /// - Throws: `DestinationError.invalidMaxRequestSize` when `size` is negative.
+    public func setMaxRequestSize(_ size: Int) throws {
+        guard size >= 0 else { throw DestinationError.invalidMaxRequestSize }
+        maxRequestSize = size
+    }
+
     /// Register a handler keyed by `path` (UTF-8 hashed to 16 bytes).
     ///
     /// - Parameters:
@@ -332,6 +354,9 @@ public final class Destination {
         case plainCannotHoldIdentity
         case missingIdentity
         case ratchetsNotEnabled
+        /// A negative value was passed to `setMaxRequestSize(_:)`.
+        /// Mirrors the `ValueError` Python raises for the same input.
+        case invalidMaxRequestSize
     }
 
     // MARK: - Static helpers

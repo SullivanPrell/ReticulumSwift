@@ -394,6 +394,10 @@ public final class RPCServer {
             kv("txb",        .int(Int64(iface.txBytes)))
             kv("status",     .bool(iface.isOnline))
             kv("mode",       .int(Int64(iface.mode.rawValue)))
+            // RNS 1.4.1 added both keys to get_interface_stats(); Python's
+            // rnstatus reads them (and sorts by gravity) when present.
+            kv("gravity",    .int(Int64(iface.gravity)))
+            kv("announces_to_internal", iface.announcesToInternal.map { MsgPack.Value.bool($0) } ?? .nil)
 
             kv("incoming_announce_frequency",  .double(t.incomingAnnounceFrequency(for: iface)))
             kv("outgoing_announce_frequency",  .double(t.outgoingAnnounceFrequency(for: iface)))

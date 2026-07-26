@@ -10,6 +10,11 @@ import Foundation
 /// back to `RNodeSubInterface` for channel identification.
 public final class RNodeSubInterface: Interface {
 
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
+
     // MARK: – Identity
 
     public let name:          String
@@ -142,6 +147,11 @@ public final class RNodeSubInterface: Interface {
 /// - **Incoming telemetry**: `CMD_SEL_INT` updates `selectedIndex`; subsequent telemetry frames
 ///   (frequency, bandwidth, RSSI, SNR, etc.) are attributed to `subInterfaces[selectedIndex]`.
 public final class RNodeMultiInterface: Interface {
+
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
 
     // MARK: – Class constants (Python: RNodeMultiInterface.XXXX)
 

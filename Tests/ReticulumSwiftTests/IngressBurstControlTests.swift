@@ -127,9 +127,42 @@ final class IngressBurstControlTests: XCTestCase {
         t.notifyIncomingAnnounce(on: iface, at: nowAfterHold - 4)
         t.notifyIncomingAnnounce(on: iface, at: nowAfterHold - 3)
 
-        let deactivated = t.shouldIngressLimit(on: iface, now: nowAfterHold)
-        XCTAssertFalse(deactivated,
+        // The call that CLEARS the burst still reports "limited": Python's
+        // `return True` sits outside the deactivation branch, so only the next
+        // call passes. Asserting false here encoded a divergence from
+        // `Interface.should_ingress_limit` (RNS/Interfaces/Interface.py:152-170).
+        let deactivatingCall = t.shouldIngressLimit(on: iface, now: nowAfterHold)
+        XCTAssertTrue(deactivatingCall,
+            "the call that clears the burst flag must still return true (Python returns True outside the deactivation branch)")
+        XCTAssertFalse(t.ingressState(for: iface)?.burstActive ?? true,
             "burst must deactivate when frequency drops and IC_BURST_HOLD has elapsed")
+
+        // …and the following call is no longer limited.
+        XCTAssertFalse(t.shouldIngressLimit(on: iface, now: nowAfterHold + 0.001),
+            "once the burst flag is cleared, subsequent calls must not limit")
+    }
+
+    // MARK: - shouldIngressLimitPR: deactivating call still returns true
+
+    func testPathRequestBurstDeactivationStillLimitsOnClearingCall() {
+        let t = Transport()
+        let createdAt = Date(timeIntervalSinceNow: -(IngressControlState.icNewTime + 1))
+        let iface = makeInterface(name: "pr-deactivate", createdAt: createdAt)
+        t.register(interface: iface)
+
+        let base: TimeInterval = 1000
+        for i in 0..<60 { t.notifyIncomingPathRequest(on: iface, at: base + Double(i) * 0.016) }
+        XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: base + 1.0), "burst should activate")
+
+        let nowAfterHold = base + 20.0
+        t.notifyIncomingPathRequest(on: iface, at: nowAfterHold - 5)
+        t.notifyIncomingPathRequest(on: iface, at: nowAfterHold - 4)
+        t.notifyIncomingPathRequest(on: iface, at: nowAfterHold - 3)
+
+        XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: nowAfterHold),
+            "the clearing call must still return true, matching should_ingress_limit_pr")
+        XCTAssertFalse(t.shouldIngressLimitPR(on: iface, now: nowAfterHold + 0.001),
+            "the following call must not limit")
     }
 
     // MARK: - holdAnnounce stores packet

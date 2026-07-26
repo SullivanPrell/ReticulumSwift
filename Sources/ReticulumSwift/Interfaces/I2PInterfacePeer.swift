@@ -22,6 +22,11 @@ import Foundation
 /// like Python's `read_watchdog`.
 public final class I2PInterfacePeer: Interface {
 
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
+
     // MARK: - Python class constants
 
     /// Python: `RECONNECT_WAIT = 15`

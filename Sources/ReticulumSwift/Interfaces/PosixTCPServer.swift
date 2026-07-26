@@ -13,6 +13,11 @@ import Darwin
 /// Used only for the shared-instance port (37428). All other server interfaces
 /// can continue to use `TCPServerInterface` + `NWListener`.
 public final class PosixTCPServer: Interface, LocalClientServingInterface {
+
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
     public let name: String
     public let port: UInt16
     public private(set) var bitrate: Int = 1_000_000_000

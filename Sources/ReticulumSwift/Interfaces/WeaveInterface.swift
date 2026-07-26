@@ -559,6 +559,11 @@ public final class WeaveDevice {
 /// Python: `WeaveInterface`
 public final class WeaveInterface: Interface {
 
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
+
     // MARK: - Class constants
 
     /// Maximum payload the hardware can carry.  Python: `HW_MTU = 1024`
@@ -685,6 +690,10 @@ public final class WeaveInterface: Interface {
         }
         let peer = WeaveInterfacePeer(owner: self, endpointAddr: endpointAddr)
         peer.bitrate = bitrate
+        // Mirrors Python's `spawned_interface.gravity = self.gravity`
+        // (RNS 1.4.1, commit 3ca71527) — the peer, not the parent, is what
+        // Transport records as a path's receiving interface.
+        peer.gravity = gravity
         spawnedInterfaces[endpointAddr] = peer
         peers[endpointAddr]             = WeaveEndpoint(endpointAddr: endpointAddr)
         onPeerAdded?(peer)
@@ -773,6 +782,11 @@ public final class WeaveInterface: Interface {
 ///
 /// Python: `WeaveInterfacePeer`
 public final class WeaveInterfacePeer: Interface {
+
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
 
     // MARK: - Interface protocol
 

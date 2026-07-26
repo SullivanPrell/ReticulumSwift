@@ -19,6 +19,11 @@ public enum SerialInterfaceError: Error {
 /// the interface can be unit-tested without physical hardware.
 public final class SerialInterface: Interface {
 
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
+
     // MARK: - Class constants
 
     /// Python: `MAX_CHUNK = 32768`

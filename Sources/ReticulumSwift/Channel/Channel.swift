@@ -454,16 +454,42 @@ public final class Channel {
 
     // MARK: - Private helpers
 
+    /// Whether an inbound envelope's sequence falls outside the acceptable RX
+    /// window and must be dropped. Faithful port of the gate at the top of
+    /// Python's `Channel._receive` (RNS/Channel.py:357-369).
+    ///
+    /// Two cases:
+    ///
+    /// * **Below `nextRxSequence`** — normally stale (already delivered), and
+    ///   dropped. The exception is a sequence that has *wrapped*: when
+    ///   `nextRxSequence + WINDOW_MAX` overflows the 16-bit sequence space,
+    ///   sequence numbers from 0 up to that overflow point are legitimately
+    ///   **future** frames and must be accepted, not dropped.
+    /// * **Above `nextRxSequence + WINDOW_MAX`** — too far in the future to be
+    ///   real, so dropped (RNS 1.4.1, commit a29a0871). This bounds how much a
+    ///   peer can make us buffer by sending a wild sequence number.
+    ///
+    /// Both the window bound and the future guard use the class-level
+    /// `WINDOW_MAX` (48), not the adaptive per-instance `windowMax` — Python
+    /// reads `self.WINDOW_MAX`, which resolves to the class attribute because
+    /// the adaptive value lives under the distinct lowercase name `window_max`.
+    /// The future comparison is deliberately non-modular, matching Python: near
+    /// the top of the sequence space `nextRxSequence + WINDOW_MAX` exceeds any
+    /// representable sequence, so the guard simply stops firing there rather
+    /// than wrapping around and rejecting valid frames.
     private func _isStaleSequence(_ seq: UInt16) -> Bool {
         let nrx = UInt32(nextRxSequence)
         let s   = UInt32(seq)
         if s < nrx {
-            let overflow = (nrx + Channel.SEQ_MODULUS/2) % Channel.SEQ_MODULUS
-            if overflow < nrx {
-                return s <= overflow
+            let windowOverflow = (nrx + UInt32(Channel.WINDOW_MAX)) % Channel.SEQ_MODULUS
+            if windowOverflow < nrx {
+                // The window wrapped: (windowOverflow, nrx) is stale, but
+                // [0, windowOverflow] is wrapped-future and must be kept.
+                return s > windowOverflow
             }
             return true
         }
+        if s > nrx + UInt32(Channel.WINDOW_MAX) { return true }
         return false
     }
 

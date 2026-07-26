@@ -75,6 +75,23 @@ public struct ReticulumConfig {
         /// 0 (default) means auto-connect is disabled.
         /// Mirrors Python's `autoconnect_discovered_interfaces`. Positive → enabled.
         public var autoconnectDiscoveredInterfaces: Int = 0
+        /// Gravity applied to interfaces that don't set `gravity` themselves.
+        /// `nil` falls back to `InterfaceMode.defaultGravity` (0).
+        /// Mirrors Python's `default_gravity` (RNS 1.4.1).
+        public var defaultGravity: Int? = nil
+        /// Interface mode assigned to auto-connected discovered interfaces.
+        /// `nil` keeps Python's default of `.gateway` when transport is enabled,
+        /// and no mode at all otherwise.
+        /// Mirrors Python's `autoconnect_interface_mode` (RNS 1.4.1).
+        public var autoconnectInterfaceMode: InterfaceMode? = nil
+        /// Gravity assigned to auto-connected discovered interfaces. `nil` uses
+        /// Python's `InterfaceDiscovery.AC_GRAVITY` (0).
+        /// Mirrors Python's `autoconnect_interface_gravity` (RNS 1.4.1).
+        public var autoconnectInterfaceGravity: Int? = nil
+        /// `announces_to_internal` assigned to auto-connected discovered
+        /// interfaces. `nil` means unset, matching Python's `None`.
+        /// Mirrors Python's `autoconnect_announces_to_internal` (RNS 1.4.1).
+        public var autoconnectAnnouncesToInternal: Bool? = nil
     }
 
     // MARK: - [logging] section
@@ -224,6 +241,20 @@ public struct ReticulumConfig {
                 case "autoconnect_discovered_interfaces":
                     // Python: if v > 0: set (so 0 is a no-op, preserving default of 0)
                     if let n = Int(value), n > 0 { cfg.reticulum.autoconnectDiscoveredInterfaces = n }
+                case "default_gravity":
+                    // Python assigns unconditionally (`as_int`), so 0 and
+                    // negatives are honoured, not treated as "unset".
+                    if let n = Int(value) { cfg.reticulum.defaultGravity = n }
+                case "autoconnect_interface_mode":
+                    // Python only assigns when the string matched a known mode,
+                    // so an unrecognised value leaves the default in place.
+                    if let m = InterfaceMode(configName: value) {
+                        cfg.reticulum.autoconnectInterfaceMode = m
+                    }
+                case "autoconnect_interface_gravity":
+                    if let n = Int(value) { cfg.reticulum.autoconnectInterfaceGravity = n }
+                case "autoconnect_announces_to_internal":
+                    if let b = parseBool(value), b { cfg.reticulum.autoconnectAnnouncesToInternal = true }
                 default: break
                 }
             case "logging":

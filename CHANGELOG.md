@@ -3,6 +3,220 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.5.0] — RNS 1.4.1 parity: interface gravity and dynamic path re-balancing
+
+Brings the port up to Python RNS 1.4.1 (released 2026-07-24). The two headline
+features both change how paths are chosen, so a mixed Swift/Python mesh will
+converge differently than before — in the same direction Python now does.
+
+### Added
+
+- **Interface gravity.** Every interface carries an integer `gravity`
+  (default 0, negative values allowed) expressing routing preference. When an
+  announce arrives that is *the same announce* already recorded for a
+  destination — same emission timebase, equal or fewer hops — the path now
+  moves to the interface with the strictly higher gravity. Configurable per
+  interface (`gravity`) and globally (`default_gravity`), and inherited by
+  spawned child interfaces (TCP server clients, I2P peers, Weave peers), which
+  is essential because the child, not the parent, is what Transport records as
+  a path's receiving interface.
+
+  A gravity takeover deliberately does **not** reset the path's responsiveness
+  state; Python's gravity branch is the one place that omits
+  `mark_path_unknown_state`, so a working path keeps its known-good status
+  across the swap.
+- **Dynamic link path re-balancing.** A link-request proof that arrives over a
+  different number of hops than the path table predicted now corrects both
+  `Link.expectedHops` and the path table's hop count, once the proof's
+  signature has validated. A link request is the first real round-trip to a
+  destination, so its proof is the earliest trustworthy hop measurement —
+  previously the port waited for the next announce to converge. Latched by the
+  new `Link.rebalanced` timestamp so each link re-balances at most once, and
+  gated by `Transport.allowLinkPathRebalance`.
+- **`Destination.setMaxRequestSize(_:)`** caps inbound requests served by
+  registered handlers. Oversized single-packet requests are dropped before the
+  msgpack body is unpacked; oversized requests advertised as a Resource are
+  rejected at advertisement time, so nothing transfers at all.
+- **`maxResponseSize:` on `Link.request(...)`** caps the response a caller will
+  accept, with the same two enforcement points. An over-size response fails the
+  receipt (new `RequestReceipt.responseRejected()`) rather than delivering
+  truncated data.
+- **`announces_to_internal`** per-interface option. Set on the interface an
+  announce arrived over, it lets that interface's announces onto internal-mode
+  interfaces even when it is itself in boundary mode.
+- **Boundary-mode path requests.** Boundary interfaces may now trigger
+  recursive path requests, restricted to boundary and gateway peers via the new
+  `InterfaceMode.boundarySearchModes`.
+- **`autoconnect_interface_mode` / `autoconnect_interface_gravity` /
+  `autoconnect_announces_to_internal`** config options, plus `gravity` and
+  `announces_to_internal` keys in the interface-stats payload (Python's
+  `rnstatus` reads both, and sorts by gravity).
+
+### Fixed
+
+- **Ingress burst control could latch on indefinitely.** Clearing the burst
+  flag required 6 samples (`IC_BURST_MIN_SAMPLES`) in a frequency deque that a
+  *subsiding* burst never refills — so the flag could only clear if new
+  announces arrived, which is exactly what it was suppressing. It now needs 2
+  (`IC_DEQUE_MIN_SAMPLE`), matching the upstream fix.
+- **Ingress limiting released one call early.** The call that clears the burst
+  flag now still reports "limited"; Python's `return True` sits outside the
+  deactivation branch, so only the *following* call passes. Applies to both
+  announce and path-request limiting.
+- **Egress path-request limiting triggered far too easily**, using the 2-sample
+  minimum that merely makes a frequency computable instead of
+  `IC_BURST_MIN_SAMPLES` (6) — throttling ordinary discovery bursts.
+- **Channel accepted arbitrarily far-future sequence numbers**, letting a peer
+  make the receive ring buffer grow on its say-so. Sequences beyond
+  `nextRxSequence + WINDOW_MAX` are now dropped.
+- **Channel's stale-sequence wraparound test was inverted and used the wrong
+  constant** (`SEQ_MODULUS/2` instead of `WINDOW_MAX`), so near the top of the
+  sequence space it dropped legitimate wrapped-*future* frames and accepted
+  genuinely stale ones.
+- **Discovered peers were dialled as `BackboneInterface` on Apple platforms.**
+  Upstream excludes Darwin from backbone support — the client side relies on
+  polling semantics that do not hold there — so a discovered
+  Backbone/TCPServer peer must be connected as a `TCPClientInterface`. Since
+  Darwin is this port's whole target, every discovered peer was taking the
+  wrong path.
+- **Persisted interface discoveries were never re-checked against the
+  blackhole list**, so an identity blackholed after its record was written
+  stayed connectable forever. Records lacking a transport or network identity,
+  or whose network identity is not in `interface_discovery_sources`, are now
+  pruned too.
+- **Config log levels were not clamped**, so an out-of-range value silently
+  fell back to the default instead of saturating. The cap is now 8, matching
+  RNS 1.4.1 raising it from 7 so `LOG_EXTREME` is reachable from a config file.
+
+#### Resource progress reporting was entirely inert
+
+- **`ResourceTransfer.onProgress` was never called from anywhere.** It was
+  declared, public, forwarded by `Link.request(progressCallback:)` into
+  `RequestReceipt`, and consumed downstream — but nothing invoked it, so every
+  progress observer in the stack silently read zero forever. Python fires it for
+  each newly-accepted part on the receiver and once per outgoing batch on the
+  sender; both now do.
+- **`progress` measured received parts for senders too**, so a sender reported
+  0.0 for an entire transfer and then jumped to 1.0. Python's `get_progress`
+  branches on `initiator` and counts parts *sent*.
+- **`RequestReceipt.responseSize` was unreadable mid-transfer.** It is now
+  populated from the response advertisement as soon as one arrives, which is the
+  only window in which a progress display can use it.
+
+#### Multi-segment (>1 MB) resource transfers were broken end to end
+
+- **The sender stalled after the first segment.** Each segment is a distinct
+  Resource with its own hashmap, but the per-segment part-serving cursors
+  (`sentMapHashes`, the collision-guard window's lower bound) carried the
+  previous segment's progress forward — so for a two-segment transfer the search
+  window started past the shorter second segment's part count, `handleRequest`
+  matched nothing, and zero parts were served.
+- **The receiver misparsed every segment after the first.** Metadata rides only
+  in segment 1's plaintext, but the advertisement's metadata flag is set on all
+  of them; gating on the flag alone made a later segment's first three payload
+  bytes read as a metadata length. Now gated on segment index, as Python does.
+- **A completed transfer was reported under the wrong advertisement.** The
+  concluding callback passed the *first* segment's advertisement while the
+  receiver's resource hash had advanced to the last, so a listener matching on
+  that hash missed — the file arrived intact and was discarded as invalid.
+
+#### Other
+
+- **A resource-started observer was handed an unpopulated hash.** The callback
+  fired before the advertisement was parsed, so `resourceHash` was still empty.
+  Python calls it from inside `Resource.accept`, after the hash is assigned;
+  anything keying on that value (LXMF's inbound registry does) collapsed every
+  concurrent transfer onto one key.
+- **A transport header was stamped on zero-hop paths.** A destination zero hops
+  away is directly reachable and must go out as `HEADER_1`, even when a next-hop
+  transport ID is on file — which happens for exactly one topology, a shared
+  instance's own local clients seen from a sibling client. The stray transport
+  header made a Python peer drop the packet, so a Swift client behind a shared
+  instance could never open a link to one.
+- **`LocalInterface.start()` returned before the connection was usable.**
+  `NWConnection` is asynchronous and `send()` discards while offline, so the
+  announce every client fires immediately after attaching went nowhere: the
+  daemon reported the client as connected while its path table stayed empty.
+  `start()` now waits for readiness (up to `connectTimeout`, 5 s) and throws
+  `ConnectionError.couldNotConnect` otherwise, matching Python's blocking
+  `socket.connect()`.
+- **An embedded i2pd crashed the host process at exit.** i2pd's router lives on
+  dylib-scope C++ singletons served by its own threads, so any `exit()` that had
+  not called `I2PDaemon.stop()` destroyed them underneath live threads — a
+  reproducible `SIGSEGV` in `i2p::tunnel::Tunnels`, and a router that never
+  flushed its netDb or dropped its leaseSets. An `atexit` handler registered on
+  first start now performs the ordered shutdown.
+- **`I2PDaemon` treated process-global state as per-instance.** `C_InitI2P`
+  initialises singletons and `C_TerminateI2P` retires them for the life of the
+  process, so a second daemon silently reconfigured a running one and a daemon
+  started after any stop re-initialised torn-down globals. Both are refused with
+  a specific error; `I2PDaemon.isTerminatedForProcess` lets a caller check first.
+- **`BackboneInterface` config ignored the `remote`/`port` aliases** that Python
+  normalises before constructing the interface, so a config written the
+  documented way — including the one RNS's own discovery emits — parsed to
+  nothing and the interface was silently skipped.
+- **`interface_discovery_sources` was only enforced when pruning stored
+  records**, leaving an unauthorised peer discoverable and dialable until the
+  next prune. It is now checked at announce reception, as Python does.
+- **A split request or response resource delivered only its last segment.**
+  Segments 2..N carry the same request/response flags and request ID as segment
+  1, so the advertisement dispatch built a fresh transfer for each one. The
+  caller received the tail chunk *as a successful response* — a truncated
+  payload merely fails to decode as the `[request_id, response]` envelope and
+  falls back to raw bytes, so this was silent corruption rather than an error,
+  on the LXMF propagation-sync and NomadNet file-fetch paths. Continuation
+  advertisements are now routed to the transfer holding the earlier segments.
+- **A receiver parked between segments adopted unrelated advertisements.** It
+  stays registered so the next segment reaches it, but the link hands every
+  advertisement to every registered receiver — so a different resource
+  advertised in that window was downloaded into the segment buffer and spliced
+  into the middle of the delivered payload, bypassing `resourceStrategy` and
+  never firing `onResourceStarted`. A transfer now accepts only its own next
+  segment.
+- **Sender progress was measured per segment**, so a split transfer reported
+  0→1 once per segment — reaching 1.0 while still running, then going
+  backwards. Python folds the segment position in; the per-segment figure is a
+  separate method there (`get_segment_progress`).
+- **`LocalInterface.start()` stalled for the full connect timeout when nothing
+  was listening.** A refused connection surfaces as `.waiting`, not `.failed`,
+  and only `.failed`/`.cancelled` released the caller — so the normal
+  standalone launch paid 5 s, serialized ahead of every later interface, on the
+  main thread if that is where the caller ran. `.waiting` on the initial connect
+  now fails fast, as Python's blocking `socket.connect()` does.
+- **A superseded connection could take down its replacement.** After any
+  `stop()`/`start()`, the old connection's terminal callback still ran, marked
+  the *healthy* new connection offline and scheduled a reconnect that abandoned
+  it uncancelled — a leaked socket the shared instance still counted as an
+  attached client, and two concurrent receive loops on one HDLC decoder. State
+  callbacks now ignore a connection that is no longer the current one.
+
+### Added — public API
+
+`InterfaceMode.init?(configName:)`, `InterfaceMode.defaultGravity`,
+`InterfaceMode.boundarySearchModes`, `IngressControlState.icBurstMinSamples`,
+`InterfaceDiscovery.isBlackholed`, `Destination.maxRequestSize` /
+`setMaxRequestSize(_:)` / `DestinationError.invalidMaxRequestSize`,
+`Link.rebalanced`, `LocalInterface.connectTimeout` /
+`LocalInterface.ConnectionError`, `I2PDaemon.isTerminatedForProcess`,
+`Transport.allowLinkPathRebalance`.
+
+Note for consumers that switch exhaustively over `Destination.DestinationError`:
+this minor version adds a case.
+
+### Known limitations
+
+- A Swift shared instance still cannot relay between two of its own local
+  clients: every client is served by one interface, and both relay paths refuse
+  to send back out the interface a packet arrived on. Client-to-client traffic
+  across a *Python* shared instance is unaffected.
+- Announces forwarded to local clients pass their hop count through unchanged,
+  matching Python's `new_announce.hops = packet.hops` — but Python's value has
+  already been incremented on inbound and this port does no inbound increment.
+  A destination one hop beyond a Swift shared instance therefore reads as
+  directly reachable to a sibling client. Harmless with the default
+  `allowLinkPathRebalance` (the first link re-balances and proceeds); with it
+  disabled, such a link stays pending.
+
 ## [1.4.3] — Thread-safe traffic counters and packet-handle state
 
 Data races only, no wire-format or behavioural change. Every reported number is
