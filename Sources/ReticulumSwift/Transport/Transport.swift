@@ -2364,14 +2364,22 @@ public final class Transport {
                 return receipt
             }
             var routed = packet
-            // Mirror Python Transport.outbound(): add HEADER_2 with the stored
-            // next-hop transport ID whenever one is known.  This covers:
-            //   • hops > 1 (multi-hop) — nextHopTransportID is always populated
-            //   • hops == 1 via a backbone — announce arrived as HEADER_2 so
-            //     nextHopTransportID carries the backbone's identity hash
-            // Direct 1-hop peers send their announce as HEADER_1, leaving
-            // nextHopTransportID nil, so we send HEADER_1 back to them too.
-            if let nhID = path.nextHopTransportID {
+            // A transport header is inserted only when the packet must be handed onward
+            // through another node — i.e. the destination is at least one hop away and the
+            // path carries the next hop's transport ID (learned from a HEADER_2 announce).
+            // The `hops >= 1` guard is the fix: a destination *zero* hops away is directly
+            // reachable and must go out as-is (HEADER_1), even when a next-hop transport ID
+            // is on file. That 0-hop-with-transport-ID combination arises for exactly one
+            // topology — a shared instance's own local clients as seen from a sibling client,
+            // whose path is learned via the instance's HEADER_2 announce yet is delivered
+            // locally. Stamping HEADER_2 there published a stray transport header addressed to
+            // the shared instance; a Python peer drops such a packet (a local client is not the
+            // addressed transport), so a Swift `rncp`/LXMF/NomadNet client's link request never
+            // reached a Python peer across a shared instance. A directly-connected 1-hop peer
+            // learns its path from a HEADER_1 announce, leaving `nextHopTransportID` nil, so it
+            // still goes out HEADER_1; a 1-hop backbone-relayed path keeps its HEADER_2. Mirrors
+            // Python Transport.outbound()'s hop-count branches (Transport.py:1150-1188).
+            if let nhID = path.nextHopTransportID, path.hops >= 1 {
                 routed.headerType = .type2
                 routed.transportID = nhID
             }

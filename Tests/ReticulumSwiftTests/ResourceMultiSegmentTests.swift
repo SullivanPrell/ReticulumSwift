@@ -25,6 +25,46 @@ final class ResourceMultiSegmentTests: XCTestCase {
     var aT: Transport!
     var bT: Transport!
 
+    /// Delivers on a serial queue instead of straight down the call stack, so a large
+    /// transfer's request/part/HMU round-trips don't recurse into an ever-deeper synchronous
+    /// stack (which the plain `LoopbackInterface` above cannot survive past a few hundred
+    /// bytes). Ordered delivery on one queue still models a single link faithfully.
+    final class AsyncLoopbackInterface: Interface {
+        var name: String; var bitrate: Int = 0; var isOnline: Bool = true
+        weak var paired: AsyncLoopbackInterface?
+        var inboundHandler: ((Packet, any Interface) -> Void)?
+        let queue: DispatchQueue
+        init(name: String, queue: DispatchQueue) { self.name = name; self.queue = queue }
+        func start() throws { isOnline = true }
+        func stop() { isOnline = false }
+        func send(_ packet: Packet) throws {
+            let raw = try packet.pack()
+            queue.async { [weak self] in
+                guard let self, let paired = self.paired else { return }
+                if let copy = try? Packet.unpack(raw) { paired.inboundHandler?(copy, paired) }
+            }
+        }
+    }
+
+    func makeAsyncLinkedPair() throws -> (aLink: Link, bLink: Link) {
+        aT = Transport(); bT = Transport()
+        let bId = Identity()
+        let bDest = try Destination(identity: bId, direction: .in, kind: .single, appName: "ms")
+        bT.ownerIdentity = bId; bT.register(destination: bDest)
+        let q = DispatchQueue(label: "ms.asyncloopback")
+        let a = AsyncLoopbackInterface(name: "a", queue: q)
+        let b = AsyncLoopbackInterface(name: "b", queue: q)
+        a.paired = b; b.paired = a
+        aT.register(interface: a); bT.register(interface: b)
+        let aE = expectation(description: "aE"); let bE = expectation(description: "bE")
+        aT.onLinkEstablished = { _ in aE.fulfill() }
+        bT.onLinkEstablished = { _ in bE.fulfill() }
+        let aLink = try Link.initiate(destination: bDest, transport: aT)
+        wait(for: [aE, bE], timeout: 2.0)
+        let bLink = try XCTUnwrap(bT.links[aLink.linkID!])
+        return (aLink, bLink)
+    }
+
     func makeLinkedPair() throws -> (aLink: Link, bLink: Link) {
         aT = Transport(); bT = Transport()
         let bId = Identity()
@@ -203,6 +243,73 @@ final class ResourceMultiSegmentTests: XCTestCase {
         wait(for: [received], timeout: 2.0)
         XCTAssertEqual(gotPayload, payload)
         XCTAssertEqual(gotMeta, meta)
+    }
+
+    // MARK: - Large multi-segment via the real Link accept path (regression)
+
+    /// A multi-segment transfer received through the actual Link accept path
+    /// (`onResourceAdvertised` → `acceptIncomingResource` → `onResourceConcluded`),
+    /// rather than the `bindAsReceiver` shortcut the other tests use, with segments large
+    /// enough to span more than one hashmap window (MDU is 464 B, so >74 parts needs ~34 KB).
+    ///
+    /// This is the shape that shipped broken and the small-payload / direct-bind tests could
+    /// not catch. It pins three fixes at once:
+    ///   1. The sender resets its per-segment part-serving window when it advances a segment.
+    ///      Segment 2 is shorter than segment 1, so a carried-over cursor pointed past its
+    ///      last part and the sender served nothing — the receiver stalled and failed.
+    ///   2. The Link reports the CONCLUDING advertisement (the last segment), not the first
+    ///      one captured when the transfer began; a listener matches a finished transfer — and
+    ///      recovers its metadata — by that hash.
+    ///   3. Metadata rides only in segment 1 yet survives, intact, to the final payload.
+    func testLargeMultiSegmentRoundTripViaLinkAcceptPath() throws {
+        let (aLink, bLink) = try makeAsyncLinkedPair()
+
+        // 240 KB split at 200 KB → segment 1 ≈ 440 parts, segment 2 ≈ 87 parts. Segment 1 must
+        // be big enough to force SEVERAL hashmap-update rounds: each round rewinds the sender's
+        // search cursor by WINDOW_MAX_FAST (75), so a segment needing only one round leaves the
+        // cursor at 0 and the carried-over state is harmless. Only after multiple rounds does the
+        // cursor climb past the shorter second segment's part count — the exact state the
+        // cursor-reset fix clears. (The interop failure was 2261- then 2051-part segments.)
+        // The payload is filled by a pseudo-random LCG so bzip2 cannot shrink it below the part
+        // count that drives those rounds; `autoCompress: false` below makes that guarantee exact.
+        // A deterministic LCG is used because the sandbox forbids `Math.random`.
+        var lcg: UInt64 = 0x9E3779B97F4A7C15
+        var payload = Data(); payload.reserveCapacity(240_000)
+        for _ in 0 ..< 240_000 {
+            lcg = lcg &* 6364136223846793005 &+ 1442695040888963407
+            payload.append(UInt8((lcg >> 33) & 0xFF))
+        }
+        let meta = Data("multi-segment-filename.bin".utf8)
+
+        // Drive the receiver through the Link accept path, not bindAsReceiver().
+        bLink.resourceStrategy = .acceptAll
+        var startedTransfer: ResourceTransfer?
+        bLink.onResourceStarted = { rt in startedTransfer = rt }
+        var gotPayload: Data?
+        var concludedSegmentIndex: UInt64?
+        var concludedTotalSegments: UInt64?
+        let concluded = expectation(description: "concluded")
+        bLink.onResourceConcluded = { p, adv, _ in
+            gotPayload = p
+            concludedSegmentIndex = adv.segmentIndex
+            concludedTotalSegments = adv.totalSegments
+            concluded.fulfill()
+        }
+
+        let tx = ResourceTransfer(link: aLink)
+        tx.testSegmentSizeOverride = 200_000
+        // Compression OFF so segment 1's part count (≈ 440, several hashmap-update rounds) is
+        // exact and the sender's search cursor climbs well past segment 2's ≈ 87 parts.
+        try tx.send(payload: payload, metadata: meta, autoCompress: false)
+
+        wait(for: [concluded], timeout: 30.0)
+
+        XCTAssertEqual(gotPayload, payload, "the full multi-segment payload must match the original")
+        XCTAssertEqual(concludedTotalSegments, 2)
+        XCTAssertEqual(concludedSegmentIndex, concludedTotalSegments,
+            "the concluding advertisement must be the LAST segment so a listener can match it by hash")
+        XCTAssertEqual(startedTransfer?.receivedMetadata, meta,
+            "segment-1 metadata must survive to the completed transfer")
     }
 
     // MARK: - originalHash is stable across segments

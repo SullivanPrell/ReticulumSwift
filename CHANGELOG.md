@@ -88,6 +88,77 @@ converge differently than before — in the same direction Python now does.
   fell back to the default instead of saturating. The cap is now 8, matching
   RNS 1.4.1 raising it from 7 so `LOG_EXTREME` is reachable from a config file.
 
+#### Resource progress reporting was entirely inert
+
+- **`ResourceTransfer.onProgress` was never called from anywhere.** It was
+  declared, public, forwarded by `Link.request(progressCallback:)` into
+  `RequestReceipt`, and consumed downstream — but nothing invoked it, so every
+  progress observer in the stack silently read zero forever. Python fires it for
+  each newly-accepted part on the receiver and once per outgoing batch on the
+  sender; both now do.
+- **`progress` measured received parts for senders too**, so a sender reported
+  0.0 for an entire transfer and then jumped to 1.0. Python's `get_progress`
+  branches on `initiator` and counts parts *sent*.
+- **`RequestReceipt.responseSize` was unreadable mid-transfer.** It is now
+  populated from the response advertisement as soon as one arrives, which is the
+  only window in which a progress display can use it.
+
+#### Multi-segment (>1 MB) resource transfers were broken end to end
+
+- **The sender stalled after the first segment.** Each segment is a distinct
+  Resource with its own hashmap, but the per-segment part-serving cursors
+  (`sentMapHashes`, the collision-guard window's lower bound) carried the
+  previous segment's progress forward — so for a two-segment transfer the search
+  window started past the shorter second segment's part count, `handleRequest`
+  matched nothing, and zero parts were served.
+- **The receiver misparsed every segment after the first.** Metadata rides only
+  in segment 1's plaintext, but the advertisement's metadata flag is set on all
+  of them; gating on the flag alone made a later segment's first three payload
+  bytes read as a metadata length. Now gated on segment index, as Python does.
+- **A completed transfer was reported under the wrong advertisement.** The
+  concluding callback passed the *first* segment's advertisement while the
+  receiver's resource hash had advanced to the last, so a listener matching on
+  that hash missed — the file arrived intact and was discarded as invalid.
+
+#### Other
+
+- **A resource-started observer was handed an unpopulated hash.** The callback
+  fired before the advertisement was parsed, so `resourceHash` was still empty.
+  Python calls it from inside `Resource.accept`, after the hash is assigned;
+  anything keying on that value (LXMF's inbound registry does) collapsed every
+  concurrent transfer onto one key.
+- **A transport header was stamped on zero-hop paths.** A destination zero hops
+  away is directly reachable and must go out as `HEADER_1`, even when a next-hop
+  transport ID is on file — which happens for exactly one topology, a shared
+  instance's own local clients seen from a sibling client. The stray transport
+  header made a Python peer drop the packet, so a Swift client behind a shared
+  instance could never open a link to one.
+- **`LocalInterface.start()` returned before the connection was usable.**
+  `NWConnection` is asynchronous and `send()` discards while offline, so the
+  announce every client fires immediately after attaching went nowhere: the
+  daemon reported the client as connected while its path table stayed empty.
+  `start()` now waits for readiness (up to `connectTimeout`, 5 s) and throws
+  `ConnectionError.couldNotConnect` otherwise, matching Python's blocking
+  `socket.connect()`.
+- **An embedded i2pd crashed the host process at exit.** i2pd's router lives on
+  dylib-scope C++ singletons served by its own threads, so any `exit()` that had
+  not called `I2PDaemon.stop()` destroyed them underneath live threads — a
+  reproducible `SIGSEGV` in `i2p::tunnel::Tunnels`, and a router that never
+  flushed its netDb or dropped its leaseSets. An `atexit` handler registered on
+  first start now performs the ordered shutdown.
+- **`I2PDaemon` treated process-global state as per-instance.** `C_InitI2P`
+  initialises singletons and `C_TerminateI2P` retires them for the life of the
+  process, so a second daemon silently reconfigured a running one and a daemon
+  started after any stop re-initialised torn-down globals. Both are refused with
+  a specific error; `I2PDaemon.isTerminatedForProcess` lets a caller check first.
+- **`BackboneInterface` config ignored the `remote`/`port` aliases** that Python
+  normalises before constructing the interface, so a config written the
+  documented way — including the one RNS's own discovery emits — parsed to
+  nothing and the interface was silently skipped.
+- **`interface_discovery_sources` was only enforced when pruning stored
+  records**, leaving an unauthorised peer discoverable and dialable until the
+  next prune. It is now checked at announce reception, as Python does.
+
 ## [1.4.3] — Thread-safe traffic counters and packet-handle state
 
 Data races only, no wire-format or behavioural change. Every reported number is

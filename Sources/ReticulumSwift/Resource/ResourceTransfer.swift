@@ -409,6 +409,16 @@ public final class ResourceTransfer {
         randomHash = resource.randomHash
         _resourceHash = resource.resourceHash
         expectedProof = resource.expectedProof
+        // Each segment is a distinct Resource with its own hashmap, so the sender's
+        // per-segment part-serving cursors must restart. `receiverMinConsecutiveHeight`
+        // (the lower bound of the collision-guard search window) and `sentMapHashes`
+        // otherwise carry the PREVIOUS segment's progress into this one: for a two-segment
+        // transfer the window starts past the second, shorter segment's part count, so
+        // `handleRequest` matched nothing and served zero parts — every segment after the
+        // first stalled and the receiver failed the transfer. Python sidesteps this by
+        // building a brand-new Resource per segment, whose cursors are zero by construction.
+        sentMapHashes.removeAll()
+        receiverMinConsecutiveHeight = 0
         // For segment 1, set overallOriginalHash = first segment's resource hash.
         if segmentIndex == 1 { overallOriginalHash = resource.resourceHash }
         let segIdxSnapshot = segmentIndex
@@ -939,8 +949,18 @@ public final class ResourceTransfer {
             return
         }
         // Hash matches — construct result.
+        //
+        // Metadata (the 3-byte big-endian size prefix + packed msgpack) rides only in
+        // the FIRST segment's plaintext; segments 2..N are pure payload. Python still
+        // sets the advertisement's metadata flag on every segment of a multi-segment
+        // resource (Resource.__init__ sets has_metadata whenever sent_metadata_size > 0),
+        // but its receiver extracts the prefix only for segment 1
+        // (`if self.has_metadata and self.segment_index == 1`, Resource.py:700). Gating on
+        // the flag alone made a later segment's first three payload bytes read as a bogus
+        // metadata length, so every >1 MB (multi-segment) receive failed here with
+        // "metadata prefix out of range". Segment index is 1-based, matching Python.
         let result: Resource.AssemblyResult
-        if adv.hasMetadata && assembledPlaintext.count >= 3 {
+        if adv.hasMetadata, adv.segmentIndex == 1, assembledPlaintext.count >= 3 {
             let sz = Int(assembledPlaintext[0]) << 16 | Int(assembledPlaintext[1]) << 8 | Int(assembledPlaintext[2])
             guard assembledPlaintext.count >= 3 + sz else {
                 fail("assembly: metadata prefix out of range")

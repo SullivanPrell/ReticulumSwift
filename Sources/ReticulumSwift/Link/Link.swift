@@ -1637,9 +1637,17 @@ public final class Link {
 
     private func acceptIncomingResource(adv: ResourceAdvertisement, rawAdv: Data) {
         let rt = ResourceTransfer(link: self)
-        rt.onAssembledInternal = { [weak self] payload, _ in
+        rt.onAssembledInternal = { [weak self] payload, transfer in
             guard let self else { return }
-            self.onResourceConcluded?(payload, adv, self)
+            // Report the CONCLUDING advertisement, not the first segment's. A
+            // multi-segment resource re-advertises with a fresh resource hash per
+            // segment, and the receiver's `resourceHash` advances to the last one;
+            // a listener recovers a completed transfer (and its metadata — the
+            // filename) by matching that hash. Passing the captured first-segment
+            // `adv` made the match miss for any >1 MB transfer, so the file arrived
+            // intact but was discarded as "Invalid data received". Fall back to the
+            // first advertisement only if the transfer somehow exposes none.
+            self.onResourceConcluded?(payload, transfer.advertisement ?? adv, self)
         }
         registerIncomingResource(rt)
         // The started callback has to fire from *inside* receiveAdvertisement,
