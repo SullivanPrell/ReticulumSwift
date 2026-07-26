@@ -158,6 +158,64 @@ converge differently than before — in the same direction Python now does.
 - **`interface_discovery_sources` was only enforced when pruning stored
   records**, leaving an unauthorised peer discoverable and dialable until the
   next prune. It is now checked at announce reception, as Python does.
+- **A split request or response resource delivered only its last segment.**
+  Segments 2..N carry the same request/response flags and request ID as segment
+  1, so the advertisement dispatch built a fresh transfer for each one. The
+  caller received the tail chunk *as a successful response* — a truncated
+  payload merely fails to decode as the `[request_id, response]` envelope and
+  falls back to raw bytes, so this was silent corruption rather than an error,
+  on the LXMF propagation-sync and NomadNet file-fetch paths. Continuation
+  advertisements are now routed to the transfer holding the earlier segments.
+- **A receiver parked between segments adopted unrelated advertisements.** It
+  stays registered so the next segment reaches it, but the link hands every
+  advertisement to every registered receiver — so a different resource
+  advertised in that window was downloaded into the segment buffer and spliced
+  into the middle of the delivered payload, bypassing `resourceStrategy` and
+  never firing `onResourceStarted`. A transfer now accepts only its own next
+  segment.
+- **Sender progress was measured per segment**, so a split transfer reported
+  0→1 once per segment — reaching 1.0 while still running, then going
+  backwards. Python folds the segment position in; the per-segment figure is a
+  separate method there (`get_segment_progress`).
+- **`LocalInterface.start()` stalled for the full connect timeout when nothing
+  was listening.** A refused connection surfaces as `.waiting`, not `.failed`,
+  and only `.failed`/`.cancelled` released the caller — so the normal
+  standalone launch paid 5 s, serialized ahead of every later interface, on the
+  main thread if that is where the caller ran. `.waiting` on the initial connect
+  now fails fast, as Python's blocking `socket.connect()` does.
+- **A superseded connection could take down its replacement.** After any
+  `stop()`/`start()`, the old connection's terminal callback still ran, marked
+  the *healthy* new connection offline and scheduled a reconnect that abandoned
+  it uncancelled — a leaked socket the shared instance still counted as an
+  attached client, and two concurrent receive loops on one HDLC decoder. State
+  callbacks now ignore a connection that is no longer the current one.
+
+### Added — public API
+
+`InterfaceMode.init?(configName:)`, `InterfaceMode.defaultGravity`,
+`InterfaceMode.boundarySearchModes`, `IngressControlState.icBurstMinSamples`,
+`InterfaceDiscovery.isBlackholed`, `Destination.maxRequestSize` /
+`setMaxRequestSize(_:)` / `DestinationError.invalidMaxRequestSize`,
+`Link.rebalanced`, `LocalInterface.connectTimeout` /
+`LocalInterface.ConnectionError`, `I2PDaemon.isTerminatedForProcess`,
+`Transport.allowLinkPathRebalance`.
+
+Note for consumers that switch exhaustively over `Destination.DestinationError`:
+this minor version adds a case.
+
+### Known limitations
+
+- A Swift shared instance still cannot relay between two of its own local
+  clients: every client is served by one interface, and both relay paths refuse
+  to send back out the interface a packet arrived on. Client-to-client traffic
+  across a *Python* shared instance is unaffected.
+- Announces forwarded to local clients pass their hop count through unchanged,
+  matching Python's `new_announce.hops = packet.hops` — but Python's value has
+  already been incremented on inbound and this port does no inbound increment.
+  A destination one hop beyond a Swift shared instance therefore reads as
+  directly reachable to a sibling client. Harmless with the default
+  `allowLinkPathRebalance` (the first link re-balances and proceeds); with it
+  disabled, such a link stays pending.
 
 ## [1.4.3] — Thread-safe traffic counters and packet-handle state
 

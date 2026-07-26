@@ -71,6 +71,12 @@ public final class ResourceTransfer {
     /// Set to nil (default) in production code.
     var testSegmentSizeOverride: Int? = nil
 
+    /// Same override, for transfers the library constructs internally — the
+    /// request and response resources built inside `Link` — which a test has no
+    /// reference to. Nil in production; only ever set from tests, and only while
+    /// no other transfer is running.
+    static var testSegmentSizeOverrideGlobal: Int? = nil
+
     // MARK: - Public state
 
     public let link: Link
@@ -140,7 +146,19 @@ public final class ResourceTransfer {
         // moment it completed.
         if !isReceiver {
             if mapHashes.isEmpty { return 0.0 }
-            return min(1.0, Double(sentMapHashes.count) / Double(mapHashes.count))
+            let withinSegment = Double(sentMapHashes.count) / Double(mapHashes.count)
+            // Both counters are per-segment and are reset when a segment starts,
+            // so this alone reports 0→1 once *per segment* — a 3-segment send
+            // would hit 1.0 three times and go backwards twice. Python spreads the
+            // same measurement across the whole split transfer
+            // (Resource.py:1151-1167: `previously_processed_parts =
+            // processed_segments * max_parts_per_segment`), so fold the segment
+            // position in. Python's per-segment figure is a separate method,
+            // `get_segment_progress`.
+            let total = max(1, totalSegments)
+            guard total > 1 else { return min(1.0, withinSegment) }
+            let completed = Double(max(0, segmentIndex - 1))
+            return min(1.0, (completed + withinSegment) / Double(total))
         }
         if totalParts == 0 { return 0.0 }
         return min(1.0, Double(receivedCount) / Double(totalParts))
@@ -360,7 +378,9 @@ public final class ResourceTransfer {
 
         // Split into segments of MAX_EFFICIENT_SIZE when payload is large.
         // Mirrors Python Resource.__init__ splitting logic.
-        let maxSeg = testSegmentSizeOverride ?? ResourceTransfer.maxEfficientSize
+        let maxSeg = testSegmentSizeOverride
+            ?? ResourceTransfer.testSegmentSizeOverrideGlobal
+            ?? ResourceTransfer.maxEfficientSize
         if payload.count > maxSeg {
             var chunks: [Data] = []
             var offset = 0
@@ -658,6 +678,37 @@ public final class ResourceTransfer {
         link.registerIncomingResource(self)
     }
 
+    /// Whether this transfer is parked between segments of a multi-segment
+    /// receive and `adv` is the segment it is waiting for.
+    ///
+    /// Link uses this to route a continuation advertisement back to the object
+    /// holding the accumulated bytes. Python needs no equivalent: it appends each
+    /// segment to a file keyed on the original hash and drops the concluded
+    /// segment's Resource from `incoming_resources` (Resource.py:190/710,
+    /// Link.py:1252-1257), so segments are never correlated in memory.
+    func continuesMultiSegmentReceive(_ adv: ResourceAdvertisement) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return isParkedBetweenSegmentsLocked(matching: adv)
+    }
+
+    /// Caller must hold `stateLock`.
+    private func isParkedBetweenSegmentsLocked(matching adv: ResourceAdvertisement) -> Bool {
+        guard isReceiver, !segmentBuffer.isEmpty, let originalHash else { return false }
+        return originalHash == Data(adv.originalHash)
+            && Int(adv.segmentIndex) == segmentBuffer.count + 1
+    }
+
+    /// Whether this transfer should adopt `adv` at all.
+    ///
+    /// A transfer that has not yet buffered a segment takes anything (it is
+    /// fresh, or Link picked it deliberately). One that is mid-multi-segment
+    /// takes only its own next segment.
+    private func acceptsAsContinuation(_ adv: ResourceAdvertisement) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        if segmentBuffer.isEmpty { return true }
+        return isParkedBetweenSegmentsLocked(matching: adv)
+    }
+
     /// Called by Link when a RESOURCE_ADV arrives (decrypted plaintext).
     ///
     /// - Parameter started: fired once the advertisement has been adopted but
@@ -687,6 +738,16 @@ public final class ResourceTransfer {
             fail("advertised part count exceeds transfer size")
             return
         }
+
+        // A receiver parked between segments stays registered on the link so the
+        // next segment's advertisement reaches it directly — but Link hands every
+        // subsequent advertisement to every registered receiver, so without this
+        // check a *different* resource advertised mid-transfer is downloaded into
+        // `segmentBuffer` and spliced into the middle of the delivered payload.
+        // (It would also bypass `resourceStrategy` and never fire
+        // `onResourceStarted`.) Only adopt what actually continues this transfer:
+        // same overall resource, and the segment we are waiting for.
+        guard acceptsAsContinuation(adv) else { return }
 
         stateLock.lock()
         isReceiver = true

@@ -1504,7 +1504,19 @@ public final class Link {
         case .resourceAdvertisement:
             do {
                 let adv = try ResourceAdvertisement.unpack(plaintext)
-                if adv.isRequest {
+                // Segments 2..N of a split resource carry the SAME isRequest /
+                // isResponse flags and request ID as segment 1 (Python's
+                // `__prepare_next_segment` forwards both, and so does ours), so
+                // without this the request/response branches below would build a
+                // brand-new ResourceTransfer for every segment. Only the last
+                // segment's bytes would then be delivered — as a *successful*
+                // response, because the truncated payload merely fails to decode
+                // as the msgpack envelope and falls back to raw bytes. Route a
+                // continuation to the object already holding the earlier
+                // segments, whatever kind of resource it is.
+                if let continuation = multiSegmentContinuation(for: adv) {
+                    continuation.receiveAdvertisement(plaintext)
+                } else if adv.isRequest {
                     // Incoming request via Resource — only accept when the destination
                     // actually has request handlers registered; otherwise the whole
                     // request resource would be downloaded and then dropped with no
@@ -1633,6 +1645,13 @@ public final class Link {
                 onDataReceived?(plaintext, self)
             }
         }
+    }
+
+    /// The registered receiver, if any, that is parked between segments waiting
+    /// for exactly this advertisement.
+    private func multiSegmentContinuation(for adv: ResourceAdvertisement) -> ResourceTransfer? {
+        guard !incomingResourcesIsEmpty() else { return nil }
+        return snapshotIncomingResources().first { $0.continuesMultiSegmentReceive(adv) }
     }
 
     private func acceptIncomingResource(adv: ResourceAdvertisement, rawAdv: Data) {

@@ -312,6 +312,174 @@ final class ResourceMultiSegmentTests: XCTestCase {
             "segment-1 metadata must survive to the completed transfer")
     }
 
+    // MARK: - Sender progress across segments
+
+    /// Sender progress must climb once across the whole split transfer, not once
+    /// per segment. The per-segment counters (`sentMapHashes` / `mapHashes`) are
+    /// both reset when a segment starts, so reading them alone reports 0→1 for
+    /// every segment — reaching 1.0 while the transfer is still running and then
+    /// going backwards. Python folds the segment position in
+    /// (Resource.py:1151-1167) and keeps a separate `get_segment_progress` for the
+    /// per-segment figure.
+    func testSenderProgressIsMonotonicAcrossSegments() throws {
+        // Async delivery: with a synchronous loopback the whole transfer runs
+        // inside the first send and every progress emit unwinds afterwards, when
+        // the status is already .complete — so intermediate values are invisible.
+        let (aLink, bLink) = try makeAsyncLinkedPair()
+        bLink.resourceStrategy = .acceptAll
+
+        let lock = NSLock()
+        var observed: [Double] = []
+        let concluded = expectation(description: "concluded")
+        bLink.onResourceConcluded = { _, _, _ in concluded.fulfill() }
+
+        let tx = ResourceTransfer(link: aLink)
+        tx.testSegmentSizeOverride = 300
+        tx.onProgress = { p, _ in lock.lock(); observed.append(p); lock.unlock() }
+        try tx.send(payload: Data(repeating: 0xD4, count: 900), autoCompress: false)
+        wait(for: [concluded], timeout: 20.0)
+
+        lock.lock(); let progress = observed; lock.unlock()
+        XCTAssertFalse(progress.isEmpty, "sender reported no progress at all")
+        XCTAssertEqual(progress, progress.sorted(),
+                       "sender progress went backwards across a segment boundary: \(progress)")
+        XCTAssertEqual(progress.filter { $0 >= 1.0 }.count, 1,
+                       "progress reached 1.0 more than once — it is being measured per segment: \(progress)")
+    }
+
+    // MARK: - Split request/response resources
+
+    /// A response larger than one segment must arrive whole.
+    ///
+    /// Segments 2..N carry the same `isResponse` flag and request ID as segment 1
+    /// (Python's `__prepare_next_segment` forwards both, and so does ours), so the
+    /// RESOURCE_ADV dispatch used to take the `isResponse` branch again for every
+    /// segment and build a fresh `ResourceTransfer` each time. Only the last
+    /// segment's bytes reached the caller — and as a *successful* response, since
+    /// a truncated payload merely fails to decode as the `[request_id, response]`
+    /// envelope and falls back to raw bytes. Silent corruption, not an error.
+    ///
+    /// This is the LXMF propagation-sync and NomadNet file-fetch path.
+    func testSplitResponseResourceIsDeliveredWhole() throws {
+        ResourceTransfer.testSegmentSizeOverrideGlobal = 4_000
+        defer { ResourceTransfer.testSegmentSizeOverrideGlobal = nil }
+
+        let (aLink, bLink) = try makeLinkedPair()
+        _ = bLink
+
+        // Incompressible so it cannot shrink back under the segment threshold.
+        let responseBody = Data((0 ..< 9_000).map { _ in UInt8.random(in: 0 ... 255) })
+        aLink.destination.registerRequestHandler(path: "/big", allow: .all) { _, _, _, _, _ in
+            responseBody
+        }
+
+        let responded = expectation(description: "response delivered")
+        var received: Data?
+        var failure: String?
+        _ = try bLink.request(
+            path: "/big",
+            data: Data([0x01]),
+            responseCallback: { data, _ in received = data; responded.fulfill() },
+            failedCallback: { reason, _ in failure = reason; responded.fulfill() },
+            timeout: 30
+        )
+        wait(for: [responded], timeout: 30.0)
+
+        XCTAssertNil(failure, "split response failed: \(failure ?? "")")
+        XCTAssertEqual(received?.count, responseBody.count,
+                       "only the last segment was delivered — the rest was dropped")
+        XCTAssertEqual(received, responseBody)
+    }
+
+    /// A receiver parked between segments stays registered on the link, and the
+    /// link hands every subsequent advertisement to every registered receiver. An
+    /// unrelated resource advertised in that window used to be adopted by the
+    /// parked transfer — downloaded into its segment buffer and spliced into the
+    /// middle of the delivered payload, while bypassing `resourceStrategy` and
+    /// never firing `onResourceStarted`.
+    ///
+    /// The receiver is held in the parked state by dropping the mid-transfer
+    /// proof on its way back to the sender: parts and requests still flow, so
+    /// segment 1 completes, but the sender never learns to advance to segment 2.
+    func testForeignAdvertisementIsNotAdoptedByAParkedReceiver() throws {
+        let (aLink, bLink, gate) = try makeProofGatedPair()
+
+        let parked = ResourceTransfer(link: bLink)
+        parked.bindAsReceiver()
+
+        // Two segments of 300 bytes each.
+        let tx = ResourceTransfer(link: aLink)
+        tx.testSegmentSizeOverride = 300
+        gate.dropProofs = true
+        try tx.send(payload: Data(repeating: 0xA7, count: 400), autoCompress: false)
+
+        // Segment 1 has been received and buffered; the transfer is parked.
+        XCTAssertEqual(parked.status, .idle, "test premise: receiver should be parked between segments")
+        XCTAssertEqual(parked.advertisement?.segmentIndex, 1)
+        let parkedHash = parked.resourceHash
+
+        // A different resource is advertised on the same link while it is parked.
+        let foreign = ResourceTransfer(link: aLink)
+        gate.dropAll = true          // don't let the foreign transfer actually run
+        try? foreign.send(payload: Data(repeating: 0x5E, count: 64), autoCompress: false)
+        let foreignAdv = try XCTUnwrap(foreign.advertisement)
+        gate.dropAll = false
+
+        parked.receiveAdvertisement(try foreignAdv.pack())
+
+        XCTAssertEqual(parked.resourceHash, parkedHash,
+                       "the parked receiver adopted an unrelated resource's advertisement")
+        XCTAssertEqual(parked.advertisement?.segmentIndex, 1,
+                       "the parked receiver's advertisement was replaced by a foreign one")
+    }
+
+    /// Loopback pair whose b→a direction can drop PROOF packets, which parks a
+    /// multi-segment receiver between segments without stalling the part transfer.
+    final class ProofGate {
+        var dropProofs = false
+        var dropAll = false
+    }
+
+    private func makeProofGatedPair() throws -> (aLink: Link, bLink: Link, gate: ProofGate) {
+        let gate = ProofGate()
+        aT = Transport(); bT = Transport()
+        let bId = Identity()
+        let bDest = try Destination(identity: bId, direction: .in, kind: .single, appName: "msgate")
+        bT.ownerIdentity = bId; bT.register(destination: bDest)
+        let a = GatedLoopbackInterface(name: "a", gate: gate, gatesOutbound: false)
+        let b = GatedLoopbackInterface(name: "b", gate: gate, gatesOutbound: true)
+        a.paired = b; b.paired = a
+        aT.register(interface: a); bT.register(interface: b)
+        let aE = expectation(description: "aE"); let bE = expectation(description: "bE")
+        aT.onLinkEstablished = { _ in aE.fulfill() }
+        bT.onLinkEstablished = { _ in bE.fulfill() }
+        let aLink = try Link.initiate(destination: bDest, transport: aT)
+        wait(for: [aE, bE], timeout: 2.0)
+        let bLink = try XCTUnwrap(bT.links[aLink.linkID!])
+        return (aLink, bLink, gate)
+    }
+
+    final class GatedLoopbackInterface: Interface {
+        var name: String; var bitrate: Int = 0; var isOnline: Bool = true
+        weak var paired: GatedLoopbackInterface?
+        var inboundHandler: ((Packet, any Interface) -> Void)?
+        let gate: ProofGate
+        /// Only the b→a side drops proofs; a→b must keep flowing.
+        let gatesOutbound: Bool
+        init(name: String, gate: ProofGate, gatesOutbound: Bool) {
+            self.name = name; self.gate = gate; self.gatesOutbound = gatesOutbound
+        }
+        func start() throws { isOnline = true }
+        func stop() { isOnline = false }
+        func send(_ packet: Packet) throws {
+            if gate.dropAll { return }
+            if gatesOutbound, gate.dropProofs, packet.packetType == .proof { return }
+            let raw = try packet.pack()
+            let copy = try Packet.unpack(raw)
+            paired?.inboundHandler?(copy, paired!)
+        }
+    }
+
     // MARK: - originalHash is stable across segments
 
     func testOriginalHashStableAcrossSegments() throws {

@@ -173,11 +173,35 @@ public final class LocalInterface: Interface {
             return
         }
         let conn = NWConnection(to: endpoint, using: .tcp)
+        // Cancel whatever we are replacing. A reconnect fires from a timer, not
+        // from stop(), so the predecessor is still live here; leaving it dangling
+        // leaks the socket and the shared instance keeps counting it as an
+        // attached client.
+        let superseded = connection
         connection = conn
         stateLock.unlock()
+        superseded?.cancel()
 
         conn.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
+            // Every arm below acts on "the interface's connection". After a
+            // stop()/start() cycle this handler can still fire for a superseded
+            // connection — its .cancelled arrives after the replacement is already
+            // live — and acting on that would take the *healthy* connection
+            // offline and schedule a reconnect that abandons it uncancelled: a
+            // leaked socket the shared instance still counts as an attached
+            // client, plus two concurrent receive loops on one HDLC decoder.
+            // Python guards the same window with `if not self.reconnecting`.
+            let isCurrent: Bool = {
+                self.stateLock.lock(); defer { self.stateLock.unlock() }
+                return self.connection === conn
+            }()
+            guard isCurrent else {
+                // Still release start() if this was its connection, or it would
+                // block for the full timeout waiting on a dead attempt.
+                pendingReady?.signal(); pendingReady = nil
+                return
+            }
             switch state {
             case .ready:
                 self.stateLock.lock(); self.reconnectCount = 0; self.stateLock.unlock()
@@ -186,6 +210,24 @@ public final class LocalInterface: Interface {
                 // for the caller the instant start() returns.
                 pendingReady?.signal(); pendingReady = nil
                 self.beginReceiveLoop()
+            case .waiting:
+                // A refused connection surfaces as .waiting, not .failed —
+                // NWConnection keeps retrying a connect that has no listener.
+                // For the initial connect that is precisely the "nothing is
+                // running on 37428" case, which must fail fast: start() is called
+                // sequentially for every configured interface, so blocking here
+                // for the full connectTimeout stalls all of them (and freezes the
+                // UI if the caller is on the main thread). Python's blocking
+                // socket.connect() gets ECONNREFUSED back in milliseconds.
+                //
+                // Only the *initial* connect bails. A reconnect legitimately sits
+                // in .waiting until the shared instance comes back.
+                if let waiter = pendingReady {
+                    pendingReady = nil
+                    self.isOnline = false
+                    conn.cancel()
+                    waiter.signal()
+                }
             case .failed, .cancelled:
                 self.isOnline = false
                 if let waiter = pendingReady {
