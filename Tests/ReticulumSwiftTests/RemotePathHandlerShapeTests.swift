@@ -254,6 +254,9 @@ final class RemotePathHandlerShapeTests: XCTestCase {
             "held_announces",
             "burst_active", "burst_activated", "pr_burst_active", "pr_burst_activated",
             "status", "mode",
+            // RNS 1.4.1 appended both after `mode`, and Python still emits them last
+            // in 1.4.2 — so they extend this sequence rather than reordering it.
+            "gravity", "announces_to_internal",
         ])
     }
 

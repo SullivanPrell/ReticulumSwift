@@ -184,9 +184,26 @@ final class ArgumentParserTests: XCTestCase {
         }
     }
 
-    func testBundleContainingValueOption_throws() {
-        // "-wj" cannot bundle, because -w consumes a value.
-        XCTAssertThrowsError(try makeParser().parse(["-wj"]))
+    func testBundleEndingInValueOption_takesTheRestAsItsValue() throws {
+        // "-wj" is not a bundle of two flags: argparse stops at the first
+        // value-taking option in a cluster and hands it everything that follows,
+        // so this is `-w j` — and `-j` is never set. The value is not validated
+        // here; a tool that wants a number reports its own conversion error, which
+        // is what argparse does too (`argument -w/--timeout: invalid int value: 'j'`).
+        let result = try makeParser().parse(["-wj", "abc"])
+        XCTAssertEqual(result.value("--timeout"), "j")
+        XCTAssertFalse(result.flag("--json"),
+                       "-j was consumed as -w's value and must not also register as a flag")
+        XCTAssertEqual(result.positionals, ["abc"])
+    }
+
+    func testBundleOfFlagsThenValueOption() throws {
+        // The general form: any number of flag/counted options, then one
+        // value-taking option that claims the remainder. "-vvw30" is verbose
+        // twice with a 30-second timeout.
+        let result = try makeParser().parse(["-vvw30", "abc"])
+        XCTAssertEqual(result.count("--verbose"), 2)
+        XCTAssertEqual(result.value("--timeout"), "30")
     }
 
     // MARK: - Help

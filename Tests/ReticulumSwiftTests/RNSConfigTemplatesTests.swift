@@ -20,24 +20,35 @@ final class RNSConfigTemplatesTests: XCTestCase {
     // MARK: - __example_rns_config__
 
     func testExampleConfigByteLength() {
-        XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 14959)
+        XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 15663)
     }
 
     func testExampleConfigSHA256() {
         XCTAssertEqual(sha256Hex(RNSConfigTemplates.exampleConfig),
-                       "c90492d51df94e2899e9fe0b201c79bfac1f117cf850d443ec9ad90bc9aebc93")
+                       "78f08f25bbfe5cb15f22cdeec36c4b7476973bd8558f59e77faf8c118df2ca67")
     }
 
     func testExampleConfigNewlineCount() {
-        XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 493)
+        XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 518)
     }
 
     func testExampleConfigBoundaries() {
         XCTAssertTrue(RNSConfigTemplates.exampleConfig
             .hasPrefix("# This is an example Reticulum config file.\n"))
-        // The literal ends with a blank line, so `print()` takes stdout to 14960 bytes.
+        // The literal ends with a blank line, so `print()` takes stdout to 15664 bytes.
         XCTAssertTrue(RNSConfigTemplates.exampleConfig
             .hasSuffix("    persistence = 200\n    slottime = 20\n\n"))
+    }
+
+    func testExampleConfigDocumentsTheRNS141GravityKeys() {
+        // RNS 1.4.1 added four directives to `__example_rns_config__`. They are commented
+        // out, so nothing parses them — the point is that a user copying this file as a
+        // starting template sees the same options Python's users see.
+        for key in ["default_gravity", "autoconnect_interface_mode",
+                    "autoconnect_announces_to_internal", "autoconnect_interface_gravity"] {
+            XCTAssertTrue(RNSConfigTemplates.exampleConfig.contains("# \(key) ="),
+                          "example config does not document '\(key)'")
+        }
     }
 
     func testReticulumExampleConfigIsTheTemplate() {
