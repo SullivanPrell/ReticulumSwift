@@ -71,6 +71,12 @@ public final class ResourceTransfer {
     /// Set to nil (default) in production code.
     var testSegmentSizeOverride: Int? = nil
 
+    /// Same override, for transfers the library constructs internally — the
+    /// request and response resources built inside `Link` — which a test has no
+    /// reference to. Nil in production; only ever set from tests, and only while
+    /// no other transfer is running.
+    static var testSegmentSizeOverrideGlobal: Int? = nil
+
     // MARK: - Public state
 
     public let link: Link
@@ -131,17 +137,28 @@ public final class ResourceTransfer {
         return progressLocked()
     }
 
-    /// `progress` with `stateLock` already held.
-    ///
-    /// Python's `Resource.get_progress()` branches on `self.initiator` and divides
-    /// `sent_parts` by the part count on the sending side (RNS/Resource.py:1139-1193).
-    /// Swift keeps the sender's equivalent state in `sentMapHashes` / `mapHashes`, both of
-    /// which stay empty on a receiver — so the receiver arithmetic below is untouched, and
-    /// a sender that has not advertised yet still reports 0.0.
+    /// `progress` without taking the lock, for callers that already hold it.
     private func progressLocked() -> Double {
         if case .complete = _status { return 1.0 }
-        if !isReceiver, !mapHashes.isEmpty {
-            return min(1.0, Double(sentMapHashes.count) / Double(mapHashes.count))
+        // Python's `get_progress` branches on `self.initiator`: a sender measures
+        // parts *sent*, a receiver parts *received* (Resource.py:1146-1149). Using
+        // the receive counter for both left every sender pinned at 0.0 until the
+        // moment it completed.
+        if !isReceiver {
+            if mapHashes.isEmpty { return 0.0 }
+            let withinSegment = Double(sentMapHashes.count) / Double(mapHashes.count)
+            // Both counters are per-segment and are reset when a segment starts,
+            // so this alone reports 0→1 once *per segment* — a 3-segment send
+            // would hit 1.0 three times and go backwards twice. Python spreads the
+            // same measurement across the whole split transfer
+            // (Resource.py:1151-1167: `previously_processed_parts =
+            // processed_segments * max_parts_per_segment`), so fold the segment
+            // position in. Python's per-segment figure is a separate method,
+            // `get_segment_progress`.
+            let total = max(1, totalSegments)
+            guard total > 1 else { return min(1.0, withinSegment) }
+            let completed = Double(max(0, segmentIndex - 1))
+            return min(1.0, (completed + withinSegment) / Double(total))
         }
         if totalParts == 0 { return 0.0 }
         return min(1.0, Double(receivedCount) / Double(totalParts))
@@ -211,8 +228,21 @@ public final class ResourceTransfer {
     public func getSegments() -> Int { segmentCount }
     public func getHash() -> Data { hash }
 
-    /// Called periodically with (progress, resource) as parts arrive.
+    /// Called with (progress, resource) as each part is accepted (receiver) or a
+    /// batch of parts goes out (sender).
+    /// Mirrors Python's `progress_callback` (Resource.py:889-893 receiver,
+    /// 1079-1081 sender).
     public var onProgress: ((Double, ResourceTransfer) -> Void)?
+
+    /// Fire `onProgress` with the current value. Must be called with the state
+    /// lock *released*: the callback is app code and reaches back into the
+    /// transfer (`progress`, `resourceHash`) and, via RequestReceipt, into the
+    /// link. Python has the same constraint and swallows callback exceptions;
+    /// Swift's non-throwing closure gives us that for free.
+    private func emitProgress() {
+        guard let cb = onProgress else { return }
+        cb(progress, self)
+    }
 
     /// Set the completion callback. Mirrors Python `Resource.set_callback(callback)`.
     public func setCallback(_ callback: @escaping (ResourceTransfer) -> Void) {
@@ -369,7 +399,9 @@ public final class ResourceTransfer {
 
         // Split into segments of MAX_EFFICIENT_SIZE when payload is large.
         // Mirrors Python Resource.__init__ splitting logic.
-        let maxSeg = testSegmentSizeOverride ?? ResourceTransfer.maxEfficientSize
+        let maxSeg = testSegmentSizeOverride
+            ?? ResourceTransfer.testSegmentSizeOverrideGlobal
+            ?? ResourceTransfer.maxEfficientSize
         if payload.count > maxSeg {
             var chunks: [Data] = []
             var offset = 0
@@ -418,6 +450,16 @@ public final class ResourceTransfer {
         randomHash = resource.randomHash
         _resourceHash = resource.resourceHash
         expectedProof = resource.expectedProof
+        // Each segment is a distinct Resource with its own hashmap, so the sender's
+        // per-segment part-serving cursors must restart. `receiverMinConsecutiveHeight`
+        // (the lower bound of the collision-guard search window) and `sentMapHashes`
+        // otherwise carry the PREVIOUS segment's progress into this one: for a two-segment
+        // transfer the window starts past the second, shorter segment's part count, so
+        // `handleRequest` matched nothing and served zero parts — every segment after the
+        // first stalled and the receiver failed the transfer. Python sidesteps this by
+        // building a brand-new Resource per segment, whose cursors are zero by construction.
+        sentMapHashes.removeAll()
+        receiverMinConsecutiveHeight = 0
         // For segment 1, set overallOriginalHash = first segment's resource hash.
         if segmentIndex == 1 { overallOriginalHash = resource.resourceHash }
         let segIdxSnapshot = segmentIndex
@@ -569,6 +611,10 @@ public final class ResourceTransfer {
             _status = .awaitingProof
         }
         stateLock.unlock()
+
+        // Sender-side progress, fired once per batch of outgoing parts exactly as
+        // Python does at the tail of its send loop (Resource.py:1075-1081).
+        emitProgress()
     }
 
     /// Called by Link when a RESOURCE_PRF proof arrives for our resource hash.
@@ -653,8 +699,49 @@ public final class ResourceTransfer {
         link.registerIncomingResource(self)
     }
 
+    /// Whether this transfer is parked between segments of a multi-segment
+    /// receive and `adv` is the segment it is waiting for.
+    ///
+    /// Link uses this to route a continuation advertisement back to the object
+    /// holding the accumulated bytes. Python needs no equivalent: it appends each
+    /// segment to a file keyed on the original hash and drops the concluded
+    /// segment's Resource from `incoming_resources` (Resource.py:190/710,
+    /// Link.py:1252-1257), so segments are never correlated in memory.
+    func continuesMultiSegmentReceive(_ adv: ResourceAdvertisement) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return isParkedBetweenSegmentsLocked(matching: adv)
+    }
+
+    /// Caller must hold `stateLock`.
+    private func isParkedBetweenSegmentsLocked(matching adv: ResourceAdvertisement) -> Bool {
+        guard isReceiver, !segmentBuffer.isEmpty, let originalHash else { return false }
+        return originalHash == Data(adv.originalHash)
+            && Int(adv.segmentIndex) == segmentBuffer.count + 1
+    }
+
+    /// Whether this transfer should adopt `adv` at all.
+    ///
+    /// A transfer that has not yet buffered a segment takes anything (it is
+    /// fresh, or Link picked it deliberately). One that is mid-multi-segment
+    /// takes only its own next segment.
+    private func acceptsAsContinuation(_ adv: ResourceAdvertisement) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        if segmentBuffer.isEmpty { return true }
+        return isParkedBetweenSegmentsLocked(matching: adv)
+    }
+
     /// Called by Link when a RESOURCE_ADV arrives (decrypted plaintext).
-    internal func receiveAdvertisement(_ data: Data) {
+    ///
+    /// - Parameter started: fired once the advertisement has been adopted but
+    ///   before the transfer machinery starts, mirroring where Python invokes
+    ///   `link.callbacks.resource_started` inside `Resource.accept`
+    ///   (Resource.py:224-230 — after `resource.hash = adv.h`, before
+    ///   `hashmap_update`/`watchdog_job`). The position matters: an observer
+    ///   called any earlier is handed a transfer whose `resourceHash` is still
+    ///   empty. It is not fired at all for an advertisement we reject, which is
+    ///   also what Python does (`accept` returns `None` without calling back).
+    internal func receiveAdvertisement(_ data: Data,
+                                       started: ((ResourceTransfer) -> Void)? = nil) {
         guard let adv = try? ResourceAdvertisement.unpack(data) else {
             fail("unparseable advertisement")
             return
@@ -672,6 +759,16 @@ public final class ResourceTransfer {
             fail("advertised part count exceeds transfer size")
             return
         }
+
+        // A receiver parked between segments stays registered on the link so the
+        // next segment's advertisement reaches it directly — but Link hands every
+        // subsequent advertisement to every registered receiver, so without this
+        // check a *different* resource advertised mid-transfer is downloaded into
+        // `segmentBuffer` and spliced into the middle of the delivered payload.
+        // (It would also bypass `resourceStrategy` and never fire
+        // `onResourceStarted`.) Only adopt what actually continues this transfer:
+        // same overall resource, and the segment we are waiting for.
+        guard acceptsAsContinuation(adv) else { return }
 
         stateLock.lock()
         isReceiver = true
@@ -704,6 +801,8 @@ public final class ResourceTransfer {
         if startedTransferring == nil { startedTransferring = Date() }
         stateLock.unlock()
 
+        started?(self)
+
         startWatchdog()
         sendRequest()
     }
@@ -722,6 +821,7 @@ public final class ResourceTransfer {
         let searchStart = max(0, consecutiveCompletedHeight + 1)
         let searchEnd = min(searchStart + window, totalParts)
 
+        var acceptedPart = false
         for i in searchStart ..< searchEnd {
             guard let mh = hashmap[i], mh == partHashData else { continue }
             if parts[i] == nil {
@@ -738,6 +838,7 @@ public final class ResourceTransfer {
                         cp += 1
                     }
                 }
+                acceptedPart = true
             }
             break
         }
@@ -750,13 +851,13 @@ public final class ResourceTransfer {
         }
         stateLock.unlock()
 
-        // Surface progress to observers. Mirrors Python's `Resource.__progress_callback`,
-        // which fires on every received part. Without this, `onProgress` was declared and
-        // settable but never invoked anywhere in the class, so
-        // `Link.handleIncomingResponseResource`'s `rt.onProgress = { receipt.updateProgress }`
-        // wiring was dead and `RequestReceipt.progress` stayed 0.0 for a whole download.
-        // Fired outside the lock, like every other callout here.
-        onProgress?(progress, self)
+        // Python fires the progress callback for every newly-accepted part, right
+        // after advancing the consecutive-completed pointer (Resource.py:889-893).
+        // Swift declared `onProgress` but never called it from anywhere, so every
+        // progress observer above this layer was inert — including
+        // `RequestReceipt.updateProgress`, and therefore LXMF's propagation-sync
+        // progress and transfer size, which only exist to be read mid-transfer.
+        if acceptedPart { emitProgress() }
 
         // ACT OUTSIDE LOCK (assemble/sendRequest do their own locking + callouts).
         if doAssemble {
@@ -930,8 +1031,18 @@ public final class ResourceTransfer {
             return
         }
         // Hash matches — construct result.
+        //
+        // Metadata (the 3-byte big-endian size prefix + packed msgpack) rides only in
+        // the FIRST segment's plaintext; segments 2..N are pure payload. Python still
+        // sets the advertisement's metadata flag on every segment of a multi-segment
+        // resource (Resource.__init__ sets has_metadata whenever sent_metadata_size > 0),
+        // but its receiver extracts the prefix only for segment 1
+        // (`if self.has_metadata and self.segment_index == 1`, Resource.py:700). Gating on
+        // the flag alone made a later segment's first three payload bytes read as a bogus
+        // metadata length, so every >1 MB (multi-segment) receive failed here with
+        // "metadata prefix out of range". Segment index is 1-based, matching Python.
         let result: Resource.AssemblyResult
-        if adv.hasMetadata && assembledPlaintext.count >= 3 {
+        if adv.hasMetadata, adv.segmentIndex == 1, assembledPlaintext.count >= 3 {
             let sz = Int(assembledPlaintext[0]) << 16 | Int(assembledPlaintext[1]) << 8 | Int(assembledPlaintext[2])
             guard assembledPlaintext.count >= 3 + sz else {
                 fail("assembly: metadata prefix out of range")

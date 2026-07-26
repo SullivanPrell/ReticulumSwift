@@ -138,6 +138,51 @@ final class Header2AnnounceTests: XCTestCase {
             "transport ID must be the backbone's identity hash")
     }
 
+    /// A shared-instance client reaches the instance's OWN local clients at zero hops:
+    /// the path is learned from the instance's HEADER_2 announce (so it carries a next-hop
+    /// transport ID) yet the destination is delivered locally by the instance. Such a packet
+    /// must go out HEADER_1. Stamping HEADER_2 with the instance's transport ID — which the
+    /// old `nextHopTransportID != nil` gate did — produced a packet a Python peer drops (a
+    /// local client is not the addressed transport), silently breaking every link a Swift
+    /// shared-instance client tried to open to a Python peer (rncp, LXMF, NomadNet).
+    func testOutboundZeroHopSharedInstanceClientUsesHeader1() throws {
+        let t = Transport()
+        t.isConnectedToSharedInstance = true
+        let outIface = CapturingInterface(name: "local-to-instance")
+        t.register(interface: outIface)
+
+        let id = Identity()
+        let dest = try Destination(identity: id, direction: .in, kind: .single,
+                                   appName: "test", aspects: ["0hop-shared"])
+        t.restore(identity: id, forDestination: dest.hash)
+
+        // hops == 0 (directly reachable via the instance) but a transport ID is on file,
+        // because the path was learned from the instance's HEADER_2 announce.
+        let instanceTransportID = Data(repeating: 0xEE, count: 16)
+        t.restore(path: Transport.PathEntry(
+            destinationHash: dest.hash,
+            nextHopInterfaceName: outIface.name,
+            hops: 0,
+            lastHeard: Date(),
+            identityHash: id.hash,
+            nextHopTransportID: instanceTransportID
+        ), forDestination: dest.hash)
+
+        let packet = Packet(
+            destinationType: .single,
+            packetType: .data,
+            destinationHash: dest.hash,
+            data: try id.encrypt(Data("ping".utf8))
+        )
+        try t.send(packet, generateReceipt: false)
+
+        let sent = outIface.sent.first(where: { $0.packetType == .data })
+        XCTAssertEqual(sent?.headerType, .type1,
+            "a 0-hop shared-instance-client path must stay HEADER_1")
+        XCTAssertNil(sent?.transportID,
+            "no transport header may be published for a directly-reachable peer")
+    }
+
     /// Direct 1-hop peer (no intermediate transport) must stay HEADER_1.
     func testOutboundPacketIsHeader1ForDirectPeer() throws {
         let t = Transport()

@@ -49,7 +49,7 @@ final class InterfaceSynthesisTests: XCTestCase {
         var cfg = ReticulumConfig()
         cfg.interfaces = [ReticulumConfig.InterfaceConfig(
             name: "Unknown",
-            type: "BackboneInterface",  // Not implemented in Swift
+            type: "NoSuchInterface",
             enabled: true,
             parameters: [:]
         )]
@@ -57,6 +57,40 @@ final class InterfaceSynthesisTests: XCTestCase {
         // Should not throw — unknown types are silently ignored
         XCTAssertNoThrow(try r.synthesizeInterfaces(from: cfg))
         // No interfaces registered for unknown types
+        XCTAssertEqual(r.transport.interfaces.count, 0)
+    }
+
+    /// Python normalises `remote`/`port` onto `target_host`/`target_port` before
+    /// building a backbone interface (Reticulum.py:988-992). RNS's own discovery
+    /// writes the `remote` form, so a config that uses it must synthesize rather
+    /// than being dropped for a missing `target_host`.
+    func testBackboneInterfaceAcceptsRemoteAndPortAliases() throws {
+        var cfg = ReticulumConfig()
+        cfg.interfaces = [ReticulumConfig.InterfaceConfig(
+            name: "AliasBackbone",
+            type: "BackboneInterface",
+            enabled: true,
+            // Port 1 on loopback: nothing listens, so the connect fails fast and
+            // the interface stays registered but offline.
+            parameters: ["remote": "127.0.0.1", "port": "1"]
+        )]
+        let r = try makeRns(config: cfg)
+        try r.synthesizeInterfaces(from: cfg)
+        XCTAssertEqual(r.transport.interfaces.count, 1,
+                       "backbone entry written with `remote`/`port` was dropped")
+        XCTAssertEqual(r.transport.interfaces.first?.name, "AliasBackbone")
+    }
+
+    func testBackboneInterfaceWithoutAnyHostIsSkipped() throws {
+        var cfg = ReticulumConfig()
+        cfg.interfaces = [ReticulumConfig.InterfaceConfig(
+            name: "NoHost",
+            type: "BackboneInterface",
+            enabled: true,
+            parameters: [:]
+        )]
+        let r = try makeRns(config: cfg)
+        try r.synthesizeInterfaces(from: cfg)
         XCTAssertEqual(r.transport.interfaces.count, 0)
     }
 

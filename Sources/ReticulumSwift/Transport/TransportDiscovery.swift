@@ -33,6 +33,13 @@ extension Transport {
         guard discoveryHandler == nil else { return }   // idempotent
 
         let discovery = InterfaceDiscovery(storagePath: storagePath)
+        // Python reaches its Reticulum singleton for this
+        // (`self.rns_instance.is_blackholed(...)`); Swift has none, so the check
+        // is injected. Without this the RNS 1.4.1 pruning of blackholed
+        // discoveries is dead code — the clauses are guarded on the closure
+        // being non-nil.  Weak self: the store outlives nothing here, but the
+        // closure must not keep Transport alive.
+        discovery.isBlackholed = { [weak self] hash in self?.isBlackholed(hash) ?? false }
 
         let handler = InterfaceAnnounceHandler(
             requiredValue: requiredValue,

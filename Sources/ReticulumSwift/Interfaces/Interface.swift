@@ -21,6 +21,35 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
     /// for unknown destinations on behalf of a path request.
     /// Mirrors Python's `Interface.DISCOVER_PATHS_FOR`.
     public static let discoverPathsFor: Set<InterfaceMode> = [.accessPoint, .gateway, .roaming, .internal]
+
+    /// Interface modes a *boundary*-mode interface is allowed to propagate
+    /// recursive path requests onto. RNS 1.4.1 lets boundary interfaces search
+    /// for unknown destinations, but only towards boundary and gateway peers —
+    /// never back out over access-point/roaming/internal segments.
+    /// Mirrors Python's `Interface.BOUNDARY_SEARCH_MODES`.
+    public static let boundarySearchModes: Set<InterfaceMode> = [.boundary, .gateway]
+
+    /// Gravity assigned to an interface that has no explicit configuration.
+    /// Mirrors Python's `Interface.DEFAULT_GRAVITY = 0`.
+    public static let defaultGravity: Int = 0
+
+    /// Parse a config-file mode string, accepting every alias Python does
+    /// (`Reticulum._config_interface_mode` / the `autoconnect_interface_mode`
+    /// parser). Comparison is case-insensitive; returns `nil` for an
+    /// unrecognised value so callers can leave their default in place, matching
+    /// Python's `if v != None:` assignment guard.
+    public init?(configName: String) {
+        switch configName.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "full":                            self = .full
+        case "access_point", "accesspoint", "ap": self = .accessPoint
+        case "pointtopoint", "ptp":             self = .pointToPoint
+        case "roaming":                         self = .roaming
+        case "boundary":                        self = .boundary
+        case "gateway", "gw":                   self = .gateway
+        case "internal":                        self = .internal
+        default:                                return nil
+        }
+    }
 }
 
 /// Base protocol every transport implementation conforms to.
@@ -139,6 +168,19 @@ public protocol Interface: AnyObject {
     /// Defaults to `true`.
     var announcesFromInternal: Bool { get set }
 
+    /// When `true`, announces whose next hop toward the source is *this*
+    /// interface are always allowed onto `internal`-mode interfaces, even when
+    /// this interface is in `boundary` mode (which would otherwise block them).
+    /// `nil` means "not configured" and behaves like `false`.
+    /// Mirrors Python's RNS 1.4.1 `Interface.announces_to_internal` (default `None`).
+    var announcesToInternal: Bool? { get set }
+
+    /// Routing preference weight for this interface. When two announces for the
+    /// same destination carry the *same* emission timebase, the one received on
+    /// the interface with the higher gravity wins the path-table entry. Higher
+    /// pulls harder. Mirrors Python's RNS 1.4.1 `Interface.gravity` (default 0).
+    var gravity: Int { get set }
+
     /// Called by Transport when an outbound packet is ready for the wire.
     func send(_ packet: Packet) throws
 
@@ -254,6 +296,15 @@ public extension Interface {
     }
     var announcesFromInternal: Bool {
         get { true }
+        set { }
+    }
+    var announcesToInternal: Bool? {
+        get { nil }
+        set { }
+    }
+    /// Mirrors Python's `Interface.DEFAULT_GRAVITY = 0`.
+    var gravity: Int {
+        get { InterfaceMode.defaultGravity }
         set { }
     }
 

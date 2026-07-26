@@ -265,7 +265,48 @@ public final class Link {
     /// destination; on the responder it is the hop count of the incoming RTT
     /// packet. Mirrors Python `Link.expected_hops` (RNS 1.3.8 made this
     /// available on the responder side as well). `nil` until known.
-    public var expectedHops: Int?
+    ///
+    /// Guarded by `stateLock`. Both writers run off the network: the responder
+    /// sets it from the RTT packet, and `Transport` rewrites it from a
+    /// link-request proof that can arrive on a different interface thread while
+    /// the watchdog is reading it.
+    public var expectedHops: Int? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _expectedHops }
+        set { stateLock.lock(); _expectedHops = newValue; stateLock.unlock() }
+    }
+    /// Backing store for `expectedHops`, for the call sites that already hold
+    /// `stateLock` (it is a plain `NSLock`, so re-entering through the property
+    /// would deadlock).
+    var _expectedHops: Int?
+
+    /// When this link's path was re-balanced from a link-request proof whose
+    /// hop count disagreed with `expectedHops`, or `nil` if it never was.
+    /// Doubles as a once-only latch: Python re-balances a given link at most
+    /// once (`if not link.rebalanced:`), so a flapping route cannot keep
+    /// rewriting the path table for the lifetime of the link.
+    /// Mirrors Python's RNS 1.4.1 `Link.rebalanced`.
+    public var rebalanced: Date? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _rebalanced }
+    }
+    private var _rebalanced: Date?
+
+    /// Claim the once-only re-balance for this link, recording `hops` as the new
+    /// expectation if the claim succeeds.
+    ///
+    /// - Returns: `true` for the caller that won the latch, `false` if this link
+    ///   has already been re-balanced.
+    ///
+    /// Test-and-set under `stateLock` rather than a read followed by a write, so
+    /// two proofs arriving on different interface threads cannot both pass the
+    /// guard. The caller must not hold `Transport.lock` — the established order
+    /// is Transport.lock last, never over a link's own lock.
+    func claimRebalance(toHops hops: Int) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        guard _rebalanced == nil else { return false }
+        _rebalanced = Date()
+        _expectedHops = hops
+        return true
+    }
 
     /// Establishment timeout. Defaults to `establishmentTimeoutPerHop`
     /// seconds; scaled up by hop count when the path is known.
@@ -932,6 +973,31 @@ public final class Link {
 
     /// Process an incoming LRPR packet. On success, the link transitions to
     /// `.active`, sends the encrypted RTT packet, and fires `onEstablished`.
+    /// Whether `packet` carries a valid link-request-proof signature for this
+    /// link, without adopting any of it.
+    ///
+    /// `validateProof` does the same check as its first step, but it also
+    /// activates the link. Path re-balancing has to establish that the proof is
+    /// genuine *before* it rewrites the path table — otherwise anyone able to
+    /// forge a proof could move a path — and it has to run before the link is
+    /// activated, so an `onEstablished` observer sees the corrected hop count.
+    /// Mirrors the inline signature check Python performs for exactly this
+    /// purpose in `Transport.inbound` (Transport.py:2279-2296).
+    func proofSignatureIsValid(_ packet: Packet) -> Bool {
+        let baseLen = Constants.signatureLength + Constants.halfKeySize
+        guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }
+        let signature = packet.data.prefix(Constants.signatureLength)
+        let responderPubBytes = packet.data[Constants.signatureLength ..< baseLen]
+        let signallingBytes: Data = packet.data.count == baseLen + 3
+            ? Data(packet.data[baseLen...])
+            : Data()
+        guard let destinationIdentity = destination.identity, let linkID else { return false }
+        let responderSigPub = destinationIdentity.signingPublicKey
+        let signedData = linkID + responderPubBytes
+            + responderSigPub.rawRepresentation + signallingBytes
+        return responderSigPub.isValidSignature(signature, for: signedData)
+    }
+
     public func validateProof(_ packet: Packet) throws {
         guard role == .initiator else { throw LinkError.invalidState }
         guard status == .pending else { throw LinkError.invalidState }
@@ -1037,7 +1103,7 @@ public final class Link {
         self.establishedAt = Date()
         // Record the hop count of the RTT packet so the responder also knows the
         // link's hop distance. Python (RNS 1.3.8): self.expected_hops = packet.hops
-        self.expectedHops = Int(packet.hops)
+        self._expectedHops = Int(packet.hops)
         stateLock.unlock()
         onEstablished?(self)
     }
@@ -1438,14 +1504,43 @@ public final class Link {
         case .resourceAdvertisement:
             do {
                 let adv = try ResourceAdvertisement.unpack(plaintext)
-                if adv.isRequest {
+                // Segments 2..N of a split resource carry the SAME isRequest /
+                // isResponse flags and request ID as segment 1 (Python's
+                // `__prepare_next_segment` forwards both, and so does ours), so
+                // without this the request/response branches below would build a
+                // brand-new ResourceTransfer for every segment. Only the last
+                // segment's bytes would then be delivered — as a *successful*
+                // response, because the truncated payload merely fails to decode
+                // as the msgpack envelope and falls back to raw bytes. Route a
+                // continuation to the object already holding the earlier
+                // segments, whatever kind of resource it is.
+                if let continuation = multiSegmentContinuation(for: adv) {
+                    continuation.receiveAdvertisement(plaintext)
+                } else if adv.isRequest {
                     // Incoming request via Resource — only accept when the destination
                     // actually has request handlers registered; otherwise the whole
                     // request resource would be downloaded and then dropped with no
                     // handler to dispatch it. Mirrors Python Link.py `if self.destination.request_handlers`
                     // (commit 3a36c367).
                     if !destination.requestHandlers.isEmpty {
-                        handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
+                        // RNS 1.4.1: reject an oversized request *at advertisement
+                        // time*, before a single part is transferred. `adv.dataSize`
+                        // is the advertised plaintext size, matching Python's
+                        // `ResourceAdvertisement.read_size(packet)`.
+                        // Compare in UInt64: `adv.dataSize` comes straight off the
+                        // wire and `ResourceAdvertisement.unpack` only bounds-checks
+                        // the transfer size, so a hostile advertisement can carry any
+                        // 64-bit `d`. `Int(_: UInt64)` is a *trapping* conversion —
+                        // any d >= 2^63 would abort the process instead of rejecting
+                        // the advertisement. Python compares arbitrary-precision ints
+                        // and simply rejects. (A negative cap is impossible:
+                        // setMaxRequestSize rejects it.)
+                        if let cap = destination.maxRequestSize, adv.dataSize > UInt64(cap) {
+                            Reticulum.log("Rejected request with excessive size \(adv.dataSize) B on \(self)", level: .debug)
+                            try? send(adv.resourceHash, context: .resourceReceiverCancel)
+                        } else {
+                            handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
+                        }
                     }
                 } else if adv.isResponse, let reqID = adv.requestID {
                     // Incoming response via Resource — route to pending request.
@@ -1516,6 +1611,16 @@ public final class Link {
             // context + ciphertext), not from the plaintext, so the id matches what the
             // initiator stored regardless of implementation language.
             stateLock.lock(); lastData = now; stateLock.unlock()
+            // RNS 1.4.1 `Destination.max_request_size`: drop an oversized request
+            // before unpacking its msgpack body — the point of the cap is to keep
+            // a hostile peer from making us allocate on its say-so. Python logs
+            // and silently ignores it (no rejection is sent on the packet path,
+            // unlike the Resource path below).
+            if let cap = destination.maxRequestSize, plaintext.count > cap {
+                Reticulum.log("Ignored request with excessive size \(plaintext.count) B on \(self)", level: .debug)
+                onPacketReceived?(plaintext, packet.packetType, packet.context, self)
+                break
+            }
             let reqID = (try? packet.truncatedPacketHash()) ?? Hashes.truncatedHash(plaintext)
             handleIncomingRequest(plaintext, requestID: reqID)
             onPacketReceived?(plaintext, packet.packetType, packet.context, self)
@@ -1542,15 +1647,40 @@ public final class Link {
         }
     }
 
+    /// The registered receiver, if any, that is parked between segments waiting
+    /// for exactly this advertisement.
+    private func multiSegmentContinuation(for adv: ResourceAdvertisement) -> ResourceTransfer? {
+        guard !incomingResourcesIsEmpty() else { return nil }
+        return snapshotIncomingResources().first { $0.continuesMultiSegmentReceive(adv) }
+    }
+
     private func acceptIncomingResource(adv: ResourceAdvertisement, rawAdv: Data) {
         let rt = ResourceTransfer(link: self)
-        rt.onAssembledInternal = { [weak self] payload, _ in
+        rt.onAssembledInternal = { [weak self] payload, transfer in
             guard let self else { return }
-            self.onResourceConcluded?(payload, adv, self)
+            // Report the CONCLUDING advertisement, not the first segment's. A
+            // multi-segment resource re-advertises with a fresh resource hash per
+            // segment, and the receiver's `resourceHash` advances to the last one;
+            // a listener recovers a completed transfer (and its metadata — the
+            // filename) by matching that hash. Passing the captured first-segment
+            // `adv` made the match miss for any >1 MB transfer, so the file arrived
+            // intact but was discarded as "Invalid data received". Fall back to the
+            // first advertisement only if the transfer somehow exposes none.
+            self.onResourceConcluded?(payload, transfer.advertisement ?? adv, self)
         }
         registerIncomingResource(rt)
-        onResourceStarted?(rt)
-        rt.receiveAdvertisement(rawAdv)
+        // The started callback has to fire from *inside* receiveAdvertisement,
+        // between adopting the advertisement and starting the transfer, because
+        // that is the first moment `rt.resourceHash` holds the real hash.
+        // Calling it out here (as this did) handed every observer a transfer
+        // still carrying the empty initial hash — LXMF keys its inbound registry
+        // on exactly that value, so every concurrent transfer collided on
+        // `Data()` and `cancelInbound(resourceHash:)` could never match.
+        // Python has no such gap: `Resource.accept` populates the resource and
+        // only then calls `link.callbacks.resource_started` (Resource.py:224-230).
+        rt.receiveAdvertisement(rawAdv) { [weak self] transfer in
+            self?.onResourceStarted?(transfer)
+        }
     }
 
     private func handleIncomingRequestResource(adv: ResourceAdvertisement, rawAdv: Data) {
@@ -1594,6 +1724,19 @@ public final class Link {
     private func handleIncomingResponseResource(adv: ResourceAdvertisement, rawAdv: Data, requestID: Data) {
         stateLock.lock(); let receipt = pendingRequests[requestID]; stateLock.unlock()
         guard let receipt else { return }
+        // RNS 1.4.1 `max_response_size`, checked against the advertised size so an
+        // oversized response is refused before any part is transferred. Python
+        // rejects the resource AND fails the receipt — do both, in that order.
+        // UInt64 comparison for the same reason as the request path above: a
+        // trapping Int conversion here would turn a hostile advertisement into a
+        // remote process abort.
+        if let cap = receipt.maxResponseSize, cap >= 0, adv.dataSize > UInt64(cap) {
+            Reticulum.log("Rejected response with excessive size \(adv.dataSize) B on \(self)", level: .debug)
+            try? send(adv.resourceHash, context: .resourceReceiverCancel)
+            evictPendingRequest(requestID)
+            receipt.responseRejected()
+            return
+        }
         // The response is arriving as a Resource. Disarm the fixed request
         // timeout now — a large / slow page can take far longer to transfer than
         // the request timeout, and from here the ResourceTransfer's own watchdog
@@ -1601,12 +1744,12 @@ public final class Link {
         // RequestReceipt entering RECEIVING (Link.py response_resource_progress),
         // which stops the request-timeout job. Without this, any response Resource
         // still in flight at the timeout is aborted mid-download.
-        receipt.beginReceivingResponse()
+        receipt.beginReceivingResponse(advertisedSize: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil)
         // Python: Link.py:1027-1031 — response_size is set once from the advertisement's
         // data size, response_transfer_size accumulates across segments. Both feed rnx's
         // "Receiving result — <got> of <total>" spinner and its -d transfer summary.
-        receipt.setResponseSizes(size: Int(adv.dataSize),
-                                 transferSize: Int(adv.transferSize),
+        receipt.setResponseSizes(size: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil,
+                                 transferSize: adv.transferSize <= UInt64(Int.max) ? Int(adv.transferSize) : nil,
                                  accumulate: true)
         let rt = ResourceTransfer(link: self)
         // Surface transfer progress on the receipt (keeps its status/progress in

@@ -1,6 +1,6 @@
 # ReticulumSwift
 
-Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.3.0).
+Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.4.1).
 Target: wire + API compatibility so a Swift node interoperates with Python nodes.
 
 ## Build & Test
@@ -94,9 +94,9 @@ Sources/ReticulumSwift/
 
 ## Parity Status
 
-Implements the full Reticulum 1.3.0 protocol — all core layers and every standard
+Implements the full Reticulum 1.4.1 protocol — all core layers and every standard
 interface — wire-compatible with the Python reference. ~78% line coverage across
-2,145 tests. See [CHANGELOG.md](CHANGELOG.md).
+2,358 tests. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Conventions
 

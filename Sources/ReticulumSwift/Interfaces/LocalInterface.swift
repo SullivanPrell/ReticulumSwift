@@ -13,6 +13,11 @@ import Network
 /// try local.start()
 /// ```
 public final class LocalInterface: Interface {
+
+    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+    public var announcesToInternal: Bool? = nil
+    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+    public var gravity: Int = InterfaceMode.defaultGravity
     public let name: String
     public let host: String
     public let port: UInt16
@@ -39,6 +44,26 @@ public final class LocalInterface: Interface {
     public var reconnectWait: TimeInterval = 8
     /// Maximum reconnect attempts. nil = unlimited (mirrors Python's `RECONNECT_MAX_TRIES = None`).
     public var maxReconnectTries: Int?
+    /// Seconds `start()` will wait for the initial connection before giving up.
+    /// Python's `connect()` is a blocking `socket.connect()` with no explicit
+    /// deadline of its own; the cap here plays the role of the OS connect timeout
+    /// so a wedged shared instance cannot hang a utility's startup forever.
+    public var connectTimeout: TimeInterval = 5
+
+    /// Raised by ``start()`` when the shared instance could not be reached.
+    /// Python raises out of `LocalClientInterface.connect()`, which
+    /// `Reticulum.__start_local_client` turns into "Local shared instance appears
+    /// to be running, but it could not be connected".
+    public enum ConnectionError: Error, CustomStringConvertible {
+        case couldNotConnect(host: String, port: UInt16)
+
+        public var description: String {
+            if case .couldNotConnect(let host, let port) = self {
+                return "could not connect to shared instance at \(host):\(port)"
+            }
+            return "could not connect to shared instance"
+        }
+    }
 
     private var connection: NWConnection?
     private let queue: DispatchQueue
@@ -75,12 +100,33 @@ public final class LocalInterface: Interface {
         self.queue = DispatchQueue(label: "ReticulumSwift.LocalInterface.\(name)")
     }
 
+    /// Connect to the shared instance, returning only once the interface can
+    /// actually send — or throwing if it cannot connect at all.
+    ///
+    /// Python's `LocalClientInterface.connect()` is a blocking `socket.connect()`
+    /// that sets `online = True` on the line after it returns, so by the time
+    /// `Reticulum.__start_local_client` hands back, the client can send. Swift's
+    /// `NWConnection` is asynchronous, so returning as soon as it had been
+    /// *started* left a window in which `send()` silently discarded everything —
+    /// including the announce every utility fires immediately after attaching,
+    /// which is how a Swift local client ended up invisible to the path table of
+    /// the Swift shared instance it was attached to.
     public func start() throws {
         stateLock.lock()
         stopped = false
         reconnectCount = 0
         stateLock.unlock()
-        connect()
+
+        let ready = DispatchSemaphore(value: 0)
+        connect(signalling: ready)
+
+        guard ready.wait(timeout: .now() + connectTimeout) == .success, isOnline else {
+            // Python raises out of connect() and the interface is discarded, so
+            // leave nothing running: a caller that got an error must not later
+            // find itself silently online through a background reconnect.
+            stop()
+            throw ConnectionError.couldNotConnect(host: host, port: port)
+        }
     }
 
     public func stop() {
@@ -105,7 +151,17 @@ public final class LocalInterface: Interface {
         conn.send(content: framed, completion: .contentProcessed { _ in })
     }
 
-    private func connect() {
+    /// - Parameter signalling: when non-nil, this is the *initial* connect made
+    ///   on behalf of ``start()``. The semaphore is signalled once the outcome is
+    ///   known, and a failure is reported back rather than retried, matching
+    ///   Python — where a first connect that fails raises instead of entering the
+    ///   reconnect loop. Reconnects pass nil and keep the existing retry behaviour.
+    private func connect(signalling readySignal: DispatchSemaphore? = nil) {
+        // Consumed by whichever state arrives first; cleared so that a later
+        // failure on an already-established connection still schedules reconnects.
+        // Only ever touched from `queue`, which is serial.
+        var pendingReady = readySignal
+
         let endpoint = NWEndpoint.hostPort(
             host: NWEndpoint.Host(host),
             port: NWEndpoint.Port(rawValue: port)!
@@ -114,20 +170,76 @@ public final class LocalInterface: Interface {
         // concurrent stop() either wins (we bail) or cancels the connection we
         // just assigned (the .cancelled handler then sees stopped and bails).
         stateLock.lock()
-        guard !stopped else { stateLock.unlock(); return }
+        guard !stopped else {
+            stateLock.unlock()
+            // Nothing will ever reach the state handler, so release start()
+            // now rather than leaving it to time out.
+            pendingReady?.signal(); pendingReady = nil
+            return
+        }
         let conn = NWConnection(to: endpoint, using: .tcp)
+        // Cancel whatever we are replacing. A reconnect fires from a timer, not
+        // from stop(), so the predecessor is still live here; leaving it dangling
+        // leaks the socket and the shared instance keeps counting it as an
+        // attached client.
+        let superseded = connection
         connection = conn
         stateLock.unlock()
+        superseded?.cancel()
 
         conn.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
+            // Every arm below acts on "the interface's connection". After a
+            // stop()/start() cycle this handler can still fire for a superseded
+            // connection — its .cancelled arrives after the replacement is already
+            // live — and acting on that would take the *healthy* connection
+            // offline and schedule a reconnect that abandons it uncancelled: a
+            // leaked socket the shared instance still counts as an attached
+            // client, plus two concurrent receive loops on one HDLC decoder.
+            // Python guards the same window with `if not self.reconnecting`.
+            let isCurrent: Bool = {
+                self.stateLock.lock(); defer { self.stateLock.unlock() }
+                return self.connection === conn
+            }()
+            guard isCurrent else {
+                // Still release start() if this was its connection, or it would
+                // block for the full timeout waiting on a dead attempt.
+                pendingReady?.signal(); pendingReady = nil
+                return
+            }
             switch state {
             case .ready:
                 self.stateLock.lock(); self.reconnectCount = 0; self.stateLock.unlock()
                 self.isOnline = true
+                // Release start() only after `isOnline` is set, so send() works
+                // for the caller the instant start() returns.
+                pendingReady?.signal(); pendingReady = nil
                 self.beginReceiveLoop()
+            case .waiting:
+                // A refused connection surfaces as .waiting, not .failed —
+                // NWConnection keeps retrying a connect that has no listener.
+                // For the initial connect that is precisely the "nothing is
+                // running on 37428" case, which must fail fast: start() is called
+                // sequentially for every configured interface, so blocking here
+                // for the full connectTimeout stalls all of them (and freezes the
+                // UI if the caller is on the main thread). Python's blocking
+                // socket.connect() gets ECONNREFUSED back in milliseconds.
+                //
+                // Only the *initial* connect bails. A reconnect legitimately sits
+                // in .waiting until the shared instance comes back.
+                if let waiter = pendingReady {
+                    pendingReady = nil
+                    self.isOnline = false
+                    conn.cancel()
+                    waiter.signal()
+                }
             case .failed, .cancelled:
                 self.isOnline = false
+                if let waiter = pendingReady {
+                    pendingReady = nil
+                    waiter.signal()
+                    return
+                }
                 self.stateLock.lock()
                 let stopped = self.stopped
                 let count = self.reconnectCount

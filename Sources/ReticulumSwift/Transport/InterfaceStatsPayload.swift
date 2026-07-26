@@ -153,6 +153,12 @@ public enum InterfaceStatsPayload {
             kv("status", .bool(iface.isOnline))
             kv("mode",   .int(Int64(iface.mode.rawValue)))
 
+            // RNS 1.4.1 added both keys to `get_interface_stats()`; Python's rnstatus
+            // reads them and sorts interfaces by gravity when they are present.
+            kv("gravity", .int(Int64(iface.gravity)))
+            kv("announces_to_internal",
+               iface.announcesToInternal.map { MsgPack.Value.bool($0) } ?? .nil)
+
             return .map(pairs)
         }
 

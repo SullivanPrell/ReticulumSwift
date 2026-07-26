@@ -204,6 +204,17 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
 
     public func receivedAnnounce(destinationHash: Data, identity: Identity, appData: Data?,
                                   announcePacketHash: Data, isPathResponse: Bool) {
+        // `interface_discovery_sources` is an allowlist of announcing identities.
+        // Python rejects at reception, before any of the work below
+        // (Discovery.py:248-251) — enforcing it only when pruning stored records,
+        // as this used to, means a non-authorised peer is still dialled for the
+        // whole interval between its announce and the next prune.
+        let discoverySources = Reticulum.interfaceDiscoverySources()
+        if !discoverySources.isEmpty, !discoverySources.contains(identity.hash) {
+            Reticulum.log("Interface discovered from non-authorized network identity \(identity.hash.hexString), ignoring",
+                          level: .debug)
+            return
+        }
         guard let appData, appData.count > stampValidator.stampSize + 1 else { return }
         let flags   = appData[0]
         let payload = appData.dropFirst()
@@ -361,9 +372,25 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
                                           transportID: String,
                                           netname: String?, netkey: String?,
                                           interfaceType: String) -> String {
-        // On Apple platforms use BackboneInterface; TCP fallback would need separate logic
-        let connType = "BackboneInterface"
-        let remoteKey = "remote"
+        // RNS 1.4.1 (commit c25b56db) excludes Darwin from backbone support when
+        // connecting to a discovered BackboneInterface/TCPServerInterface:
+        //
+        //     backbone_support = not is_windows() and not is_darwin()
+        //     connection_interface = "BackboneInterface" if backbone_support else "TCPClientInterface"
+        //
+        // BackboneInterface's client side relies on epoll/kqueue semantics that
+        // do not hold on Darwin, so a discovered peer must be dialled as a plain
+        // TCPClientInterface instead. This is the whole platform ReticulumSwift
+        // targets, so every discovered peer takes the TCP path here — and the
+        // key changes with it: TCPClientInterface reads `target_host`, whereas
+        // BackboneInterface reads `remote`.
+        #if canImport(Darwin)
+        let backboneSupport = false
+        #else
+        let backboneSupport = true
+        #endif
+        let connType  = backboneSupport ? "BackboneInterface" : "TCPClientInterface"
+        let remoteKey = backboneSupport ? "remote" : "target_host"
         let idStr  = "\n  transport_identity = \(transportID)"
         let nnStr  = netname.map { "\n  network_name = \($0)" } ?? ""
         let nkStr  = netkey.map  { "\n  passphrase = \($0)" }   ?? ""
@@ -500,6 +527,16 @@ public final class InterfaceDiscovery {
     private let storagePath: URL
     private let lock = NSLock()
 
+    /// Predicate used to drop persisted discoveries belonging to blackholed
+    /// identities. Python reaches its `Reticulum` singleton
+    /// (`self.rns_instance.is_blackholed(...)`); Swift has no such singleton, so
+    /// the owner injects the check. Left `nil` the blackhole clauses are skipped,
+    /// which is the pre-1.4.1 behaviour.
+    ///
+    /// Hold this weakly at the call site — `Transport.isBlackholed` is the
+    /// intended implementation and `Transport` may outlive nothing here.
+    public var isBlackholed: ((Data) -> Bool)?
+
     // MARK: - Init
 
     /// - Parameter storagePath: Directory URL used for persistence.
@@ -553,11 +590,28 @@ public final class InterfaceDiscovery {
 
             guard var entry = info else { continue }
 
-            // Age filtering
+            // Age filtering, plus the RNS 1.4.1 hygiene clauses (commit e29b8394).
+            // Order follows Python's elif chain exactly.
             let heardDelta = now - entry.lastHeard
+            let discoverySources = Reticulum.interfaceDiscoverySources()
             let shouldRemove: Bool = {
                 if heardDelta > Self.thresholdRemove { return true }
+                // A record without a transport or network identity can never be
+                // matched against the discovery-source allowlist or the blackhole
+                // list, so it is unusable rather than merely unverified.
+                if entry.transportID.isEmpty { return true }
+                if entry.networkID.isEmpty   { return true }
+                guard let networkIDData = Data(hex: entry.networkID) else { return true }
+                if !discoverySources.isEmpty, !discoverySources.contains(networkIDData) { return true }
                 if !Self.discoverableTypes.contains(entry.type) { return true }
+                // Historical discoveries must be re-checked against the blackhole
+                // list: an identity blackholed after its record was written would
+                // otherwise stay connectable forever.
+                if let isBlackholed {
+                    if isBlackholed(networkIDData) { return true }
+                    if let transportIDData = Data(hex: entry.transportID),
+                       isBlackholed(transportIDData) { return true }
+                }
                 return false
             }()
 
