@@ -40,6 +40,24 @@ final class RNS141ParityTests: XCTestCase {
         func stop() { isOnline = false }
     }
 
+    /// A `StubInterface` that also hands what it sends to a paired peer, so a
+    /// link can actually complete its handshake.
+    private final class LoopInterface: Interface {
+        let name: String
+        var bitrate: Int = 1_000_000
+        var isOnline: Bool = true
+        var inboundHandler: ((Packet, any Interface) -> Void)?
+        weak var paired: LoopInterface?
+        init(name: String) { self.name = name }
+        func start() throws { isOnline = true }
+        func stop() { isOnline = false }
+        func send(_ packet: Packet) throws {
+            let raw = try packet.pack()
+            guard let paired else { return }
+            paired.inboundHandler?(try Packet.unpack(raw), paired)
+        }
+    }
+
     /// Feed an announce into Transport the way the wire does — through the
     /// interface's `inboundHandler`, which `register(interface:)` installs.
     private static func deliver(_ announce: Packet, on iface: any Interface) throws {
@@ -242,9 +260,18 @@ final class RNS141ParityTests: XCTestCase {
                        "Python's comparison is `announce_gravity <= current_gravity → should_add = False`")
     }
 
-    /// A gravity takeover must NOT reset the path's responsiveness state —
-    /// Python's gravity branch is the one that omits `mark_path_unknown_state`.
-    func testGravitySwapPreservesPathState() throws {
+    /// A gravity takeover resets the path's responsiveness state, like every
+    /// other accepted announce: Python calls `mark_path_unknown_state`
+    /// unconditionally inside `if should_add:` (Transport.py:2053), *after* the
+    /// path-table assignment. The per-branch inline calls higher up the ladder
+    /// are redundant with it, so the gravity branch omitting one means nothing.
+    ///
+    /// This is asserted via `markPathUnresponsive` rather than
+    /// `markPathResponsive`, because `pathIsUnresponsive` cannot distinguish
+    /// `stateResponsive` from `stateUnknown` — starting from *responsive* the
+    /// assertion would hold whether or not the reset happened, and would pass
+    /// with the behaviour it exists to pin removed.
+    func testGravitySwapResetsPathState() throws {
         let t = Transport()
         let low  = StubInterface(name: "low",  gravity: 0)
         let high = StubInterface(name: "high", gravity: 10)
@@ -257,13 +284,42 @@ final class RNS141ParityTests: XCTestCase {
         let announce = try Announce.make(for: dest)
 
         try Self.deliver(announce, on: low)
-        _ = t.markPathResponsive(for: dest.hash)
-        XCTAssertFalse(t.pathIsUnresponsive(to: dest.hash), "precondition")
+        _ = t.markPathUnresponsive(for: dest.hash)
+        XCTAssertTrue(t.pathIsUnresponsive(to: dest.hash), "precondition")
 
         try Self.deliver(announce, on: high)
         XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "high")
         XCTAssertFalse(t.pathIsUnresponsive(to: dest.hash),
-                       "a gravity swap keeps the known-good responsiveness state")
+                       "a gravity takeover must reset the path state like any other accepted announce")
+    }
+
+    /// The consequence of getting the above wrong: a latched `stateUnresponsive`
+    /// makes the more-hops/equal-emission branch (`shouldUpdate = isUnresponsive`)
+    /// fire for the *same* announce arriving over a longer, lower-gravity route,
+    /// silently handing the path back and undoing the takeover.
+    func testGravityTakeoverIsNotUndoneByALongerLowerGravityRoute() throws {
+        let t = Transport()
+        let low  = StubInterface(name: "low",  gravity: 0)
+        let high = StubInterface(name: "high", gravity: 10)
+        let far  = StubInterface(name: "far",  gravity: 0)
+        for i in [low, high, far] { t.register(interface: i) }
+
+        let dest = try Destination(identity: Identity(), direction: .in, kind: .single,
+                                   appName: "grav", aspects: ["undo"])
+        let announce = try Announce.make(for: dest)
+
+        try Self.deliver(announce, on: low)
+        _ = t.markPathUnresponsive(for: dest.hash)
+        try Self.deliver(announce, on: high)
+        XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "high", "gravity takes the path")
+
+        // Same announce, three hops away, zero gravity.
+        var farAnnounce = announce
+        farAnnounce.hops = 3
+        try Self.deliver(farAnnounce, on: far)
+
+        XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "high",
+                       "the 1-hop high-gravity path must hold; a 3-hop zero-gravity route must not reclaim it")
     }
 
     // MARK: - Spawned-interface gravity inheritance
@@ -294,6 +350,71 @@ final class RNS141ParityTests: XCTestCase {
         XCTAssertTrue(Transport.allowLinkPathRebalance,
                       "Python Transport.ALLOW_LINK_PATH_REBALANCE = True")
     }
+
+    /// A link opened with no path entry has `expectedHops == nil`, which maps onto
+    /// Python's PATHFINDER_M sentinel and therefore always disagrees with the
+    /// proof — so an ordinary establishment over a direct interface exercises the
+    /// re-balance path. The corrected hop count must be in place *before* the link
+    /// activates: Python re-balances ahead of `validate_proof`
+    /// (Transport.py:2276-2317), so no `onEstablished` observer ever sees the
+    /// stale count.
+    func testLinkRebalancesBeforeEstablishedCallbackFires() throws {
+        let (aLink, _, hopsAtCallback) = try establishRebalancingLink()
+        XCTAssertNotNil(aLink.rebalanced, "link was never marked re-balanced")
+        XCTAssertEqual(aLink.expectedHops, 0, "expectedHops was not corrected to the proof's hop count")
+        XCTAssertEqual(hopsAtCallback, 0,
+                       "the established callback observed the pre-re-balance hop count")
+    }
+
+    /// With re-balancing disabled, Python's `packet.hops == link.expected_hops`
+    /// gate is never satisfied for a mismatched proof, so `validate_proof` is not
+    /// reached and the link stays pending until it times out. Swift used to
+    /// validate the proof first and re-balance afterwards, which established the
+    /// link in a case Python leaves dead.
+    func testMismatchedProofIsNotAcceptedWhenRebalanceDisabled() throws {
+        let previous = Transport.allowLinkPathRebalance
+        Transport.allowLinkPathRebalance = false
+        defer { Transport.allowLinkPathRebalance = previous }
+
+        let aT = Transport(); let bT = Transport()
+        let bId = Identity()
+        let bDest = try Destination(identity: bId, direction: .in, kind: .single,
+                                    appName: "rebalance", aspects: ["off"])
+        bT.ownerIdentity = bId; bT.register(destination: bDest)
+        let aI = LoopInterface(name: "A"); let bI = LoopInterface(name: "B")
+        aI.paired = bI; bI.paired = aI
+        aT.register(interface: aI); bT.register(interface: bI)
+
+        var established = false
+        aT.onLinkEstablished = { _ in established = true }
+        let aLink = try Link.initiate(destination: bDest, transport: aT)
+
+        XCTAssertNil(aLink.expectedHops, "test premise: no path entry, so hops disagree")
+        XCTAssertFalse(established, "a proof whose hops disagree must not establish the link")
+        XCTAssertEqual(aLink.status, .pending)
+        XCTAssertNil(aLink.rebalanced)
+        _ = (aT, bT)
+    }
+
+    private func establishRebalancingLink() throws -> (Link, Link, Int?) {
+        let aT = Transport(); let bT = Transport()
+        let bId = Identity()
+        let bDest = try Destination(identity: bId, direction: .in, kind: .single,
+                                    appName: "rebalance", aspects: ["on"])
+        bT.ownerIdentity = bId; bT.register(destination: bDest)
+        let aI = LoopInterface(name: "A"); let bI = LoopInterface(name: "B")
+        aI.paired = bI; bI.paired = aI
+        aT.register(interface: aI); bT.register(interface: bI)
+
+        var hopsAtCallback: Int?
+        aT.onLinkEstablished = { link in hopsAtCallback = link.expectedHops }
+        let aLink = try Link.initiate(destination: bDest, transport: aT)
+        let bLink = try XCTUnwrap(bT.links[aLink.linkID!])
+        retainedForRebalance = [aT, bT]
+        return (aLink, bLink, hopsAtCallback)
+    }
+
+    private var retainedForRebalance: [Transport] = []
 
 
     // MARK: - Destination.max_request_size
@@ -335,11 +456,25 @@ final class RNS141ParityTests: XCTestCase {
                                path: "/x", requestSize: 10, maxResponseSize: 16)
         var failure: String?
         r.onFailed = { reason, _ in failure = reason }
+        r.markDelivered()
         r.responseRejected()
         guard case .failed = r.status else {
             return XCTFail("an over-size response must fail the receipt, not deliver it")
         }
         XCTAssertNotNil(failure, "Python's response_rejected() runs the failed callback")
+    }
+
+    /// Python guards `response_rejected` on `status == DELIVERED`, so a rejection
+    /// for a receipt that never reached that state fires nothing at all.
+    func testResponseRejectedIgnoredUnlessDelivered() {
+        let r = RequestReceipt(requestID: Data(repeating: 2, count: 16),
+                               path: "/x", requestSize: 10, maxResponseSize: 16)
+        var failed = false
+        r.onFailed = { _, _ in failed = true }
+        r.responseRejected()   // still .sent
+        XCTAssertEqual(r.status, .sent,
+                       "a rejection before delivery must leave the receipt untouched")
+        XCTAssertFalse(failed, "Python fires no callback in this case")
     }
 
     // MARK: - Log level
@@ -358,18 +493,22 @@ final class RNS141ParityTests: XCTestCase {
         var delivered = 0
         ch.addMessageHandler { _ in delivered += 1; return true }
 
-        // A far-future sequence must be dropped outright rather than buffered.
-        // Observable behaviour: after dropping it, filling the whole window
-        // 0..<WINDOW_MAX delivers exactly WINDOW_MAX messages — the out-of-window
-        // frame is not sitting in the ring waiting to be delivered as well.
+        // A far-future sequence must be DROPPED, not merely left undelivered.
+        //
+        // Distinguishing the two takes care: an out-of-window frame that is
+        // buffered still delivers nothing on arrival (it is not contiguous), so
+        // filling only 0..<WINDOW_MAX cannot tell "dropped" from "buffered" —
+        // both yield WINDOW_MAX deliveries. Fill 0...WINDOW_MAX instead, which
+        // advances nextRxSequence to WINDOW_MAX+1: if the frame had been
+        // buffered it would now become contiguous and deliver too.
         ch.receive(Self.frame(seq: UInt16(Channel.WINDOW_MAX + 1), value: 0x01))
         XCTAssertEqual(delivered, 0, "an out-of-window frame delivers nothing on arrival")
 
-        for s in 0..<Channel.WINDOW_MAX {
+        for s in 0...Channel.WINDOW_MAX {
             ch.receive(Self.frame(seq: UInt16(s), value: 0x02))
         }
-        XCTAssertEqual(delivered, Channel.WINDOW_MAX,
-                       "the dropped far-future frame must not be buffered; only the in-window run delivers")
+        XCTAssertEqual(delivered, Channel.WINDOW_MAX + 1,
+                       "the far-future frame must have been dropped; if it were buffered it would deliver here too")
     }
 
     private static func frame(seq: UInt16, value: UInt8) -> Data {

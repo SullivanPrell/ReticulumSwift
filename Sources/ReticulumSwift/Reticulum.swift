@@ -505,7 +505,10 @@ loglevel = 4
 
     /// Returns the list of network identity hashes from which interfaces are discovered.
     /// Mirrors Python's `Reticulum.interface_discovery_sources()`.
-    public private(set) static var interfaceDiscoverySources_: [Data] = []
+    /// `internal(set)`, not `private(set)`: the announce-time allowlist check in
+    /// `InterfaceAnnounceHandler` needs to be testable, and config loading (the
+    /// only production writer) already lives in this module.
+    public internal(set) static var interfaceDiscoverySources_: [Data] = []
     public static func interfaceDiscoverySources() -> [Data] { interfaceDiscoverySources_ }
 
     /// Maximum number of discovered interfaces to auto-connect to.
@@ -868,9 +871,15 @@ loglevel = 4
                 if let t = ifCfg.int("max_reconnect_tries") { li.maxReconnectTries = t }
                 iface = li
 
-            case "BackboneInterface":
-                guard let host = ifCfg["target_host"],
-                      let port = ifCfg.int("target_port") else { continue }
+            case "BackboneInterface", "BackboneClientInterface":
+                // Python accepts a set of aliases for this interface family before
+                // constructing it (Reticulum.py:988-992): `remote` → `target_host`,
+                // `port` → both `listen_port` and `target_port`. Written configs —
+                // including the one RNS's own discovery emits for a backbone peer —
+                // use `remote`/`port`, so without the aliases the entry parsed to
+                // nothing and the interface was silently skipped.
+                guard let host = ifCfg["target_host"] ?? ifCfg["remote"],
+                      let port = ifCfg.int("target_port") ?? ifCfg.int("port") else { continue }
                 let bb = BackboneInterface(name: ifCfg.name, host: host, port: UInt16(port))
                 iface = bb
 

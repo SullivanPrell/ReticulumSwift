@@ -162,7 +162,14 @@ public final class RequestReceipt {
     /// concluded (ready/failed). Distinct from `updateProgress` so the request
     /// *send* path (a large outbound request resource) is unaffected — only an
     /// incoming response resource disarms the timeout.
-    func beginReceivingResponse() {
+    /// - Parameter advertisedSize: the response's advertised size in bytes, if
+    ///   known. Python assigns `pending_request.response_size` from
+    ///   `ResourceAdvertisement.read_size(packet)` as soon as the response
+    ///   advertisement arrives (Link.py), which is what lets a caller's progress
+    ///   callback render "x of y bytes" while the transfer is still running.
+    ///   Without it `responseSize` stayed nil until the transfer concluded, so
+    ///   anything reading it mid-transfer saw nothing.
+    func beginReceivingResponse(advertisedSize: Int? = nil) {
         stateLock.lock()
         switch _status {
         case .ready, .failed: stateLock.unlock(); return
@@ -170,6 +177,7 @@ public final class RequestReceipt {
         }
         timeoutItem?.cancel()
         timeoutItem = nil
+        if let advertisedSize, _responseSize == nil { _responseSize = advertisedSize }
         _status = .receiving(_progress)
         stateLock.unlock()
     }
@@ -218,7 +226,18 @@ public final class RequestReceipt {
     /// Mirrors Python's RNS 1.4.1 `RequestReceipt.response_rejected()`, which
     /// runs the *failed* callback path — a caller that set a size cap wants a
     /// failure, not a truncated success.
+    ///
+    /// Python guards on `self.status == RequestReceipt.DELIVERED`, so a rejection
+    /// arriving for a receipt that is merely `SENT`, already `RECEIVING`, or
+    /// already concluded fires nothing at all. `fail()` alone is more permissive
+    /// than that (it accepts any non-terminal state), so the state check is made
+    /// explicit here.
     func responseRejected() {
+        stateLock.lock()
+        let isDelivered: Bool
+        if case .delivered = _status { isDelivered = true } else { isDelivered = false }
+        stateLock.unlock()
+        guard isDelivered else { return }
         fail("response exceeds maximum accepted size")
     }
 
@@ -503,12 +522,16 @@ extension Link {
         case .bytes(let b): responseData = Data(b)  // already bytes (old Swift encoding)
         default:            responseData = MsgPack.encode(parts[1])  // native value (Python encoding)
         }
-        // RNS 1.4.1 `max_response_size`. Python measures the *transfer size* here
-        // (`len(umsgpack.packb(response_data))-2`, i.e. the encoded response value
-        // minus the 2-byte array framing), not the length of the whole envelope —
-        // so cap the re-encoded response value, which is the same quantity.
-        if let cap = receipt.maxResponseSize, responseData.count > cap {
-            Reticulum.log("Rejected response with excessive size \(responseData.count) B on \(self)", level: .debug)
+        // RNS 1.4.1 `max_response_size`. Python measures
+        // `len(umsgpack.packb(response_data)) - 2` — the response value re-encoded
+        // as msgpack, less 2 — and caps THAT, not the delivered payload. The two
+        // differ: for a native value the delivered bytes are the encoding without
+        // the -2, and for a `.bytes` response the delivered bytes omit the msgpack
+        // bin header entirely. Measure Python's quantity explicitly rather than
+        // reusing whatever `responseData` happens to be.
+        let measuredSize = MsgPack.encode(parts[1]).count - 2
+        if let cap = receipt.maxResponseSize, measuredSize > cap {
+            Reticulum.log("Rejected response with excessive size \(measuredSize) B on \(self)", level: .debug)
             receipt.responseRejected()
             return
         }

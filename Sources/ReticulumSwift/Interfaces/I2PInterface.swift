@@ -199,6 +199,12 @@ public final class I2PInterface: Interface {
     public func addSpawnedInterface(_ peer: I2PInterfacePeer) {
         // Inbound (accepted) peers inherit routing preference from the parent
         // just like the outbound ones spawned in `start()`.
+        //
+        // Nothing in the library calls this yet — the SAM `STREAM ACCEPT`
+        // inbound-listen path is not implemented, so today only tests reach it.
+        // The assignment belongs here rather than at the future call site: it is
+        // the parent that knows its own gravity, and an inbound peer that routes
+        // without it would quietly ignore the operator's path preference.
         peer.gravity = gravity
         lock.lock(); spawned.append(peer); lock.unlock()
     }

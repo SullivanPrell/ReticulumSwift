@@ -204,6 +204,17 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
 
     public func receivedAnnounce(destinationHash: Data, identity: Identity, appData: Data?,
                                   announcePacketHash: Data, isPathResponse: Bool) {
+        // `interface_discovery_sources` is an allowlist of announcing identities.
+        // Python rejects at reception, before any of the work below
+        // (Discovery.py:248-251) — enforcing it only when pruning stored records,
+        // as this used to, means a non-authorised peer is still dialled for the
+        // whole interval between its announce and the next prune.
+        let discoverySources = Reticulum.interfaceDiscoverySources()
+        if !discoverySources.isEmpty, !discoverySources.contains(identity.hash) {
+            Reticulum.log("Interface discovered from non-authorized network identity \(identity.hash.hexString), ignoring",
+                          level: .debug)
+            return
+        }
         guard let appData, appData.count > stampValidator.stampSize + 1 else { return }
         let flags   = appData[0]
         let payload = appData.dropFirst()

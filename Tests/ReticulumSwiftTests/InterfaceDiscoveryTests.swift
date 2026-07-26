@@ -266,6 +266,47 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
         XCTAssertEqual(result?.frequency ?? 0.0, 144200000.0, accuracy: 1.0)
     }
 
+    /// `interface_discovery_sources` is an allowlist of announcing identities.
+    /// Python applies it at the top of `received_announce` (Discovery.py:248-251);
+    /// applying it only when pruning stored records left an unauthorised peer
+    /// discoverable — and dialable — until the next prune.
+    func testAnnounceFromUnauthorizedIdentityIsIgnored() {
+        let previous = Reticulum.interfaceDiscoverySources_
+        defer { Reticulum.interfaceDiscoverySources_ = previous }
+
+        let authorized = makeIdentity()
+        let stranger   = makeIdentity()
+        Reticulum.interfaceDiscoverySources_ = [authorized.hash]
+
+        var result: DiscoveredInterfaceInfo?
+        let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough) { result = $0 }
+        let payload = makePayload(info: backboneInfo())
+
+        handler.receivedAnnounce(destinationHash: Data(repeating: 0, count: 16),
+                                 identity: stranger, appData: payload,
+                                 announcePacketHash: Data(repeating: 0, count: 4), isPathResponse: false)
+        XCTAssertNil(result, "an identity outside the allowlist must not be discovered")
+
+        handler.receivedAnnounce(destinationHash: Data(repeating: 0, count: 16),
+                                 identity: authorized, appData: payload,
+                                 announcePacketHash: Data(repeating: 0, count: 4), isPathResponse: false)
+        XCTAssertNotNil(result, "an allowlisted identity must still be discovered")
+    }
+
+    /// An empty allowlist means "no restriction", not "reject everything".
+    func testEmptyDiscoverySourcesAllowsAnyIdentity() {
+        let previous = Reticulum.interfaceDiscoverySources_
+        defer { Reticulum.interfaceDiscoverySources_ = previous }
+        Reticulum.interfaceDiscoverySources_ = []
+
+        var result: DiscoveredInterfaceInfo?
+        let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough) { result = $0 }
+        handler.receivedAnnounce(destinationHash: Data(repeating: 0, count: 16),
+                                 identity: makeIdentity(), appData: makePayload(info: backboneInfo()),
+                                 announcePacketHash: Data(repeating: 0, count: 4), isPathResponse: false)
+        XCTAssertNotNil(result)
+    }
+
     func testInvalidInterfaceTypeIgnored() {
         var called = false
         let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough) { _ in called = true }

@@ -265,7 +265,19 @@ public final class Link {
     /// destination; on the responder it is the hop count of the incoming RTT
     /// packet. Mirrors Python `Link.expected_hops` (RNS 1.3.8 made this
     /// available on the responder side as well). `nil` until known.
-    public var expectedHops: Int?
+    ///
+    /// Guarded by `stateLock`. Both writers run off the network: the responder
+    /// sets it from the RTT packet, and `Transport` rewrites it from a
+    /// link-request proof that can arrive on a different interface thread while
+    /// the watchdog is reading it.
+    public var expectedHops: Int? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _expectedHops }
+        set { stateLock.lock(); _expectedHops = newValue; stateLock.unlock() }
+    }
+    /// Backing store for `expectedHops`, for the call sites that already hold
+    /// `stateLock` (it is a plain `NSLock`, so re-entering through the property
+    /// would deadlock).
+    var _expectedHops: Int?
 
     /// When this link's path was re-balanced from a link-request proof whose
     /// hop count disagreed with `expectedHops`, or `nil` if it never was.
@@ -273,7 +285,28 @@ public final class Link {
     /// once (`if not link.rebalanced:`), so a flapping route cannot keep
     /// rewriting the path table for the lifetime of the link.
     /// Mirrors Python's RNS 1.4.1 `Link.rebalanced`.
-    public var rebalanced: Date?
+    public var rebalanced: Date? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _rebalanced }
+    }
+    private var _rebalanced: Date?
+
+    /// Claim the once-only re-balance for this link, recording `hops` as the new
+    /// expectation if the claim succeeds.
+    ///
+    /// - Returns: `true` for the caller that won the latch, `false` if this link
+    ///   has already been re-balanced.
+    ///
+    /// Test-and-set under `stateLock` rather than a read followed by a write, so
+    /// two proofs arriving on different interface threads cannot both pass the
+    /// guard. The caller must not hold `Transport.lock` — the established order
+    /// is Transport.lock last, never over a link's own lock.
+    func claimRebalance(toHops hops: Int) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        guard _rebalanced == nil else { return false }
+        _rebalanced = Date()
+        _expectedHops = hops
+        return true
+    }
 
     /// Establishment timeout. Defaults to `establishmentTimeoutPerHop`
     /// seconds; scaled up by hop count when the path is known.
@@ -940,6 +973,31 @@ public final class Link {
 
     /// Process an incoming LRPR packet. On success, the link transitions to
     /// `.active`, sends the encrypted RTT packet, and fires `onEstablished`.
+    /// Whether `packet` carries a valid link-request-proof signature for this
+    /// link, without adopting any of it.
+    ///
+    /// `validateProof` does the same check as its first step, but it also
+    /// activates the link. Path re-balancing has to establish that the proof is
+    /// genuine *before* it rewrites the path table — otherwise anyone able to
+    /// forge a proof could move a path — and it has to run before the link is
+    /// activated, so an `onEstablished` observer sees the corrected hop count.
+    /// Mirrors the inline signature check Python performs for exactly this
+    /// purpose in `Transport.inbound` (Transport.py:2279-2296).
+    func proofSignatureIsValid(_ packet: Packet) -> Bool {
+        let baseLen = Constants.signatureLength + Constants.halfKeySize
+        guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }
+        let signature = packet.data.prefix(Constants.signatureLength)
+        let responderPubBytes = packet.data[Constants.signatureLength ..< baseLen]
+        let signallingBytes: Data = packet.data.count == baseLen + 3
+            ? Data(packet.data[baseLen...])
+            : Data()
+        guard let destinationIdentity = destination.identity, let linkID else { return false }
+        let responderSigPub = destinationIdentity.signingPublicKey
+        let signedData = linkID + responderPubBytes
+            + responderSigPub.rawRepresentation + signallingBytes
+        return responderSigPub.isValidSignature(signature, for: signedData)
+    }
+
     public func validateProof(_ packet: Packet) throws {
         guard role == .initiator else { throw LinkError.invalidState }
         guard status == .pending else { throw LinkError.invalidState }
@@ -1045,7 +1103,7 @@ public final class Link {
         self.establishedAt = Date()
         // Record the hop count of the RTT packet so the responder also knows the
         // link's hop distance. Python (RNS 1.3.8): self.expected_hops = packet.hops
-        self.expectedHops = Int(packet.hops)
+        self._expectedHops = Int(packet.hops)
         stateLock.unlock()
         onEstablished?(self)
     }
@@ -1457,7 +1515,15 @@ public final class Link {
                         // time*, before a single part is transferred. `adv.dataSize`
                         // is the advertised plaintext size, matching Python's
                         // `ResourceAdvertisement.read_size(packet)`.
-                        if let cap = destination.maxRequestSize, Int(adv.dataSize) > cap {
+                        // Compare in UInt64: `adv.dataSize` comes straight off the
+                        // wire and `ResourceAdvertisement.unpack` only bounds-checks
+                        // the transfer size, so a hostile advertisement can carry any
+                        // 64-bit `d`. `Int(_: UInt64)` is a *trapping* conversion —
+                        // any d >= 2^63 would abort the process instead of rejecting
+                        // the advertisement. Python compares arbitrary-precision ints
+                        // and simply rejects. (A negative cap is impossible:
+                        // setMaxRequestSize rejects it.)
+                        if let cap = destination.maxRequestSize, adv.dataSize > UInt64(cap) {
                             Reticulum.log("Rejected request with excessive size \(adv.dataSize) B on \(self)", level: .debug)
                             try? send(adv.resourceHash, context: .resourceReceiverCancel)
                         } else {
@@ -1576,8 +1642,18 @@ public final class Link {
             self.onResourceConcluded?(payload, adv, self)
         }
         registerIncomingResource(rt)
-        onResourceStarted?(rt)
-        rt.receiveAdvertisement(rawAdv)
+        // The started callback has to fire from *inside* receiveAdvertisement,
+        // between adopting the advertisement and starting the transfer, because
+        // that is the first moment `rt.resourceHash` holds the real hash.
+        // Calling it out here (as this did) handed every observer a transfer
+        // still carrying the empty initial hash — LXMF keys its inbound registry
+        // on exactly that value, so every concurrent transfer collided on
+        // `Data()` and `cancelInbound(resourceHash:)` could never match.
+        // Python has no such gap: `Resource.accept` populates the resource and
+        // only then calls `link.callbacks.resource_started` (Resource.py:224-230).
+        rt.receiveAdvertisement(rawAdv) { [weak self] transfer in
+            self?.onResourceStarted?(transfer)
+        }
     }
 
     private func handleIncomingRequestResource(adv: ResourceAdvertisement, rawAdv: Data) {
@@ -1609,7 +1685,10 @@ public final class Link {
         // RNS 1.4.1 `max_response_size`, checked against the advertised size so an
         // oversized response is refused before any part is transferred. Python
         // rejects the resource AND fails the receipt — do both, in that order.
-        if let cap = receipt.maxResponseSize, Int(adv.dataSize) > cap {
+        // UInt64 comparison for the same reason as the request path above: a
+        // trapping Int conversion here would turn a hostile advertisement into a
+        // remote process abort.
+        if let cap = receipt.maxResponseSize, cap >= 0, adv.dataSize > UInt64(cap) {
             Reticulum.log("Rejected response with excessive size \(adv.dataSize) B on \(self)", level: .debug)
             try? send(adv.resourceHash, context: .resourceReceiverCancel)
             evictPendingRequest(requestID)
@@ -1623,7 +1702,7 @@ public final class Link {
         // RequestReceipt entering RECEIVING (Link.py response_resource_progress),
         // which stops the request-timeout job. Without this, any response Resource
         // still in flight at the timeout is aborted mid-download.
-        receipt.beginReceivingResponse()
+        receipt.beginReceivingResponse(advertisedSize: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil)
         let rt = ResourceTransfer(link: self)
         // Surface transfer progress on the receipt (keeps its status/progress in
         // sync for any observer; wire-neutral).

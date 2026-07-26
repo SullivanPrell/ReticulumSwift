@@ -128,7 +128,20 @@ public final class ResourceTransfer {
     /// Mirrors Python's `Resource.get_progress()`.
     public var progress: Double {
         stateLock.lock(); defer { stateLock.unlock() }
+        return progressLocked()
+    }
+
+    /// `progress` without taking the lock, for callers that already hold it.
+    private func progressLocked() -> Double {
         if case .complete = _status { return 1.0 }
+        // Python's `get_progress` branches on `self.initiator`: a sender measures
+        // parts *sent*, a receiver parts *received* (Resource.py:1146-1149). Using
+        // the receive counter for both left every sender pinned at 0.0 until the
+        // moment it completed.
+        if !isReceiver {
+            if mapHashes.isEmpty { return 0.0 }
+            return min(1.0, Double(sentMapHashes.count) / Double(mapHashes.count))
+        }
         if totalParts == 0 { return 0.0 }
         return min(1.0, Double(receivedCount) / Double(totalParts))
     }
@@ -176,8 +189,21 @@ public final class ResourceTransfer {
     public func getSegments() -> Int { segmentCount }
     public func getHash() -> Data { hash }
 
-    /// Called periodically with (progress, resource) as parts arrive.
+    /// Called with (progress, resource) as each part is accepted (receiver) or a
+    /// batch of parts goes out (sender).
+    /// Mirrors Python's `progress_callback` (Resource.py:889-893 receiver,
+    /// 1079-1081 sender).
     public var onProgress: ((Double, ResourceTransfer) -> Void)?
+
+    /// Fire `onProgress` with the current value. Must be called with the state
+    /// lock *released*: the callback is app code and reaches back into the
+    /// transfer (`progress`, `resourceHash`) and, via RequestReceipt, into the
+    /// link. Python has the same constraint and swallows callback exceptions;
+    /// Swift's non-throwing closure gives us that for free.
+    private func emitProgress() {
+        guard let cb = onProgress else { return }
+        cb(progress, self)
+    }
 
     /// Set the completion callback. Mirrors Python `Resource.set_callback(callback)`.
     public func setCallback(_ callback: @escaping (ResourceTransfer) -> Void) {
@@ -534,6 +560,10 @@ public final class ResourceTransfer {
             _status = .awaitingProof
         }
         stateLock.unlock()
+
+        // Sender-side progress, fired once per batch of outgoing parts exactly as
+        // Python does at the tail of its send loop (Resource.py:1075-1081).
+        emitProgress()
     }
 
     /// Called by Link when a RESOURCE_PRF proof arrives for our resource hash.
@@ -619,7 +649,17 @@ public final class ResourceTransfer {
     }
 
     /// Called by Link when a RESOURCE_ADV arrives (decrypted plaintext).
-    internal func receiveAdvertisement(_ data: Data) {
+    ///
+    /// - Parameter started: fired once the advertisement has been adopted but
+    ///   before the transfer machinery starts, mirroring where Python invokes
+    ///   `link.callbacks.resource_started` inside `Resource.accept`
+    ///   (Resource.py:224-230 — after `resource.hash = adv.h`, before
+    ///   `hashmap_update`/`watchdog_job`). The position matters: an observer
+    ///   called any earlier is handed a transfer whose `resourceHash` is still
+    ///   empty. It is not fired at all for an advertisement we reject, which is
+    ///   also what Python does (`accept` returns `None` without calling back).
+    internal func receiveAdvertisement(_ data: Data,
+                                       started: ((ResourceTransfer) -> Void)? = nil) {
         guard let adv = try? ResourceAdvertisement.unpack(data) else {
             fail("unparseable advertisement")
             return
@@ -669,6 +709,8 @@ public final class ResourceTransfer {
         if startedTransferring == nil { startedTransferring = Date() }
         stateLock.unlock()
 
+        started?(self)
+
         startWatchdog()
         sendRequest()
     }
@@ -687,6 +729,7 @@ public final class ResourceTransfer {
         let searchStart = max(0, consecutiveCompletedHeight + 1)
         let searchEnd = min(searchStart + window, totalParts)
 
+        var acceptedPart = false
         for i in searchStart ..< searchEnd {
             guard let mh = hashmap[i], mh == partHashData else { continue }
             if parts[i] == nil {
@@ -703,6 +746,7 @@ public final class ResourceTransfer {
                         cp += 1
                     }
                 }
+                acceptedPart = true
             }
             break
         }
@@ -714,6 +758,14 @@ public final class ResourceTransfer {
             doSendRequest = true
         }
         stateLock.unlock()
+
+        // Python fires the progress callback for every newly-accepted part, right
+        // after advancing the consecutive-completed pointer (Resource.py:889-893).
+        // Swift declared `onProgress` but never called it from anywhere, so every
+        // progress observer above this layer was inert — including
+        // `RequestReceipt.updateProgress`, and therefore LXMF's propagation-sync
+        // progress and transfer size, which only exist to be read mid-transfer.
+        if acceptedPart { emitProgress() }
 
         // ACT OUTSIDE LOCK (assemble/sendRequest do their own locking + callouts).
         if doAssemble {

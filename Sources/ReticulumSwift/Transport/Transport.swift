@@ -564,10 +564,17 @@ public final class Transport {
 
     /// Gravity of the interface the current path for `destinationHash` was heard
     /// on, or `nil` when there is no path or the interface is no longer
-    /// registered. Mirrors Python's
-    /// `Transport.path_table[dst][IDX_PT_RVCD_IF].gravity`, which is a live
-    /// reference to the interface object — so this resolves the interface each
-    /// time rather than snapshotting gravity into the path entry.
+    /// registered.
+    ///
+    /// Python reads `Transport.path_table[dst][IDX_PT_RVCD_IF].gravity` off a
+    /// stored interface object, so it keeps answering after the interface is
+    /// detached. Swift stores the interface *name* in the path entry and
+    /// re-resolves it here, which matches Python for every registered interface
+    /// and diverges once the interface is gone: Python compares against the dead
+    /// interface's gravity, Swift returns `nil` and the caller declines the
+    /// takeover. That is the fail-closed direction (a path is never pulled onto
+    /// another interface on the strength of a stale gravity reading), and it
+    /// follows the same resolve-by-name convention as `nextHopInterface(for:)`.
     ///
     /// **Caller must already hold `lock`.** Python's `announce_gravity == None
     /// or current_gravity == None → should_add = False` maps onto this
@@ -2690,20 +2697,39 @@ public final class Transport {
 
     private func handleLinkRequestProof(_ packet: Packet, from interface: Interface) {
         if let link = lookupLink(packet.destinationHash) {
-            // Snapshot before validateProof, which flips status away from
-            // .pending and is what Python gates re-balancing on.
             let proofHops = Int(packet.hops)
-            let hopsDisagree = link.expectedHops.map { $0 != proofHops } ?? false
-            do {
-                try link.validateProof(packet)
-                // RNS 1.4.1 path re-balancing at the link terminus. Python runs
-                // its own signature check *before* accepting the proof and only
-                // then rewrites the hop counts; `validateProof` has just done
-                // that verification and thrown on failure, so reaching here is
-                // the same guarantee — a forged proof can never move a path.
-                if Transport.allowLinkPathRebalance, hopsDisagree {
+            // Python's `hops_to` returns PATHFINDER_M for an unknown path, never
+            // None, so `link.expected_hops` is always an int and a pathless link
+            // compares against a sentinel that can never equal a real hop count —
+            // i.e. it ALWAYS disagrees and always re-balances. Swift models the
+            // unknown case as nil, so map it onto the same sentinel; treating nil
+            // as "agrees" would skip re-balancing for exactly the pathless links
+            // that most need it.
+            if (link.expectedHops ?? Transport.pathfinderM) != proofHops {
+                // RNS 1.4.1 path re-balancing at the link terminus. Python
+                // re-balances *before* validating the proof, and then accepts the
+                // proof only if the hop counts agree (Transport.py:2276-2317):
+                // re-balancing sets `expected_hops = packet.hops`, so a successful
+                // re-balance is what makes them agree. Ordering matters twice
+                // over — the path table and `expectedHops` must be corrected
+                // before the link goes active, or every `onEstablished` observer
+                // reads the stale hop count.
+                //
+                // Re-balancing verifies the signature itself rather than relying
+                // on `validateProof`, which has not run yet; a forged proof
+                // therefore still cannot move a path.
+                if Transport.allowLinkPathRebalance, link.status == .pending,
+                   link.proofSignatureIsValid(packet) {
                     rebalancePath(for: link, toHops: proofHops)
                 }
+                // Still disagreeing means the re-balance did not happen —
+                // disabled, already latched for this link, or a bad signature. In
+                // every one of those cases Python never reaches `validate_proof`
+                // and the link simply stays pending until it times out.
+                guard (link.expectedHops ?? Transport.pathfinderM) == proofHops else { return }
+            }
+            do {
+                try link.validateProof(packet)
                 // Fire the transport-level callback for the initiator side.
                 // The destination's onLinkEstablished is intentionally NOT
                 // fired here — it belongs to the responder side and is wired
@@ -2743,11 +2769,13 @@ public final class Transport {
     /// Latched by `link.rebalanced` so each link re-balances at most once,
     /// matching Python's `if not link.rebalanced:` guard.
     private func rebalancePath(for link: Link, toHops hops: Int) {
+        // Claim the latch on the link first, under the link's own lock and
+        // *before* taking `lock`: a read-then-write across two threads could
+        // otherwise let two proofs both pass the guard, and taking `lock` while
+        // holding a link lock would invert the established order.
+        guard link.claimRebalance(toHops: hops) else { return }
         lock.lock()
         defer { lock.unlock() }
-        guard link.rebalanced == nil else { return }
-        link.rebalanced = Date()
-        link.expectedHops = hops
         let destinationHash = link.destination.hash
         if var entry = paths[destinationHash], entry.hops != UInt8(truncatingIfNeeded: hops) {
             entry.hops = UInt8(truncatingIfNeeded: hops)
@@ -2939,8 +2967,25 @@ public final class Transport {
                 // returns True unconditionally for a duplicate SINGLE announce
                 // (Transport.py:1417-1425), and every duplicate reaches the
                 // `should_add` ladder. This early return is a Swift-only
-                // optimisation, so each ladder branch that can fire on a
-                // duplicate needs a matching exemption here.
+                // optimisation, so every ladder branch that a duplicate can
+                // still satisfy needs a matching exemption here.
+                //
+                // Which branches those are: the ladder's remaining accept
+                // branches all require `!blobSeen`, and a duplicate that already
+                // updated the path recorded its blob on the first pass — so for a
+                // duplicate only the two exempted below (gravity takeover, and
+                // reviving an unresponsive path, both of which turn on equal
+                // emission rather than an unheard blob) can fire.
+                //
+                // Known residual divergence: the dedup cache is populated above,
+                // *before* the blackhole / ingress-burst / announce-rate filters
+                // run. An announce dropped by one of those never reaches the
+                // ladder and so never records its blob, yet its cache entry
+                // survives — a later copy at equal-or-greater hops is then
+                // swallowed here where Python would still evaluate it. Narrow
+                // (it needs a first copy dropped by a rate limiter and a second
+                // copy on a non-shorter route) and fail-closed, so it is left
+                // as-is rather than reordering the filters around the cache.
                 let higherGravity = currentPathGravityLocked(decoded.destinationHash)
                     .map { interface.gravity > $0 } ?? false
                 if packet.hops >= existingHops, !unresponsive, !higherGravity {
@@ -3010,9 +3055,6 @@ public final class Transport {
             //    (the existing path's source may have moved or the old path is stale).
             // 5. Update if the existing path is expired.
             let shouldUpdate: Bool
-            // Set when the update was won purely on interface gravity, which is
-            // the one Python branch that does not call `mark_path_unknown_state`.
-            var gravitySwap = false
             pathStatesLock.lock()
             let isUnresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
             pathStatesLock.unlock()
@@ -3057,12 +3099,8 @@ public final class Transport {
                     } else if let currentGravity = currentPathGravityLocked(decoded.destinationHash) {
                         // RNS 1.4.1: the same announce arriving on an interface
                         // with strictly higher gravity pulls the path onto that
-                        // interface. Note this deliberately does NOT mark the
-                        // path unknown — Python omits `mark_path_unknown_state`
-                        // in this branch alone, so a working path keeps its
-                        // responsiveness state across a gravity swap.
+                        // interface.
                         shouldUpdate = interface.gravity > currentGravity
-                        gravitySwap = shouldUpdate
                     } else {
                         // Python: `announce_gravity == None or current_gravity
                         // == None → should_add = False`.
@@ -3113,15 +3151,25 @@ public final class Transport {
                 lock.unlock()
                 try? cacheAnnounce(packet, receivingInterfaceName: interface.name)
                 lock.lock()
-                // Reset responsiveness state when path is updated with fresh announce.
-                // Mirrors Python: Transport.mark_path_unknown_state(destination_hash)
-                // — except on a pure gravity takeover, where Python's branch
-                // omits that call so the known-good path keeps its state.
-                if !gravitySwap {
-                    pathStatesLock.lock()
-                    pathStates[decoded.destinationHash] = Transport.stateUnknown
-                    pathStatesLock.unlock()
-                }
+                // Reset responsiveness state whenever the path table is updated.
+                //
+                // Python calls `mark_path_unknown_state` UNCONDITIONALLY inside
+                // `if should_add:` (Transport.py:2053), immediately after the
+                // path_table assignment — so every accepted announce resets the
+                // state, gravity takeover included. The per-branch inline
+                // `mark_path_unknown_state` calls higher up the ladder are
+                // redundant with it, and three branches omit them (the
+                // unknown-destination, gravity and unresponsive-revive
+                // branches); none of those escapes this tail call.
+                //
+                // Do not be tempted to preserve the old state on a gravity
+                // takeover: a latched `stateUnresponsive` would immediately let
+                // the `emittedAt == pathTimebase → shouldUpdate = isUnresponsive`
+                // branch below hand the path to any longer, lower-gravity route
+                // that repeats the same announce, silently undoing the takeover.
+                pathStatesLock.lock()
+                pathStates[decoded.destinationHash] = Transport.stateUnknown
+                pathStatesLock.unlock()
             }
             // Attach app_data to the identity so callers can retrieve it via
             // Identity.recallAppData / Transport.recallAppData.  Python stores this in
