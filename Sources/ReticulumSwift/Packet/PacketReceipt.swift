@@ -32,6 +32,16 @@ public final class PacketReceipt {
     public private(set) var status: Status = .sent
     public private(set) var proved: Bool = false
 
+    /// The inbound proof `Packet` that concluded this receipt, when the proof arrived as
+    /// a packet rather than as bare bytes.
+    ///
+    /// Mirrors Python's `PacketReceipt.proof_packet` (Packet.py:411), which is likewise
+    /// only populated by `validate_proof_packet` → `validate_proof(proof, proof_packet)`
+    /// (Packet.py:427-431) and legitimately stays `None` otherwise. Its value to callers
+    /// is the physical-layer metadata the receiving interface stamped on it — `rssi`,
+    /// `snr`, `quality` — which `rnprobe` reports for a delivered probe.
+    public private(set) var proofPacket: Packet?
+
     /// Timeout interval in seconds. When `sentAt + timeout < now` the
     /// receipt transitions to `.failed` (or `.culled` when `timeout == -1`).
     public var timeout: TimeInterval
@@ -122,8 +132,12 @@ public final class PacketReceipt {
     /// If the signature over the packet hash verifies against the
     /// destination's identity, marks the receipt delivered.
     /// Mirrors Python's `PacketReceipt.validate_proof` (EXPL_LENGTH branch).
+    ///
+    /// - Parameter packet: the inbound proof packet, when one is available. Recorded on
+    ///   ``proofPacket`` so callers can read its PHY metadata, matching Python's
+    ///   `validate_proof(proof, proof_packet)`.
     @discardableResult
-    func validateExplicitProof(_ proof: Data) -> Bool {
+    func validateExplicitProof(_ proof: Data, packet: Packet? = nil) -> Bool {
         guard status == .sent else { return false }
         guard proof.count == PacketReceipt.explicitProofLength else { return false }
         let proofHash = proof.prefix(Constants.fullHashLength)
@@ -131,7 +145,7 @@ public final class PacketReceipt {
         guard proofHash == packetHash else { return false }
         guard let identity = peerIdentity else { return false }
         guard identity.validate(signature: signature, for: packetHash) else { return false }
-        return markDelivered()
+        return markDelivered(packet)
     }
 
     /// Validate an implicit proof: just a 64-byte Ed25519 signature over the
@@ -140,23 +154,26 @@ public final class PacketReceipt {
     /// Unlike explicit proofs, implicit proofs cannot be pre-filtered by hash,
     /// so the caller must try this against every outstanding receipt.
     @discardableResult
-    func validateImplicitProof(_ proof: Data) -> Bool {
+    func validateImplicitProof(_ proof: Data, packet: Packet? = nil) -> Bool {
         guard status == .sent else { return false }
         guard proof.count == PacketReceipt.implicitProofLength else { return false }
         guard let identity = peerIdentity else { return false }
         guard identity.validate(signature: proof, for: packetHash) else { return false }
-        return markDelivered()
+        return markDelivered(packet)
     }
 
     /// Atomic terminal-state commit. Returns `true` iff this call won the race
     /// (transitioned from `.sent` to `.delivered`); a loser returns `false`
     /// without firing a callback. The delivery callback fires outside the lock.
     @discardableResult
-    private func markDelivered() -> Bool {
+    private func markDelivered(_ packet: Packet? = nil) -> Bool {
         stateLock.lock()
         guard status == .sent else { stateLock.unlock(); return false }
         status = .delivered
         proved = true
+        // Assigned under the same lock as the terminal transition, so a reader that has
+        // seen `.delivered` always sees the matching proof packet.
+        proofPacket = packet
         concludedAt = Date()
         let cb = _onDelivery
         _onDelivery = nil

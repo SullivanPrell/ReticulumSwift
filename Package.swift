@@ -11,7 +11,15 @@ let package = Package(
     ],
     products: [
         .library(name: "ReticulumSwift", targets: ["ReticulumSwift"]),
-        .executable(name: "rnsd", targets: ["rnsd"])
+        .executable(name: "rnsd", targets: ["rnsd"]),
+        .executable(name: "rnstatus", targets: ["rnstatus"]),
+        .executable(name: "rnpath", targets: ["rnpath"]),
+        .executable(name: "rnprobe", targets: ["rnprobe"]),
+        .executable(name: "rncp", targets: ["rncp"]),
+        .executable(name: "rnid", targets: ["rnid"]),
+        .executable(name: "rnx", targets: ["rnx"]),
+        .executable(name: "rnir", targets: ["rnir"]),
+        .executable(name: "rnpkg", targets: ["rnpkg"])
     ],
     dependencies: [
         // CryptoKit ships with Apple platforms; for portability we may add
@@ -85,6 +93,86 @@ let package = Package(
             name: "rnsd",
             dependencies: ["ReticulumSwift"],
             path: "Sources/rnsd",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rnstatus",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rnstatus",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rnpath",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rnpath",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rnprobe",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rnprobe",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rncp",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rncp",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rnid",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rnid",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rnx",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rnx",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rnir",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rnir",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rnpkg",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rnpkg",
             linkerSettings: [
                 .linkedLibrary("c++"),
                 .linkedLibrary("c++abi"),

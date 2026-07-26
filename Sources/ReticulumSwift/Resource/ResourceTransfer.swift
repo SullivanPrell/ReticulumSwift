@@ -164,6 +164,26 @@ public final class ResourceTransfer {
         return min(1.0, Double(receivedCount) / Double(totalParts))
     }
 
+    /// Number of parts this sender has transmitted at least once.
+    /// Mirrors Python `Resource.sent_parts`.
+    public var sentPartCount: Int {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return sentMapHashes.count
+    }
+
+    /// Progress within the current segment only.
+    /// Mirrors Python's `Resource.get_segment_progress()` (RNS/Resource.py:1196-1205).
+    ///
+    /// Swift's part accounting is already per-segment — `mapHashes`/`parts` are rebuilt for
+    /// each segment — so this currently equals ``progress``. It exists as a distinct name
+    /// because `rncp -P/--phy-rates` multiplies it by `transferSize` to derive the
+    /// physical-layer rate (rncp.py:331), and because a future cross-segment `progress`
+    /// must not change this one.
+    public var segmentProgress: Double {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return progressLocked()
+    }
+
     /// The number of bytes needed to transfer the resource (encrypted).
     /// Mirrors Python's `Resource.get_transfer_size()`.
     public var transferSize: Int { Int(advertisement?.transferSize ?? 0) }
@@ -201,6 +221,7 @@ public final class ResourceTransfer {
 
     /// Python-compatible getter methods (mirrors Python `Resource.get_progress()` etc.)
     public func getProgress() -> Double { progress }
+    public func getSegmentProgress() -> Double { segmentProgress }
     public func getTransferSize() -> Int { transferSize }
     public func getDataSize() -> Int { dataSize }
     public func getParts() -> Int { partCount }

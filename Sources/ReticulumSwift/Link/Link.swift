@@ -1697,9 +1697,24 @@ public final class Link {
                 return 0
             }()
             guard case .bytes(let pathHash) = parts[1] else { return }
-            let reqPayload: Data? = { if case .bytes(let b) = parts[2] { return b }; return nil }()
+            // Re-encode parts[2] exactly as the single-packet path does
+            // (LinkRequest.handleIncomingRequest), and pass the raw value through. Without
+            // `rawValue:` the parameter defaulted to `.nil`, so every NATIVE request
+            // handler received `.nil` for any request whose envelope exceeded the packet
+            // threshold — e.g. `rnx <dest> cat --stdin '<400+ bytes>'` arrived empty.
+            let rawValue = parts[2]
+            let reqPayload: Data? = {
+                switch parts[2] {
+                case .nil:          return nil
+                case .bytes(let b):
+                    if let decoded = try? MsgPack.decode(Data(b)),
+                       case .nil = decoded { return nil }
+                    return Data(b)
+                default:            return MsgPack.encode(parts[2])
+                }
+            }()
             let requestID = adv.requestID ?? Hashes.truncatedHash(payload)
-            self.dispatchRequest(pathHash: pathHash, payload: reqPayload,
+            self.dispatchRequest(pathHash: pathHash, payload: reqPayload, rawValue: rawValue,
                                  requestID: requestID, requestedAt: requestedAt)
         }
         registerIncomingResource(rt)
@@ -1730,6 +1745,12 @@ public final class Link {
         // which stops the request-timeout job. Without this, any response Resource
         // still in flight at the timeout is aborted mid-download.
         receipt.beginReceivingResponse(advertisedSize: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil)
+        // Python: Link.py:1027-1031 — response_size is set once from the advertisement's
+        // data size, response_transfer_size accumulates across segments. Both feed rnx's
+        // "Receiving result — <got> of <total>" spinner and its -d transfer summary.
+        receipt.setResponseSizes(size: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil,
+                                 transferSize: adv.transferSize <= UInt64(Int.max) ? Int(adv.transferSize) : nil,
+                                 accumulate: true)
         let rt = ResourceTransfer(link: self)
         // Surface transfer progress on the receipt (keeps its status/progress in
         // sync for any observer; wire-neutral).

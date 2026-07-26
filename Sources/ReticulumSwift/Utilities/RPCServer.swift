@@ -29,10 +29,9 @@ public final class RPCServer {
     /// Weak to avoid a retain cycle (Transport → Reticulum → RPCServer → Transport).
     public weak var transport: Transport?
 
-    private static let challengePrefix = "#CHALLENGE#".data(using: .utf8)!
-    private static let welcomeMessage  = "#WELCOME#".data(using: .utf8)!
-    private static let failureMessage  = "#FAILURE#".data(using: .utf8)!
-    private static let messageLength   = 20
+    private static let challengePrefix = MultiprocessingAuth.challengePrefix
+    private static let welcomeMessage  = MultiprocessingAuth.welcomeMessage
+    private static let failureMessage  = MultiprocessingAuth.failureMessage
 
     public init(port: UInt16, authkey: Data) {
         self.port = port
@@ -69,10 +68,10 @@ public final class RPCServer {
     }
 
     private func deliverChallenge(_ conn: NWConnection) {
-        var message = Data(count: RPCServer.messageLength)
-        _ = message.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, RPCServer.messageLength, $0.baseAddress!)
-        }
+        // Modern (CPython ≥ 3.12) challenge: "{sha256}" + 40 random bytes. Legacy
+        // clients (≤ 3.11) answer this with a bare HMAC-MD5 over the whole message,
+        // which `verifyChallenge` also accepts — so one challenge serves both.
+        let message = MultiprocessingAuth.makeChallengeMessage(digest: .sha256)
         let challenge = RPCServer.challengePrefix + message
 
         sendBytes(challenge, over: conn) { [weak self] error in
@@ -81,15 +80,16 @@ public final class RPCServer {
                 conn.cancel(); return
             }
             self?.receiveBytes(from: conn) { digest, err in
-                guard let digest, err == nil else { conn.cancel(); return }
-                let expected = self?.hmacMD5(key: self!.authkey, data: message)
-                if digest == expected {
-                    self?.sendBytes(RPCServer.welcomeMessage, over: conn) { _ in
+                guard let self, let digest, err == nil else { conn.cancel(); return }
+                if MultiprocessingAuth.verifyChallenge(authkey: self.authkey,
+                                                       message: message,
+                                                       response: digest) {
+                    self.sendBytes(RPCServer.welcomeMessage, over: conn) { [weak self] _ in
                         Reticulum.log("RPC client auth OK from \(conn.endpoint)", level: .debug)
                         self?.answerChallenge(conn)
                     }
                 } else {
-                    self?.sendBytes(RPCServer.failureMessage, over: conn) { _ in
+                    self.sendBytes(RPCServer.failureMessage, over: conn) { _ in
                         Reticulum.log("RPC auth failed from \(conn.endpoint)", level: .warning)
                         conn.cancel()
                     }
@@ -107,13 +107,19 @@ public final class RPCServer {
         receiveBytes(from: conn) { [weak self] challengeMsg, err in
             guard let self, let challengeMsg, err == nil else { conn.cancel(); return }
             let prefix = RPCServer.challengePrefix
-            guard challengeMsg.count == prefix.count + RPCServer.messageLength,
+            // The client's challenge is 20 raw bytes on CPython ≤ 3.11 and
+            // "{sha256}" + 40 bytes on ≥ 3.12; accept either, and let
+            // `createResponse` pick the matching digest and reply framing.
+            guard challengeMsg.count > prefix.count,
                   challengeMsg.prefix(prefix.count) == prefix else {
                 Reticulum.log("RPC: bad client challenge (\(challengeMsg.count) bytes)", level: .warning)
                 conn.cancel(); return
             }
             let nonce = Data(challengeMsg.dropFirst(prefix.count))
-            let digest = self.hmacMD5(key: self.authkey, data: nonce)
+            guard let digest = try? MultiprocessingAuth.createResponse(authkey: self.authkey, message: nonce) else {
+                Reticulum.log("RPC: unsupported client challenge format", level: .warning)
+                conn.cancel(); return
+            }
             self.sendBytes(digest, over: conn) { [weak self] error in
                 if let error {
                     Reticulum.log("RPC: digest send failed: \(error)", level: .error)
@@ -216,8 +222,12 @@ public final class RPCServer {
         // Python: {"unblackhole_identity": identity_hash}
         // The hash is the VALUE of the "unblackhole_identity" key.
         if let ubhKey = kv["unblackhole_identity"] {
+            // Python's rpc_loop returns the call's value verbatim (Reticulum.py:1234):
+            // True lifted, None not blackholed, False rejected. `rnpath -U` prints a
+            // different message for each, so replying .nil unconditionally would make
+            // every success read as "not blackholed" — in both directions.
             if let t = transport, let hash = binValue(ubhKey) {
-                t.unblackholeIdentity(hash)
+                return msgpack(triState(t.unblackholeIdentity(hash)))
             }
             return msgpack(.nil)
         }
@@ -239,7 +249,9 @@ public final class RPCServer {
                     guard let r = kv["reason"], case .string(let s) = r else { return nil }
                     return s
                 }()
-                t.blackholeIdentity(hash, until: until, reason: reason)
+                // Python: Reticulum.py:1230 returns the tri-state verbatim — see the
+                // unblackhole_identity note above.
+                return msgpack(triState(t.blackholeIdentity(hash, until: until, reason: reason)))
             }
             return msgpack(.nil)
         }
@@ -253,8 +265,8 @@ public final class RPCServer {
     private func respondGet(path: String, kv: [String: MsgPack.Value]) -> Data {
         switch path {
         case "interface_stats":
-            guard let t = transport else { return msgpack(emptyInterfaceStats) }
-            return msgpack(buildInterfaceStats(t))
+            guard let t = transport else { return msgpack(InterfaceStatsPayload.empty) }
+            return msgpack(InterfaceStatsPayload.build(t))
 
         case "path_table":
             guard let t = transport else { return msgpack(.array([])) }
@@ -280,11 +292,16 @@ public final class RPCServer {
             return msgpack(.nil)
 
         case "next_hop_if_name":
+            // Python: `str(RNS.Transport.next_hop_interface(destination))` — the
+            // interface's `__str__` (Swift: `displayName`, NOT `Interface.name`), and the
+            // literal string "None" when there is no interface. A Python `rnprobe` tests
+            // the response against the *string* "None", so answering msgpack nil made it
+            // print " on None".
             if let t = transport, let hash = binValue(kv["destination_hash"]),
-               let ifName = t.nextHopInterfaceName(for: hash) {
-                return msgpack(.string(ifName))
+               let iface = t.nextHopInterface(for: hash) {
+                return msgpack(.string(iface.displayName))
             }
-            return msgpack(.nil)
+            return msgpack(.string("None"))
 
         case "first_hop_timeout":
             if let t = transport, let hash = binValue(kv["destination_hash"]) {
@@ -293,12 +310,20 @@ public final class RPCServer {
             return msgpack(.double(Transport.pathRequestTimeout))
 
         case "blackholed_identities":
+            // Python returns `Transport.blackholed_identities` verbatim, which maps each
+            // identity hash to the full entry dict {"source", "until", "reason"}
+            // (Transport.py `blackhole_identity`). rnpath reads all three fields off it,
+            // so emitting a bare `true` here would break `rnpath -b`.
             guard let t = transport else { return msgpack(.map([])) }
             t.blackholeLock.lock()
-            let keys = Array(t.blackholedIdentities.keys)
+            let entries = t.blackholedIdentities
             t.blackholeLock.unlock()
-            let pairs: [(MsgPack.Value, MsgPack.Value)] = keys.map {
-                (.bytes($0), .bool(true))
+            let pairs: [(MsgPack.Value, MsgPack.Value)] = entries.map { hash, entry in
+                (.bytes(hash), .map([
+                    (.string("source"), entry.source.map { .bytes($0) } ?? .nil),
+                    (.string("until"),  entry.until.map  { .double($0) } ?? .nil),
+                    (.string("reason"), entry.reason.map { .string($0) } ?? .nil),
+                ]))
             }
             return msgpack(.map(pairs))
 
@@ -311,7 +336,11 @@ public final class RPCServer {
         case "packet_rssi":
             if let t = transport, let hash = binValue(kv["packet_hash"]),
                let rssi = t.getPacketRssi(packetHash: hash) {
-                return msgpack(.double(Double(rssi)))
+                // Python's RSSI is an integer (`byte - RSSI_OFFSET`, RNodeInterface.py:878)
+                // and rnprobe renders it with `str()`, so a float here would print
+                // "[RSSI -73.0 dBm]" where Python prints "[RSSI -73 dBm]". SNR and quality
+                // below stay floats, matching RNodeInterface.py:880 and :890.
+                return msgpack(.int(Int64(rssi.rounded())))
             }
             return msgpack(.nil)
 
@@ -340,10 +369,12 @@ public final class RPCServer {
     private func respondDrop(target: String, kv: [String: MsgPack.Value]) -> Data {
         switch target {
         case "path":
+            // Python returns the bool from Transport.expire_path (Reticulum.py:1519),
+            // which rnpath prints as "Path to <hash> was dropped" vs "No path known".
             if let t = transport, let hash = binValue(kv["destination_hash"]) {
-                t.expirePath(for: hash)
+                return msgpack(.bool(t.expirePath(for: hash)))
             }
-            return msgpack(.nil)
+            return msgpack(.bool(false))
 
         case "all_via":
             if let t = transport, let hash = binValue(kv["destination_hash"]) {
@@ -360,184 +391,19 @@ public final class RPCServer {
         }
     }
 
-    // MARK: - interface_stats builder
-
-    private var emptyInterfaceStats: MsgPack.Value {
-        .map([
-            (.string("interfaces"), .array([])),
-            (.string("rxb"),        .int(0)),
-            (.string("txb"),        .int(0)),
-            (.string("rxs"),        .double(0)),
-            (.string("txs"),        .double(0)),
-            (.string("rss"),        .nil),
-        ])
-    }
-
-    private func buildInterfaceStats(_ t: Transport) -> MsgPack.Value {
-        let now = Date().timeIntervalSince1970
-
-        // Snapshot the interface list under Transport's lock (register/deregister
-        // mutate it on network-callback threads).
-        t.lock.lock()
-        let ifaces = t.interfaces
-        t.lock.unlock()
-        let interfaceValues: [MsgPack.Value] = ifaces.map { iface in
-            var pairs: [(MsgPack.Value, MsgPack.Value)] = []
-
-            func kv(_ k: String, _ v: MsgPack.Value) { pairs.append((.string(k), v)) }
-
-            kv("name",       .string(iface.displayName))
-            kv("short_name", .string(iface.name))
-            kv("hash",       .bytes(Hashes.fullHash(Data(iface.displayName.utf8))))
-            kv("type",       .string(String(describing: type(of: iface))))
-            kv("rxb",        .int(Int64(iface.rxBytes)))
-            kv("txb",        .int(Int64(iface.txBytes)))
-            kv("status",     .bool(iface.isOnline))
-            kv("mode",       .int(Int64(iface.mode.rawValue)))
-            // RNS 1.4.1 added both keys to get_interface_stats(); Python's
-            // rnstatus reads them (and sorts by gravity) when present.
-            kv("gravity",    .int(Int64(iface.gravity)))
-            kv("announces_to_internal", iface.announcesToInternal.map { MsgPack.Value.bool($0) } ?? .nil)
-
-            kv("incoming_announce_frequency",  .double(t.incomingAnnounceFrequency(for: iface)))
-            kv("outgoing_announce_frequency",  .double(t.outgoingAnnounceFrequency(for: iface)))
-            kv("incoming_pr_frequency",        .double(t.incomingPathRequestFrequency(for: iface)))
-            kv("outgoing_pr_frequency",        .double(t.outgoingPathRequestFrequency(for: iface)))
-
-            if let target = iface.announceRateTarget {
-                kv("announce_rate_target", .double(target))
-            } else {
-                kv("announce_rate_target", .nil)
-            }
-            kv("announce_rate_penalty", .double(iface.announceRatePenalty))
-            kv("announce_rate_grace",   .int(Int64(iface.announceRateGrace)))
-
-            let ingress = t.ingressState(for: iface)
-            kv("held_announces",     .int(Int64(t.heldAnnounceCount(for: iface))))
-            kv("burst_active",       .bool(ingress?.burstActive    ?? false))
-            kv("burst_activated",    .double(ingress?.burstActivated ?? 0))
-            kv("pr_burst_active",    .bool(ingress?.prBurstActive    ?? false))
-            kv("pr_burst_activated", .double(ingress?.prBurstActivated ?? 0))
-
-            kv("rxs",     .double(t.currentRxSpeed(for: iface)))
-            kv("txs",     .double(t.currentTxSpeed(for: iface)))
-            kv("bitrate", .int(Int64(iface.bitrate)))
-
-            if let qCount = t.announceQueueCount(for: iface) {
-                kv("announce_queue", .int(Int64(qCount)))
-            } else {
-                kv("announce_queue", .nil)
-            }
-
-            // IFAC fields (present only when IFAC is configured)
-            if iface.ifacIdentity != nil {
-                kv("ifac_size",      .int(Int64(iface.ifacSize)))
-                kv("ifac_signature", iface.ifacKey.map { .bytes($0) } ?? .nil)
-            } else {
-                kv("ifac_size",      .nil)
-                kv("ifac_signature", .nil)
-            }
-            // ifac_netname is not stored in the Swift interface protocol; always nil
-            kv("ifac_netname", .nil)
-            kv("autoconnect_source", .nil)
-
-            // --- Interface-type-specific fields (Python uses hasattr) ---
-
-            // TCPServerInterface / PosixTCPServer: connected client count
-            if let srv = iface as? TCPServerInterface {
-                kv("clients", .int(Int64(srv.clientCount)))
-            } else if let srv = iface as? PosixTCPServer {
-                kv("clients", .int(Int64(srv.clientCount)))
-            } else if let i2p = iface as? I2PInterface {
-                kv("clients", .int(Int64(i2p.clients)))
-            } else {
-                kv("clients", .nil)
-            }
-
-            // RNodeInterface: airtime, channel load, battery, noise, interference
-            if let rnode = iface as? RNodeInterface {
-                kv("airtime_short",    .double(rnode.rAirtimeShort))
-                kv("airtime_long",     .double(rnode.rAirtimeLong))
-                kv("channel_load_short", .double(rnode.rChannelLoadShort))
-                kv("channel_load_long",  .double(rnode.rChannelLoadLong))
-                kv("noise_floor",      rnode.rNoiseFloor.map { .int(Int64($0)) } ?? .nil)
-                kv("interference",     rnode.rInterference.map { .int(Int64($0)) } ?? .nil)
-                let hasValidBattery = rnode.getBatteryState() != RNodeInterface.batteryStateUnknown
-                if hasValidBattery {
-                    kv("battery_state",   .string(rnode.getBatteryStateString()))
-                    kv("battery_percent", .int(Int64(rnode.getBatteryPercent())))
-                }
-            }
-
-            // WeaveInterfacePeer: switch_id, via_switch_id, endpoint_id
-            if let weave = iface as? WeaveInterfacePeer {
-                kv("switch_id",     weave.switchID.map    { .string($0.hexString) } ?? .nil)
-                kv("via_switch_id", weave.viaSwitchID.map { .string($0.hexString) } ?? .nil)
-                kv("endpoint_id",   weave.endpointID.map  { .string($0.hexString) } ?? .nil)
-            }
-
-            // I2PInterface: i2p_b32, tunnelstate, i2p_connectable
-            if let i2p = iface as? I2PInterface {
-                kv("i2p_connectable", .bool(i2p.connectable))
-                kv("i2p_b32",     i2p.b32.map { .string($0 + ".b32.i2p") } ?? .nil)
-                kv("tunnelstate", i2p.tunnelState.map { .string($0) } ?? .nil)
-            }
-
-            // RNodeSubInterface: parent_interface_name/hash (not yet wired — RNodeSubInterface
-            // has no back-reference to the parent RNodeMultiInterface)
-            // These fields would only appear in rnstatus if we add a parentMultiInterface
-            // property to RNodeSubInterface. For now, they're omitted (rnstatus handles absence).
-
-            return .map(pairs)
-        }
-
-        let tStats = t.getTransportStats()
-        var topPairs: [(MsgPack.Value, MsgPack.Value)] = [
-            (.string("interfaces"), .array(interfaceValues)),
-            (.string("rxb"),        .int(Int64(tStats.trafficRxBytes))),
-            (.string("txb"),        .int(Int64(tStats.trafficTxBytes))),
-            (.string("rxs"),        .double(tStats.speedRx)),
-            (.string("txs"),        .double(tStats.speedTx)),
-            (.string("rss"),        .nil),
-        ]
-
-        if t.transportEnabled, let tid = t.transportIdentity {
-            topPairs.append((.string("transport_id"), .bytes(tid.hash)))
-            if let netID = t.networkIdentity {
-                topPairs.append((.string("network_id"), .bytes(netID.hash)))
-            } else {
-                topPairs.append((.string("network_id"), .nil))
-            }
-            let uptime = t.startTime > 0 ? now - t.startTime : 0
-            topPairs.append((.string("transport_uptime"), .double(uptime)))
-            if let probe = t.probeDestination {
-                topPairs.append((.string("probe_responder"), .bytes(probe.hash)))
-            } else {
-                topPairs.append((.string("probe_responder"), .nil))
-            }
-        }
-
-        return .map(topPairs)
-    }
-
     // MARK: - path_table builder
 
     private func buildPathTable(_ t: Transport, maxHops: UInt8?) -> MsgPack.Value {
         let entries = t.getPathTable(maxHops: maxHops)
         let values: [MsgPack.Value] = entries.map { entry in
-            var pairs: [(MsgPack.Value, MsgPack.Value)] = [
+            .map([
                 (.string("hash"),      .bytes(entry.destinationHash)),
                 (.string("timestamp"), .double(entry.lastHeard.timeIntervalSince1970)),
+                (.string("via"),       .bytes(entry.via)),
                 (.string("hops"),      .int(Int64(entry.hops))),
                 (.string("expires"),   .double(entry.expires.timeIntervalSince1970)),
                 (.string("interface"), .string(entry.interfaceName)),
-            ]
-            if let via = entry.via {
-                pairs.append((.string("via"), .bytes(via)))
-            } else {
-                pairs.append((.string("via"), .nil))
-            }
-            return .map(pairs)
+            ])
         }
         return .array(values)
     }
@@ -563,6 +429,12 @@ public final class RPCServer {
     /// Encode a MsgPack value into a length-prefixed byte blob ready to send.
     private func msgpack(_ value: MsgPack.Value) -> Data {
         MsgPack.encode(value)
+    }
+
+    /// Encode Python's `True` / `None` / `False` tri-state, which the blackhole calls
+    /// return and `rnpath -B` / `-U` branch on.
+    private func triState(_ value: Bool?) -> MsgPack.Value {
+        value.map { MsgPack.Value.bool($0) } ?? .nil
     }
 
     /// Extract a binary (bytes) value from a MsgPack.Value, or nil.
@@ -592,11 +464,6 @@ public final class RPCServer {
             }
             conn.receive(exactly: length) { payload, _, _, error in completion(payload, error) }
         }
-    }
-
-    private func hmacMD5(key: Data, data: Data) -> Data {
-        let key = SymmetricKey(data: key)
-        return Data(HMAC<Insecure.MD5>.authenticationCode(for: data, using: key))
     }
 
     public enum RPCError: Error {

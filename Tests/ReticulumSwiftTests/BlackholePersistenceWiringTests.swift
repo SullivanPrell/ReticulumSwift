@@ -91,11 +91,11 @@ final class BlackholePersistenceWiringTests: XCTestCase {
 
         // Write an external source file with two entries.
         let extId1 = Identity(); let extId2 = Identity()
-        let extEntries: [String: Transport.BlackholeEntry] = [
-            extId1.hash.hexString: .init(source: externalSource.hash, until: nil, reason: nil),
-            extId2.hash.hexString: .init(source: externalSource.hash, until: nil, reason: "test"),
+        let extEntries: [(Data, Transport.BlackholeEntry)] = [
+            (extId1.hash, .init(source: externalSource.hash, until: nil, reason: nil)),
+            (extId2.hash, .init(source: externalSource.hash, until: nil, reason: "test")),
         ]
-        let extData = try JSONEncoder().encode(extEntries)
+        let extData = Self.encodeBlackholeFile(extEntries)
         let extFile = tmpDir.appendingPathComponent(externalSource.hash.hexString)
         try extData.write(to: extFile)
 
@@ -117,10 +117,10 @@ final class BlackholePersistenceWiringTests: XCTestCase {
         let externalSource = Identity()
 
         let extId = Identity()
-        let extEntries: [String: Transport.BlackholeEntry] = [
-            extId.hash.hexString: .init(source: externalSource.hash, until: nil, reason: nil),
+        let extEntries: [(Data, Transport.BlackholeEntry)] = [
+            (extId.hash, .init(source: externalSource.hash, until: nil, reason: nil)),
         ]
-        let extData = try JSONEncoder().encode(extEntries)
+        let extData = Self.encodeBlackholeFile(extEntries)
         let extFile = tmpDir.appendingPathComponent(externalSource.hash.hexString)
         try extData.write(to: extFile)
 
@@ -191,18 +191,18 @@ final class BlackholePersistenceWiringTests: XCTestCase {
         let sharedId = Identity()
 
         // External source file contains sharedId.
-        let extEntries: [String: Transport.BlackholeEntry] = [
-            sharedId.hash.hexString: .init(source: externalSource.hash, until: nil, reason: "external"),
+        let extEntries: [(Data, Transport.BlackholeEntry)] = [
+            (sharedId.hash, .init(source: externalSource.hash, until: nil, reason: "external")),
         ]
-        let extData = try JSONEncoder().encode(extEntries)
+        let extData = Self.encodeBlackholeFile(extEntries)
         let extFile = tmpDir.appendingPathComponent(externalSource.hash.hexString)
         try extData.write(to: extFile)
 
         // Local file also contains sharedId (own entry takes priority).
-        let localEntries: [String: Transport.BlackholeEntry] = [
-            sharedId.hash.hexString: .init(source: ownIdentity.hash, until: nil, reason: "local"),
+        let localEntries: [(Data, Transport.BlackholeEntry)] = [
+            (sharedId.hash, .init(source: ownIdentity.hash, until: nil, reason: "local")),
         ]
-        let localData = try JSONEncoder().encode(localEntries)
+        let localData = Self.encodeBlackholeFile(localEntries)
         let localFile = tmpDir.appendingPathComponent("local")
         try localData.write(to: localFile)
 
@@ -252,4 +252,20 @@ final class BlackholePersistenceWiringTests: XCTestCase {
         XCTAssertTrue(r2.transport.isBlackholed(id1.hash),
             "Reticulum.start() must reload blackhole list persisted by previous stop()")
     }
+
+    // MARK: - Fixture helper
+
+    /// Encode a blackhole source file exactly as Python's `persist_blackhole` does:
+    /// msgpack, keyed by the raw 16-byte identity hash.
+    /// Reference: `RNS/Transport.py:3550`.
+    static func encodeBlackholeFile(_ entries: [(Data, Transport.BlackholeEntry)]) -> Data {
+        MsgPack.encode(.map(entries.map { hash, entry in
+            (.bytes(hash), .map([
+                (.string("source"), entry.source.map { .bytes($0) } ?? .nil),
+                (.string("until"),  entry.until.map  { .double($0) } ?? .nil),
+                (.string("reason"), entry.reason.map { .string($0) } ?? .nil),
+            ]))
+        }))
+    }
+
 }

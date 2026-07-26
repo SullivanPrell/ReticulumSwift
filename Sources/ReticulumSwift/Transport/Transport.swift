@@ -1290,7 +1290,12 @@ public final class Transport {
     /// Mirrors Python's `Reticulum.get_path_table(max_hops:)`.
     public struct PathTableEntry {
         public let destinationHash: Data
-        public let via: Data?
+        /// Python's `path_table[dst][1]` (`received_from`), which is **never None**:
+        /// Transport.py:1772-1796 stores `packet.transport_id` when the announce carried
+        /// one and `packet.destination_hash` when it did not. `rnpath -t` calls
+        /// `prettyhexrep(path["via"])` unguarded, so a null here is a TypeError in the
+        /// Python client, not an empty column — hence non-optional.
+        public let via: Data
         public let hops: UInt8
         public let interfaceName: String
         public let lastHeard: Date
@@ -1299,13 +1304,25 @@ public final class Transport {
 
     public func getPathTable(maxHops: UInt8? = nil) -> [PathTableEntry] {
         lock.lock(); defer { lock.unlock() }
+        // Python publishes `str(receiving_interface)` — the display name, "LocalInterface
+        // [56156]" — where a path entry stores only the interface's short config name here.
+        // Resolving at the producer means every consumer of the table (the RPC path_table,
+        // the /path request handler, and rnpath running in-process) reports the same string
+        // Python would.
+        let displayNames = Dictionary(interfaces.map { ($0.name, $0.displayName) },
+                                      uniquingKeysWith: { first, _ in first })
         return paths.values
             .filter { maxHops == nil || $0.hops <= maxHops! }
             .map { PathTableEntry(
                 destinationHash: $0.destinationHash,
-                via: $0.nextHopTransportID,
+                // `nextHopTransportID` is nil exactly when the announce carried no
+                // transport id, which is the case where Python falls back to the
+                // destination's own hash.
+                via: $0.nextHopTransportID ?? $0.destinationHash,
                 hops: $0.hops,
-                interfaceName: $0.nextHopInterfaceName,
+                // Fall back to the stored short name when nothing is registered under it —
+                // a path restored from disk can outlive the interface that heard it.
+                interfaceName: displayNames[$0.nextHopInterfaceName] ?? $0.nextHopInterfaceName,
                 lastHeard: $0.lastHeard,
                 expires: $0.expires
             )}
@@ -1327,25 +1344,41 @@ public final class Transport {
 
     // MARK: - Packet PHY stats cache
 
+    /// Accept either hash width for a PHY-cache lookup.
+    ///
+    /// The caches are keyed by the *truncated* 16-byte packet hash, but Python keys its
+    /// equivalents by the full 32-byte `packet.packet_hash` (Transport.py:1500/1507/1514)
+    /// and a Python `rnprobe` therefore asks a Swift daemon over RPC with 32 bytes. Since
+    /// the truncated hash is by definition the first 16 bytes of the full one, narrowing
+    /// the key here makes both spellings resolve without changing what is stored.
+    private static func phyCacheKey(_ packetHash: Data) -> Data {
+        packetHash.count > Constants.truncatedHashLength
+            ? packetHash.prefix(Constants.truncatedHashLength)
+            : packetHash
+    }
+
     /// Returns the cached RSSI for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_rssi(packet_hash)`.
     public func getPacketRssi(packetHash: Data) -> Float? {
+        let key = Transport.phyCacheKey(packetHash)
         metricsLock.lock(); defer { metricsLock.unlock() }
-        return packetRssiCache.last(where: { $0.hash == packetHash })?.rssi
+        return packetRssiCache.last(where: { $0.hash == key })?.rssi
     }
 
     /// Returns the cached SNR for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_snr(packet_hash)`.
     public func getPacketSnr(packetHash: Data) -> Float? {
+        let key = Transport.phyCacheKey(packetHash)
         metricsLock.lock(); defer { metricsLock.unlock() }
-        return packetSnrCache.last(where: { $0.hash == packetHash })?.snr
+        return packetSnrCache.last(where: { $0.hash == key })?.snr
     }
 
     /// Returns the cached quality for a packet hash, or nil if not in cache.
     /// Mirrors Python's `Reticulum.get_packet_q(packet_hash)`.
     public func getPacketQ(packetHash: Data) -> Float? {
+        let key = Transport.phyCacheKey(packetHash)
         metricsLock.lock(); defer { metricsLock.unlock() }
-        return packetQCache.last(where: { $0.hash == packetHash })?.quality
+        return packetQCache.last(where: { $0.hash == key })?.quality
     }
 
     // MARK: - Path responsiveness
@@ -1496,6 +1529,18 @@ public final class Transport {
         lock.lock(); defer { lock.unlock() }
         guard let ratchetPub = knownRatchets[destinationHash] else { return nil }
         return Identity.ratchetID(forPublicKey: ratchetPub)
+    }
+
+    /// The 32-byte ratchet PUBLIC key currently known for a destination, or nil.
+    ///
+    /// Mirrors Python's `Identity.get_ratchet(destination_hash)`, which is what
+    /// `Destination.encrypt` feeds to `identity.encrypt(plaintext, ratchet=…)`
+    /// (Destination.py:594-600). Distinct from ``currentRatchetID(forDestination:)``,
+    /// which returns the 10-byte *identifier* derived from this key and cannot be used
+    /// as an encryption target.
+    public func currentRatchetKey(forDestination destinationHash: Data) -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        return knownRatchets[destinationHash]
     }
 
     // MARK: - Lifecycle
@@ -1959,51 +2004,72 @@ public final class Transport {
             if let mgmt = try? Destination(identity: identity, direction: .in, kind: .single,
                                             appName: "rnstransport", aspects: ["remote", "management"]) {
                 let allowed = remoteManagementAllowed
-                mgmt.registerRequestHandler(path: "/status", allow: .list, allowedList: allowed) {
-                    [weak self] _, data, _, _, _ -> Data? in
+                // Registered as a NATIVE handler, not a bytes one: Python's rnstatus does
+                // `isinstance(request_receipt.response, list)` on the decoded value
+                // (rnstatus.py:112). A bytes handler makes `dispatchRequest` wrap the
+                // reply as `[request_id, BIN(<msgpack>)]`, Python sees `bytes`, the
+                // isinstance test fails and rnstatus reports "Could not get RNS status
+                // from remote transport instance". A Swift client would NOT catch this —
+                // `handleIncomingResponse` unwraps a .bytes payload transparently.
+                mgmt.registerNativeRequestHandler(path: "/status", allow: .list, allowedList: allowed) {
+                    [weak self] _, data, _, _, _ -> MsgPack.Value? in
                     guard let self else { return nil }
-                    guard let data, case .array(let arr) = (try? MsgPack.decode(data)) ?? .nil,
-                          let first = arr.first else { return nil }
-                    let stats = self.getInterfaceStats()
-                    let statsArr = MsgPack.Value.array(stats.map { s -> MsgPack.Value in
-                        .map([(.string("name"), .string(s.name)),
-                              (.string("rxb"),  .int(Int64(s.rxBytes))),
-                              (.string("txb"),  .int(Int64(s.txBytes)))])
-                    })
-                    var response: [MsgPack.Value] = [statsArr]
+                    // Python also guards on `remote_identity != None` (Transport.py:2851);
+                    // here the `.list` allow policy in `Link.dispatchRequest` already
+                    // requires an identified peer whose hash is in `allowed`, so reaching
+                    // this closure implies it.
+                    guard case .array(let arr) = data, let first = arr.first else { return nil }
+                    // Python: response = [Transport.owner.get_interface_stats()], plus the
+                    // link count when data[0] is True (Transport.py:2855-2856). rnstatus then
+                    // reads the returned dict's "interfaces", "rxb", "txs", "transport_id"…
+                    // keys, so this must be the full stats payload, not a summary of it.
+                    var response: [MsgPack.Value] = [InterfaceStatsPayload.build(self)]
                     if case .bool(true) = first {
                         response.append(.int(Int64(self.getLinkCount())))
                     }
-                    return MsgPack.encode(.array(response))
+                    return .array(response)
                 }
                 mgmt.registerRequestHandler(path: "/path", allow: .list, allowedList: allowed) {
                     [weak self] _, data, _, _, _ -> Data? in
                     guard let self else { return nil }
                     guard let data, case .array(let arr) = (try? MsgPack.decode(data)) ?? .nil,
                           !arr.isEmpty, case .string(let command) = arr[0] else { return nil }
+                    // Python: data = [command, destination_hash, max_hops]
                     let filterHash: Data? = {
                         guard arr.count > 1, case .bytes(let b) = arr[1] else { return nil }
                         return b
                     }()
+                    let maxHops: UInt8? = {
+                        guard arr.count > 2, let hops = arr[2].asInt, hops >= 0 else { return nil }
+                        return UInt8(min(hops, 255))
+                    }()
                     switch command {
                     case "table":
-                        let table = self.getPathTable()
+                        // The entries must carry every key `get_path_table()` produces —
+                        // rnpath renders `path["interface"]` and `path["expires"]` directly,
+                        // so an abridged entry raises a KeyError on the Python side.
+                        let table = self.getPathTable(maxHops: maxHops)
                         let filtered = filterHash == nil ? table : table.filter { $0.destinationHash == filterHash }
                         let entries = filtered.map { e -> MsgPack.Value in
-                            let via: MsgPack.Value = e.via.map { .bytes($0) } ?? .nil
-                            return .map([(.string("hash"), .bytes(e.destinationHash)),
-                                         (.string("hops"), .int(Int64(e.hops))),
-                                         (.string("via"),  via),
-                                         (.string("expires"), .double(e.expires.timeIntervalSince1970))])
+                            .map([(.string("hash"),      .bytes(e.destinationHash)),
+                                         (.string("timestamp"), .double(e.lastHeard.timeIntervalSince1970)),
+                                         (.string("via"),       .bytes(e.via)),
+                                         (.string("hops"),      .int(Int64(e.hops))),
+                                         (.string("expires"),   .double(e.expires.timeIntervalSince1970)),
+                                         (.string("interface"), .string(e.interfaceName))])
                         }
                         return MsgPack.encode(.array(entries))
                     case "rates":
+                        // Likewise: rnpath computes an announce rate from
+                        // `entry["timestamps"]` and reads `entry["blocked_until"]`.
                         let rates = self.getRateTable()
                         let filtered = filterHash == nil ? rates : rates.filter { $0.destinationHash == filterHash }
                         let entries = filtered.map { r -> MsgPack.Value in
-                            .map([(.string("hash"), .bytes(r.destinationHash)),
-                                  (.string("last"), .double(r.last)),
-                                  (.string("rate_violations"), .int(Int64(r.rateViolations)))])
+                            .map([(.string("hash"),            .bytes(r.destinationHash)),
+                                  (.string("last"),            .double(r.last)),
+                                  (.string("rate_violations"), .int(Int64(r.rateViolations))),
+                                  (.string("blocked_until"),   .double(r.blockedUntil)),
+                                  (.string("timestamps"),      .array(r.timestamps.map { .double($0) }))])
                         }
                         return MsgPack.encode(.array(entries))
                     default: return nil
@@ -2890,7 +2956,11 @@ public final class Transport {
             let match = receipts.first { $0.packetHash == proofHash }
             receiptsLock.unlock()
             if let match {
-                match.validateExplicitProof(proofData)
+                // Hand the inbound packet to the receipt as well: it carries the PHY
+                // metadata (rssi/snr/quality) the interface stamped on it, which is what
+                // Python's `receipt.proof_packet` exposes. Mirrors Python's
+                // `receipt.validate_proof_packet(packet)` (Transport.py:2302).
+                match.validateExplicitProof(proofData, packet: packet)
                 return
             }
         } else if proofData.count == PacketReceipt.implicitProofLength {
@@ -2900,7 +2970,7 @@ public final class Transport {
             let snapshot = receipts
             receiptsLock.unlock()
             for receipt in snapshot {
-                if receipt.validateImplicitProof(proofData) {
+                if receipt.validateImplicitProof(proofData, packet: packet) {
                     receiptsLock.lock()
                     receipts.removeAll { $0 === receipt }
                     receiptsLock.unlock()
