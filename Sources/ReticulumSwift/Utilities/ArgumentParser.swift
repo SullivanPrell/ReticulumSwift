@@ -245,30 +245,50 @@ public struct ArgumentParser {
                 continue
             }
 
-            // Bundled single-character flags, e.g. "-vv" or "-qv". argparse accepts these
-            // for any combination of single-character flag/count options.
-            if !argument.hasPrefix("--"), argument.count > 2 {
-                let letters = argument.dropFirst().map { "-\($0)" }
-                let resolved = letters.map { declaration(for: $0) }
-                if resolved.allSatisfy({ declaration in
-                    guard let declaration else { return false }
-                    switch declaration.kind {
-                    case .flag, .counted:                        return true
-                    case .value, .variadic, .optionalValue,
-                         .appended:                              return false
-                    }
-                }) {
-                    for declaration in resolved.compactMap({ $0 }) {
-                        let key = canonicalName(declaration)
-                        provided.insert(key)
-                        switch declaration.kind {
-                        case .flag:    flags.insert(key)
-                        case .counted: counts[key, default: 0] += 1
-                        case .value, .variadic, .optionalValue, .appended: break
+            // A cluster of single-character short options. argparse walks the token left to
+            // right: flag/count options are consumed one character at a time (so "-vv" is two
+            // counts and "-qv" is quiet-then-verbose), and the FIRST value-taking option
+            // consumes the REST of the token as its value ("-s16" is "-s 16", "-vvs16" is
+            // "-v -v -s 16") — or, if it is the last character, the next argument ("-vs 16").
+            // A bare "-h" anywhere in the cluster is the implicit help option. The whole token
+            // is resolved before anything is applied, so an unrecognised character rejects the
+            // entire argument (argparse reports the original token) rather than half-applying it.
+            if !argument.hasPrefix("--"), argument.count > 2, let steps = shortCluster(argument) {
+                for step in steps {
+                    provided.insert(step.key)
+                    if step.isHelp { flags.insert("--help"); continue }
+                    switch step.kind {
+                    case .flag:    flags.insert(step.key)
+                    case .counted: counts[step.key, default: 0] += 1
+                    case .value:
+                        let value: String
+                        if let attached = step.attached { value = attached }
+                        else if index < arguments.count { value = arguments[index]; index += 1 }
+                        else { throw ArgumentError.missingValue(step.key) }
+                        values[step.key] = value
+                    case .appended:
+                        let value: String
+                        if let attached = step.attached { value = attached }
+                        else if index < arguments.count { value = arguments[index]; index += 1 }
+                        else { throw ArgumentError.missingValue(step.key) }
+                        lists[step.key, default: []].append(value)
+                    case .optionalValue(_, let const):
+                        if let attached = step.attached { values[step.key] = attached }
+                        else if index < arguments.count, !looksLikeOption(arguments[index]) {
+                            values[step.key] = arguments[index]; index += 1
+                        } else if let const { values[step.key] = const }
+                    case .variadic:
+                        var collected = lists[step.key] ?? []
+                        if let attached = step.attached { collected.append(attached) }
+                        else {
+                            while index < arguments.count, !looksLikeOption(arguments[index]) {
+                                collected.append(arguments[index]); index += 1
+                            }
                         }
+                        lists[step.key] = collected
                     }
-                    continue
                 }
+                continue
             }
 
             throw ArgumentError.unrecognisedOption(argument)
@@ -289,6 +309,58 @@ public struct ArgumentParser {
 
     private func declaration(for name: String) -> Declaration? {
         declarations.first { $0.names.contains(name) }
+    }
+
+    /// One resolved character from a short-option cluster.
+    private struct ClusterStep {
+        let key: String
+        let kind: Kind
+        /// The value attached in the same token (the characters after a value-taking
+        /// option). `nil` means "take the next argument", except for `isHelp`.
+        let attached: String?
+        let isHelp: Bool
+    }
+
+    /// Resolve a `-xyz…` token into its constituent short options, or `nil` if any
+    /// character is not a known single-character option. The first value-taking option
+    /// terminates the walk and claims the rest of the token as its (possibly empty)
+    /// attached value; `-h` resolves to the implicit help option when the program has not
+    /// declared its own. Mirrors argparse's `_parse_optional` / short-option consumption.
+    private func shortCluster(_ token: String) -> [ClusterStep]? {
+        let chars = Array(token.dropFirst())
+        var steps: [ClusterStep] = []
+        var i = 0
+        while i < chars.count {
+            let name = "-\(chars[i])"
+            if let decl = declaration(for: name) {
+                let key = canonicalName(decl)
+                switch decl.kind {
+                case .flag, .counted:
+                    steps.append(ClusterStep(key: key, kind: decl.kind, attached: nil, isHelp: false))
+                    i += 1
+                case .value, .appended, .optionalValue, .variadic:
+                    let rest = String(chars[(i + 1)...])
+                    steps.append(ClusterStep(key: key, kind: decl.kind,
+                                             attached: rest.isEmpty ? nil : rest, isHelp: false))
+                    i = chars.count
+                }
+            } else if name == "-h", declaration(for: "--help") == nil {
+                steps.append(ClusterStep(key: "--help", kind: .flag, attached: nil, isHelp: true))
+                i += 1
+            } else {
+                return nil
+            }
+        }
+        return steps
+    }
+
+    /// Expand a single `--abbrev` token to its unambiguous long-option name under
+    /// `allow_abbrev`, or return it unchanged when it is not a long option, not a unique
+    /// prefix, or ambiguous. Lets a tool that pre-scans for `--help`/`--version` before full
+    /// parsing (e.g. rnprobe) honour abbreviations — `--hel`, `--vers` — exactly as argparse
+    /// does, instead of only matching the spelled-out forms.
+    public func expandedLongOption(_ argument: String) -> String {
+        (try? expandingAbbreviation(argument)) ?? argument
     }
 
     /// Every declared option, for external help formatters. Python: `parser._actions`.
