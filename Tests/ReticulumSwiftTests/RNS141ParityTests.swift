@@ -327,7 +327,8 @@ final class RNS141ParityTests: XCTestCase {
     func testTCPServerSpawnedClientInheritsGravity() {
         let server = TCPServerInterface(name: "srv", port: 0)
         server.gravity = 12
-        let client = TCPServerClientInterface(name: "srv/1", parentServer: server)
+        let client = TCPServerClientInterface(name: "Client on srv", parentServer: server,
+                                              peerHost: "10.0.0.9", peerPort: 51420)
         XCTAssertEqual(client.gravity, 12,
                        "Python: spawned_interface.gravity = self.gravity")
     }

@@ -306,12 +306,12 @@ final class PickleEncoderTests: XCTestCase {
 
     func testTCPClientInterfaceDisplayName() {
         let iface = TCPClientInterface(name: "TestTCP", host: "10.0.0.1", port: 42422)
-        XCTAssertEqual(iface.displayName, "TCPInterface[Client on 10.0.0.1:42422]")
+        XCTAssertEqual(iface.displayName, "TCPInterface[TestTCP/10.0.0.1:42422]")
     }
 
     func testTCPServerInterfaceDisplayName() {
         let iface = TCPServerInterface(name: "TestServer", port: 42422)
-        XCTAssertEqual(iface.displayName, "TCPInterface[Server on 0.0.0.0:42422]")
+        XCTAssertEqual(iface.displayName, "TCPServerInterface[TestServer/0.0.0.0:42422]")
     }
 
     func testAutoInterfaceDisplayName() {

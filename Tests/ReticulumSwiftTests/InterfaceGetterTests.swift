@@ -51,7 +51,7 @@ final class InterfaceGetterTests: XCTestCase {
         XCTAssertNotEqual(auto.hash, Hashes.fullHash(Data(auto.name.utf8)))
 
         let tcpClient = TCPClientInterface(name: "tcp0", host: "127.0.0.1", port: 4242)
-        XCTAssertEqual(tcpClient.displayName, "TCPInterface[Client on 127.0.0.1:4242]")
+        XCTAssertEqual(tcpClient.displayName, "TCPInterface[tcp0/127.0.0.1:4242]")
         XCTAssertEqual(tcpClient.hash, Hashes.fullHash(Data(tcpClient.displayName.utf8)))
         XCTAssertNotEqual(tcpClient.hash, Hashes.fullHash(Data(tcpClient.name.utf8)))
 

@@ -13,7 +13,7 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently — a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.6.0"
+    public static let version = "1.7.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
@@ -744,11 +744,18 @@ public final class Reticulum {
                       let port = ifCfg.int("target_port") else { continue }
                 let tcpClient = TCPClientInterface(name: ifCfg.name, host: host, port: UInt16(port))
                 if ifCfg.bool("bootstrap_only") == true { tcpClient.bootstrapOnly = true }
+                // Python: `max_reconnect_tries` from the interface block, else the class
+                // default of None/unlimited (TCPInterface.py:109, 135).
+                if let tries = ifCfg.int("max_reconnect_tries") { tcpClient.maxReconnectTries = tries }
                 iface = tcpClient
 
             case "TCPServerInterface":
                 let listenPort = ifCfg.int("listen_port") ?? ifCfg.int("port") ?? 4242
-                iface = TCPServerInterface(name: ifCfg.name, port: UInt16(listenPort))
+                // Python resolves `listen_ip` into `bind_ip` and renders it in `__str__`
+                // (Reticulum.py / TCPInterface.py:518). Ignoring it made every Swift
+                // listener report 0.0.0.0 regardless of configuration.
+                let bindIP = ifCfg["listen_ip"] ?? "0.0.0.0"
+                iface = TCPServerInterface(name: ifCfg.name, port: UInt16(listenPort), bindIP: bindIP)
 
             case "UDPInterface":
                 let listenPort = ifCfg.int("listen_port")
@@ -758,7 +765,9 @@ public final class Reticulum {
                     name: ifCfg.name,
                     listenPort: listenPort.map(UInt16.init),
                     forwardHost: forwardHost,
-                    forwardPort: forwardPort.map(UInt16.init)
+                    forwardPort: forwardPort.map(UInt16.init),
+                    // Python's `bind_ip`, which its `__str__` reports (UDPInterface.py:63).
+                    bindIP: ifCfg["listen_ip"] ?? "0.0.0.0"
                 )
 
             case "AutoInterface":

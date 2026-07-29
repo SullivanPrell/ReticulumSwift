@@ -51,23 +51,33 @@ public final class UDPInterface: Interface {
     private var inboundConnections: [NWConnection] = []
     private let connLock = NSLock()
 
-    /// Python `UDPInterface.__str__` returns `"UDPInterface[<name>/<ip>:<port>]"`.
+    /// Python `UDPInterface.__str__` (`UDPInterface.py:131-132`):
+    /// `"UDPInterface["+self.name+"/"+self.bind_ip+":"+str(self.bind_port)+"]"`, where
+    /// `bind_ip` is the configured `listen_ip` (`UDPInterface.py:63`, `:91`). Hardcoding
+    /// `0.0.0.0` here made a loopback-bound Swift interface report a different name — and
+    /// so a different `Interface.hash` — than the Python interface beside it.
     public var displayName: String {
-        let ip = "0.0.0.0"
+        let ip = bindIP.contains(":") ? "[\(bindIP)]" : bindIP
         let port = listenPort ?? forwardPort ?? 0
         return "UDPInterface[\(name)/\(ip):\(port)]"
     }
+
+    /// The configured `listen_ip`. Python's `bind_ip`; reporting-only here, since
+    /// `NWListener` binds every address.
+    public let bindIP: String
 
     public init(
         name: String,
         listenPort: UInt16? = nil,
         forwardHost: String? = nil,
-        forwardPort: UInt16? = nil
+        forwardPort: UInt16? = nil,
+        bindIP: String = "0.0.0.0"
     ) {
         self.name = name
         self.listenPort = listenPort
         self.forwardHost = forwardHost
         self.forwardPort = forwardPort
+        self.bindIP = bindIP
         self.queue = DispatchQueue(label: "ReticulumSwift.UDPInterface.\(name)")
     }
 

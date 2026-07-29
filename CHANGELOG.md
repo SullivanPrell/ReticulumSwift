@@ -3,6 +3,91 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.7.0] — TCP interface naming, reconnection and keepalive
+
+A minor rather than a patch release: the fixes add public API (`reconnectWait`,
+`maxReconnectTries`, `bindIP`, `HDLC.FrameDecoder.reset()`) and change what every TCP and
+UDP interface calls itself — and therefore its `Interface.hash`, which is
+`fullHash(displayName)`.
+
+### Fixed
+
+- **Configured TCP interfaces were invisible to `rnstatus`** (`bugs/013`).
+  `TCPClientInterface.displayName` emitted `TCPInterface[Client on <host>:<port>]` for
+  every client. In Python that form belongs only to a *server-spawned* client — the
+  spawned interface's `name` is `"Client on "+servername` (`TCPInterface.py:590`) — and
+  `rnstatus` hides every interface whose name starts with `TCPInterface[Client`
+  (`rnstatus.py:397`), because those are per-connection sub-interfaces rather than
+  anything an operator configured. So every interface from a config file was filtered out
+  of every status report, by Python's `rnstatus` and this port's alike, while being online
+  and passing traffic the whole time.
+
+  The names now follow Python's `__str__` exactly:
+
+  | | before | after (Python: `TCPInterface.py:456`, `:680`) |
+  |---|---|---|
+  | configured client | `TCPInterface[Client on 1.2.3.4:4242]` | `TCPInterface[<name>/1.2.3.4:4242]` |
+  | listener | `TCPInterface[Server on 0.0.0.0:4242]` | `TCPServerInterface[<name>/<bind_ip>:4242]` |
+  | spawned client | `TCPInterface[Client on <name>[client-N]]` | `TCPInterface[Client on <name>/<peer_ip>:<peer_port>]` |
+
+  `Interface.hash` is `fullHash(displayName)`, so this also aligns interface identity with
+  a Python daemon on the same network — previously the two disagreed for every TCP
+  interface. `TCPServerInterface` gained a `bindIP` (default `0.0.0.0`), and interface
+  synthesis now reads `listen_ip` for it.
+
+- **`TCPClientInterface` never reconnected** (`bugs/013`). It dialed once from `start()`;
+  on peer FIN the receive loop set `isOnline = false` and returned — no log line, no
+  `cancel()`, no redial. A peer that accepts and immediately hangs up (ordinary churn on
+  the public transit nodes) took the node permanently offline with nothing in the log,
+  while the dead connection sat in `CLOSE_WAIT` for the life of the process. Python has
+  retried since forever (`RECONNECT_WAIT = 5`, `RECONNECT_MAX_TRIES = None`,
+  `TCPInterface.py:270-293`), and every other reconnecting interface in this port already
+  did too — the TCP client was the only one that did not.
+
+  Adds `reconnectWait` (default 5s) and `maxReconnectTries` (default nil = unlimited,
+  config key `max_reconnect_tries`), cancels the superseded connection before each redial,
+  and logs Python's "Reconnected socket for …" / "Max reconnection attempts reached for …".
+  `.waiting` is no longer swallowed: a refused peer is retried on Python's clock instead of
+  silently inside `NWConnection`.
+
+- **No TCP keepalive on the dialing interfaces.** Python sets `SO_KEEPALIVE` and the probe
+  timers on every TCP socket it opens (`TCPInterface.set_timeouts_osx` /
+  `set_timeouts_linux`, `BackboneInterface.py:655`); this port set none, because
+  `NWConnection(to:using: .tcp)` takes Network.framework's defaults and those have keepalive
+  off. A peer that vanished *without sending FIN* — a machine that slept, a NAT that dropped
+  the mapping, a peer that was hard-killed — therefore left the connection `.ready` forever:
+  no event fired, the interface kept reporting "Up", and everything sent through it was
+  silently discarded. Reported as "RetiOS doesn't reconnect to the mesh after the laptop
+  sleeps", and the reason the reconnect fix above could not cover that case on its own —
+  nothing ever triggered it.
+
+  `TCPClientInterface` and `BackboneInterface` now dial with Python's values:
+  `keepaliveIdle = 5`, `keepaliveInterval = 2`, `keepaliveCount = 12`,
+  `connectionDropTime = 24`, and `noDelay = true` (`TCP_NODELAY`, which Python sets on every
+  socket on both platforms).
+
+- **Swift utilities ignored `$HOME`.** Python expands `~` with `os.path.expanduser`, which
+  returns `$HOME` when it is set; `NSHomeDirectory()` — and
+  `FileManager.homeDirectoryForCurrentUser`, which `rnsd` used — always reports the
+  account's real home on macOS. A utility launched with `HOME` pointed at a sandbox
+  therefore read and wrote the developer's actual `~/.reticulum`, picked up the real
+  transport identity, and could authenticate to the real daemon on 37428. Utilities that
+  keep state in `$HOME` directly (`rncp`'s `$HOME/.rncp` identity and allow-list) wrote to
+  the developer's real files. All config-directory resolution now goes through
+  `InstanceConnection.homeDirectory(environment:)`.
+
+- **`UDPInterface` hardcoded `0.0.0.0` as its bind address** instead of reporting the
+  configured `listen_ip`, as Python does (`UDPInterface.py:63`, `:131-132`) — so a
+  loopback-bound interface published a different name, and a different `Interface.hash`,
+  than the Python interface beside it. Gained a `bindIP`, which synthesis now populates.
+
+- **A server-spawned client published `type = "TCPServerClientInterface"`**, which is not an
+  RNS interface class. Python builds a plain `TCPClientInterface` from the accepted socket
+  (`TCPInterface.py:591`), so `type` now says that.
+
+- `HDLC.FrameDecoder.reset()` — drops a partially-received frame, so a half-decoded frame
+  cannot be prepended to the first bytes of a reconnected session.
+
 ## [1.6.0] — The `rn*` command-line utilities
 
 Ports of the tools in `RNS/Utilities`, each split into a testable library type under

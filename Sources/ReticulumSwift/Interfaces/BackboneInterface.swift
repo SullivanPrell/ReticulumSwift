@@ -161,12 +161,20 @@ public final class BackboneInterface: Interface {
 
     // MARK: - Connection management
 
+    /// The same socket options the TCP client dials with — Python configures both
+    /// identically. See ``TCPClientInterface/tcpParameters``.
+    static var tcpParameters: NWParameters { TCPClientInterface.tcpParameters }
+
     private func openConnection() {
         let endpoint = NWEndpoint.hostPort(
             host: NWEndpoint.Host(host),
             port: NWEndpoint.Port(rawValue: port)!
         )
-        let conn = NWConnection(to: endpoint, using: .tcp)
+        // Python: `set_timeouts_linux()` + `TCP_NODELAY` on every backbone socket
+        // (BackboneInterface.py:626-627, :655-660) — the same options the TCP client uses,
+        // for the same reason: without keepalive a peer that vanished without sending FIN
+        // leaves this connection `.ready` forever and the reconnect below never fires.
+        let conn = NWConnection(to: endpoint, using: Self.tcpParameters)
         // Re-check stopped and publish the connection atomically (see LocalInterface).
         stateLock.lock()
         guard !_isStopped else { stateLock.unlock(); return }
