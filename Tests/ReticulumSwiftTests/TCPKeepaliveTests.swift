@@ -19,15 +19,29 @@ import Network
 /// Reported as "RetiOS doesn't reconnect to the mesh after the laptop sleeps".
 final class TCPKeepaliveTests: XCTestCase {
 
-    private func tcpOptions(_ parameters: NWParameters) throws -> NWProtocolTCP.Options {
-        try XCTUnwrap(parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options,
-                      "expected a TCP transport protocol in the stack")
+    /// Whether this OS reads back a TCP option that was set before the options object was
+    /// handed to `NWParameters`. It does not on macOS 14: `defaultProtocolStack`
+    /// `.transportProtocol` returns a *different* `NWProtocolTCP.Options` instance than the
+    /// one passed in — `===` is false on every OS tested — and on 14 that re-wrapped
+    /// instance reports framework defaults instead of the configured values.
+    ///
+    /// Probed with a control value rather than gated on an OS version, because the thing
+    /// that matters is whether the readback can be trusted, not which OS is running.
+    private var readbackIsTrustworthy: Bool {
+        let control = NWProtocolTCP.Options()
+        control.keepaliveIdle = 7
+        let stack = NWParameters(tls: nil, tcp: control).defaultProtocolStack
+        return (stack.transportProtocol as? NWProtocolTCP.Options)?.keepaliveIdle == 7
     }
 
     /// Python `TCPClientInterface`: `TCP_PROBE_AFTER = 5`, `TCP_PROBE_INTERVAL = 2`,
     /// `TCP_PROBES = 12`, `TCP_USER_TIMEOUT = 24` (`TCPInterface.py:83-86`).
-    func testClientParametersCarryPythonsKeepaliveTimers() throws {
-        let options = try tcpOptions(TCPClientInterface.tcpParameters)
+    ///
+    /// Asserted on the object the interface constructs and hands to Network.framework, which
+    /// is the only place these values can be read back reliably — see
+    /// ``TCPClientInterface/tcpOptions()``.
+    func testClientOptionsCarryPythonsKeepaliveTimers() {
+        let options = TCPClientInterface.tcpOptions()
         XCTAssertTrue(options.enableKeepalive, "keepalive must be on, as in Python")
         XCTAssertEqual(options.keepaliveIdle, 5)
         XCTAssertEqual(options.keepaliveInterval, 2)
@@ -38,16 +52,49 @@ final class TCPKeepaliveTests: XCTestCase {
     /// Python sets `TCP_NODELAY` on every TCP socket it opens, on both platforms
     /// (`TCPInterface.py:148`, `:239`). RNS packets are small and latency-sensitive;
     /// Nagle would coalesce them behind the 40 ms delayed-ACK timer.
-    func testClientParametersDisableNagle() throws {
-        XCTAssertTrue(try tcpOptions(TCPClientInterface.tcpParameters).noDelay)
+    func testClientOptionsDisableNagle() {
+        XCTAssertTrue(TCPClientInterface.tcpOptions().noDelay)
     }
 
     /// The backbone client dials over the same networks and fails the same way
     /// (`BackboneInterface.py:626-627`, `:655-660`).
-    func testBackboneParametersCarryTheSameTimers() throws {
-        let options = try tcpOptions(BackboneInterface.tcpParameters)
+    func testBackboneOptionsCarryTheSameTimers() {
+        let options = BackboneInterface.tcpOptions()
         XCTAssertTrue(options.enableKeepalive)
         XCTAssertEqual(options.keepaliveIdle, 5)
+        XCTAssertEqual(options.keepaliveInterval, 2)
+        XCTAssertEqual(options.keepaliveCount, 12)
+        XCTAssertEqual(options.connectionDropTime, 24)
+        XCTAssertTrue(options.noDelay)
+    }
+
+    /// The parameters a dial is built from must carry a TCP stack at all — true on every OS,
+    /// and the part of ``TCPClientInterface/tcpParameters`` worth pinning: it would break if
+    /// the initializer were ever changed to drop the options.
+    func testParametersCarryATCPStack() throws {
+        _ = try XCTUnwrap(
+            TCPClientInterface.tcpParameters.defaultProtocolStack.transportProtocol
+                as? NWProtocolTCP.Options,
+            "expected a TCP transport protocol in the stack")
+    }
+
+    /// Where the platform's readback can be trusted, verify the values actually survive the
+    /// trip through `NWParameters` rather than only asserting what we set. This is the leg
+    /// that cannot run on macOS 14 — and the reason it is probed rather than skipped by OS
+    /// version is that a future OS regaining or losing the readback should change what runs
+    /// here without anyone editing an availability check.
+    func testValuesSurviveTheTripThroughParametersWhereReadableAtAll() throws {
+        try XCTSkipUnless(readbackIsTrustworthy,
+                          "this OS reports framework defaults when a TCP option is read back "
+                          + "through NWParameters.defaultProtocolStack")
+        let options = try XCTUnwrap(
+            TCPClientInterface.tcpParameters.defaultProtocolStack.transportProtocol
+                as? NWProtocolTCP.Options)
+        XCTAssertTrue(options.enableKeepalive)
+        XCTAssertEqual(options.keepaliveIdle, 5)
+        XCTAssertEqual(options.keepaliveInterval, 2)
+        XCTAssertEqual(options.keepaliveCount, 12)
+        XCTAssertEqual(options.connectionDropTime, 24)
         XCTAssertTrue(options.noDelay)
     }
 

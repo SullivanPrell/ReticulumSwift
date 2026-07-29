@@ -141,7 +141,19 @@ public final class TCPClientInterface: Interface {
     ///
     /// A fresh instance per call: `NWParameters` is a reference type and one already handed
     /// to a live connection cannot be reused.
-    static var tcpParameters: NWParameters {
+    /// The socket options every dial carries, matching what Python sets on each TCP socket
+    /// it opens (`TCPInterface.set_timeouts_osx` / `set_timeouts_linux`).
+    ///
+    /// Kept separate from ``tcpParameters`` because this is the only object whose values can
+    /// be read back reliably. `NWParameters.defaultProtocolStack.transportProtocol` returns a
+    /// *different* `NWProtocolTCP.Options` instance than the one handed to
+    /// `NWParameters(tls:tcp:)` — verified: `===` is false even where the values survive —
+    /// and on macOS 14 that re-wrapped instance's getters report framework defaults rather
+    /// than the configured values. Network.framework publishes no getters for TCP options at
+    /// the C level either, so there is no authoritative readback anywhere: what this port
+    /// controls, and therefore what the tests assert, is the object it constructs and hands
+    /// over.
+    static func tcpOptions() -> NWProtocolTCP.Options {
         let options = NWProtocolTCP.Options()
         // Python: `SO_KEEPALIVE, 1` + `TCP_KEEPIDLE = TCP_PROBE_AFTER`.
         options.enableKeepalive = true
@@ -154,7 +166,11 @@ public final class TCPClientInterface: Interface {
         // Python sets TCP_NODELAY on every socket it opens. RNS packets are small and
         // latency-sensitive; Nagle would hold them behind the delayed-ACK timer.
         options.noDelay = true
-        return NWParameters(tls: nil, tcp: options)
+        return options
+    }
+
+    static var tcpParameters: NWParameters {
+        NWParameters(tls: nil, tcp: tcpOptions())
     }
 
     // MARK: - Connect / reconnect

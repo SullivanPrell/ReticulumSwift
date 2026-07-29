@@ -61,6 +61,17 @@ UDP interface calls itself — and therefore its `Interface.hash`, which is
   sleeps", and the reason the reconnect fix above could not cover that case on its own —
   nothing ever triggered it.
 
+  The values live in `TCPClientInterface.tcpOptions()`, separately from the `NWParameters`
+  built around them, because that object is the only place they can be read back at all:
+  `NWParameters.defaultProtocolStack.transportProtocol` returns a *different*
+  `NWProtocolTCP.Options` instance than the one passed to `NWParameters(tls:tcp:)` — `===`
+  is false on every OS tested — and on macOS 14 that re-wrapped instance reports framework
+  defaults rather than the configured values. Network.framework publishes no getters for TCP
+  options at the C level either, so no readback anywhere is authoritative. The tests
+  therefore assert the object this port constructs and hands over, and additionally verify
+  the round trip through `NWParameters` on platforms where a control value proves the
+  readback can be trusted.
+
   `TCPClientInterface` and `BackboneInterface` now dial with Python's values:
   `keepaliveIdle = 5`, `keepaliveInterval = 2`, `keepaliveCount = 12`,
   `connectionDropTime = 24`, and `noDelay = true` (`TCP_NODELAY`, which Python sets on every

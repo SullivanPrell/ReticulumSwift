@@ -162,7 +162,9 @@ public final class BackboneInterface: Interface {
     // MARK: - Connection management
 
     /// The same socket options the TCP client dials with — Python configures both
-    /// identically. See ``TCPClientInterface/tcpParameters``.
+    /// identically (`BackboneInterface.py:655-660`). See ``TCPClientInterface/tcpOptions()``.
+    static func tcpOptions() -> NWProtocolTCP.Options { TCPClientInterface.tcpOptions() }
+
     static var tcpParameters: NWParameters { TCPClientInterface.tcpParameters }
 
     private func openConnection() {
