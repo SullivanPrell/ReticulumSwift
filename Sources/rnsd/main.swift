@@ -52,10 +52,12 @@ if options.exampleConfig {
 // Python: `targetverbosity = verbosity-quietness`, then `None` in service mode (`rnsd.py:41-47`).
 let targetVerbosity = options.effectiveVerbosity
 
+// `DaemonBootstrap.homeDirectory()` rather than `homeDirectoryForCurrentUser`, which
+// ignores `$HOME`. Python resolves `~` with `os.path.expanduser`, which honours it.
 let paths = DaemonBootstrap.Paths(
     configDir: DaemonBootstrap.resolveConfigDir(
         explicit: options.configDir,
-        home: FileManager.default.homeDirectoryForCurrentUser))
+        home: DaemonBootstrap.homeDirectory()))
 
 // Python: `targetlogdest = RNS.LOG_FILE` under -s, otherwise `RNS.LOG_STDOUT` (`rnsd.py:43-47`).
 // The log file lives at <configdir>/logfile, so the destination is chosen only once the

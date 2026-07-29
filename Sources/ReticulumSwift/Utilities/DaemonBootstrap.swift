@@ -67,6 +67,10 @@ public enum DaemonBootstrap {
     /// Delegates to ``InstanceConnection/resolveConfigDirectory(_:home:systemConfigDir:fileManager:)``
     /// rather than re-deriving the order, so the two can never drift.
     /// Python: `Reticulum.py:229-236`.
+    /// The home directory `~` expands to, honouring `$HOME` the way Python's
+    /// `os.path.expanduser` does. See ``InstanceConnection/homeDirectory(environment:)``.
+    public static func homeDirectory() -> URL { InstanceConnection.homeDirectory() }
+
     public static func resolveConfigDir(explicit: String?,
                                         home: URL,
                                         systemConfigDir: URL = URL(fileURLWithPath: "/etc/reticulum"),

@@ -89,14 +89,31 @@ public final class InstanceConnection {
     /// else:                                                     ~/.reticulum
     /// ```
     public static func resolveConfigDirectory(_ explicit: URL? = nil) -> URL {
-        // NSHomeDirectory() rather than FileManager.homeDirectoryForCurrentUser, which is
-        // unavailable outside macOS — this type lives in the library target, which has to
-        // keep compiling for iOS, tvOS and watchOS. The two resolve identically for a
-        // command-line process.
         resolveConfigDirectory(explicit,
-                               home: URL(fileURLWithPath: NSHomeDirectory()),
+                               home: homeDirectory(),
                                systemConfigDir: URL(fileURLWithPath: "/etc/reticulum"),
                                fileManager: .default)
+    }
+
+    /// The home directory the config search starts from.
+    ///
+    /// Python reaches `~/.reticulum` through `os.path.expanduser("~")`, which returns
+    /// **`$HOME` when it is set** and only falls back to the password database otherwise.
+    /// `NSHomeDirectory()` does not: on macOS it always reports the account's real home,
+    /// so a Swift utility launched with `HOME` pointed at a sandbox silently read and wrote
+    /// the developer's actual `~/.reticulum` — and, finding the real daemon's identity
+    /// there, authenticated to the real daemon on 37428 and reported its status. That is
+    /// how `tri-test` came to be running "isolated" Swift utilities against a live node;
+    /// its Python half was correctly sandboxed the whole time.
+    ///
+    /// `NSHomeDirectory()` stays as the fallback rather than
+    /// `FileManager.homeDirectoryForCurrentUser`, which is macOS-only — this type lives in
+    /// the library target and has to keep compiling for iOS, tvOS and watchOS.
+    static func homeDirectory(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        if let home = environment["HOME"], !home.isEmpty {
+            return URL(fileURLWithPath: home)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
     }
 
     /// The same search order with its two fixed locations injected, so it can be exercised

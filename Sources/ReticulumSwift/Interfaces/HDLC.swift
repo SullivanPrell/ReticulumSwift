@@ -58,6 +58,16 @@ public enum HDLC {
 
         public init() {}
 
+        /// Discard any partially-received frame.
+        ///
+        /// Called when the underlying connection is replaced: Python allocates a fresh
+        /// read buffer per socket, so a half-decoded frame from the previous session must
+        /// not be prepended to the first bytes of the new one.
+        public func reset() {
+            buffer.removeAll(keepingCapacity: false)
+            inFrame = false
+        }
+
         /// Feed received bytes and return any complete frames.
         ///
         /// When `hwMtu` is supplied, two received-side safeguards from Python's

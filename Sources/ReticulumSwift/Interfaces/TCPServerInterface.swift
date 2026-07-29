@@ -12,6 +12,11 @@ import Network
 public final class TCPServerInterface: Interface {
     public let name: String
     public let port: UInt16
+    /// The address reported as the listener's bind address. Python resolves `listen_ip`
+    /// into `self.bind_ip` and prints it in `__str__` (`TCPInterface.py:518`, `:552`);
+    /// `NWListener` always binds every address, so this is a reporting-only value that
+    /// defaults to Python's `0.0.0.0`.
+    public let bindIP: String
     public private(set) var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
@@ -52,8 +57,15 @@ public final class TCPServerInterface: Interface {
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
 
-    /// Python `TCPServerInterface.__str__` returns `"TCPInterface[Server on 0.0.0.0:<port>]"`.
-    public var displayName: String { "TCPInterface[Server on 0.0.0.0:\(port)]" }
+    /// Python `TCPServerInterface.__str__` (`TCPInterface.py:680-686`):
+    /// `"TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"`, with an
+    /// IPv6 literal bracketed. The old `"TCPInterface[Server on …]"` form matched no
+    /// Python string at all, which put a different `Interface.hash` — it is
+    /// `fullHash(displayName)` — on the wire than the Python listener beside it.
+    public var displayName: String {
+        let ipString = bindIP.contains(":") ? "[\(bindIP)]" : bindIP
+        return "TCPServerInterface[\(name)/\(ipString):\(port)]"
+    }
 
     /// Number of currently-connected clients. Used by buildInterfaceStats for rnstatus.
     public var clientCount: Int {
@@ -71,9 +83,10 @@ public final class TCPServerInterface: Interface {
     private var spawned: [SpawnedClient] = []
     private var clientCounter = 0
 
-    public init(name: String, port: UInt16) {
+    public init(name: String, port: UInt16, bindIP: String = "0.0.0.0") {
         self.name = name
         self.port = port
+        self.bindIP = bindIP
         self.queue = DispatchQueue(label: "ReticulumSwift.TCPServerInterface.\(name)", attributes: .concurrent)
     }
 
@@ -137,14 +150,21 @@ public final class TCPServerInterface: Interface {
         let clientIndex = clientCounter
         lock.unlock()
 
-        let clientName = "\(name)[client-\(clientIndex)]"
+        // Python: `{"name": "Client on "+self.name, …}` (TCPInterface.py:590). Every
+        // spawned client on one server shares this name; they are told apart by the peer
+        // address in `displayName`, exactly as in Python.
+        let clientName = "Client on \(name)"
         Reticulum.log("Accepted TCP connection \(clientIndex) on \(name)", level: .verbose)
+
+        let peer = TCPServerInterface.peerAddress(of: conn)
 
         // Create a client interface before starting the connection so the
         // onFrame callback can reference it.
         let clientIface = TCPServerClientInterface(
             name: clientName,
-            parentServer: self
+            parentServer: self,
+            peerHost: peer.host,
+            peerPort: peer.port
         )
 
         let spawned = SpawnedClient(
@@ -186,6 +206,25 @@ public final class TCPServerInterface: Interface {
 
         // Register the sub-interface with Transport.
         onClientConnected?(clientIface)
+    }
+
+    /// The remote address of an accepted connection, for the spawned interface's name.
+    /// Python reads it straight off `handler.client_address`; `NWConnection` exposes it as
+    /// the endpoint it was created from.
+    static func peerAddress(of conn: NWConnection) -> (host: String, port: UInt16) {
+        guard case let .hostPort(host, port) = conn.endpoint else { return ("0.0.0.0", 0) }
+        switch host {
+        case .ipv4(let address):
+            // `debugDescription` on an IPv4Address is the dotted quad.
+            return ("\(address)", port.rawValue)
+        case .ipv6(let address):
+            // Strip the scope suffix ("fe80::1%en0") Python's client_address does not carry.
+            return ("\(address)".components(separatedBy: "%")[0], port.rawValue)
+        case .name(let name, _):
+            return (name, port.rawValue)
+        @unknown default:
+            return ("0.0.0.0", port.rawValue)
+        }
     }
 }
 
@@ -232,15 +271,36 @@ public final class TCPServerClientInterface: Interface {
     /// receive path for every spawned client.
     fileprivate func noteRx(bytes: Int) { counters.addRx(bytes: bytes) }
 
-    public var displayName: String { "TCPInterface[Client on \(name)]" }
+    /// The connecting peer's address, as Python records it on the spawned interface
+    /// (`spawned_interface.target_ip = handler.client_address[0]`, `TCPInterface.py:609`).
+    public let peerHost: String
+    public let peerPort: UInt16
+
+    /// A spawned client shares the `TCPClientInterface.__str__` format, but its `name` is
+    /// `"Client on "+servername` (`TCPInterface.py:590`) — which is exactly the prefix
+    /// `rnstatus` hides (`rnstatus.py:397`), because these are per-connection
+    /// sub-interfaces rather than anything an operator configured. Python distinguishes
+    /// concurrent clients by the peer address in the tail, not by the name.
+    public var displayName: String {
+        let ipString = peerHost.contains(":") ? "[\(peerHost)]" : peerHost
+        return "TCPInterface[\(name)/\(ipString):\(peerPort)]"
+    }
+
+    /// Python has no separate class for a spawned client: `TCPServerInterface` constructs a
+    /// plain `TCPClientInterface` from the accepted socket (`TCPInterface.py:591`), so that
+    /// is the class name `rnstatus` expects to see in the `type` field. `TCPServerClientInterface`
+    /// is a Swift implementation detail and is not an RNS interface class.
+    public var statsTypeName: String { "TCPClientInterface" }
 
     // Back-reference to parent server (for IFAC inheritance).
     private weak var parentServer: TCPServerInterface?
     // The underlying TCP connection.
     fileprivate weak var spawnedClient: SpawnedClient?
 
-    init(name: String, parentServer: TCPServerInterface) {
+    init(name: String, parentServer: TCPServerInterface, peerHost: String, peerPort: UInt16) {
         self.name = name
+        self.peerHost = peerHost
+        self.peerPort = peerPort
         self.parentServer = parentServer
         // Inherit IFAC settings from parent server.
         self.ifacIdentity = parentServer.ifacIdentity
