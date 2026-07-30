@@ -37,6 +37,52 @@ falsified both. They are corrected here rather than edited out of history.
 
 ### Fixed
 
+- **A packet on an MTU-upgraded link could not be sent at all** (`bugs/033`). `pack()` capped
+  every packet at the global 500-byte MTU. Python carries a *per-packet* cap and takes it from
+  the destination — `self.MTU = destination.mtu` for LINK-typed packets (`Packet.py:153-154`) —
+  so once MTU discovery raised a link, the resource parts `bugs/016` sizes from that negotiated
+  MTU exceeded the global cap and every one of the thirteen interfaces refused to transmit
+  them. The sender advertised a resource and then sent nothing; the peer timed out. This is the
+  outbound half of `bugs/010`. `Packet.mtu` is now set from the link in `Transport.send`, and
+  from the packet's own size in `unpack` so a relay forwards an upgraded link's traffic without
+  re-capping it. **Found by the interop suite, not by any unit test** — there was no
+  package-level test of an over-MDU request response, which is why it survived.
+
+- **The path table and the link table routed by interface name** (`bugs/027`). Both stored
+  `Interface.name` and resolved it with `first(where:)`, and every connection accepted by one
+  `TCPServerInterface` is named `"Client on <server>"` by design (`TCPInterface.py:590`). With
+  two clients attached, every route resolved to whichever registered first — regardless of
+  which one heard the announce — so traffic went to the wrong peer while the table insisted it
+  had a route. Both tables now hold weak references to the interface object, as the reference
+  does (`Transport.py:1639`, `:1693`), and keep the name for display only (`Reticulum.py:1532`).
+  Persistence stores `Interface.hash` and resolves it through the new
+  `Transport.findInterface(fromHash:)`; an entry whose interface is gone is not persisted
+  (`:3374`) and one whose hash resolves to nothing is dropped on load rather than restored
+  unroutable. **The link-table half was found only by the new interop cell**: link
+  *establishment* routes through the path table, so a relayed link came up normally and only
+  the traffic afterwards was misrouted — it read as a resource bug.
+
+- **Shutdown never tore links down** (`bugs/028`). `Transport.detachInterfaces()` was a
+  faithful port with zero callers, so a node exiting cleanly emitted no `LINK_CLOSE` and every
+  peer held the link ACTIVE until its own keepalive watchdog expired — up to 360 s — with the
+  sessions riding those links hanging rather than failing. `Reticulum.stop()` now calls it,
+  **before** `transport.stop()`: running it after would hand the closes to already-stopped
+  interfaces, satisfying "teardown was called" while emitting nothing.
+
+- **Discarding an unstarted dispatch source killed the process** (`bugs/032`). A source from
+  `DispatchSource.make…Source` begins suspended, and libdispatch traps when a suspended
+  object's last reference is released — cancelled or not. `Link.rescheduleWatchdog` and
+  `TCPClientInterface.scheduleReconnect` released one after only `cancel()`, on paths reached
+  by ordinary link teardown and by a `stop()` landing during a failed dial. `SIGTRAP`, nothing
+  thrown or logged. Both now use `DispatchSourceProtocol.cancelUnstarted()`.
+
+- **Link data packets generated no receipt** (`bugs/014`, the transport half). `Transport.send`
+  gated receipt creation on `destinationType == .single`, and `Link.send` hardcoded
+  `generateReceipt: false`, so nothing above the link could learn whether a packet arrived.
+  Receipts are now generated for link packets matching the reference's predicate
+  (`Transport.py:1113-1124`), and `Link.receive` routes a context-`.none` PROOF to the
+  packet-receipt table when no channel-proof waiter matches.
+
 - **Eleven interface types published a name Python does not** (`bugs/022`). `displayName`
   defaulted to the bare configured `name`, and 1.7.0 corrected it for the TCP and UDP
   families by adding per-type overrides — so every type it did not touch kept the wrong
@@ -106,6 +152,21 @@ falsified both. They are corrected here rather than edited out of history.
 
 ### Changed
 
+- **Resource part size, and every payload limit on a link, now derive from the negotiated
+  per-link MTU** rather than the base constant (`bugs/016`) — resource segmentation, channel
+  and buffer chunking, and request/response body limits. The receiver derives
+  `total_parts = ceil(size / sdu)` itself instead of trusting the advertisement
+  (`Resource.py:187`) and surfaces a disagreement at error level. **This is a wire change**: a
+  1.8.0 node serving a resource over an upgraded link sizes parts differently from a 1.7.0
+  peer. Old-receiver/new-sender works by accident (the old receiver follows the
+  advertisement); new-receiver/old-sender now reports the mismatch instead of timing out.
+- `Transport.PathEntry` and `Transport.LinkRoute` gain interface references and hand-written
+  `==`; the name-only `PathEntry` initialiser still exists but builds a deliberately
+  unroutable entry, and production code is forbidden from using it by a structural test.
+- **Persisted path entries are keyed on `Interface.hash`.** Since that derives from
+  `displayName` and eleven display names changed, a daemon upgrading across this release drops
+  those paths and relearns them from announces. This mirrors the reference, which drops an
+  entry whose interface hash is no longer active rather than misrouting it.
 - `Interface.displayName`'s default is the class-qualified form rather than `name`. Any
   downstream conformer that relied on publishing a bare name — including test doubles —
   publishes `TypeName[name]` now.
