@@ -3,6 +3,117 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased] — 1.8.0
+
+A minor rather than a patch release, for the same reason 1.7.0 was: `displayName` changes
+for eleven more interface types and `Interface.hash` is `fullHash(displayName)`, so
+interface identity changes again.
+
+### Corrections to 1.7.0
+
+Two claims in the 1.7.0 notes below were wrong when published. The 2026-07-29 audit
+falsified both. They are corrected here rather than edited out of history.
+
+- **"All config-directory resolution now goes through
+  `InstanceConnection.homeDirectory(environment:)`"** — it did not. One resolver was
+  converted; **fourteen** other sites still reached a platform home API. `rnir` and `rnpkg`
+  passed `FileManager.homeDirectoryForCurrentUser` into the config resolver;
+  `RNCopyDiskFileSystem.homeDirectoryPath` — which is where `rncp`'s `$HOME/.rncp` identity
+  and allow-list come from, and which the same 1.7.0 note describes as a problem — was still
+  `NSHomeDirectory()`; and eleven `expandingTildeInPath` sites across `rnid`, `rnpath`,
+  `rnstatus`, `rnx` and two library files resolved every user-supplied `~` against the
+  account's real home. So the failure the note describes — a utility under a relocated
+  `HOME` reading the real `~/.reticulum`, finding the live daemon's identity and
+  authenticating to the live daemon — remained reachable through all of them. Fixed below,
+  with a structural guard so the claim is now checkable rather than asserted.
+
+- **"Python sets `SO_KEEPALIVE` and the probe timers on every TCP socket it opens … this
+  port set none"** — the statement about Python is right; what shipped covered the two
+  *dialing* paths. `TCPServerInterface.start()` still passed `.tcp` to `NWListener`, so every
+  connection a listening interface accepted took Network.framework's defaults with keepalive
+  **off** — which is the case Python's own `connected_socket` branch exists to handle
+  (`TCPInterface.py:241`, `:259-261`, reached from `:591`). Three further sites were also
+  never covered. Fixed below.
+
+### Fixed
+
+- **Eleven interface types published a name Python does not** (`bugs/022`). `displayName`
+  defaulted to the bare configured `name`, and 1.7.0 corrected it for the TCP and UDP
+  families by adding per-type overrides — so every type it did not touch kept the wrong
+  shape. Since `Interface.hash` is `fullHash(displayName)` and `rnstatus` filters and hides
+  rows by class prefix, each was a different interface identity on the wire than the Python
+  interface beside it, and invisible to a class-name filter.
+
+  The default is now the composed `"\(statsTypeName)[\(name)]"`, so a new interface type
+  gets the correct shape by declaring nothing. Overrides remain only where the reference
+  string is genuinely a different shape:
+
+  | | before | after |
+  |---|---|---|
+  | Serial, KISS, AX25KISS, RNode, RNodeMulti, I2P, Weave | `<name>` | `<Class>[<name>]` |
+  | `BackboneInterface` | `<name>` | `BackboneInterface[<name>/<ip>:<port>]` |
+  | `RNodeSubInterface` | `<name>` | `<parent name>[<name>]` |
+  | `PosixTCPServer` | `<name>[<port>]` | `Shared Instance[<port>]` |
+  | `WeaveInterfacePeer` | `WeaveInterfacePeer[01020304]` | `WeaveInterfacePeer[01:02:03:04]` |
+
+  The last two were not in the audit's list. `PosixTCPServer` built Python's literal
+  `"Shared Instance[<port>]"` (`LocalInterface.py:496-498`) out of `name`, so it matched only
+  because its one caller happens to pass that string. `WeaveInterfacePeer` published
+  undelimited hex where `RNS.hexrep` delimits with `:` (`RNS/__init__.py:176-183`) — a
+  correct-looking string with a different hash.
+
+  `RNodeSubInterface` gained the `parentInterface` back-reference Python passes into its
+  `__init__` (`RNodeMultiInterface.py:939`), assigned when the multi-interface adopts its
+  sub-interfaces, since Swift constructs them before the parent exists.
+
+- **A non-connectable I2P interface was never hidden from status output** (`bugs/022`).
+  The suppression gate was a faithful port of `rnstatus.py:393-403` and its tests passed —
+  against a hand-built stats dict named `"I2PInterface["`, the string the gate keys on. A
+  real interface published its bare configured name, so the prefix never matched and the
+  gate suppressed nothing. Fixed by the published-name change above; now asserted from a
+  real interface through the rendered output, for any configured name.
+
+- **Sockets this port accepted or listened on took Network.framework's defaults**
+  (`bugs/023`). Python configures the socket it accepts exactly as the one it dials, so
+  direction must not decide whether the options apply. All socket options now come from a
+  single `RNSSocketOptions` factory, and a structural test fails if any other file
+  constructs them. Six sites were bypassing it:
+
+  - `TCPServerInterface.start()` — the listener, and so every connection accepted from it.
+  - `LocalInterface.connect()` — missing the `TCP_NODELAY` Python sets at
+    `LocalInterface.py:147`.
+  - `TCPClientInterface` — built its own; now delegates.
+  - `RPCServer.start()` — `.tcp` on the loopback control listener.
+  - `SAMSocket.connect()` — `.tcp`, so a SAM bridge that stopped answering left the I2P peer
+    online forever. It now takes Python's **I2P** timing set (`I2P_USER_TIMEOUT` 45,
+    `I2P_PROBE_AFTER` 10, `I2P_PROBE_INTERVAL` 9, `I2P_PROBES` 5), selected by
+    `i2p_tunneled = True` at `TCPInterface.py:190-194` — a distinction this port did not
+    previously have, and the direct-TCP timers would tear down a healthy tunnel.
+  - `PosixTCPServer.acceptOne()` — set only `SO_NOSIGPIPE` where Python sets `TCP_NODELAY`
+    on every accepted shared-instance socket (`LocalInterface.py:98-100`).
+
+  The last three were not in the audit's list. The shared-instance option set is
+  `TCP_NODELAY` **only**, matching Python: `LocalClientInterface` calls no `set_timeouts_*`
+  on either direction, so enabling keepalive there would exceed the reference.
+
+- **Fourteen sites resolved a home path without honouring `$HOME`** (`bugs/024`) — see the
+  1.7.0 correction above. `InstanceConnection.expandTilde` is now the single expansion, with
+  `posixpath.expanduser`'s semantics including the `rstrip('/')` on the home;
+  `RNCopyDiskFileSystem` takes an injected environment. `rncp` already had a correct
+  `$HOME`-aware expansion and now delegates to the shared one rather than keeping a second
+  copy of the rules. The unset-`HOME` fallback in `InstanceConnection` is the one sanctioned
+  exception, and a test pins it at exactly one occurrence.
+
+### Changed
+
+- `Interface.displayName`'s default is the class-qualified form rather than `name`. Any
+  downstream conformer that relied on publishing a bare name — including test doubles —
+  publishes `TypeName[name]` now.
+- `TCPClientInterface.tcpOptions()` / `.tcpParameters` and `BackboneInterface`'s equivalents
+  are removed; use `RNSSocketOptions`.
+- `RNCopyDiskFileSystem.init()` gains an `environment:` parameter (defaulted, so existing
+  callers are unaffected).
+
 ## [1.7.0] — TCP interface naming, reconnection and keepalive
 
 A minor rather than a patch release: the fixes add public API (`reconnectWait`,
@@ -50,7 +161,9 @@ UDP interface calls itself — and therefore its `Interface.hash`, which is
   `.waiting` is no longer swallowed: a refused peer is retried on Python's clock instead of
   silently inside `NWConnection`.
 
-- **No TCP keepalive on the dialing interfaces.** Python sets `SO_KEEPALIVE` and the probe
+- **No TCP keepalive on the dialing interfaces.** *(Corrected in 1.8.0 — this covered the
+  two dialing paths only; the listener and three other sites still took framework defaults.)*
+  Python sets `SO_KEEPALIVE` and the probe
   timers on every TCP socket it opens (`TCPInterface.set_timeouts_osx` /
   `set_timeouts_linux`, `BackboneInterface.py:655`); this port set none, because
   `NWConnection(to:using: .tcp)` takes Network.framework's defaults and those have keepalive
@@ -77,7 +190,10 @@ UDP interface calls itself — and therefore its `Interface.hash`, which is
   `connectionDropTime = 24`, and `noDelay = true` (`TCP_NODELAY`, which Python sets on every
   socket on both platforms).
 
-- **Swift utilities ignored `$HOME`.** Python expands `~` with `os.path.expanduser`, which
+- **Swift utilities ignored `$HOME`.** *(Corrected in 1.8.0 — "all config-directory
+  resolution" was one resolver; fourteen other sites still reached a platform home API,
+  including the `rncp` allow-list this very note describes.)*
+  Python expands `~` with `os.path.expanduser`, which
   returns `$HOME` when it is set; `NSHomeDirectory()` — and
   `FileManager.homeDirectoryForCurrentUser`, which `rnsd` used — always reports the
   account's real home on macOS. A utility launched with `HOME` pointed at a sandbox
