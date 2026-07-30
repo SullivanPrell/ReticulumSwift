@@ -378,7 +378,10 @@ extension Link {
             effectiveTimeout = nil
         }
 
-        if body.count <= Constants.linkMdu {
+        // The link's negotiated MDU, not the base constant: Python decides packet-vs-Resource
+        // on `self.mdu` (`Link.py:493`), which tracks the negotiated MTU. Same seam as
+        // `bugs/016` — see `Resource.segmentSize(for:)`.
+        if body.count <= mdu {
             // ---------------------------------------------------------------
             // Small-packet path
             // Build the wire Packet first to compute request_id from its
@@ -509,7 +512,7 @@ extension Link {
             // Native (Python-compatible) handler: response embedded directly in envelope.
             guard let responseValue = native(pathHash, rawValue, requestID, self, requestedAt) else { return }
             let responseBody = MsgPack.encode(.array([.bytes(requestID), responseValue]))
-            if responseBody.count <= Constants.linkMdu {
+            if responseBody.count <= mdu {
                 try? send(responseBody, context: .response)
             } else {
                 let rt = ResourceTransfer(link: self)
@@ -520,7 +523,7 @@ extension Link {
             // Bytes handler: response wrapped as .bytes in the envelope.
             guard let response = entry.handler(pathHash, payload, requestID, self, requestedAt) else { return }
             let responseBody = MsgPack.encode(.array([.bytes(requestID), .bytes(response)]))
-            if responseBody.count <= Constants.linkMdu {
+            if responseBody.count <= mdu {
                 try? send(responseBody, context: .response)
             } else {
                 let rt = ResourceTransfer(link: self)

@@ -95,10 +95,16 @@ final class ResourceTransferTests: XCTestCase {
         bRx.onPayloadReceived = { d, _ in got = d; received.fulfill() }
         aTx.onComplete = { _ in complete.fulfill() }
 
-        // 150 bytes at 50-byte segments = 3 segments.
+        // 150 bytes at 50-byte parts = 3 parts. Driven by lowering the link's MTU rather than
+        // by overriding the part size on the sender: the receiver derives its own part count
+        // from the link (`bugs/016`, `Resource.py:187`), so an override on one side only is a
+        // disagreement — exactly the one that makes a real transfer time out. A low-MTU link is
+        // also the realistic way to get small parts.
+        aLink.establishedMtu = 50 + Constants.headerMaxSize + Constants.ifacMinSize
+        bLink.establishedMtu = aLink.establishedMtu
         var payload = Data()
         for i: UInt8 in 0 ..< 150 { payload.append(i) }
-        try aTx.send(payload: payload, segmentSize: 50)
+        try aTx.send(payload: payload)
 
         wait(for: [received, complete], timeout: 2.0)
         XCTAssertEqual(got, payload)

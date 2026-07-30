@@ -54,8 +54,34 @@ public final class Resource {
     ///   - metadata: Pre-packed (e.g. msgpack) metadata bytes to prepend. The receiver will
     ///               receive both the metadata and the payload via ``ResourceTransfer``.
     ///               Mirrors Python `Resource(data, link, metadata=...)`.
+    /// The part size for a resource travelling over `link` — the one place it is decided.
+    ///
+    /// `bugs/016`. Python computes this on **both** sides from the per-link MTU
+    /// (`Resource.py:335`):
+    ///
+    /// ```python
+    /// if self.link.mtu: self.sdu = self.link.mtu - HEADER_MAXSIZE - IFAC_MIN_SIZE
+    /// else:             self.sdu = link.mdu or Resource.SDU
+    /// ```
+    ///
+    /// This port used a fixed `Constants.mdu` (464), which is the reference's answer only at the
+    /// base MTU of 500. Above that the two sides derive different part counts, the receiver's
+    /// hashmap update walks off the end of its map, the error is swallowed at debug level
+    /// (`Resource.py:240`), and the transfer times out with the link still ACTIVE — silently, in
+    /// both directions.
+    ///
+    /// A function rather than a default argument at each call site, because "fixed at the call
+    /// sites the failing test touched" is how three of `bugs/013`'s four sub-defects came back.
+    /// Every site that needs a part size asks here.
+    public static func segmentSize(for link: Link) -> Int {
+        link.establishedMtu - Constants.headerMaxSize - Constants.ifacMinSize
+    }
+
+    /// - Parameter segmentSize: part size in bytes. `nil` derives it from the link, which is what
+    ///   every caller should want — see ``segmentSize(for:)``.
     public init(link: Link, payload: Data, metadata: Data? = nil,
-                segmentSize: Int = Constants.mdu, autoCompress: Bool = true) throws {
+                segmentSize: Int? = nil, autoCompress: Bool = true) throws {
+        let segmentSize = segmentSize ?? Resource.segmentSize(for: link)
         self.link = link
         self.uncompressedData = payload
         self.metadata = metadata
