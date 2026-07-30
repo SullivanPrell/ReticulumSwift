@@ -122,6 +122,9 @@ public struct ReticulumConfig {
         public subscript(_ key: String) -> String? { parameters[key] }
         public func int(_ key: String) -> Int? { parameters[key].flatMap(Int.init) }
         public func bool(_ key: String) -> Bool? { parameters[key].flatMap(parseBool) }
+        /// Python's `c.as_float(key)`. Used by the `ic_*` / `ec_pr_freq` family, all of which
+        /// Python reads as floats (`Reticulum.py:791-813`).
+        public func double(_ key: String) -> Double? { parameters[key].flatMap(Double.init) }
     }
 
     // MARK: - Parsing

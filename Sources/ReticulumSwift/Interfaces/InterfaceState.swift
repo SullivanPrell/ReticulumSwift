@@ -53,6 +53,16 @@ public final class InterfaceState {
         var icBurstPenalty: TimeInterval = IngressControlState.icBurstPenalty
         var icHeldReleaseInterval: TimeInterval = IngressControlState.icHeldReleaseInterval
         var icBurstMinSamples: Int = IngressControlState.icBurstMinSamples
+        /// Python `interface.ic_max_held_announces` (`Interface.py:126`, config key at
+        /// `Reticulum.py:791-792`) — a per-interface instance value, not a class constant.
+        ///
+        /// This port had it the other way round: `IngressControlState.maxHeldAnnounces` was a
+        /// global `static let 256` that no config could reach, while `icBurstMinSamples` — which
+        /// Python reads as the class constant `self.IC_BURST_MIN_SAMPLES` (`Interface.py:85`,
+        /// `:201`) and exposes no config key for — was the per-interface one. So an operator could
+        /// configure the tunable Python does not expose and not the one it does. Found while
+        /// writing the per-interface parser; `icBurstMinSamples` stays on the box, harmlessly.
+        var icMaxHeldAnnounces: Int = IngressControlState.maxHeldAnnounces
 
         var gravity: Int = InterfaceMode.defaultGravity
         var bootstrapOnly: Bool = false
@@ -203,6 +213,13 @@ public final class InterfaceState {
     public var icBurstMinSamples: Int {
         get { read(\.icBurstMinSamples) }
         set { write(\.icBurstMinSamples, newValue) }
+    }
+
+    /// Python: `interface.ic_max_held_announces` — how many announces this interface will hold
+    /// during an ingress burst before dropping them.
+    public var icMaxHeldAnnounces: Int {
+        get { read(\.icMaxHeldAnnounces) }
+        set { write(\.icMaxHeldAnnounces, newValue) }
     }
 
     // MARK: - Routing and announce-propagation flags

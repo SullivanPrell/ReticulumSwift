@@ -39,6 +39,12 @@ public struct IngressControlState {
     /// (= Python's `IC_DEQUE_MIN_SAMPLE` = 2), which governs whether a
     /// frequency is computable at all.
     /// Mirrors Python's `Interface.IC_BURST_MIN_SAMPLES = 6`.
+    /// `Interface.IC_BURST_MIN_SAMPLES` (`Interface.py:85`).
+    ///
+    /// Deliberately **not** per-interface, unlike the tunables around it: Python reads it as the
+    /// class constant `self.IC_BURST_MIN_SAMPLES` (`:201`) and exposes no config key for it. The
+    /// statics in this type are the canonical default values the per-interface box initialises
+    /// from; this one is also the only value read directly at the decision site.
     public static let icBurstMinSamples: Int = 6
     /// Maximum number of held announces per interface.
     /// Mirrors Python `Interface.MAX_HELD_ANNOUNCES = 256`.

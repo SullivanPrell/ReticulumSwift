@@ -973,9 +973,9 @@ public final class Transport {
               let tracker = tracker(for: interface) else { return false }
 
         let age = now - interface.createdAt.timeIntervalSince1970
-        let threshold = age < IngressControlState.icNewTime
-            ? IngressControlState.icBurstFreqNew
-            : IngressControlState.icBurstFreq
+        let threshold = age < interface.interfaceState.icNewTime
+            ? interface.interfaceState.icBurstFreqNew
+            : interface.interfaceState.icBurstFreq
         let freq = tracker.incomingAnnounceFrequency(now: now)
 
         if state.burstActive {
@@ -993,7 +993,7 @@ public final class Transport {
             // sample requirement against a deque that a subsiding burst never
             // refills, the flag could only ever clear if *new* announces arrived,
             // which is precisely what it was suppressing.
-            if freq < threshold && now > state.burstActivated + IngressControlState.icBurstHold {
+            if freq < threshold && now > state.burstActivated + interface.interfaceState.icBurstHold {
                 if tracker.incomingAnnounceSampleCount >= InterfaceFreqTracker.minSamples {
                     state.burstActive = false
                     ingressStates[key] = state
@@ -1004,7 +1004,7 @@ public final class Transport {
             if freq > threshold {
                 state.burstActive = true
                 state.burstActivated = now
-                state.heldRelease = now + IngressControlState.icBurstPenalty
+                state.heldRelease = now + interface.interfaceState.icBurstPenalty
                 ingressStates[key] = state
                 return true
             }
@@ -1023,15 +1023,15 @@ public final class Transport {
               let tracker = tracker(for: interface) else { return false }
 
         let age = now - interface.createdAt.timeIntervalSince1970
-        let threshold = age < IngressControlState.icNewTime
-            ? IngressControlState.icPrBurstFreqNew
-            : IngressControlState.icPrBurstFreq
+        let threshold = age < interface.interfaceState.icNewTime
+            ? interface.interfaceState.icPrBurstFreqNew
+            : interface.interfaceState.icPrBurstFreq
         let freq = tracker.incomingPathRequestFrequency(now: now)
 
         if state.prBurstActive {
             // As in `shouldIngressLimit`, the deactivating call itself still
             // returns `true` — Python's `return True` is outside this branch.
-            if freq < threshold && now > state.prBurstActivated + IngressControlState.icBurstHold {
+            if freq < threshold && now > state.prBurstActivated + interface.interfaceState.icBurstHold {
                 state.prBurstActive = false
                 ingressStates[key] = state
             }
@@ -1067,7 +1067,7 @@ public final class Transport {
 
     /// Hold `packet` on `interface` for deferred replay when burst ends.
     /// Newer packets for the same destination overwrite older ones.
-    /// Capped at `IngressControlState.maxHeldAnnounces`.
+    /// Capped at `interface.interfaceState.icMaxHeldAnnounces`.
     ///
     /// Mirrors Python's `Interface.hold_announce(packet)`.
     public func holdAnnounce(_ packet: Packet, destinationHash: Data, on interface: any Interface) {
@@ -1082,7 +1082,7 @@ public final class Transport {
         if state.heldAnnounces[destinationHash] != nil {
             // Overwrite existing held announce for same destination (most recent wins).
             state.heldAnnounces[destinationHash] = packet
-        } else if state.heldAnnounces.count < IngressControlState.maxHeldAnnounces {
+        } else if state.heldAnnounces.count < interface.interfaceState.icMaxHeldAnnounces {
             state.heldAnnounces[destinationHash] = packet
         }
         ingressStates[key] = state
@@ -1105,16 +1105,16 @@ public final class Transport {
            !state.heldAnnounces.isEmpty, now > state.heldRelease {
             // Check current frequency is below threshold before releasing.
             let age = now - interface.createdAt.timeIntervalSince1970
-            let threshold = age < IngressControlState.icNewTime
-                ? IngressControlState.icBurstFreqNew
-                : IngressControlState.icBurstFreq
+            let threshold = age < interface.interfaceState.icNewTime
+                ? interface.interfaceState.icBurstFreqNew
+                : interface.interfaceState.icBurstFreq
             let freq = tracker(for: interface)?.incomingAnnounceFrequency(now: now) ?? 0
             if freq < threshold,
                // Select lowest-hop held announce (mirrors Python's min-hops selection).
                let (bestHash, bestPacket) = state.heldAnnounces
                    .min(by: { $0.value.hops < $1.value.hops }) {
                 state.heldAnnounces.removeValue(forKey: bestHash)
-                state.heldRelease = now + IngressControlState.icHeldReleaseInterval
+                state.heldRelease = now + interface.interfaceState.icHeldReleaseInterval
                 ingressStates[key] = state
                 released = bestPacket
             }

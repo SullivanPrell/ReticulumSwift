@@ -716,6 +716,94 @@ public final class Reticulum {
         return identity
     }
 
+    // MARK: - Per-interface configuration
+
+    /// Apply everything one interface block configures, then its IFAC keys.
+    ///
+    /// The other half of `bugs/025`. §1 of this change made `mode`, the three `announce_rate_*`
+    /// values, `announce_cap`, `bitrate`, `ingress_control`, `egress_control`/`ec_pr_freq` and the
+    /// nine `ic_*` tunables settable, because Python mutates all of them at runtime and this port
+    /// had declared them get-only. That removed the compile-time blocker and left the values with
+    /// nowhere to come *from*: this function did not exist, and `synthesizeInterfaces` applied
+    /// exactly two attributes — `gravity` and `announces_to_internal`. Which is the same defect one
+    /// step earlier, in the spec's words: "a configuration value with nowhere to be written is
+    /// indistinguishable from a configuration value that is never read, and both are failures of
+    /// this requirement."
+    ///
+    /// Mirrors `Reticulum.py:735-857` (extraction) and `:906-953` (application). Python applies the
+    /// first group unconditionally, from resolved defaults, and the `egress_control` / `ic_*`
+    /// group only where the key is present — so an absent key leaves the class default rather than
+    /// overwriting it with a zero.
+    ///
+    /// Called before `Transport.register` and `Interface.start`, matching `Reticulum.py:975`.
+    public static func applyInterfaceConfiguration(to interface: any Interface,
+                                                   from block: ReticulumConfig.InterfaceConfig) {
+        // `interface_mode` first, then `mode` (`Reticulum.py:736-768`). Case-insensitive, and an
+        // unrecognised value falls through leaving the default — Python's if/elif chain has no
+        // else branch, so `interface_mode` stays MODE_FULL.
+        //
+        // Divergence worth recording: Python's `interface_mode` branch reads `c["mode"]` for its
+        // `gateway` and `internal` cases (`Reticulum.py:748-751`) — a typo in the reference. With
+        // `interface_mode = gateway` and no `mode` key, configobj raises `KeyError` there. This
+        // port resolves both aliases from whichever key was given, which is what the branch plainly
+        // intends and what the spec table describes.
+        let modeString = block["interface_mode"] ?? block["mode"]
+        if let modeString, let mode = InterfaceMode(configName: modeString) {
+            interface.mode = mode
+        }
+
+        // An explicit `gravity` wins, else `default_gravity`, else 0 (`Reticulum.py:771-772`).
+        interface.gravity = block.int("gravity") ?? Reticulum.defaultGravity()
+
+        // A percentage in `(0, 100]`, divided by 100 (`Reticulum.py:834-837`). Out of range leaves
+        // the class default.
+        if let cap = block.double("announce_cap"), cap > 0, cap <= 100 {
+            interface.announceCap = cap / 100.0
+        }
+
+        interface.bootstrapOnly = block.bool("bootstrap_only") ?? false
+        interface.recursivePrs = block.bool("recursive_prs") ?? false
+        interface.announcesFromInternal = block.bool("announces_from_internal") ?? true
+        // No default: absent means Python's `None`, distinct from an explicit `False`.
+        interface.announcesToInternal = block.bool("announces_to_internal")
+
+        // `announce_rate_target` must be `> 0`; grace and penalty `>= 0` (`Reticulum.py:820-829`).
+        // A target with neither companion gets both defaulted to 0 (`:831-832`), so a config that
+        // sets only the target is complete rather than half-configured.
+        let target = block.int("announce_rate_target").flatMap { $0 > 0 ? $0 : nil }
+        let grace = block.int("announce_rate_grace").flatMap { $0 >= 0 ? $0 : nil }
+        let penalty = block.int("announce_rate_penalty").flatMap { $0 >= 0 ? $0 : nil }
+        interface.announceRateTarget = target.map(TimeInterval.init)
+        interface.announceRateGrace = grace ?? 0
+        interface.announceRatePenalty = TimeInterval(penalty ?? 0)
+
+        // A configured bitrate replaces the class guess when it is at least `MINIMUM_BITRATE`
+        // (`Reticulum.py:815-816`, applied at `:914`). It is not merely reported: announce capacity
+        // and resource timings derive from it.
+        if let bitrate = block.int("bitrate"), bitrate >= Reticulum.minimumBitrate {
+            interface.bitrate = bitrate
+        }
+
+        interface.ingressControl = block.bool("ingress_control") ?? true
+
+        // Present-only, so an absent key leaves the class default (`Reticulum.py:942-953`).
+        let state = interface.interfaceState
+        if let value = block.bool("egress_control")            { interface.egressControl = value }
+        if let value = block.double("ec_pr_freq")              { interface.ecPrFreq = value }
+        if let value = block.int("ic_max_held_announces")      { state.icMaxHeldAnnounces = value }
+        if let value = block.double("ic_burst_hold")           { state.icBurstHold = value }
+        if let value = block.double("ic_burst_freq_new")       { state.icBurstFreqNew = value }
+        if let value = block.double("ic_burst_freq")           { state.icBurstFreq = value }
+        if let value = block.double("ic_pr_burst_freq_new")    { state.icPrBurstFreqNew = value }
+        if let value = block.double("ic_pr_burst_freq")        { state.icPrBurstFreq = value }
+        if let value = block.double("ic_new_time")             { state.icNewTime = value }
+        if let value = block.double("ic_burst_penalty")        { state.icBurstPenalty = value }
+        if let value = block.double("ic_held_release_interval") { state.icHeldReleaseInterval = value }
+
+        // IFAC last, as Python does (`Reticulum.py:955` follows the attribute block).
+        applyIfacConfiguration(to: interface, from: block)
+    }
+
     // MARK: - Per-interface IFAC configuration
 
     /// Read the IFAC keys out of one interface block and install the derived key on the interface.
@@ -854,23 +942,16 @@ public final class Reticulum {
             default:
                 iface = nil
             }
-            if var iface {
-                // RNS 1.4.1 per-interface routing policy, applied before
-                // registration so Transport never sees an unconfigured
-                // interface. Resolution matches Python (Reticulum.py:771-772,
-                // 845-847, 908-936): an explicit `gravity` in the interface
-                // block wins, otherwise `default_gravity`, otherwise 0.
-                iface.gravity = ifCfg.int("gravity") ?? Reticulum.defaultGravity()
-                // `announces_to_internal` has no default — absent means Python's
-                // `None`, which is distinct from an explicit `False`.
-                if let ati = ifCfg.bool("announces_to_internal") {
-                    iface.announcesToInternal = ati
-                }
-                // Before register/start, matching `Reticulum.py:975`: the IFAC key has to be
-                // installed before the first frame moves, or the interface's opening announce
-                // goes out unprotected and the peer drops it. Spawned sub-interfaces pick it up
-                // through `InterfaceState.inherit(from:)` and the per-conformer IFAC copy.
-                Reticulum.applyIfacConfiguration(to: iface, from: ifCfg)
+            if let iface {
+                // Everything the block configures, applied before registration so Transport never
+                // sees an unconfigured interface, and before `start()` so the IFAC key is installed
+                // before the first frame moves — matching `Reticulum.py:975`. Spawned
+                // sub-interfaces pick it all up through `InterfaceState.inherit(from:)`.
+                //
+                // This used to apply `gravity` and `announces_to_internal` and nothing else, which
+                // is what `bugs/025`'s second half is: §1 made the rest settable and no parser
+                // wrote to them.
+                Reticulum.applyInterfaceConfiguration(to: iface, from: ifCfg)
                 transport.register(interface: iface)
                 try? iface.start()
             }
