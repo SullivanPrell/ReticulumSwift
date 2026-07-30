@@ -2486,6 +2486,20 @@ public final class Transport {
     /// callbacks.
     @discardableResult
     public func send(_ packet: Packet, generateReceipt: Bool = true) throws -> PacketReceipt? {
+        var packet = packet
+        // Give the packet the transmit cap of the link it belongs to, mirroring Python's
+        // `self.MTU = destination.mtu` for LINK-typed packets (`Packet.py:153-154`). Done here
+        // because this is the single funnel every link packet passes through — the alternative
+        // is stamping it at the ten `destinationType: .link` construction sites in `Link`, which
+        // is the shape that let `bugs/013` come back three times.
+        //
+        // Without it, `pack()` caps every packet at the base 500 bytes, so once MTU discovery
+        // raises a link the resource parts `bugs/016` sizes from that MTU are refused by every
+        // interface and the transfer dies silently (`bugs/033`).
+        if packet.destinationType == .link {
+            lock.lock(); let link = links[packet.destinationHash]; lock.unlock()
+            if let link { packet.mtu = max(packet.mtu, link.establishedMtu) }
+        }
         var receipt: PacketReceipt? = nil
 
         if generateReceipt, Transport.shouldGenerateReceipt(for: packet) {
