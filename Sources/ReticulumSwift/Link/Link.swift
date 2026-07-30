@@ -930,22 +930,44 @@ public final class Link {
     /// Match an inbound explicit link-data PROOF (`[full hash][signature]`) to a
     /// pending channel packet, validating the signature against the link peer's
     /// signing key (Python `Link.validate`), and mark the handle delivered.
-    private func handleChannelProof(_ proofData: Data) {
-        guard proofData.count == Constants.fullHashLength + Constants.signatureLength else { return }
+    /// Returns `true` when the proof matched an outstanding channel packet, so the caller knows
+    /// not to try the packet-receipt table as well.
+    @discardableResult
+    private func handleChannelProof(_ proofData: Data) -> Bool {
+        guard proofData.count == Constants.fullHashLength + Constants.signatureLength else { return false }
         let hash = Data(proofData.prefix(Constants.fullHashLength))
         let signature = Data(proofData.suffix(Constants.signatureLength))
         stateLock.lock()
         let peer = peerSigPub
         let handle = channelProofWaiters[hash]
         stateLock.unlock()
-        guard let peer, let handle else { return }
-        guard peer.isValidSignature(signature, for: hash) else { return }
+        guard let peer, let handle else { return false }
+        guard peer.isValidSignature(signature, for: hash) else { return false }
         stateLock.lock()
         // Drop every hash pointing at this handle (the matched one plus any stale
         // retransmission hashes) so the map stays tight.
         for (k, v) in channelProofWaiters where v === handle { channelProofWaiters.removeValue(forKey: k) }
         stateLock.unlock()
         handle.markDelivered()
+        return true
+    }
+
+    /// Conclude the packet receipt for an ordinary link data packet the peer has proved.
+    ///
+    /// The other half of `bugs/014`. A link data proof carries `[full hash][signature]` signed
+    /// with the peer's **link** signing key (`proveLinkPacket`), not with its destination
+    /// identity — so `PacketReceipt.validateExplicitProof` cannot check it and this is the only
+    /// layer that can: `peerSigPub` exists nowhere else. The signature is verified here and the
+    /// receipt is then concluded directly.
+    private func handleDataProof(_ proofData: Data, packet: Packet) {
+        guard proofData.count == Constants.fullHashLength + Constants.signatureLength else { return }
+        let hash = Data(proofData.prefix(Constants.fullHashLength))
+        let signature = Data(proofData.suffix(Constants.signatureLength))
+        stateLock.lock()
+        let peer = peerSigPub
+        stateLock.unlock()
+        guard let peer, peer.isValidSignature(signature, for: hash) else { return }
+        transport?.concludeLinkReceipt(packetHash: hash, proofPacket: packet)
     }
 
     // MARK: - Init
@@ -1395,7 +1417,15 @@ public final class Link {
     /// Encrypt and send a data packet over the link. `context` defaults to
     /// `.none` (a plain user-data packet); pass `.request`, `.response`,
     /// `.channel`, etc., for higher-level framing.
-    public func send(_ plaintext: Data, context: Packet.Context = .none) throws {
+    ///
+    /// Returns the delivery receipt for contexts the reference generates one for, so a caller
+    /// can learn whether the peer actually received the packet. This used to hardcode
+    /// `generateReceipt: false`, which is why nothing above the link layer could distinguish
+    /// "sent" from "delivered" and LXMF reported delivery from the return of this call
+    /// (`bugs/014`). `@discardableResult` because most callers — keepalives, link control,
+    /// resource parts — legitimately do not want one.
+    @discardableResult
+    public func send(_ plaintext: Data, context: Packet.Context = .none) throws -> PacketReceipt? {
         guard status == .active else { throw LinkError.notActive }
         guard let linkID, let transport else { throw LinkError.invalidState }
         let ciphertext = try encrypt(plaintext)
@@ -1406,8 +1436,9 @@ public final class Link {
             context: context,
             data: ciphertext
         )
-        try transport.send(packet, generateReceipt: false)
+        let receipt = try transport.send(packet)
         recordOutbound(bytes: ciphertext.count, countPacket: true, isData: context != .keepalive)
+        return receipt
     }
 
     // MARK: - Request helpers (called from LinkRequest.swift extension)
@@ -1477,7 +1508,12 @@ public final class Link {
         // which would otherwise fail on the cleartext proof bytes.
         if packet.packetType == .proof, packet.context == .none {
             stateLock.lock(); lastInbound = Date(); stateLock.unlock()
-            handleChannelProof(packet.data)
+            // A context-`.none` proof is ambiguous between a channel proof and a proof for an
+            // ordinary link data packet. Channel waiters keep priority — that is the order the
+            // code already implied, so adding the receipt path is purely additive and cannot
+            // regress the `bugs/005` channel-proof fix.
+            if handleChannelProof(packet.data) { return }
+            handleDataProof(packet.data, packet: packet)
             return
         }
 

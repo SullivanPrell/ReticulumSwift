@@ -162,6 +162,17 @@ public final class PacketReceipt {
         return markDelivered(packet)
     }
 
+    /// Conclude a receipt whose proof has already been validated by the `Link` that owns it.
+    ///
+    /// A link data packet's proof is signed with the link's ephemeral signing key, not with the
+    /// destination identity, so `peerIdentity` cannot verify it and only the `Link` holds
+    /// `peerSigPub`. `Link.receive` checks the signature and calls this; the check is not
+    /// skipped, it happens one layer up (`bugs/014`).
+    @discardableResult
+    func markDeliveredByLinkProof(_ packet: Packet? = nil) -> Bool {
+        markDelivered(packet)
+    }
+
     /// Atomic terminal-state commit. Returns `true` iff this call won the race
     /// (transitioned from `.sent` to `.delivered`); a loser returns `false`
     /// without firing a callback. The delivery callback fires outside the lock.

@@ -2343,6 +2343,18 @@ public final class Transport {
         receiptsLock.unlock()
     }
 
+    /// Conclude the receipt for a link data packet whose proof a `Link` has already validated.
+    ///
+    /// Separate from ``deliverProof(packetHash:proof:)`` because the signature over a link data
+    /// packet is made with the link's own signing key, which no receipt can verify — see
+    /// `Link.handleDataProof` (`bugs/014`).
+    func concludeLinkReceipt(packetHash: Data, proofPacket: Packet?) {
+        receiptsLock.lock()
+        let match = receipts.first { $0.packetHash == packetHash }
+        receiptsLock.unlock()
+        match?.markDeliveredByLinkProof(proofPacket)
+    }
+
     /// Look up a receipt by packet hash and mark it delivered via
     /// explicit proof (hash + Ed25519 signature). Mirrors Python's
     /// `PacketReceipt.validate_proof`.
@@ -2355,26 +2367,50 @@ public final class Transport {
 
     // MARK: - Outbound
 
+    /// Whether `packet` is one the reference would generate a delivery receipt for.
+    ///
+    /// Python's predicate, verbatim (`Transport.py:1113-1124`): a DATA packet to a non-PLAIN
+    /// destination whose context is outside the link-control range (`KEEPALIVE`…`LRPROOF`) and
+    /// outside the resource range (`RESOURCE`…`RESOURCE_RCL`).
+    ///
+    /// This port gated on `destinationType == .single` instead, which excluded **every link
+    /// packet** — so a message sent over a link got no receipt, nothing could ever prove it, and
+    /// LXMF had no choice but to call `send()` returning "delivered" (`bugs/014`). The reference
+    /// has no such restriction; a LINK destination is simply not PLAIN.
+    static func shouldGenerateReceipt(for packet: Packet) -> Bool {
+        guard packet.packetType == .data else { return false }
+        guard packet.destinationType != .plain else { return false }
+        let context = packet.context.rawValue
+        // Link control: KEEPALIVE (0xFA) … LRPROOF (0xFF).
+        if context >= Packet.Context.keepalive.rawValue { return false }
+        // Resource transfer: RESOURCE (0x01) … RESOURCE_RCL (0x07). Resources carry their own
+        // proof mechanism, so a per-part receipt would be duplicated bookkeeping.
+        if context >= Packet.Context.resource.rawValue,
+           context <= Packet.Context.resourceReceiverCancel.rawValue { return false }
+        return true
+    }
+
     /// Send a packet and optionally generate a delivery receipt.
     ///
-    /// For DATA packets to SINGLE destinations, a `PacketReceipt` is
-    /// created (matching Python's `Transport.outbound`). The receipt is
-    /// returned so the caller can attach callbacks.
+    /// A `PacketReceipt` is created for any packet ``shouldGenerateReceipt(for:)`` accepts,
+    /// matching Python's `Transport.outbound`. The receipt is returned so the caller can attach
+    /// callbacks.
     @discardableResult
     public func send(_ packet: Packet, generateReceipt: Bool = true) throws -> PacketReceipt? {
         var receipt: PacketReceipt? = nil
 
-        // Generate receipt for DATA → SINGLE (not PLAIN, not link/resource contexts).
-        if generateReceipt,
-           packet.packetType == .data,
-           packet.destinationType == .single,
-           packet.context == .none || packet.context == .request || packet.context == .response {
+        if generateReceipt, Transport.shouldGenerateReceipt(for: packet) {
             if let hashable = try? packet.hashablePart() {
                 let hash = Hashes.fullHash(hashable)
                 // Use the remote peer's identity (public key) for proof validation.
                 // Look up from knownIdentities first (outbound to remote peer);
                 // fall back to the local registered destination's identity if
                 // this is a loopback packet addressed to a local destination.
+                //
+                // A LINK packet has neither: its destination hash is a link ID, and its proof is
+                // signed with the link's own signing key, which only the `Link` holds. Those
+                // receipts are concluded by `Link.receive` after it validates the signature
+                // against `peerSigPub` — see `PacketReceipt.markDeliveredByLinkProof`.
                 lock.lock()
                 let peerIdentity = knownIdentities[packet.destinationHash]
                     ?? registeredDestinations[packet.destinationHash]?.identity
