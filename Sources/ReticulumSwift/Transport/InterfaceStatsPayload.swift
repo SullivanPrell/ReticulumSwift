@@ -111,8 +111,10 @@ public enum InterfaceStatsPayload {
                 kv("ifac_signature", .nil)
                 kv("ifac_size",      .nil)
             }
-            // ifac_netname is not stored in the Swift interface protocol; always nil
-            kv("ifac_netname", .nil)
+            // Python: `interface.ifac_netname` (`Reticulum.py:955`). Hardcoded nil until
+            // `bugs/015`, because nothing stored it — so an operator could not see which IFAC
+            // segment an interface was on, where a Python daemon reports it.
+            kv("ifac_netname", iface.ifacNetname.map { .string($0) } ?? .nil)
             kv("autoconnect_source", .nil)
 
             // Python creates `announce_queue` lazily, the first time an announce is actually

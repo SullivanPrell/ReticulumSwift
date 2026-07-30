@@ -61,6 +61,14 @@ public final class InterfaceState {
         var announcesToInternal: Bool?
         var wantsTunnel: Bool = false
         var tunnelID: Data?
+
+        /// Python `interface.ifac_netname` (`Reticulum.py:955`) — the IFAC segment's name.
+        ///
+        /// Lives on the box rather than as a per-conformer stored property because it is a
+        /// config value like the rest, it must be inherited by spawned interfaces alongside the
+        /// key and size (`TCPInterface.py:594-641`), and `rnstatus` reports it. Nothing stored
+        /// it before, so `InterfaceStatsPayload` hardcoded `ifac_netname` to nil (`bugs/015`).
+        var ifacNetname: String?
     }
 
     private let lock: UnsafeMutablePointer<os_unfair_lock>
@@ -213,6 +221,13 @@ public final class InterfaceState {
     public var bootstrapOnly: Bool {
         get { read(\.bootstrapOnly) }
         set { write(\.bootstrapOnly, newValue) }
+    }
+
+    /// Python: `interface.ifac_netname` (`Reticulum.py:955`) — the name of the IFAC segment this
+    /// interface is on, reported by `rnstatus`. See `bugs/015`.
+    public var ifacNetname: String? {
+        get { read(\.ifacNetname) }
+        set { write(\.ifacNetname, newValue) }
     }
 
     /// Python: `interface.recursive_prs` (RNS 1.3.6).

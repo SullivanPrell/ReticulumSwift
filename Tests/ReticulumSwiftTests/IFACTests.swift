@@ -65,7 +65,7 @@ final class IFACTests: XCTestCase {
 
     func testWrapUnwrapRoundTrip() throws {
         let iface = IFACInterface("a")
-        Transport.configureIfac(on: iface, netname: "testnet")
+        configureIfacFromConfigBlock(on: iface, netname: "testnet")
 
         let pkt = makePacket()
         let raw = try pkt.pack()
@@ -82,7 +82,7 @@ final class IFACTests: XCTestCase {
 
     func testUnwrapFailsOnTamperedIfac() throws {
         let iface = IFACInterface("a")
-        Transport.configureIfac(on: iface, netname: "testnet")
+        configureIfacFromConfigBlock(on: iface, netname: "testnet")
 
         let raw = try makePacket().pack()
         var wrapped = iface.wrapIfac(raw)
@@ -93,7 +93,7 @@ final class IFACTests: XCTestCase {
 
     func testUnwrapDropsPacketMissingIfacFlag() throws {
         let iface = IFACInterface("a")
-        Transport.configureIfac(on: iface, netname: "testnet")
+        configureIfacFromConfigBlock(on: iface, netname: "testnet")
 
         let raw = try makePacket().pack()
         // IFAC flag not set — must be dropped when interface has IFAC enabled
@@ -122,8 +122,8 @@ final class IFACTests: XCTestCase {
     func testDifferentNetnamesDifferentWrap() throws {
         let a = IFACInterface("a")
         let b = IFACInterface("b")
-        Transport.configureIfac(on: a, netname: "netA")
-        Transport.configureIfac(on: b, netname: "netB")
+        configureIfacFromConfigBlock(on: a, netname: "netA")
+        configureIfacFromConfigBlock(on: b, netname: "netB")
 
         let raw = try makePacket().pack()
         let wrappedA = a.wrapIfac(raw)
@@ -145,8 +145,8 @@ final class IFACTests: XCTestCase {
         let b = IFACInterface("b")
         a.paired = b
         b.paired = a
-        Transport.configureIfac(on: a, netname: "shared")
-        Transport.configureIfac(on: b, netname: "shared")
+        configureIfacFromConfigBlock(on: a, netname: "shared")
+        configureIfacFromConfigBlock(on: b, netname: "shared")
 
         t1.register(interface: a)
         t2.register(interface: b)
@@ -177,7 +177,7 @@ final class IFACTests: XCTestCase {
 
     func testSmallIfacSize() throws {
         let iface = IFACInterface("a")
-        Transport.configureIfac(on: iface, netname: "net", size: 4)
+        configureIfacFromConfigBlock(on: iface, netname: "net", sizeBits: 32)
         XCTAssertEqual(iface.ifacSize, 4)
 
         let raw = try makePacket().pack()
@@ -191,15 +191,15 @@ final class IFACTests: XCTestCase {
     func testNetnameAndNetkeyBothUsed() throws {
         let a = IFACInterface("a")
         let b = IFACInterface("b")
-        Transport.configureIfac(on: a, netname: "net", netkey: "key")
-        Transport.configureIfac(on: b, netname: "net", netkey: "key")
+        configureIfacFromConfigBlock(on: a, netname: "net", netkey: "key")
+        configureIfacFromConfigBlock(on: b, netname: "net", netkey: "key")
 
         let raw = try makePacket().pack()
         let wrapped = a.wrapIfac(raw)
         XCTAssertNotNil(b.unwrapIfac(wrapped), "same netname+netkey must interoperate")
 
         let c = IFACInterface("c")
-        Transport.configureIfac(on: c, netname: "net", netkey: "wrongkey")
+        configureIfacFromConfigBlock(on: c, netname: "net", netkey: "wrongkey")
         XCTAssertNil(c.unwrapIfac(wrapped), "wrong netkey must be rejected")
     }
 
@@ -220,7 +220,7 @@ final class IFACTests: XCTestCase {
         let passphrase = "test_ifac_shared_secret"
 
         let iface = IFACInterface("a")
-        Transport.configureIfac(on: iface, netkey: passphrase, size: 8)
+        configureIfacFromConfigBlock(on: iface, netkey: passphrase, sizeBits: 64)
 
         // Use the same test payload as the Python cross-check script
         let testRaw = Data((0..<32).map { UInt8($0) })
@@ -254,8 +254,8 @@ final class IFACTests: XCTestCase {
     func testSameNetnameProducesSameIfacKey() throws {
         let a = IFACInterface("a")
         let b = IFACInterface("b")
-        Transport.configureIfac(on: a, netname: "deterministic")
-        Transport.configureIfac(on: b, netname: "deterministic")
+        configureIfacFromConfigBlock(on: a, netname: "deterministic")
+        configureIfacFromConfigBlock(on: b, netname: "deterministic")
 
         let raw = try makePacket().pack()
         let wrapped = a.wrapIfac(raw)

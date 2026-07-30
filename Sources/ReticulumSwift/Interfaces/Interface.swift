@@ -182,6 +182,10 @@ public protocol Interface: AnyObject {
     /// Mirrors Python's `Interface.bootstrap_only`.
     var bootstrapOnly: Bool { get set }
 
+    /// The IFAC segment this interface is on, from the block's `networkname` / `network_name`.
+    /// Mirrors Python's `Interface.ifac_netname` (`Reticulum.py:955`); `rnstatus` reports it.
+    var ifacNetname: String? { get set }
+
     /// When true, a transport node searches for unknown paths on path requests
     /// received here regardless of this interface's `mode` (i.e. even when the
     /// mode isn't in `discoverPathsFor`). Mirrors Python's RNS 1.3.6
@@ -376,6 +380,10 @@ public extension Interface {
     var bootstrapOnly: Bool {
         get { interfaceState.bootstrapOnly }
         set { interfaceState.bootstrapOnly = newValue }
+    }
+    var ifacNetname: String? {
+        get { interfaceState.ifacNetname }
+        set { interfaceState.ifacNetname = newValue }
     }
     var recursivePrs: Bool {
         get { interfaceState.recursivePrs }

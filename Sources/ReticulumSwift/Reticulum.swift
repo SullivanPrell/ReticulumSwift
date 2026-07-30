@@ -716,6 +716,57 @@ public final class Reticulum {
         return identity
     }
 
+    // MARK: - Per-interface IFAC configuration
+
+    /// Read the IFAC keys out of one interface block and install the derived key on the interface.
+    ///
+    /// `bugs/015`. `Transport.configureIfac` was correct and thoroughly tested, and **nothing
+    /// called it**. An operator who set `network_name` and `passphrase` got an interface that came
+    /// up, reported Up and passed nothing: every frame it sent went out unflagged and was dropped
+    /// by the peer, every frame it received arrived flagged and was dropped locally. Silent in
+    /// both directions, and invisible from the Python side, which saw a peer that simply never
+    /// spoke.
+    ///
+    /// Python does this inline in `__apply_config` (`Reticulum.py:770-788` for the extraction,
+    /// `:955-973` for the derivation). Factored out here so the one call site cannot be the thing
+    /// that is missing again, and so `RetiOS` — which builds interfaces without a config file —
+    /// can reach the same code.
+    ///
+    /// Must be called **before** `Transport.register` and `Interface.start`, matching
+    /// `Reticulum.py:975`: the key has to be installed before the first frame moves, or the
+    /// interface's opening announce goes out unprotected.
+    public static func applyIfacConfiguration(to interface: any Interface,
+                                              from block: ReticulumConfig.InterfaceConfig) {
+        // Python reads both spellings and lets the later one win (`Reticulum.py:778-788`), and
+        // treats an empty string as absent.
+        func nonEmpty(_ keys: String...) -> String? {
+            var found: String?
+            for key in keys {
+                if let value = block[key], !value.isEmpty { found = value }
+            }
+            return found
+        }
+
+        let netname = nonEmpty("networkname", "network_name")
+        let netkey = nonEmpty("passphrase", "pass_phrase")
+
+        // `ifac_size` in the config is in **bits** (`Reticulum.py:776`). A value below
+        // `IFAC_MIN_SIZE * 8` is *ignored* — the assignment sits inside the `>=` guard — so the
+        // class default stays in place rather than being clamped to the minimum.
+        var size = interface.ifacSize
+        if let bits = block.int("ifac_size"), bits >= Constants.ifacMinSize * 8 {
+            size = bits / 8
+        }
+        interface.ifacSize = size
+
+        // Python assigns both unconditionally, then derives only if either is present
+        // (`Reticulum.py:955-958`).
+        interface.ifacNetname = netname
+        guard netname != nil || netkey != nil else { return }
+
+        Transport.configureIfac(on: interface, netname: netname, netkey: netkey, size: size)
+    }
+
     // MARK: - Interface synthesis from config
 
     /// Create and register interfaces described in `cfg.interfaces`.
@@ -815,6 +866,11 @@ public final class Reticulum {
                 if let ati = ifCfg.bool("announces_to_internal") {
                     iface.announcesToInternal = ati
                 }
+                // Before register/start, matching `Reticulum.py:975`: the IFAC key has to be
+                // installed before the first frame moves, or the interface's opening announce
+                // goes out unprotected and the peer drops it. Spawned sub-interfaces pick it up
+                // through `InterfaceState.inherit(from:)` and the per-conformer IFAC copy.
+                Reticulum.applyIfacConfiguration(to: iface, from: ifCfg)
                 transport.register(interface: iface)
                 try? iface.start()
             }

@@ -1662,6 +1662,13 @@ public final class Transport {
 
         interface.ifacKey = key
         interface.ifacSize = size
+        // Python derives the IFAC identity from the key and signs `full_hash(key)` with it
+        // (`Reticulum.py:972-973`). `rnstatus` prints the last bytes of that signature as the
+        // segment's "Access" fingerprint, so an interface holding a key but no identity reports
+        // no access code where a Python node on the same segment reports one — the stats payload
+        // emits `ifac_signature` nil (`InterfaceStatsPayload.swift:98-107`). Derived, never
+        // random: two nodes on one segment must produce the same signature.
+        interface.ifacIdentity = try? Identity(privateKeyBytes: key)
     }
 
     public func register(destination: Destination) {
