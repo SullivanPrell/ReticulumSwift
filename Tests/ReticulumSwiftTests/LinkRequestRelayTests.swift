@@ -83,7 +83,7 @@ final class LinkRequestRelayTests: XCTestCase {
         rT.restore(
             path: Transport.PathEntry(
                 destinationHash: aDest.hash,
-                nextHopInterfaceName: rToA.name,
+                nextHopInterface: rToA,
                 hops: 0,
                 lastHeard: Date(),
                 identityHash: aIdentity.hash
@@ -97,7 +97,7 @@ final class LinkRequestRelayTests: XCTestCase {
         bT.restore(
             path: Transport.PathEntry(
                 destinationHash: aDest.hash,
-                nextHopInterfaceName: bIface.name,
+                nextHopInterface: bIface,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: aIdentity.hash,
@@ -199,7 +199,7 @@ final class LinkRequestRelayTests: XCTestCase {
         rT.restore(
             path: Transport.PathEntry(
                 destinationHash: aDest.hash,
-                nextHopInterfaceName: rToA.name,
+                nextHopInterface: rToA,
                 hops: 0,
                 lastHeard: Date(),
                 identityHash: aIdentity.hash
@@ -268,7 +268,7 @@ final class LinkRequestRelayTests: XCTestCase {
         rT.restore(
             path: Transport.PathEntry(
                 destinationHash: aDest.hash,
-                nextHopInterfaceName: rToA.name,
+                nextHopInterface: rToA,
                 hops: 0,
                 lastHeard: Date(),
                 identityHash: aIdentity.hash

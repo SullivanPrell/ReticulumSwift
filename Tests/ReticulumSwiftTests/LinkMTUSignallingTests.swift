@@ -211,7 +211,7 @@ final class LinkMTUSignallingTests: XCTestCase {
         aT.restore(
             path: Transport.PathEntry(
                 destinationHash: bDest.hash,
-                nextHopInterfaceName: "highMtu",
+                nextHopInterface: aIface,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: bIdentity.hash

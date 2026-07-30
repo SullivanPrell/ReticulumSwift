@@ -44,7 +44,7 @@ final class PlainDestinationTests: XCTestCase {
         t.restore(
             path: Transport.PathEntry(
                 destinationHash: plainDest.hash,
-                nextHopInterfaceName: out.name,
+                nextHopInterface: out,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: Data(repeating: 0x00, count: 16)
@@ -81,7 +81,7 @@ final class PlainDestinationTests: XCTestCase {
         t.restore(
             path: Transport.PathEntry(
                 destinationHash: destHash,
-                nextHopInterfaceName: out.name,
+                nextHopInterface: out,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: Data(repeating: 0x11, count: 16)

@@ -44,7 +44,7 @@ final class TransportPathUtilsTests: XCTestCase {
         transport.restore(
             path: Transport.PathEntry(
                 destinationHash: destHash,
-                nextHopInterfaceName: "test0",
+                nextHopInterface: iface,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: Data(repeating: 0, count: 16)

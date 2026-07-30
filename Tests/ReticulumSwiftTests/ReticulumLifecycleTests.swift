@@ -45,11 +45,15 @@ final class ReticulumLifecycleTests: XCTestCase {
         do {
             let rns = Reticulum(configuration: config)
             try rns.start()
+            // Registered on both runs: a persisted path stores its interface's hash and is
+            // dropped on load if nothing matches (`bugs/027`, D6).
+            let iface = LoopbackInterface(name: "test")
+            rns.transport.register(interface: iface)
             let fakeHash = Data(repeating: 0xAB, count: 16)
             rns.transport.restore(
                 path: Transport.PathEntry(
                     destinationHash: fakeHash,
-                    nextHopInterfaceName: "test",
+                    nextHopInterface: iface,
                     hops: 2,
                     lastHeard: Date(),
                     identityHash: Data(repeating: 0xCD, count: 16)
@@ -62,6 +66,7 @@ final class ReticulumLifecycleTests: XCTestCase {
         // Second run: path should be restored
         do {
             let rns2 = Reticulum(configuration: config)
+            rns2.transport.register(interface: LoopbackInterface(name: "test"))
             try rns2.start()
             let fakeHash = Data(repeating: 0xAB, count: 16)
             XCTAssertTrue(rns2.transport.hasPath(to: fakeHash), "path should be restored from disk")

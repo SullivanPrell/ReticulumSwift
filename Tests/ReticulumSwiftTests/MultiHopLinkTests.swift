@@ -62,7 +62,7 @@ final class MultiHopLinkTests: XCTestCase {
         rTransport.restore(
             path: Transport.PathEntry(
                 destinationHash: bDestination.hash,
-                nextHopInterfaceName: rToB.name,
+                nextHopInterface: rToB,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: bIdentity.hash

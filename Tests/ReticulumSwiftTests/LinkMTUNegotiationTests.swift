@@ -48,7 +48,7 @@ final class LinkMTUNegotiationTests: XCTestCase {
 
         // Seed A's path so nextHopInterfaceHwMtu(for:) resolves the loopback iface.
         aTransport.restore(
-            path: Transport.PathEntry(destinationHash: bDest.hash, nextHopInterfaceName: aIface.name,
+            path: Transport.PathEntry(destinationHash: bDest.hash, nextHopInterface: aIface,
                                       hops: 0, lastHeard: Date(), identityHash: bIdentity.hash),
             forDestination: bDest.hash)
 

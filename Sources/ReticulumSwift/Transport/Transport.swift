@@ -92,6 +92,27 @@ public final class Transport {
 
     public struct PathEntry: Equatable {
         public let destinationHash: Data
+
+        /// The interface this route leads through — the value routing resolves.
+        ///
+        /// The reference stores the interface **object** here (`Transport.py:1639`) and
+        /// transmits through it (`:1693`). Names are deliberately not unique: every connection
+        /// accepted by one listening interface is named `"Client on <server name>"`
+        /// (`TCPInterface.py:590`), so resolving a route by name sends traffic to whichever
+        /// peer registered first, whatever the announce said (`bugs/027`).
+        ///
+        /// **Weak**, so a path cannot keep a deregistered interface alive and a route through a
+        /// vanished peer stops resolving rather than falling back to a same-named sibling.
+        /// Persistence therefore cannot store this; it stores `Interface.hash` and resolves it
+        /// back through ``Transport/findInterface(fromHash:)`` on load, which is what the
+        /// reference does (`:3387-3395`, `:326`).
+        public weak var nextHopInterface: (any Interface)?
+
+        /// The interface name captured when the path was learned, for display only.
+        ///
+        /// Mirrors the reference's use of the stored object: it is stringified for the path
+        /// listing (`Reticulum.py:1532`) and for nothing else. Never resolve a route from this
+        /// — that is the defect above.
         public let nextHopInterfaceName: String
         public var hops: UInt8
         public var lastHeard: Date
@@ -119,6 +140,39 @@ public final class Transport {
         /// network loops via captured announces).
         public var randomBlobs: [Data] = []
 
+        /// A routable path through `nextHopInterface`. The display name is derived from it, so
+        /// the two can never disagree.
+        ///
+        /// This is the initialiser production code uses. There is no name-only production path:
+        /// see the guard in `PathTableInterfaceIdentityTests`.
+        public init(
+            destinationHash: Data,
+            nextHopInterface: any Interface,
+            hops: UInt8,
+            lastHeard: Date,
+            identityHash: Data,
+            expires: Date? = nil,
+            nextHopTransportID: Data? = nil,
+            announceEmittedAt: TimeInterval = 0,
+            cachedAnnounceHash: Data? = nil,
+            randomBlobs: [Data] = []
+        ) {
+            self.init(destinationHash: destinationHash,
+                      nextHopInterfaceName: nextHopInterface.name,
+                      hops: hops, lastHeard: lastHeard, identityHash: identityHash,
+                      expires: expires, nextHopTransportID: nextHopTransportID,
+                      announceEmittedAt: announceEmittedAt,
+                      cachedAnnounceHash: cachedAnnounceHash, randomBlobs: randomBlobs)
+            self.nextHopInterface = nextHopInterface
+        }
+
+        /// A path with a recorded interface *name* and no live interface — **deliberately not
+        /// routable**, because routing resolves `nextHopInterface` and there is no name fallback
+        /// (`bugs/027`).
+        ///
+        /// Two legitimate uses: a test that only exercises table bookkeeping (hops, expiry,
+        /// responsiveness), and the moment before persistence resolves a stored interface hash
+        /// back to an object. Production routing code must use the initialiser above.
         public init(
             destinationHash: Data,
             nextHopInterfaceName: String,
@@ -144,6 +198,23 @@ public final class Transport {
         }
 
         public var isExpired: Bool { Date() >= expires }
+
+        /// Hand-written because `nextHopInterface` is an existential and cannot be synthesised.
+        /// Interfaces compare by **identity**, which is the whole point of `bugs/027`: two
+        /// clients of one server are equal by name and are not the same route.
+        public static func == (lhs: PathEntry, rhs: PathEntry) -> Bool {
+            lhs.destinationHash == rhs.destinationHash
+                && lhs.nextHopInterface === rhs.nextHopInterface
+                && lhs.nextHopInterfaceName == rhs.nextHopInterfaceName
+                && lhs.hops == rhs.hops
+                && lhs.lastHeard == rhs.lastHeard
+                && lhs.identityHash == rhs.identityHash
+                && lhs.expires == rhs.expires
+                && lhs.nextHopTransportID == rhs.nextHopTransportID
+                && lhs.announceEmittedAt == rhs.announceEmittedAt
+                && lhs.cachedAnnounceHash == rhs.cachedAnnounceHash
+                && lhs.randomBlobs == rhs.randomBlobs
+        }
     }
 
     /// Learned routing for an in-flight or active multi-hop link. The relay
@@ -556,10 +627,28 @@ public final class Transport {
     }
 
     /// The live `Interface` object for the next hop, or nil.
+    ///
+    /// Reads the stored object rather than re-resolving a name, matching the reference
+    /// (`Transport.py:1639`). Nil once that interface is gone — a route through a vanished peer
+    /// must stop resolving, not fall back to a same-named sibling (`bugs/027`).
     public func nextHopInterface(for destinationHash: Data) -> (any Interface)? {
-        guard let name = nextHopInterfaceName(for: destinationHash) else { return nil }
         lock.lock(); defer { lock.unlock() }
-        return interfaces.first { $0.name == name }
+        return paths[destinationHash]?.nextHopInterface
+    }
+
+    /// The registered interface whose `Interface.hash` matches, or nil.
+    /// Mirrors Python's `Transport.find_interface_from_hash` (`Transport.py:2580-2585`), used to
+    /// resolve a persisted path entry back to a live interface on load.
+    public func findInterface(fromHash hash: Data) -> (any Interface)? {
+        lock.lock(); defer { lock.unlock() }
+        return interfaces.first { $0.hash == hash }
+    }
+
+    /// The `Interface.hash` of every registered interface.
+    /// Mirrors Python's `Transport.interface_hashes()` (`Transport.py:2577`).
+    func interfaceHashes() -> Set<Data> {
+        lock.lock(); defer { lock.unlock() }
+        return Set(interfaces.map { $0.hash })
     }
 
     /// Gravity of the interface the current path for `destinationHash` was heard
@@ -581,7 +670,7 @@ public final class Transport {
     /// returning `nil`.
     private func currentPathGravityLocked(_ destinationHash: Data) -> Int? {
         guard let path = paths[destinationHash] else { return nil }
-        return interfaces.first { $0.name == path.nextHopInterfaceName }?.gravity
+        return path.nextHopInterface?.gravity
     }
 
     // MARK: - Interface management
@@ -1713,7 +1802,7 @@ public final class Transport {
                            announcePacketHash: Data?) {
         let entry = PathEntry(
             destinationHash: destinationHash,
-            nextHopInterfaceName: interface.name,
+            nextHopInterface: interface,
             hops: hops,
             lastHeard: Date(),
             identityHash: Data(count: 16),
@@ -2463,9 +2552,7 @@ public final class Transport {
         // PLAIN and GROUP destinations are broadcast directly (Python: excluded from path routing).
         if let path, packet.packetType != .announce,
            packet.destinationType == .single {
-            guard let outbound = interfaces.first(where: {
-                $0.name == path.nextHopInterfaceName && $0.isOnline
-            }) else {
+            guard let outbound = path.nextHopInterface, outbound.isOnline else {
                 // Path exists but interface is offline — broadcast as fallback.
                 for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
                     try? iface.send(deltaMangled(packet, for: iface))
@@ -2707,16 +2794,12 @@ public final class Transport {
         // from_local_client or for_local_client_link`, Transport.py:1573).
         let fromLocalLR = fromLocalClient(interface: interface)
         let forLocalLR: Bool = {
-            guard let p = path, p.hops == 0,
-                  let nh = interfaces.first(where: { $0.name == p.nextHopInterfaceName })
-            else { return false }
+            guard let p = path, p.hops == 0, let nh = p.nextHopInterface else { return false }
             return isLocalClientInterface(nh)
         }()
         guard transportEnabled || fromLocalLR || forLocalLR, let path else { return }
         guard packet.hops < propagationLimit else { return }
-        guard let outbound = interfaces.first(where: {
-            $0.name == path.nextHopInterfaceName && $0.isOnline
-        }) else { return }
+        guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
         guard outbound !== interface else { return }
 
         // link_id derives from the LRR packet's hashable part with signalling bytes
@@ -3155,7 +3238,7 @@ public final class Transport {
             }
             let entry = PathEntry(
                 destinationHash: decoded.destinationHash,
-                nextHopInterfaceName: interface.name,
+                nextHopInterface: interface,
                 hops: packet.hops,
                 lastHeard: now,
                 identityHash: decoded.identity.hash,
@@ -3476,9 +3559,7 @@ public final class Transport {
         // LINK-typed packets are routed by their own dispatchers.
         let fromLocal = fromLocalClient(interface: interface)
         let forLocal: Bool = {
-            guard let p = path, p.hops == 0,
-                  let nextHop = interfaces.first(where: { $0.name == p.nextHopInterfaceName })
-            else { return false }
+            guard let p = path, p.hops == 0, let nextHop = p.nextHopInterface else { return false }
             return isLocalClientInterface(nextHop)
         }()
         guard transportEnabled || fromLocal || forLocal,
@@ -4029,9 +4110,7 @@ public final class Transport {
 
     private func forward(_ packet: Packet, from sourceInterface: Interface, path: PathEntry) {
         guard packet.hops < propagationLimit else { return }
-        guard let outbound = interfaces.first(where: {
-            $0.name == path.nextHopInterfaceName && $0.isOnline
-        }) else { return }
+        guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
         guard outbound !== sourceInterface else { return }   // never bounce
         var forwarded = packet
         // to_local_client: a directly reachable destination (path.hops == 0) is a

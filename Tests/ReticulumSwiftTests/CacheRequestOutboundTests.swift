@@ -75,7 +75,7 @@ final class CacheRequestOutboundTests: XCTestCase {
         // Register a path so the packet can be routed.
         let path = Transport.PathEntry(
             destinationHash: queryDest.hash,
-            nextHopInterfaceName: spy.name,
+            nextHopInterface: spy,
             hops: 1,
             lastHeard: Date(),
             identityHash: peerIdentity.hash
@@ -108,7 +108,7 @@ final class CacheRequestOutboundTests: XCTestCase {
                                         appName: "creq", aspects: ["fields"])
         let path = Transport.PathEntry(
             destinationHash: queryDest.hash,
-            nextHopInterfaceName: spy.name,
+            nextHopInterface: spy,
             hops: 1,
             lastHeard: Date(),
             identityHash: peerIdentity.hash

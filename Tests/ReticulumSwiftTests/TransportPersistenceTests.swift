@@ -27,11 +27,17 @@ final class TransportPersistenceTests: XCTestCase {
         let rns1 = Reticulum(configuration: .init(storagePath: dir))
         try rns1.start()
 
+        // A persisted path records its interface's hash and is dropped on load when nothing
+        // matches (`bugs/027`, D6), so the same interface is registered on both runs — which is
+        // what a real daemon does when it rebuilds interfaces from one config file.
+        let iface1 = LoopbackInterface(name: "test0")
+        rns1.transport.register(interface: iface1)
+
         let destHash = Data(repeating: 0xAA, count: 16)
         let idHash   = Data(repeating: 0xBB, count: 16)
         let entry = Transport.PathEntry(
             destinationHash: destHash,
-            nextHopInterfaceName: "test0",
+            nextHopInterface: iface1,
             hops: 2,
             lastHeard: Date(),
             identityHash: idHash
@@ -42,6 +48,7 @@ final class TransportPersistenceTests: XCTestCase {
 
         // --- Second instance: path must survive ---
         let rns2 = Reticulum(configuration: .init(storagePath: dir))
+        rns2.transport.register(interface: LoopbackInterface(name: "test0"))
         try rns2.start()
         defer { rns2.stop() }
 
@@ -56,11 +63,13 @@ final class TransportPersistenceTests: XCTestCase {
         let rns1 = Reticulum(configuration: .init(storagePath: dir))
         try rns1.start()
 
+        let ifaces1 = (0..<5).map { LoopbackInterface(name: "iface\($0)") }
+        ifaces1.forEach { rns1.transport.register(interface: $0) }
         let hashes = (0..<5).map { Data(repeating: UInt8($0 + 1), count: 16) }
         for (i, h) in hashes.enumerated() {
             let e = Transport.PathEntry(
                 destinationHash: h,
-                nextHopInterfaceName: "iface\(i)",
+                nextHopInterface: ifaces1[i],
                 hops: UInt8(i + 1),
                 lastHeard: Date(),
                 identityHash: Data(repeating: UInt8(0x10 + i), count: 16)
@@ -70,6 +79,7 @@ final class TransportPersistenceTests: XCTestCase {
         rns1.stop()
 
         let rns2 = Reticulum(configuration: .init(storagePath: dir))
+        (0..<5).forEach { rns2.transport.register(interface: LoopbackInterface(name: "iface\($0)")) }
         try rns2.start()
         defer { rns2.stop() }
 
@@ -130,25 +140,45 @@ final class TransportPersistenceTests: XCTestCase {
         let rns1 = Reticulum(configuration: .init(storagePath: dir))
         try rns1.start()
 
+        // The interface is registered on **both** runs on purpose. Since `bugs/027` a path whose
+        // stored interface hash resolves to nothing is dropped on load, so without this the
+        // assertion below would pass for that reason instead of for expiry — the test would stop
+        // testing what it is named for. A live path with the same setup is asserted alongside it
+        // to keep that honest.
+        let iface1 = LoopbackInterface(name: "old0")
+        rns1.transport.register(interface: iface1)
+
         let destHash = Data(repeating: 0xDD, count: 16)
+        let liveHash = Data(repeating: 0xDE, count: 16)
         let pastDate = Date(timeIntervalSinceNow: -Transport.pathExpiry - 60)
         let entry = Transport.PathEntry(
             destinationHash: destHash,
-            nextHopInterfaceName: "old0",
+            nextHopInterface: iface1,
             hops: 1,
             lastHeard: pastDate,
             identityHash: Data(repeating: 0x01, count: 16),
             expires: Date(timeIntervalSinceNow: -1)  // already expired
         )
         rns1.transport.restore(path: entry, forDestination: destHash)
+        rns1.transport.restore(path: Transport.PathEntry(
+            destinationHash: liveHash,
+            nextHopInterface: iface1,
+            hops: 1,
+            lastHeard: Date(),
+            identityHash: Data(repeating: 0x02, count: 16)
+        ), forDestination: liveHash)
         rns1.stop()
 
         let rns2 = Reticulum(configuration: .init(storagePath: dir))
+        rns2.transport.register(interface: LoopbackInterface(name: "old0"))
         try rns2.start()
         defer { rns2.stop() }
 
         // start() sweeps expired paths on load
         XCTAssertFalse(rns2.transport.hasPath(to: destHash),
                        "expired paths must not be present after restart")
+        XCTAssertTrue(rns2.transport.hasPath(to: liveHash),
+                      "a live path through the same interface must survive — otherwise the "
+                      + "assertion above proves only that nothing was restored at all")
     }
 }

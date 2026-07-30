@@ -105,7 +105,7 @@ final class RNS138ParityTests: XCTestCase {
                                    appName: "test", aspects: ["expectedhops"])
         // Inject a known path with hops = 3.
         t.restore(path: Transport.PathEntry(
-            destinationHash: dest.hash, nextHopInterfaceName: iface.name,
+            destinationHash: dest.hash, nextHopInterface: iface,
             hops: 3, lastHeard: Date(), identityHash: id.hash),
             forDestination: dest.hash)
 

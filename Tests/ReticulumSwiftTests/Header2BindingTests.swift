@@ -94,7 +94,7 @@ final class Header2BindingTests: XCTestCase {
         relay.restore(
             path: Transport.PathEntry(
                 destinationHash: destHash,
-                nextHopInterfaceName: outIface.name,
+                nextHopInterface: outIface,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: Data(repeating: 0, count: Constants.truncatedHashLength),

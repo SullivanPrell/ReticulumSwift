@@ -68,7 +68,7 @@ final class ProofForwardingTests: XCTestCase {
         rT.restore(
             path: Transport.PathEntry(
                 destinationHash: bDest.hash,
-                nextHopInterfaceName: rToB.name,
+                nextHopInterface: rToB,
                 hops: 0,
                 lastHeard: Date(),
                 identityHash: bId.hash
