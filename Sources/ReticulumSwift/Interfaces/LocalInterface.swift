@@ -13,6 +13,10 @@ import Network
 /// try local.start()
 /// ```
 public final class LocalInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -21,7 +25,7 @@ public final class LocalInterface: Interface {
     public let name: String
     public let host: String
     public let port: UInt16
-    public private(set) var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
+    public var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }

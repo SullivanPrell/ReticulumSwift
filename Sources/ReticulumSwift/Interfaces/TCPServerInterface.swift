@@ -10,6 +10,10 @@ import Network
 /// per-connection `TCPServerInterfaceClient` model.  The server itself is NOT a
 /// routing endpoint (`isRoutingEndpoint == false`); only the spawned clients are.
 public final class TCPServerInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
     public let name: String
     public let port: UInt16
     /// The address reported as the listener's bind address. Python resolves `listen_ip`
@@ -17,7 +21,7 @@ public final class TCPServerInterface: Interface {
     /// `NWListener` always binds every address, so this is a reporting-only value that
     /// defaults to Python's `0.0.0.0`.
     public let bindIP: String
-    public private(set) var bitrate: Int = 10_000_000
+    public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
@@ -235,6 +239,10 @@ public final class TCPServerInterface: Interface {
 /// Mirrors Python's per-connection `TCPServerInterfaceClient` which is registered
 /// with Transport as an independent Interface.
 public final class TCPServerClientInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil

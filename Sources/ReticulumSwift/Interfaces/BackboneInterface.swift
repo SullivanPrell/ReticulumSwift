@@ -9,6 +9,10 @@ import Network
 ///   - `BITRATE_GUESS = 100_000_000` (100 Mbps)
 ///   - Automatic reconnection after disconnect
 public final class BackboneInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     // MARK: - Constants (mirrors Python BackboneClientInterface)
 
@@ -33,7 +37,7 @@ public final class BackboneInterface: Interface {
     public let name: String
     public let host: String
     public let port: UInt16
-    public private(set) var bitrate: Int = BackboneInterface.bitrateGuess
+    public var bitrate: Int = BackboneInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }

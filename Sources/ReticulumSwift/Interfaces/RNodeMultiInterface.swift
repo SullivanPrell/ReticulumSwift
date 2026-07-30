@@ -9,6 +9,10 @@ import Foundation
 /// and be passed directly as `any Interface` to inbound handlers, enabling callers to downcast
 /// back to `RNodeSubInterface` for channel identification.
 public final class RNodeSubInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -91,7 +95,14 @@ public final class RNodeSubInterface: Interface {
     public var rawInboundHandler: ((Data,   any Interface) -> Void)? = nil
     public var ifacIdentity: Identity? = nil
     public var ifacKey:      Data?     = nil
-    public var ifacSize:     Int       = Constants.defaultIfacSize
+    /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
+    /// `ifac_size` is given. Python declares 8 for the RNode family — `RNodeInterface.py:110`,
+    /// `RNodeMultiInterface.py:137` — where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
+    /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
+    /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
+    public static let defaultIfacSize: Int = 8
+
+    public var ifacSize:     Int       = RNodeSubInterface.defaultIfacSize
 
     /// Sends are routed through the parent `RNodeMultiInterface`.
     /// Direct calls on a sub-interface are no-ops; use the parent's `processOutgoing`.
@@ -147,6 +158,10 @@ public final class RNodeSubInterface: Interface {
 /// - **Incoming telemetry**: `CMD_SEL_INT` updates `selectedIndex`; subsequent telemetry frames
 ///   (frequency, bandwidth, RSSI, SNR, etc.) are attributed to `subInterfaces[selectedIndex]`.
 public final class RNodeMultiInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -182,7 +197,14 @@ public final class RNodeMultiInterface: Interface {
     public var rawInboundHandler: ((Data,   any Interface) -> Void)?
     public var ifacIdentity: Identity?
     public var ifacKey:      Data?
-    public var ifacSize:     Int = Constants.defaultIfacSize
+    /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
+    /// `ifac_size` is given. Python declares 8 for the RNode family — `RNodeInterface.py:110`,
+    /// `RNodeMultiInterface.py:137` — where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
+    /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
+    /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
+    public static let defaultIfacSize: Int = 8
+
+    public var ifacSize:     Int = RNodeMultiInterface.defaultIfacSize
 
     // MARK: – Sub-interfaces
 

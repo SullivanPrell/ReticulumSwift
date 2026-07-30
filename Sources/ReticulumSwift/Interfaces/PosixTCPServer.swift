@@ -13,6 +13,10 @@ import Darwin
 /// Used only for the shared-instance port (37428). All other server interfaces
 /// can continue to use `TCPServerInterface` + `NWListener`.
 public final class PosixTCPServer: Interface, LocalClientServingInterface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -20,7 +24,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     public var gravity: Int = InterfaceMode.defaultGravity
     public let name: String
     public let port: UInt16
-    public private(set) var bitrate: Int = 1_000_000_000
+    public var bitrate: Int = 1_000_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }

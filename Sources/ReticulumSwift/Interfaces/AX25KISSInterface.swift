@@ -60,6 +60,10 @@ public enum AX25KISSInterfaceError: Error {
 ///
 /// Wire-compatible with Python `RNS/Interfaces/AX25KISSInterface.py`.
 public final class AX25KISSInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil

@@ -11,6 +11,10 @@ import Foundation
 /// the parent interface itself never transmits (Python: `process_outgoing:
 /// pass`). Packets are HDLC-framed (same as BackboneInterface/TCPInterface).
 public final class I2PInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     // MARK: - Python class constants
 
@@ -49,8 +53,9 @@ public final class I2PInterface: Interface {
     // Hardware MTU
     public var hwMtu: Int? { I2PInterface.hwMtu }
 
-    // Mode
-    public var mode: InterfaceMode = .full
+    // Mode is held in `interfaceState` like every other interface. This type used to be the only
+    // one with a settable `mode`, which is what made `bugs/025` look like a config-parser gap
+    // rather than a protocol-shape gap.
     public var recursivePrs: Bool = false
     public var announcesFromInternal: Bool = true
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).

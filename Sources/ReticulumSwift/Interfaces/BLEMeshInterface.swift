@@ -51,6 +51,10 @@ import Foundation
 /// nodes (iOS/macOS) can use it, and any two such nodes already agree, since
 /// they share the same `HDLC` + `Packet` wire format.
 public final class BLEMeshInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -73,7 +77,7 @@ public final class BLEMeshInterface: Interface {
     // MARK: - Interface conformance
 
     public let name: String
-    public private(set) var bitrate: Int
+    public var bitrate: Int
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }

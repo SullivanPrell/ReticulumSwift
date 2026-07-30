@@ -17,6 +17,10 @@ import Darwin
 /// Default multicast address: ff12:0:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
 ///   where the x-groups are derived from sha256("reticulum").
 public final class AutoInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     // MARK: - Protocol constants
 
@@ -33,7 +37,7 @@ public final class AutoInterface: Interface {
     // MARK: - Public interface conformance
 
     public let name: String
-    public private(set) var bitrate: Int = 10_000_000
+    public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
