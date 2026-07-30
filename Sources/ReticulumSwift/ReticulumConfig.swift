@@ -119,6 +119,21 @@ public struct ReticulumConfig {
         /// parameters like `target_host`, `target_port`, etc.).
         public var parameters: [String: String]
 
+        /// Explicit rather than relying on the memberwise initialiser, which a `public struct`
+        /// only exposes internally.
+        ///
+        /// A caller outside this module needs to build one: `Reticulum
+        /// .applyInterfaceConfiguration(to:from:)` and `applyIfacConfiguration(to:from:)` take a
+        /// block, and the interfaces RetiOS constructs in code have no config file to come from —
+        /// so without this they could not reach the parser at all, which is the shape of
+        /// `bugs/015` (the API exists; nothing outside can call it).
+        public init(name: String, type: String, enabled: Bool, parameters: [String: String]) {
+            self.name = name
+            self.type = type
+            self.enabled = enabled
+            self.parameters = parameters
+        }
+
         public subscript(_ key: String) -> String? { parameters[key] }
         public func int(_ key: String) -> Int? { parameters[key].flatMap(Int.init) }
         public func bool(_ key: String) -> Bool? { parameters[key].flatMap(parseBool) }
