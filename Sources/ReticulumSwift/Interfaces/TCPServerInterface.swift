@@ -310,16 +310,31 @@ public final class TCPServerClientInterface: Interface {
         self.peerHost = peerHost
         self.peerPort = peerPort
         self.parentServer = parentServer
-        // Inherit IFAC settings from parent server.
+
+        // Inherit the parent's configuration. Python copies nineteen attributes onto each accepted
+        // client (`TCPInterface.py:594-641`); a spawned client is the real routing endpoint on a
+        // server-side interface, so anything that does not reach it is inert for every peer that
+        // dials in. See `swift_devel/bugs/025-*.md`.
+        //
+        // `inherit(from:)` covers everything held in `InterfaceState` — mode, announce cap and
+        // rate control, ingress/egress control and all nine `ic_*` tunables — and it is a copy, so
+        // reconfiguring the parent later does not retune already-connected clients.
+        self.interfaceState.inherit(from: parentServer.interfaceState)
+
+        // Attributes stored on the conformer rather than in the state box need their own copy.
+        // `bitrate` because interfaces that derive one (RNode, from spreading factor/bandwidth/
+        // coding rate) must keep that derivation as their starting value — Python copies it
+        // explicitly too (`TCPInterface.py:611`). Previously this was a fresh hardcoded
+        // 10_000_000, so a configured server bitrate never reached any client.
+        self.bitrate = parentServer.bitrate
+
+        // Python: `spawned_interface.gravity = self.gravity` (RNS 1.4.1, commit 3ca71527).
+        self.gravity = parentServer.gravity
+
+        // IFAC (`TCPInterface.py:615-617`).
         self.ifacIdentity = parentServer.ifacIdentity
         self.ifacKey      = parentServer.ifacKey
         self.ifacSize     = parentServer.ifacSize
-        // Inherit routing preference from the parent server. Mirrors Python's
-        // `spawned_interface.gravity = self.gravity` in TCPServerInterface
-        // (RNS 1.4.1, commit 3ca71527) — a spawned client is the real routing
-        // endpoint, so the parent's gravity has to reach it or the whole
-        // option is inert on server-side interfaces.
-        self.gravity = parentServer.gravity
     }
 
     public func start() throws { }  // started by the parent server

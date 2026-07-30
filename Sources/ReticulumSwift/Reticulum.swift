@@ -308,10 +308,16 @@ public final class Reticulum {
         }
     }
 
-    /// Returns whether link MTU discovery is enabled globally.
+    /// Whether link MTU discovery is enabled globally.
     /// Mirrors Python's `Reticulum.link_mtu_discovery()`.
     /// Default: true (Python `LINK_MTU_DISCOVERY = True`).
-    public private(set) static var linkMtuDiscoveryEnabled: Bool = true
+    ///
+    /// Settable because Python reads `link_mtu_discovery` from the `[reticulum]` config section
+    /// (`Reticulum.py:537-539`). It was `private(set)` with no writer anywhere, so the option had
+    /// nowhere to be applied — the same shape as the get-only interface attributes, and the reason
+    /// adding the config parser alone would not have been enough. See `swift_devel/bugs/025-*.md`
+    /// and `bugs/030-*.md`.
+    public static var linkMtuDiscoveryEnabled: Bool = true
 
     public static func linkMtuDiscovery() -> Bool { linkMtuDiscoveryEnabled }
 

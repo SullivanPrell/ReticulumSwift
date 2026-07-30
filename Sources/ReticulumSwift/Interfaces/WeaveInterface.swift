@@ -852,6 +852,16 @@ public final class WeaveInterfacePeer: Interface {
         self.endpointAddr = endpointAddr
         self.name         = "WeaveInterfacePeer[\(endpointAddr.map { String(format: "%02x", $0) }.joined())]"
         self.bitrate      = owner.bitrate
+
+        // A peer is the real routing endpoint, so the parent's configuration has to reach it or
+        // every option is inert for traffic that arrives over Weave. Mirrors the spawned-interface
+        // attribute copy Python performs in every interface that fans out per peer
+        // (`TCPInterface.py:594-641`). See `swift_devel/bugs/025-*.md`.
+        self.interfaceState.inherit(from: owner.interfaceState)
+        self.gravity      = owner.gravity
+        self.ifacIdentity = owner.ifacIdentity
+        self.ifacKey      = owner.ifacKey
+        self.ifacSize     = owner.ifacSize
     }
 
     // MARK: - Incoming

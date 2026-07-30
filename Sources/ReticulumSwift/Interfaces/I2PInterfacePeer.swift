@@ -171,6 +171,17 @@ public final class I2PInterfacePeer: Interface {
         self.targetDestination = targetI2PDestination
         self.dialQueue = DispatchQueue(label: "ReticulumSwift.I2PInterfacePeer.dial.\(name)")
         self.watchdogQueue = DispatchQueue(label: "ReticulumSwift.I2PInterfacePeer.wd.\(name)")
+
+        // A peer is the real routing endpoint, so the parent's configuration has to reach it.
+        // Python does the same copy at `I2PInterface.py:846`. See `swift_devel/bugs/025-*.md`.
+        if let parent = parentInterface {
+            self.interfaceState.inherit(from: parent.interfaceState)
+            self.bitrate      = parent.bitrate
+            self.gravity      = parent.gravity
+            self.ifacIdentity = parent.ifacIdentity
+            self.ifacKey      = parent.ifacKey
+            self.ifacSize     = parent.ifacSize
+        }
     }
 
     // MARK: - Interface lifecycle
