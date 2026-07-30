@@ -41,17 +41,27 @@ public final class InterfaceState {
         var announceRatePenalty: TimeInterval = 0
 
         var ingressControl: Bool = true
-        var egressControl: Bool = false
-        var ecPrFreq: Double = 5.0
 
-        var icNewTime: TimeInterval = IngressControlState.icNewTime
-        var icBurstFreqNew: Double = IngressControlState.icBurstFreqNew
-        var icBurstFreq: Double = IngressControlState.icBurstFreq
-        var icPrBurstFreqNew: Double = IngressControlState.icPrBurstFreqNew
-        var icPrBurstFreq: Double = IngressControlState.icPrBurstFreq
-        var icBurstHold: TimeInterval = IngressControlState.icBurstHold
-        var icBurstPenalty: TimeInterval = IngressControlState.icBurstPenalty
-        var icHeldReleaseInterval: TimeInterval = IngressControlState.icHeldReleaseInterval
+        // Python reads these from `Reticulum._default_*()` in `Interface.__init__`
+        // (`Interface.py:126-136`), so the `[reticulum]` section sets what every interface
+        // *starts* from and a per-interface block overrides it. They were hardcoded here, so the
+        // global half of `bugs/030` had nowhere to land even once the parser read it — the same
+        // "configuration value with nowhere to be written" shape as `bugs/025`. Each accessor
+        // falls back to the `IngressControlState` constant holding the Python class value, so
+        // the numbers are still written down exactly once.
+        var egressControl: Bool = Reticulum.defaultEgressControl()
+        var ecPrFreq: Double = Reticulum.defaultEcPrFreq()
+
+        var icNewTime: TimeInterval = Reticulum.defaultIcNewTime()
+        var icBurstFreqNew: Double = Reticulum.defaultIcBurstFreqNew()
+        var icBurstFreq: Double = Reticulum.defaultIcBurstFreq()
+        var icPrBurstFreqNew: Double = Reticulum.defaultIcPrBurstFreqNew()
+        var icPrBurstFreq: Double = Reticulum.defaultIcPrBurstFreq()
+        var icBurstHold: TimeInterval = Reticulum.defaultIcBurstHold()
+        var icBurstPenalty: TimeInterval = Reticulum.defaultIcBurstPenalty()
+        var icHeldReleaseInterval: TimeInterval = Reticulum.defaultIcHeldReleaseInterval()
+        /// Python reads this as the class constant `IC_BURST_MIN_SAMPLES` (`Interface.py:85`,
+        /// `:201`) and exposes no config key for it, so it stays a constant here too.
         var icBurstMinSamples: Int = IngressControlState.icBurstMinSamples
         /// Python `interface.ic_max_held_announces` (`Interface.py:126`, config key at
         /// `Reticulum.py:791-792`) — a per-interface instance value, not a class constant.
@@ -62,7 +72,7 @@ public final class InterfaceState {
         /// `:201`) and exposes no config key for — was the per-interface one. So an operator could
         /// configure the tunable Python does not expose and not the one it does. Found while
         /// writing the per-interface parser; `icBurstMinSamples` stays on the box, harmlessly.
-        var icMaxHeldAnnounces: Int = IngressControlState.maxHeldAnnounces
+        var icMaxHeldAnnounces: Int = Reticulum.defaultIcMaxHeldAnnounces()
 
         var gravity: Int = InterfaceMode.defaultGravity
         var bootstrapOnly: Bool = false
