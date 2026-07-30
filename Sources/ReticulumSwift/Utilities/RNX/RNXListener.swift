@@ -248,9 +248,9 @@ public final class RNXListener {
     /// Send `msgpack([request_id, array8])` on `link`.
     ///
     /// Chooses packet-vs-Resource on the **per-link** `mdu`, matching Python's
-    /// `len(packed_response) <= self.mdu` (Link.py:848-852). `Link.dispatchRequest` uses
-    /// the fixed `Constants.linkMdu` instead; the two agree at the default MTU and are
-    /// wire-compatible either way, since the receiver handles both.
+    /// `len(packed_response) <= self.mdu` (Link.py:848-852). This was the only site in the port
+    /// that got it right; `Link.dispatchRequest` used the fixed `Constants.linkMdu` until
+    /// `bugs/016` closed the seam, so the two now agree at every MTU rather than only at 500.
     public func deliver(_ result: RNXResult, requestID: Data, on link: Link) throws {
         let body = MsgPack.encode(.array([.bytes(requestID), result.packedValue()]))
         if body.count <= link.mdu {
@@ -291,7 +291,7 @@ public final class RNXListener {
     ) throws -> [Data] {
         var found: String?
         for directory in searchPaths {
-            let path = (directory as NSString).expandingTildeInPath
+            let path = DaemonBootstrap.expandTilde(directory)
                 + "/" + RNXApp.allowedIdentitiesFileName
             var isDirectory: ObjCBool = false
             if fileManager.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue {

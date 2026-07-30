@@ -229,6 +229,10 @@ public enum KISS {
 /// host application as an `RNodeTransport`. This file owns KISS framing and
 /// the full RNode configuration / telemetry command set.
 public final class RNodeInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -258,7 +262,7 @@ public final class RNodeInterface: Interface {
 
     public let name:   String
     public var hwMtu:  Int?    { Self.hwMtuValue }
-    public private(set) var bitrate: Int = 0
+    public var bitrate: Int = 0
 
     private let onlineFlag = LockedFlag(false)
     public var isOnline: Bool {
@@ -270,7 +274,14 @@ public final class RNodeInterface: Interface {
     public var rawInboundHandler: ((Data,   any Interface) -> Void)?
     public var ifacIdentity: Identity?
     public var ifacKey:      Data?
-    public var ifacSize:     Int = Constants.defaultIfacSize
+    /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
+    /// `ifac_size` is given. Python declares 8 for the RNode family — `RNodeInterface.py:110`,
+    /// `RNodeMultiInterface.py:137` — where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
+    /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
+    /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
+    public static let defaultIfacSize: Int = 8
+
+    public var ifacSize:     Int = RNodeInterface.defaultIfacSize
 
     // MARK: – Transport
 

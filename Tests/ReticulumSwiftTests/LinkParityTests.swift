@@ -117,10 +117,10 @@ final class LinkParityTests: XCTestCase {
         rT.register(interface: rToA); aT.register(interface: aIface)
 
         rT.restore(path: Transport.PathEntry(
-            destinationHash: aDest.hash, nextHopInterfaceName: rToA.name,
+            destinationHash: aDest.hash, nextHopInterface: rToA,
             hops: 0, lastHeard: Date(), identityHash: aIdentity.hash), forDestination: aDest.hash)
         bT.restore(path: Transport.PathEntry(
-            destinationHash: aDest.hash, nextHopInterfaceName: bIface.name,
+            destinationHash: aDest.hash, nextHopInterface: bIface,
             hops: 1, lastHeard: Date(), identityHash: aIdentity.hash,
             nextHopTransportID: rT.transportInstanceID), forDestination: aDest.hash)
 

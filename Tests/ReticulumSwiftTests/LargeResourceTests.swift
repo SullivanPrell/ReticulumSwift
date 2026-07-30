@@ -167,8 +167,13 @@ final class LargeResourceTests: XCTestCase {
         receiver.bindAsReceiver()
         receiver.onPayloadReceived = { data, _ in received = data }
 
-        // 80-byte parts => >162 parts, spanning hashmap segments 0, 1 and 2.
-        try sender.send(payload: payload, segmentSize: 80, autoCompress: false)
+        // 80-byte parts => >162 parts, spanning hashmap segments 0, 1 and 2. Set on the link,
+        // not passed to the sender: the receiver derives its own part count from the link
+        // (`bugs/016`), so sizing one side only is the disagreement this change exists to make
+        // detectable rather than a way to configure a transfer.
+        aLink.establishedMtu = 80 + Constants.headerMaxSize + Constants.ifacMinSize
+        bLink.establishedMtu = aLink.establishedMtu
+        try sender.send(payload: payload, autoCompress: false)
         wait(for: [done], timeout: 15.0)
 
         XCTAssertGreaterThan(sender.partCount, 2 * ResourceAdvertisement.hashmapMaxLength,

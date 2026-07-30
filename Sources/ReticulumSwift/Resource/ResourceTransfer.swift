@@ -382,13 +382,37 @@ public final class ResourceTransfer {
 
     // MARK: - Sender
 
+    /// The part count a receiver computes for itself: `ceil(size / sdu)`, matching
+    /// `Resource.py:187`. Deriving it is what makes a mismatch with the sender detectable.
+    static func derivedPartCount(size: Int, segmentSize: Int) -> Int {
+        guard segmentSize > 0 else { return 0 }
+        return (size + segmentSize - 1) / segmentSize
+    }
+
+    /// Whether an advertised part count contradicts the one this side derived.
+    ///
+    /// Separate from the comparison itself so the meaning has a name: an advertisement that
+    /// disagrees means the peer sized its parts against a different MTU, and the transfer cannot
+    /// complete however long it is left running.
+    static func partCountDisagrees(advertised: Int, derived: Int) -> Bool {
+        advertised != derived
+    }
+
     /// Prepare and advertise a resource. The sender registers with the link,
     /// which will call `handleRequest(_:)` when the receiver requests parts.
     /// Set `requestID` and `isRequest`/`isResponse` for request/response transfers.
     public func send(
         payload: Data,
         metadata: Data? = nil,
-        segmentSize: Int = Constants.mdu,
+        /// `nil` derives the part size from the link's negotiated MTU, which is what the
+        /// reference does on both sides (`Resource.py:335`). See `Resource.segmentSize(for:)`.
+        ///
+        /// **Passing a value is almost always wrong.** The reference has no such override: the
+        /// receiver derives its own part count from *its* view of the link (`Resource.py:187`),
+        /// so a size that disagrees with what the peer derives produces a part-count mismatch and
+        /// the transfer never completes. To exercise small parts, lower the link's MTU — that
+        /// moves both sides together, as a real low-MTU link does.
+        segmentSize: Int? = nil,
         requestID: Data? = nil,
         isRequest: Bool = false,
         isResponse: Bool = false,
@@ -436,7 +460,7 @@ public final class ResourceTransfer {
     }
 
     private func sendSegment(
-        payload: Data, metadata: Data?, segmentSize: Int,
+        payload: Data, metadata: Data?, segmentSize: Int?,
         requestID: Data?, isRequest: Bool, isResponse: Bool, autoCompress: Bool = true
     ) throws {
         // Resource construction is a callout (reads link state, performs crypto) —
@@ -668,7 +692,9 @@ public final class ResourceTransfer {
                 try sendSegment(
                     payload: next,
                     metadata: nil,  // metadata only on first segment
-                    segmentSize: Constants.mdu,
+                    // Derived from the link, like every other segment (`bugs/016`). This
+                    // site was the second of the two that hardcoded the base constant.
+                    segmentSize: nil,
                     requestID: nextReqID,
                     isRequest: nextIsRequest,
                     isResponse: nextIsResponse,
@@ -770,11 +796,23 @@ public final class ResourceTransfer {
         // same overall resource, and the segment we are waiting for.
         guard acceptsAsContinuation(adv) else { return }
 
+        // Derive the part count rather than reading it off the wire.
+        //
+        // `bugs/016`. Python does not trust the advertisement — it computes
+        // `total_parts = ceil(size / sdu)` from its *own* `sdu` (`Resource.py:187`), which is
+        // what makes a disagreement between the two sides detectable at all. Trusting
+        // `adv.partCount` is why two consistently-wrong implementations interoperate with each
+        // other and with nothing else: this port sized parts at a fixed 464 and believed whatever
+        // it was told, so Swift↔Swift always agreed and Swift↔Python silently timed out.
+        let sdu = Resource.segmentSize(for: link)
+        let derived = ResourceTransfer.derivedPartCount(size: Int(adv.transferSize),
+                                                        segmentSize: sdu)
+
         stateLock.lock()
         isReceiver = true
         _advertisement = adv
         _resourceHash = adv.resourceHash
-        totalParts = Int(adv.partCount)
+        totalParts = derived
 
         // Build hashmap array from advertisement bytes.
         hashmap = []
@@ -788,6 +826,20 @@ public final class ResourceTransfer {
         while hashmap.count < totalParts {
             hashmap.append(nil)
         }
+        stateLock.unlock()
+
+        // Surface a disagreement instead of absorbing it. In the reference the mismatch shows up
+        // as an `IndexError` swallowed behind a `LOG_DEBUG` line (`Resource.py:240`), so the
+        // operator sees a transfer that never finishes and no reason why. Saying so out loud is
+        // the difference between a diagnosable failure and a hang.
+        if ResourceTransfer.partCountDisagrees(advertised: Int(adv.partCount), derived: derived) {
+            Reticulum.log("Resource \(RNSUtilities.hexrep(adv.resourceHash, delimit: false)) "
+                          + "advertises \(adv.partCount) parts, but \(derived) is what this link's "
+                          + "MTU (\(link.establishedMtu)) implies for \(adv.transferSize) bytes. "
+                          + "The peer is sizing parts from a different MTU; the transfer will not "
+                          + "complete.", level: .error)
+        }
+        stateLock.lock()
 
         parts = [Data?](repeating: nil, count: totalParts)
         consecutiveCompletedHeight = -1

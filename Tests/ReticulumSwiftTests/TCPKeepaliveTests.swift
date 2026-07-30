@@ -39,9 +39,9 @@ final class TCPKeepaliveTests: XCTestCase {
     ///
     /// Asserted on the object the interface constructs and hands to Network.framework, which
     /// is the only place these values can be read back reliably — see
-    /// ``TCPClientInterface/tcpOptions()``.
+    /// ``RNSSocketOptions``.
     func testClientOptionsCarryPythonsKeepaliveTimers() {
-        let options = TCPClientInterface.tcpOptions()
+        let options = RNSSocketOptions.tcpOptions()
         XCTAssertTrue(options.enableKeepalive, "keepalive must be on, as in Python")
         XCTAssertEqual(options.keepaliveIdle, 5)
         XCTAssertEqual(options.keepaliveInterval, 2)
@@ -53,13 +53,13 @@ final class TCPKeepaliveTests: XCTestCase {
     /// (`TCPInterface.py:148`, `:239`). RNS packets are small and latency-sensitive;
     /// Nagle would coalesce them behind the 40 ms delayed-ACK timer.
     func testClientOptionsDisableNagle() {
-        XCTAssertTrue(TCPClientInterface.tcpOptions().noDelay)
+        XCTAssertTrue(RNSSocketOptions.tcpOptions().noDelay)
     }
 
     /// The backbone client dials over the same networks and fails the same way
     /// (`BackboneInterface.py:626-627`, `:655-660`).
     func testBackboneOptionsCarryTheSameTimers() {
-        let options = BackboneInterface.tcpOptions()
+        let options = RNSSocketOptions.tcpOptions()   // Backbone dials with the same set
         XCTAssertTrue(options.enableKeepalive)
         XCTAssertEqual(options.keepaliveIdle, 5)
         XCTAssertEqual(options.keepaliveInterval, 2)
@@ -69,11 +69,11 @@ final class TCPKeepaliveTests: XCTestCase {
     }
 
     /// The parameters a dial is built from must carry a TCP stack at all — true on every OS,
-    /// and the part of ``TCPClientInterface/tcpParameters`` worth pinning: it would break if
+    /// and the part of ``RNSSocketOptions/tcpParameters()`` worth pinning: it would break if
     /// the initializer were ever changed to drop the options.
     func testParametersCarryATCPStack() throws {
         _ = try XCTUnwrap(
-            TCPClientInterface.tcpParameters.defaultProtocolStack.transportProtocol
+            RNSSocketOptions.tcpParameters().parameters.defaultProtocolStack.transportProtocol
                 as? NWProtocolTCP.Options,
             "expected a TCP transport protocol in the stack")
     }
@@ -88,7 +88,7 @@ final class TCPKeepaliveTests: XCTestCase {
                           "this OS reports framework defaults when a TCP option is read back "
                           + "through NWParameters.defaultProtocolStack")
         let options = try XCTUnwrap(
-            TCPClientInterface.tcpParameters.defaultProtocolStack.transportProtocol
+            RNSSocketOptions.tcpParameters().parameters.defaultProtocolStack.transportProtocol
                 as? NWProtocolTCP.Options)
         XCTAssertTrue(options.enableKeepalive)
         XCTAssertEqual(options.keepaliveIdle, 5)
@@ -102,7 +102,8 @@ final class TCPKeepaliveTests: XCTestCase {
     /// handing the same instance to two connections lets Network.framework mutate shared
     /// state — and a `NWParameters` already used by a live connection cannot be reused.
     func testEachDialGetsFreshParameters() {
-        XCTAssertFalse(TCPClientInterface.tcpParameters === TCPClientInterface.tcpParameters)
+        XCTAssertFalse(RNSSocketOptions.tcpParameters().parameters
+                       === RNSSocketOptions.tcpParameters().parameters)
     }
 
     /// End to end: a real connection carrying these parameters still speaks to a peer.
@@ -116,7 +117,8 @@ final class TCPKeepaliveTests: XCTestCase {
         for _ in 0..<16 {
             let candidate = UInt16.random(in: 41_000...48_000)
             guard let nwPort = NWEndpoint.Port(rawValue: candidate) else { continue }
-            if let l = try? NWListener(using: TCPClientInterface.tcpParameters, on: nwPort) {
+            if let l = try? NWListener(using: RNSSocketOptions.tcpParameters().parameters,
+                                      on: nwPort) {
                 bound = (l, candidate); break
             }
         }

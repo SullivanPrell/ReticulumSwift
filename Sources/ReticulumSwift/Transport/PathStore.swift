@@ -9,6 +9,19 @@ import Foundation
 public struct PathStore: Codable {
     public struct Entry: Codable {
         public var destinationHashHex: String
+        /// `Interface.hash` of the interface this route leads through.
+        ///
+        /// The routed value is the interface *object*, which cannot be written down, so
+        /// persistence stores its hash and resolves it back through
+        /// `Transport.findInterface(fromHash:)` on load — exactly what the reference does
+        /// (`Transport.py:3387-3395` writing `interface.get_hash()`, `:326` restoring with
+        /// `find_interface_from_hash`). An entry whose hash resolves to nothing is dropped, as
+        /// it is there.
+        ///
+        /// Optional only so a path store written before `bugs/027` still decodes; such an entry
+        /// has no resolvable identity and is dropped on load.
+        public var nextHopInterfaceHashHex: String?
+        /// Display name, for a path listing (`Reticulum.py:1532`). Never used to resolve a route.
         public var nextHopInterfaceName: String
         public var hops: UInt8
         public var lastHeard: Date
@@ -40,12 +53,24 @@ public struct PathStore: Codable {
         let knownIdentities = transport.knownIdentities
         let knownRatchets = transport.knownRatchets
         transport.lock.unlock()
+        let liveInterfaceHashes = transport.interfaceHashes()
         var entries: [Entry] = []
         for (destHash, path) in paths {
+            // Only persist an entry whose interface is still active, matching
+            // `Transport.py:3374`. A path whose interface is gone cannot be resolved back on
+            // load, and writing it down would leave a route pointing at nothing (R2).
+            guard let interface = path.nextHopInterface,
+                  liveInterfaceHashes.contains(interface.hash) else {
+                Reticulum.log("Skipping persist for path table entry "
+                              + "\(destHash.hexString), interface "
+                              + "\(path.nextHopInterfaceName) no longer active", level: .debug)
+                continue
+            }
             let identityHex = knownIdentities[destHash]?
                 .publicKeyBytes.hexString ?? ""
             entries.append(Entry(
                 destinationHashHex: destHash.hexString,
+                nextHopInterfaceHashHex: interface.hash.hexString,
                 nextHopInterfaceName: path.nextHopInterfaceName,
                 hops: path.hops,
                 lastHeard: path.lastHeard,
@@ -64,9 +89,24 @@ public struct PathStore: Codable {
     public func apply(to transport: Transport) {
         for entry in entries {
             guard let destHash = Data(hex: entry.destinationHashHex) else { continue }
+            // Resolve the stored interface hash back to a live interface, and drop the entry if
+            // nothing answers — the reference does the same (`Transport.py:326`,
+            // `receiving_interface != None` gating the restore). A route that cannot name the
+            // interface it goes through is not a route; keeping it would mean falling back to a
+            // name, which is `bugs/027`. Interface identity is derived from `displayName`, so a
+            // daemon upgrading across a release that changes any display name drops those paths
+            // and relearns them from announces (R2).
+            guard let hashHex = entry.nextHopInterfaceHashHex,
+                  let interfaceHash = Data(hex: hashHex),
+                  let interface = transport.findInterface(fromHash: interfaceHash) else {
+                Reticulum.log("Dropping restored path for \(entry.destinationHashHex): "
+                              + "interface \(entry.nextHopInterfaceName) is not registered",
+                              level: .debug)
+                continue
+            }
             let path = Transport.PathEntry(
                 destinationHash: destHash,
-                nextHopInterfaceName: entry.nextHopInterfaceName,
+                nextHopInterface: interface,
                 hops: entry.hops,
                 lastHeard: entry.lastHeard,
                 identityHash: Data(hex: entry.identityHashHex) ?? Data(),

@@ -664,7 +664,14 @@ public final class LinkChannelOutlet: ChannelOutlet {
         }
     }
 
-    public var mdu: Int { Constants.linkMdu }
+    /// The link's negotiated MDU, not the base constant.
+    ///
+    /// Python reads `self.link.mdu` here (`Link.py:569`), which tracks the negotiated MTU. Part
+    /// of the same seam as `bugs/016`: fixing only the Resource splitter would leave channel and
+    /// buffer chunking sized for a 500-byte link on a link that negotiated far more — the
+    /// "corrected at the call sites the failing test touched" mistake that brought three of
+    /// `bugs/013`'s sub-defects back.
+    public var mdu: Int { link?.mdu ?? Constants.linkMdu }
 
     public var rtt: TimeInterval { link?.rtt ?? 0 }
 

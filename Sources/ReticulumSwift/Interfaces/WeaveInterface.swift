@@ -558,6 +558,10 @@ public final class WeaveDevice {
 ///
 /// Python: `WeaveInterface`
 public final class WeaveInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -782,6 +786,10 @@ public final class WeaveInterface: Interface {
 ///
 /// Python: `WeaveInterfacePeer`
 public final class WeaveInterfacePeer: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -825,6 +833,19 @@ public final class WeaveInterfacePeer: Interface {
     /// Optional switch_id through which this endpoint is reachable.
     public var viaSwitchID:  Data? = nil
 
+    /// Python `WeaveInterfacePeer.__str__` (`WeaveInterface.py:1022-1023`):
+    /// `f"WeaveInterfacePeer[{RNS.hexrep(self.endpoint_addr)}]"`. `RNS.hexrep` delimits with
+    /// `:` unless told otherwise (`RNS/__init__.py:176-183`), so the address is colon-separated.
+    ///
+    /// This does **not** compose `name`, even though `name` already carries a bracketed form:
+    /// `init` builds it with undelimited hex, so publishing it gave
+    /// `WeaveInterfacePeer[01020304]` against Python's `WeaveInterfacePeer[01:02:03:04]` — a
+    /// correct-looking string with a different `Interface.hash`. Found by the
+    /// enumerate-every-conformer test in `bugs/022`; not in the audit's list of nine.
+    public var displayName: String {
+        "WeaveInterfacePeer[\(RNSUtilities.hexrep(endpointAddr))]"
+    }
+
     /// The parent WeaveInterface's device switch ID (mirrors Python `peer.switch_id`).
     public var switchID: Data? { owner?.device.switchID }
     /// The endpoint ID for this peer, derived from the endpoint address.
@@ -844,6 +865,16 @@ public final class WeaveInterfacePeer: Interface {
         self.endpointAddr = endpointAddr
         self.name         = "WeaveInterfacePeer[\(endpointAddr.map { String(format: "%02x", $0) }.joined())]"
         self.bitrate      = owner.bitrate
+
+        // A peer is the real routing endpoint, so the parent's configuration has to reach it or
+        // every option is inert for traffic that arrives over Weave. Mirrors the spawned-interface
+        // attribute copy Python performs in every interface that fans out per peer
+        // (`TCPInterface.py:594-641`). See `swift_devel/bugs/025-*.md`.
+        self.interfaceState.inherit(from: owner.interfaceState)
+        self.gravity      = owner.gravity
+        self.ifacIdentity = owner.ifacIdentity
+        self.ifacKey      = owner.ifacKey
+        self.ifacSize     = owner.ifacSize
     }
 
     // MARK: - Incoming

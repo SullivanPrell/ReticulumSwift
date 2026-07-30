@@ -49,7 +49,11 @@ if options.exampleConfig {
 let paths = DaemonBootstrap.Paths(
     configDir: DaemonBootstrap.resolveConfigDir(
         explicit: options.configDir,
-        home: FileManager.default.homeDirectoryForCurrentUser))
+        // `DaemonBootstrap.homeDirectory()`, not `homeDirectoryForCurrentUser`: the latter
+        // reports the account's real home regardless of `$HOME`, so this utility read the
+        // developer's real ~/.reticulum under a relocated HOME (`bugs/024`). `rnsd` already
+        // resolved it correctly; only rnir and rnpkg did not.
+        home: DaemonBootstrap.homeDirectory()))
 
 FileLogSink.installStdoutHandler()
 Reticulum.globalLogLevel = .notice

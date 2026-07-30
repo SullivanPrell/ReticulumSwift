@@ -21,6 +21,10 @@ import Foundation
 /// and a watchdog sends idle keepalives / kills unresponsive tunnels exactly
 /// like Python's `read_watchdog`.
 public final class I2PInterfacePeer: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -93,8 +97,9 @@ public final class I2PInterfacePeer: Interface {
     public var rxPackets: Int { counters.rxPackets }
     public var txPackets: Int { counters.txPackets }
 
-    /// Python: `__str__` returns `"I2PInterfacePeer[<name>]"`.
-    public var displayName: String { "I2PInterfacePeer[\(name)]" }
+    // `displayName` is not declared here: Python's `I2PInterfacePeer[<name>]`
+    // (`I2PInterface.py:713-714`) is exactly the protocol's class-qualified default.
+    // See `Interface.displayName`.
 
     // MARK: - I2P-specific properties
 
@@ -167,6 +172,17 @@ public final class I2PInterfacePeer: Interface {
         self.targetDestination = targetI2PDestination
         self.dialQueue = DispatchQueue(label: "ReticulumSwift.I2PInterfacePeer.dial.\(name)")
         self.watchdogQueue = DispatchQueue(label: "ReticulumSwift.I2PInterfacePeer.wd.\(name)")
+
+        // A peer is the real routing endpoint, so the parent's configuration has to reach it.
+        // Python does the same copy at `I2PInterface.py:846`. See `swift_devel/bugs/025-*.md`.
+        if let parent = parentInterface {
+            self.interfaceState.inherit(from: parent.interfaceState)
+            self.bitrate      = parent.bitrate
+            self.gravity      = parent.gravity
+            self.ifacIdentity = parent.ifacIdentity
+            self.ifacKey      = parent.ifacKey
+            self.ifacSize     = parent.ifacSize
+        }
     }
 
     // MARK: - Interface lifecycle

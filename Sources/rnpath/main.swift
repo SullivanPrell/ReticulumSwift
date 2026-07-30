@@ -122,7 +122,7 @@ func requireNumber<T>(_ raw: String?, flag: String, typeName: String,
 }
 
 var options = RNPathOptions()
-options.configDirectory = parsed.value("--config").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+options.configDirectory = parsed.value("--config").map { DaemonBootstrap.expandTildeURL($0) }
 options.table = parsed.flag("--table")
 options.rates = parsed.flag("--rates")
 options.drop = parsed.flag("--drop")
@@ -234,7 +234,7 @@ if let remoteHex = options.remote {
             // Python: expanduser(None) → TypeError → exit 20 printing the TypeError text.
             throw RNPathRemoteClient.RemoteError.identityUnavailable("None")
         }
-        let expanded = (identityPath as NSString).expandingTildeInPath
+        let expanded = DaemonBootstrap.expandTilde(identityPath)
         guard let identity = Identity.fromFile(URL(fileURLWithPath: expanded)) else {
             throw RNPathRemoteClient.RemoteError.identityUnavailable(identityPath)
         }

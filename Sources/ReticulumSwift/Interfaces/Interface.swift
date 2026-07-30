@@ -59,8 +59,29 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
 /// reports clean packet bytes upward via `inboundHandler`.
 public protocol Interface: AnyObject {
     var name: String { get }
-    var bitrate: Int { get }
+
+    /// Interface capacity in bits per second.
+    ///
+    /// Settable because Python assigns it per interface from config and copies it onto every
+    /// spawned sub-interface (`Reticulum.py:1115`, `TCPInterface.py:594-641`). Each conformer
+    /// stores its own so that types deriving a bitrate from radio parameters keep that
+    /// derivation as their starting value. See `swift_devel/bugs/025-*.md`.
+    var bitrate: Int { get set }
+
     var isOnline: Bool { get }
+
+    /// Per-interface mutable configuration — mode, announce rate control, ingress/egress
+    /// control and the `ic_*` tunables.
+    ///
+    /// One stored property is the entire requirement; `Interface`'s extension forwards each
+    /// individual attribute to it. This exists because Python mutates all of these at runtime
+    /// while this port declared them `{ get }`-only, leaving a parsed config value nowhere to
+    /// be written (`swift_devel/bugs/025-*.md`). Declare it in a conformer as:
+    ///
+    /// ```swift
+    /// public let interfaceState = InterfaceState()
+    /// ```
+    var interfaceState: InterfaceState { get }
 
     /// Human-readable display name matching Python's `str(interface)` format,
     /// e.g. `"AutoInterface[local]"`, `"TCPClientInterface[...]"`.
@@ -113,31 +134,36 @@ public protocol Interface: AnyObject {
     /// Mirrors Python's `Interface.FIXED_MTU`.
     var fixedMtu: Bool { get }
 
+    /// Fraction of interface capacity announces may consume (e.g. `0.02` for 2%).
+    /// Mirrors Python's `Interface.announce_cap`, assigned from config at
+    /// `Reticulum.py:834-837` / `:912` where the config value is a percentage in `(0, 100]`.
+    var announceCap: Double { get set }
+
     /// Minimum time (seconds) between successive announces of the same destination.
     /// When nil, no rate limiting is applied. Mirrors Python's `Interface.announce_rate_target`.
-    var announceRateTarget: TimeInterval? { get }
+    var announceRateTarget: TimeInterval? { get set }
     /// Number of rate violations allowed before a destination is blocked.
     /// Mirrors Python's `Interface.announce_rate_grace`.
-    var announceRateGrace: Int { get }
+    var announceRateGrace: Int { get set }
     /// Extra penalty (seconds) added to the block window on top of `announceRateTarget`.
     /// Mirrors Python's `Interface.announce_rate_penalty`.
-    var announceRatePenalty: TimeInterval { get }
+    var announceRatePenalty: TimeInterval { get set }
 
     /// Whether ingress burst limiting is enabled on this interface.
     /// Mirrors Python's `Interface.ingress_control` (default True).
-    var ingressControl: Bool { get }
+    var ingressControl: Bool { get set }
 
     /// Whether egress path-request limiting is enabled on this interface.
     /// Mirrors Python's `Interface.egress_control` (default False).
-    var egressControl: Bool { get }
+    var egressControl: Bool { get set }
 
     /// Egress path-request frequency cap in Hz.
     /// Mirrors Python's `Interface.EC_PR_FREQ = 5`.
-    var ecPrFreq: Double { get }
+    var ecPrFreq: Double { get set }
 
     /// Operating mode of this interface.
-    /// Mirrors Python's `Interface.mode` (default `.full`).
-    var mode: InterfaceMode { get }
+    /// Mirrors Python's `Interface.mode` (default `.full`), assigned at `Reticulum.py:910`.
+    var mode: InterfaceMode { get set }
 
     /// When this interface was created. Used to determine "new interface" vs established.
     /// Mirrors Python's `Interface.age()` computation.
@@ -155,6 +181,10 @@ public protocol Interface: AnyObject {
     /// When true, this interface is used only to bootstrap the path table on startup.
     /// Mirrors Python's `Interface.bootstrap_only`.
     var bootstrapOnly: Bool { get set }
+
+    /// The IFAC segment this interface is on, from the block's `networkname` / `network_name`.
+    /// Mirrors Python's `Interface.ifac_netname` (`Reticulum.py:955`); `rnstatus` reports it.
+    var ifacNetname: String? { get set }
 
     /// When true, a transport node searches for unknown paths on path requests
     /// received here regardless of this interface's `mode` (i.e. even when the
@@ -225,9 +255,29 @@ public protocol LocalClientServingInterface: Interface {
 
 /// Default implementations so existing interfaces don't need to add these.
 public extension Interface {
-    /// Default `displayName`: just `name`. Sufficient for interfaces that don't
-    /// appear in rnstatus-style output; others override to match Python's `__str__`.
-    var displayName: String { name }
+    /// Default `displayName`: the class-qualified form `"Class[name]"`, which is what Python's
+    /// `__str__` returns for every interface whose reference string carries no peer address —
+    /// `SerialInterface[…]` (`SerialInterface.py:226-227`), `KISSInterface[…]` (`:387-388`),
+    /// `AX25KISSInterface[…]` (`:400-401`), `RNodeInterface[…]` (`:1247-1248`),
+    /// `RNodeMultiInterface[…]` (`:923-924`), `I2PInterface[…]` (`:890`),
+    /// `I2PInterfacePeer[…]` (`:713-714`), `AutoInterface[…]` (`:609`),
+    /// `WeaveInterface[…]` (`:1005-1006`).
+    ///
+    /// It composes `statsTypeName`, which is already the RNS class name, so a new interface type
+    /// gets the correct shape by declaring nothing. **The previous default was the bare `name`**,
+    /// and that is why `bugs/022` exists: 1.7.0 fixed the nine wrong publishers by adding
+    /// overrides to the TCP and UDP families only, and every type it did not touch kept silently
+    /// inheriting a name that is neither the identity Python computes
+    /// (`hash` is `fullHash(displayName)`) nor a string `rnstatus`' class-prefix filters match.
+    /// Composing here rather than overriding per file is the seam: the tenth interface type
+    /// cannot repeat it.
+    ///
+    /// Override only where the reference string is genuinely a different shape — a peer address
+    /// in the tail (`TCPInterface[name/ip:port]`), a form that ignores `name`
+    /// (`LocalInterface[port]`, `Shared Instance[port]`), or one derived from a parent or peer
+    /// address (`RNodeSubInterface`, `WeaveInterfacePeer`). `InterfaceDisplayNameTests` asserts
+    /// the resulting string for every conformer against the reference form.
+    var displayName: String { "\(statsTypeName)[\(name)]" }
 
     /// Default: the Swift type's own name, which is what most interfaces are called in
     /// Python too (`UDPInterface`, `TCPClientInterface`, `RNodeInterface`, …).
@@ -263,49 +313,94 @@ public extension Interface {
     var autoconfigureMtu: Bool { false }
     var fixedMtu: Bool { false }
 
-    // Announce rate limiting — disabled by default (matches Python's None defaults).
-    var announceRateTarget: TimeInterval? { nil }
-    var announceRateGrace: Int { 0 }
-    var announceRatePenalty: TimeInterval { 0 }
+    /// Default `interfaceState` for conformers that do not declare their own.
+    ///
+    /// Every interface this library ships declares `public let interfaceState = InterfaceState()`,
+    /// which is the intended form. This default keeps the protocol adoptable by conformers defined
+    /// elsewhere, and still yields genuine per-instance state — see
+    /// `InterfaceState.FallbackStorage`.
+    var interfaceState: InterfaceState {
+        InterfaceState.fallbackStorage.state(for: self)
+    }
 
-    // Ingress burst control — enabled by default, creation time = now.
-    var ingressControl: Bool { true }
-    // Egress PR control — disabled by default (matches Python's None/False defaults).
-    var egressControl: Bool { false }
-    var ecPrFreq: Double { 5.0 }
-    // Interface mode — full by default.
-    var mode: InterfaceMode { .full }
+    // MARK: - Mutable configuration, forwarded to `interfaceState`
+    //
+    // These were `{ get }`-only requirements with blanket defaults (announce rates, ingress and
+    // egress control, mode) or `{ get set }` requirements with `set { }` no-op defaults that
+    // silently discarded the write (the tunnel and announce-propagation flags below). Both shapes
+    // meant a parsed config value had nowhere to go. Every one now forwards to the per-interface
+    // state box, so a conformer needs one stored property and gets the whole set. Defaults live in
+    // `InterfaceState` and match Python's. See `swift_devel/bugs/025-*.md`.
+
+    var announceCap: Double {
+        get { interfaceState.announceCap }
+        set { interfaceState.announceCap = newValue }
+    }
+    var announceRateTarget: TimeInterval? {
+        get { interfaceState.announceRateTarget }
+        set { interfaceState.announceRateTarget = newValue }
+    }
+    var announceRateGrace: Int {
+        get { interfaceState.announceRateGrace }
+        set { interfaceState.announceRateGrace = newValue }
+    }
+    var announceRatePenalty: TimeInterval {
+        get { interfaceState.announceRatePenalty }
+        set { interfaceState.announceRatePenalty = newValue }
+    }
+
+    var ingressControl: Bool {
+        get { interfaceState.ingressControl }
+        set { interfaceState.ingressControl = newValue }
+    }
+    var egressControl: Bool {
+        get { interfaceState.egressControl }
+        set { interfaceState.egressControl = newValue }
+    }
+    var ecPrFreq: Double {
+        get { interfaceState.ecPrFreq }
+        set { interfaceState.ecPrFreq = newValue }
+    }
+
+    var mode: InterfaceMode {
+        get { interfaceState.mode }
+        set { interfaceState.mode = newValue }
+    }
+
     var createdAt: Date { Date() }
 
-    // Tunnel defaults — not a tunneled interface by default
     var wantsTunnel: Bool {
-        get { false }
-        set { }
+        get { interfaceState.wantsTunnel }
+        set { interfaceState.wantsTunnel = newValue }
     }
     var tunnelID: Data? {
-        get { nil }
-        set { }
+        get { interfaceState.tunnelID }
+        set { interfaceState.tunnelID = newValue }
     }
     var bootstrapOnly: Bool {
-        get { false }
-        set { }
+        get { interfaceState.bootstrapOnly }
+        set { interfaceState.bootstrapOnly = newValue }
+    }
+    var ifacNetname: String? {
+        get { interfaceState.ifacNetname }
+        set { interfaceState.ifacNetname = newValue }
     }
     var recursivePrs: Bool {
-        get { false }
-        set { }
+        get { interfaceState.recursivePrs }
+        set { interfaceState.recursivePrs = newValue }
     }
     var announcesFromInternal: Bool {
-        get { true }
-        set { }
+        get { interfaceState.announcesFromInternal }
+        set { interfaceState.announcesFromInternal = newValue }
     }
     var announcesToInternal: Bool? {
-        get { nil }
-        set { }
+        get { interfaceState.announcesToInternal }
+        set { interfaceState.announcesToInternal = newValue }
     }
-    /// Mirrors Python's `Interface.DEFAULT_GRAVITY = 0`.
+    /// Mirrors Python's `Interface.gravity` (`DEFAULT_GRAVITY = 0`).
     var gravity: Int {
-        get { InterfaceMode.defaultGravity }
-        set { }
+        get { interfaceState.gravity }
+        set { interfaceState.gravity = newValue }
     }
 
     var isRoutingEndpoint: Bool { true }

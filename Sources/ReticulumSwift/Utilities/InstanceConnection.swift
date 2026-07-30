@@ -116,6 +116,49 @@ public final class InstanceConnection {
         return URL(fileURLWithPath: NSHomeDirectory())
     }
 
+    /// `os.path.expanduser` — expand a leading `~` from `$HOME`.
+    ///
+    /// The counterpart to ``homeDirectory(environment:)`` for the paths a *user* types, and it
+    /// exists for the same reason. `NSString.expandingTildeInPath` ignores `$HOME` on macOS
+    /// exactly as `NSHomeDirectory()` does, so `--config ~/scratch` under a relocated `HOME`
+    /// resolved into the account's real home while the surrounding code believed it was
+    /// sandboxed. Eleven call sites across five utilities used it (`bugs/024`), which is why the
+    /// 1.7.0 fix — one resolver, in one place — did not hold: it corrected where the *default*
+    /// came from and left every explicit `~` path going somewhere else.
+    ///
+    /// Semantics, matching CPython's `posixpath.expanduser`:
+    /// - `"~"` → `$HOME`, `"~/x"` → `$HOME/x`.
+    /// - A trailing slash on `$HOME` is not doubled.
+    /// - `~user` is returned **unchanged**. CPython looks it up in the password database;
+    ///   nothing in RNS passes one, and silently resolving it to `$HOME` would be worse than
+    ///   leaving it for the filesystem to reject.
+    /// - Anything not starting with `~` is returned unchanged.
+    static func expandTilde(_ path: String,
+                            environment: [String: String] = ProcessInfo.processInfo.environment)
+    -> String {
+        expandTilde(path, home: homeDirectory(environment: environment).path)
+    }
+
+    /// ``expandTilde(_:environment:)`` against an explicitly supplied home.
+    ///
+    /// The core implementation, separate so `rncp` — whose filesystem abstraction already carries
+    /// an injected home — reaches the same expansion rather than keeping its own copy. It had
+    /// one; the two agreed except on a home with repeated trailing slashes, where CPython's
+    /// `rstrip('/')` is what this does.
+    static func expandTilde(_ path: String, home: String) -> String {
+        guard path.hasPrefix("~") else { return path }
+        let rest = String(path.dropFirst())
+        if rest.isEmpty { return home }
+        // `~user…` — not ours to expand. CPython consults the password database; RNS never does,
+        // and resolving it to `$HOME` would be worse than letting the filesystem reject it.
+        guard rest.hasPrefix("/") else { return path }
+        // CPython: `userhome.rstrip('/') + path[i:]` (`posixpath.expanduser`).
+        var base = home
+        while base.count > 1, base.hasSuffix("/") { base.removeLast() }
+        if base == "/" { return rest }
+        return base + rest
+    }
+
     /// The same search order with its two fixed locations injected, so it can be exercised
     /// against a temporary tree instead of the real `/etc` and `$HOME`.
     ///

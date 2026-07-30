@@ -9,11 +9,15 @@ import Network
 /// `forwardHost`/`forwardPort` to address outbound traffic. Either
 /// direction is optional, but at least one must be configured.
 public final class UDPInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
     public let name: String
     public let listenPort: UInt16?
     public let forwardHost: String?
     public let forwardPort: UInt16?
-    public private(set) var bitrate: Int = 10_000_000
+    public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }

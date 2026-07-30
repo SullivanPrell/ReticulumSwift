@@ -33,7 +33,7 @@ final class PathResponsivenessTests: XCTestCase {
         // Seed path so responsiveness can be tracked
         aT.restore(path: Transport.PathEntry(
             destinationHash: bDest.hash,
-            nextHopInterfaceName: aI.name,
+            nextHopInterface: aI,
             hops: 1,
             lastHeard: Date(),
             identityHash: bId.hash
@@ -68,7 +68,7 @@ final class PathResponsivenessTests: XCTestCase {
 
         aT.restore(path: Transport.PathEntry(
             destinationHash: bDest.hash,
-            nextHopInterfaceName: bhole.name,
+            nextHopInterface: bhole,
             hops: 1,
             lastHeard: Date(),
             identityHash: bId.hash

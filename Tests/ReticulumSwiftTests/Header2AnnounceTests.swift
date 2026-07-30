@@ -74,7 +74,7 @@ final class Header2AnnounceTests: XCTestCase {
         let relayTransportID = Data(repeating: 0xCC, count: 16)
         t.restore(path: Transport.PathEntry(
             destinationHash: dest.hash,
-            nextHopInterfaceName: outIface.name,
+            nextHopInterface: outIface,
             hops: 2,
             lastHeard: Date(),
             identityHash: id.hash,
@@ -116,7 +116,7 @@ final class Header2AnnounceTests: XCTestCase {
         let backboneTransportID = Data(repeating: 0xBB, count: 16)
         t.restore(path: Transport.PathEntry(
             destinationHash: dest.hash,
-            nextHopInterfaceName: outIface.name,
+            nextHopInterface: outIface,
             hops: 1,                             // ← 1 hop, NOT > 1
             lastHeard: Date(),
             identityHash: id.hash,
@@ -161,7 +161,7 @@ final class Header2AnnounceTests: XCTestCase {
         let instanceTransportID = Data(repeating: 0xEE, count: 16)
         t.restore(path: Transport.PathEntry(
             destinationHash: dest.hash,
-            nextHopInterfaceName: outIface.name,
+            nextHopInterface: outIface,
             hops: 0,
             lastHeard: Date(),
             identityHash: id.hash,
@@ -197,7 +197,7 @@ final class Header2AnnounceTests: XCTestCase {
         // Direct peer: announce came as HEADER_1, so nextHopTransportID is nil.
         t.restore(path: Transport.PathEntry(
             destinationHash: dest.hash,
-            nextHopInterfaceName: outIface.name,
+            nextHopInterface: outIface,
             hops: 1,
             lastHeard: Date(),
             identityHash: id.hash,

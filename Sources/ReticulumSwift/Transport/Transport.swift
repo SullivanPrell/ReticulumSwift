@@ -92,6 +92,27 @@ public final class Transport {
 
     public struct PathEntry: Equatable {
         public let destinationHash: Data
+
+        /// The interface this route leads through — the value routing resolves.
+        ///
+        /// The reference stores the interface **object** here (`Transport.py:1639`) and
+        /// transmits through it (`:1693`). Names are deliberately not unique: every connection
+        /// accepted by one listening interface is named `"Client on <server name>"`
+        /// (`TCPInterface.py:590`), so resolving a route by name sends traffic to whichever
+        /// peer registered first, whatever the announce said (`bugs/027`).
+        ///
+        /// **Weak**, so a path cannot keep a deregistered interface alive and a route through a
+        /// vanished peer stops resolving rather than falling back to a same-named sibling.
+        /// Persistence therefore cannot store this; it stores `Interface.hash` and resolves it
+        /// back through ``Transport/findInterface(fromHash:)`` on load, which is what the
+        /// reference does (`:3387-3395`, `:326`).
+        public weak var nextHopInterface: (any Interface)?
+
+        /// The interface name captured when the path was learned, for display only.
+        ///
+        /// Mirrors the reference's use of the stored object: it is stringified for the path
+        /// listing (`Reticulum.py:1532`) and for nothing else. Never resolve a route from this
+        /// — that is the defect above.
         public let nextHopInterfaceName: String
         public var hops: UInt8
         public var lastHeard: Date
@@ -119,6 +140,39 @@ public final class Transport {
         /// network loops via captured announces).
         public var randomBlobs: [Data] = []
 
+        /// A routable path through `nextHopInterface`. The display name is derived from it, so
+        /// the two can never disagree.
+        ///
+        /// This is the initialiser production code uses. There is no name-only production path:
+        /// see the guard in `PathTableInterfaceIdentityTests`.
+        public init(
+            destinationHash: Data,
+            nextHopInterface: any Interface,
+            hops: UInt8,
+            lastHeard: Date,
+            identityHash: Data,
+            expires: Date? = nil,
+            nextHopTransportID: Data? = nil,
+            announceEmittedAt: TimeInterval = 0,
+            cachedAnnounceHash: Data? = nil,
+            randomBlobs: [Data] = []
+        ) {
+            self.init(destinationHash: destinationHash,
+                      nextHopInterfaceName: nextHopInterface.name,
+                      hops: hops, lastHeard: lastHeard, identityHash: identityHash,
+                      expires: expires, nextHopTransportID: nextHopTransportID,
+                      announceEmittedAt: announceEmittedAt,
+                      cachedAnnounceHash: cachedAnnounceHash, randomBlobs: randomBlobs)
+            self.nextHopInterface = nextHopInterface
+        }
+
+        /// A path with a recorded interface *name* and no live interface — **deliberately not
+        /// routable**, because routing resolves `nextHopInterface` and there is no name fallback
+        /// (`bugs/027`).
+        ///
+        /// Two legitimate uses: a test that only exercises table bookkeeping (hops, expiry,
+        /// responsiveness), and the moment before persistence resolves a stored interface hash
+        /// back to an object. Production routing code must use the initialiser above.
         public init(
             destinationHash: Data,
             nextHopInterfaceName: String,
@@ -144,6 +198,23 @@ public final class Transport {
         }
 
         public var isExpired: Bool { Date() >= expires }
+
+        /// Hand-written because `nextHopInterface` is an existential and cannot be synthesised.
+        /// Interfaces compare by **identity**, which is the whole point of `bugs/027`: two
+        /// clients of one server are equal by name and are not the same route.
+        public static func == (lhs: PathEntry, rhs: PathEntry) -> Bool {
+            lhs.destinationHash == rhs.destinationHash
+                && lhs.nextHopInterface === rhs.nextHopInterface
+                && lhs.nextHopInterfaceName == rhs.nextHopInterfaceName
+                && lhs.hops == rhs.hops
+                && lhs.lastHeard == rhs.lastHeard
+                && lhs.identityHash == rhs.identityHash
+                && lhs.expires == rhs.expires
+                && lhs.nextHopTransportID == rhs.nextHopTransportID
+                && lhs.announceEmittedAt == rhs.announceEmittedAt
+                && lhs.cachedAnnounceHash == rhs.cachedAnnounceHash
+                && lhs.randomBlobs == rhs.randomBlobs
+        }
     }
 
     /// Learned routing for an in-flight or active multi-hop link. The relay
@@ -152,6 +223,27 @@ public final class Transport {
     /// link is forwarded through whichever interface didn't deliver it.
     public struct LinkRoute: Equatable {
         public let linkID: Data
+
+        /// The two interfaces this relayed link runs between — the values routing resolves.
+        ///
+        /// The same requirement as `PathEntry.nextHopInterface`, in the link table
+        /// (`bugs/027`). Storing names here is the identical defect: two clients accepted by
+        /// one `TCPServerInterface` share the name `"Client on <server>"`, so a hairpin relay
+        /// between them resolved both sides to whichever registered first — the source — and
+        /// `forwardLinkTraffic`'s "which side didn't deliver it" test compared two equal
+        /// strings and steered every packet back where it came from.
+        ///
+        /// Link *establishment* still worked, because the LINKREQUEST is routed through the
+        /// path table; only the traffic afterwards was misrouted. That split is why the
+        /// failure looked like a resource bug: the link came up, then the transfer stalled.
+        ///
+        /// Weak, for the same reason as the path table — a route must not keep a
+        /// deregistered interface alive, and a vanished peer must stop resolving rather than
+        /// falling back to a same-named sibling.
+        public weak var initiatorSideInterface: (any Interface)?
+        public weak var responderSideInterface: (any Interface)?
+
+        /// Display only, never used to resolve a route.
         public let initiatorSideInterfaceName: String
         public let responderSideInterfaceName: String
         /// Original destination hash from the LINKREQUEST packet.
@@ -160,6 +252,19 @@ public final class Transport {
         /// after a relay node successfully forwards the LRPROOF.
         public let destinationHash: Data
         public var lastHeard: Date
+
+        /// Hand-written because the interface fields are existentials. They compare by
+        /// **identity** — two clients of one server are equal by name and are not the same
+        /// route, which is the whole point.
+        public static func == (lhs: LinkRoute, rhs: LinkRoute) -> Bool {
+            lhs.linkID == rhs.linkID
+                && lhs.initiatorSideInterface === rhs.initiatorSideInterface
+                && lhs.responderSideInterface === rhs.responderSideInterface
+                && lhs.initiatorSideInterfaceName == rhs.initiatorSideInterfaceName
+                && lhs.responderSideInterfaceName == rhs.responderSideInterfaceName
+                && lhs.destinationHash == rhs.destinationHash
+                && lhs.lastHeard == rhs.lastHeard
+        }
     }
 
     /// A tunnel entry: tracks an interface that was synthesized as a tunnel endpoint
@@ -556,10 +661,28 @@ public final class Transport {
     }
 
     /// The live `Interface` object for the next hop, or nil.
+    ///
+    /// Reads the stored object rather than re-resolving a name, matching the reference
+    /// (`Transport.py:1639`). Nil once that interface is gone — a route through a vanished peer
+    /// must stop resolving, not fall back to a same-named sibling (`bugs/027`).
     public func nextHopInterface(for destinationHash: Data) -> (any Interface)? {
-        guard let name = nextHopInterfaceName(for: destinationHash) else { return nil }
         lock.lock(); defer { lock.unlock() }
-        return interfaces.first { $0.name == name }
+        return paths[destinationHash]?.nextHopInterface
+    }
+
+    /// The registered interface whose `Interface.hash` matches, or nil.
+    /// Mirrors Python's `Transport.find_interface_from_hash` (`Transport.py:2580-2585`), used to
+    /// resolve a persisted path entry back to a live interface on load.
+    public func findInterface(fromHash hash: Data) -> (any Interface)? {
+        lock.lock(); defer { lock.unlock() }
+        return interfaces.first { $0.hash == hash }
+    }
+
+    /// The `Interface.hash` of every registered interface.
+    /// Mirrors Python's `Transport.interface_hashes()` (`Transport.py:2577`).
+    func interfaceHashes() -> Set<Data> {
+        lock.lock(); defer { lock.unlock() }
+        return Set(interfaces.map { $0.hash })
     }
 
     /// Gravity of the interface the current path for `destinationHash` was heard
@@ -581,7 +704,7 @@ public final class Transport {
     /// returning `nil`.
     private func currentPathGravityLocked(_ destinationHash: Data) -> Int? {
         guard let path = paths[destinationHash] else { return nil }
-        return interfaces.first { $0.name == path.nextHopInterfaceName }?.gravity
+        return path.nextHopInterface?.gravity
     }
 
     // MARK: - Interface management
@@ -973,9 +1096,9 @@ public final class Transport {
               let tracker = tracker(for: interface) else { return false }
 
         let age = now - interface.createdAt.timeIntervalSince1970
-        let threshold = age < IngressControlState.icNewTime
-            ? IngressControlState.icBurstFreqNew
-            : IngressControlState.icBurstFreq
+        let threshold = age < interface.interfaceState.icNewTime
+            ? interface.interfaceState.icBurstFreqNew
+            : interface.interfaceState.icBurstFreq
         let freq = tracker.incomingAnnounceFrequency(now: now)
 
         if state.burstActive {
@@ -993,7 +1116,7 @@ public final class Transport {
             // sample requirement against a deque that a subsiding burst never
             // refills, the flag could only ever clear if *new* announces arrived,
             // which is precisely what it was suppressing.
-            if freq < threshold && now > state.burstActivated + IngressControlState.icBurstHold {
+            if freq < threshold && now > state.burstActivated + interface.interfaceState.icBurstHold {
                 if tracker.incomingAnnounceSampleCount >= InterfaceFreqTracker.minSamples {
                     state.burstActive = false
                     ingressStates[key] = state
@@ -1004,7 +1127,7 @@ public final class Transport {
             if freq > threshold {
                 state.burstActive = true
                 state.burstActivated = now
-                state.heldRelease = now + IngressControlState.icBurstPenalty
+                state.heldRelease = now + interface.interfaceState.icBurstPenalty
                 ingressStates[key] = state
                 return true
             }
@@ -1023,15 +1146,15 @@ public final class Transport {
               let tracker = tracker(for: interface) else { return false }
 
         let age = now - interface.createdAt.timeIntervalSince1970
-        let threshold = age < IngressControlState.icNewTime
-            ? IngressControlState.icPrBurstFreqNew
-            : IngressControlState.icPrBurstFreq
+        let threshold = age < interface.interfaceState.icNewTime
+            ? interface.interfaceState.icPrBurstFreqNew
+            : interface.interfaceState.icPrBurstFreq
         let freq = tracker.incomingPathRequestFrequency(now: now)
 
         if state.prBurstActive {
             // As in `shouldIngressLimit`, the deactivating call itself still
             // returns `true` — Python's `return True` is outside this branch.
-            if freq < threshold && now > state.prBurstActivated + IngressControlState.icBurstHold {
+            if freq < threshold && now > state.prBurstActivated + interface.interfaceState.icBurstHold {
                 state.prBurstActive = false
                 ingressStates[key] = state
             }
@@ -1067,7 +1190,7 @@ public final class Transport {
 
     /// Hold `packet` on `interface` for deferred replay when burst ends.
     /// Newer packets for the same destination overwrite older ones.
-    /// Capped at `IngressControlState.maxHeldAnnounces`.
+    /// Capped at `interface.interfaceState.icMaxHeldAnnounces`.
     ///
     /// Mirrors Python's `Interface.hold_announce(packet)`.
     public func holdAnnounce(_ packet: Packet, destinationHash: Data, on interface: any Interface) {
@@ -1082,7 +1205,7 @@ public final class Transport {
         if state.heldAnnounces[destinationHash] != nil {
             // Overwrite existing held announce for same destination (most recent wins).
             state.heldAnnounces[destinationHash] = packet
-        } else if state.heldAnnounces.count < IngressControlState.maxHeldAnnounces {
+        } else if state.heldAnnounces.count < interface.interfaceState.icMaxHeldAnnounces {
             state.heldAnnounces[destinationHash] = packet
         }
         ingressStates[key] = state
@@ -1105,16 +1228,16 @@ public final class Transport {
            !state.heldAnnounces.isEmpty, now > state.heldRelease {
             // Check current frequency is below threshold before releasing.
             let age = now - interface.createdAt.timeIntervalSince1970
-            let threshold = age < IngressControlState.icNewTime
-                ? IngressControlState.icBurstFreqNew
-                : IngressControlState.icBurstFreq
+            let threshold = age < interface.interfaceState.icNewTime
+                ? interface.interfaceState.icBurstFreqNew
+                : interface.interfaceState.icBurstFreq
             let freq = tracker(for: interface)?.incomingAnnounceFrequency(now: now) ?? 0
             if freq < threshold,
                // Select lowest-hop held announce (mirrors Python's min-hops selection).
                let (bestHash, bestPacket) = state.heldAnnounces
                    .min(by: { $0.value.hops < $1.value.hops }) {
                 state.heldAnnounces.removeValue(forKey: bestHash)
-                state.heldRelease = now + IngressControlState.icHeldReleaseInterval
+                state.heldRelease = now + interface.interfaceState.icHeldReleaseInterval
                 ingressStates[key] = state
                 released = bestPacket
             }
@@ -1662,6 +1785,13 @@ public final class Transport {
 
         interface.ifacKey = key
         interface.ifacSize = size
+        // Python derives the IFAC identity from the key and signs `full_hash(key)` with it
+        // (`Reticulum.py:972-973`). `rnstatus` prints the last bytes of that signature as the
+        // segment's "Access" fingerprint, so an interface holding a key but no identity reports
+        // no access code where a Python node on the same segment reports one — the stats payload
+        // emits `ifac_signature` nil (`InterfaceStatsPayload.swift:98-107`). Derived, never
+        // random: two nodes on one segment must produce the same signature.
+        interface.ifacIdentity = try? Identity(privateKeyBytes: key)
     }
 
     public func register(destination: Destination) {
@@ -1690,6 +1820,13 @@ public final class Transport {
         paths[destinationHash] = path
     }
 
+    /// Directly insert a relayed-link route, so a hairpin relay can be exercised without
+    /// standing up two peers and driving a full link handshake through them.
+    public func restore(linkRoute: LinkRoute) {
+        lock.lock(); defer { lock.unlock() }
+        linkRoutes[linkRoute.linkID] = linkRoute
+    }
+
     /// Directly insert an announce packet into the announce cache for testing.
     /// Mirrors the side-effect of processing a real announce packet.
     public func cacheAnnounce(_ packet: Packet, forDestination hash: Data) {
@@ -1706,7 +1843,7 @@ public final class Transport {
                            announcePacketHash: Data?) {
         let entry = PathEntry(
             destinationHash: destinationHash,
-            nextHopInterfaceName: interface.name,
+            nextHopInterface: interface,
             hops: hops,
             lastHeard: Date(),
             identityHash: Data(count: 16),
@@ -2336,6 +2473,18 @@ public final class Transport {
         receiptsLock.unlock()
     }
 
+    /// Conclude the receipt for a link data packet whose proof a `Link` has already validated.
+    ///
+    /// Separate from ``deliverProof(packetHash:proof:)`` because the signature over a link data
+    /// packet is made with the link's own signing key, which no receipt can verify — see
+    /// `Link.handleDataProof` (`bugs/014`).
+    func concludeLinkReceipt(packetHash: Data, proofPacket: Packet?) {
+        receiptsLock.lock()
+        let match = receipts.first { $0.packetHash == packetHash }
+        receiptsLock.unlock()
+        match?.markDeliveredByLinkProof(proofPacket)
+    }
+
     /// Look up a receipt by packet hash and mark it delivered via
     /// explicit proof (hash + Ed25519 signature). Mirrors Python's
     /// `PacketReceipt.validate_proof`.
@@ -2348,26 +2497,64 @@ public final class Transport {
 
     // MARK: - Outbound
 
+    /// Whether `packet` is one the reference would generate a delivery receipt for.
+    ///
+    /// Python's predicate, verbatim (`Transport.py:1113-1124`): a DATA packet to a non-PLAIN
+    /// destination whose context is outside the link-control range (`KEEPALIVE`…`LRPROOF`) and
+    /// outside the resource range (`RESOURCE`…`RESOURCE_RCL`).
+    ///
+    /// This port gated on `destinationType == .single` instead, which excluded **every link
+    /// packet** — so a message sent over a link got no receipt, nothing could ever prove it, and
+    /// LXMF had no choice but to call `send()` returning "delivered" (`bugs/014`). The reference
+    /// has no such restriction; a LINK destination is simply not PLAIN.
+    static func shouldGenerateReceipt(for packet: Packet) -> Bool {
+        guard packet.packetType == .data else { return false }
+        guard packet.destinationType != .plain else { return false }
+        let context = packet.context.rawValue
+        // Link control: KEEPALIVE (0xFA) … LRPROOF (0xFF).
+        if context >= Packet.Context.keepalive.rawValue { return false }
+        // Resource transfer: RESOURCE (0x01) … RESOURCE_RCL (0x07). Resources carry their own
+        // proof mechanism, so a per-part receipt would be duplicated bookkeeping.
+        if context >= Packet.Context.resource.rawValue,
+           context <= Packet.Context.resourceReceiverCancel.rawValue { return false }
+        return true
+    }
+
     /// Send a packet and optionally generate a delivery receipt.
     ///
-    /// For DATA packets to SINGLE destinations, a `PacketReceipt` is
-    /// created (matching Python's `Transport.outbound`). The receipt is
-    /// returned so the caller can attach callbacks.
+    /// A `PacketReceipt` is created for any packet ``shouldGenerateReceipt(for:)`` accepts,
+    /// matching Python's `Transport.outbound`. The receipt is returned so the caller can attach
+    /// callbacks.
     @discardableResult
     public func send(_ packet: Packet, generateReceipt: Bool = true) throws -> PacketReceipt? {
+        var packet = packet
+        // Give the packet the transmit cap of the link it belongs to, mirroring Python's
+        // `self.MTU = destination.mtu` for LINK-typed packets (`Packet.py:153-154`). Done here
+        // because this is the single funnel every link packet passes through — the alternative
+        // is stamping it at the ten `destinationType: .link` construction sites in `Link`, which
+        // is the shape that let `bugs/013` come back three times.
+        //
+        // Without it, `pack()` caps every packet at the base 500 bytes, so once MTU discovery
+        // raises a link the resource parts `bugs/016` sizes from that MTU are refused by every
+        // interface and the transfer dies silently (`bugs/033`).
+        if packet.destinationType == .link {
+            lock.lock(); let link = links[packet.destinationHash]; lock.unlock()
+            if let link { packet.mtu = max(packet.mtu, link.establishedMtu) }
+        }
         var receipt: PacketReceipt? = nil
 
-        // Generate receipt for DATA → SINGLE (not PLAIN, not link/resource contexts).
-        if generateReceipt,
-           packet.packetType == .data,
-           packet.destinationType == .single,
-           packet.context == .none || packet.context == .request || packet.context == .response {
+        if generateReceipt, Transport.shouldGenerateReceipt(for: packet) {
             if let hashable = try? packet.hashablePart() {
                 let hash = Hashes.fullHash(hashable)
                 // Use the remote peer's identity (public key) for proof validation.
                 // Look up from knownIdentities first (outbound to remote peer);
                 // fall back to the local registered destination's identity if
                 // this is a loopback packet addressed to a local destination.
+                //
+                // A LINK packet has neither: its destination hash is a link ID, and its proof is
+                // signed with the link's own signing key, which only the `Link` holds. Those
+                // receipts are concluded by `Link.receive` after it validates the signature
+                // against `peerSigPub` — see `PacketReceipt.markDeliveredByLinkProof`.
                 lock.lock()
                 let peerIdentity = knownIdentities[packet.destinationHash]
                     ?? registeredDestinations[packet.destinationHash]?.identity
@@ -2420,9 +2607,7 @@ public final class Transport {
         // PLAIN and GROUP destinations are broadcast directly (Python: excluded from path routing).
         if let path, packet.packetType != .announce,
            packet.destinationType == .single {
-            guard let outbound = interfaces.first(where: {
-                $0.name == path.nextHopInterfaceName && $0.isOnline
-            }) else {
+            guard let outbound = path.nextHopInterface, outbound.isOnline else {
                 // Path exists but interface is offline — broadcast as fallback.
                 for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
                     try? iface.send(deltaMangled(packet, for: iface))
@@ -2664,16 +2849,12 @@ public final class Transport {
         // from_local_client or for_local_client_link`, Transport.py:1573).
         let fromLocalLR = fromLocalClient(interface: interface)
         let forLocalLR: Bool = {
-            guard let p = path, p.hops == 0,
-                  let nh = interfaces.first(where: { $0.name == p.nextHopInterfaceName })
-            else { return false }
+            guard let p = path, p.hops == 0, let nh = p.nextHopInterface else { return false }
             return isLocalClientInterface(nh)
         }()
         guard transportEnabled || fromLocalLR || forLocalLR, let path else { return }
         guard packet.hops < propagationLimit else { return }
-        guard let outbound = interfaces.first(where: {
-            $0.name == path.nextHopInterfaceName && $0.isOnline
-        }) else { return }
+        guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
         guard outbound !== interface else { return }
 
         // link_id derives from the LRR packet's hashable part with signalling bytes
@@ -2685,6 +2866,8 @@ public final class Transport {
         let linkID = Hashes.truncatedHash(linkIDHashable)
         let route = LinkRoute(
             linkID: linkID,
+            initiatorSideInterface: interface,
+            responderSideInterface: outbound,
             initiatorSideInterfaceName: interface.name,
             responderSideInterfaceName: outbound.name,
             destinationHash: packet.destinationHash,
@@ -2892,26 +3075,27 @@ public final class Transport {
         var route = linkRoutes[packet.destinationHash]
         lock.unlock()
         guard route != nil else { return }
-        let initIface = interfaces.first { $0.name == route!.initiatorSideInterfaceName }
-        let respIface = interfaces.first { $0.name == route!.responderSideInterfaceName }
+        let initIface = route!.initiatorSideInterface
+        let respIface = route!.responderSideInterface
         // A non-transport shared instance still relays link traffic when either
         // side of the link is a directly-connected local client (Python's
         // for_local_client_link, Transport.py:1573).
         let touchesLocalClient = (initIface.map(isLocalClientInterface) ?? false)
                               || (respIface.map(isLocalClientInterface) ?? false)
         guard transportEnabled || touchesLocalClient else { return }
-        // Steer to the side that didn't deliver the packet.
-        let outboundName: String
-        if sourceInterface.name == route!.initiatorSideInterfaceName {
-            outboundName = route!.responderSideInterfaceName
-        } else if sourceInterface.name == route!.responderSideInterfaceName {
-            outboundName = route!.initiatorSideInterfaceName
+        // Steer to the side that didn't deliver the packet — compared by identity, not by
+        // name. With names, a hairpin between two clients of one listening interface compares
+        // two equal strings, matches the first branch, and sends the packet back out the
+        // interface it arrived on (`bugs/027`).
+        let outboundCandidate: (any Interface)?
+        if sourceInterface === route!.initiatorSideInterface {
+            outboundCandidate = route!.responderSideInterface
+        } else if sourceInterface === route!.responderSideInterface {
+            outboundCandidate = route!.initiatorSideInterface
         } else {
             return
         }
-        guard let outbound = interfaces.first(where: {
-            $0.name == outboundName && $0.isOnline
-        }) else { return }
+        guard let outbound = outboundCandidate, outbound.isOnline else { return }
         var forwarded = packet
         // instance_local_link: both sides of this link are local clients, so the
         // traffic never leaves the local-client domain and must keep its real
@@ -3112,7 +3296,7 @@ public final class Transport {
             }
             let entry = PathEntry(
                 destinationHash: decoded.destinationHash,
-                nextHopInterfaceName: interface.name,
+                nextHopInterface: interface,
                 hops: packet.hops,
                 lastHeard: now,
                 identityHash: decoded.identity.hash,
@@ -3433,9 +3617,7 @@ public final class Transport {
         // LINK-typed packets are routed by their own dispatchers.
         let fromLocal = fromLocalClient(interface: interface)
         let forLocal: Bool = {
-            guard let p = path, p.hops == 0,
-                  let nextHop = interfaces.first(where: { $0.name == p.nextHopInterfaceName })
-            else { return false }
+            guard let p = path, p.hops == 0, let nextHop = p.nextHopInterface else { return false }
             return isLocalClientInterface(nextHop)
         }()
         guard transportEnabled || fromLocal || forLocal,
@@ -3986,9 +4168,7 @@ public final class Transport {
 
     private func forward(_ packet: Packet, from sourceInterface: Interface, path: PathEntry) {
         guard packet.hops < propagationLimit else { return }
-        guard let outbound = interfaces.first(where: {
-            $0.name == path.nextHopInterfaceName && $0.isOnline
-        }) else { return }
+        guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
         guard outbound !== sourceInterface else { return }   // never bounce
         var forwarded = packet
         // to_local_client: a directly reachable destination (path.hops == 0) is a

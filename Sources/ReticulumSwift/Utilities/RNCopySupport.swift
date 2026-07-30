@@ -154,21 +154,13 @@ public extension RNCopyApp {
         return String(path[path.index(after: slash)...])
     }
 
-    /// `os.path.expanduser` restricted to the leading-`~` forms rncp can produce.
+    /// `os.path.expanduser` against `rncp`'s injected home.
     ///
-    /// `"~"` → home, `"~/x"` → `home + "/x"`, anything else unchanged. A `~user/…`
-    /// form is left alone (Python would resolve it via the password database; rncp
-    /// never receives one in practice).
+    /// Delegates to the one implementation every utility uses, rather than keeping a second copy
+    /// of the same rules — `bugs/024` is what happens when path resolution exists in more than
+    /// one place. See ``InstanceConnection/expandTilde(_:home:)``.
     static func expandUser(_ path: String, home: String) -> String {
-        guard path.hasPrefix("~") else { return path }
-        let rest = String(path.dropFirst())
-        if rest.isEmpty { return home }
-        guard rest.hasPrefix("/") else { return path }
-        // Python rstrips trailing slashes off the home directory before joining.
-        var base = home
-        while base.count > 1, base.hasSuffix("/") { base.removeLast() }
-        if base == "/" { return rest }
-        return base + rest
+        InstanceConnection.expandTilde(path, home: home)
     }
 
     /// `os.path.abspath` — join against `cwd` when relative, then `normpath`.
@@ -413,10 +405,20 @@ public protocol RNCopyFileSystem: AnyObject {
 /// `RNCopyFileSystem` backed by `FileManager`.
 public final class RNCopyDiskFileSystem: RNCopyFileSystem {
 
-    public init() {}
+    private let environment: [String: String]
 
+    public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        self.environment = environment
+    }
+
+    /// `rncp`'s identity store and its `~/.rncp` allow-list hang off this.
+    ///
+    /// Resolved through the shared `$HOME`-aware resolver, not `NSHomeDirectory()`, which reports
+    /// the account's real home regardless of `$HOME`. Applying the wrong allow-list silently
+    /// accepts identities the operator never authorised for that environment — or refuses the
+    /// ones they did — behind a normal-looking banner (`bugs/024`).
     public var homeDirectoryPath: String {
-        NSHomeDirectory()
+        InstanceConnection.homeDirectory(environment: environment).path
     }
 
     public var currentDirectoryPath: String {

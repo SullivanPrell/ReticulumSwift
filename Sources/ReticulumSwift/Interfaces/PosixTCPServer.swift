@@ -13,6 +13,10 @@ import Darwin
 /// Used only for the shared-instance port (37428). All other server interfaces
 /// can continue to use `TCPServerInterface` + `NWListener`.
 public final class PosixTCPServer: Interface, LocalClientServingInterface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -20,7 +24,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     public var gravity: Int = InterfaceMode.defaultGravity
     public let name: String
     public let port: UInt16
-    public private(set) var bitrate: Int = 1_000_000_000
+    public var bitrate: Int = 1_000_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
@@ -60,9 +64,27 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     private let lock = NSLock()
     private var clients: [PosixClient] = []
 
-    /// Python `LocalServerInterface.__str__` returns `"Shared Instance[<port>]"`.
-    /// Shown in rnstatus output; distinct from the client-side "LocalInterface[...]".
-    public var displayName: String { "\(name)[\(port)]" }
+    /// Descriptors this server has accepted, for tests that assert the socket options actually
+    /// landed. Unlike the Network.framework paths, a POSIX descriptor has an authoritative
+    /// readback — `getsockopt` — so `bugs/023` is verifiable here rather than only structural.
+    private var acceptedDescriptors: [Int32] = []
+    var lastAcceptedDescriptorForTesting: Int32? {
+        lock.lock(); defer { lock.unlock() }; return acceptedDescriptors.last
+    }
+    var acceptedDescriptorHandlerForTesting: ((Int32) -> Void)?
+
+    /// Python `LocalServerInterface.__str__` (`LocalInterface.py:496-498`) returns the literal
+    /// `"Shared Instance["+str(bind_port)+"]"`. Shown in rnstatus output; distinct from the
+    /// client-side `"LocalInterface[…]"`.
+    ///
+    /// `"Shared Instance"` is hardcoded here, not read from `name`. Python's
+    /// `LocalServerInterface` sets `self.name = "Reticulum"` (`LocalInterface.py:391`) and its
+    /// `__str__` ignores it entirely, so building the string from `name` made this correct only
+    /// while the one caller happened to pass `name: "Shared Instance"`
+    /// (`InstanceConnection.swift:208`) — correct by coincidence at a single call site, which is
+    /// the `bugs/013` shape. Found by the enumerate-every-conformer test in `bugs/022`; not in
+    /// the audit's list of nine.
+    public var displayName: String { "Shared Instance[\(port)]" }
 
     /// This class is Python's `LocalServerInterface`; only the Swift name differs. Reported
     /// verbatim in the stats payload, where a Python `rnstatus -d` prints it and would
@@ -166,6 +188,17 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
             }
         }
         guard clientFD >= 0 else { return }
+
+        // Python sets `TCP_NODELAY` on every socket its shared-instance server accepts
+        // (`LocalInterface.py:98-100`) — the accepted-socket half of `bugs/023`, in the POSIX
+        // server rather than the Network.framework one. This port set only `SO_NOSIGPIPE`, so
+        // small control frames sat behind Nagle's delayed-ACK timer on every shared-instance
+        // client. Found while building `RNSSocketOptions`; not in `bugs/023` as filed.
+        RNSSocketOptions.applyLocalOptions(toFileDescriptor: clientFD)
+        lock.lock()
+        acceptedDescriptors.append(clientFD)
+        lock.unlock()
+        acceptedDescriptorHandlerForTesting?(clientFD)
 
         let client = PosixClient(
             fd: clientFD,

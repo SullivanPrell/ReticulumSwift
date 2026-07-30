@@ -9,6 +9,10 @@ import Network
 ///   - `BITRATE_GUESS = 100_000_000` (100 Mbps)
 ///   - Automatic reconnection after disconnect
 public final class BackboneInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     // MARK: - Constants (mirrors Python BackboneClientInterface)
 
@@ -33,7 +37,23 @@ public final class BackboneInterface: Interface {
     public let name: String
     public let host: String
     public let port: UInt16
-    public private(set) var bitrate: Int = BackboneInterface.bitrateGuess
+
+    /// Python `BackboneClientInterface.__str__` (`BackboneInterface.py:870-873`):
+    /// `"BackboneInterface["+name+"/"+ip_str+":"+str(target_port)+"]"`, with an IPv6 literal
+    /// bracketed. That connecting form is the one that applies: this class dials a host, and
+    /// Python's listening `BackboneInterface.__str__` (`:561-564`) uses `bind_ip`/`bind_port`,
+    /// which this port has no separate object for.
+    ///
+    /// Overridden rather than left to the protocol's class-qualified default because the peer
+    /// address is part of the reference string — the default would publish
+    /// `BackboneInterface[<name>]` and so a different `Interface.hash` than the Python node
+    /// beside it (`bugs/022`).
+    public var displayName: String {
+        let ipString = host.contains(":") ? "[\(host)]" : host
+        return "BackboneInterface[\(name)/\(ipString):\(port)]"
+    }
+
+    public var bitrate: Int = BackboneInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
@@ -161,11 +181,12 @@ public final class BackboneInterface: Interface {
 
     // MARK: - Connection management
 
-    /// The same socket options the TCP client dials with — Python configures both
-    /// identically (`BackboneInterface.py:655-660`). See ``TCPClientInterface/tcpOptions()``.
-    static func tcpOptions() -> NWProtocolTCP.Options { TCPClientInterface.tcpOptions() }
+    /// The same socket options the TCP client dials with — Python configures both identically
+    /// (`BackboneInterface.py:655-660`), and both take them from ``RNSSocketOptions``.
 
-    static var tcpParameters: NWParameters { TCPClientInterface.tcpParameters }
+    /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
+    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
     private func openConnection() {
         let endpoint = NWEndpoint.hostPort(
@@ -176,7 +197,9 @@ public final class BackboneInterface: Interface {
         // (BackboneInterface.py:626-627, :655-660) — the same options the TCP client uses,
         // for the same reason: without keepalive a peer that vanished without sending FIN
         // leaves this connection `.ready` forever and the reconnect below never fires.
-        let conn = NWConnection(to: endpoint, using: Self.tcpParameters)
+        let socketOptions = RNSSocketOptions.tcpParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
+        let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
         // Re-check stopped and publish the connection atomically (see LocalInterface).
         stateLock.lock()
         guard !_isStopped else { stateLock.unlock(); return }

@@ -137,6 +137,33 @@ public struct Packet: Equatable {
 
     public enum PackError: Error { case missingTransportID, exceedsMTU(size: Int) }
 
+    /// The transmit cap `pack()` enforces for **this** packet.
+    ///
+    /// Python carries the same per-packet value and sources it from the destination:
+    ///
+    ///     # Packet.py:153-156
+    ///     if destination and destination.type == RNS.Destination.LINK:
+    ///         self.MTU = destination.mtu          # the link's negotiated MTU
+    ///     else:
+    ///         self.MTU = RNS.Reticulum.MTU        # 500
+    ///
+    /// and `pack()` raises on `len(self.raw) > self.MTU` (`:235`).
+    ///
+    /// A single global cap is only correct while every link sits at the base MTU. Once MTU
+    /// discovery raises a link, its packets are legitimately larger than 500 bytes — and
+    /// `bugs/016` made resource parts derive from that negotiated MTU, so on an upgraded link
+    /// *every* part exceeded the global cap and `pack()` refused it. Since every interface
+    /// transmits through `pack()`, the packets were dropped before reaching any medium: the
+    /// sender advertised a resource and then sent nothing, and the peer timed out
+    /// (`bugs/033`). This is the outbound half of `bugs/010`, whose inbound half was fixed by
+    /// giving hashing and accounting the unguarded `packedBytes()`.
+    ///
+    /// Set by `Transport.send(_:generateReceipt:)` for packets on a link this node owns, and by
+    /// `unpack(_:)` for packets that arrived — a packet that was received is by definition
+    /// transmissible at its own size, which is how a relay forwards one without re-capping it.
+    /// Python gets that for free by forwarding `packet.raw` rather than re-packing.
+    public var mtu: Int = Constants.mtu
+
     /// Build the raw wire bytes for this packet **without** enforcing the
     /// transmit MTU cap.
     ///
@@ -172,7 +199,7 @@ public struct Packet: Equatable {
 
     public func pack() throws -> Data {
         let raw = try packedBytes()
-        if raw.count > Constants.mtu { throw PackError.exceedsMTU(size: raw.count) }
+        if raw.count > mtu { throw PackError.exceedsMTU(size: raw.count) }
         return raw
     }
 
@@ -221,7 +248,7 @@ public struct Packet: Equatable {
 
         let data = raw.subdata(in: cursor..<raw.endIndex)
 
-        return Packet(
+        var packet = Packet(
             headerType: headerType,
             contextFlag: contextFlag,
             transportType: transportType,
@@ -233,6 +260,12 @@ public struct Packet: Equatable {
             context: context,
             data: data
         )
+        // A packet that arrived is transmissible at its own size, so a relay can forward it
+        // without the base cap refusing a link packet from an upgraded link it knows nothing
+        // about. Python reaches the same place by forwarding `packet.raw` rather than
+        // re-packing (`Transport.transmit`). Never *lowers* the cap.
+        packet.mtu = max(Constants.mtu, raw.count)
+        return packet
     }
 
     // MARK: - Hashing

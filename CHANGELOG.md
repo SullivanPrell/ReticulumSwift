@@ -3,6 +3,178 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased] — 1.8.0
+
+A minor rather than a patch release, for the same reason 1.7.0 was: `displayName` changes
+for eleven more interface types and `Interface.hash` is `fullHash(displayName)`, so
+interface identity changes again.
+
+### Corrections to 1.7.0
+
+Two claims in the 1.7.0 notes below were wrong when published. The 2026-07-29 audit
+falsified both. They are corrected here rather than edited out of history.
+
+- **"All config-directory resolution now goes through
+  `InstanceConnection.homeDirectory(environment:)`"** — it did not. One resolver was
+  converted; **fourteen** other sites still reached a platform home API. `rnir` and `rnpkg`
+  passed `FileManager.homeDirectoryForCurrentUser` into the config resolver;
+  `RNCopyDiskFileSystem.homeDirectoryPath` — which is where `rncp`'s `$HOME/.rncp` identity
+  and allow-list come from, and which the same 1.7.0 note describes as a problem — was still
+  `NSHomeDirectory()`; and eleven `expandingTildeInPath` sites across `rnid`, `rnpath`,
+  `rnstatus`, `rnx` and two library files resolved every user-supplied `~` against the
+  account's real home. So the failure the note describes — a utility under a relocated
+  `HOME` reading the real `~/.reticulum`, finding the live daemon's identity and
+  authenticating to the live daemon — remained reachable through all of them. Fixed below,
+  with a structural guard so the claim is now checkable rather than asserted.
+
+- **"Python sets `SO_KEEPALIVE` and the probe timers on every TCP socket it opens … this
+  port set none"** — the statement about Python is right; what shipped covered the two
+  *dialing* paths. `TCPServerInterface.start()` still passed `.tcp` to `NWListener`, so every
+  connection a listening interface accepted took Network.framework's defaults with keepalive
+  **off** — which is the case Python's own `connected_socket` branch exists to handle
+  (`TCPInterface.py:241`, `:259-261`, reached from `:591`). Three further sites were also
+  never covered. Fixed below.
+
+### Fixed
+
+- **A packet on an MTU-upgraded link could not be sent at all** (`bugs/033`). `pack()` capped
+  every packet at the global 500-byte MTU. Python carries a *per-packet* cap and takes it from
+  the destination — `self.MTU = destination.mtu` for LINK-typed packets (`Packet.py:153-154`) —
+  so once MTU discovery raised a link, the resource parts `bugs/016` sizes from that negotiated
+  MTU exceeded the global cap and every one of the thirteen interfaces refused to transmit
+  them. The sender advertised a resource and then sent nothing; the peer timed out. This is the
+  outbound half of `bugs/010`. `Packet.mtu` is now set from the link in `Transport.send`, and
+  from the packet's own size in `unpack` so a relay forwards an upgraded link's traffic without
+  re-capping it. **Found by the interop suite, not by any unit test** — there was no
+  package-level test of an over-MDU request response, which is why it survived.
+
+- **The path table and the link table routed by interface name** (`bugs/027`). Both stored
+  `Interface.name` and resolved it with `first(where:)`, and every connection accepted by one
+  `TCPServerInterface` is named `"Client on <server>"` by design (`TCPInterface.py:590`). With
+  two clients attached, every route resolved to whichever registered first — regardless of
+  which one heard the announce — so traffic went to the wrong peer while the table insisted it
+  had a route. Both tables now hold weak references to the interface object, as the reference
+  does (`Transport.py:1639`, `:1693`), and keep the name for display only (`Reticulum.py:1532`).
+  Persistence stores `Interface.hash` and resolves it through the new
+  `Transport.findInterface(fromHash:)`; an entry whose interface is gone is not persisted
+  (`:3374`) and one whose hash resolves to nothing is dropped on load rather than restored
+  unroutable. **The link-table half was found only by the new interop cell**: link
+  *establishment* routes through the path table, so a relayed link came up normally and only
+  the traffic afterwards was misrouted — it read as a resource bug.
+
+- **Shutdown never tore links down** (`bugs/028`). `Transport.detachInterfaces()` was a
+  faithful port with zero callers, so a node exiting cleanly emitted no `LINK_CLOSE` and every
+  peer held the link ACTIVE until its own keepalive watchdog expired — up to 360 s — with the
+  sessions riding those links hanging rather than failing. `Reticulum.stop()` now calls it,
+  **before** `transport.stop()`: running it after would hand the closes to already-stopped
+  interfaces, satisfying "teardown was called" while emitting nothing.
+
+- **Discarding an unstarted dispatch source killed the process** (`bugs/032`). A source from
+  `DispatchSource.make…Source` begins suspended, and libdispatch traps when a suspended
+  object's last reference is released — cancelled or not. `Link.rescheduleWatchdog` and
+  `TCPClientInterface.scheduleReconnect` released one after only `cancel()`, on paths reached
+  by ordinary link teardown and by a `stop()` landing during a failed dial. `SIGTRAP`, nothing
+  thrown or logged. Both now use `DispatchSourceProtocol.cancelUnstarted()`.
+
+- **Link data packets generated no receipt** (`bugs/014`, the transport half). `Transport.send`
+  gated receipt creation on `destinationType == .single`, and `Link.send` hardcoded
+  `generateReceipt: false`, so nothing above the link could learn whether a packet arrived.
+  Receipts are now generated for link packets matching the reference's predicate
+  (`Transport.py:1113-1124`), and `Link.receive` routes a context-`.none` PROOF to the
+  packet-receipt table when no channel-proof waiter matches.
+
+- **Eleven interface types published a name Python does not** (`bugs/022`). `displayName`
+  defaulted to the bare configured `name`, and 1.7.0 corrected it for the TCP and UDP
+  families by adding per-type overrides — so every type it did not touch kept the wrong
+  shape. Since `Interface.hash` is `fullHash(displayName)` and `rnstatus` filters and hides
+  rows by class prefix, each was a different interface identity on the wire than the Python
+  interface beside it, and invisible to a class-name filter.
+
+  The default is now the composed `"\(statsTypeName)[\(name)]"`, so a new interface type
+  gets the correct shape by declaring nothing. Overrides remain only where the reference
+  string is genuinely a different shape:
+
+  | | before | after |
+  |---|---|---|
+  | Serial, KISS, AX25KISS, RNode, RNodeMulti, I2P, Weave | `<name>` | `<Class>[<name>]` |
+  | `BackboneInterface` | `<name>` | `BackboneInterface[<name>/<ip>:<port>]` |
+  | `RNodeSubInterface` | `<name>` | `<parent name>[<name>]` |
+  | `PosixTCPServer` | `<name>[<port>]` | `Shared Instance[<port>]` |
+  | `WeaveInterfacePeer` | `WeaveInterfacePeer[01020304]` | `WeaveInterfacePeer[01:02:03:04]` |
+
+  The last two were not in the audit's list. `PosixTCPServer` built Python's literal
+  `"Shared Instance[<port>]"` (`LocalInterface.py:496-498`) out of `name`, so it matched only
+  because its one caller happens to pass that string. `WeaveInterfacePeer` published
+  undelimited hex where `RNS.hexrep` delimits with `:` (`RNS/__init__.py:176-183`) — a
+  correct-looking string with a different hash.
+
+  `RNodeSubInterface` gained the `parentInterface` back-reference Python passes into its
+  `__init__` (`RNodeMultiInterface.py:939`), assigned when the multi-interface adopts its
+  sub-interfaces, since Swift constructs them before the parent exists.
+
+- **A non-connectable I2P interface was never hidden from status output** (`bugs/022`).
+  The suppression gate was a faithful port of `rnstatus.py:393-403` and its tests passed —
+  against a hand-built stats dict named `"I2PInterface["`, the string the gate keys on. A
+  real interface published its bare configured name, so the prefix never matched and the
+  gate suppressed nothing. Fixed by the published-name change above; now asserted from a
+  real interface through the rendered output, for any configured name.
+
+- **Sockets this port accepted or listened on took Network.framework's defaults**
+  (`bugs/023`). Python configures the socket it accepts exactly as the one it dials, so
+  direction must not decide whether the options apply. All socket options now come from a
+  single `RNSSocketOptions` factory, and a structural test fails if any other file
+  constructs them. Six sites were bypassing it:
+
+  - `TCPServerInterface.start()` — the listener, and so every connection accepted from it.
+  - `LocalInterface.connect()` — missing the `TCP_NODELAY` Python sets at
+    `LocalInterface.py:147`.
+  - `TCPClientInterface` — built its own; now delegates.
+  - `RPCServer.start()` — `.tcp` on the loopback control listener.
+  - `SAMSocket.connect()` — `.tcp`, so a SAM bridge that stopped answering left the I2P peer
+    online forever. It now takes Python's **I2P** timing set (`I2P_USER_TIMEOUT` 45,
+    `I2P_PROBE_AFTER` 10, `I2P_PROBE_INTERVAL` 9, `I2P_PROBES` 5), selected by
+    `i2p_tunneled = True` at `TCPInterface.py:190-194` — a distinction this port did not
+    previously have, and the direct-TCP timers would tear down a healthy tunnel.
+  - `PosixTCPServer.acceptOne()` — set only `SO_NOSIGPIPE` where Python sets `TCP_NODELAY`
+    on every accepted shared-instance socket (`LocalInterface.py:98-100`).
+
+  The last three were not in the audit's list. The shared-instance option set is
+  `TCP_NODELAY` **only**, matching Python: `LocalClientInterface` calls no `set_timeouts_*`
+  on either direction, so enabling keepalive there would exceed the reference.
+
+- **Fourteen sites resolved a home path without honouring `$HOME`** (`bugs/024`) — see the
+  1.7.0 correction above. `InstanceConnection.expandTilde` is now the single expansion, with
+  `posixpath.expanduser`'s semantics including the `rstrip('/')` on the home;
+  `RNCopyDiskFileSystem` takes an injected environment. `rncp` already had a correct
+  `$HOME`-aware expansion and now delegates to the shared one rather than keeping a second
+  copy of the rules. The unset-`HOME` fallback in `InstanceConnection` is the one sanctioned
+  exception, and a test pins it at exactly one occurrence.
+
+### Changed
+
+- **Resource part size, and every payload limit on a link, now derive from the negotiated
+  per-link MTU** rather than the base constant (`bugs/016`) — resource segmentation, channel
+  and buffer chunking, and request/response body limits. The receiver derives
+  `total_parts = ceil(size / sdu)` itself instead of trusting the advertisement
+  (`Resource.py:187`) and surfaces a disagreement at error level. **This is a wire change**: a
+  1.8.0 node serving a resource over an upgraded link sizes parts differently from a 1.7.0
+  peer. Old-receiver/new-sender works by accident (the old receiver follows the
+  advertisement); new-receiver/old-sender now reports the mismatch instead of timing out.
+- `Transport.PathEntry` and `Transport.LinkRoute` gain interface references and hand-written
+  `==`; the name-only `PathEntry` initialiser still exists but builds a deliberately
+  unroutable entry, and production code is forbidden from using it by a structural test.
+- **Persisted path entries are keyed on `Interface.hash`.** Since that derives from
+  `displayName` and eleven display names changed, a daemon upgrading across this release drops
+  those paths and relearns them from announces. This mirrors the reference, which drops an
+  entry whose interface hash is no longer active rather than misrouting it.
+- `Interface.displayName`'s default is the class-qualified form rather than `name`. Any
+  downstream conformer that relied on publishing a bare name — including test doubles —
+  publishes `TypeName[name]` now.
+- `TCPClientInterface.tcpOptions()` / `.tcpParameters` and `BackboneInterface`'s equivalents
+  are removed; use `RNSSocketOptions`.
+- `RNCopyDiskFileSystem.init()` gains an `environment:` parameter (defaulted, so existing
+  callers are unaffected).
+
 ## [1.7.0] — TCP interface naming, reconnection and keepalive
 
 A minor rather than a patch release: the fixes add public API (`reconnectWait`,
@@ -50,7 +222,9 @@ UDP interface calls itself — and therefore its `Interface.hash`, which is
   `.waiting` is no longer swallowed: a refused peer is retried on Python's clock instead of
   silently inside `NWConnection`.
 
-- **No TCP keepalive on the dialing interfaces.** Python sets `SO_KEEPALIVE` and the probe
+- **No TCP keepalive on the dialing interfaces.** *(Corrected in 1.8.0 — this covered the
+  two dialing paths only; the listener and three other sites still took framework defaults.)*
+  Python sets `SO_KEEPALIVE` and the probe
   timers on every TCP socket it opens (`TCPInterface.set_timeouts_osx` /
   `set_timeouts_linux`, `BackboneInterface.py:655`); this port set none, because
   `NWConnection(to:using: .tcp)` takes Network.framework's defaults and those have keepalive
@@ -77,7 +251,10 @@ UDP interface calls itself — and therefore its `Interface.hash`, which is
   `connectionDropTime = 24`, and `noDelay = true` (`TCP_NODELAY`, which Python sets on every
   socket on both platforms).
 
-- **Swift utilities ignored `$HOME`.** Python expands `~` with `os.path.expanduser`, which
+- **Swift utilities ignored `$HOME`.** *(Corrected in 1.8.0 — "all config-directory
+  resolution" was one resolver; fourteen other sites still reached a platform home API,
+  including the `rncp` allow-list this very note describes.)*
+  Python expands `~` with `os.path.expanduser`, which
   returns `$HOME` when it is set; `NSHomeDirectory()` — and
   `FileManager.homeDirectoryForCurrentUser`, which `rnsd` used — always reports the
   account's real home on macOS. A utility launched with `HOME` pointed at a sandbox

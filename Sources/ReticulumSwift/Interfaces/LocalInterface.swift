@@ -13,6 +13,10 @@ import Network
 /// try local.start()
 /// ```
 public final class LocalInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -21,7 +25,7 @@ public final class LocalInterface: Interface {
     public let name: String
     public let host: String
     public let port: UInt16
-    public private(set) var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
+    public var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
@@ -66,6 +70,10 @@ public final class LocalInterface: Interface {
     }
 
     private var connection: NWConnection?
+
+    /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
+    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
     private let queue: DispatchQueue
     private let decoder = HDLC.FrameDecoder()
     private var reconnectTimer: DispatchSourceTimer?
@@ -177,7 +185,14 @@ public final class LocalInterface: Interface {
             pendingReady?.signal(); pendingReady = nil
             return
         }
-        let conn = NWConnection(to: endpoint, using: .tcp)
+        // Python's `LocalClientInterface.connect()` sets `TCP_NODELAY` on its TCP socket
+        // (`LocalInterface.py:147`), as does the branch that adopts an accepted one (`:98-100`).
+        // It sets no keepalive — its only one is the application-level `phy_keepalive` flag on
+        // Android — so this takes the shared-instance option set rather than the full TCP one.
+        // Through 1.7.0 this line passed `.tcp`: framework defaults, Nagle on (`bugs/023`).
+        let socketOptions = RNSSocketOptions.localParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
+        let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
         // Cancel whatever we are replacing. A reconnect fires from a timer, not
         // from stop(), so the predecessor is still live here; leaving it dangling
         // leaks the socket and the shared instance keeps counting it as an

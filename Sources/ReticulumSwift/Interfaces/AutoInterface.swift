@@ -17,6 +17,10 @@ import Darwin
 /// Default multicast address: ff12:0:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
 ///   where the x-groups are derived from sha256("reticulum").
 public final class AutoInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     // MARK: - Protocol constants
 
@@ -33,7 +37,7 @@ public final class AutoInterface: Interface {
     // MARK: - Public interface conformance
 
     public let name: String
-    public private(set) var bitrate: Int = 10_000_000
+    public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
@@ -93,8 +97,9 @@ public final class AutoInterface: Interface {
 
     // MARK: - Init
 
-    /// Python `AutoInterface.__str__` returns `"AutoInterface[<name>]"`.
-    public var displayName: String { "AutoInterface[\(name)]" }
+    // `displayName` is not declared here: Python's `AutoInterface[<name>]`
+    // (`AutoInterface.py:609`) is exactly the protocol's class-qualified default, and one
+    // shared composition is the point of `bugs/022` — see `Interface.displayName`.
 
     public init(
         name: String,

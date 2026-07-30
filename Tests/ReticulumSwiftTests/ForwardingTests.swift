@@ -48,7 +48,7 @@ final class ForwardingTests: XCTestCase {
         relay.restore(
             path: Transport.PathEntry(
                 destinationHash: destination,
-                nextHopInterfaceName: destSide.name,
+                nextHopInterface: destSide,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: Data(repeating: 0, count: 16)

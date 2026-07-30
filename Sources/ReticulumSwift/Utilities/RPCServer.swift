@@ -42,7 +42,14 @@ public final class RPCServer {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw RPCError.invalidPort
         }
-        let listener = try NWListener(using: .tcp, on: nwPort)
+        // A loopback control socket, so it takes the shared-instance option set — `TCP_NODELAY`,
+        // no keepalive — the same one `LocalInterface` uses. Python's RPC listener is a
+        // `multiprocessing.connection.Listener` and sets nothing, but this is still a socket this
+        // port opens, and it had the same defect as the rest: `.tcp` meant Nagle held small
+        // control frames behind the delayed-ACK timer. Found by the construction-site guard;
+        // not in `bugs/023` as filed.
+        let listener = try NWListener(using: RNSSocketOptions.localParameters().parameters,
+                                      on: nwPort)
         self.listener = listener
         listener.newConnectionHandler = { [weak self] conn in self?.handleConnection(conn) }
         listener.start(queue: queue)

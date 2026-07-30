@@ -989,7 +989,7 @@ final class NetworkProbeCryptoTests: XCTestCase {
                                                appName: "lxmf", aspects: ["delivery"])
         transport.restore(identity: identity, forDestination: destinationHash)
         transport.restore(path: Transport.PathEntry(destinationHash: destinationHash,
-                                                    nextHopInterfaceName: iface.name,
+                                                    nextHopInterface: iface,
                                                     hops: hops,
                                                     lastHeard: Date(),
                                                     identityHash: identity.hash),

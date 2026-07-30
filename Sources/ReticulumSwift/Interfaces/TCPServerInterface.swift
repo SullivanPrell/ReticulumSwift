@@ -10,6 +10,10 @@ import Network
 /// per-connection `TCPServerInterfaceClient` model.  The server itself is NOT a
 /// routing endpoint (`isRoutingEndpoint == false`); only the spawned clients are.
 public final class TCPServerInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
     public let name: String
     public let port: UInt16
     /// The address reported as the listener's bind address. Python resolves `listen_ip`
@@ -17,7 +21,7 @@ public final class TCPServerInterface: Interface {
     /// `NWListener` always binds every address, so this is a reporting-only value that
     /// defaults to Python's `0.0.0.0`.
     public let bindIP: String
-    public private(set) var bitrate: Int = 10_000_000
+    public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
@@ -74,6 +78,17 @@ public final class TCPServerInterface: Interface {
     }
 
     private var listener: NWListener?
+
+    /// What `start()` handed to `NWListener`, and what the framework handed back on accept.
+    ///
+    /// Recorded because there is no authoritative readback for TCP options — see
+    /// ``RNSSocketOptions``. `SocketOptionsTests` asserts that the accepted connection's
+    /// parameters *are* the listener's object, which is what makes configuring the listener
+    /// sufficient to cover every accepted socket rather than merely assumed to be.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
+    private(set) var handedOverParametersForTesting: NWParameters?
+    private(set) var lastAcceptedParametersForTesting: NWParameters?
+    var acceptedConnectionParametersForTesting: ((NWParameters) -> Void)?
     private let queue: DispatchQueue
     /// Serial queue that all spawned clients' inbound deliveries funnel through,
     /// so multiple client connections never invoke the (non-thread-safe) inbound
@@ -94,10 +109,22 @@ public final class TCPServerInterface: Interface {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw InterfaceError.invalidConfiguration("invalid port \(port)")
         }
-        let listener = try NWListener(using: .tcp, on: nwPort)
+        // Python configures the socket it *accepts* exactly as the one it dials
+        // (`TCPInterface.py:241`, `:259-261`, reached from `:591`), so direction must not decide
+        // whether the options apply. Network.framework derives an accepted connection from the
+        // listener's parameters, so taking them from the shared factory here is what carries them
+        // onto every client — this line passed `.tcp` through 1.7.0, meaning framework defaults
+        // with keepalive **off**, and an accepted connection whose peer vanished without sending
+        // FIN stayed `.ready` forever while the interface reported Up (`bugs/023`).
+        let socketOptions = RNSSocketOptions.tcpParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
+        handedOverParametersForTesting = socketOptions.parameters
+        let listener = try NWListener(using: socketOptions.parameters, on: nwPort)
         self.listener = listener
 
         listener.newConnectionHandler = { [weak self] conn in
+            self?.lastAcceptedParametersForTesting = conn.parameters
+            self?.acceptedConnectionParametersForTesting?(conn.parameters)
             self?.accept(conn)
         }
         listener.stateUpdateHandler = { [weak self] state in
@@ -235,6 +262,10 @@ public final class TCPServerInterface: Interface {
 /// Mirrors Python's per-connection `TCPServerInterfaceClient` which is registered
 /// with Transport as an independent Interface.
 public final class TCPServerClientInterface: Interface {
+    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+    public let interfaceState = InterfaceState()
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -302,16 +333,31 @@ public final class TCPServerClientInterface: Interface {
         self.peerHost = peerHost
         self.peerPort = peerPort
         self.parentServer = parentServer
-        // Inherit IFAC settings from parent server.
+
+        // Inherit the parent's configuration. Python copies nineteen attributes onto each accepted
+        // client (`TCPInterface.py:594-641`); a spawned client is the real routing endpoint on a
+        // server-side interface, so anything that does not reach it is inert for every peer that
+        // dials in. See `swift_devel/bugs/025-*.md`.
+        //
+        // `inherit(from:)` covers everything held in `InterfaceState` — mode, announce cap and
+        // rate control, ingress/egress control and all nine `ic_*` tunables — and it is a copy, so
+        // reconfiguring the parent later does not retune already-connected clients.
+        self.interfaceState.inherit(from: parentServer.interfaceState)
+
+        // Attributes stored on the conformer rather than in the state box need their own copy.
+        // `bitrate` because interfaces that derive one (RNode, from spreading factor/bandwidth/
+        // coding rate) must keep that derivation as their starting value — Python copies it
+        // explicitly too (`TCPInterface.py:611`). Previously this was a fresh hardcoded
+        // 10_000_000, so a configured server bitrate never reached any client.
+        self.bitrate = parentServer.bitrate
+
+        // Python: `spawned_interface.gravity = self.gravity` (RNS 1.4.1, commit 3ca71527).
+        self.gravity = parentServer.gravity
+
+        // IFAC (`TCPInterface.py:615-617`).
         self.ifacIdentity = parentServer.ifacIdentity
         self.ifacKey      = parentServer.ifacKey
         self.ifacSize     = parentServer.ifacSize
-        // Inherit routing preference from the parent server. Mirrors Python's
-        // `spawned_interface.gravity = self.gravity` in TCPServerInterface
-        // (RNS 1.4.1, commit 3ca71527) — a spawned client is the real routing
-        // endpoint, so the parent's gravity has to reach it or the whole
-        // option is inert on server-side interfaces.
-        self.gravity = parentServer.gravity
     }
 
     public func start() throws { }  // started by the parent server

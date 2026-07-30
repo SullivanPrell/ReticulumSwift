@@ -155,6 +155,10 @@ final class RatchetTests: XCTestCase {
 
     func testPathStoreRoundTripsRatchet() throws {
         let t1 = Transport()
+        // A persisted path stores its interface's hash and is dropped on load if nothing
+        // matches (`bugs/027`, D6), so both transports register the same interface.
+        let iface1 = LoopbackInterface(name: "iface")
+        t1.register(interface: iface1)
         let identity = Identity()
         let destination = try Destination(
             identity: identity, direction: .in, kind: .single, appName: "x"
@@ -163,7 +167,7 @@ final class RatchetTests: XCTestCase {
         t1.restore(
             path: Transport.PathEntry(
                 destinationHash: destination.hash,
-                nextHopInterfaceName: "iface",
+                nextHopInterface: iface1,
                 hops: 1,
                 lastHeard: Date(),
                 identityHash: identity.hash
@@ -175,6 +179,7 @@ final class RatchetTests: XCTestCase {
 
         let snapshot = PathStore.snapshot(of: t1)
         let t2 = Transport()
+        t2.register(interface: LoopbackInterface(name: "iface"))
         snapshot.apply(to: t2)
 
         XCTAssertEqual(t2.knownRatchets[destination.hash], ratchet)
