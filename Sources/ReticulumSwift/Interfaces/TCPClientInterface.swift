@@ -256,7 +256,9 @@ public final class TCPClientInterface: Interface {
         // first leaves a window in which a concurrent `stop()` cancels the *previous*
         // timer and never sees this one — an interface that keeps dialing after teardown.
         stateLock.lock()
-        guard !stopped else { stateLock.unlock(); timer.cancel(); return }
+        // `cancelUnstarted()`, not `cancel()`: this timer has not been resumed, and releasing a
+        // suspended dispatch source traps in libdispatch (`bugs/032`).
+        guard !stopped else { stateLock.unlock(); timer.cancelUnstarted(); return }
         reconnectCount += 1
         reconnectTimer?.cancel()
         reconnectTimer = timer

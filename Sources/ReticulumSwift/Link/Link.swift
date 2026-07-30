@@ -1406,7 +1406,13 @@ public final class Link {
         timer.schedule(deadline: .now() + nextTick, repeating: .never)
         timer.setEventHandler { [weak self] in self?.watchdogTick() }
         stateLock.lock()
-        guard _status != .closed && _status != .failed else { stateLock.unlock(); timer.cancel(); return }
+        guard _status != .closed && _status != .failed else {
+            stateLock.unlock()
+            // `cancel()` alone would trap: the timer has not been resumed yet, so it is still
+            // suspended, and releasing a suspended source kills the process (`bugs/032`).
+            timer.cancelUnstarted()
+            return
+        }
         watchdogTimer = timer
         stateLock.unlock()
         timer.resume()
