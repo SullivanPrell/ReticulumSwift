@@ -729,6 +729,27 @@ public final class Reticulum {
     }
 
     public func stop() {
+        // Tear links down first, while the interfaces can still carry the close.
+        //
+        // Mirrors `Reticulum.py:196-205`, where both signal handlers call
+        // `Transport.detach_interfaces()` before anything else: each established link is closed,
+        // the queue is given 150 ms to drain, then each interface is stopped
+        // (`Transport.py:3171-3183`). A node that exits without it leaves every peer holding the
+        // link ACTIVE until its own keepalive watchdog expires — up to `KEEPALIVE_MAX` = 360 s —
+        // with the LXMF, NomadNet and LXST sessions riding those links hanging rather than
+        // failing (`bugs/028`).
+        //
+        // Here rather than in each caller, deliberately (D9). There are at least three exit paths
+        // — `rnsd`'s signal handlers via `InstanceConnection.stop()`, the shared-instance stop,
+        // and an application's own teardown — and wiring them individually leaves whichever one is
+        // added next broken. That is not hypothetical for this subsystem: `detachInterfaces()`
+        // itself sat here with no callers, and RetiOS shipped `StackController.tearDown()` with
+        // none until v0.3.9.
+        //
+        // Order matters as much as the call. `transport.stop()` stops every interface, so running
+        // it first would leave the close packets handed to dead interfaces — satisfying "teardown
+        // was called" while emitting nothing, which is the same silence the defect produced.
+        transport.detachInterfaces()
         transport.stop()
         let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
         try? PathStore.snapshot(of: transport).write(to: pathStoreURL)
