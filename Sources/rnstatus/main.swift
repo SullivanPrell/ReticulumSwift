@@ -66,7 +66,7 @@ let managementIdentity = arguments.value("-i")
 let remoteTimeout      = requiredDouble("-w", default: RNStatusApp.defaultRemoteTimeout)
 let monitorInterval    = requiredDouble("--monitor-interval", default: RNStatusApp.defaultMonitorInterval)
 let nameFilter         = arguments.positionals.first
-let configDirectory    = arguments.value("--config").map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+let configDirectory    = arguments.value("--config").map { DaemonBootstrap.expandTildeURL($0) }
 
 var options = RNStatusRenderer.Options()
 options.showAll       = showAll
@@ -192,7 +192,7 @@ if let remoteHex {
     guard let identityHash = Data(hex: remoteHex) else {
         fail("Invalid destination entered. Check your input.", .remoteError)
     }
-    let expanded = URL(fileURLWithPath: (identityPath as NSString).expandingTildeInPath)
+    let expanded = DaemonBootstrap.expandTildeURL(identityPath)
     guard let identity = Identity.fromFile(expanded) else {
         fail("Could not load management identity from \(identityPath)", .remoteError)
     }

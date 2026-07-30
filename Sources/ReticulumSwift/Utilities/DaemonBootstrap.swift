@@ -71,6 +71,20 @@ public enum DaemonBootstrap {
     /// `os.path.expanduser` does. See ``InstanceConnection/homeDirectory(environment:)``.
     public static func homeDirectory() -> URL { InstanceConnection.homeDirectory() }
 
+    /// Expand a leading `~` from `$HOME`, as `os.path.expanduser` does.
+    ///
+    /// Every utility takes its `~`-containing paths through this rather than
+    /// `NSString.expandingTildeInPath`, which ignores `$HOME` on macOS. See
+    /// ``InstanceConnection/expandTilde(_:environment:)`` and `bugs/024`.
+    public static func expandTilde(_ path: String) -> String {
+        InstanceConnection.expandTilde(path)
+    }
+
+    /// ``expandTilde(_:)``, as a file URL.
+    public static func expandTildeURL(_ path: String) -> URL {
+        URL(fileURLWithPath: expandTilde(path))
+    }
+
     public static func resolveConfigDir(explicit: String?,
                                         home: URL,
                                         systemConfigDir: URL = URL(fileURLWithPath: "/etc/reticulum"),

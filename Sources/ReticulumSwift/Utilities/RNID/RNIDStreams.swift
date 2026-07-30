@@ -127,7 +127,7 @@ public final class RNIDRealFileSystem: RNIDFileSystem {
     public init() {}
 
     public func expandTilde(_ path: String) -> String {
-        (path as NSString).expandingTildeInPath
+        DaemonBootstrap.expandTilde(path)
     }
 
     public func fileExists(atPath path: String) -> Bool {

@@ -148,7 +148,7 @@ final class ReticulumBringUp {
 
         // Python takes a config DIRECTORY; Swift's Configuration takes a storage directory
         // plus a config FILE, so map --config the way InstanceConnection already derives them.
-        let configDirectory = invocation.config.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        let configDirectory = invocation.config.map { DaemonBootstrap.expandTildeURL($0) }
         connection = try? InstanceConnection.attach(configDirectory: configDirectory, logLevel: level)
         return connection
     }
@@ -203,7 +203,8 @@ func runRNID() -> Int32 {
     let needsStack = invocation.truthy(invocation.announce)
         || (invocation.truthy(invocation.identity)
             && invocation.identity!.count == RNIDIdentityResolver.hashStringLength
-            && !FileManager.default.fileExists(atPath: (invocation.identity! as NSString).expandingTildeInPath))
+            && !FileManager.default.fileExists(
+                atPath: DaemonBootstrap.expandTilde(invocation.identity!)))
     if needsStack { bringUp.ensure() }
 
     let resolver = RNIDIdentityResolver(transport: bringUp.transport,

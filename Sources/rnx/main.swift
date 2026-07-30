@@ -237,7 +237,7 @@ func parseOptions() -> Options {
 
     var options = Options()
     options.configDirectory = parsed.value("--config").map {
-        URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath)
+        DaemonBootstrap.expandTildeURL($0)
     }
     options.verbosity = parsed.count("--verbose")
     options.quietness = parsed.count("--quiet")
@@ -332,7 +332,7 @@ func bringUpStack(_ options: Options) -> InstanceConnection {
 func prepareIdentity(_ options: Options, configDirectory: URL) -> Identity {
     if let existing = session.identity { return existing }
     let url = options.identityPath.map {
-        URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath)
+        DaemonBootstrap.expandTildeURL($0)
     } ?? RNXListener.defaultIdentityURL(configDir: configDirectory)
     do {
         let identity = try RNXListener.loadOrCreateIdentity(at: url)

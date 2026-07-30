@@ -44,7 +44,8 @@ if options.exampleConfig {
 let paths = DaemonBootstrap.Paths(
     configDir: DaemonBootstrap.resolveConfigDir(
         explicit: options.configDir,
-        home: FileManager.default.homeDirectoryForCurrentUser))
+        // See the note in `rnir` — `homeDirectoryForCurrentUser` ignores `$HOME` (`bugs/024`).
+        home: DaemonBootstrap.homeDirectory()))
 
 FileLogSink.installStdoutHandler()
 Reticulum.globalLogLevel = .notice

@@ -114,7 +114,7 @@ final class ProcessCommandExecutor: RNXCommandExecutor {
     private static func resolve(_ program: String) -> URL? {
         let fileManager = FileManager.default
         if program.contains("/") {
-            let url = URL(fileURLWithPath: (program as NSString).expandingTildeInPath)
+            let url = DaemonBootstrap.expandTildeURL(program)
             return fileManager.isExecutableFile(atPath: url.path) ? url : nil
         }
         let path = ProcessInfo.processInfo.environment["PATH"]

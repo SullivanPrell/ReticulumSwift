@@ -291,7 +291,7 @@ public final class RNXListener {
     ) throws -> [Data] {
         var found: String?
         for directory in searchPaths {
-            let path = (directory as NSString).expandingTildeInPath
+            let path = DaemonBootstrap.expandTilde(directory)
                 + "/" + RNXApp.allowedIdentitiesFileName
             var isDirectory: ObjCBool = false
             if fileManager.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue {
