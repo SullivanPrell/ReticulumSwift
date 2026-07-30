@@ -70,6 +70,10 @@ public final class LocalInterface: Interface {
     }
 
     private var connection: NWConnection?
+
+    /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
+    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
     private let queue: DispatchQueue
     private let decoder = HDLC.FrameDecoder()
     private var reconnectTimer: DispatchSourceTimer?
@@ -181,7 +185,14 @@ public final class LocalInterface: Interface {
             pendingReady?.signal(); pendingReady = nil
             return
         }
-        let conn = NWConnection(to: endpoint, using: .tcp)
+        // Python's `LocalClientInterface.connect()` sets `TCP_NODELAY` on its TCP socket
+        // (`LocalInterface.py:147`), as does the branch that adopts an accepted one (`:98-100`).
+        // It sets no keepalive — its only one is the application-level `phy_keepalive` flag on
+        // Android — so this takes the shared-instance option set rather than the full TCP one.
+        // Through 1.7.0 this line passed `.tcp`: framework defaults, Nagle on (`bugs/023`).
+        let socketOptions = RNSSocketOptions.localParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
+        let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
         // Cancel whatever we are replacing. A reconnect fires from a timer, not
         // from stop(), so the predecessor is still live here; leaving it dangling
         // leaks the socket and the shared instance keeps counting it as an

@@ -78,6 +78,17 @@ public final class TCPServerInterface: Interface {
     }
 
     private var listener: NWListener?
+
+    /// What `start()` handed to `NWListener`, and what the framework handed back on accept.
+    ///
+    /// Recorded because there is no authoritative readback for TCP options — see
+    /// ``RNSSocketOptions``. `SocketOptionsTests` asserts that the accepted connection's
+    /// parameters *are* the listener's object, which is what makes configuring the listener
+    /// sufficient to cover every accepted socket rather than merely assumed to be.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
+    private(set) var handedOverParametersForTesting: NWParameters?
+    private(set) var lastAcceptedParametersForTesting: NWParameters?
+    var acceptedConnectionParametersForTesting: ((NWParameters) -> Void)?
     private let queue: DispatchQueue
     /// Serial queue that all spawned clients' inbound deliveries funnel through,
     /// so multiple client connections never invoke the (non-thread-safe) inbound
@@ -98,10 +109,22 @@ public final class TCPServerInterface: Interface {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw InterfaceError.invalidConfiguration("invalid port \(port)")
         }
-        let listener = try NWListener(using: .tcp, on: nwPort)
+        // Python configures the socket it *accepts* exactly as the one it dials
+        // (`TCPInterface.py:241`, `:259-261`, reached from `:591`), so direction must not decide
+        // whether the options apply. Network.framework derives an accepted connection from the
+        // listener's parameters, so taking them from the shared factory here is what carries them
+        // onto every client — this line passed `.tcp` through 1.7.0, meaning framework defaults
+        // with keepalive **off**, and an accepted connection whose peer vanished without sending
+        // FIN stayed `.ready` forever while the interface reported Up (`bugs/023`).
+        let socketOptions = RNSSocketOptions.tcpParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
+        handedOverParametersForTesting = socketOptions.parameters
+        let listener = try NWListener(using: socketOptions.parameters, on: nwPort)
         self.listener = listener
 
         listener.newConnectionHandler = { [weak self] conn in
+            self?.lastAcceptedParametersForTesting = conn.parameters
+            self?.acceptedConnectionParametersForTesting?(conn.parameters)
             self?.accept(conn)
         }
         listener.stateUpdateHandler = { [weak self] state in

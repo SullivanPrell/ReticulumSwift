@@ -134,48 +134,17 @@ public final class TCPClientInterface: Interface {
 
     // MARK: - Socket options
 
-    /// Python's TCP socket options (`TCPInterface.py:83-86`), applied to every dial.
-    ///
-    /// `NWConnection(to:using: .tcp)` takes Network.framework's defaults, which have
-    /// keepalive **off**. Without it a connection whose peer vanished without sending FIN
-    /// — a machine that slept, a NAT that dropped the mapping, a peer that was hard-killed
-    /// — stays `.ready` indefinitely: no event fires, the interface keeps reporting "Up",
-    /// and everything sent through it is silently discarded. Keepalive is what turns that
-    /// half-open connection into a failure the reconnect logic can act on.
-    ///
-    /// A fresh instance per call: `NWParameters` is a reference type and one already handed
-    /// to a live connection cannot be reused.
-    /// The socket options every dial carries, matching what Python sets on each TCP socket
-    /// it opens (`TCPInterface.set_timeouts_osx` / `set_timeouts_linux`).
-    ///
-    /// Kept separate from ``tcpParameters`` because this is the only object whose values can
-    /// be read back reliably. `NWParameters.defaultProtocolStack.transportProtocol` returns a
-    /// *different* `NWProtocolTCP.Options` instance than the one handed to
-    /// `NWParameters(tls:tcp:)` — verified: `===` is false even where the values survive —
-    /// and on macOS 14 that re-wrapped instance's getters report framework defaults rather
-    /// than the configured values. Network.framework publishes no getters for TCP options at
-    /// the C level either, so there is no authoritative readback anywhere: what this port
-    /// controls, and therefore what the tests assert, is the object it constructs and hands
-    /// over.
-    static func tcpOptions() -> NWProtocolTCP.Options {
-        let options = NWProtocolTCP.Options()
-        // Python: `SO_KEEPALIVE, 1` + `TCP_KEEPIDLE = TCP_PROBE_AFTER`.
-        options.enableKeepalive = true
-        options.keepaliveIdle = 5           // TCP_PROBE_AFTER
-        options.keepaliveInterval = 2       // TCP_PROBE_INTERVAL
-        options.keepaliveCount = 12         // TCP_PROBES
-        // Python's Linux path sets `TCP_USER_TIMEOUT`; Network.framework spells the same
-        // "give up on an unacknowledged connection after N seconds" as connectionDropTime.
-        options.connectionDropTime = 24     // TCP_USER_TIMEOUT
-        // Python sets TCP_NODELAY on every socket it opens. RNS packets are small and
-        // latency-sensitive; Nagle would hold them behind the delayed-ACK timer.
-        options.noDelay = true
-        return options
-    }
+    /// The option set every dial carries lives in ``RNSSocketOptions`` — the single construction
+    /// site for every socket this package opens. It was declared *here* through 1.7.0 and wired
+    /// into the two dial paths only, so `TCPServerInterface`'s listener, `LocalInterface`'s dial,
+    /// the RPC listener and the SAM socket all kept taking Network.framework's defaults, which
+    /// have keepalive **off**. The 1.7.0 CHANGELOG's "every socket" claim covered two of six
+    /// sites (`bugs/023`); `SocketOptionsTests` now fails if any file but the factory constructs
+    /// them.
 
-    static var tcpParameters: NWParameters {
-        NWParameters(tls: nil, tcp: tcpOptions())
-    }
+    /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
+    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
     // MARK: - Connect / reconnect
 
@@ -188,7 +157,9 @@ public final class TCPClientInterface: Interface {
         // stop() either wins (we bail) or cancels the connection we just assigned.
         stateLock.lock()
         guard !stopped else { stateLock.unlock(); return }
-        let conn = NWConnection(to: endpoint, using: Self.tcpParameters)
+        let socketOptions = RNSSocketOptions.tcpParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
+        let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
         // Cancel whatever we are replacing. A reconnect fires from a timer, not from
         // stop(), so the predecessor is still live here — and a peer that sent FIN leaves
         // it in CLOSE_WAIT until something closes our half.

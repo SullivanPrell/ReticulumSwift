@@ -70,6 +70,10 @@ public final class NWSAMSocket: SAMSocket {
     private var streamHandler: ((Data) -> Void)?
     private var closeHandler: (() -> Void)?
 
+    /// The exact `NWProtocolTCP.Options` instance the last connect handed to Network.framework,
+    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
+
     public init(host: String = "127.0.0.1", port: UInt16) {
         self.host = host
         self.port = port
@@ -80,9 +84,19 @@ public final class NWSAMSocket: SAMSocket {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw SAMSocketError.connectFailed("invalid SAM port \(port)")
         }
+        // This carries I2P-tunneled traffic, so it takes Python's I2P timing set rather than the
+        // direct-TCP one: `I2PInterfacePeer` and `I2PInterface` both set `i2p_tunneled = True`
+        // (`I2PInterface.py:356`, `:742`), which selects `I2P_USER_TIMEOUT`/`I2P_PROBE_*` in
+        // `TCPClientInterface.set_timeouts_*` (`TCPInterface.py:190-194`, `:204-207`). I2P
+        // round-trips are long enough that the direct-TCP timers would tear down a healthy
+        // tunnel. This line passed `.tcp` — framework defaults, keepalive off — so a SAM bridge
+        // that stopped answering left the peer online forever. Found by the construction-site
+        // guard; not in `bugs/023` as filed.
+        let socketOptions = RNSSocketOptions.i2pParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
         let connection = NWConnection(
             to: .hostPort(host: NWEndpoint.Host(host), port: nwPort),
-            using: .tcp
+            using: socketOptions.parameters
         )
         conn = connection
 

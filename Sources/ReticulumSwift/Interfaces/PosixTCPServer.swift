@@ -64,6 +64,15 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     private let lock = NSLock()
     private var clients: [PosixClient] = []
 
+    /// Descriptors this server has accepted, for tests that assert the socket options actually
+    /// landed. Unlike the Network.framework paths, a POSIX descriptor has an authoritative
+    /// readback — `getsockopt` — so `bugs/023` is verifiable here rather than only structural.
+    private var acceptedDescriptors: [Int32] = []
+    var lastAcceptedDescriptorForTesting: Int32? {
+        lock.lock(); defer { lock.unlock() }; return acceptedDescriptors.last
+    }
+    var acceptedDescriptorHandlerForTesting: ((Int32) -> Void)?
+
     /// Python `LocalServerInterface.__str__` (`LocalInterface.py:496-498`) returns the literal
     /// `"Shared Instance["+str(bind_port)+"]"`. Shown in rnstatus output; distinct from the
     /// client-side `"LocalInterface[…]"`.
@@ -179,6 +188,17 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
             }
         }
         guard clientFD >= 0 else { return }
+
+        // Python sets `TCP_NODELAY` on every socket its shared-instance server accepts
+        // (`LocalInterface.py:98-100`) — the accepted-socket half of `bugs/023`, in the POSIX
+        // server rather than the Network.framework one. This port set only `SO_NOSIGPIPE`, so
+        // small control frames sat behind Nagle's delayed-ACK timer on every shared-instance
+        // client. Found while building `RNSSocketOptions`; not in `bugs/023` as filed.
+        RNSSocketOptions.applyLocalOptions(toFileDescriptor: clientFD)
+        lock.lock()
+        acceptedDescriptors.append(clientFD)
+        lock.unlock()
+        acceptedDescriptorHandlerForTesting?(clientFD)
 
         let client = PosixClient(
             fd: clientFD,

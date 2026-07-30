@@ -181,11 +181,12 @@ public final class BackboneInterface: Interface {
 
     // MARK: - Connection management
 
-    /// The same socket options the TCP client dials with — Python configures both
-    /// identically (`BackboneInterface.py:655-660`). See ``TCPClientInterface/tcpOptions()``.
-    static func tcpOptions() -> NWProtocolTCP.Options { TCPClientInterface.tcpOptions() }
+    /// The same socket options the TCP client dials with — Python configures both identically
+    /// (`BackboneInterface.py:655-660`), and both take them from ``RNSSocketOptions``.
 
-    static var tcpParameters: NWParameters { TCPClientInterface.tcpParameters }
+    /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
+    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
     private func openConnection() {
         let endpoint = NWEndpoint.hostPort(
@@ -196,7 +197,9 @@ public final class BackboneInterface: Interface {
         // (BackboneInterface.py:626-627, :655-660) — the same options the TCP client uses,
         // for the same reason: without keepalive a peer that vanished without sending FIN
         // leaves this connection `.ready` forever and the reconnect below never fires.
-        let conn = NWConnection(to: endpoint, using: Self.tcpParameters)
+        let socketOptions = RNSSocketOptions.tcpParameters()
+        handedOverTCPOptionsForTesting = socketOptions.options
+        let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
         // Re-check stopped and publish the connection atomically (see LocalInterface).
         stateLock.lock()
         guard !_isStopped else { stateLock.unlock(); return }
