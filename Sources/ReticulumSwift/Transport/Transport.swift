@@ -223,6 +223,27 @@ public final class Transport {
     /// link is forwarded through whichever interface didn't deliver it.
     public struct LinkRoute: Equatable {
         public let linkID: Data
+
+        /// The two interfaces this relayed link runs between — the values routing resolves.
+        ///
+        /// The same requirement as `PathEntry.nextHopInterface`, in the link table
+        /// (`bugs/027`). Storing names here is the identical defect: two clients accepted by
+        /// one `TCPServerInterface` share the name `"Client on <server>"`, so a hairpin relay
+        /// between them resolved both sides to whichever registered first — the source — and
+        /// `forwardLinkTraffic`'s "which side didn't deliver it" test compared two equal
+        /// strings and steered every packet back where it came from.
+        ///
+        /// Link *establishment* still worked, because the LINKREQUEST is routed through the
+        /// path table; only the traffic afterwards was misrouted. That split is why the
+        /// failure looked like a resource bug: the link came up, then the transfer stalled.
+        ///
+        /// Weak, for the same reason as the path table — a route must not keep a
+        /// deregistered interface alive, and a vanished peer must stop resolving rather than
+        /// falling back to a same-named sibling.
+        public weak var initiatorSideInterface: (any Interface)?
+        public weak var responderSideInterface: (any Interface)?
+
+        /// Display only, never used to resolve a route.
         public let initiatorSideInterfaceName: String
         public let responderSideInterfaceName: String
         /// Original destination hash from the LINKREQUEST packet.
@@ -231,6 +252,19 @@ public final class Transport {
         /// after a relay node successfully forwards the LRPROOF.
         public let destinationHash: Data
         public var lastHeard: Date
+
+        /// Hand-written because the interface fields are existentials. They compare by
+        /// **identity** — two clients of one server are equal by name and are not the same
+        /// route, which is the whole point.
+        public static func == (lhs: LinkRoute, rhs: LinkRoute) -> Bool {
+            lhs.linkID == rhs.linkID
+                && lhs.initiatorSideInterface === rhs.initiatorSideInterface
+                && lhs.responderSideInterface === rhs.responderSideInterface
+                && lhs.initiatorSideInterfaceName == rhs.initiatorSideInterfaceName
+                && lhs.responderSideInterfaceName == rhs.responderSideInterfaceName
+                && lhs.destinationHash == rhs.destinationHash
+                && lhs.lastHeard == rhs.lastHeard
+        }
     }
 
     /// A tunnel entry: tracks an interface that was synthesized as a tunnel endpoint
@@ -1786,6 +1820,13 @@ public final class Transport {
         paths[destinationHash] = path
     }
 
+    /// Directly insert a relayed-link route, so a hairpin relay can be exercised without
+    /// standing up two peers and driving a full link handshake through them.
+    public func restore(linkRoute: LinkRoute) {
+        lock.lock(); defer { lock.unlock() }
+        linkRoutes[linkRoute.linkID] = linkRoute
+    }
+
     /// Directly insert an announce packet into the announce cache for testing.
     /// Mirrors the side-effect of processing a real announce packet.
     public func cacheAnnounce(_ packet: Packet, forDestination hash: Data) {
@@ -2825,6 +2866,8 @@ public final class Transport {
         let linkID = Hashes.truncatedHash(linkIDHashable)
         let route = LinkRoute(
             linkID: linkID,
+            initiatorSideInterface: interface,
+            responderSideInterface: outbound,
             initiatorSideInterfaceName: interface.name,
             responderSideInterfaceName: outbound.name,
             destinationHash: packet.destinationHash,
@@ -3032,26 +3075,27 @@ public final class Transport {
         var route = linkRoutes[packet.destinationHash]
         lock.unlock()
         guard route != nil else { return }
-        let initIface = interfaces.first { $0.name == route!.initiatorSideInterfaceName }
-        let respIface = interfaces.first { $0.name == route!.responderSideInterfaceName }
+        let initIface = route!.initiatorSideInterface
+        let respIface = route!.responderSideInterface
         // A non-transport shared instance still relays link traffic when either
         // side of the link is a directly-connected local client (Python's
         // for_local_client_link, Transport.py:1573).
         let touchesLocalClient = (initIface.map(isLocalClientInterface) ?? false)
                               || (respIface.map(isLocalClientInterface) ?? false)
         guard transportEnabled || touchesLocalClient else { return }
-        // Steer to the side that didn't deliver the packet.
-        let outboundName: String
-        if sourceInterface.name == route!.initiatorSideInterfaceName {
-            outboundName = route!.responderSideInterfaceName
-        } else if sourceInterface.name == route!.responderSideInterfaceName {
-            outboundName = route!.initiatorSideInterfaceName
+        // Steer to the side that didn't deliver the packet — compared by identity, not by
+        // name. With names, a hairpin between two clients of one listening interface compares
+        // two equal strings, matches the first branch, and sends the packet back out the
+        // interface it arrived on (`bugs/027`).
+        let outboundCandidate: (any Interface)?
+        if sourceInterface === route!.initiatorSideInterface {
+            outboundCandidate = route!.responderSideInterface
+        } else if sourceInterface === route!.responderSideInterface {
+            outboundCandidate = route!.initiatorSideInterface
         } else {
             return
         }
-        guard let outbound = interfaces.first(where: {
-            $0.name == outboundName && $0.isOnline
-        }) else { return }
+        guard let outbound = outboundCandidate, outbound.isOnline else { return }
         var forwarded = packet
         // instance_local_link: both sides of this link are local clients, so the
         // traffic never leaves the local-client domain and must keep its real

@@ -147,6 +147,61 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
                        + "does when it stringifies the stored object for display")
     }
 
+    // MARK: - The link table is the same defect in a second table
+
+    /// A relayed link between two clients of one listening interface steers by identity.
+    ///
+    /// `LinkRoute` had exactly the defect `bugs/027` describes, in the link table rather than
+    /// the path table — and the first pass at §8 fixed only the path table, because that is
+    /// what the bug file enumerated. The interop suite caught the rest: a file transfer between
+    /// two clients of one Swift hub failed while the same transfer through a *Python* hub
+    /// succeeded.
+    ///
+    /// The split is what made it confusing. A LINKREQUEST is routed through the *path* table, so
+    /// the link came up fine; everything afterwards goes through the *link* table, so the
+    /// transfer stalled. It read as a resource bug.
+    ///
+    /// With names, `forwardLinkTraffic`'s "which side didn't deliver it" test compares two equal
+    /// strings for a hairpin, matches the first branch, and sends the packet back out the
+    /// interface it arrived on.
+    func testARelayedLinkBetweenTwoClientsOfOneServerSteersToTheOtherClient() throws {
+        let transport = Transport()
+        transport.transportEnabled = true
+        let clientA = RecordingInterface(name: "Client on hub", label: "A")
+        let clientB = RecordingInterface(name: "Client on hub", label: "B")
+        transport.register(interface: clientA)
+        transport.register(interface: clientB)
+
+        let linkID = Data(repeating: 0x5A, count: Constants.truncatedHashLength)
+        transport.restore(linkRoute: Transport.LinkRoute(
+            linkID: linkID,
+            initiatorSideInterface: clientA,
+            responderSideInterface: clientB,
+            initiatorSideInterfaceName: clientA.name,
+            responderSideInterfaceName: clientB.name,
+            destinationHash: Data(repeating: 0x11, count: Constants.truncatedHashLength),
+            lastHeard: Date()
+        ))
+
+        // Traffic arriving from A must leave through B, and vice versa. By name both are
+        // "Client on hub", so a name-keyed steer cannot tell these two cases apart.
+        let fromA = Packet(destinationType: .link, packetType: .data,
+                           destinationHash: linkID, data: Data("a->b".utf8))
+        transport.handleIncoming(packet: fromA, from: clientA)
+        XCTAssertEqual(clientB.dataSent.count, 1,
+                       "traffic from client A must be relayed out through client B")
+        XCTAssertEqual(clientA.dataSent.count, 0,
+                       "the relay sent the packet back out the interface it arrived on")
+
+        let fromB = Packet(destinationType: .link, packetType: .data,
+                           destinationHash: linkID, data: Data("b->a".utf8))
+        transport.handleIncoming(packet: fromB, from: clientB)
+        XCTAssertEqual(clientA.dataSent.count, 1,
+                       "traffic from client B must be relayed out through client A")
+        XCTAssertEqual(clientB.dataSent.count, 1,
+                       "client B must not receive its own traffic back")
+    }
+
     // MARK: - The structural guard
 
     /// No production code builds a path from an interface *name*.
