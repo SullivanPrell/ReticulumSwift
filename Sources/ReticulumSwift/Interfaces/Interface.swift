@@ -251,9 +251,29 @@ public protocol LocalClientServingInterface: Interface {
 
 /// Default implementations so existing interfaces don't need to add these.
 public extension Interface {
-    /// Default `displayName`: just `name`. Sufficient for interfaces that don't
-    /// appear in rnstatus-style output; others override to match Python's `__str__`.
-    var displayName: String { name }
+    /// Default `displayName`: the class-qualified form `"Class[name]"`, which is what Python's
+    /// `__str__` returns for every interface whose reference string carries no peer address —
+    /// `SerialInterface[…]` (`SerialInterface.py:226-227`), `KISSInterface[…]` (`:387-388`),
+    /// `AX25KISSInterface[…]` (`:400-401`), `RNodeInterface[…]` (`:1247-1248`),
+    /// `RNodeMultiInterface[…]` (`:923-924`), `I2PInterface[…]` (`:890`),
+    /// `I2PInterfacePeer[…]` (`:713-714`), `AutoInterface[…]` (`:609`),
+    /// `WeaveInterface[…]` (`:1005-1006`).
+    ///
+    /// It composes `statsTypeName`, which is already the RNS class name, so a new interface type
+    /// gets the correct shape by declaring nothing. **The previous default was the bare `name`**,
+    /// and that is why `bugs/022` exists: 1.7.0 fixed the nine wrong publishers by adding
+    /// overrides to the TCP and UDP families only, and every type it did not touch kept silently
+    /// inheriting a name that is neither the identity Python computes
+    /// (`hash` is `fullHash(displayName)`) nor a string `rnstatus`' class-prefix filters match.
+    /// Composing here rather than overriding per file is the seam: the tenth interface type
+    /// cannot repeat it.
+    ///
+    /// Override only where the reference string is genuinely a different shape — a peer address
+    /// in the tail (`TCPInterface[name/ip:port]`), a form that ignores `name`
+    /// (`LocalInterface[port]`, `Shared Instance[port]`), or one derived from a parent or peer
+    /// address (`RNodeSubInterface`, `WeaveInterfacePeer`). `InterfaceDisplayNameTests` asserts
+    /// the resulting string for every conformer against the reference form.
+    var displayName: String { "\(statsTypeName)[\(name)]" }
 
     /// Default: the Swift type's own name, which is what most interfaces are called in
     /// Python too (`UDPInterface`, `TCPClientInterface`, `RNodeInterface`, …).

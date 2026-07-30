@@ -190,7 +190,9 @@ final class RemoteStatusQueryTests: XCTestCase {
         // Slot 0 must be the full interface_stats MAP, not a summary array.
         let stats = try XCTUnwrap(RNStatusStats(parts[0]))
         XCTAssertEqual(stats.interfaces.count, 1)
-        XCTAssertEqual(stats.interfaces.first?.name, "server")
+        // The published name is `displayName`, class-qualified for every conformer since
+        // `bugs/022` — the bare configured `name` here is "server".
+        XCTAssertEqual(stats.interfaces.first?.name, "LoopbackInterface[server]")
         XCTAssertNotNil(parts[1].asInt)
 
         // And the decoder the CLI uses accepts it.

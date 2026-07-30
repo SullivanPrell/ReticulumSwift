@@ -100,8 +100,10 @@ final class RNStatusInProcessTests: XCTestCase {
 
     func testSharedInstanceNameTriggersTheServingBranch() {
         let transport = Transport()
-        // PosixTCPServer's displayName is "<name>[<port>]" → "Shared Instance[37428]",
-        // which is the prefix rnstatus keys the Serving / subtraction branches off.
+        // PosixTCPServer's displayName is the literal "Shared Instance[<port>]"
+        // (LocalInterface.py:496-498), which is the prefix rnstatus keys the Serving /
+        // subtraction branches off. It no longer depends on the `name` passed here — see
+        // `bugs/022`, where building it from `name` made it correct only at this one call site.
         let server = PosixTCPServer(name: "Shared Instance", port: 37428)
         transport.register(interface: server)
         let iface = RNStatusStats(InterfaceStatsPayload.build(transport))!.interfaces[0]
@@ -125,7 +127,9 @@ final class RNStatusInProcessTests: XCTestCase {
         options.linkStats = true
         let rendered = RNStatusRenderer(options: options, now: 1_700_000_000)
             .render(stats: stats!, linkCount: 0)
-        XCTAssertTrue(rendered.contains(" stub\n"))
+        // The rendered row is the interface's `displayName`, which is class-qualified for every
+        // conformer including test doubles since `bugs/022` — not the bare configured `name`.
+        XCTAssertTrue(rendered.contains(" StubInterface[stub]\n"))
         XCTAssertTrue(rendered.contains("    Status    : Up\n"))
         XCTAssertTrue(rendered.contains("    Rate      : 9.60 kbps\n"))
         XCTAssertTrue(rendered.contains(" Transport Instance <"))

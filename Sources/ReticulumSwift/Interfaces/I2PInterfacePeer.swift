@@ -97,8 +97,9 @@ public final class I2PInterfacePeer: Interface {
     public var rxPackets: Int { counters.rxPackets }
     public var txPackets: Int { counters.txPackets }
 
-    /// Python: `__str__` returns `"I2PInterfacePeer[<name>]"`.
-    public var displayName: String { "I2PInterfacePeer[\(name)]" }
+    // `displayName` is not declared here: Python's `I2PInterfacePeer[<name>]`
+    // (`I2PInterface.py:713-714`) is exactly the protocol's class-qualified default.
+    // See `Interface.displayName`.
 
     // MARK: - I2P-specific properties
 

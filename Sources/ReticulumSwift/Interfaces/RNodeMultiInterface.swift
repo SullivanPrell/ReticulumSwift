@@ -25,6 +25,28 @@ public final class RNodeSubInterface: Interface {
     public let index:         Int           // vport index (0-based)
     public let interfaceType: String        // "SX127X", "SX126X", or "SX128X"
 
+    /// The `RNodeMultiInterface` this sub-channel belongs to. Python's
+    /// `RNodeSubInterface.__init__` takes `parent_interface` as an argument
+    /// (`RNodeMultiInterface.py:939`, stored at `:997`); Swift builds the subs before the
+    /// parent exists, so `RNodeMultiInterface.init` assigns this after adopting them. Weak: the
+    /// parent owns the subs.
+    public weak var parentInterface: RNodeMultiInterface?
+
+    /// Python `RNodeSubInterface.__str__` (`RNodeMultiInterface.py:1152-1153`):
+    /// `self.parent_interface.name+"["+self.name+"]"` — the **parent's** name, not this class's.
+    /// The protocol's class-qualified default would publish `RNodeSubInterface[<name>]`, which is
+    /// also what the dormant `description` below says and what `bugs/022`'s design note warns
+    /// against copying: neither matches Python, so both give a different `Interface.hash` than
+    /// the Python sub-interface beside it.
+    ///
+    /// An unparented sub falls back to the class-qualified form. Python would raise on
+    /// `None.name`; there is nothing truer to publish, and a crash in a status call is worse
+    /// than a name no Python peer can be holding, since an unparented sub carries no traffic.
+    public var displayName: String {
+        guard let parentName = parentInterface?.name else { return "RNodeSubInterface[\(name)]" }
+        return "\(parentName)[\(name)]"
+    }
+
     // MARK: – Desired radio parameters (what we want)
 
     public let frequency: UInt32
@@ -253,6 +275,12 @@ public final class RNodeMultiInterface: Interface {
         self.name          = name
         self.transport     = transport
         self.subInterfaces = subInterfaces
+        // Python passes `parent_interface` into `RNodeSubInterface.__init__`
+        // (`RNodeMultiInterface.py:939`, stored at `:997`). Swift constructs the subs first and
+        // hands them in, so the link is closed here instead. It is what `RNodeSubInterface`'s
+        // published name is built from (`__str__` at `:1152-1153`), so without it the sub
+        // publishes a bare name — `bugs/022`.
+        for sub in subInterfaces { sub.parentInterface = self }
         transport.byteHandler = { [weak self] data in self?.handleIncoming(data) }
     }
 

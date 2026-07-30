@@ -833,6 +833,19 @@ public final class WeaveInterfacePeer: Interface {
     /// Optional switch_id through which this endpoint is reachable.
     public var viaSwitchID:  Data? = nil
 
+    /// Python `WeaveInterfacePeer.__str__` (`WeaveInterface.py:1022-1023`):
+    /// `f"WeaveInterfacePeer[{RNS.hexrep(self.endpoint_addr)}]"`. `RNS.hexrep` delimits with
+    /// `:` unless told otherwise (`RNS/__init__.py:176-183`), so the address is colon-separated.
+    ///
+    /// This does **not** compose `name`, even though `name` already carries a bracketed form:
+    /// `init` builds it with undelimited hex, so publishing it gave
+    /// `WeaveInterfacePeer[01020304]` against Python's `WeaveInterfacePeer[01:02:03:04]` — a
+    /// correct-looking string with a different `Interface.hash`. Found by the
+    /// enumerate-every-conformer test in `bugs/022`; not in the audit's list of nine.
+    public var displayName: String {
+        "WeaveInterfacePeer[\(RNSUtilities.hexrep(endpointAddr))]"
+    }
+
     /// The parent WeaveInterface's device switch ID (mirrors Python `peer.switch_id`).
     public var switchID: Data? { owner?.device.switchID }
     /// The endpoint ID for this peer, derived from the endpoint address.

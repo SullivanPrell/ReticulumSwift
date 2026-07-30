@@ -37,6 +37,22 @@ public final class BackboneInterface: Interface {
     public let name: String
     public let host: String
     public let port: UInt16
+
+    /// Python `BackboneClientInterface.__str__` (`BackboneInterface.py:870-873`):
+    /// `"BackboneInterface["+name+"/"+ip_str+":"+str(target_port)+"]"`, with an IPv6 literal
+    /// bracketed. That connecting form is the one that applies: this class dials a host, and
+    /// Python's listening `BackboneInterface.__str__` (`:561-564`) uses `bind_ip`/`bind_port`,
+    /// which this port has no separate object for.
+    ///
+    /// Overridden rather than left to the protocol's class-qualified default because the peer
+    /// address is part of the reference string — the default would publish
+    /// `BackboneInterface[<name>]` and so a different `Interface.hash` than the Python node
+    /// beside it (`bugs/022`).
+    public var displayName: String {
+        let ipString = host.contains(":") ? "[\(host)]" : host
+        return "BackboneInterface[\(name)/\(ipString):\(port)]"
+    }
+
     public var bitrate: Int = BackboneInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {

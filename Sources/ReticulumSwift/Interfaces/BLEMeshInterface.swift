@@ -107,10 +107,9 @@ public final class BLEMeshInterface: Interface {
     public var ifacKey: Data?
     public var ifacSize: Int = BLEMeshInterface.defaultIfacSize
 
-    /// Type-qualified display name, matching the `"<Type>[<name>]"`
-    /// convention other interfaces use in `rnstatus`-style output
-    /// (e.g. `AutoInterface[local]`).
-    public var displayName: String { "BLEMeshInterface[\(name)]" }
+    // `displayName` is not declared here: BLEMesh has no Python counterpart, and the
+    // protocol's class-qualified default already yields `BLEMeshInterface[<name>]` — the
+    // `"<Type>[<name>]"` shape every RNS interface publishes. See `Interface.displayName`.
 
     // MARK: - State
 

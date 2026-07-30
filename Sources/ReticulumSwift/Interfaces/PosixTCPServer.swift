@@ -64,9 +64,18 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
     private let lock = NSLock()
     private var clients: [PosixClient] = []
 
-    /// Python `LocalServerInterface.__str__` returns `"Shared Instance[<port>]"`.
-    /// Shown in rnstatus output; distinct from the client-side "LocalInterface[...]".
-    public var displayName: String { "\(name)[\(port)]" }
+    /// Python `LocalServerInterface.__str__` (`LocalInterface.py:496-498`) returns the literal
+    /// `"Shared Instance["+str(bind_port)+"]"`. Shown in rnstatus output; distinct from the
+    /// client-side `"LocalInterface[…]"`.
+    ///
+    /// `"Shared Instance"` is hardcoded here, not read from `name`. Python's
+    /// `LocalServerInterface` sets `self.name = "Reticulum"` (`LocalInterface.py:391`) and its
+    /// `__str__` ignores it entirely, so building the string from `name` made this correct only
+    /// while the one caller happened to pass `name: "Shared Instance"`
+    /// (`InstanceConnection.swift:208`) — correct by coincidence at a single call site, which is
+    /// the `bugs/013` shape. Found by the enumerate-every-conformer test in `bugs/022`; not in
+    /// the audit's list of nine.
+    public var displayName: String { "Shared Instance[\(port)]" }
 
     /// This class is Python's `LocalServerInterface`; only the Swift name differs. Reported
     /// verbatim in the stats payload, where a Python `rnstatus -d` prints it and would

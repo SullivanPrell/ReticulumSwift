@@ -97,8 +97,9 @@ public final class AutoInterface: Interface {
 
     // MARK: - Init
 
-    /// Python `AutoInterface.__str__` returns `"AutoInterface[<name>]"`.
-    public var displayName: String { "AutoInterface[\(name)]" }
+    // `displayName` is not declared here: Python's `AutoInterface[<name>]`
+    // (`AutoInterface.py:609`) is exactly the protocol's class-qualified default, and one
+    // shared composition is the point of `bugs/022` — see `Interface.displayName`.
 
     public init(
         name: String,
