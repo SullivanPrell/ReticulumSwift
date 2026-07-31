@@ -152,15 +152,28 @@ public extension StorageInventory.Entry {
         authority: .reference("Identity.py:293,426,453,487")
     )
 
-    /// `storage/identity.ratchets` — this node's own ratchet set.
+    /// `storage/identity.ratchets` — this node's *own* ratchet privates.
     ///
-    /// Port-only *name*: the reference keeps every ratchet under `storage/ratchets/` keyed by
-    /// destination hash, and has no separate file for the local identity's. Declared as a
-    /// divergence pending the comparison in task 3.1 rather than left implicit — an undocumented
-    /// divergence is the one outcome `bugs/029` rules out.
+    /// Port-only, and the audit (task 3.1) confirmed it is a divergence RNS cannot have: the
+    /// reference has no location for this at all. `storage/ratchets/` holds ratchets *learned
+    /// from peers*, keyed by their destination hash; a destination's own ratchets are written
+    /// wherever the application says, through `Destination.enable_ratchets(path)`
+    /// (`Destination.py:207-221,477`) — LXMF, for instance, puts them at
+    /// `<lxmf-storage>/ratchets/<desthash>.ratchets`. ReticulumSwift keeps the stack usable
+    /// without an application choosing a path, so it picks one.
+    ///
+    /// Harmless for interop in both directions: no Python code reads this name, so a Python
+    /// daemon on the same directory ignores it rather than mis-parsing or deleting it. The cost
+    /// of a switch is that the node's own ratchet history does not carry over, and peers relearn
+    /// the current one from the next announce.
+    ///
+    /// The *format* also differs from the reference's own-ratchet format
+    /// (`umsgpack.packb(self.ratchets)`, a list of raw privates newest-first) — but since the
+    /// path is ours alone, nothing on the other side ever reads it.
     static let identityRatchets = StorageInventory.Entry(
         ["storage", "identity.ratchets"], .file,
-        authority: .portOnly(reason: "see bugs/029 §3.1")  // pending audit
+        authority: .portOnly(reason: "the local identity's own ratchets; the reference has no "
+                             + "config-directory location for these — see Destination.enable_ratchets")
     )
 
     // Routing state. These four are `bugs/029`: the reference's names and encodings.
@@ -249,19 +262,24 @@ public extension StorageInventory.Entry {
 
     // Interface discovery.
 
-    /// `storage/discovery`.
+    /// `storage/discovery` — the parent of the discovered-interface store below.
     ///
-    /// Port-only: RNS 1.4.x interface discovery keeps discovered peers in the config file, not in
-    /// a separate store. Declared pending the comparison in task 3.4.
+    /// Declared port-only pending audit while §1 was in flight; the audit (task 3.4) settled it
+    /// the other way. `InterfaceDiscovery.__init__` composes
+    /// `os.path.join(storagepath, "discovery", "interfaces")` and `makedirs` it, so the reference
+    /// creates both levels.
     static let discovery = StorageInventory.Entry(
         ["storage", "discovery"], .directory,
-        authority: .portOnly(reason: "see bugs/029 §3.4")  // pending audit
+        authority: .reference("Discovery.py:451-452")
     )
 
-    /// `storage/discovery/interfaces` — discovered interface records.
+    /// `storage/discovery/interfaces` — one msgpack record per discovered interface, named by
+    /// `hexrep(discovery_hash, delimit=False)`, holding the announce's `info` dict plus
+    /// `discovered`, `last_heard` and `heard_count`.
+    /// Python: `Discovery.py:451-452` (path), `:510-560` (write), `:463-467` (read).
     static let discoveredInterfaces = StorageInventory.Entry(
         ["storage", "discovery", "interfaces"], .directory,
-        authority: .portOnly(reason: "see bugs/029 §3.4")  // pending audit
+        authority: .reference("Discovery.py:451-452,510-560")
     )
 
     static let all: [StorageInventory.Entry] = [

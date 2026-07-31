@@ -1941,51 +1941,74 @@ public final class Transport {
         }
     }
 
-    /// Persist a learned ratchet to `<ratchetsDirectory>/<desthex>`
-    /// using the simple `{ratchet, received}` layout the rest of the
-    /// stack reads.
+    /// Persist a learned ratchet to `<ratchetsDirectory>/<desthex>`.
+    ///
+    /// `umsgpack.packb({"ratchet": ratchet, "received": time.time()})` — `Identity.py:424,434`,
+    /// read straight back with `umsgpack.unpackb` at `:493`. The raw key and a float timestamp:
+    /// the reference gates on `len(ratchet_data["ratchet"]) == RATCHETSIZE//8` and does
+    /// arithmetic on `received` (`:494`), so a hex string and an ISO-8601 date — which is what
+    /// the port wrote — fail both.
+    ///
+    /// `bugs/029`'s fifth divergence, and the one that cost the most: this path carries matching
+    /// directory *and* filenames on both sides, so it read as correct in a listing, and both
+    /// implementations *delete* what they cannot parse here (`Identity._clean_ratchets`,
+    /// `:459-462,476`, and `loadKnownRatchets` below). Each side silently destroyed the other's
+    /// forward-secrecy state on the first start after a switch.
     private func persistKnownRatchet(_ ratchet: Data, forDestination hash: Data, receivedAt: Date) {
         guard let dir = ratchetsDirectory else { return }
         try? FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )
-        let url = dir.appendingPathComponent(hash.hexString)
-        let payload: [String: Any] = [
-            "ratchet": ratchet.hexString,
-            "received": ISO8601DateFormatter().string(from: receivedAt),
-        ]
-        if let data = try? JSONSerialization.data(withJSONObject: payload) {
-            try? data.write(to: url, options: .atomic)
-        }
+        let payload = MsgPack.Value.map([
+            (.string("ratchet"), .bytes(ratchet)),
+            (.string("received"), .double(receivedAt.timeIntervalSince1970)),
+        ])
+        try? MsgPack.encode(payload).write(to: dir.appendingPathComponent(hash.hexString),
+                                           options: .atomic)
     }
 
     /// Bulk-load all learned ratchets from `ratchetsDirectory`,
     /// dropping any whose `received` is older than `ratchetExpiry`.
+    ///
+    /// Mirrors `Identity.get_ratchet` (`:487-497`) for the read and `_clean_ratchets`
+    /// (`:452-482`) for the removal of expired and corrupt files.
     public func loadKnownRatchets() {
         guard let dir = ratchetsDirectory,
               let entries = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
         else { return }
         let now = Date()
-        let formatter = ISO8601DateFormatter()
         lock.lock(); defer { lock.unlock() }
         for filename in entries {
             guard let destHash = Data(hex: filename) else { continue }
             let url = dir.appendingPathComponent(filename)
             guard let raw = try? Data(contentsOf: url),
-                  let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
-                  let rHex = obj["ratchet"] as? String,
-                  let rData = Data(hex: rHex),
-                  let recHex = obj["received"] as? String,
-                  let received = formatter.date(from: recHex)
+                  case .map(let pairs)? = try? MsgPack.decode(raw)
+            else {
+                // "Corrupted ratchet data while reading …, removing file" (`Identity.py:459-462`,
+                // unlinked at `:476`). This is also what retires the port's own JSON ratchets on
+                // the first start after `bugs/029`: unlike `paths.json` and its siblings, these
+                // sit at a name the reference *does* use, so leaving them in place would only
+                // leave a file a Python daemon deletes anyway.
+                try? FileManager.default.removeItem(at: url)
+                continue
+            }
+            var fields: [String: MsgPack.Value] = [:]
+            for (key, value) in pairs {
+                if case .string(let name) = key { fields[name] = value }
+            }
+            guard case .bytes(let ratchet)? = fields["ratchet"],
+                  ratchet.count == Constants.ratchetSize,
+                  let receivedAt = fields["received"]?.asDouble
             else {
                 try? FileManager.default.removeItem(at: url)
                 continue
             }
+            let received = Date(timeIntervalSince1970: receivedAt)
             if now.timeIntervalSince(received) > ratchetExpiry {
                 try? FileManager.default.removeItem(at: url)
                 continue
             }
-            knownRatchets[destHash] = rData
+            knownRatchets[destHash] = ratchet
             knownRatchetTimes[destHash] = received
         }
     }
