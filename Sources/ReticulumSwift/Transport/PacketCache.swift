@@ -17,7 +17,8 @@ extension Transport {
 
     private var announcesDirectory: URL? {
         guard let base = cacheDirectory else { return nil }
-        return base.appendingPathComponent("announces")
+        return base.appendingPathComponent(
+            StorageInventory.Entry.announceCache.components.last!)
     }
 
     // MARK: - Write

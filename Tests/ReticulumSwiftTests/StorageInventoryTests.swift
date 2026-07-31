@@ -44,7 +44,7 @@ final class StorageInventoryTests: XCTestCase {
     /// The inventory is only worth having if it is complete, so a declaration with no citation is
     /// as bad as an undeclared literal: it records a name without recording what makes it correct.
     func testEveryDeclarationCitesItsAuthority() {
-        let uncited = StorageInventory.entries.filter { $0.authority.trimmingCharacters(in: .whitespaces).isEmpty }
+        let uncited = StorageInventory.Entry.all.filter { $0.authority.trimmingCharacters(in: .whitespaces).isEmpty }
         XCTAssertTrue(uncited.isEmpty,
                       "\(uncited.count) inventory entr(ies) carry no authority: "
                       + uncited.map(\.relativePath).joined(separator: ", ")
@@ -54,7 +54,7 @@ final class StorageInventoryTests: XCTestCase {
     }
 
     func testNoTwoEntriesResolveToTheSamePath() {
-        let paths = StorageInventory.entries.map(\.relativePath)
+        let paths = StorageInventory.Entry.all.map(\.relativePath)
         XCTAssertEqual(Set(paths).count, paths.count,
                        "two inventory entries resolve to the same path; "
                        + "the inventory must be a set of distinct files")

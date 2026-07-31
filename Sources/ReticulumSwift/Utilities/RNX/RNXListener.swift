@@ -318,8 +318,7 @@ public final class RNXListener {
     /// `<configDir>/storage/identities/rnx`.
     /// Python: `RNS.Reticulum.identitypath+"/"+APP_NAME` — rnx.py:53.
     public static func defaultIdentityURL(configDir: URL) -> URL {
-        configDir.appendingPathComponent("storage")
-            .appendingPathComponent("identities")
+        StorageInventory.url(.identities, in: configDir)
             .appendingPathComponent(RNXApp.identityFileName)
     }
 

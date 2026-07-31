@@ -47,40 +47,73 @@ public enum StorageInventory {
         entry.components.reduce(configDirectory) { $0.appendingPathComponent($1) }
     }
 
-    /// Every distinct path component named by the inventory, for the source guard.
-    public static var declaredComponents: Set<String> {
-        Set(entries.flatMap(\.components))
+    /// Resolve an entry against a storage directory.
+    ///
+    /// ``Reticulum/Configuration/storagePath`` is settable independently of the configuration
+    /// directory — tests point it at a temporary directory, and platforms where two instances
+    /// cannot share a config directory rely on it — so a caller holding only the storage path
+    /// cannot re-derive the configuration directory from it. Traps for an entry that does not
+    /// live under `storage/`: that is a programming error at the call site, not a runtime
+    /// condition.
+    public static func url(_ entry: Entry, storage storagePath: URL) -> URL {
+        precondition(entry.components.first == Entry.storage.relativePath,
+                     "\(entry.relativePath) does not live under storage/; "
+                     + "resolve it with url(_:in:) against the config directory")
+        return entry.components.dropFirst().reduce(storagePath) { $0.appendingPathComponent($1) }
     }
 
-    // MARK: - The inventory
+    /// Every distinct path component named by the inventory, for the source guard.
+    public static var declaredComponents: Set<String> {
+        Set(Entry.all.flatMap(\.components))
+    }
+
+}
+
+// MARK: - The inventory
+
+public extension StorageInventory.Entry {
 
     // The configuration directory itself.
 
     /// `<configdir>/config` — the INI configuration file. Python: `Reticulum.py:245`.
-    public static let config = Entry(["config"], .file, authority: "Reticulum.py:245")
+    static let config = StorageInventory.Entry(
+        ["config"], .file,
+        authority: "Reticulum.py:245"
+    )
 
     /// `<configdir>/storage`. Python: `Reticulum.py:246`.
-    public static let storage = Entry(["storage"], .directory, authority: "Reticulum.py:246")
+    static let storage = StorageInventory.Entry(
+        ["storage"], .directory,
+        authority: "Reticulum.py:246"
+    )
 
     /// `<configdir>/interfaces` — external interface modules. Python: `Reticulum.py:252`.
-    public static let interfaceModules = Entry(["interfaces"], .directory,
-                                               authority: "Reticulum.py:252")
+    static let interfaceModules = StorageInventory.Entry(
+        ["interfaces"], .directory,
+        authority: "Reticulum.py:252"
+    )
 
     // Identity material.
 
     /// `storage/identity` — this node's primary identity. Python: `Identity.to_file` /
     /// `Reticulum.py` identity handling.
-    public static let identity = Entry(["storage", "identity"], .file,
-                                       authority: "Identity.py:to_file / from_file")
+    static let identity = StorageInventory.Entry(
+        ["storage", "identity"], .file,
+        authority: "Identity.py:to_file / from_file"
+    )
 
     /// `storage/transport_identity` — the transport identity, loaded at `Transport.start` and
     /// created if absent. Python: `Transport.py:223-231`.
-    public static let transportIdentity = Entry(["storage", "transport_identity"], .file,
-                                                authority: "Transport.py:223-231")
+    static let transportIdentity = StorageInventory.Entry(
+        ["storage", "transport_identity"], .file,
+        authority: "Transport.py:223-231"
+    )
 
     /// `storage/ratchets` — per-destination ratchet files. Python: `Identity.py:293,426,453,487`.
-    public static let ratchets = Entry(["storage", "ratchets"], .directory,
-                                       authority: "Identity.py:293,426,453,487")
+    static let ratchets = StorageInventory.Entry(
+        ["storage", "ratchets"], .directory,
+        authority: "Identity.py:293,426,453,487"
+    )
 
     /// `storage/identity.ratchets` — this node's own ratchet set.
     ///
@@ -88,36 +121,48 @@ public enum StorageInventory {
     /// destination hash, and has no separate file for the local identity's. Declared as a
     /// divergence pending the comparison in task 3.1 rather than left implicit — an undocumented
     /// divergence is the one outcome `bugs/029` rules out.
-    public static let identityRatchets = Entry(["storage", "identity.ratchets"], .file,
-                                               authority: "port-only, pending audit — see bugs/029 §3.1")
+    static let identityRatchets = StorageInventory.Entry(
+        ["storage", "identity.ratchets"], .file,
+        authority: "port-only, pending audit — see bugs/029 §3.1"
+    )
 
     // Routing state. These four are `bugs/029`: the reference's names and encodings.
 
     /// `storage/known_destinations` — umsgpack dict, hash → 5-element list.
     /// Python: `Identity.py:198` (write), `:220` (read).
-    public static let knownDestinations = Entry(["storage", "known_destinations"], .file,
-                                                authority: "Identity.py:198,220")
+    static let knownDestinations = StorageInventory.Entry(
+        ["storage", "known_destinations"], .file,
+        authority: "Identity.py:198,220"
+    )
 
     /// `storage/destination_table` — umsgpack list of 8-element entries.
     /// Python: `Transport.py:3405-3408` (write), `:307-360` (read).
-    public static let destinationTable = Entry(["storage", "destination_table"], .file,
-                                               authority: "Transport.py:3405-3408,307-360")
+    static let destinationTable = StorageInventory.Entry(
+        ["storage", "destination_table"], .file,
+        authority: "Transport.py:3405-3408,307-360"
+    )
 
     /// `storage/tunnels` — umsgpack list of 4-element entries.
     /// Python: `Transport.py:3490-3493` (write), `:368-405` (read).
-    public static let tunnels = Entry(["storage", "tunnels"], .file,
-                                      authority: "Transport.py:3490-3493,368-405")
+    static let tunnels = StorageInventory.Entry(
+        ["storage", "tunnels"], .file,
+        authority: "Transport.py:3490-3493,368-405"
+    )
 
     /// `storage/packet_hashlist.raw` — raw concatenated 32-byte hashes.
     /// Python: `Transport.py:3314-3316` (write), `:242-251` (read).
-    public static let packetHashlist = Entry(["storage", "packet_hashlist.raw"], .file,
-                                             authority: "Transport.py:3314-3316,242-251")
+    static let packetHashlist = StorageInventory.Entry(
+        ["storage", "packet_hashlist.raw"], .file,
+        authority: "Transport.py:3314-3316,242-251"
+    )
 
     // Caches.
 
     /// `storage/cache`. Python: `Reticulum.py:247`.
-    public static let cache = Entry(["storage", "cache"], .directory,
-                                    authority: "Reticulum.py:247")
+    static let cache = StorageInventory.Entry(
+        ["storage", "cache"], .directory,
+        authority: "Reticulum.py:247"
+    )
 
     /// `storage/cache/announces` — one file per cached announce, keyed by full packet hash in
     /// lowercase hex, holding umsgpack `[raw, interface_name]`.
@@ -125,29 +170,41 @@ public enum StorageInventory {
     ///
     /// Path-table restore depends on this: the reference discards any `destination_table` entry
     /// whose announce cannot be loaded (`Transport.py:334-345`).
-    public static let announceCache = Entry(["storage", "cache", "announces"], .directory,
-                                            authority: "Transport.py:2646-2657,2663-2690")
+    static let announceCache = StorageInventory.Entry(
+        ["storage", "cache", "announces"], .directory,
+        authority: "Transport.py:2646-2657,2663-2690"
+    )
 
     /// `storage/resources` — in-progress resource transfers. Python: `Reticulum.py:248`.
-    public static let resources = Entry(["storage", "resources"], .directory,
-                                        authority: "Reticulum.py:248")
+    static let resources = StorageInventory.Entry(
+        ["storage", "resources"], .directory,
+        authority: "Reticulum.py:248"
+    )
 
     /// `storage/identities` — identities held by the utilities (`rncp`, `rnx`).
-    public static let identities = Entry(["storage", "identities"], .directory,
-                                         authority: "rncp/rnx identity store, RNS utilities")
+    static let identities = StorageInventory.Entry(
+        ["storage", "identities"], .directory,
+        authority: "rncp/rnx identity store, RNS utilities"
+    )
 
     /// `storage/blackhole` — a *directory* in the reference, created with `os.makedirs`.
     /// Python: `Reticulum.py:250,324`.
-    public static let blackhole = Entry(["storage", "blackhole"], .directory,
-                                        authority: "Reticulum.py:250,324")
+    static let blackhole = StorageInventory.Entry(
+        ["storage", "blackhole"], .directory,
+        authority: "Reticulum.py:250,324"
+    )
 
     /// `storage/blackhole/local` — the locally-maintained blackhole list.
-    public static let blackholeLocal = Entry(["storage", "blackhole", "local"], .file,
-                                             authority: "Reticulum.py:250,324 (contents of the directory)")
+    static let blackholeLocal = StorageInventory.Entry(
+        ["storage", "blackhole", "local"], .file,
+        authority: "Reticulum.py:250,324 (contents of the directory)"
+    )
 
     /// `storage/blackhole/local.tmp` — the atomic-replace temporary for the above.
-    public static let blackholeLocalTemp = Entry(["storage", "blackhole", "local.tmp"], .file,
-                                                 authority: "port-only: atomic write temporary for blackholeLocal")
+    static let blackholeLocalTemp = StorageInventory.Entry(
+        ["storage", "blackhole", "local.tmp"], .file,
+        authority: "port-only: atomic write temporary for blackholeLocal"
+    )
 
     // Interface discovery.
 
@@ -155,14 +212,18 @@ public enum StorageInventory {
     ///
     /// Port-only: RNS 1.4.x interface discovery keeps discovered peers in the config file, not in
     /// a separate store. Declared pending the comparison in task 3.4.
-    public static let discovery = Entry(["storage", "discovery"], .directory,
-                                        authority: "port-only, pending audit — see bugs/029 §3.4")
+    static let discovery = StorageInventory.Entry(
+        ["storage", "discovery"], .directory,
+        authority: "port-only, pending audit — see bugs/029 §3.4"
+    )
 
     /// `storage/discovery/interfaces` — discovered interface records.
-    public static let discoveredInterfaces = Entry(["storage", "discovery", "interfaces"], .directory,
-                                                   authority: "port-only, pending audit — see bugs/029 §3.4")
+    static let discoveredInterfaces = StorageInventory.Entry(
+        ["storage", "discovery", "interfaces"], .directory,
+        authority: "port-only, pending audit — see bugs/029 §3.4"
+    )
 
-    public static let entries: [Entry] = [
+    static let all: [StorageInventory.Entry] = [
         config, storage, interfaceModules,
         identity, transportIdentity, ratchets, identityRatchets,
         knownDestinations, destinationTable, tunnels, packetHashlist,

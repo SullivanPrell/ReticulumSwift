@@ -130,10 +130,7 @@ if let level = Reticulum.LogLevel(rawValue: RNStatusApp.baseLogLevel + verbosity
 
 if discoveredMode {
     let storage = InstanceConnection.storagePath(for: connection.configDirectory)
-    let discoveryPath = storage
-        .appendingPathComponent("discovery")
-        .appendingPathComponent("interfaces")
-        .path
+    let discoveryPath = StorageInventory.url(.discoveredInterfaces, storage: storage).path
     let discovery = InterfaceDiscovery(storagePath: discoveryPath)
 
     func renderDiscovered() -> String {

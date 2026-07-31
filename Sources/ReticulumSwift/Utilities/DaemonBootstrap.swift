@@ -46,16 +46,18 @@ public enum DaemonBootstrap {
 
         public init(configDir: URL) {
             self.configDir = configDir
-            self.configFile = configDir.appendingPathComponent("config")
-            let storage = configDir.appendingPathComponent("storage")
+            // Every path resolves through `StorageInventory` — the one place that names the
+            // files we persist. `rnsd` bootstraps here rather than through `Reticulum`, so a
+            // second set of literals in this file is a second place for bugs/029 to happen.
+            self.configFile = StorageInventory.url(.config, in: configDir)
+            let storage = StorageInventory.url(.storage, in: configDir)
             self.storage = storage
-            let cache = storage.appendingPathComponent("cache")
-            self.cache = cache
-            self.announceCache = cache.appendingPathComponent("announces")
-            self.resources = storage.appendingPathComponent("resources")
-            self.identities = storage.appendingPathComponent("identities")
-            self.blackhole = storage.appendingPathComponent("blackhole")
-            self.interfaces = configDir.appendingPathComponent("interfaces")
+            self.cache = StorageInventory.url(.cache, in: configDir)
+            self.announceCache = StorageInventory.url(.announceCache, in: configDir)
+            self.resources = StorageInventory.url(.resources, in: configDir)
+            self.identities = StorageInventory.url(.identities, in: configDir)
+            self.blackhole = StorageInventory.url(.blackhole, in: configDir)
+            self.interfaces = StorageInventory.url(.interfaceModules, in: configDir)
             self.logFile = configDir.appendingPathComponent(RNSDApp.logFileName)
             self.rotatedLogFile = configDir
                 .appendingPathComponent(RNSDApp.logFileName + RNSDApp.rotatedLogSuffix)
@@ -272,6 +274,6 @@ public enum DaemonBootstrap {
         try? reticulum.transport
             .savePacketHashlist(to: storage.appendingPathComponent("packet_hashlist"))
         try? reticulum.transport
-            .persistBlacklist(toDirectory: storage.appendingPathComponent("blackhole"))
+            .persistBlacklist(toDirectory: StorageInventory.url(.blackhole, storage: storage))
     }
 }

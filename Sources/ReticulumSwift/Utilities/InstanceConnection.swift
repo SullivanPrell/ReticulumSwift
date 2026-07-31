@@ -170,24 +170,24 @@ public final class InstanceConnection {
                                               fileManager: FileManager) -> URL {
         if let explicit { return explicit }
 
-        if fileManager.fileExists(atPath: systemConfigDir.appendingPathComponent("config").path) {
+        if fileManager.fileExists(atPath: StorageInventory.url(.config, in: systemConfigDir).path) {
             return systemConfigDir
         }
 
         let xdg = home.appendingPathComponent(".config/reticulum")
-        if fileManager.fileExists(atPath: xdg.appendingPathComponent("config").path) { return xdg }
+        if fileManager.fileExists(atPath: StorageInventory.url(.config, in: xdg).path) { return xdg }
 
         return home.appendingPathComponent(".reticulum")
     }
 
     /// `<configdir>/storage`. Python: `Reticulum.storagepath`.
     public static func storagePath(for configDirectory: URL) -> URL {
-        configDirectory.appendingPathComponent("storage")
+        StorageInventory.url(.storage, in: configDirectory)
     }
 
     /// `<configdir>/config`. Python: `Reticulum.configpath`.
     public static func configPath(for configDirectory: URL) -> URL {
-        configDirectory.appendingPathComponent("config")
+        StorageInventory.url(.config, in: configDirectory)
     }
 
     // MARK: - Attach

@@ -562,8 +562,8 @@ public final class Reticulum {
     /// Convenience: init from a config directory path (mirrors Python's
     /// `RNS.Reticulum(configdir=...)` pattern).
     public static func fromConfigDir(_ configDir: URL) -> Reticulum {
-        let storagePath = configDir.appendingPathComponent("storage")
-        let configPath = configDir.appendingPathComponent("config")
+        let storagePath = StorageInventory.url(.storage, in: configDir)
+        let configPath = StorageInventory.url(.config, in: configDir)
         return Reticulum(configuration: Configuration(
             storagePath: storagePath,
             configPath: configPath
@@ -605,14 +605,16 @@ public final class Reticulum {
         case missingIdentity
     }
 
+    // Every persisted path resolves through `StorageInventory`, which is the one place that
+    // names them and cites the Python file:line each name mirrors (bugs/029).
     private var identityURL: URL {
-        configuration.storagePath.appendingPathComponent("identity")
+        StorageInventory.url(.identity, storage: configuration.storagePath)
     }
     private var ratchetsURL: URL {
-        configuration.storagePath.appendingPathComponent("identity.ratchets")
+        StorageInventory.url(.identityRatchets, storage: configuration.storagePath)
     }
     private var transportIDURL: URL {
-        configuration.storagePath.appendingPathComponent("transport_identity")
+        StorageInventory.url(.transportIdentity, storage: configuration.storagePath)
     }
     private var knownDestinationsURL: URL {
         configuration.storagePath.appendingPathComponent("known_destinations.json")
@@ -667,12 +669,13 @@ public final class Reticulum {
             transport.localHopsDelta = UInt8.random(in: 2...7)
         }
 
-        transport.ratchetsDirectory = configuration.storagePath
-            .appendingPathComponent("ratchets")
+        transport.ratchetsDirectory = StorageInventory.url(
+            .ratchets, storage: configuration.storagePath)
 
         // Set cache directory for disk-based packet (announce) cache.
         // Mirrors Python's `RNS.Reticulum.cachepath`.
-        transport.cacheDirectory = configuration.storagePath.appendingPathComponent("cache")
+        transport.cacheDirectory = StorageInventory.url(
+            .cache, storage: configuration.storagePath)
 
         // Restore path table, dropping any expired entries.
         let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
@@ -696,7 +699,7 @@ public final class Reticulum {
 
         // Load blackhole list from directory (mirrors Python's Transport.reload_blackhole()).
         // Allows external sources listed in Reticulum.blackhole_sources().
-        let blackholePath = configuration.storagePath.appendingPathComponent("blackhole")
+        let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
         try? transport.reloadBlacklist(fromDirectory: blackholePath,
                                        allowedSources: Reticulum.blackholeSources())
 
@@ -707,10 +710,8 @@ public final class Reticulum {
         // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
         if let parsedCfg = config, parsedCfg.reticulum.discoverInterfaces,
            let validator = configuration.discoveryStampValidator {
-            let discoveryPath = configuration.storagePath
-                .appendingPathComponent("discovery")
-                .appendingPathComponent("interfaces")
-                .path
+            let discoveryPath = StorageInventory.url(
+                .discoveredInterfaces, storage: configuration.storagePath).path
             transport.discoverInterfaces(
                 storagePath: discoveryPath,
                 requiredValue: Reticulum.requiredDiscoveryValue(),
@@ -760,7 +761,7 @@ public final class Reticulum {
         let hashlistURL = configuration.storagePath.appendingPathComponent("packet_hashlist")
         try? transport.savePacketHashlist(to: hashlistURL)
         // Persist blackhole list (own entries only, mirrors Python's Transport.persist_blackhole()).
-        let blackholePath = configuration.storagePath.appendingPathComponent("blackhole")
+        let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
         try? transport.persistBlacklist(toDirectory: blackholePath)
     }
 
@@ -1226,8 +1227,7 @@ public final class Reticulum {
         // Default: one level above storagePath, matching Python's layout
         // (<configdir>/storage ↔ <configdir>/config).
         let parent = configuration.storagePath.deletingLastPathComponent()
-        let candidate = parent.appendingPathComponent("config")
-        return candidate
+        return StorageInventory.url(.config, in: parent)
     }
 
     private func applyConfig(_ cfg: ReticulumConfig) {
