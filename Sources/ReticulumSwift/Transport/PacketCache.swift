@@ -7,10 +7,12 @@ import Foundation
 /// `Transport.clean_announce_cache()`.
 ///
 /// Storage layout (under `Transport.cacheDirectory`):
-///   announces/<32-byte-hash-hex>   — JSON {"rawHex": "...", "interfaceName": "..." | null}
+///   announces/<32-byte-hash-hex>   — umsgpack [raw, interface_name | nil]
 ///
-/// The announce packet is stored with its raw bytes and the receiving interface name so
-/// that it can be reconstructed with the interface reference on restore.
+/// The encoding is the reference's, byte for byte (`Transport.py:2646-2657`): a Python daemon
+/// must be able to read what this writes, because a path table entry names its announce by
+/// hash and the reference discards any entry whose announce it cannot load (`:334-345`).
+/// Storing the receiving interface's name is what lets a restored packet say where it came from.
 extension Transport {
 
     // MARK: - Announces subdirectory
@@ -35,9 +37,13 @@ extension Transport {
         let hexName = hash.hexString
         let raw = try packet.pack()
 
-        let entry = CachedAnnounceEntry(rawHex: raw.hexString, interfaceName: receivingInterfaceName)
-        let data = try JSONEncoder().encode(entry)
-        try data.write(to: dir.appendingPathComponent(hexName), options: .atomic)
+        // `umsgpack.packb([packet.raw, interface_reference])` — Transport.py:2655. A packet with
+        // no receiving interface stores None, not a placeholder (:2650-2651).
+        let entry = MsgPack.Value.array([
+            .bytes(raw),
+            receivingInterfaceName.map(MsgPack.Value.string) ?? .nil,
+        ])
+        try MsgPack.encode(entry).write(to: dir.appendingPathComponent(hexName), options: .atomic)
     }
 
     // MARK: - Read
@@ -51,9 +57,21 @@ extension Transport {
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
 
         let data = try Data(contentsOf: file)
-        let entry = try JSONDecoder().decode(CachedAnnounceEntry.self, from: data)
-        guard let raw = Data(hex: entry.rawHex) else { return nil }
-        return try Packet.unpack(raw)
+        guard case .array(let fields) = try MsgPack.decode(data), fields.count == 2,
+              case .bytes(let raw) = fields[0] else { return nil }
+
+        var packet = try Packet.unpack(raw)
+
+        // Resolve the stored reference back to a live interface, as Python does at
+        // `Transport.py:2680-2683`. A name matching nothing leaves the packet without an
+        // interface — the reference's loop simply finds no match.
+        if case .string(let interfaceName) = fields[1] {
+            lock.lock()
+            let match = interfaces.first { $0.name == interfaceName }
+            lock.unlock()
+            packet.receivingInterface = match
+        }
+        return packet
     }
 
     // MARK: - Clean
@@ -131,11 +149,5 @@ extension Transport {
         }
     }
 
-    // MARK: - Codable helper
-
-    private struct CachedAnnounceEntry: Codable {
-        let rawHex: String
-        let interfaceName: String?
-    }
 }
 
