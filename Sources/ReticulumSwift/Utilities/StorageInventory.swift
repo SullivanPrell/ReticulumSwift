@@ -24,23 +24,60 @@ public enum StorageInventory {
         case directory
     }
 
+    /// Why a name is correct.
+    ///
+    /// Typed rather than a free-text note, so a test can ask which entries the reference backs
+    /// and which are ours. `bugs/029`'s conclusion is that the one indefensible position is a
+    /// divergence nobody wrote down — and a divergence recorded in prose nothing can read is
+    /// barely better.
+    public enum Authority {
+        /// The Python `file:line` this name and encoding mirror.
+        case reference(String)
+        /// A path the reference has no counterpart for, and why it exists anyway.
+        case portOnly(reason: String)
+
+        public var citation: String {
+            switch self {
+            case .reference(let cite): return cite
+            case .portOnly(let reason): return "port-only: \(reason)"
+            }
+        }
+
+        public var isPortOnly: Bool {
+            if case .portOnly = self { return true }
+            return false
+        }
+    }
+
     public struct Entry {
         /// Path components relative to the configuration directory.
         public let components: [String]
         public let kind: Kind
         /// Why this name is correct: the Python `file:line` it mirrors, or an explicit statement
-        /// that it is port-only and the reason. `bugs/029`'s conclusion is that the one
-        /// indefensible position is a divergence nobody wrote down.
-        public let authority: String
+        /// that it is port-only and the reason.
+        public let authority: Authority
 
         public var relativePath: String { components.joined(separator: "/") }
 
-        public init(_ components: [String], _ kind: Kind, authority: String) {
+        public init(_ components: [String], _ kind: Kind, authority: Authority) {
             self.components = components
             self.kind = kind
             self.authority = authority
         }
     }
+
+    /// Names the port used before `bugs/029` brought these files to the reference's.
+    ///
+    /// They are orphans: not read, not written, not deleted. A daemon upgrading past `029` leaves
+    /// them on disk and starts these three structures empty, which is exactly what the reference
+    /// does when it does not find its own files (`Identity.py:238-240`, `Transport.py:243`). They
+    /// are listed here so the guard can assert they are never created again, and so the CHANGELOG
+    /// and the operator have one place naming what is safe to delete.
+    public static let preParityOrphans = [
+        "paths.json",
+        "known_destinations.json",
+        "packet_hashlist",
+    ]
 
     /// Resolve an entry against a configuration directory.
     public static func url(_ entry: Entry, in configDirectory: URL) -> URL {
@@ -78,19 +115,19 @@ public extension StorageInventory.Entry {
     /// `<configdir>/config` — the INI configuration file. Python: `Reticulum.py:245`.
     static let config = StorageInventory.Entry(
         ["config"], .file,
-        authority: "Reticulum.py:245"
+        authority: .reference("Reticulum.py:245")
     )
 
     /// `<configdir>/storage`. Python: `Reticulum.py:246`.
     static let storage = StorageInventory.Entry(
         ["storage"], .directory,
-        authority: "Reticulum.py:246"
+        authority: .reference("Reticulum.py:246")
     )
 
     /// `<configdir>/interfaces` — external interface modules. Python: `Reticulum.py:252`.
     static let interfaceModules = StorageInventory.Entry(
         ["interfaces"], .directory,
-        authority: "Reticulum.py:252"
+        authority: .reference("Reticulum.py:252")
     )
 
     // Identity material.
@@ -99,20 +136,20 @@ public extension StorageInventory.Entry {
     /// `Reticulum.py` identity handling.
     static let identity = StorageInventory.Entry(
         ["storage", "identity"], .file,
-        authority: "Identity.py:to_file / from_file"
+        authority: .reference("Identity.py:to_file / from_file")
     )
 
     /// `storage/transport_identity` — the transport identity, loaded at `Transport.start` and
     /// created if absent. Python: `Transport.py:223-231`.
     static let transportIdentity = StorageInventory.Entry(
         ["storage", "transport_identity"], .file,
-        authority: "Transport.py:223-231"
+        authority: .reference("Transport.py:223-231")
     )
 
     /// `storage/ratchets` — per-destination ratchet files. Python: `Identity.py:293,426,453,487`.
     static let ratchets = StorageInventory.Entry(
         ["storage", "ratchets"], .directory,
-        authority: "Identity.py:293,426,453,487"
+        authority: .reference("Identity.py:293,426,453,487")
     )
 
     /// `storage/identity.ratchets` — this node's own ratchet set.
@@ -123,7 +160,7 @@ public extension StorageInventory.Entry {
     /// divergence is the one outcome `bugs/029` rules out.
     static let identityRatchets = StorageInventory.Entry(
         ["storage", "identity.ratchets"], .file,
-        authority: "port-only, pending audit — see bugs/029 §3.1"
+        authority: .portOnly(reason: "see bugs/029 §3.1")  // pending audit
     )
 
     // Routing state. These four are `bugs/029`: the reference's names and encodings.
@@ -132,28 +169,28 @@ public extension StorageInventory.Entry {
     /// Python: `Identity.py:198` (write), `:220` (read).
     static let knownDestinations = StorageInventory.Entry(
         ["storage", "known_destinations"], .file,
-        authority: "Identity.py:198,220"
+        authority: .reference("Identity.py:198,220")
     )
 
     /// `storage/destination_table` — umsgpack list of 8-element entries.
     /// Python: `Transport.py:3405-3408` (write), `:307-360` (read).
     static let destinationTable = StorageInventory.Entry(
         ["storage", "destination_table"], .file,
-        authority: "Transport.py:3405-3408,307-360"
+        authority: .reference("Transport.py:3405-3408,307-360")
     )
 
     /// `storage/tunnels` — umsgpack list of 4-element entries.
     /// Python: `Transport.py:3490-3493` (write), `:368-405` (read).
     static let tunnels = StorageInventory.Entry(
         ["storage", "tunnels"], .file,
-        authority: "Transport.py:3490-3493,368-405"
+        authority: .reference("Transport.py:3490-3493,368-405")
     )
 
     /// `storage/packet_hashlist.raw` — raw concatenated 32-byte hashes.
     /// Python: `Transport.py:3314-3316` (write), `:242-251` (read).
     static let packetHashlist = StorageInventory.Entry(
         ["storage", "packet_hashlist.raw"], .file,
-        authority: "Transport.py:3314-3316,242-251"
+        authority: .reference("Transport.py:3314-3316,242-251")
     )
 
     // Caches.
@@ -161,7 +198,7 @@ public extension StorageInventory.Entry {
     /// `storage/cache`. Python: `Reticulum.py:247`.
     static let cache = StorageInventory.Entry(
         ["storage", "cache"], .directory,
-        authority: "Reticulum.py:247"
+        authority: .reference("Reticulum.py:247")
     )
 
     /// `storage/cache/announces` — one file per cached announce, keyed by full packet hash in
@@ -172,38 +209,42 @@ public extension StorageInventory.Entry {
     /// whose announce cannot be loaded (`Transport.py:334-345`).
     static let announceCache = StorageInventory.Entry(
         ["storage", "cache", "announces"], .directory,
-        authority: "Transport.py:2646-2657,2663-2690"
+        authority: .reference("Transport.py:2646-2657,2663-2690")
     )
 
     /// `storage/resources` — in-progress resource transfers. Python: `Reticulum.py:248`.
     static let resources = StorageInventory.Entry(
         ["storage", "resources"], .directory,
-        authority: "Reticulum.py:248"
+        authority: .reference("Reticulum.py:248")
     )
 
-    /// `storage/identities` — identities held by the utilities (`rncp`, `rnx`).
+    /// `storage/identities` — `Reticulum.identitypath`, the identity store the utilities
+    /// (`rncp`, `rnx`) keep their keys in.
     static let identities = StorageInventory.Entry(
         ["storage", "identities"], .directory,
-        authority: "rncp/rnx identity store, RNS utilities"
+        authority: .reference("Reticulum.py:249,320")
     )
 
     /// `storage/blackhole` — a *directory* in the reference, created with `os.makedirs`.
     /// Python: `Reticulum.py:250,324`.
     static let blackhole = StorageInventory.Entry(
         ["storage", "blackhole"], .directory,
-        authority: "Reticulum.py:250,324"
+        authority: .reference("Reticulum.py:250,324")
     )
 
-    /// `storage/blackhole/local` — the locally-maintained blackhole list.
+    /// `storage/blackhole/local` — this node's own blackhole entries, umsgpack. The rest of the
+    /// directory is one file per remote source, named by its identity hash (`Discovery.py:794`,
+    /// read at `Transport.py:3579-3589`).
     static let blackholeLocal = StorageInventory.Entry(
         ["storage", "blackhole", "local"], .file,
-        authority: "Reticulum.py:250,324 (contents of the directory)"
+        authority: .reference("Transport.py:3652-3657")
     )
 
-    /// `storage/blackhole/local.tmp` — the atomic-replace temporary for the above.
+    /// `storage/blackhole/local.tmp` — the write-then-rename temporary for the above. The
+    /// reference's own name: `tmppath = f"{localpath}.tmp"`.
     static let blackholeLocalTemp = StorageInventory.Entry(
         ["storage", "blackhole", "local.tmp"], .file,
-        authority: "port-only: atomic write temporary for blackholeLocal"
+        authority: .reference("Transport.py:3654-3657")
     )
 
     // Interface discovery.
@@ -214,13 +255,13 @@ public extension StorageInventory.Entry {
     /// a separate store. Declared pending the comparison in task 3.4.
     static let discovery = StorageInventory.Entry(
         ["storage", "discovery"], .directory,
-        authority: "port-only, pending audit — see bugs/029 §3.4"
+        authority: .portOnly(reason: "see bugs/029 §3.4")  // pending audit
     )
 
     /// `storage/discovery/interfaces` — discovered interface records.
     static let discoveredInterfaces = StorageInventory.Entry(
         ["storage", "discovery", "interfaces"], .directory,
-        authority: "port-only, pending audit — see bugs/029 §3.4"
+        authority: .portOnly(reason: "see bugs/029 §3.4")  // pending audit
     )
 
     static let all: [StorageInventory.Entry] = [
