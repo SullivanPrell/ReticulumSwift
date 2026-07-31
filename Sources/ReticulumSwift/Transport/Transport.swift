@@ -3955,28 +3955,52 @@ public final class Transport {
 
     // MARK: - Packet hashlist persistence
 
-    /// Persist the current packet hashlist to disk.
-    /// Mirrors Python's `Transport.save_packet_hashlist()`.
+    /// Persist the current packet hashlist to `storage/packet_hashlist.raw`.
+    ///
+    /// `for packet_hash in Transport.packet_hashlist.copy(): file.write(packet_hash)` —
+    /// `Transport.py:3315-3323`. The hashes themselves, concatenated: no delimiters, no length
+    /// prefix, no encoding. The reader recovers records by fixed width, so the framing *is* the
+    /// hash length.
     public func savePacketHashlist(to url: URL) throws {
         hashlistLock.lock()
         let snapshot = packetHashlist.union(packetHashlistPrev)
         hashlistLock.unlock()
-        let hexList = snapshot.map { $0.hexString }
-        let data = try JSONEncoder().encode(hexList)
-        try data.write(to: url, options: .atomic)
+        var raw = Data()
+        raw.reserveCapacity(snapshot.count * Constants.fullHashLength)
+        var skipped = 0
+        for hash in snapshot {
+            // A record of the wrong width is not a short record, it is a shifted file: every
+            // hash after it decodes as two halves of its neighbours. The live filter only ever
+            // inserts `fullHash(hashablePart())`, so this cannot fire from the network — but it
+            // is reported rather than dropped in silence, since a silent drop here reads on disk
+            // exactly like a hashlist that was simply smaller.
+            guard hash.count == Constants.fullHashLength else { skipped += 1; continue }
+            raw.append(hash)
+        }
+        if skipped > 0 {
+            Reticulum.log("Skipped \(skipped) packet hashlist entr(ies) that are not "
+                          + "\(Constants.fullHashLength) bytes; the file is framed by hash "
+                          + "length alone (Transport.py:3323)", level: .error)
+        }
+        try raw.write(to: url, options: .atomic)
     }
 
     /// Load a previously persisted packet hashlist and merge into the current set.
-    /// Mirrors Python's hashlist loading in `Transport.__init__`.
-    /// A missing file is silently ignored.
+    ///
+    /// `packet_hash = file.read(hashlen); if len(packet_hash) == hashlen: add … else: done`
+    /// (`Transport.py:246-250`) — fixed-width records until a short read ends the file, so a
+    /// torn write gives up its trailing partial record and keeps everything before it. A missing
+    /// file is silently ignored, as `:244`'s `isfile` gate does.
     public func loadPacketHashlist(from url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
-        let data = try Data(contentsOf: url)
-        let hexList = try JSONDecoder().decode([String].self, from: data)
+        let raw = try Data(contentsOf: url)
         hashlistLock.lock()
         defer { hashlistLock.unlock() }
-        for hex in hexList {
-            if let h = Data(hex: hex) { packetHashlist.insert(h) }
+        var cursor = raw.startIndex
+        while raw.distance(from: cursor, to: raw.endIndex) >= Constants.fullHashLength {
+            let next = raw.index(cursor, offsetBy: Constants.fullHashLength)
+            packetHashlist.insert(Data(raw[cursor..<next]))
+            cursor = next
         }
     }
 

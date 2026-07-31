@@ -271,11 +271,8 @@ public enum DaemonBootstrap {
             .write(to: StorageInventory.url(.destinationTable, storage: storage))
         try? reticulum.transport
             .saveKnownDestinations(to: StorageInventory.url(.knownDestinations, storage: storage))
-        // Still the port's name and codec: a reference filename holding a port-format payload is
-        // the one state worse than a port filename, so it is renamed together with its codec
-        // (task 2.6), not ahead of it.
         try? reticulum.transport
-            .savePacketHashlist(to: storage.appendingPathComponent("packet_hashlist"))
+            .savePacketHashlist(to: StorageInventory.url(.packetHashlist, storage: storage))
         try? reticulum.transport
             .persistBlacklist(toDirectory: StorageInventory.url(.blackhole, storage: storage))
     }

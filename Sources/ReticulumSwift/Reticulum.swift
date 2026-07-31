@@ -705,7 +705,8 @@ public final class Reticulum {
 
         // Restore packet hashlist for replay prevention across restarts.
         // Mirrors Python's hashlist loading in Transport.__init__.
-        let hashlistURL = configuration.storagePath.appendingPathComponent("packet_hashlist")
+        let hashlistURL = StorageInventory.url(.packetHashlist,
+                                               storage: configuration.storagePath)
         try? transport.loadPacketHashlist(from: hashlistURL)
 
         // Load blackhole list from directory (mirrors Python's Transport.reload_blackhole()).
@@ -770,7 +771,8 @@ public final class Reticulum {
         // Persist known destinations (mirrors Python's Identity.save_known_destinations).
         try? transport.saveKnownDestinations(to: knownDestinationsURL)
         // Persist packet hashlist for replay prevention across restarts.
-        let hashlistURL = configuration.storagePath.appendingPathComponent("packet_hashlist")
+        let hashlistURL = StorageInventory.url(.packetHashlist,
+                                               storage: configuration.storagePath)
         try? transport.savePacketHashlist(to: hashlistURL)
         // Persist blackhole list (own entries only, mirrors Python's Transport.persist_blackhole()).
         let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)

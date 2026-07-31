@@ -111,7 +111,9 @@ final class TransportPersistenceTests: XCTestCase {
         let rns1 = Reticulum(configuration: .init(storagePath: dir))
         try rns1.start()
 
-        let fakeHash = Hashes.randomHash()
+        // The full 32 bytes the live filter stores; the reference's file is framed
+        // by nothing but the hash length (`Transport.py:3323`).
+        let fakeHash = Hashes.fullHash(Hashes.randomHash())
         rns1.transport.testInsertPacketHash(fakeHash)
         XCTAssertTrue(rns1.transport.testContainsPacketHash(fakeHash),
                       "hash must be present before stop")

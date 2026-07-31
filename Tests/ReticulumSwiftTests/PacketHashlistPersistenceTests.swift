@@ -3,6 +3,13 @@ import XCTest
 
 /// Tests for Transport packet hashlist persistence.
 /// Mirrors Python's `Transport.save_packet_hashlist()` / loading in `__init__`.
+///
+/// Hashes here are the full 32 bytes the live filter stores —
+/// `Hashes.fullHash(packet.hashablePart())`, mirroring Python's `packet.packet_hash`. They used
+/// to be 16, a width no production path produces, and the port's hex-JSON codec round-tripped it
+/// happily. The reference's file has no framing but the hash length (`Transport.py:3323`,
+/// `:246-250`), so a wrong-width record is not a record at all — which is exactly why the format
+/// and the width had to be fixed together (`bugs/029`).
 final class PacketHashlistPersistenceTests: XCTestCase {
 
     private var tmpDir: URL!
@@ -23,10 +30,11 @@ final class PacketHashlistPersistenceTests: XCTestCase {
 
     func testSaveAndLoadRoundTrip() throws {
         let t = Transport()
-        let hashes = (0..<10).map { _ in Data((0..<16).map { _ in UInt8.random(in: 0...255) }) }
+        let hashes = (0..<10).map { _ in Hashes.fullHash(Hashes.randomHash()) }
         for h in hashes { t.testInsertPacketHash(h) }
 
-        let url = tmpDir.appendingPathComponent("packet_hashlist")
+        let url = tmpDir.appendingPathComponent(
+            StorageInventory.Entry.packetHashlist.components.last!)
         try t.savePacketHashlist(to: url)
 
         let t2 = Transport()
@@ -41,10 +49,11 @@ final class PacketHashlistPersistenceTests: XCTestCase {
 
     func testDuplicatePacketRejectedAfterLoad() throws {
         let t = Transport()
-        let h = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+        let h = Hashes.fullHash(Hashes.randomHash())
         t.testInsertPacketHash(h)
 
-        let url = tmpDir.appendingPathComponent("packet_hashlist")
+        let url = tmpDir.appendingPathComponent(
+            StorageInventory.Entry.packetHashlist.components.last!)
         try t.savePacketHashlist(to: url)
 
         let t2 = Transport()
@@ -61,7 +70,7 @@ final class PacketHashlistPersistenceTests: XCTestCase {
         let url = tmpDir.appendingPathComponent("nonexistent")
         // Should not throw; transport starts with empty hashlist.
         XCTAssertNoThrow(try t.loadPacketHashlist(from: url))
-        let h = Data(repeating: 0xAB, count: 16)
+        let h = Data(repeating: 0xAB, count: Constants.fullHashLength)
         XCTAssertFalse(t.testContainsPacketHash(h))
     }
 
@@ -76,12 +85,12 @@ final class PacketHashlistPersistenceTests: XCTestCase {
         try rns.start()
 
         // Insert a synthetic hash into transport's hashlist
-        let h = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+        let h = Hashes.fullHash(Hashes.randomHash())
         rns.transport.testInsertPacketHash(h)
         rns.stop()
 
         // Verify the hashlist file was created
-        let hashlistURL = dir.appendingPathComponent("storage/packet_hashlist")
+        let hashlistURL = StorageInventory.url(.packetHashlist, in: dir)
         XCTAssertTrue(FileManager.default.fileExists(atPath: hashlistURL.path),
             "stop() should persist packet_hashlist file")
 
