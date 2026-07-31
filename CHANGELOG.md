@@ -3,7 +3,7 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
-## [Unreleased] — 1.9.0
+## [1.9.0] — persisted state, and a node that listened to itself
 
 A minor rather than a patch release: **every persisted state file changes name, encoding or
 both**, so a config directory written by 1.8.0 or earlier is not read by this version. See
@@ -54,6 +54,32 @@ reference's outcome for an interface that is not there.
 
 This is why the format work above is necessary but not sufficient: with `029` fixed and this
 not, the daemon writes a perfectly correct `destination_table` and still starts with no paths.
+
+### Fixed — a node acted on its own announces (`bugs/047`)
+
+A transport-enabled neighbour reflects announces back to the node that originated them, by
+design: `Transport.outbound`'s broadcast loop (`Transport.py:1197`) has no receiving-interface
+exclusion, and the PATHFINDER_R retransmission re-sends with `attached_interface = None`
+(`:604-637`). Every node hears its own announces come back, and every node is expected to ignore
+them.
+
+The reference ignores them with one test — `local_destination` is looked up in
+`destinations_map` and the **entire** announce block hangs off it being nil
+(`Transport.py:1767-1772`), with the ownership check repeated at the path-table admission test
+(`:1806-1807`). This port had no equivalent anywhere in `handleAnnounce`. The one place it
+consulted `registeredDestinations` in that path was an ingress-limit *exemption* — the opposite
+polarity, making the node more eager to process its own announce, not less.
+
+So a node learned a path to itself, re-cached its own identity from the wire, handed its own
+announce to every registered handler, and could relay it onward. For most destination types that
+is invisible: a delivery destination re-learning its own stamp cost changes nothing. It became
+visible only when a handler that *creates state* appeared — an LXMF propagation node, which
+peers. A lone one, on a mesh with nobody else on it, ended with exactly one peer: itself.
+
+Three existing tests were passing only because the gate was missing; each registered the
+destination it then announced to itself, which was never what they were testing. A fourth
+asserted "the handler was NOT called" and would have started passing for the gate's reason rather
+than the path-response filter's — it is fixed too.
 
 ### Fixed — a control listener that reported a bind it did not achieve (`bugs/040`)
 
