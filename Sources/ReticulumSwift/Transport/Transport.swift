@@ -3357,6 +3357,34 @@ public final class Transport {
         // Mirrors Python: `interface.received_announce()` called on valid announce receipt.
         notifyIncomingAnnounce(on: interface)
 
+        // An announce for a destination this node owns is dropped here and goes no further.
+        //
+        // Python computes `local_destination` from `destinations_map` and hangs the ENTIRE
+        // announce block off it being nil (`Transport.py:1767-1772`) — path table, identity
+        // caching, announce handlers and relay are all inside that one `if`. It then repeats the
+        // ownership test at the path-table admission check (`:1806-1807`), which is a fair signal
+        // of how load-bearing it is.
+        //
+        // This is not a rare case. A transport-enabled neighbour reflects announces back to their
+        // originator by design: `Transport.outbound`'s broadcast loop (`:1197`) has no
+        // receiving-interface exclusion, and the PATHFINDER_R retransmission re-sends with
+        // `attached_interface = None` (`:604-637`). Every node hears its own announces come back,
+        // and every node is expected to ignore them.
+        //
+        // Without this, a node learns a path to itself, re-caches its own identity from the wire,
+        // hands its own announce to every registered handler, and may relay it onward. The symptom
+        // that surfaced it (`swift_devel/bugs/047`): a lone LXMF propagation node, on a mesh with
+        // nobody else on it, peered with itself.
+        //
+        // One ordering difference from the reference, with no observable consequence: Python
+        // checks the announce signature before this gate and the full announce after it, so an
+        // invalid announce for an owned destination is rejected there and dropped here. Either way
+        // it goes nowhere.
+        lock.lock()
+        let isOwnDestination = registeredDestinations[packet.destinationHash] != nil
+        lock.unlock()
+        if isOwnDestination { return }
+
         // Ingress burst limiting: hold announces during flooding bursts.
         // Mirrors Python: `if interface.should_ingress_limit(): interface.hold_announce(packet); return`
         // Only applies to unknown destinations (known paths exempt — Python checks path_requests too).

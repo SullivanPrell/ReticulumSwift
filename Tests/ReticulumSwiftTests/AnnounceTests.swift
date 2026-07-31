@@ -110,8 +110,10 @@ final class AnnounceTests: XCTestCase {
         let transport = Transport()
         let bIdentity = Identity()
         let bDest = try Destination(identity: bIdentity, direction: .in, kind: .single, appName: "test")
-        transport.ownerIdentity = bIdentity
-        transport.register(destination: bDest)
+        // The announced destination must NOT be registered on this transport: a node ignores
+        // announces for destinations it owns (`swift_devel/bugs/047`, Transport.py:1767-1772).
+        // This test registered the destination it then announced to itself, so it was passing only
+        // because that gate was missing; the registration was never what it was testing.
 
         let handler = TestHandler()
         transport.register(announceHandler: handler)
@@ -147,8 +149,10 @@ final class AnnounceTests: XCTestCase {
         let transport = Transport()
         let bId = Identity()
         let bDest = try Destination(identity: bId, direction: .in, kind: .single, appName: "pr")
-        transport.ownerIdentity = bId
-        transport.register(destination: bDest)
+        // Not registered on this transport. This test asserts the handler is NOT called, and a
+        // node ignores announces for destinations it owns (`swift_devel/bugs/047`) — so with the
+        // destination registered it would pass whatever the path-response filter did, which is
+        // the one thing it exists to check.
 
         let handler = NoPathHandler()
         transport.register(announceHandler: handler)
@@ -182,8 +186,10 @@ final class AnnounceTests: XCTestCase {
         let transport = Transport()
         let bId = Identity()
         let bDest = try Destination(identity: bId, direction: .in, kind: .single, appName: "pr2")
-        transport.ownerIdentity = bId
-        transport.register(destination: bDest)
+        // The announced destination must NOT be registered on this transport: a node ignores
+        // announces for destinations it owns (`swift_devel/bugs/047`, Transport.py:1767-1772).
+        // This test registered the destination it then announced to itself, so it was passing only
+        // because that gate was missing; the registration was never what it was testing.
 
         let handler = PathHandler()
         transport.register(announceHandler: handler)
