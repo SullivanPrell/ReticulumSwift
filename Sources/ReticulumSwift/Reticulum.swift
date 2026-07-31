@@ -677,19 +677,30 @@ public final class Reticulum {
         transport.cacheDirectory = StorageInventory.url(
             .cache, storage: configuration.storagePath)
 
-        // Restore path table, dropping any expired entries.
-        let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
-        if FileManager.default.fileExists(atPath: pathStoreURL.path),
-           let store = try? PathStore.read(from: pathStoreURL) {
-            store.apply(to: transport)
+        // Load persisted known destinations (mirrors Python's Identity.load_known_destinations).
+        if FileManager.default.fileExists(atPath: knownDestinationsURL.path) {
+            try? transport.loadKnownDestinations(from: knownDestinationsURL)
         }
 
         transport.loadKnownRatchets()
         transport.sweepKnownRatchets()
 
-        // Load persisted known destinations (mirrors Python's Identity.load_known_destinations).
-        if FileManager.default.fileExists(atPath: knownDestinationsURL.path) {
-            try? transport.loadKnownDestinations(from: knownDestinationsURL)
+        // Restore path table, dropping any expired entries.
+        //
+        // After known destinations and ratchets, deliberately: the reference's entry carries no
+        // identity material of its own and resolves it through `Identity.recall`, so
+        // `Reticulum.py:344` loads that file before `:346` starts Transport and reads this one.
+        // Restoring paths first would leave every restored entry without an identity hash.
+        let pathStoreURL = StorageInventory.url(.destinationTable,
+                                                storage: configuration.storagePath)
+        if FileManager.default.fileExists(atPath: pathStoreURL.path) {
+            do {
+                try PathStore.read(from: pathStoreURL).apply(to: transport)
+            } catch {
+                // `Transport.py:357-359` — log and start with an empty path table.
+                Reticulum.log("Could not load destination table from storage, the contained "
+                              + "exception was: \(error)", level: .error)
+            }
         }
 
         // Restore packet hashlist for replay prevention across restarts.
@@ -752,7 +763,8 @@ public final class Reticulum {
         // was called" while emitting nothing, which is the same silence the defect produced.
         transport.detachInterfaces()
         transport.stop()
-        let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
+        let pathStoreURL = StorageInventory.url(.destinationTable,
+                                                storage: configuration.storagePath)
         try? PathStore.snapshot(of: transport).write(to: pathStoreURL)
         try? trackedIdentity?.writeRatchets(toFile: ratchetsURL)
         // Persist known destinations (mirrors Python's Identity.save_known_destinations).
@@ -857,7 +869,8 @@ public final class Reticulum {
     /// Force-checkpoint the path table without stopping the stack — useful
     /// from `applicationWillResignActive` on iOS.
     public func checkpoint() throws {
-        let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
+        let pathStoreURL = StorageInventory.url(.destinationTable,
+                                                storage: configuration.storagePath)
         try PathStore.snapshot(of: transport).write(to: pathStoreURL)
         try trackedIdentity?.writeRatchets(toFile: ratchetsURL)
     }
