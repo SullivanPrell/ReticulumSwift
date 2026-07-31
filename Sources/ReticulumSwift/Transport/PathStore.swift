@@ -234,10 +234,35 @@ public struct PathStore {
         return announce
     }
 
+    /// Install every entry that can be installed *now*, and hold the rest.
+    ///
+    /// The reference resolves each entry's interface once, at `Transport.start()`, by which time
+    /// every configured interface exists (`Reticulum.py:340` precedes `:346`). This port
+    /// synthesises the daemon's interfaces *after* `Reticulum.start()`, so a single-shot resolve
+    /// dropped every entry, every time (`bugs/041`). `apply(to:)` therefore parks what it cannot
+    /// resolve on the transport, and ``Transport/register(interface:)`` retries it as interfaces
+    /// arrive; `Transport.sweepPendingRestores` gives up on the remainder after a bounded window,
+    /// which is the reference's outcome for an interface that is not there.
     public func apply(to transport: Transport) {
+        let installed = install(into: transport)
+        let pending = entries.filter { !installed.contains($0.destinationHash) }
+        guard !pending.isEmpty else { return }
+        transport.lock.lock()
+        transport.pendingPathRestores = pending
+        transport.pendingRestoresReadAt = Date()
+        transport.lock.unlock()
+    }
+
+    /// The single-shot half: returns the destination hashes actually installed.
+    @discardableResult
+    func install(into transport: Transport) -> Set<Data> {
+        var installed: Set<Data> = []
         for entry in entries {
             // `len(destination_hash) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8` (Transport.py:319).
-            guard entry.destinationHash.count == Constants.truncatedHashLength else { continue }
+            // Resolved-and-rejected rather than pending: a malformed hash never becomes valid.
+            guard entry.destinationHash.count == Constants.truncatedHashLength else {
+                installed.insert(entry.destinationHash); continue
+            }
 
             // Resolve the stored interface hash back to a live interface, and drop the entry if
             // nothing answers — the reference gates the restore on `receiving_interface != None`
@@ -247,9 +272,9 @@ public struct PathStore {
             // name drops those paths and relearns them from announces.
             guard let interfaceHash = entry.interfaceHash,
                   let interface = transport.findInterface(fromHash: interfaceHash) else {
-                Reticulum.log("Could not reconstruct path table entry from storage for "
-                              + "\(entry.destinationHash.hexString): the interface is no longer "
-                              + "available", level: .debug)
+                // Deliberately *not* marked installed: this is the one failure the entry can
+                // recover from, when the interface registers a moment later. Everything else
+                // here is final.
                 continue
             }
             // `announce_packet != None` (`Transport.py:334`). An entry whose announce is missing
@@ -267,7 +292,7 @@ public struct PathStore {
                 Reticulum.log("Could not reconstruct path table entry from storage for "
                               + "\(entry.destinationHash.hexString): the announce packet could "
                               + "not be loaded from cache", level: .debug)
-                continue
+                installed.insert(entry.destinationHash); continue
             }
 
             // The identity comes from `known_destinations`, exactly as `Identity.recall` does
@@ -277,10 +302,13 @@ public struct PathStore {
             let identityHash = transport.recall(identity: entry.destinationHash)?.hash ?? Data()
             let path = entry.pathEntry(interface: interface, identityHash: identityHash)
 
-            // Skip entries that are already expired.
-            guard !path.isExpired else { continue }
+            // Skip entries that are already expired. Counted as installed so they are not held
+            // pending: an expired path does not become restorable when its interface appears.
+            guard !path.isExpired else { installed.insert(entry.destinationHash); continue }
             transport.restore(path: path, forDestination: entry.destinationHash)
+            installed.insert(entry.destinationHash)
         }
+        return installed
     }
 
     // MARK: - Codec

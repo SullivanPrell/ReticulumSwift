@@ -1779,10 +1779,77 @@ public final class Transport {
         ingressLock.unlock()
         let wantsTunnel = interface.wantsTunnel
         lock.unlock()
+        // A restored path or tunnel waiting for this interface can now be installed.
+        // Outside the lock: the installers take it themselves.
+        drainPendingRestores()
         // Synthesize a tunnel for interfaces that request it (outside all locks).
         if wantsTunnel {
             synthesizeTunnel(interface)
         }
+    }
+
+    // MARK: - Deferred restore
+
+    /// Entries read from `destination_table` that could not be installed yet because the
+    /// interface they name was not registered at the time.
+    ///
+    /// Only the path table needs this. A tunnel path does not depend on an interface being
+    /// present — the reference restores it with `receiving_interface = None`
+    /// (`Transport.py:398-400`) — so `TunnelStore` resolves every entry on the spot.
+    ///
+    /// **This exists because of an ordering difference from the reference, not as an
+    /// optimisation.** Python builds every configured interface in `__apply_config()` and only
+    /// then calls `Transport.start()`, which restores the tables (`Reticulum.py:340,346`) — so
+    /// by the time it resolves `find_interface_from_hash`, every interface exists. In this port
+    /// the daemon's interfaces are synthesised *after* `Reticulum.start()`, by `rnsd` itself,
+    /// so the restore ran against an empty interface set and **every entry was dropped, always**.
+    /// The path table has never survived a restart in a real daemon, whatever its on-disk format
+    /// (`bugs/041`).
+    ///
+    /// Holding the entries and installing them as their interfaces appear fixes that without
+    /// making any caller responsible for an ordering. The alternative — moving the restore to
+    /// after interface synthesis — would be a correction at whichever call site happened to be
+    /// looked at, and there are three that register interfaces.
+    ///
+    /// Bounded: `sweepPendingRestores()` discards whatever is still pending after
+    /// ``pendingRestoreWindow``, so this cannot install a path minutes later when a discovered
+    /// interface appears — which would be a real divergence, since the reference drops such an
+    /// entry permanently.
+    var pendingPathRestores: [PathStore.Entry] = []
+    /// When the pending entries were read, so they can be given up on.
+    var pendingRestoresReadAt: Date?
+
+    /// How long a restored entry waits for its interface. Startup, plus slack for an interface
+    /// whose construction is slow (a serial port opening, an I2P tunnel building).
+    public static let pendingRestoreWindow: TimeInterval = 30
+
+    /// Install any pending entries whose interface is now registered.
+    func drainPendingRestores() {
+        lock.lock()
+        let paths = pendingPathRestores
+        lock.unlock()
+        guard !paths.isEmpty else { return }
+
+        let installed = PathStore(entries: paths).install(into: self)
+        guard !installed.isEmpty else { return }
+
+        lock.lock()
+        pendingPathRestores.removeAll { installed.contains($0.destinationHash) }
+        lock.unlock()
+    }
+
+    /// Give up on entries whose interface never arrived, matching the reference's outcome for
+    /// an interface that is not there when the tables are read (`Transport.py:334,348`).
+    func sweepPendingRestores(now: Date = Date()) {
+        lock.lock(); defer { lock.unlock() }
+        guard let readAt = pendingRestoresReadAt,
+              now.timeIntervalSince(readAt) > Transport.pendingRestoreWindow else { return }
+        if !pendingPathRestores.isEmpty {
+            Reticulum.log("Giving up on \(pendingPathRestores.count) restored path table "
+                          + "entr(ies) whose interface never registered", level: .debug)
+        }
+        pendingPathRestores = []
+        pendingRestoresReadAt = nil
     }
 
     /// Remove an interface from the transport. Cleans up all per-interface state.
@@ -2375,6 +2442,7 @@ public final class Transport {
     }
 
     private func runJobs() {
+        sweepPendingRestores()
         sweepExpiredPaths()
         sweepExpiredReceipts()
         sweepKnownRatchets()

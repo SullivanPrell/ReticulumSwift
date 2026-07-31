@@ -52,9 +52,56 @@ public final class RPCServer {
                                       on: nwPort)
         self.listener = listener
         listener.newConnectionHandler = { [weak self] conn in self?.handleConnection(conn) }
+
+        // Wait for the listener to be ready, and throw if it fails.
+        //
+        // `NWListener.start(queue:)` returns before the bind is attempted and reports the result
+        // asynchronously through `stateUpdateHandler`. With no handler set, a listener that never
+        // bound still reached the log line below — so a daemon whose control port was taken
+        // announced "RPC server started on port N", ran normally, and answered every `rnstatus`,
+        // `rnpath`, `rnprobe`, `rnid -r` and `rnx` with "Could not connect to instance control
+        // socket". A component reporting success it did not achieve; `bugs/040`.
+        //
+        // Python raises here — `SocketListener.__init__` does `except OSError: … raise` — and
+        // `rnsd` exits rather than running without a control socket. Blocking until the state is
+        // known also means a caller may connect as soon as `start()` returns, instead of racing
+        // the bind.
+        let settled = DispatchSemaphore(value: 0)
+        var failure: Error?
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                settled.signal()
+            case .failed(let error), .waiting(let error):
+                // `.waiting` is where an address conflict surfaces: the framework holds the
+                // listener in that state and retries, so treating it as "not yet ready" would
+                // hang for the settle timeout and then report success anyway.
+                failure = error
+                settled.signal()
+            case .cancelled:
+                settled.signal()
+            default:
+                break
+            }
+        }
         listener.start(queue: queue)
+
+        if settled.wait(timeout: .now() + RPCServer.bindTimeout) == .timedOut {
+            listener.cancel()
+            self.listener = nil
+            throw RPCError.listenerFailed(nil)
+        }
+        if let failure {
+            listener.cancel()
+            self.listener = nil
+            throw RPCError.listenerFailed(failure)
+        }
         Reticulum.log("RPC server started on port \(port)", level: .info)
     }
+
+    /// How long `start()` waits for the listener to reach a terminal state. Generous: this is a
+    /// loopback bind, so anything approaching it means the framework is not going to answer.
+    private static let bindTimeout: DispatchTimeInterval = .seconds(5)
 
     public func stop() {
         listener?.cancel()
@@ -476,6 +523,9 @@ public final class RPCServer {
     public enum RPCError: Error {
         case invalidPort
         case invalidProtocol
+        /// The listener never reached `.ready`. Carries the framework's error when there was
+        /// one, and `nil` when the state simply never settled (`bugs/040`).
+        case listenerFailed(Error?)
     }
 }
 

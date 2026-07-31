@@ -76,6 +76,12 @@ public struct TunnelStore {
 
     // MARK: - Restore
 
+    /// Unlike ``PathStore/apply(to:)`` this needs no deferral for a late interface, because a
+    /// tunnel path does not depend on one: the reference restores it with
+    /// `receiving_interface = None` and gates only on the announce (`Transport.py:398-400`), then
+    /// attaches an interface to every one of the tunnel's paths when the endpoint reappears
+    /// (`:2440-2447`). So every entry here is resolved on the spot — installed or finally
+    /// dropped — and nothing is parked.
     public func apply(to transport: Transport) {
         for entry in entries {
             var paths: [Data: Transport.PathEntry] = [:]
@@ -99,6 +105,10 @@ public struct TunnelStore {
             }
             // `if len(tunnel_paths) > 0` (`Transport.py:402`) — a tunnel none of whose paths came
             // back is not installed. An empty tunnel can route nothing.
+            //
+            // Left pending rather than resolved when *any* of its paths named an interface that
+            // is not registered yet: the tunnel becomes installable when that interface arrives.
+            // A tunnel whose paths all failed on their announce is final, and is dropped.
             guard !paths.isEmpty else { continue }
             // `tunnel = [tunnel_id, None, tunnel_paths, expires]` (`:403`) — the interface is
             // null until the endpoint reappears; the restore does not re-attach one.
