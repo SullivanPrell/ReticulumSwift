@@ -197,6 +197,43 @@ public final class Transport {
             self.randomBlobs = randomBlobs
         }
 
+        /// A path with **no** interface and no name — the state a restored tunnel path is in
+        /// until its endpoint reappears.
+        ///
+        /// Deliberately distinct from the name-only initialiser above, which records a name that
+        /// could not be resolved. This one records that there is nothing to resolve *yet*: the
+        /// reference restores a tunnel path with `receiving_interface = None`
+        /// (`Transport.py:396-400`) and `handle_tunnel` writes the live interface into every one
+        /// of the tunnel's paths when the endpoint comes back (`:2440-2447`). Dropping such paths
+        /// instead would make the tunnel table useless in exactly the case it exists for.
+        ///
+        /// Not routable until attached — same as there, and the same reason
+        /// `PathTableInterfaceIdentityTests` forbids production code building a path from a name:
+        /// an unroutable path must be visibly unroutable, not one wearing a name that resolves to
+        /// somebody else's interface.
+        public init(
+            unattachedPathTo destinationHash: Data,
+            hops: UInt8,
+            lastHeard: Date,
+            identityHash: Data,
+            expires: Date? = nil,
+            nextHopTransportID: Data? = nil,
+            announceEmittedAt: TimeInterval = 0,
+            cachedAnnounceHash: Data? = nil,
+            randomBlobs: [Data] = []
+        ) {
+            self.destinationHash = destinationHash
+            self.nextHopInterfaceName = ""
+            self.hops = hops
+            self.lastHeard = lastHeard
+            self.identityHash = identityHash
+            self.expires = expires ?? lastHeard.addingTimeInterval(Transport.pathExpiry)
+            self.nextHopTransportID = nextHopTransportID
+            self.announceEmittedAt = announceEmittedAt
+            self.cachedAnnounceHash = cachedAnnounceHash
+            self.randomBlobs = randomBlobs
+        }
+
         public var isExpired: Bool { Date() >= expires }
 
         /// Hand-written because `nextHopInterface` is an existential and cannot be synthesised.
@@ -1827,6 +1864,13 @@ public final class Transport {
     public func restore(path: PathEntry, forDestination destinationHash: Data) {
         lock.lock(); defer { lock.unlock() }
         paths[destinationHash] = path
+    }
+
+    /// Bulk-load a tunnel entry — used by `TunnelStore.apply` to rehydrate `storage/tunnels` at
+    /// start (`Transport.py:403`).
+    public func restore(tunnel: TunnelEntry) {
+        lock.lock(); defer { lock.unlock() }
+        tunnels[tunnel.tunnelID] = tunnel
     }
 
     /// Directly insert a relayed-link route, so a hairpin relay can be exercised without

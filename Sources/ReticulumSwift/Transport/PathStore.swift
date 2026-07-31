@@ -49,7 +49,12 @@ public struct PathStore {
         /// connection accepted by one listening interface is `"Client on <server name>"`
         /// (`TCPInterface.py:590`), so resolving a route by name sends traffic to whichever peer
         /// registered first, whatever the announce said (`bugs/027`).
-        public var interfaceHash: Data
+        ///
+        /// Optional because a tunnel path takes its tunnel's interface hash, and the reference
+        /// writes `None` there for a tunnel whose interface has gone (`Transport.py:3456-3457`).
+        /// A destination-table entry always has one — the reference skips any whose interface is
+        /// no longer active before serialising it (`:3374`).
+        public var interfaceHash: Data?
         /// 7 — the full hash of the announce packet that established this path, under which
         /// `storage/cache/announces/` holds it.
         public var announceHash: Data
@@ -60,7 +65,7 @@ public struct PathStore {
                     hops: UInt8,
                     expires: TimeInterval,
                     randomBlobs: [Data],
-                    interfaceHash: Data,
+                    interfaceHash: Data?,
                     announceHash: Data) {
             self.destinationHash = destinationHash
             self.timestamp = timestamp
@@ -70,6 +75,103 @@ public struct PathStore {
             self.randomBlobs = randomBlobs
             self.interfaceHash = interfaceHash
             self.announceHash = announceHash
+        }
+
+        // MARK: - The shared 8-element codec
+
+        /// The reference serialises a destination-table entry and a tunnel path with the *same*
+        /// eight fields in the same order (`Transport.py:3390-3397` and `:3470-3479`), and reads
+        /// them back with the same positional indexing (`:317-327` and `:379-386`). One codec, so
+        /// the two files cannot drift into disagreeing about a field's meaning.
+        public var msgpackValue: MsgPack.Value {
+            .array([
+                .bytes(destinationHash),
+                .double(timestamp),
+                .bytes(receivedFrom),
+                .uint(UInt64(hops)),
+                .double(expires),
+                .array(randomBlobs.map { .bytes($0) }),
+                interfaceHash.map(MsgPack.Value.bytes) ?? .nil,
+                .bytes(announceHash),
+            ])
+        }
+
+        /// Returns `nil` for anything that is not the reference's 8-element entry. The caller
+        /// skips it rather than aborting the file, as the reference's per-entry `try` does.
+        public static func decode(_ value: MsgPack.Value) -> Entry? {
+            guard case .array(let f) = value, f.count == 8,
+                  case .bytes(let destinationHash) = f[0],
+                  let timestamp = f[1].asDouble,
+                  case .bytes(let receivedFrom) = f[2],
+                  let hops = f[3].asDouble,
+                  let expires = f[4].asDouble,
+                  case .array(let blobs) = f[5],
+                  case .bytes(let announceHash) = f[7] else { return nil }
+            var interfaceHash: Data?
+            if case .bytes(let hash) = f[6] { interfaceHash = hash }
+            return Entry(
+                destinationHash: destinationHash,
+                timestamp: timestamp,
+                receivedFrom: receivedFrom,
+                hops: UInt8(clamping: Int(hops)),
+                expires: expires,
+                randomBlobs: blobs.compactMap(\.asData),
+                interfaceHash: interfaceHash,
+                announceHash: announceHash
+            )
+        }
+
+        /// Serialise a live path entry. `interfaceHash` is passed in rather than read off the
+        /// path, because a tunnel path carries its *tunnel's* interface hash
+        /// (`Transport.py:3476`), not its own.
+        public init(_ path: Transport.PathEntry,
+                    destinationHash: Data,
+                    interfaceHash: Data?,
+                    announceHash: Data) {
+            self.init(
+                destinationHash: destinationHash,
+                timestamp: path.lastHeard.timeIntervalSince1970,
+                receivedFrom: path.nextHopTransportID ?? destinationHash,
+                hops: path.hops,
+                expires: path.expires.timeIntervalSince1970,
+                randomBlobs: Array(path.randomBlobs.suffix(Transport.persistRandomBlobs)),
+                interfaceHash: interfaceHash,
+                announceHash: announceHash
+            )
+        }
+
+        /// Rebuild the in-memory path, with the interface already resolved by the caller — the
+        /// destination table drops an entry whose interface is gone (`Transport.py:334`) while a
+        /// tunnel path keeps it (`:398`), so who may be `nil` is the caller's decision.
+        public func pathEntry(interface: (any Interface)?,
+                              identityHash: Data) -> Transport.PathEntry {
+            var path: Transport.PathEntry
+            if let interface {
+                path = Transport.PathEntry(
+                    destinationHash: destinationHash,
+                    nextHopInterface: interface,
+                    hops: hops,
+                    lastHeard: Date(timeIntervalSince1970: timestamp),
+                    identityHash: identityHash,
+                    expires: Date(timeIntervalSince1970: expires),
+                    nextHopTransportID: receivedFrom == destinationHash ? nil : receivedFrom,
+                    cachedAnnounceHash: announceHash,
+                    randomBlobs: randomBlobs
+                )
+            } else {
+                path = Transport.PathEntry(
+                    unattachedPathTo: destinationHash,
+                    hops: hops,
+                    lastHeard: Date(timeIntervalSince1970: timestamp),
+                    identityHash: identityHash,
+                    expires: Date(timeIntervalSince1970: expires),
+                    nextHopTransportID: receivedFrom == destinationHash ? nil : receivedFrom,
+                    cachedAnnounceHash: announceHash,
+                    randomBlobs: randomBlobs
+                )
+            }
+            path.announceEmittedAt = Transport.timebaseFromRandomBlobs(randomBlobs)
+            return path
         }
     }
 
@@ -106,16 +208,10 @@ public struct PathStore {
                               + "\(destHash.hexString), no cached announce", level: .debug)
                 continue
             }
-            entries.append(Entry(
-                destinationHash: destHash,
-                timestamp: path.lastHeard.timeIntervalSince1970,
-                receivedFrom: path.nextHopTransportID ?? destHash,
-                hops: path.hops,
-                expires: path.expires.timeIntervalSince1970,
-                randomBlobs: Array(path.randomBlobs.suffix(Transport.persistRandomBlobs)),
-                interfaceHash: interface.hash,
-                announceHash: announceHash
-            ))
+            entries.append(Entry(path,
+                                 destinationHash: destHash,
+                                 interfaceHash: interface.hash,
+                                 announceHash: announceHash))
         }
         return PathStore(entries: entries)
     }
@@ -149,7 +245,8 @@ public struct PathStore {
             // not a route; falling back to a name is `bugs/027`. Interface identity is derived
             // from `displayName`, so a daemon upgrading across a release that changes any display
             // name drops those paths and relearns them from announces.
-            guard let interface = transport.findInterface(fromHash: entry.interfaceHash) else {
+            guard let interfaceHash = entry.interfaceHash,
+                  let interface = transport.findInterface(fromHash: interfaceHash) else {
                 Reticulum.log("Could not reconstruct path table entry from storage for "
                               + "\(entry.destinationHash.hexString): the interface is no longer "
                               + "available", level: .debug)
@@ -178,20 +275,7 @@ public struct PathStore {
             // `Reticulum.py:344` preceding `:346`. An entry for a destination we have no key for
             // still routes; it just cannot be displayed with an identity hash, same as Python.
             let identityHash = transport.recall(identity: entry.destinationHash)?.hash ?? Data()
-
-            var path = Transport.PathEntry(
-                destinationHash: entry.destinationHash,
-                nextHopInterface: interface,
-                hops: entry.hops,
-                lastHeard: Date(timeIntervalSince1970: entry.timestamp),
-                identityHash: identityHash,
-                expires: Date(timeIntervalSince1970: entry.expires),
-                nextHopTransportID: entry.receivedFrom == entry.destinationHash
-                    ? nil : entry.receivedFrom,
-                cachedAnnounceHash: entry.announceHash,
-                randomBlobs: entry.randomBlobs
-            )
-            path.announceEmittedAt = Transport.timebaseFromRandomBlobs(entry.randomBlobs)
+            let path = entry.pathEntry(interface: interface, identityHash: identityHash)
 
             // Skip entries that are already expired.
             guard !path.isExpired else { continue }
@@ -203,18 +287,7 @@ public struct PathStore {
 
     /// `umsgpack.packb(serialised_destinations)` — `Transport.py:3407`.
     public func encoded() -> Data {
-        MsgPack.encode(.array(entries.map { entry in
-            .array([
-                .bytes(entry.destinationHash),
-                .double(entry.timestamp),
-                .bytes(entry.receivedFrom),
-                .uint(UInt64(entry.hops)),
-                .double(entry.expires),
-                .array(entry.randomBlobs.map { .bytes($0) }),
-                .bytes(entry.interfaceHash),
-                .bytes(entry.announceHash),
-            ])
-        }))
+        MsgPack.encode(.array(entries.map(\.msgpackValue)))
     }
 
     /// `umsgpack.unpackb(file.read())` — `Transport.py:313`.
@@ -226,29 +299,7 @@ public struct PathStore {
         guard case .array(let serialised) = try MsgPack.decode(data) else {
             throw MsgPack.Error.typeMismatch
         }
-        var entries: [Entry] = []
-        for element in serialised {
-            guard case .array(let f) = element, f.count == 8,
-                  case .bytes(let destinationHash) = f[0],
-                  let timestamp = f[1].asDouble,
-                  case .bytes(let receivedFrom) = f[2],
-                  let hops = f[3].asDouble,
-                  let expires = f[4].asDouble,
-                  case .array(let blobs) = f[5],
-                  case .bytes(let interfaceHash) = f[6],
-                  case .bytes(let announceHash) = f[7] else { continue }
-            entries.append(Entry(
-                destinationHash: destinationHash,
-                timestamp: timestamp,
-                receivedFrom: receivedFrom,
-                hops: UInt8(clamping: Int(hops)),
-                expires: expires,
-                randomBlobs: blobs.compactMap(\.asData),
-                interfaceHash: interfaceHash,
-                announceHash: announceHash
-            ))
-        }
-        return PathStore(entries: entries)
+        return PathStore(entries: serialised.compactMap(Entry.decode))
     }
 
     // MARK: - File I/O

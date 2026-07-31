@@ -269,6 +269,10 @@ public enum DaemonBootstrap {
         let storage = reticulum.configuration.storagePath
         try? PathStore.snapshot(of: reticulum.transport)
             .write(to: StorageInventory.url(.destinationTable, storage: storage))
+        // Python persists all three tables together — `Transport.persist_data`
+        // (`Transport.py:3510-3512`).
+        try? TunnelStore.snapshot(of: reticulum.transport)
+            .write(to: StorageInventory.url(.tunnels, storage: storage))
         try? reticulum.transport
             .saveKnownDestinations(to: StorageInventory.url(.knownDestinations, storage: storage))
         try? reticulum.transport

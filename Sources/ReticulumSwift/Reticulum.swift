@@ -703,6 +703,20 @@ public final class Reticulum {
             }
         }
 
+        // Then the tunnel table, which the reference reads immediately after the destination
+        // table in the same block (`Transport.py:365-405`). A tunnel path is restored with no
+        // interface; `handleTunnel` re-attaches one when the endpoint reappears.
+        let tunnelStoreURL = StorageInventory.url(.tunnels, storage: configuration.storagePath)
+        if FileManager.default.fileExists(atPath: tunnelStoreURL.path) {
+            do {
+                try TunnelStore.read(from: tunnelStoreURL).apply(to: transport)
+            } catch {
+                // `Transport.py:406-407` — log and start with an empty tunnel table.
+                Reticulum.log("Could not load tunnel table from storage, the contained "
+                              + "exception was: \(error)", level: .error)
+            }
+        }
+
         // Restore packet hashlist for replay prevention across restarts.
         // Mirrors Python's hashlist loading in Transport.__init__.
         let hashlistURL = StorageInventory.url(.packetHashlist,
@@ -767,6 +781,8 @@ public final class Reticulum {
         let pathStoreURL = StorageInventory.url(.destinationTable,
                                                 storage: configuration.storagePath)
         try? PathStore.snapshot(of: transport).write(to: pathStoreURL)
+        try? TunnelStore.snapshot(of: transport)
+            .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
         try? trackedIdentity?.writeRatchets(toFile: ratchetsURL)
         // Persist known destinations (mirrors Python's Identity.save_known_destinations).
         try? transport.saveKnownDestinations(to: knownDestinationsURL)
@@ -874,6 +890,8 @@ public final class Reticulum {
         let pathStoreURL = StorageInventory.url(.destinationTable,
                                                 storage: configuration.storagePath)
         try PathStore.snapshot(of: transport).write(to: pathStoreURL)
+        try TunnelStore.snapshot(of: transport)
+            .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
         try trackedIdentity?.writeRatchets(toFile: ratchetsURL)
     }
 
