@@ -307,6 +307,15 @@ public final class Transport {
     /// When each known identity was last used (recalled for outbound). nil = never used.
     /// Mirrors Python's `Identity.known_destinations[hash][4]` (last_use field, 0 = never).
     var knownDestinationLastUsed: [Data: Date] = [:]
+    /// Full hash of the announce packet each identity was learned from —
+    /// `Identity.remember(packet.get_hash(), …)` (`Identity.py:577`), field 1 of the entry
+    /// (`:107`).
+    ///
+    /// The reference writes this field and never reads it back: every access to a
+    /// `known_destinations` entry indexes 0, 2, 3 or 4. It is carried anyway because the entry is
+    /// a positional list — a missing field 1 shifts the public key into the slot the reader takes
+    /// as app data.
+    var knownDestinationPacketHash: [Data: Data] = [:]
     /// Destinations explicitly marked as retained — never swept by `cleanKnownDestinations`.
     /// Mirrors Python's last_use == -1 sentinel.
     var retainedDestinations: Set<Data> = []
@@ -1955,48 +1964,91 @@ public final class Transport {
     // MARK: - Known destinations persistence
     // Mirrors Python's Identity.save_known_destinations() / load_known_destinations().
 
-    private struct PersistedDestination: Codable {
-        var publicKey: String   // hex-encoded 64-byte public key
-        var appData: String?    // hex-encoded optional app data
-        var timestamp: Double
+    /// The entry's `last_use` slot, as the reference types it.
+    ///
+    /// Not one type: `remember` seeds it with the integer `0` (`Identity.py:107`), retention
+    /// writes the integer `-1` (`:255`), and use writes `time.time()`, a float (`:246`). msgpack
+    /// preserves that distinction — a fixint versus a float64 — so writing everything as a double
+    /// would produce a file the reference never would, even though its own reader is arithmetic
+    /// and would not notice.
+    private static func lastUseValue(retained: Bool, lastUsed: Date?) -> MsgPack.Value {
+        if retained { return .int(-1) }
+        guard let lastUsed else { return .uint(0) }
+        return .double(lastUsed.timeIntervalSince1970)
     }
 
-    /// Persist `knownIdentities` to a JSON file at `url`.
-    /// Mirrors Python's `Identity.save_known_destinations()`.
+    /// Persist `knownIdentities` to `url` in the reference's format.
+    ///
+    /// `umsgpack.dump(Identity.known_destinations)` (`Identity.py:198`): a map keyed by the raw
+    /// destination hash whose values are `[last_announce, packet_hash, public_key, app_data,
+    /// last_use]` (`:107`). Positional — the reader indexes 0, 2, 3 and 4 directly (`:146-149`,
+    /// `:314-324`) — so field 1 is carried even though nothing reads it.
+    ///
+    /// Written atomically, as `Identity.py:196-200` does with an explicit temp file and
+    /// `os.replace`. `Data.write(options: .atomic)` is that same write-then-rename, so a torn
+    /// file is not observable on either side.
     public func saveKnownDestinations(to url: URL) throws {
         lock.lock()
         let snapshot = knownIdentities
+        let announcedAt = knownDestinationAnnouncedAt
+        let lastUsed = knownDestinationLastUsed
+        let retained = retainedDestinations
+        let packetHashes = knownDestinationPacketHash
         lock.unlock()
-        var map: [String: PersistedDestination] = [:]
-        for (destHash, identity) in snapshot {
-            map[destHash.hexString] = PersistedDestination(
-                publicKey: identity.publicKeyBytes.hexString,
-                appData: identity.appData?.hexString,
-                timestamp: Date().timeIntervalSince1970
-            )
+
+        let pairs: [(MsgPack.Value, MsgPack.Value)] = snapshot.map { destHash, identity in
+            let lastUse = Transport.lastUseValue(retained: retained.contains(destHash),
+                                                 lastUsed: lastUsed[destHash])
+            return (.bytes(destHash), .array([
+                .double(announcedAt[destHash]?.timeIntervalSince1970
+                        ?? Date().timeIntervalSince1970),
+                .bytes(packetHashes[destHash] ?? Data()),
+                .bytes(identity.publicKeyBytes),
+                identity.appData.map(MsgPack.Value.bytes) ?? .nil,
+                lastUse,
+            ]))
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(map).write(to: url, options: .atomic)
+        try MsgPack.encode(.map(pairs)).write(to: url, options: .atomic)
     }
 
     /// Load previously persisted `knownIdentities` from `url`.
-    /// Mirrors Python's `Identity.load_known_destinations()`.
+    /// Mirrors Python's `Identity.load_known_destinations()` (`Identity.py:216-240`).
     public func loadKnownDestinations(from url: URL) throws {
-        let data = try Data(contentsOf: url)
-        let map = try JSONDecoder().decode([String: PersistedDestination].self, from: data)
+        guard case .map(let pairs) = try MsgPack.decode(Data(contentsOf: url)) else {
+            throw MsgPack.Error.typeMismatch
+        }
         lock.lock()
         defer { lock.unlock() }
-        for (hashHex, entry) in map {
-            guard let destHash = Data(hex: hashHex),
+        for (key, value) in pairs {
+            // `if len(known_destination) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8` (:225) — a key
+            // that is not a destination hash is skipped, and does not abort the load.
+            guard case .bytes(let destHash) = key,
                   destHash.count == Constants.truncatedHashLength,
-                  let pubKeyBytes = Data(hex: entry.publicKey),
-                  pubKeyBytes.count == Constants.keySize,
-                  let identity = try? Identity(publicKeyBytes: pubKeyBytes) else { continue }
-            if let adHex = entry.appData { identity.appData = Data(hex: adHex) }
-            if knownIdentities[destHash] == nil {
-                knownIdentities[destHash] = identity
-                knownDestinationAnnouncedAt[destHash] = Date(timeIntervalSince1970: entry.timestamp)
+                  case .array(var fields) = value else { continue }
+            // `[e[0], e[1], e[2], e[3], 0]` (:226-229) — an entry written by an older reference
+            // has four fields and is backfilled with a zero `last_use`, not discarded.
+            if fields.count == 4 { fields.append(.double(0)) }
+            guard fields.count == 5,
+                  case .bytes(let publicKey) = fields[2],
+                  publicKey.count == Constants.keySize,
+                  let identity = try? Identity(publicKeyBytes: publicKey) else { continue }
+
+            if case .bytes(let appData) = fields[3] { identity.appData = appData }
+            guard knownIdentities[destHash] == nil else { continue }
+            knownIdentities[destHash] = identity
+            knownDestinationAnnouncedAt[destHash] =
+                Date(timeIntervalSince1970: fields[0].asDouble ?? 0)
+            if case .bytes(let packetHash) = fields[1] {
+                knownDestinationPacketHash[destHash] = packetHash
+            }
+            // 0 is "never used", a negative value is the retention sentinel, and anything else is
+            // a use time (`Identity.py:314-324`). Reading it back is what keeps a pinned
+            // destination pinned across a restart.
+            let lastUse = fields[4].asDouble ?? 0
+            if lastUse < 0 {
+                retainedDestinations.insert(destHash)
+            } else if lastUse > 0 {
+                knownDestinationLastUsed[destHash] = Date(timeIntervalSince1970: lastUse)
             }
         }
     }
@@ -3439,6 +3491,10 @@ public final class Transport {
             if let ad = decoded.appData { decoded.identity.appData = ad }
             knownIdentities[decoded.destinationHash] = decoded.identity
             knownDestinationAnnouncedAt[decoded.destinationHash] = Date()
+            // `Identity.remember(packet.get_hash(), …)` — Identity.py:577, stored at field 1 of
+            // the known-destinations entry (`:107`).
+            knownDestinationPacketHash[decoded.destinationHash] =
+                (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
             cachedAnnounces[decoded.destinationHash] = packet
             if let ratchet = decoded.ratchet {
                 let now = Date()

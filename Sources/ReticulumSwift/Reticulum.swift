@@ -617,7 +617,7 @@ public final class Reticulum {
         StorageInventory.url(.transportIdentity, storage: configuration.storagePath)
     }
     private var knownDestinationsURL: URL {
-        configuration.storagePath.appendingPathComponent("known_destinations.json")
+        StorageInventory.url(.knownDestinations, storage: configuration.storagePath)
     }
 
     public func start() throws {

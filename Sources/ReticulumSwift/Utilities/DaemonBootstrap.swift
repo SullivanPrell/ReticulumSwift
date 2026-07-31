@@ -269,11 +269,11 @@ public enum DaemonBootstrap {
         let storage = reticulum.configuration.storagePath
         try? PathStore.snapshot(of: reticulum.transport)
             .write(to: StorageInventory.url(.destinationTable, storage: storage))
-        // Still the port's names and codecs: a reference filename holding a port-format payload
-        // is the one state worse than a port filename, so each of these is renamed together with
-        // its codec (tasks 2.4 and 2.6), not ahead of it.
         try? reticulum.transport
-            .saveKnownDestinations(to: storage.appendingPathComponent("known_destinations.json"))
+            .saveKnownDestinations(to: StorageInventory.url(.knownDestinations, storage: storage))
+        // Still the port's name and codec: a reference filename holding a port-format payload is
+        // the one state worse than a port filename, so it is renamed together with its codec
+        // (task 2.6), not ahead of it.
         try? reticulum.transport
             .savePacketHashlist(to: storage.appendingPathComponent("packet_hashlist"))
         try? reticulum.transport
