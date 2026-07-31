@@ -67,7 +67,7 @@ public final class RPCClient {
     /// - Parameter storagePath: the instance's storage directory (`~/.reticulum/storage`).
     /// - Throws: ``RPCClientError/noInstanceIdentity`` if the identity file is absent or unreadable.
     public static func authkey(storagePath: URL) throws -> Data {
-        let identityURL = storagePath.appendingPathComponent("transport_identity")
+        let identityURL = StorageInventory.url(.transportIdentity, storage: storagePath)
         guard let identity = try? Identity.read(fromFile: identityURL),
               let privateKey = identity.getPrivateKey() else {
             throw RPCClientError.noInstanceIdentity(identityURL)

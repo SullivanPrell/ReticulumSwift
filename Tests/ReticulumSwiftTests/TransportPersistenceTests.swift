@@ -33,16 +33,13 @@ final class TransportPersistenceTests: XCTestCase {
         let iface1 = LoopbackInterface(name: "test0")
         rns1.transport.register(interface: iface1)
 
-        let destHash = Data(repeating: 0xAA, count: 16)
-        let idHash   = Data(repeating: 0xBB, count: 16)
-        let entry = Transport.PathEntry(
-            destinationHash: destHash,
-            nextHopInterface: iface1,
-            hops: 2,
-            lastHeard: Date(),
-            identityHash: idHash
-        )
-        rns1.transport.restore(path: entry, forDestination: destHash)
+        // A real destination with its announce in the cache: the reference's entry references
+        // that announce and discards any entry whose announce it cannot load
+        // (`Transport.py:334-345`), so a synthetic destination hash is not a persistable path.
+        let (destHash, _, _) = try installPersistablePath(on: rns1.transport,
+                                                          through: iface1,
+                                                          hops: 2,
+                                                          aspect: "survives")
         XCTAssertTrue(rns1.transport.hasPath(to: destHash))
         rns1.stop()
 
@@ -65,16 +62,11 @@ final class TransportPersistenceTests: XCTestCase {
 
         let ifaces1 = (0..<5).map { LoopbackInterface(name: "iface\($0)") }
         ifaces1.forEach { rns1.transport.register(interface: $0) }
-        let hashes = (0..<5).map { Data(repeating: UInt8($0 + 1), count: 16) }
-        for (i, h) in hashes.enumerated() {
-            let e = Transport.PathEntry(
-                destinationHash: h,
-                nextHopInterface: ifaces1[i],
-                hops: UInt8(i + 1),
-                lastHeard: Date(),
-                identityHash: Data(repeating: UInt8(0x10 + i), count: 16)
-            )
-            rns1.transport.restore(path: e, forDestination: h)
+        let hashes = try (0..<5).map { i in
+            try installPersistablePath(on: rns1.transport,
+                                       through: ifaces1[i],
+                                       hops: UInt8(i + 1),
+                                       aspect: "multi\(i)").destinationHash
         }
         rns1.stop()
 
@@ -119,7 +111,9 @@ final class TransportPersistenceTests: XCTestCase {
         let rns1 = Reticulum(configuration: .init(storagePath: dir))
         try rns1.start()
 
-        let fakeHash = Hashes.randomHash()
+        // The full 32 bytes the live filter stores; the reference's file is framed
+        // by nothing but the hash length (`Transport.py:3323`).
+        let fakeHash = Hashes.fullHash(Hashes.randomHash())
         rns1.transport.testInsertPacketHash(fakeHash)
         XCTAssertTrue(rns1.transport.testContainsPacketHash(fakeHash),
                       "hash must be present before stop")
@@ -148,25 +142,14 @@ final class TransportPersistenceTests: XCTestCase {
         let iface1 = LoopbackInterface(name: "old0")
         rns1.transport.register(interface: iface1)
 
-        let destHash = Data(repeating: 0xDD, count: 16)
-        let liveHash = Data(repeating: 0xDE, count: 16)
         let pastDate = Date(timeIntervalSinceNow: -Transport.pathExpiry - 60)
-        let entry = Transport.PathEntry(
-            destinationHash: destHash,
-            nextHopInterface: iface1,
-            hops: 1,
+        let (destHash, _, _) = try installPersistablePath(
+            on: rns1.transport, through: iface1, aspect: "expired",
             lastHeard: pastDate,
-            identityHash: Data(repeating: 0x01, count: 16),
             expires: Date(timeIntervalSinceNow: -1)  // already expired
         )
-        rns1.transport.restore(path: entry, forDestination: destHash)
-        rns1.transport.restore(path: Transport.PathEntry(
-            destinationHash: liveHash,
-            nextHopInterface: iface1,
-            hops: 1,
-            lastHeard: Date(),
-            identityHash: Data(repeating: 0x02, count: 16)
-        ), forDestination: liveHash)
+        let (liveHash, _, _) = try installPersistablePath(
+            on: rns1.transport, through: iface1, aspect: "live")
         rns1.stop()
 
         let rns2 = Reticulum(configuration: .init(storagePath: dir))

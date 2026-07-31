@@ -106,9 +106,21 @@ enum RNSSocketOptions {
     }
 
     /// Parameters carrying ``localOptions()``, plus the options instance they were built from.
+    ///
+    /// Also sets `allowLocalEndpointReuse`, the framework's `SO_REUSEADDR`. Every listener built
+    /// from these binds a fixed loopback port that a previous run of the same daemon may just
+    /// have released, and without reuse the bind fails with `EADDRINUSE` against a `TIME_WAIT`
+    /// socket. Python sets it on the equivalent listeners — `multiprocessing.connection`'s
+    /// `SocketListener.__init__` for the instance-control port, and `socketserver` for the
+    /// shared instance — so a Python daemon rebinds where this one could not (`bugs/040`).
+    ///
+    /// Unlike the TCP options above, this one *is* readable back off the object the framework is
+    /// handed, so `RPCServerBindTests` asserts it directly.
     static func localParameters() -> (parameters: NWParameters, options: NWProtocolTCP.Options) {
         let options = localOptions()
-        return (NWParameters(tls: nil, tcp: options), options)
+        let parameters = NWParameters(tls: nil, tcp: options)
+        parameters.allowLocalEndpointReuse = true
+        return (parameters, options)
     }
 
     /// Parameters carrying ``i2pOptions()``, plus the options instance they were built from.

@@ -42,6 +42,7 @@ final class ReticulumLifecycleTests: XCTestCase {
         let config = Reticulum.Configuration(storagePath: storage)
 
         // First run: create a path
+        var destHash = Data()
         do {
             let rns = Reticulum(configuration: config)
             try rns.start()
@@ -49,17 +50,10 @@ final class ReticulumLifecycleTests: XCTestCase {
             // dropped on load if nothing matches (`bugs/027`, D6).
             let iface = LoopbackInterface(name: "test")
             rns.transport.register(interface: iface)
-            let fakeHash = Data(repeating: 0xAB, count: 16)
-            rns.transport.restore(
-                path: Transport.PathEntry(
-                    destinationHash: fakeHash,
-                    nextHopInterface: iface,
-                    hops: 2,
-                    lastHeard: Date(),
-                    identityHash: Data(repeating: 0xCD, count: 16)
-                ),
-                forDestination: fakeHash
-            )
+            // A real destination with its announce cached — the reference's entry names an
+            // announce and an entry naming none restores nothing (`Transport.py:334-345`).
+            destHash = try installPersistablePath(on: rns.transport, through: iface,
+                                                  hops: 2, aspect: "lifecycle").destinationHash
             rns.stop()
         }
 
@@ -68,8 +62,7 @@ final class ReticulumLifecycleTests: XCTestCase {
             let rns2 = Reticulum(configuration: config)
             rns2.transport.register(interface: LoopbackInterface(name: "test"))
             try rns2.start()
-            let fakeHash = Data(repeating: 0xAB, count: 16)
-            XCTAssertTrue(rns2.transport.hasPath(to: fakeHash), "path should be restored from disk")
+            XCTAssertTrue(rns2.transport.hasPath(to: destHash), "path should be restored from disk")
             rns2.stop()
         }
     }

@@ -660,7 +660,8 @@ public extension RNCopyApp {
     /// `Reticulum.start()` creates `storage/` but NOT the `identities/` subdirectory, so
     /// ``prepareIdentity(at:)`` creates it with intermediates before writing.
     static func defaultIdentityPath(storagePath: URL) -> URL {
-        storagePath.appendingPathComponent("identities").appendingPathComponent(identityFileName)
+        StorageInventory.url(.identities, storage: storagePath)
+            .appendingPathComponent(identityFileName)
     }
 
     /// Load, or create and persist, the rncp identity. Python: `prepare_identity` (rncp.py:54-68).

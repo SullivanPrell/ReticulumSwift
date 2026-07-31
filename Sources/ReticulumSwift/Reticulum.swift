@@ -13,7 +13,7 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently — a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.8.0"
+    public static let version = "1.9.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
@@ -562,8 +562,8 @@ public final class Reticulum {
     /// Convenience: init from a config directory path (mirrors Python's
     /// `RNS.Reticulum(configdir=...)` pattern).
     public static func fromConfigDir(_ configDir: URL) -> Reticulum {
-        let storagePath = configDir.appendingPathComponent("storage")
-        let configPath = configDir.appendingPathComponent("config")
+        let storagePath = StorageInventory.url(.storage, in: configDir)
+        let configPath = StorageInventory.url(.config, in: configDir)
         return Reticulum(configuration: Configuration(
             storagePath: storagePath,
             configPath: configPath
@@ -605,17 +605,19 @@ public final class Reticulum {
         case missingIdentity
     }
 
+    // Every persisted path resolves through `StorageInventory`, which is the one place that
+    // names them and cites the Python file:line each name mirrors (bugs/029).
     private var identityURL: URL {
-        configuration.storagePath.appendingPathComponent("identity")
+        StorageInventory.url(.identity, storage: configuration.storagePath)
     }
     private var ratchetsURL: URL {
-        configuration.storagePath.appendingPathComponent("identity.ratchets")
+        StorageInventory.url(.identityRatchets, storage: configuration.storagePath)
     }
     private var transportIDURL: URL {
-        configuration.storagePath.appendingPathComponent("transport_identity")
+        StorageInventory.url(.transportIdentity, storage: configuration.storagePath)
     }
     private var knownDestinationsURL: URL {
-        configuration.storagePath.appendingPathComponent("known_destinations.json")
+        StorageInventory.url(.knownDestinations, storage: configuration.storagePath)
     }
 
     public func start() throws {
@@ -667,36 +669,63 @@ public final class Reticulum {
             transport.localHopsDelta = UInt8.random(in: 2...7)
         }
 
-        transport.ratchetsDirectory = configuration.storagePath
-            .appendingPathComponent("ratchets")
+        transport.ratchetsDirectory = StorageInventory.url(
+            .ratchets, storage: configuration.storagePath)
 
         // Set cache directory for disk-based packet (announce) cache.
         // Mirrors Python's `RNS.Reticulum.cachepath`.
-        transport.cacheDirectory = configuration.storagePath.appendingPathComponent("cache")
-
-        // Restore path table, dropping any expired entries.
-        let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
-        if FileManager.default.fileExists(atPath: pathStoreURL.path),
-           let store = try? PathStore.read(from: pathStoreURL) {
-            store.apply(to: transport)
-        }
-
-        transport.loadKnownRatchets()
-        transport.sweepKnownRatchets()
+        transport.cacheDirectory = StorageInventory.url(
+            .cache, storage: configuration.storagePath)
 
         // Load persisted known destinations (mirrors Python's Identity.load_known_destinations).
         if FileManager.default.fileExists(atPath: knownDestinationsURL.path) {
             try? transport.loadKnownDestinations(from: knownDestinationsURL)
         }
 
+        transport.loadKnownRatchets()
+        transport.sweepKnownRatchets()
+
+        // Restore path table, dropping any expired entries.
+        //
+        // After known destinations and ratchets, deliberately: the reference's entry carries no
+        // identity material of its own and resolves it through `Identity.recall`, so
+        // `Reticulum.py:344` loads that file before `:346` starts Transport and reads this one.
+        // Restoring paths first would leave every restored entry without an identity hash.
+        let pathStoreURL = StorageInventory.url(.destinationTable,
+                                                storage: configuration.storagePath)
+        if FileManager.default.fileExists(atPath: pathStoreURL.path) {
+            do {
+                try PathStore.read(from: pathStoreURL).apply(to: transport)
+            } catch {
+                // `Transport.py:357-359` — log and start with an empty path table.
+                Reticulum.log("Could not load destination table from storage, the contained "
+                              + "exception was: \(error)", level: .error)
+            }
+        }
+
+        // Then the tunnel table, which the reference reads immediately after the destination
+        // table in the same block (`Transport.py:365-405`). A tunnel path is restored with no
+        // interface; `handleTunnel` re-attaches one when the endpoint reappears.
+        let tunnelStoreURL = StorageInventory.url(.tunnels, storage: configuration.storagePath)
+        if FileManager.default.fileExists(atPath: tunnelStoreURL.path) {
+            do {
+                try TunnelStore.read(from: tunnelStoreURL).apply(to: transport)
+            } catch {
+                // `Transport.py:406-407` — log and start with an empty tunnel table.
+                Reticulum.log("Could not load tunnel table from storage, the contained "
+                              + "exception was: \(error)", level: .error)
+            }
+        }
+
         // Restore packet hashlist for replay prevention across restarts.
         // Mirrors Python's hashlist loading in Transport.__init__.
-        let hashlistURL = configuration.storagePath.appendingPathComponent("packet_hashlist")
+        let hashlistURL = StorageInventory.url(.packetHashlist,
+                                               storage: configuration.storagePath)
         try? transport.loadPacketHashlist(from: hashlistURL)
 
         // Load blackhole list from directory (mirrors Python's Transport.reload_blackhole()).
         // Allows external sources listed in Reticulum.blackhole_sources().
-        let blackholePath = configuration.storagePath.appendingPathComponent("blackhole")
+        let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
         try? transport.reloadBlacklist(fromDirectory: blackholePath,
                                        allowedSources: Reticulum.blackholeSources())
 
@@ -707,10 +736,8 @@ public final class Reticulum {
         // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
         if let parsedCfg = config, parsedCfg.reticulum.discoverInterfaces,
            let validator = configuration.discoveryStampValidator {
-            let discoveryPath = configuration.storagePath
-                .appendingPathComponent("discovery")
-                .appendingPathComponent("interfaces")
-                .path
+            let discoveryPath = StorageInventory.url(
+                .discoveredInterfaces, storage: configuration.storagePath).path
             transport.discoverInterfaces(
                 storagePath: discoveryPath,
                 requiredValue: Reticulum.requiredDiscoveryValue(),
@@ -751,16 +778,20 @@ public final class Reticulum {
         // was called" while emitting nothing, which is the same silence the defect produced.
         transport.detachInterfaces()
         transport.stop()
-        let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
+        let pathStoreURL = StorageInventory.url(.destinationTable,
+                                                storage: configuration.storagePath)
         try? PathStore.snapshot(of: transport).write(to: pathStoreURL)
+        try? TunnelStore.snapshot(of: transport)
+            .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
         try? trackedIdentity?.writeRatchets(toFile: ratchetsURL)
         // Persist known destinations (mirrors Python's Identity.save_known_destinations).
         try? transport.saveKnownDestinations(to: knownDestinationsURL)
         // Persist packet hashlist for replay prevention across restarts.
-        let hashlistURL = configuration.storagePath.appendingPathComponent("packet_hashlist")
+        let hashlistURL = StorageInventory.url(.packetHashlist,
+                                               storage: configuration.storagePath)
         try? transport.savePacketHashlist(to: hashlistURL)
         // Persist blackhole list (own entries only, mirrors Python's Transport.persist_blackhole()).
-        let blackholePath = configuration.storagePath.appendingPathComponent("blackhole")
+        let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
         try? transport.persistBlacklist(toDirectory: blackholePath)
     }
 
@@ -856,8 +887,11 @@ public final class Reticulum {
     /// Force-checkpoint the path table without stopping the stack — useful
     /// from `applicationWillResignActive` on iOS.
     public func checkpoint() throws {
-        let pathStoreURL = configuration.storagePath.appendingPathComponent("paths.json")
+        let pathStoreURL = StorageInventory.url(.destinationTable,
+                                                storage: configuration.storagePath)
         try PathStore.snapshot(of: transport).write(to: pathStoreURL)
+        try TunnelStore.snapshot(of: transport)
+            .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
         try trackedIdentity?.writeRatchets(toFile: ratchetsURL)
     }
 
@@ -1226,8 +1260,7 @@ public final class Reticulum {
         // Default: one level above storagePath, matching Python's layout
         // (<configdir>/storage ↔ <configdir>/config).
         let parent = configuration.storagePath.deletingLastPathComponent()
-        let candidate = parent.appendingPathComponent("config")
-        return candidate
+        return StorageInventory.url(.config, in: parent)
     }
 
     private func applyConfig(_ cfg: ReticulumConfig) {

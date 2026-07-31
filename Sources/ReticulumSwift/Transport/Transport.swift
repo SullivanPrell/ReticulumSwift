@@ -197,6 +197,43 @@ public final class Transport {
             self.randomBlobs = randomBlobs
         }
 
+        /// A path with **no** interface and no name — the state a restored tunnel path is in
+        /// until its endpoint reappears.
+        ///
+        /// Deliberately distinct from the name-only initialiser above, which records a name that
+        /// could not be resolved. This one records that there is nothing to resolve *yet*: the
+        /// reference restores a tunnel path with `receiving_interface = None`
+        /// (`Transport.py:396-400`) and `handle_tunnel` writes the live interface into every one
+        /// of the tunnel's paths when the endpoint comes back (`:2440-2447`). Dropping such paths
+        /// instead would make the tunnel table useless in exactly the case it exists for.
+        ///
+        /// Not routable until attached — same as there, and the same reason
+        /// `PathTableInterfaceIdentityTests` forbids production code building a path from a name:
+        /// an unroutable path must be visibly unroutable, not one wearing a name that resolves to
+        /// somebody else's interface.
+        public init(
+            unattachedPathTo destinationHash: Data,
+            hops: UInt8,
+            lastHeard: Date,
+            identityHash: Data,
+            expires: Date? = nil,
+            nextHopTransportID: Data? = nil,
+            announceEmittedAt: TimeInterval = 0,
+            cachedAnnounceHash: Data? = nil,
+            randomBlobs: [Data] = []
+        ) {
+            self.destinationHash = destinationHash
+            self.nextHopInterfaceName = ""
+            self.hops = hops
+            self.lastHeard = lastHeard
+            self.identityHash = identityHash
+            self.expires = expires ?? lastHeard.addingTimeInterval(Transport.pathExpiry)
+            self.nextHopTransportID = nextHopTransportID
+            self.announceEmittedAt = announceEmittedAt
+            self.cachedAnnounceHash = cachedAnnounceHash
+            self.randomBlobs = randomBlobs
+        }
+
         public var isExpired: Bool { Date() >= expires }
 
         /// Hand-written because `nextHopInterface` is an existential and cannot be synthesised.
@@ -307,6 +344,15 @@ public final class Transport {
     /// When each known identity was last used (recalled for outbound). nil = never used.
     /// Mirrors Python's `Identity.known_destinations[hash][4]` (last_use field, 0 = never).
     var knownDestinationLastUsed: [Data: Date] = [:]
+    /// Full hash of the announce packet each identity was learned from —
+    /// `Identity.remember(packet.get_hash(), …)` (`Identity.py:577`), field 1 of the entry
+    /// (`:107`).
+    ///
+    /// The reference writes this field and never reads it back: every access to a
+    /// `known_destinations` entry indexes 0, 2, 3 or 4. It is carried anyway because the entry is
+    /// a positional list — a missing field 1 shifts the public key into the slot the reader takes
+    /// as app data.
+    var knownDestinationPacketHash: [Data: Data] = [:]
     /// Destinations explicitly marked as retained — never swept by `cleanKnownDestinations`.
     /// Mirrors Python's last_use == -1 sentinel.
     var retainedDestinations: Set<Data> = []
@@ -1733,10 +1779,77 @@ public final class Transport {
         ingressLock.unlock()
         let wantsTunnel = interface.wantsTunnel
         lock.unlock()
+        // A restored path or tunnel waiting for this interface can now be installed.
+        // Outside the lock: the installers take it themselves.
+        drainPendingRestores()
         // Synthesize a tunnel for interfaces that request it (outside all locks).
         if wantsTunnel {
             synthesizeTunnel(interface)
         }
+    }
+
+    // MARK: - Deferred restore
+
+    /// Entries read from `destination_table` that could not be installed yet because the
+    /// interface they name was not registered at the time.
+    ///
+    /// Only the path table needs this. A tunnel path does not depend on an interface being
+    /// present — the reference restores it with `receiving_interface = None`
+    /// (`Transport.py:398-400`) — so `TunnelStore` resolves every entry on the spot.
+    ///
+    /// **This exists because of an ordering difference from the reference, not as an
+    /// optimisation.** Python builds every configured interface in `__apply_config()` and only
+    /// then calls `Transport.start()`, which restores the tables (`Reticulum.py:340,346`) — so
+    /// by the time it resolves `find_interface_from_hash`, every interface exists. In this port
+    /// the daemon's interfaces are synthesised *after* `Reticulum.start()`, by `rnsd` itself,
+    /// so the restore ran against an empty interface set and **every entry was dropped, always**.
+    /// The path table has never survived a restart in a real daemon, whatever its on-disk format
+    /// (`bugs/041`).
+    ///
+    /// Holding the entries and installing them as their interfaces appear fixes that without
+    /// making any caller responsible for an ordering. The alternative — moving the restore to
+    /// after interface synthesis — would be a correction at whichever call site happened to be
+    /// looked at, and there are three that register interfaces.
+    ///
+    /// Bounded: `sweepPendingRestores()` discards whatever is still pending after
+    /// ``pendingRestoreWindow``, so this cannot install a path minutes later when a discovered
+    /// interface appears — which would be a real divergence, since the reference drops such an
+    /// entry permanently.
+    var pendingPathRestores: [PathStore.Entry] = []
+    /// When the pending entries were read, so they can be given up on.
+    var pendingRestoresReadAt: Date?
+
+    /// How long a restored entry waits for its interface. Startup, plus slack for an interface
+    /// whose construction is slow (a serial port opening, an I2P tunnel building).
+    public static let pendingRestoreWindow: TimeInterval = 30
+
+    /// Install any pending entries whose interface is now registered.
+    func drainPendingRestores() {
+        lock.lock()
+        let paths = pendingPathRestores
+        lock.unlock()
+        guard !paths.isEmpty else { return }
+
+        let installed = PathStore(entries: paths).install(into: self)
+        guard !installed.isEmpty else { return }
+
+        lock.lock()
+        pendingPathRestores.removeAll { installed.contains($0.destinationHash) }
+        lock.unlock()
+    }
+
+    /// Give up on entries whose interface never arrived, matching the reference's outcome for
+    /// an interface that is not there when the tables are read (`Transport.py:334,348`).
+    func sweepPendingRestores(now: Date = Date()) {
+        lock.lock(); defer { lock.unlock() }
+        guard let readAt = pendingRestoresReadAt,
+              now.timeIntervalSince(readAt) > Transport.pendingRestoreWindow else { return }
+        if !pendingPathRestores.isEmpty {
+            Reticulum.log("Giving up on \(pendingPathRestores.count) restored path table "
+                          + "entr(ies) whose interface never registered", level: .debug)
+        }
+        pendingPathRestores = []
+        pendingRestoresReadAt = nil
     }
 
     /// Remove an interface from the transport. Cleans up all per-interface state.
@@ -1820,6 +1933,13 @@ public final class Transport {
         paths[destinationHash] = path
     }
 
+    /// Bulk-load a tunnel entry — used by `TunnelStore.apply` to rehydrate `storage/tunnels` at
+    /// start (`Transport.py:403`).
+    public func restore(tunnel: TunnelEntry) {
+        lock.lock(); defer { lock.unlock() }
+        tunnels[tunnel.tunnelID] = tunnel
+    }
+
     /// Directly insert a relayed-link route, so a hairpin relay can be exercised without
     /// standing up two peers and driving a full link handshake through them.
     public func restore(linkRoute: LinkRoute) {
@@ -1888,51 +2008,74 @@ public final class Transport {
         }
     }
 
-    /// Persist a learned ratchet to `<ratchetsDirectory>/<desthex>`
-    /// using the simple `{ratchet, received}` layout the rest of the
-    /// stack reads.
+    /// Persist a learned ratchet to `<ratchetsDirectory>/<desthex>`.
+    ///
+    /// `umsgpack.packb({"ratchet": ratchet, "received": time.time()})` — `Identity.py:424,434`,
+    /// read straight back with `umsgpack.unpackb` at `:493`. The raw key and a float timestamp:
+    /// the reference gates on `len(ratchet_data["ratchet"]) == RATCHETSIZE//8` and does
+    /// arithmetic on `received` (`:494`), so a hex string and an ISO-8601 date — which is what
+    /// the port wrote — fail both.
+    ///
+    /// `bugs/029`'s fifth divergence, and the one that cost the most: this path carries matching
+    /// directory *and* filenames on both sides, so it read as correct in a listing, and both
+    /// implementations *delete* what they cannot parse here (`Identity._clean_ratchets`,
+    /// `:459-462,476`, and `loadKnownRatchets` below). Each side silently destroyed the other's
+    /// forward-secrecy state on the first start after a switch.
     private func persistKnownRatchet(_ ratchet: Data, forDestination hash: Data, receivedAt: Date) {
         guard let dir = ratchetsDirectory else { return }
         try? FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )
-        let url = dir.appendingPathComponent(hash.hexString)
-        let payload: [String: Any] = [
-            "ratchet": ratchet.hexString,
-            "received": ISO8601DateFormatter().string(from: receivedAt),
-        ]
-        if let data = try? JSONSerialization.data(withJSONObject: payload) {
-            try? data.write(to: url, options: .atomic)
-        }
+        let payload = MsgPack.Value.map([
+            (.string("ratchet"), .bytes(ratchet)),
+            (.string("received"), .double(receivedAt.timeIntervalSince1970)),
+        ])
+        try? MsgPack.encode(payload).write(to: dir.appendingPathComponent(hash.hexString),
+                                           options: .atomic)
     }
 
     /// Bulk-load all learned ratchets from `ratchetsDirectory`,
     /// dropping any whose `received` is older than `ratchetExpiry`.
+    ///
+    /// Mirrors `Identity.get_ratchet` (`:487-497`) for the read and `_clean_ratchets`
+    /// (`:452-482`) for the removal of expired and corrupt files.
     public func loadKnownRatchets() {
         guard let dir = ratchetsDirectory,
               let entries = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
         else { return }
         let now = Date()
-        let formatter = ISO8601DateFormatter()
         lock.lock(); defer { lock.unlock() }
         for filename in entries {
             guard let destHash = Data(hex: filename) else { continue }
             let url = dir.appendingPathComponent(filename)
             guard let raw = try? Data(contentsOf: url),
-                  let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
-                  let rHex = obj["ratchet"] as? String,
-                  let rData = Data(hex: rHex),
-                  let recHex = obj["received"] as? String,
-                  let received = formatter.date(from: recHex)
+                  case .map(let pairs)? = try? MsgPack.decode(raw)
+            else {
+                // "Corrupted ratchet data while reading …, removing file" (`Identity.py:459-462`,
+                // unlinked at `:476`). This is also what retires the port's own JSON ratchets on
+                // the first start after `bugs/029`: unlike `paths.json` and its siblings, these
+                // sit at a name the reference *does* use, so leaving them in place would only
+                // leave a file a Python daemon deletes anyway.
+                try? FileManager.default.removeItem(at: url)
+                continue
+            }
+            var fields: [String: MsgPack.Value] = [:]
+            for (key, value) in pairs {
+                if case .string(let name) = key { fields[name] = value }
+            }
+            guard case .bytes(let ratchet)? = fields["ratchet"],
+                  ratchet.count == Constants.ratchetSize,
+                  let receivedAt = fields["received"]?.asDouble
             else {
                 try? FileManager.default.removeItem(at: url)
                 continue
             }
+            let received = Date(timeIntervalSince1970: receivedAt)
             if now.timeIntervalSince(received) > ratchetExpiry {
                 try? FileManager.default.removeItem(at: url)
                 continue
             }
-            knownRatchets[destHash] = rData
+            knownRatchets[destHash] = ratchet
             knownRatchetTimes[destHash] = received
         }
     }
@@ -1955,48 +2098,91 @@ public final class Transport {
     // MARK: - Known destinations persistence
     // Mirrors Python's Identity.save_known_destinations() / load_known_destinations().
 
-    private struct PersistedDestination: Codable {
-        var publicKey: String   // hex-encoded 64-byte public key
-        var appData: String?    // hex-encoded optional app data
-        var timestamp: Double
+    /// The entry's `last_use` slot, as the reference types it.
+    ///
+    /// Not one type: `remember` seeds it with the integer `0` (`Identity.py:107`), retention
+    /// writes the integer `-1` (`:255`), and use writes `time.time()`, a float (`:246`). msgpack
+    /// preserves that distinction — a fixint versus a float64 — so writing everything as a double
+    /// would produce a file the reference never would, even though its own reader is arithmetic
+    /// and would not notice.
+    private static func lastUseValue(retained: Bool, lastUsed: Date?) -> MsgPack.Value {
+        if retained { return .int(-1) }
+        guard let lastUsed else { return .uint(0) }
+        return .double(lastUsed.timeIntervalSince1970)
     }
 
-    /// Persist `knownIdentities` to a JSON file at `url`.
-    /// Mirrors Python's `Identity.save_known_destinations()`.
+    /// Persist `knownIdentities` to `url` in the reference's format.
+    ///
+    /// `umsgpack.dump(Identity.known_destinations)` (`Identity.py:198`): a map keyed by the raw
+    /// destination hash whose values are `[last_announce, packet_hash, public_key, app_data,
+    /// last_use]` (`:107`). Positional — the reader indexes 0, 2, 3 and 4 directly (`:146-149`,
+    /// `:314-324`) — so field 1 is carried even though nothing reads it.
+    ///
+    /// Written atomically, as `Identity.py:196-200` does with an explicit temp file and
+    /// `os.replace`. `Data.write(options: .atomic)` is that same write-then-rename, so a torn
+    /// file is not observable on either side.
     public func saveKnownDestinations(to url: URL) throws {
         lock.lock()
         let snapshot = knownIdentities
+        let announcedAt = knownDestinationAnnouncedAt
+        let lastUsed = knownDestinationLastUsed
+        let retained = retainedDestinations
+        let packetHashes = knownDestinationPacketHash
         lock.unlock()
-        var map: [String: PersistedDestination] = [:]
-        for (destHash, identity) in snapshot {
-            map[destHash.hexString] = PersistedDestination(
-                publicKey: identity.publicKeyBytes.hexString,
-                appData: identity.appData?.hexString,
-                timestamp: Date().timeIntervalSince1970
-            )
+
+        let pairs: [(MsgPack.Value, MsgPack.Value)] = snapshot.map { destHash, identity in
+            let lastUse = Transport.lastUseValue(retained: retained.contains(destHash),
+                                                 lastUsed: lastUsed[destHash])
+            return (.bytes(destHash), .array([
+                .double(announcedAt[destHash]?.timeIntervalSince1970
+                        ?? Date().timeIntervalSince1970),
+                .bytes(packetHashes[destHash] ?? Data()),
+                .bytes(identity.publicKeyBytes),
+                identity.appData.map(MsgPack.Value.bytes) ?? .nil,
+                lastUse,
+            ]))
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(map).write(to: url, options: .atomic)
+        try MsgPack.encode(.map(pairs)).write(to: url, options: .atomic)
     }
 
     /// Load previously persisted `knownIdentities` from `url`.
-    /// Mirrors Python's `Identity.load_known_destinations()`.
+    /// Mirrors Python's `Identity.load_known_destinations()` (`Identity.py:216-240`).
     public func loadKnownDestinations(from url: URL) throws {
-        let data = try Data(contentsOf: url)
-        let map = try JSONDecoder().decode([String: PersistedDestination].self, from: data)
+        guard case .map(let pairs) = try MsgPack.decode(Data(contentsOf: url)) else {
+            throw MsgPack.Error.typeMismatch
+        }
         lock.lock()
         defer { lock.unlock() }
-        for (hashHex, entry) in map {
-            guard let destHash = Data(hex: hashHex),
+        for (key, value) in pairs {
+            // `if len(known_destination) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8` (:225) — a key
+            // that is not a destination hash is skipped, and does not abort the load.
+            guard case .bytes(let destHash) = key,
                   destHash.count == Constants.truncatedHashLength,
-                  let pubKeyBytes = Data(hex: entry.publicKey),
-                  pubKeyBytes.count == Constants.keySize,
-                  let identity = try? Identity(publicKeyBytes: pubKeyBytes) else { continue }
-            if let adHex = entry.appData { identity.appData = Data(hex: adHex) }
-            if knownIdentities[destHash] == nil {
-                knownIdentities[destHash] = identity
-                knownDestinationAnnouncedAt[destHash] = Date(timeIntervalSince1970: entry.timestamp)
+                  case .array(var fields) = value else { continue }
+            // `[e[0], e[1], e[2], e[3], 0]` (:226-229) — an entry written by an older reference
+            // has four fields and is backfilled with a zero `last_use`, not discarded.
+            if fields.count == 4 { fields.append(.double(0)) }
+            guard fields.count == 5,
+                  case .bytes(let publicKey) = fields[2],
+                  publicKey.count == Constants.keySize,
+                  let identity = try? Identity(publicKeyBytes: publicKey) else { continue }
+
+            if case .bytes(let appData) = fields[3] { identity.appData = appData }
+            guard knownIdentities[destHash] == nil else { continue }
+            knownIdentities[destHash] = identity
+            knownDestinationAnnouncedAt[destHash] =
+                Date(timeIntervalSince1970: fields[0].asDouble ?? 0)
+            if case .bytes(let packetHash) = fields[1] {
+                knownDestinationPacketHash[destHash] = packetHash
+            }
+            // 0 is "never used", a negative value is the retention sentinel, and anything else is
+            // a use time (`Identity.py:314-324`). Reading it back is what keeps a pinned
+            // destination pinned across a restart.
+            let lastUse = fields[4].asDouble ?? 0
+            if lastUse < 0 {
+                retainedDestinations.insert(destHash)
+            } else if lastUse > 0 {
+                knownDestinationLastUsed[destHash] = Date(timeIntervalSince1970: lastUse)
             }
         }
     }
@@ -2256,6 +2442,7 @@ public final class Transport {
     }
 
     private func runJobs() {
+        sweepPendingRestores()
         sweepExpiredPaths()
         sweepExpiredReceipts()
         sweepKnownRatchets()
@@ -3170,6 +3357,34 @@ public final class Transport {
         // Mirrors Python: `interface.received_announce()` called on valid announce receipt.
         notifyIncomingAnnounce(on: interface)
 
+        // An announce for a destination this node owns is dropped here and goes no further.
+        //
+        // Python computes `local_destination` from `destinations_map` and hangs the ENTIRE
+        // announce block off it being nil (`Transport.py:1767-1772`) — path table, identity
+        // caching, announce handlers and relay are all inside that one `if`. It then repeats the
+        // ownership test at the path-table admission check (`:1806-1807`), which is a fair signal
+        // of how load-bearing it is.
+        //
+        // This is not a rare case. A transport-enabled neighbour reflects announces back to their
+        // originator by design: `Transport.outbound`'s broadcast loop (`:1197`) has no
+        // receiving-interface exclusion, and the PATHFINDER_R retransmission re-sends with
+        // `attached_interface = None` (`:604-637`). Every node hears its own announces come back,
+        // and every node is expected to ignore them.
+        //
+        // Without this, a node learns a path to itself, re-caches its own identity from the wire,
+        // hands its own announce to every registered handler, and may relay it onward. The symptom
+        // that surfaced it (`swift_devel/bugs/047`): a lone LXMF propagation node, on a mesh with
+        // nobody else on it, peered with itself.
+        //
+        // One ordering difference from the reference, with no observable consequence: Python
+        // checks the announce signature before this gate and the full announce after it, so an
+        // invalid announce for an owned destination is rejected there and dropped here. Either way
+        // it goes nowhere.
+        lock.lock()
+        let isOwnDestination = registeredDestinations[packet.destinationHash] != nil
+        lock.unlock()
+        if isOwnDestination { return }
+
         // Ingress burst limiting: hold announces during flooding bursts.
         // Mirrors Python: `if interface.should_ingress_limit(): interface.hold_announce(packet); return`
         // Only applies to unknown destinations (known paths exempt — Python checks path_requests too).
@@ -3439,6 +3654,10 @@ public final class Transport {
             if let ad = decoded.appData { decoded.identity.appData = ad }
             knownIdentities[decoded.destinationHash] = decoded.identity
             knownDestinationAnnouncedAt[decoded.destinationHash] = Date()
+            // `Identity.remember(packet.get_hash(), …)` — Identity.py:577, stored at field 1 of
+            // the known-destinations entry (`:107`).
+            knownDestinationPacketHash[decoded.destinationHash] =
+                (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
             cachedAnnounces[decoded.destinationHash] = packet
             if let ratchet = decoded.ratchet {
                 let now = Date()
@@ -3899,28 +4118,52 @@ public final class Transport {
 
     // MARK: - Packet hashlist persistence
 
-    /// Persist the current packet hashlist to disk.
-    /// Mirrors Python's `Transport.save_packet_hashlist()`.
+    /// Persist the current packet hashlist to `storage/packet_hashlist.raw`.
+    ///
+    /// `for packet_hash in Transport.packet_hashlist.copy(): file.write(packet_hash)` —
+    /// `Transport.py:3315-3323`. The hashes themselves, concatenated: no delimiters, no length
+    /// prefix, no encoding. The reader recovers records by fixed width, so the framing *is* the
+    /// hash length.
     public func savePacketHashlist(to url: URL) throws {
         hashlistLock.lock()
         let snapshot = packetHashlist.union(packetHashlistPrev)
         hashlistLock.unlock()
-        let hexList = snapshot.map { $0.hexString }
-        let data = try JSONEncoder().encode(hexList)
-        try data.write(to: url, options: .atomic)
+        var raw = Data()
+        raw.reserveCapacity(snapshot.count * Constants.fullHashLength)
+        var skipped = 0
+        for hash in snapshot {
+            // A record of the wrong width is not a short record, it is a shifted file: every
+            // hash after it decodes as two halves of its neighbours. The live filter only ever
+            // inserts `fullHash(hashablePart())`, so this cannot fire from the network — but it
+            // is reported rather than dropped in silence, since a silent drop here reads on disk
+            // exactly like a hashlist that was simply smaller.
+            guard hash.count == Constants.fullHashLength else { skipped += 1; continue }
+            raw.append(hash)
+        }
+        if skipped > 0 {
+            Reticulum.log("Skipped \(skipped) packet hashlist entr(ies) that are not "
+                          + "\(Constants.fullHashLength) bytes; the file is framed by hash "
+                          + "length alone (Transport.py:3323)", level: .error)
+        }
+        try raw.write(to: url, options: .atomic)
     }
 
     /// Load a previously persisted packet hashlist and merge into the current set.
-    /// Mirrors Python's hashlist loading in `Transport.__init__`.
-    /// A missing file is silently ignored.
+    ///
+    /// `packet_hash = file.read(hashlen); if len(packet_hash) == hashlen: add … else: done`
+    /// (`Transport.py:246-250`) — fixed-width records until a short read ends the file, so a
+    /// torn write gives up its trailing partial record and keeps everything before it. A missing
+    /// file is silently ignored, as `:244`'s `isfile` gate does.
     public func loadPacketHashlist(from url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
-        let data = try Data(contentsOf: url)
-        let hexList = try JSONDecoder().decode([String].self, from: data)
+        let raw = try Data(contentsOf: url)
         hashlistLock.lock()
         defer { hashlistLock.unlock() }
-        for hex in hexList {
-            if let h = Data(hex: hex) { packetHashlist.insert(h) }
+        var cursor = raw.startIndex
+        while raw.distance(from: cursor, to: raw.endIndex) >= Constants.fullHashLength {
+            let next = raw.index(cursor, offsetBy: Constants.fullHashLength)
+            packetHashlist.insert(Data(raw[cursor..<next]))
+            cursor = next
         }
     }
 

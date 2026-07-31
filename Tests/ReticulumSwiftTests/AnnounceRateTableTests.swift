@@ -203,8 +203,10 @@ final class AnnounceRateTableTests: XCTestCase {
         let identity = Identity()
         let dest = try Destination(identity: identity, direction: .in, kind: .single,
                                    appName: "ratelimit", aspects: ["test"])
-        t.ownerIdentity = identity
-        t.register(destination: dest)
+        // The announced destination must NOT be registered on this transport: a node ignores
+        // announces for destinations it owns (`swift_devel/bugs/047`, Transport.py:1767-1772).
+        // This test registered the destination it then announced to itself, so it was passing only
+        // because that gate was missing; the registration was never what it was testing.
 
         // Interface with tight rate limiting: target=60s, grace=0
         let iface = RateLimitedInterface(name: "tight", rateTarget: 60.0, grace: 0, penalty: 0)

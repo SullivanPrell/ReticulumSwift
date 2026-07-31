@@ -153,35 +153,44 @@ final class RatchetTests: XCTestCase {
         XCTAssertEqual(reloaded.previousRatchets.count, 0)
     }
 
-    func testPathStoreRoundTripsRatchet() throws {
+    /// A learned ratchet survives a restart through `storage/ratchets/`, **not** through the path
+    /// table.
+    ///
+    /// This suite used to assert a `PathStore` round trip, because the port inlined the ratchet
+    /// into each path entry. The reference does not: its `destination_table` entry carries no
+    /// identity material at all, and ratchets live one file per destination under
+    /// `storage/ratchets/` (`Identity.py:293,426,453,487`). Bringing the path table to the
+    /// reference's shape (`bugs/029`) moved this property to the store that owns it, where
+    /// `RatchetParityTests.testTransportPersistsLearnedRatchetToDirectory` already asserts it end
+    /// to end — through a real inbound announce, which is the only path that writes the file. So
+    /// what remains here is the other half: that the path table carries none of it.
+    func testPathStoreCarriesNoRatchet() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rns-ratchet-pathstore-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
         let t1 = Transport()
-        // A persisted path stores its interface's hash and is dropped on load if nothing
-        // matches (`bugs/027`, D6), so both transports register the same interface.
+        t1.cacheDirectory = dir
         let iface1 = LoopbackInterface(name: "iface")
         t1.register(interface: iface1)
         let identity = Identity()
-        let destination = try Destination(
-            identity: identity, direction: .in, kind: .single, appName: "x"
-        )
         let ratchet = identity.rotateRatchet()
-        t1.restore(
-            path: Transport.PathEntry(
-                destinationHash: destination.hash,
-                nextHopInterface: iface1,
-                hops: 1,
-                lastHeard: Date(),
-                identityHash: identity.hash
-            ),
-            forDestination: destination.hash
-        )
-        t1.restore(identity: identity, forDestination: destination.hash)
-        t1.restore(ratchet: ratchet, forDestination: destination.hash)
+        let installed = try installPersistablePath(on: t1, through: iface1,
+                                                   aspect: "ratchet",
+                                                   identity: identity, ratchet: ratchet)
 
-        let snapshot = PathStore.snapshot(of: t1)
+        let encoded = PathStore.snapshot(of: t1).encoded()
+        XCTAssertNil(encoded.range(of: ratchet),
+                     "the reference's path entry holds no ratchet (Transport.py:3390-3397)")
+
         let t2 = Transport()
+        t2.cacheDirectory = dir
         t2.register(interface: LoopbackInterface(name: "iface"))
-        snapshot.apply(to: t2)
+        try PathStore.decode(encoded).apply(to: t2)
 
-        XCTAssertEqual(t2.knownRatchets[destination.hash], ratchet)
+        XCTAssertNotNil(t2.paths[installed.destinationHash], "the path itself still restores")
+        XCTAssertNil(t2.knownRatchets[installed.destinationHash],
+                     "and it brings no ratchet with it — that comes from `storage/ratchets/`")
     }
 }

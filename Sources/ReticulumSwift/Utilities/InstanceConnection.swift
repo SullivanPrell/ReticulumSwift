@@ -170,24 +170,24 @@ public final class InstanceConnection {
                                               fileManager: FileManager) -> URL {
         if let explicit { return explicit }
 
-        if fileManager.fileExists(atPath: systemConfigDir.appendingPathComponent("config").path) {
+        if fileManager.fileExists(atPath: StorageInventory.url(.config, in: systemConfigDir).path) {
             return systemConfigDir
         }
 
         let xdg = home.appendingPathComponent(".config/reticulum")
-        if fileManager.fileExists(atPath: xdg.appendingPathComponent("config").path) { return xdg }
+        if fileManager.fileExists(atPath: StorageInventory.url(.config, in: xdg).path) { return xdg }
 
         return home.appendingPathComponent(".reticulum")
     }
 
     /// `<configdir>/storage`. Python: `Reticulum.storagepath`.
     public static func storagePath(for configDirectory: URL) -> URL {
-        configDirectory.appendingPathComponent("storage")
+        StorageInventory.url(.storage, in: configDirectory)
     }
 
     /// `<configdir>/config`. Python: `Reticulum.configpath`.
     public static func configPath(for configDirectory: URL) -> URL {
-        configDirectory.appendingPathComponent("config")
+        StorageInventory.url(.config, in: configDirectory)
     }
 
     // MARK: - Attach
@@ -295,7 +295,29 @@ public final class InstanceConnection {
             throw InstanceError.noSharedInstance
         }
 
-        try? reticulum.startRPC(port: controlPort)
+        // Not `try?`. A shared instance with no control socket is a daemon every `rn*` utility
+        // has lost while it keeps running and passing traffic: invisible from the daemon's side,
+        // and indistinguishable from "no daemon" from the utility's. It used to be swallowed
+        // here *and* mislogged as success inside `RPCServer.start()` — `bugs/040`.
+        //
+        // Logged rather than rethrown, deliberately and temporarily. Python raises
+        // (`Reticulum.py:359` constructs its `Listener` unguarded, so an `OSError` propagates out
+        // of `__init__`) and parity says do the same — but Python never reaches that case,
+        // because `multiprocessing.connection.SocketListener` sets `SO_REUSEADDR` and rebinds
+        // over `TIME_WAIT`. `NWListener` has no working equivalent here: `allowLocalEndpointReuse`
+        // is set on these parameters and the live daemon still gets `EADDRINUSE` restarting on a
+        // control port it recently served clients on. Until that half of `bugs/040` is fixed,
+        // rethrowing would turn "restart within TIME_WAIT gives you a daemon with no control
+        // socket" into "restart within TIME_WAIT gives you no daemon", which is worse for the
+        // operator and not what Python does either. This says so at CRITICAL and carries on.
+        do {
+            try reticulum.startRPC(port: controlPort)
+        } catch {
+            Reticulum.log("Could not start the instance control socket on port \(controlPort): "
+                          + "\(error). The daemon is running, but rnstatus, rnpath, rnprobe, "
+                          + "rnid and rnx cannot reach it. If this is a restart, the port is "
+                          + "most likely still in TIME_WAIT — see bugs/040.", level: .critical)
+        }
         if synthesizeInterfaces { try reticulum.synthesizeInterfaces(from: config) }
 
         return InstanceConnection(reticulum: reticulum, config: config,

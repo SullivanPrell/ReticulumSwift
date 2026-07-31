@@ -3,7 +3,123 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
-## [Unreleased] — 1.8.0
+## [1.9.0] — persisted state, and a node that listened to itself
+
+A minor rather than a patch release: **every persisted state file changes name, encoding or
+both**, so a config directory written by 1.8.0 or earlier is not read by this version. See
+*Upgrading* below — the cost is one cold start, and nothing is destroyed.
+
+### Changed — persisted state is now the reference's, byte for byte (`bugs/029`)
+
+A Reticulum config directory is a shared surface the moment `rnsd` can be either
+implementation, which is what the RetiOS macOS daemon probe and the interop suite already
+assume. Four files diverged from the Python reference in name *and* encoding for the whole
+life of the port, and a fifth was not written at all. None of it was visible: the names
+resembled the reference's closely enough to read as correct in a directory listing, and
+3400 unit tests round-tripped the port's own shape through the port's own codec.
+
+| was | is now | encoding |
+|---|---|---|
+| `storage/paths.json` | `storage/destination_table` | umsgpack, 8-element entries (`Transport.py:3390-3407`) |
+| `storage/known_destinations.json` | `storage/known_destinations` | umsgpack dict → 5-element list (`Identity.py:107,198`) |
+| `storage/packet_hashlist` | `storage/packet_hashlist.raw` | raw concatenated 32-byte hashes (`Transport.py:3323`) |
+| *(not written)* | `storage/tunnels` | umsgpack, `[tunnel_id, interface_hash, paths, expires]` (`Transport.py:3487`) |
+| `storage/cache/announces/<hash>` | unchanged name | umsgpack `[raw, interface_name]` (`Transport.py:2655`) |
+| `storage/ratchets/<hash>` | unchanged name | umsgpack `{ratchet, received}` (`Identity.py:424-434`) |
+
+The path table's *shape* changed as well as its encoding: an entry now references an
+announce packet in `storage/cache/announces/` instead of inlining the destination's public
+key and ratchet, which are resolved through `known_destinations` and `storage/ratchets/` as
+the reference does. Re-encoding the old shape under the reference's name would have produced
+a file Python still could not read — the worst available outcome, because it looks right.
+
+Three fields of the known-destinations entry were not being persisted at all and now are:
+the last-announce time (previously overwritten with "now" on every save, so
+`UNUSED_DESTINATION_LINGER` could never expire anything), the last-use time, and the
+retention sentinel (so a pinned destination was eligible for the next sweep).
+
+`storage/ratchets/` is the one to note if you run both implementations: the port wrote JSON
+where the reference writes msgpack, at the same path under the same filename, and **both
+implementations delete what they cannot parse there** — so each side was destroying the
+other's forward-secrecy state on every switch (`bugs/039`).
+
+### Fixed — the path table now actually restores (`bugs/041`)
+
+`Reticulum.start()` reads the path table and resolves each entry's interface; `rnsd`
+synthesises the configured interfaces *after* `start()` returns. So the restore ran against
+an empty interface set and dropped every entry, on every start, under every on-disk format.
+A Swift daemon had never restored a path table. Entries whose interface has not appeared yet
+are now held and installed as interfaces register, with a bounded give-up matching the
+reference's outcome for an interface that is not there.
+
+This is why the format work above is necessary but not sufficient: with `029` fixed and this
+not, the daemon writes a perfectly correct `destination_table` and still starts with no paths.
+
+### Fixed — a node acted on its own announces (`bugs/047`)
+
+A transport-enabled neighbour reflects announces back to the node that originated them, by
+design: `Transport.outbound`'s broadcast loop (`Transport.py:1197`) has no receiving-interface
+exclusion, and the PATHFINDER_R retransmission re-sends with `attached_interface = None`
+(`:604-637`). Every node hears its own announces come back, and every node is expected to ignore
+them.
+
+The reference ignores them with one test — `local_destination` is looked up in
+`destinations_map` and the **entire** announce block hangs off it being nil
+(`Transport.py:1767-1772`), with the ownership check repeated at the path-table admission test
+(`:1806-1807`). This port had no equivalent anywhere in `handleAnnounce`. The one place it
+consulted `registeredDestinations` in that path was an ingress-limit *exemption* — the opposite
+polarity, making the node more eager to process its own announce, not less.
+
+So a node learned a path to itself, re-cached its own identity from the wire, handed its own
+announce to every registered handler, and could relay it onward. For most destination types that
+is invisible: a delivery destination re-learning its own stamp cost changes nothing. It became
+visible only when a handler that *creates state* appeared — an LXMF propagation node, which
+peers. A lone one, on a mesh with nobody else on it, ended with exactly one peer: itself.
+
+Three existing tests were passing only because the gate was missing; each registered the
+destination it then announced to itself, which was never what they were testing. A fourth
+asserted "the handler was NOT called" and would have started passing for the gate's reason rather
+than the path-response filter's — it is fixed too.
+
+### Fixed — a control listener that reported a bind it did not achieve (`bugs/040`)
+
+`NWListener` reports bind failures asynchronously through `stateUpdateHandler`. None was set,
+so a listener that never bound still logged "RPC server started on port N", and the caller
+discarded the errors that *were* raised. The daemon then ran normally while `rnstatus`,
+`rnpath`, `rnprobe`, `rnid -r` and `rnx` all answered "Could not connect to instance control
+socket" — from the utility's side, indistinguishable from no daemon at all. The failure is
+now detected and logged at CRITICAL, naming what has become unreachable.
+
+### Upgrading
+
+**Expect one cold start.** A daemon upgrading past this release meets none of its own
+previous state files and starts with an empty path table, no known destinations and an empty
+replay window, relearning them from announces. That is exactly what the reference does on a
+fresh install, and what it does for any file it cannot find (`Identity.py:238-240`,
+`Transport.py:243`).
+
+There is deliberately **no migration reader**. A converter for the port's own earlier formats
+would be implementation-specific code on the one seam this change exists to make
+implementation-independent, and the reference has no counterpart to it.
+
+**Three files are left behind as orphans and are safe to delete:**
+
+```
+~/.reticulum/storage/paths.json
+~/.reticulum/storage/known_destinations.json
+~/.reticulum/storage/packet_hashlist
+```
+
+They are not read, not written and not deleted — removing an operator's files to tidy up is
+not a decision this release makes. Learned peer ratchets under `storage/ratchets/` *are*
+removed as they are encountered, because they sit at a name the reference uses and a Python
+daemon deletes them anyway.
+
+Rolling back is symmetric: the reference-format files a rolled-back build leaves behind
+become orphans in their turn, and the older build starts empty. No data is destroyed in
+either direction.
+
+## [1.8.0] — the bugs/013 defect class: config, transport identity, delivery truth
 
 A minor rather than a patch release, for the same reason 1.7.0 was: `displayName` changes
 for eleven more interface types and `Interface.hash` is `fullHash(displayName)`, so

@@ -254,6 +254,50 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
                       """)
     }
 
+    /// The other way to build an unroutable path is `PathEntry(unattachedPathTo:…)`, added for the
+    /// tunnel restore (`bugs/029`), and it would be a hole in the guard above if any site could
+    /// reach for it.
+    ///
+    /// The reference has exactly one place that produces a path with `receiving_interface = None`
+    /// — the tunnel-table restore at `Transport.py:396-400` — so the port has exactly one too.
+    /// Anywhere else, an unattached path is a route that silently goes nowhere.
+    func testOnlyTheTunnelRestoreBuildsAnUnattachedPath() throws {
+        let sourcesDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+
+        var sites: [String] = []
+        let walker = FileManager.default.enumerator(at: sourcesDir, includingPropertiesForKeys: nil)
+        while let url = walker?.nextObject() as? URL {
+            guard url.pathExtension == "swift" else { continue }
+            let src = try String(contentsOf: url, encoding: .utf8)
+            for (index, line) in src.components(separatedBy: .newlines).enumerated() {
+                let code = line.trimmingCharacters(in: .whitespaces)
+                guard !code.hasPrefix("//"), !code.hasPrefix("///"), !code.hasPrefix("*") else {
+                    continue
+                }
+                // The declaration itself is not a construction.
+                guard code.contains("unattachedPathTo"),
+                      !code.hasSuffix("unattachedPathTo destinationHash: Data,") else { continue }
+                sites.append("\(url.lastPathComponent):\(index + 1)")
+            }
+        }
+
+        // The count as well as the file, so a *second* call site in `PathStore.swift` is caught
+        // too. Not the line number: pinning that makes the guard fail on any edit above it, which
+        // trains the next person to update the expectation without reading it.
+        XCTAssertEqual(sites.count, 1, "expected exactly one call site, found: \(sites)")
+        XCTAssertEqual(sites.first?.hasPrefix("PathStore.swift:"), true,
+                       """
+                       `PathEntry(unattachedPathTo:…)` builds a path with no interface, which \
+                       routes nowhere until something attaches one. Its one legitimate caller is \
+                       the tunnel-path restore in `PathStore.swift`, where the reference does the \
+                       same and `handle_tunnel` attaches the interface when the endpoint \
+                       reappears (Transport.py:2440-2447). Found at: \(sites.joined(separator: ", "))
+                       A new site almost certainly wants `PathEntry(destinationHash:nextHopInterface:…)`.
+                       """)
+    }
+
     // MARK: - A vanished interface is not a routing target
 
     /// Spec: "A vanished client does not remain a routing target" — the deregistration half.
