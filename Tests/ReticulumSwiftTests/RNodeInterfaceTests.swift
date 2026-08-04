@@ -4,6 +4,7 @@ import XCTest
 // MARK: - Mock transport for capturing writes and injecting reads
 
 final class MockRNodeTransport: RNodeTransport {
+    var onTransportError: ((Error) -> Void)?
     var byteHandler: ((Data) -> Void)?
     var writtenData: [Data] = []
     var isOpen = false

@@ -296,11 +296,17 @@ public final class RNodeMultiInterface: Interface {
     /// `RNodeInterface.detectTimeout`.
     public var detectTimeout: TimeInterval = 5.0
 
+    /// Seconds between redial attempts after device loss; the class `reconnectWait` constant
+    /// records the reference value, this carries the live one.
+    public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeMultiInterface.reconnectWait)
+    private let reconnector = TransportReconnector()
+
     public func start() throws {
         // The same gate as `RNodeInterface.start()`: Python's multi bring-up goes detect →
         // CMD_INTERFACES → per-sub radio init before anything reports online; `open();
         // online = true` with `detect`/`initAllRadios` production-dead left every configured
         // radio silent behind an Up interface.
+        transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         try transport?.open()
         try detect()
 
@@ -320,8 +326,22 @@ public final class RNodeMultiInterface: Interface {
     }
 
     public func stop() {
+        reconnector.cancel()
+        transport?.onTransportError = nil
         transport?.close()
         isOnline = false
+    }
+
+    /// Device loss → offline → redial, re-running the whole `start()` gate so every
+    /// sub-interface radio is reconfigured on the re-powered device.
+    private func handleTransportLoss(_ error: Error) {
+        Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
+        isOnline = false
+        reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
+            guard let self else { return true }
+            try? self.start()
+            return self.isOnline
+        }
     }
 
     public func send(_ packet: Packet) throws {

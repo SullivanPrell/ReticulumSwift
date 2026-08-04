@@ -160,6 +160,13 @@ public final class SerialRNodeTransport: RNodeTransport {
 
     public var byteHandler: ((Data) -> Void)?
 
+    /// Forwarded straight to the serial port — this adapter adds no failure modes of its own,
+    /// so the interface hears exactly what the device layer reports.
+    public var onTransportError: ((Error) -> Void)? {
+        get { serial.onTransportError }
+        set { serial.onTransportError = newValue }
+    }
+
     public init(device: String, serial: SerialPortTransport) {
         self.device = device
         self.serial = serial
@@ -190,6 +197,9 @@ public final class POSIXSerialPort: SerialPortTransport {
         case configurationFailed(port: String, errno: Int32)
         case unsupportedBaudRate(Int)
         case notOpen
+        case deviceGone
+        case readFailed(errno: Int32)
+        case writeFailed(errno: Int32)
 
         public var errorDescription: String? {
             switch self {
@@ -201,6 +211,12 @@ public final class POSIXSerialPort: SerialPortTransport {
                 return "unsupported baud rate \(rate)"
             case .notOpen:
                 return "serial port is not open"
+            case .deviceGone:
+                return "serial device disappeared"
+            case .readFailed(let err):
+                return "serial read failed: \(String(cString: strerror(err)))"
+            case .writeFailed(let err):
+                return "serial write failed: \(String(cString: strerror(err)))"
             }
         }
     }
@@ -210,6 +226,12 @@ public final class POSIXSerialPort: SerialPortTransport {
     private let queue = DispatchQueue(label: "rns.serial.read")
     private var readCallback: ((Data) -> Void)?
     private let lock = NSLock()
+    private var errorCallback: ((Error) -> Void)?
+
+    public var onTransportError: ((Error) -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return errorCallback }
+        set { lock.lock(); errorCallback = newValue; lock.unlock() }
+    }
 
     public init() {}
 
@@ -270,13 +292,38 @@ public final class POSIXSerialPort: SerialPortTransport {
             guard let self else { return }
             var buffer = [UInt8](repeating: 0, count: 4096)
             let count = Darwin.read(descriptor, &buffer, buffer.count)
-            guard count > 0 else { return }
+            guard count > 0 else {
+                // 0 is EOF — the device side is gone; -1 with EAGAIN is a spurious wakeup on
+                // this non-blocking descriptor and nothing else. Anything else is the device
+                // failing underneath us. This `guard … return` used to swallow both cases,
+                // which is why nothing above this layer could ever notice a USB flap: the
+                // interface stayed Up writing into a dead descriptor.
+                if count < 0 && errno == EAGAIN { return }
+                let cause: Error = count == 0
+                    ? SerialError.deviceGone
+                    : SerialError.readFailed(errno: errno)
+                self.reportLoss(cause)
+                return
+            }
             let data = Data(buffer[0..<count])
             self.lock.lock(); let callback = self.readCallback; self.lock.unlock()
             callback?(data)
         }
         source.resume()
         readSource = source
+    }
+
+    /// Close the descriptor and surface the loss exactly once — the read source can fire
+    /// repeatedly against a dead fd before the interface reacts.
+    private func reportLoss(_ cause: Error) {
+        lock.lock()
+        let callback = errorCallback
+        let wasOpen = fd >= 0
+        readSource?.cancel()
+        readSource = nil
+        if fd >= 0 { Darwin.close(fd); fd = -1 }
+        lock.unlock()
+        if wasOpen { callback?(cause) }
     }
 
     public func close() {
@@ -290,10 +337,19 @@ public final class POSIXSerialPort: SerialPortTransport {
     public func write(_ data: Data) throws -> Int {
         lock.lock(); let descriptor = fd; lock.unlock()
         guard descriptor >= 0 else { throw SerialError.notOpen }
-        return data.withUnsafeBytes { raw -> Int in
+        let written = data.withUnsafeBytes { raw -> Int in
             guard let base = raw.baseAddress else { return 0 }
             return Darwin.write(descriptor, base, raw.count)
         }
+        // Python raises when written != len (its serial write checks); a -1 here was
+        // previously returned to callers who discarded it via `try?`, so a dead device's
+        // writes "succeeded" and were counted as traffic.
+        guard written == data.count else {
+            let cause = SerialError.writeFailed(errno: written < 0 ? errno : EIO)
+            reportLoss(cause)
+            throw cause
+        }
+        return written
     }
 
     public func setReadCallback(_ callback: @escaping (Data) -> Void) {

@@ -137,8 +137,14 @@ public final class SerialInterface: Interface {
 
     // MARK: - Interface lifecycle
 
+    /// Seconds between redial attempts after device loss. Python's reconnect loop hardcodes
+    /// `time.sleep(5)` (`SerialInterface.py:210`).
+    public var reconnectWait: TimeInterval = 5.0
+    private let reconnector = TransportReconnector()
+
     /// Open the serial port and bring the interface online.
     public func start() throws {
+        transport.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         try transport.open(port: port, baudRate: speed,
                            dataBits: dataBits, parity: parity, stopBits: stopBits)
         transport.setReadCallback { [weak self] data in
@@ -149,8 +155,24 @@ public final class SerialInterface: Interface {
 
     /// Take the interface offline and close the serial port.
     public func stop() {
+        reconnector.cancel()
+        transport.onTransportError = nil
         isOnline = false
         transport.close()
+    }
+
+    /// The device failed underneath the port: go offline and redial until it answers, as
+    /// Python's read loop does when it raises into `reconnect_port`
+    /// (`SerialInterface.py:196-221`).
+    private func handleTransportLoss(_ error: Error) {
+        Reticulum.log("\(displayName) lost its serial device (\(error)) — reconnecting",
+                      level: .error)
+        isOnline = false
+        reconnector.begin(wait: reconnectWait) { [weak self] in
+            guard let self else { return true }   // interface gone: end the loop
+            try? self.start()
+            return self.isOnline
+        }
     }
 
     // MARK: - Outgoing
@@ -172,7 +194,10 @@ public final class SerialInterface: Interface {
     public func processOutgoing(_ data: Data) {
         guard isOnline else { return }
         let framed = HDLC.frame(data)
-        try? transport.write(framed)
+        // Counted only when the write succeeded: a failed write counted as traffic is how a
+        // flapped device kept showing healthy growing TX counters in rnstatus. The failure
+        // itself reaches `handleTransportLoss` through the transport's error callback.
+        guard (try? transport.write(framed)) != nil else { return }
         counters.addTx(bytes: framed.count)   // Python counts framed bytes
     }
 

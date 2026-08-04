@@ -17,6 +17,7 @@ import XCTest
 final class RemainingConstructionTests: XCTestCase {
 
     private final class StubSerialPort: SerialPortTransport {
+        var onTransportError: ((Error) -> Void)?
         var isOpen = false
         func open(port: String, baudRate: Int, dataBits: Int,
                   parity: SerialParity, stopBits: Int) throws { isOpen = true }
@@ -26,6 +27,7 @@ final class RemainingConstructionTests: XCTestCase {
     }
 
     private final class StubRNodeTransport: RNodeTransport {
+        var onTransportError: ((Error) -> Void)?
         var byteHandler: ((Data) -> Void)?
         func open() throws {}
         func close() {}

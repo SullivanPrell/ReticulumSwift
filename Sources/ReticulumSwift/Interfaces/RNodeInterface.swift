@@ -404,12 +404,19 @@ public final class RNodeInterface: Interface {
     /// the same largest bound reaches the same decision without the fixed stall.
     public var validateTimeout: TimeInterval = 1.5
 
+    /// Seconds between redial attempts after device loss; overridable for tests. Python's
+    /// reconnect loop hardcodes `time.sleep(5)` (`RNodeInterface.py:1178`) — the class
+    /// `reconnectWait` constant records the reference value, this carries the live one.
+    public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeInterface.reconnectWait)
+    private let reconnector = TransportReconnector()
+
     public func start() throws {
         // Python `configure_device` (`RNodeInterface.py:424-467`): reset state, open, detect,
         // wait bounded; no answer closes the port and stays offline. On detect: initRadio,
         // validate the echoed parameters, and only then interface_ready/online. `online` gates
         // `process_outgoing` (`:708-710`) — reporting it before the modem is configured is a
         // healthy-looking interface whose radio is off, the exact `bugs/013` shape.
+        transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         resetRadioState()
         try transport?.open()
         try detect()
@@ -454,10 +461,27 @@ public final class RNodeInterface: Interface {
     }
 
     public func stop() {
+        reconnector.cancel()
+        transport?.onTransportError = nil
         idTimer?.invalidate()
         idTimer = nil
         transport?.close()
         isOnline = false
+    }
+
+    /// Device loss → offline → redial, re-running the whole `start()` gate: a re-powered RNode
+    /// lost its radio configuration with its power, so reopening the port alone would bring
+    /// back an interface whose modem is unconfigured — Python's `reconnect_port` ends in
+    /// `configure_device` for the same reason (`RNodeInterface.py:1155-1187`).
+    private func handleTransportLoss(_ error: Error) {
+        Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
+        isOnline = false
+        interfaceReady = false
+        reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
+            guard let self else { return true }
+            try? self.start()
+            return self.isOnline
+        }
     }
 
     public func send(_ packet: Packet) throws {
@@ -915,6 +939,14 @@ public final class RNodeInterface: Interface {
 /// (USB serial, BLE NUS, TCP) into the RNode interface.
 public protocol RNodeTransport: AnyObject {
     var byteHandler: ((Data) -> Void)? { get set }
+
+    /// Invoked when the device fails underneath the transport — a read reporting the device
+    /// gone or a failed write. Required (no defaulted no-op): a conformer that cannot report
+    /// loss leaves the interface Up over a dead device forever, which is the defect this seam
+    /// closes. Python's equivalent is the read loop raising into `reconnect_port`
+    /// (`RNodeInterface.py:1155-1187`).
+    var onTransportError: ((Error) -> Void)? { get set }
+
     func open()  throws
     func close()
     func write(_ data: Data) throws

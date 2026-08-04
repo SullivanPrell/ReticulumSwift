@@ -14,6 +14,7 @@ final class InterfaceConstructionTests: XCTestCase {
     // MARK: - Stubs
 
     private final class StubSerialPort: SerialPortTransport {
+        var onTransportError: ((Error) -> Void)?
         var isOpen = false
         func open(port: String, baudRate: Int, dataBits: Int,
                   parity: SerialParity, stopBits: Int) throws { isOpen = true }
@@ -23,6 +24,7 @@ final class InterfaceConstructionTests: XCTestCase {
     }
 
     private final class StubRNodeTransport: RNodeTransport {
+        var onTransportError: ((Error) -> Void)?
         var byteHandler: ((Data) -> Void)?
         private(set) var opened = false
         func open() throws { opened = true }

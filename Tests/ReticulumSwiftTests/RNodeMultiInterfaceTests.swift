@@ -4,6 +4,7 @@ import XCTest
 // MARK: - Local mock transport (do not import from RNodeInterfaceTests)
 
 private final class MockMultiTransport: RNodeTransport {
+    var onTransportError: ((Error) -> Void)?
     var byteHandler: ((Data) -> Void)?
     var writtenData: [Data] = []
     var isOpen = false

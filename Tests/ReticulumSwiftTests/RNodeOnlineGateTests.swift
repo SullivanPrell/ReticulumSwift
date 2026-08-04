@@ -17,6 +17,7 @@ final class RNodeOnlineGateTests: XCTestCase {
     /// what real firmware does as each `set*` command lands. Echo values are configurable so a
     /// mismatch can be staged; defaults echo whatever the interface was configured with.
     private final class EchoingRNodeTransport: RNodeTransport {
+        var onTransportError: ((Error) -> Void)?
         var byteHandler: ((Data) -> Void)?
         private(set) var opened = false
         private(set) var closed = false
@@ -56,6 +57,7 @@ final class RNodeOnlineGateTests: XCTestCase {
 
     /// Accepts everything, answers nothing — an absent or dead device.
     private final class SilentRNodeTransport: RNodeTransport {
+        var onTransportError: ((Error) -> Void)?
         var byteHandler: ((Data) -> Void)?
         private(set) var closed = false
         private(set) var writes: [Data] = []
@@ -143,6 +145,7 @@ final class RNodeOnlineGateTests: XCTestCase {
     // MARK: - RNodeMultiInterface, same gate
 
     private final class EchoingMultiTransport: RNodeTransport {
+        var onTransportError: ((Error) -> Void)?
         var byteHandler: ((Data) -> Void)?
         private(set) var closed = false
         private(set) var writes: [Data] = []

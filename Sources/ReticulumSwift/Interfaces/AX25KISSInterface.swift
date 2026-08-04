@@ -210,7 +210,13 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Interface lifecycle
 
+    /// Seconds between redial attempts after device loss. Python's reconnect loop hardcodes
+    /// `time.sleep(5)` (`AX25KISSInterface.py:386`).
+    public var reconnectWait: TimeInterval = 5.0
+    private let reconnector = TransportReconnector()
+
     public func start() throws {
+        transport.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         try transport.open(port: port, baudRate: speed,
                            dataBits: dataBits, parity: parity, stopBits: stopBits)
         transport.setReadCallback { [weak self] data in
@@ -222,11 +228,26 @@ public final class AX25KISSInterface: Interface {
     }
 
     public func stop() {
+        reconnector.cancel()
+        transport.onTransportError = nil
         lock.lock()
         isOnline       = false
         interfaceReady = false
         lock.unlock()
         transport.close()
+    }
+
+    /// Device loss → offline → redial, re-running `start()` so the TNC is reconfigured
+    /// (`AX25KISSInterface.py:378-393`).
+    private func handleTransportLoss(_ error: Error) {
+        Reticulum.log("\(displayName) lost its serial device (\(error)) — reconnecting",
+                      level: .error)
+        lock.lock(); isOnline = false; interfaceReady = false; lock.unlock()
+        reconnector.begin(wait: reconnectWait) { [weak self] in
+            guard let self else { return true }
+            try? self.start()
+            return self.isOnline
+        }
     }
 
     // MARK: - KISS TNC configuration (same as KISSInterface)
@@ -303,7 +324,9 @@ public final class AX25KISSInterface: Interface {
             ax25.append(data)
 
             let framed = KISS.frame(ax25)
-            try? transport.write(framed)
+            // Counted only on success — a failed write is not traffic (the failure reaches
+            // `handleTransportLoss` through the transport's error callback).
+            guard (try? transport.write(framed)) != nil else { return }
             counters.addTx(bytes: data.count)   // Python counts original payload
         } else {
             packetQueue.append(data)
