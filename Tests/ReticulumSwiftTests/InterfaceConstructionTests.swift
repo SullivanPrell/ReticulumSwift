@@ -27,7 +27,17 @@ final class InterfaceConstructionTests: XCTestCase {
         private(set) var opened = false
         func open() throws { opened = true }
         func close() { opened = false }
-        func write(_ data: Data) throws {}
+        func write(_ data: Data) throws {
+            // Behave like firmware, which `start()`'s bring-up gate now requires: answer a
+            // detect request, and echo every configuration command back verbatim — that echo
+            // is exactly what real RNode firmware sends as each parameter is applied.
+            let bytes = [UInt8](data)
+            if bytes.count > 1, bytes[1] == KISS.cmdDetect {
+                byteHandler?(Data([KISS.fend, KISS.cmdDetect, KISS.detectResp, KISS.fend]))
+            } else {
+                byteHandler?(data)
+            }
+        }
     }
 
     private final class StubI2PDaemon: I2PDaemonProtocol {

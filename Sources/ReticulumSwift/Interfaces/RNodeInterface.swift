@@ -354,7 +354,9 @@ public final class RNodeInterface: Interface {
 
     // MARK: – Flow control / TX queue
 
-    public var interfaceReady: Bool  = true
+    /// Python starts this `False` (`RNodeInterface.py:297`) and raises it only after a
+    /// validated bring-up (`:459`); defaulting it true was half of the missing online gate.
+    public var interfaceReady: Bool  = false
     public var flowControl:    Bool  = false
     public var packetQueue:    [Data] = []
 
@@ -391,9 +393,53 @@ public final class RNodeInterface: Interface {
 
     // MARK: – Interface lifecycle
 
+    /// Bound on the wait for the device's detect response. Python polls 5 s over TCP/BLE
+    /// (`RNodeInterface.py:434-442`) and sleeps a fixed 0.2 s on serial (`:444`); this port's
+    /// reads are event-driven, so one bounded poll serves every transport and exits the moment
+    /// the response lands.
+    public var detectTimeout: TimeInterval = 5.0
+
+    /// Bound on the wait for the echoed radio parameters before `validateRadioState()` decides.
+    /// Python sleeps a fixed 0.25–1.5 s by transport (`:662-664`) and compares once; polling to
+    /// the same largest bound reaches the same decision without the fixed stall.
+    public var validateTimeout: TimeInterval = 1.5
+
     public func start() throws {
+        // Python `configure_device` (`RNodeInterface.py:424-467`): reset state, open, detect,
+        // wait bounded; no answer closes the port and stays offline. On detect: initRadio,
+        // validate the echoed parameters, and only then interface_ready/online. `online` gates
+        // `process_outgoing` (`:708-710`) — reporting it before the modem is configured is a
+        // healthy-looking interface whose radio is off, the exact `bugs/013` shape.
+        resetRadioState()
         try transport?.open()
+        try detect()
+
+        let detectDeadline = Date().addingTimeInterval(detectTimeout)
+        while !detected && Date() < detectDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard detected else {
+            Reticulum.log("Could not detect device for \(displayName)", level: .error)
+            transport?.close()
+            return
+        }
+
+        try initRadio()
+        let validateDeadline = Date().addingTimeInterval(validateTimeout)
+        while !validateRadioState() && Date() < validateDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard validateRadioState() else {
+            Reticulum.log("After configuring \(displayName), the reported radio parameters "
+                          + "did not match your configuration. Aborting RNode startup",
+                          level: .error)
+            transport?.close()
+            return
+        }
+
+        interfaceReady = true
         isOnline = true
+        Reticulum.log("\(displayName) is configured and powered up", level: .info)
 
         // The reference checks the ID deadline on its ~80 ms read loop (`:1142-1146`); this
         // port's reads are event-driven, so a coarse timer carries the check. One-second
@@ -774,12 +820,16 @@ public final class RNodeInterface: Interface {
     // MARK: – Radio state validation (Python: validateRadioState)
 
     public func validateRadioState() -> Bool {
+        // Python None-guards only the frequency comparison (`RNodeInterface.py:671`); the
+        // bandwidth, txpower, sf and state comparisons are unconditional (`:674-685`), so a
+        // device that echoed nothing is a mismatch. Guarding every comparison made validation
+        // vacuously true against total silence — an unconfigured modem "validated".
         var valid = true
         if let rf = rFrequency, abs(Int(frequency) - Int(rf)) > 100 { valid = false }
-        if let rb = rBandwidth, bandwidth != rb                       { valid = false }
-        if let rt = rTxPower,  txPower   != rt                       { valid = false }
-        if let rs = rSf,       sf        != rs                        { valid = false }
-        if let st = rState,    state     != st                        { valid = false }
+        if rBandwidth != bandwidth { valid = false }
+        if rTxPower   != txPower   { valid = false }
+        if rSf        != sf        { valid = false }
+        if rState     != state     { valid = false }
         return valid
     }
 

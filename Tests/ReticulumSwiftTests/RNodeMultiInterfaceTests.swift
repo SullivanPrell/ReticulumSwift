@@ -7,10 +7,18 @@ private final class MockMultiTransport: RNodeTransport {
     var byteHandler: ((Data) -> Void)?
     var writtenData: [Data] = []
     var isOpen = false
+    /// When true, a detect write is answered with a detect response, so `start()`'s
+    /// bring-up gate (detect → initAllRadios → online) can complete against this mock.
+    var answerDetect = false
 
     func open()  throws { isOpen = true }
     func close() { isOpen = false }
-    func write(_ data: Data) throws { writtenData.append(data) }
+    func write(_ data: Data) throws {
+        writtenData.append(data)
+        if answerDetect, data.count > 1, [UInt8](data)[1] == KISS.cmdDetect {
+            byteHandler?(Data([KISS.fend, KISS.cmdDetect, KISS.detectResp, KISS.fend]))
+        }
+    }
 
     /// Feed bytes as if they arrived from the hardware.
     func inject(_ bytes: [UInt8]) {
@@ -957,17 +965,27 @@ final class RNodeMultiInterfaceOnlineStateTests: XCTestCase {
         XCTAssertFalse(multi.isOnline)
     }
 
-    func testStartOpensTransport() throws {
+    /// The mock answers detect (nothing more is needed for the multi gate), so `start()`
+    /// completes its bring-up: this suite's subject is the transport lifecycle, and
+    /// `RNodeOnlineGateTests` owns the failed-detect path.
+    private func answeringTransport() -> MockMultiTransport {
         let transport = MockMultiTransport()
+        transport.answerDetect = true
+        return transport
+    }
+
+    func testStartOpensTransport() throws {
+        let transport = answeringTransport()
         let sub0 = RNodeSubInterface(name: "ch0", index: 0, interfaceType: "SX127X",
                                      frequency: 868_000_000, bandwidth: 125_000, txPower: 14, sf: 7, cr: 5)
         let multi = try RNodeMultiInterface(name: "test", transport: transport, subInterfaces: [sub0])
         try multi.start()
         XCTAssertTrue(transport.isOpen)
+        XCTAssertTrue(multi.isOnline)
     }
 
     func testStopClosesTransport() throws {
-        let transport = MockMultiTransport()
+        let transport = answeringTransport()
         let sub0 = RNodeSubInterface(name: "ch0", index: 0, interfaceType: "SX127X",
                                      frequency: 868_000_000, bandwidth: 125_000, txPower: 14, sf: 7, cr: 5)
         let multi = try RNodeMultiInterface(name: "test", transport: transport, subInterfaces: [sub0])
