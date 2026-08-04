@@ -173,8 +173,14 @@ public final class KISSInterface: Interface {
 
     // MARK: - Interface lifecycle
 
+    /// Seconds between redial attempts after device loss. Python's reconnect loop hardcodes
+    /// `time.sleep(5)` (`KISSInterface.py:373`).
+    public var reconnectWait: TimeInterval = 5.0
+    private let reconnector = TransportReconnector()
+
     /// Open the serial port, configure the KISS TNC, and bring the interface online.
     public func start() throws {
+        transport.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         try transport.open(port: port, baudRate: speed,
                            dataBits: dataBits, parity: parity, stopBits: stopBits)
         transport.setReadCallback { [weak self] data in
@@ -187,11 +193,27 @@ public final class KISSInterface: Interface {
 
     /// Take the interface offline and close the serial port.
     public func stop() {
+        reconnector.cancel()
+        transport.onTransportError = nil
         lock.lock()
         isOnline       = false
         interfaceReady = false
         lock.unlock()
         transport.close()
+    }
+
+    /// Device loss → offline → redial until the TNC answers, re-running the whole `start()`
+    /// (the KISS configuration must be resent to a re-powered TNC), as Python's read loop does
+    /// when it raises into `reconnect_port` (`KISSInterface.py:365-380`).
+    private func handleTransportLoss(_ error: Error) {
+        Reticulum.log("\(displayName) lost its serial device (\(error)) — reconnecting",
+                      level: .error)
+        lock.lock(); isOnline = false; interfaceReady = false; lock.unlock()
+        reconnector.begin(wait: reconnectWait) { [weak self] in
+            guard let self else { return true }
+            try? self.start()
+            return self.isOnline
+        }
     }
 
     // MARK: - KISS TNC configuration commands
@@ -271,7 +293,9 @@ public final class KISSInterface: Interface {
             }
             lock.unlock()
             let framed = KISS.frame(data)
-            try? transport.write(framed)
+            // Counted only on success — a failed write is not traffic (the failure reaches
+            // `handleTransportLoss` through the transport's error callback).
+            guard (try? transport.write(framed)) != nil else { return }
             counters.addTx(bytes: data.count)   // Python counts original (unframed) bytes
         } else {
             packetQueue.append(data)

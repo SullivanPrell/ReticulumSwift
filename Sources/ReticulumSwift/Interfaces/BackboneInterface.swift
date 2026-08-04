@@ -8,7 +8,7 @@ import Network
 ///   - `HW_MTU = 1_048_576` (1 MB vs 262 KB for TCP)
 ///   - `BITRATE_GUESS = 100_000_000` (100 Mbps)
 ///   - Automatic reconnection after disconnect
-public final class BackboneInterface: Interface {
+public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -53,6 +53,14 @@ public final class BackboneInterface: Interface {
         return "BackboneInterface[\(name)/\(ipString):\(port)]"
     }
 
+    /// The stats `type` field is `type(interface).__name__` (`Reticulum.py:1472`), and a dialing
+    /// backbone config constructs `BackboneClientInterface` on Python (`Reticulum.py:994-1000`) —
+    /// the class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener. The Swift
+    /// class name would report the listener's name for a client, so consumers keying on
+    /// `ifstats["type"]` mis-classify it. `displayName` above stays on the client `__str__` form;
+    /// the two are different contracts.
+    public var statsTypeName: String { "BackboneClientInterface" }
+
     public var bitrate: Int = BackboneInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
@@ -61,7 +69,7 @@ public final class BackboneInterface: Interface {
     }
 
     /// Python: `HW_MTU = 1_048_576`.
-    public let hwMtu: Int? = BackboneInterface.hwMtuConstant
+    public var hwMtu: Int? = BackboneInterface.hwMtuConstant
 
     /// Python: `AUTOCONFIGURE_MTU = True`.
     public let autoconfigureMtu: Bool = true
@@ -211,6 +219,7 @@ public final class BackboneInterface: Interface {
             switch state {
             case .ready:
                 self.isOnline = true
+                self.noteConnected()
                 self.stateLock.lock(); self.reconnectAttempts = 0; self.stateLock.unlock()
                 self.beginReceiveLoop()
                 Reticulum.log("BackboneInterface \(self.name) connected to \(self.host):\(self.port)",

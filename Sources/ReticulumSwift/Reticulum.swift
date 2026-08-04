@@ -453,6 +453,29 @@ public final class Reticulum {
     /// shared-instance interface at `:397-399` and `:424-425`.
     public static var forceSharedInstanceBitrate_: Int? = nil
 
+    /// The configured forced shared-instance bitrate, or nil.
+    ///
+    /// **Known gap** (`fix-013 §7.8`): the reference also marks the interface `_force_bitrate`
+    /// and uses that flag to simulate the forced link's latency
+    /// (`Reticulum.py:397-401`/`:424-428` → `LocalInterface.py:234`, propagated to spawned
+    /// clients at `:459`/`:475`). This port has neither the flag nor the simulation, so the
+    /// value is readable and honest about being reportable-only.
+    public static func forceSharedInstanceBitrate() -> Int? { forceSharedInstanceBitrate_ }
+
+    /// **Known gap** (`fix-013 §7.8`): whether this port announces its own interfaces as
+    /// discoverable endpoints — Python's `Discovery.InterfaceAnnouncer`. The *receive* side is
+    /// implemented (a Swift node discovers Python interfaces); the publish side is not, so the
+    /// eleven `discovery_*`/`reachable_on`/`discoverable` interface attributes have no
+    /// counterpart here. `RuntimeAttributeParityTests` fails if this ever becomes true without
+    /// those attributes landing with it.
+    public static let publishesInterfaceDiscovery = false
+
+    /// **Known gap** (`fix-013 §7.8`): whether this port dials and monitors discovered
+    /// endpoints — Python's `Discovery.py:574-742`, which writes `autoconnect_hash`,
+    /// `autoconnect_source` and `autoconnect_down`. The `autoconnect_*` policy keys parse into
+    /// statics that nothing consumes, because the subsystem is absent.
+    public static let autoconnectsDiscoveredInterfaces = false
+
     /// Announce-rate defaults for interfaces that do not configure their own.
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
     public static var defaultArTarget_: Int? = nil
@@ -994,6 +1017,12 @@ public final class Reticulum {
             interface.bitrate = bitrate
         }
 
+        // Immediately after the bitrate, as `Reticulum.py:915` does, and unconditionally: the
+        // gate is `autoconfigureMtu`, inside. The class MTU constants never survive Python
+        // startup — a TCP interface runs at 8192, a dialing backbone at 16384 — and the value
+        // is wire-visible in the 3-byte LINKREQUEST MTU signalling.
+        interface.optimiseMtu()
+
         interface.ingressControl = block.bool("ingress_control") ?? true
 
         // Present-only, so an absent key leaves the class default (`Reticulum.py:942-953`).
@@ -1108,21 +1137,29 @@ public final class Reticulum {
                 let listenPort = ifCfg.int("listen_port") ?? ifCfg.int("port") ?? 4242
                 // Python resolves `listen_ip` into `bind_ip` and renders it in `__str__`
                 // (Reticulum.py / TCPInterface.py:518). Ignoring it made every Swift
-                // listener report 0.0.0.0 regardless of configuration.
-                let bindIP = ifCfg["listen_ip"] ?? "0.0.0.0"
+                // listener report 0.0.0.0 regardless of configuration. `device` binds the
+                // named device's own address instead of the wildcard
+                // (`TCPServerInterface.get_address_for_if`, `TCPInterface.py:517,548`).
+                let bindIP = ifCfg["listen_ip"]
+                    ?? ifCfg["device"].flatMap(NetworkDeviceAddress.address(for:))
+                    ?? "0.0.0.0"
                 iface = TCPServerInterface(name: ifCfg.name, port: UInt16(listenPort), bindIP: bindIP)
 
             case "UDPInterface":
                 let listenPort = ifCfg.int("listen_port")
-                let forwardHost = ifCfg["forward_ip"] ?? ifCfg["forward_host"]
                 let forwardPort = ifCfg.int("forward_port")
+                // `device` names a network device whose broadcast address fills whichever of
+                // bind and forward the block leaves unset (`UDPInterface.py:82-86`); explicit
+                // `listen_ip` / `forward_ip` win, as they do there.
+                let deviceBroadcast = ifCfg["device"].flatMap(NetworkDeviceAddress.broadcast(for:))
+                let forwardHost = ifCfg["forward_ip"] ?? ifCfg["forward_host"] ?? deviceBroadcast
                 iface = UDPInterface(
                     name: ifCfg.name,
                     listenPort: listenPort.map(UInt16.init),
                     forwardHost: forwardHost,
                     forwardPort: forwardPort.map(UInt16.init),
                     // Python's `bind_ip`, which its `__str__` reports (UDPInterface.py:63).
-                    bindIP: ifCfg["listen_ip"] ?? "0.0.0.0"
+                    bindIP: ifCfg["listen_ip"] ?? deviceBroadcast ?? "0.0.0.0"
                 )
 
             case "AutoInterface":
@@ -1149,18 +1186,291 @@ public final class Reticulum {
                 iface = nil
                 #endif
 
+            case "RNodeInterface":
+                // Python: `RNodeInterface.py:139-360`. A missing or out-of-range radio
+                // parameter fails construction (`validcfg` → raise → `RNS.panic()`,
+                // `Reticulum.py:1087-1090`); absent *hardware* does not — the port opens at
+                // `start()`, and a failed open leaves the interface registered and offline.
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard let rnodeFactory = InterfaceTransportFactories.rnode else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "RNode", device: device,
+                        hint: "no RNode transport factory is registered on this platform")
+                }
+                let frequency = ifCfg.int("frequency") ?? 0
+                let bandwidth = ifCfg.int("bandwidth") ?? 0
+                let txPower   = ifCfg.int("txpower") ?? 0
+                let sf        = ifCfg.int("spreadingfactor") ?? 0
+                let cr        = ifCfg.int("codingrate") ?? 0
+                // The reference's `validcfg` gates (`RNodeInterface.py:305-327`).
+                guard (137_000_000...3_000_000_000).contains(frequency) else {
+                    throw InterfaceConstructionError.invalidValue(
+                        interface: ifCfg.name, key: "frequency", value: String(frequency))
+                }
+                guard (0...37).contains(txPower) else {
+                    throw InterfaceConstructionError.invalidValue(
+                        interface: ifCfg.name, key: "txpower", value: String(txPower))
+                }
+                guard (7_800...1_625_000).contains(bandwidth) else {
+                    throw InterfaceConstructionError.invalidValue(
+                        interface: ifCfg.name, key: "bandwidth", value: String(bandwidth))
+                }
+                guard (5...12).contains(sf) else {
+                    throw InterfaceConstructionError.invalidValue(
+                        interface: ifCfg.name, key: "spreadingfactor", value: String(sf))
+                }
+                guard (5...8).contains(cr) else {
+                    throw InterfaceConstructionError.invalidValue(
+                        interface: ifCfg.name, key: "codingrate", value: String(cr))
+                }
+
+                let radioTransport = try rnodeFactory(device)
+                let rnode = RNodeInterface(name: ifCfg.name, transport: radioTransport)
+                rnode.ownedTransport = radioTransport
+                rnode.frequency = UInt32(frequency)
+                rnode.bandwidth = UInt32(bandwidth)
+                rnode.txPower   = txPower
+                rnode.sf        = sf
+                rnode.cr        = cr
+                if let st = ifCfg.double("airtime_limit_short") {
+                    guard (0.0...100.0).contains(st) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: ifCfg.name, key: "airtime_limit_short", value: String(st))
+                    }
+                    rnode.stAlock = st
+                }
+                if let lt = ifCfg.double("airtime_limit_long") {
+                    guard (0.0...100.0).contains(lt) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: ifCfg.name, key: "airtime_limit_long", value: String(lt))
+                    }
+                    rnode.ltAlock = lt
+                }
+                // Both halves or neither, as the reference treats the pair
+                // (`RNodeInterface.py:333-343`), with the same length gate.
+                if let callsign = ifCfg["id_callsign"], let interval = ifCfg.int("id_interval") {
+                    let encoded = Data(callsign.utf8)
+                    guard encoded.count <= RNodeInterface.callsignMaxLength else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: ifCfg.name, key: "id_callsign", value: callsign)
+                    }
+                    rnode.idCallsign = encoded
+                    rnode.idInterval = TimeInterval(interval)
+                }
+                iface = rnode
+
+            case "KISSInterface":
+                // Python: `KISSInterface.py:60-115`, with `id_interval`/`id_callsign` becoming
+                // the KISS beacon pair (`:100-113`).
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard let serialFactory = InterfaceTransportFactories.serial else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "serial", device: device,
+                        hint: "no serial transport factory is registered on this platform")
+                }
+                iface = KISSInterface(
+                    name: ifCfg.name,
+                    port: device,
+                    speed: ifCfg.int("speed") ?? 9600,
+                    dataBits: ifCfg.int("databits") ?? 8,
+                    parity: SerialParity(string: ifCfg["parity"] ?? "N"),
+                    stopBits: ifCfg.int("stopbits") ?? 1,
+                    preamble: ifCfg.int("preamble") ?? 350,
+                    txtail: ifCfg.int("txtail") ?? 20,
+                    persistence: ifCfg.int("persistence") ?? 64,
+                    slottime: ifCfg.int("slottime") ?? 20,
+                    flowControl: ifCfg.bool("flow_control") ?? false,
+                    beaconInterval: ifCfg.int("id_interval").map(TimeInterval.init),
+                    beaconData: ifCfg["id_callsign"] ?? "",
+                    transport: try serialFactory(device)
+                )
+
+            case "AX25KISSInterface":
+                // Python: `AX25KISSInterface.py:60-135`. The callsign and SSID gates live in the
+                // interface's own throwing init; a bad value fails construction as the
+                // reference's `validcfg` raise does.
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard let callsign = ifCfg["callsign"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "callsign")
+                }
+                guard let ssid = ifCfg.int("ssid") else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "ssid")
+                }
+                guard let serialFactory = InterfaceTransportFactories.serial else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "serial", device: device,
+                        hint: "no serial transport factory is registered on this platform")
+                }
+                iface = try AX25KISSInterface(
+                    name: ifCfg.name,
+                    port: device,
+                    speed: ifCfg.int("speed") ?? 9600,
+                    dataBits: ifCfg.int("databits") ?? 8,
+                    parityString: ifCfg["parity"] ?? "N",
+                    stopBits: ifCfg.int("stopbits") ?? 1,
+                    callsign: callsign,
+                    ssid: ssid,
+                    preamble: ifCfg.int("preamble") ?? 350,
+                    txtail: ifCfg.int("txtail") ?? 20,
+                    persistence: ifCfg.int("persistence") ?? 64,
+                    slottime: ifCfg.int("slottime") ?? 20,
+                    flowControl: ifCfg.bool("flow_control") ?? false,
+                    transport: try serialFactory(device)
+                )
+
+            case "I2PInterface":
+                // Python: `I2PInterface.py:725-745`, with `storagepath` injected by
+                // `Reticulum.py:1015`. The embedded daemon's data lives under this stack's
+                // storage, mirroring the reference keeping i2pd state under its storagepath.
+                guard let daemonFactory = InterfaceTransportFactories.i2pDaemon else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "I2P", device: ifCfg.name,
+                        hint: "no I2P daemon factory is registered on this platform")
+                }
+                let peers = ifCfg["peers"]?
+                    .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
+                iface = I2PInterface(
+                    name: ifCfg.name,
+                    daemon: try daemonFactory(),
+                    // The reference's own location: `storagepath + "/i2p"`
+                    // (`I2PInterface.py:90-91`), declared in `StorageInventory`.
+                    dataDirectory: StorageInventory.url(.i2p, storage: configuration.storagePath),
+                    connectable: ifCfg.bool("connectable") ?? false,
+                    peers: peers
+                )
+
+            case "SerialInterface":
+                // Python: `Reticulum.py:1024-1026` → `SerialInterface.py:74-86`. A missing
+                // port is a raise that panics the daemon; everything else defaults
+                // (9600/8/N/1, `:77-80`).
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard let serialFactory = InterfaceTransportFactories.serial else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "serial", device: device,
+                        hint: "no serial transport factory is registered on this platform")
+                }
+                iface = SerialInterface(
+                    name: ifCfg.name,
+                    port: device,
+                    speed: ifCfg.int("speed") ?? 9600,
+                    dataBits: ifCfg.int("databits") ?? 8,
+                    parityString: ifCfg["parity"] ?? "N",
+                    stopBits: ifCfg.int("stopbits") ?? 1,
+                    transport: try serialFactory(device)
+                )
+
+            case "RNodeMultiInterface":
+                // Python: `Reticulum.py:1044-1047` → `RNodeMultiInterface.py:160-233`. The
+                // radio rows are configobj's third section level. No port, no sub-blocks, or
+                // no *enabled* sub-blocks are all raises (`:219-224`, `:229-231`).
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard !ifCfg.subBlocks.isEmpty else {
+                    // `ValueError("No subinterfaces configured for "+name)`
+                    throw InterfaceConstructionError.missingKey(
+                        interface: ifCfg.name, key: "subinterfaces")
+                }
+                // A sub is enabled by its own `interface_enabled`, or by the parent's literal
+                // `enabled` spelling — not by a parent `interface_enabled`
+                // (`RNodeMultiInterface.py:178`).
+                let enabledSubs = ifCfg.subBlocks.filter {
+                    $0.bool("interface_enabled") == true || ifCfg.enabledViaEnabledKey
+                }
+                guard !enabledSubs.isEmpty else {
+                    // `ValueError("No subinterfaces enabled for "+name)`
+                    throw InterfaceConstructionError.invalidValue(
+                        interface: ifCfg.name, key: "subinterfaces", value: "none enabled")
+                }
+                guard let rnodeFactory = InterfaceTransportFactories.rnode else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "RNode", device: device,
+                        hint: "no RNode transport factory is registered on this platform")
+                }
+                var subs: [RNodeSubInterface] = []
+                for (position, sub) in enabledSubs.enumerated() {
+                    let subName = "\(ifCfg.name)/\(sub.name)"
+                    let frequency = sub.int("frequency") ?? 0
+                    let bandwidth = sub.int("bandwidth") ?? 0
+                    let txPower   = sub.int("txpower") ?? 0
+                    let sf        = sub.int("spreadingfactor") ?? 0
+                    let cr        = sub.int("codingrate") ?? 0
+                    // The same `validcfg` gates the single-radio case applies
+                    // (`RNodeMultiInterface.py` mirrors `RNodeInterface.py:305-327`).
+                    guard (137_000_000...3_000_000_000).contains(frequency) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "frequency", value: String(frequency))
+                    }
+                    guard (0...37).contains(txPower) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "txpower", value: String(txPower))
+                    }
+                    guard (7_800...1_625_000).contains(bandwidth) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "bandwidth", value: String(bandwidth))
+                    }
+                    guard (5...12).contains(sf) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "spreadingfactor", value: String(sf))
+                    }
+                    guard (5...8).contains(cr) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "codingrate", value: String(cr))
+                    }
+                    subs.append(RNodeSubInterface(
+                        name: sub.name,
+                        index: sub.int("vport") ?? position,
+                        // The concrete chip type is reported by the device at detect
+                        // (CMD_INTERFACES); Python fills it from that response, never from
+                        // config, so construction has nothing to put here.
+                        interfaceType: "",
+                        frequency: UInt32(frequency),
+                        bandwidth: UInt32(bandwidth),
+                        txPower: txPower,
+                        sf: sf,
+                        cr: cr,
+                        flowControl: sub.bool("flow_control") ?? false,
+                        stAlock: sub.double("airtime_limit_short"),
+                        ltAlock: sub.double("airtime_limit_long")
+                    ))
+                }
+                let radioTransport = try rnodeFactory(device)
+                let multi = try RNodeMultiInterface(
+                    name: ifCfg.name, transport: radioTransport, subInterfaces: subs)
+                multi.ownedTransport = radioTransport
+                iface = multi
+
+            case "WeaveInterface":
+                // Python: `Reticulum.py:1049-1051` → `WeaveInterface.py:849-851`, where
+                // `c["port"]` is a KeyError when absent — a raise that panics the daemon. The
+                // WDCL fabric rides an ordinary serial device, so the serial factory serves it.
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard let serialFactory = InterfaceTransportFactories.serial else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "serial", device: device,
+                        hint: "no serial transport factory is registered on this platform")
+                }
+                iface = WeaveInterface(
+                    name: ifCfg.name, port: device, transport: try serialFactory(device))
+
             default:
-                // Python raises `ValueError("Unsupported interface type")` here
-                // (`Reticulum.py:1000-1090`); this port skipped the block in silence, so an
-                // operator who enabled a documented radio block got a daemon that started,
-                // reported healthy, and had no radio (`bugs/031`).
-                //
-                // Constructing those types needs config-string → transport factories and is
-                // deferred, but the *silence* is the part this change exists to remove, and it
-                // costs one line. Logged rather than thrown so an otherwise-working config with
-                // one unsupported block still brings up its other interfaces — Python's throw
-                // would take the whole daemon down, which is a worse trade while four documented
-                // types remain unsupported.
+                // The current reference no longer raises here: an unknown type goes through the
+                // external-interface-module lookup, and a missing module is an ERROR log naming
+                // it (`Reticulum.py:1055-1061`). This port loads no external modules, so the
+                // parallel observable is the same loud log — an operator's typo is named, the
+                // other interfaces still come up. `PipeInterface` deliberately stays on this
+                // path: unimplemented by design (macOS/Linux subprocess pipes, no mobile use
+                // case), pinned by `RemainingConstructionTests`.
                 Reticulum.log("Unsupported interface type '\(ifCfg.type)' for interface "
                               + "'\(ifCfg.name)' — this interface will not be created",
                               level: .error)

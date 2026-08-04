@@ -1,7 +1,13 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for RNS.prettytime() and RNS.prettyshorttime() matching Python reference output.
+/// `prettytime` pins match Python reference output. `prettyshorttime` pins marked
+/// "DIVERGES from Python 1.4.2" pin a **deliberate divergence**: Python keeps microseconds as a
+/// float (`RNS/__init__.py:296`, `:305`) and emits `.0`-suffixed and artifact strings; this port
+/// pre-rounds to integer microseconds (see the doc comment on `prettyshorttime`). Each divergent
+/// pin records the string live Python 1.4.2 produces for the same input, so the next parity
+/// sweep does not re-derive the difference. This header previously claimed the whole file
+/// matched Python reference output, which five of these pins never did.
 final class PrettyTimeTests: XCTestCase {
 
     // MARK: - prettytime basic cases
@@ -132,7 +138,7 @@ final class PrettyTimeTests: XCTestCase {
     }
 
     func testShortTimeOneMicrosecond() {
-        // 1e-6 seconds = 1 µs
+        // DIVERGES from Python 1.4.2, which emits "1.0µs" (float microseconds, __init__.py:296).
         XCTAssertEqual(RNSUtilities.prettyshorttime(1e-6), "1µs")
     }
 
@@ -146,12 +152,14 @@ final class PrettyTimeTests: XCTestCase {
     }
 
     func testShortTimeOneSecondOneMs() {
-        // 1.001 seconds = 1s and 1ms
+        // DIVERGES from Python 1.4.2, which emits "1s and 1000.0µs" — 1.001*1e6 is
+        // 1000999.9999999999, so its float math yields a 1000.0µs component instead of 1ms.
+        // The artifact string is exactly what this port declines to reproduce.
         XCTAssertEqual(RNSUtilities.prettyshorttime(1.001), "1s and 1ms")
     }
 
     func testShortTimeOneMsAndMicros() {
-        // 0.0015 seconds = 1ms and 500µs
+        // DIVERGES from Python 1.4.2, which emits "1ms and 500.0µs" (float microseconds).
         XCTAssertEqual(RNSUtilities.prettyshorttime(0.0015), "1ms and 500µs")
     }
 
@@ -170,10 +178,12 @@ final class PrettyTimeTests: XCTestCase {
     }
 
     func testShortTimeVerboseOneMicrosecond() {
+        // DIVERGES from Python 1.4.2, which emits "1.0 microsecond" (float microseconds).
         XCTAssertEqual(RNSUtilities.prettyshorttime(1e-6, verbose: true), "1 microsecond")
     }
 
     func testShortTimeVerboseTwoMicroseconds() {
+        // DIVERGES from Python 1.4.2, which emits "2.0 microseconds" (float microseconds).
         XCTAssertEqual(RNSUtilities.prettyshorttime(2e-6, verbose: true), "2 microseconds")
     }
 

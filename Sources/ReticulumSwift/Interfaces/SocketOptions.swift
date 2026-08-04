@@ -123,6 +123,26 @@ enum RNSSocketOptions {
         return (parameters, options)
     }
 
+    /// ``localParameters()`` constrained to a loopback **bind** — for listeners, never dials.
+    ///
+    /// Python's control listener is constructed on the address `("127.0.0.1", port)`
+    /// (`Reticulum.py:352` → `:359`), so it is unreachable off-host by construction. The Swift
+    /// listener took ``localParameters()``, which carries no local endpoint — Network.framework
+    /// then binds the wildcard, and the authenticated instance-control socket answered on every
+    /// network the host was attached to.
+    ///
+    /// A separate function rather than a flag on ``localParameters()`` because that one is shared
+    /// with `LocalInterface`'s outbound dial, where a required *local* endpoint would pin the
+    /// source address of a connect. The port lives in the endpoint, so a listener built from
+    /// these parameters uses `NWListener(using:)` — handing a port to the `on:` overload as well
+    /// would be two sources of truth for one bind.
+    static func localListenerParameters(port: NWEndpoint.Port)
+        -> (parameters: NWParameters, options: NWProtocolTCP.Options) {
+        let (parameters, options) = localParameters()
+        parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: port)
+        return (parameters, options)
+    }
+
     /// Parameters carrying ``i2pOptions()``, plus the options instance they were built from.
     static func i2pParameters() -> (parameters: NWParameters, options: NWProtocolTCP.Options) {
         let options = i2pOptions()

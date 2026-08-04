@@ -4,7 +4,7 @@ import Network
 /// Connects to a remote Reticulum node over TCP and exchanges HDLC-framed
 /// packet bytes. Wire-compatible with `RNS.Interfaces.TCPInterface` running
 /// in HDLC mode (`kiss_framing=False`, the default).
-public final class TCPClientInterface: Interface {
+public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -20,7 +20,7 @@ public final class TCPClientInterface: Interface {
     }
 
     // Python TCPClientInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
-    public let hwMtu: Int? = 262_144
+    public var hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
 
     public var inboundHandler: ((Packet, any Interface) -> Void)?
@@ -193,6 +193,7 @@ public final class TCPClientInterface: Interface {
                 self.everConnected = true
                 self.stateLock.unlock()
                 self.isOnline = true
+                self.noteConnected()
                 if reconnected {
                     // Python: `RNS.log("Reconnected socket for "+str(self)+".", LOG_INFO)`
                     Reticulum.log("Reconnected socket for \(self.displayName).", level: .info)

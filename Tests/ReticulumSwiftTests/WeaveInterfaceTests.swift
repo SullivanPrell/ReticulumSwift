@@ -4,6 +4,7 @@ import XCTest
 // MARK: - Mock serial transport for Weave tests
 
 private final class MockWeaveTransport: SerialPortTransport {
+    var onTransportError: ((Error) -> Void)?
     var written:    [Data] = []
     var readCB:     ((Data) -> Void)?
     var openCalled  = false

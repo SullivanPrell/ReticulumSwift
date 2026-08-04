@@ -8,7 +8,7 @@ final class AnnounceRateLimitTests: XCTestCase {
         // bitrate=0 means "unknown" — always transmit.
         let pkt = Packet(destinationType: .single, packetType: .announce,
                          destinationHash: Data(repeating: 0x01, count: 16), data: Data(count: 100))
-        let ok = q.shouldTransmit(packet: pkt, now: 1_000, bitrate: 0, emitted: 999)
+        let ok = q.shouldTransmit(packet: pkt, now: 1_000, bitrate: 0, announceCap: AnnounceQueue.announceCap, emitted: 999)
         XCTAssertTrue(ok)
         XCTAssertTrue(q.isEmpty)
     }
@@ -17,7 +17,7 @@ final class AnnounceRateLimitTests: XCTestCase {
         let q = AnnounceQueue()
         let pkt = Packet(destinationType: .single, packetType: .announce,
                          destinationHash: Data(repeating: 0x02, count: 16), data: Data(count: 100))
-        let ok = q.shouldTransmit(packet: pkt, now: 1_000, bitrate: 9600, emitted: 999)
+        let ok = q.shouldTransmit(packet: pkt, now: 1_000, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999)
         XCTAssertTrue(ok)
         // allowedAt should be > now after consuming bitrate budget.
         XCTAssertGreaterThan(q.allowedAt, 1_000)
@@ -29,9 +29,9 @@ final class AnnounceRateLimitTests: XCTestCase {
                         destinationHash: Data(repeating: 0x03, count: 16), data: Data(count: 100))
         let p2 = Packet(destinationType: .single, packetType: .announce,
                         destinationHash: Data(repeating: 0x04, count: 16), data: Data(count: 100))
-        _ = q.shouldTransmit(packet: p1, now: 1_000, bitrate: 9600, emitted: 999)
+        _ = q.shouldTransmit(packet: p1, now: 1_000, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999)
         // Second announce arrives before allowedAt — must be queued.
-        let ok2 = q.shouldTransmit(packet: p2, now: 1_000.001, bitrate: 9600, emitted: 999)
+        let ok2 = q.shouldTransmit(packet: p2, now: 1_000.001, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999)
         XCTAssertFalse(ok2)
         XCTAssertEqual(q.count, 1)
     }
@@ -42,12 +42,12 @@ final class AnnounceRateLimitTests: XCTestCase {
                         destinationHash: Data(repeating: 0x05, count: 16), data: Data(count: 100))
         let p2 = Packet(destinationType: .single, packetType: .announce,
                         destinationHash: Data(repeating: 0x06, count: 16), data: Data(count: 100))
-        _ = q.shouldTransmit(packet: p1, now: 1_000, bitrate: 9600, emitted: 999)
-        _ = q.shouldTransmit(packet: p2, now: 1_000.001, bitrate: 9600, emitted: 999)
+        _ = q.shouldTransmit(packet: p1, now: 1_000, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999)
+        _ = q.shouldTransmit(packet: p2, now: 1_000.001, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999)
         XCTAssertEqual(q.count, 1)
 
         // Drain at a time well past allowedAt.
-        let drained = q.drain(now: q.allowedAt + 100, bitrate: 9600)
+        let drained = q.drain(now: q.allowedAt + 100, bitrate: 9600, announceCap: AnnounceQueue.announceCap)
         XCTAssertEqual(drained.count, 1)
         XCTAssertTrue(q.isEmpty)
     }
@@ -61,11 +61,11 @@ final class AnnounceRateLimitTests: XCTestCase {
                          destinationHash: dest, data: Data(count: 100))
 
         // First announce occupies the slot.
-        _ = q.shouldTransmit(packet: old, now: 1_000, bitrate: 9600, emitted: 900)
+        _ = q.shouldTransmit(packet: old, now: 1_000, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 900)
         // Same destination with a newer emitted ts — should replace old entry.
-        _ = q.shouldTransmit(packet: new, now: 1_000.001, bitrate: 9600, emitted: 950)
+        _ = q.shouldTransmit(packet: new, now: 1_000.001, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 950)
         XCTAssertEqual(q.count, 1)
-        let drained = q.drain(now: q.allowedAt + 100, bitrate: 9600)
+        let drained = q.drain(now: q.allowedAt + 100, bitrate: 9600, announceCap: AnnounceQueue.announceCap)
         // The drained packet should be the newer one (larger data count).
         XCTAssertEqual(drained.first?.data.count, 100)
     }
@@ -76,7 +76,7 @@ final class AnnounceRateLimitTests: XCTestCase {
         _ = q.shouldTransmit(
             packet: Packet(destinationType: .single, packetType: .announce,
                            destinationHash: Data(repeating: 0x00, count: 16), data: Data(count: 10)),
-            now: 1_000, bitrate: 9600, emitted: 999
+            now: 1_000, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999
         )
         for i in 1..<(AnnounceQueue.maxQueued + 5) {
             // Encode i across two bytes so distinct destinations remain distinct
@@ -85,7 +85,7 @@ final class AnnounceRateLimitTests: XCTestCase {
             _ = q.shouldTransmit(
                 packet: Packet(destinationType: .single, packetType: .announce,
                                destinationHash: d, data: Data(count: 10)),
-                now: 1_000.001, bitrate: 9600, emitted: 999
+                now: 1_000.001, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999
             )
         }
         XCTAssertEqual(q.count, AnnounceQueue.maxQueued)

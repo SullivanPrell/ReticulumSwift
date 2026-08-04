@@ -23,14 +23,14 @@ final class AnnounceHopPriorityTests: XCTestCase {
 
         // Fill the queue: first transmit one to use up bandwidth
         let first = makeAnnounce(hops: 0, dest: 0xFF)
-        _ = queue.shouldTransmit(packet: first, now: now, bitrate: bitrate, emitted: 0)
+        _ = queue.shouldTransmit(packet: first, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         // Queue a high-hop announce first
         let highHop = makeAnnounce(hops: 10, dest: 0x01)
         let lowHop  = makeAnnounce(hops: 1,  dest: 0x02)
 
-        _ = queue.shouldTransmit(packet: highHop, now: now, bitrate: bitrate, emitted: 0)
-        _ = queue.shouldTransmit(packet: lowHop, now: now, bitrate: bitrate, emitted: 0)
+        _ = queue.shouldTransmit(packet: highHop, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
+        _ = queue.shouldTransmit(packet: lowHop, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         XCTAssertEqual(queue.count, 2, "both should be queued")
 
@@ -38,7 +38,7 @@ final class AnnounceHopPriorityTests: XCTestCase {
         // Drain at t=100, t=200 to get both (each drain gets one due to rate limiting).
         var drained: [Packet] = []
         for t in stride(from: 100.0, through: 10000.0, by: 100.0) {
-            drained += queue.drain(now: t, bitrate: bitrate)
+            drained += queue.drain(now: t, bitrate: bitrate, announceCap: AnnounceQueue.announceCap)
             if drained.count >= 2 { break }
         }
         guard drained.count >= 2 else {

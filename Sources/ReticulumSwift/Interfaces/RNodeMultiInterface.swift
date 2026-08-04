@@ -239,6 +239,12 @@ public final class RNodeMultiInterface: Interface {
     // MARK: – Transport & decoder
 
     public weak var transport: RNodeTransport?
+
+    /// Keeps a factory-created transport alive: `transport` is deliberately `weak` (an
+    /// application owning its BLE/USB stack must not be retained by the interface), so when the
+    /// *config path* creates the transport, the interface is the only candidate owner. Same
+    /// pattern as `RNodeInterface.ownedTransport`.
+    internal var ownedTransport: AnyObject? = nil
     private let decoder = KISS.FrameDecoder()
 
     // MARK: – Hardware / firmware state (shared across all sub-interfaces)
@@ -286,14 +292,56 @@ public final class RNodeMultiInterface: Interface {
 
     // MARK: – Interface lifecycle
 
+    /// Bound on the wait for the device's detect response — same gate as
+    /// `RNodeInterface.detectTimeout`.
+    public var detectTimeout: TimeInterval = 5.0
+
+    /// Seconds between redial attempts after device loss; the class `reconnectWait` constant
+    /// records the reference value, this carries the live one.
+    public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeMultiInterface.reconnectWait)
+    private let reconnector = TransportReconnector()
+
     public func start() throws {
+        // The same gate as `RNodeInterface.start()`: Python's multi bring-up goes detect →
+        // CMD_INTERFACES → per-sub radio init before anything reports online; `open();
+        // online = true` with `detect`/`initAllRadios` production-dead left every configured
+        // radio silent behind an Up interface.
+        transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         try transport?.open()
+        try detect()
+
+        let detectDeadline = Date().addingTimeInterval(detectTimeout)
+        while !detected && Date() < detectDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard detected else {
+            Reticulum.log("Could not detect device for \(displayName)", level: .error)
+            transport?.close()
+            return
+        }
+
+        try initAllRadios()
         isOnline = true
+        Reticulum.log("\(displayName) is configured and powered up", level: .info)
     }
 
     public func stop() {
+        reconnector.cancel()
+        transport?.onTransportError = nil
         transport?.close()
         isOnline = false
+    }
+
+    /// Device loss → offline → redial, re-running the whole `start()` gate so every
+    /// sub-interface radio is reconfigured on the re-powered device.
+    private func handleTransportLoss(_ error: Error) {
+        Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
+        isOnline = false
+        reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
+            guard let self else { return true }
+            try? self.start()
+            return self.isOnline
+        }
     }
 
     public func send(_ packet: Packet) throws {

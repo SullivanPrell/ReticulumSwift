@@ -1,13 +1,25 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// `swift_devel/bugs/038` — the public filter and the production recorder must agree on the key.
+///
+/// Python keys `packet_filter` on `packet.packet_hash`, the **full** 32-byte hash
+/// (`Transport.py:1417`, `Packet.py:342-344`), and every production insertion stores the same
+/// (`Transport.py:1344,1545,1733,2314`). The port's `packetFilter` keyed on the 16-byte
+/// truncated hash while `filterAndRecord` stored full hashes — a 16-byte `Data` never equals a
+/// 32-byte one, so "seen" was always false and the public filter suppressed nothing.
+///
+/// The previous tests could not observe this: they pre-inserted `truncatedPacketHash()` by
+/// hand — the same wrong key the function computed — so filter and fixture agreed with each
+/// other and disagreed with production. Every "seen" state below comes from the production
+/// recording path instead; no test computes a hashlist key.
 final class PacketFilterTests: XCTestCase {
 
-    private func makeDataPacket() -> Packet {
+    private func makeDataPacket(fill: UInt8 = 0x01) -> Packet {
         Packet(
             destinationType: .single,
             packetType: .data,
-            destinationHash: Data(repeating: 0x01, count: 16),
+            destinationHash: Data(repeating: fill, count: 16),
             context: .none,
             data: Data(repeating: 0xFF, count: 4)
         )
@@ -23,63 +35,37 @@ final class PacketFilterTests: XCTestCase {
         )
     }
 
-    // MARK: - addPacketHash
-
-    func testAddPacketHashInsertedIntoHashlist() {
+    func testPacketFilterTrueForUnseen() {
         let transport = Transport()
-        let hash = Data(repeating: 0x99, count: 16)
-        XCTAssertFalse(transport.testContainsPacketHash(hash))
-        transport.addPacketHash(hash)
-        XCTAssertTrue(transport.testContainsPacketHash(hash))
+        XCTAssertTrue(transport.packetFilter(makeDataPacket()))
     }
 
-    func testAddPacketHashIdempotent() {
-        let transport = Transport()
-        let hash = Data(repeating: 0x88, count: 16)
-        transport.addPacketHash(hash)
-        transport.addPacketHash(hash)
-        XCTAssertTrue(transport.testContainsPacketHash(hash))
-    }
-
-    // MARK: - packetFilter
-
-    func testPacketFilterTrueForUnseen() throws {
+    func testPacketFilterFalseForAPacketTheStackRecorded() {
         let transport = Transport()
         let packet = makeDataPacket()
-        XCTAssertTrue(transport.packetFilter(packet))
+        XCTAssertTrue(transport.filterAndRecord(packet: packet),
+                      "first sight must record and pass")
+        XCTAssertFalse(transport.packetFilter(packet),
+                       """
+                       the public filter missed a packet the production path recorded — it is \
+                       keying on a different hash width than the hashlist stores (bugs/038; \
+                       Python keys packet_filter on the full packet_hash, Transport.py:1417)
+                       """)
     }
 
-    func testPacketFilterFalseForSeenDataPacket() throws {
+    func testPacketFilterPassesASeenSingleAnnounce() {
         let transport = Transport()
-        let packet = makeDataPacket()
-        // Pre-insert the packet's truncated hash
-        let hash = try packet.truncatedPacketHash()
-        transport.addPacketHash(hash)
-        XCTAssertFalse(transport.packetFilter(packet))
+        let announce = makeAnnouncePacket()
+        _ = transport.filterAndRecord(packet: announce)
+        _ = transport.filterAndRecord(packet: announce)
+        XCTAssertTrue(transport.packetFilter(announce),
+                      "a SINGLE announce passes even when seen, so path tables can update "
+                      + "via multiple routes (Python parity)")
     }
 
-    func testPacketFilterTrueForSeenAnnouncePacket() throws {
+    func testPacketFilterTrueForADifferentPacket() {
         let transport = Transport()
-        let packet = makeAnnouncePacket()
-        let hash = try packet.truncatedPacketHash()
-        transport.addPacketHash(hash)
-        // SINGLE ANNOUNCE always passes even if seen (Python parity)
-        XCTAssertTrue(transport.packetFilter(packet))
-    }
-
-    func testPacketFilterTrueForDifferentPacket() throws {
-        let transport = Transport()
-        let p1 = makeDataPacket()
-        let p2 = Packet(
-            destinationType: .single,
-            packetType: .data,
-            destinationHash: Data(repeating: 0x03, count: 16),
-            context: .none,
-            data: Data(repeating: 0x55, count: 4)
-        )
-        let hash1 = try p1.truncatedPacketHash()
-        transport.addPacketHash(hash1)
-        // p2 is a different packet — should pass
-        XCTAssertTrue(transport.packetFilter(p2))
+        _ = transport.filterAndRecord(packet: makeDataPacket(fill: 0x01))
+        XCTAssertTrue(transport.packetFilter(makeDataPacket(fill: 0x03)))
     }
 }

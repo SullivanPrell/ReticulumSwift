@@ -48,8 +48,14 @@ public final class RPCServer {
         // port opens, and it had the same defect as the rest: `.tcp` meant Nagle held small
         // control frames behind the delayed-ACK timer. Found by the construction-site guard;
         // not in `bugs/023` as filed.
-        let listener = try NWListener(using: RNSSocketOptions.localParameters().parameters,
-                                      on: nwPort)
+        //
+        // "Loopback" is a property of the parameters, not of intent: Python constructs its
+        // listener on `("127.0.0.1", port)` (`Reticulum.py:352`, `:359`), and parameters without
+        // a required local endpoint bind the wildcard — which put this authenticated management
+        // socket on every network the host was attached to. The port travels inside the
+        // endpoint, so no `on:` argument here.
+        let listener = try NWListener(
+            using: RNSSocketOptions.localListenerParameters(port: nwPort).parameters)
         self.listener = listener
         listener.newConnectionHandler = { [weak self] conn in self?.handleConnection(conn) }
 

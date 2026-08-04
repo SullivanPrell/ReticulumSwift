@@ -9,7 +9,7 @@ import Network
 /// registered with Transport as a distinct routing endpoint — matching Python's
 /// per-connection `TCPServerInterfaceClient` model.  The server itself is NOT a
 /// routing endpoint (`isRoutingEndpoint == false`); only the spawned clients are.
-public final class TCPServerInterface: Interface {
+public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -29,7 +29,7 @@ public final class TCPServerInterface: Interface {
     }
 
     // Python TCPServerInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
-    public let hwMtu: Int? = 262_144
+    public var hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
 
     // Not a routing endpoint — spawned clients are registered separately.
@@ -261,7 +261,7 @@ public final class TCPServerInterface: Interface {
 ///
 /// Mirrors Python's per-connection `TCPServerInterfaceClient` which is registered
 /// with Transport as an independent Interface.
-public final class TCPServerClientInterface: Interface {
+public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -279,7 +279,7 @@ public final class TCPServerClientInterface: Interface {
         set { onlineFlag.value = newValue }
     }
 
-    public let hwMtu: Int? = 262_144
+    public var hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
 
     // Fully a routing endpoint.
@@ -358,6 +358,11 @@ public final class TCPServerClientInterface: Interface {
         self.ifacIdentity = parentServer.ifacIdentity
         self.ifacKey      = parentServer.ifacKey
         self.ifacSize     = parentServer.ifacSize
+
+        // After the bitrate copy, as Python does for every accepted client
+        // (`TCPInterface.py:612-613`): the spawned interface is the routing endpoint, so its
+        // MTU must follow the bitrate it inherited, not the 262144 class constant.
+        optimiseMtu()
     }
 
     public func start() throws { }  // started by the parent server
