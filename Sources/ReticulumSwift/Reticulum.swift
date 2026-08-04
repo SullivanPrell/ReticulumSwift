@@ -453,6 +453,29 @@ public final class Reticulum {
     /// shared-instance interface at `:397-399` and `:424-425`.
     public static var forceSharedInstanceBitrate_: Int? = nil
 
+    /// The configured forced shared-instance bitrate, or nil.
+    ///
+    /// **Known gap** (`fix-013 §7.8`): the reference also marks the interface `_force_bitrate`
+    /// and uses that flag to simulate the forced link's latency
+    /// (`Reticulum.py:397-401`/`:424-428` → `LocalInterface.py:234`, propagated to spawned
+    /// clients at `:459`/`:475`). This port has neither the flag nor the simulation, so the
+    /// value is readable and honest about being reportable-only.
+    public static func forceSharedInstanceBitrate() -> Int? { forceSharedInstanceBitrate_ }
+
+    /// **Known gap** (`fix-013 §7.8`): whether this port announces its own interfaces as
+    /// discoverable endpoints — Python's `Discovery.InterfaceAnnouncer`. The *receive* side is
+    /// implemented (a Swift node discovers Python interfaces); the publish side is not, so the
+    /// eleven `discovery_*`/`reachable_on`/`discoverable` interface attributes have no
+    /// counterpart here. `RuntimeAttributeParityTests` fails if this ever becomes true without
+    /// those attributes landing with it.
+    public static let publishesInterfaceDiscovery = false
+
+    /// **Known gap** (`fix-013 §7.8`): whether this port dials and monitors discovered
+    /// endpoints — Python's `Discovery.py:574-742`, which writes `autoconnect_hash`,
+    /// `autoconnect_source` and `autoconnect_down`. The `autoconnect_*` policy keys parse into
+    /// statics that nothing consumes, because the subsystem is absent.
+    public static let autoconnectsDiscoveredInterfaces = false
+
     /// Announce-rate defaults for interfaces that do not configure their own.
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
     public static var defaultArTarget_: Int? = nil
