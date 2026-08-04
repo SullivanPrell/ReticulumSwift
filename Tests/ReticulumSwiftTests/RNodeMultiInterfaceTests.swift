@@ -982,7 +982,9 @@ final class RNodeMultiInterfaceOnlineStateTests: XCTestCase {
         let multi = try RNodeMultiInterface(name: "test", transport: transport, subInterfaces: [sub0])
         try multi.start()
         XCTAssertTrue(transport.isOpen)
-        XCTAssertTrue(multi.isOnline)
+        XCTAssertTrue(multi.waitUntilOnline(timeout: 3.0),
+                      "`start()` hands the bring-up to its own queue and returns; this suite's "
+                      + "subject is the transport lifecycle, so it waits for the outcome")
     }
 
     func testStopClosesTransport() throws {
@@ -991,6 +993,7 @@ final class RNodeMultiInterfaceOnlineStateTests: XCTestCase {
                                      frequency: 868_000_000, bandwidth: 125_000, txPower: 14, sf: 7, cr: 5)
         let multi = try RNodeMultiInterface(name: "test", transport: transport, subInterfaces: [sub0])
         try multi.start()
+        multi.waitUntilOnline(timeout: 3.0)
         multi.stop()
         XCTAssertFalse(transport.isOpen)
         XCTAssertFalse(multi.isOnline)

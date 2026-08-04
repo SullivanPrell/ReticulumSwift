@@ -5,6 +5,25 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The RNode bring-up gate must not block its caller's thread
+
+1.10.0's bring-up gate (`bugs/057`) waited for the device's detect response on the thread that
+called `start()`. That is safe for a config-file interface, and **deadlocks** for the port's only
+real BLE transport: `RNodeScannerController` hands `CBCentralManager` one serial queue and calls
+`start()` from `onGATTReady`, which arrives on it — so every subsequent delegate callback,
+including the `didUpdateValueFor` that sets `detected`, is queued behind the wait. The wait was
+starving the response it was waiting for: it could only ever time out, close the transport, and
+leave the interface offline for good.
+
+`start()` now performs open and detect and returns; the rest of the sequence runs on a queue the
+interface owns, which by construction is never a transport's delivery queue. A caller that wants
+the reference's synchronous `__init__` semantics — `rnsd` bringing up a config-file radio — calls
+the new `waitUntilOnline(timeout:)` explicitly, and `synthesizeInterfaces` does. Same shape for
+`RNodeMultiInterface`.
+
+The fix is the same lesson `bugs/058` records, turned on the fix for `bugs/057`: a component must
+not depend on a scheduling property its callers cannot be relied on to have.
+
 ### Every documented interface type constructs from a config file (`bugs/031`)
 
 `RNodeInterface`, `KISSInterface`, `AX25KISSInterface` and `I2PInterface` fell through

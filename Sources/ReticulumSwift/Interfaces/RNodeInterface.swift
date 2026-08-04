@@ -410,16 +410,54 @@ public final class RNodeInterface: Interface {
     public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeInterface.reconnectWait)
     private let reconnector = TransportReconnector()
 
+    /// Where the bring-up's bounded waits run.
+    ///
+    /// **Never the caller's thread.** The bring-up waits for bytes the transport delivers, and
+    /// the port's real BLE transport delivers them on the *same* serial queue its owner calls
+    /// `start()` from (`RNodeScannerController` hands `CBCentralManager` one queue and calls
+    /// `start()` from `onGATTReady`, which arrives on it). Blocking there waits for work it is
+    /// itself preventing: the detect response cannot be delivered until the wait gives up. A
+    /// queue this interface owns cannot be the delivery queue of any transport, so waiting on it
+    /// is always safe.
+    private let bringUpQueue = DispatchQueue(label: "ReticulumSwift.RNodeInterface.bringUp")
+
+    /// Signalled when a bring-up reaches a terminal outcome — online, or failed and closed.
+    private let bringUpSettled = DispatchSemaphore(value: 0)
+
     public func start() throws {
         // Python `configure_device` (`RNodeInterface.py:424-467`): reset state, open, detect,
         // wait bounded; no answer closes the port and stays offline. On detect: initRadio,
         // validate the echoed parameters, and only then interface_ready/online. `online` gates
         // `process_outgoing` (`:708-710`) — reporting it before the modem is configured is a
         // healthy-looking interface whose radio is off, the exact `bugs/013` shape.
+        //
+        // The reference performs all of that synchronously in `__init__`, and it can: Python's
+        // reads run in their own thread, so the constructor's sleeps never starve them. Here the
+        // sequence is handed to `bringUpQueue` and `start()` returns immediately; a caller that
+        // wants the reference's blocking semantics — and knows it is not on the transport's
+        // delivery thread — calls ``waitUntilOnline(timeout:)``.
         transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         resetRadioState()
         try transport?.open()
         try detect()
+        bringUpQueue.async { [weak self] in self?.completeBringUp() }
+    }
+
+    /// Block until the bring-up begun by `start()` finishes, returning whether the interface came
+    /// online. Must not be called from the transport's byte-delivery thread — see
+    /// ``bringUpQueue``. `rnsd` bringing a config-file interface up is the intended caller.
+    @discardableResult
+    public func waitUntilOnline(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !isOnline && Date() < deadline {
+            if bringUpSettled.wait(timeout: .now() + 0.05) == .success { break }
+        }
+        return isOnline
+    }
+
+    /// The rest of `configure_device`, running off the caller's thread.
+    private func completeBringUp() {
+        defer { bringUpSettled.signal() }
 
         let detectDeadline = Date().addingTimeInterval(detectTimeout)
         while !detected && Date() < detectDeadline {
@@ -431,7 +469,11 @@ public final class RNodeInterface: Interface {
             return
         }
 
-        try initRadio()
+        do { try initRadio() } catch {
+            Reticulum.log("Could not configure radio for \(displayName): \(error)", level: .error)
+            transport?.close()
+            return
+        }
         let validateDeadline = Date().addingTimeInterval(validateTimeout)
         while !validateRadioState() && Date() < validateDeadline {
             Thread.sleep(forTimeInterval: 0.01)
@@ -452,11 +494,14 @@ public final class RNodeInterface: Interface {
         // port's reads are event-driven, so a coarse timer carries the check. One-second
         // resolution against intervals measured in minutes.
         if idCallsign != nil, idInterval != nil, idTimer == nil {
-            let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-                self?.transmitIDIfDue()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.idTimer == nil else { return }
+                let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+                    self?.transmitIDIfDue()
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                self.idTimer = timer
             }
-            RunLoop.main.add(timer, forMode: .common)
-            idTimer = timer
         }
     }
 

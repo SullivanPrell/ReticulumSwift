@@ -301,6 +301,12 @@ public final class RNodeMultiInterface: Interface {
     public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeMultiInterface.reconnectWait)
     private let reconnector = TransportReconnector()
 
+    /// Where the bring-up's bounded wait runs — never the caller's thread, for the reason
+    /// spelled out on `RNodeInterface.bringUpQueue`: a transport may deliver its bytes on the
+    /// very thread that called `start()`.
+    private let bringUpQueue = DispatchQueue(label: "ReticulumSwift.RNodeMultiInterface.bringUp")
+    private let bringUpSettled = DispatchSemaphore(value: 0)
+
     public func start() throws {
         // The same gate as `RNodeInterface.start()`: Python's multi bring-up goes detect →
         // CMD_INTERFACES → per-sub radio init before anything reports online; `open();
@@ -309,6 +315,22 @@ public final class RNodeMultiInterface: Interface {
         transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         try transport?.open()
         try detect()
+        bringUpQueue.async { [weak self] in self?.completeBringUp() }
+    }
+
+    /// Block until the bring-up finishes, returning whether the interface came online. Must not
+    /// be called from the transport's byte-delivery thread.
+    @discardableResult
+    public func waitUntilOnline(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !isOnline && Date() < deadline {
+            if bringUpSettled.wait(timeout: .now() + 0.05) == .success { break }
+        }
+        return isOnline
+    }
+
+    private func completeBringUp() {
+        defer { bringUpSettled.signal() }
 
         let detectDeadline = Date().addingTimeInterval(detectTimeout)
         while !detected && Date() < detectDeadline {
@@ -320,7 +342,11 @@ public final class RNodeMultiInterface: Interface {
             return
         }
 
-        try initAllRadios()
+        do { try initAllRadios() } catch {
+            Reticulum.log("Could not configure radios for \(displayName): \(error)", level: .error)
+            transport?.close()
+            return
+        }
         isOnline = true
         Reticulum.log("\(displayName) is configured and powered up", level: .info)
     }
