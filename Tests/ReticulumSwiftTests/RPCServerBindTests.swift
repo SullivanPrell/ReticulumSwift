@@ -120,4 +120,69 @@ final class RPCServerBindTests: XCTestCase {
                        + "otherwise every utility racing daemon startup sees "
                        + "\"Could not connect to instance control socket\"")
     }
+
+    /// The first non-loopback, non-link-local IPv4 address this host holds, or nil.
+    private func nonLoopbackIPv4() -> String? {
+        var list: UnsafeMutablePointer<ifaddrs>? = nil
+        guard getifaddrs(&list) == 0, let first = list else { return nil }
+        defer { freeifaddrs(list) }
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let entry = cursor {
+            defer { cursor = entry.pointee.ifa_next }
+            guard let sa = entry.pointee.ifa_addr,
+                  sa.pointee.sa_family == sa_family_t(AF_INET),
+                  (entry.pointee.ifa_flags & UInt32(IFF_LOOPBACK)) == 0,
+                  (entry.pointee.ifa_flags & UInt32(IFF_UP)) != 0 else { continue }
+            var addr = sockaddr_in()
+            memcpy(&addr, sa, MemoryLayout<sockaddr_in>.size)
+            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil
+            else { continue }
+            let text = String(cString: buffer)
+            if text.hasPrefix("169.254.") { continue }
+            return text
+        }
+        return nil
+    }
+
+    /// The bind must be loopback-**only**, which reachability alone cannot prove.
+    ///
+    /// Python's control listener is constructed on `("127.0.0.1", port)` (`Reticulum.py:352` →
+    /// `:359`), so it is unreachable off-host by construction. This is the negative assertion
+    /// whose absence let a wildcard bind sit behind 3258 green tests: the test above proves
+    /// 127.0.0.1 answers, and a listener on `*` passes that too. An authenticated management
+    /// socket (path drops, blackholing) must not be reachable from every network the host is on.
+    func testTheControlSocketIsNotReachableOnANonLoopbackAddress() throws {
+        guard let lanAddress = nonLoopbackIPv4() else {
+            throw XCTSkip("host has no non-loopback IPv4 address to probe")
+        }
+        let port = freePort()
+        let server = RPCServer(port: port, authkey: Data(repeating: 0x03, count: 32))
+        try server.start()
+        defer { server.stop() }
+
+        let probe = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(probe) }
+        // Bound: connecting to the host's own address answers immediately (accept or RST),
+        // but never let a pathological stack hang the suite.
+        var tv = timeval(tv_sec: 3, tv_usec: 0)
+        setsockopt(probe, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = inet_addr(lanAddress)
+        addr.sin_port = port.bigEndian
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(probe, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        XCTAssertNotEqual(connected, 0,
+                          """
+                          the control socket accepted a connection on \(lanAddress):\(port) — \
+                          the listener is bound to the wildcard, so the instance-control RPC \
+                          port is reachable from every network this host is on, where Python's \
+                          identical listener binds ("127.0.0.1", port) and is unreachable \
+                          off-host by construction (Reticulum.py:352, :359)
+                          """)
+    }
 }
