@@ -524,8 +524,13 @@ public final class RNodeInterface: Interface {
         interfaceReady = false
         reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
             guard let self else { return true }
-            try? self.start()
-            return self.isOnline
+            // `start()` returns before the bring-up finishes, so reading `isOnline` on the next
+            // line would report the *previous* attempt's outcome — always false, so the loop
+            // would fire a second, spurious bring-up over a radio that had already recovered,
+            // wiping its validated parameters mid-flight. Wait for the outcome this attempt
+            // actually produced.
+            do { try self.start() } catch { return false }
+            return self.waitUntilOnline(timeout: self.detectTimeout + self.validateTimeout + 1)
         }
     }
 

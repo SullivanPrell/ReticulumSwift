@@ -126,9 +126,14 @@ public final class RNodeSubInterface: Interface {
 
     public var ifacSize:     Int       = RNodeSubInterface.defaultIfacSize
 
-    /// Sends are routed through the parent `RNodeMultiInterface`.
-    /// Direct calls on a sub-interface are no-ops; use the parent's `processOutgoing`.
-    public func send(_ packet: Packet) throws { }
+    /// Sends are routed through the parent `RNodeMultiInterface`, which owns the single
+    /// physical transport all sub-interfaces share. A sub with no parent — which only a
+    /// hand-built test object can be — has nowhere to send, and says so rather than
+    /// silently discarding the packet.
+    public func send(_ packet: Packet) throws {
+        guard let parent = parentInterface else { throw RNodeMultiInterface.MultiInterfaceError.noParentInterface }
+        try parent.processOutgoing(parent.wrapIfac(try packet.pack()), subInterface: self)
+    }
     public func start() throws { }
     public func stop() { }
 
@@ -265,6 +270,8 @@ public final class RNodeMultiInterface: Interface {
     public enum MultiInterfaceError: Error {
         case noSubInterfaces
         case tooManySubInterfaces(Int)
+        /// A sub-interface asked to transmit with no parent to transmit through.
+        case noParentInterface
     }
 
     // MARK: – Init
@@ -365,14 +372,25 @@ public final class RNodeMultiInterface: Interface {
         isOnline = false
         reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
             guard let self else { return true }
-            try? self.start()
-            return self.isOnline
+            // See `RNodeInterface.handleTransportLoss`: `start()` is asynchronous, so the
+            // outcome has to be waited for rather than read off the next line.
+            do { try self.start() } catch { return false }
+            return self.waitUntilOnline(timeout: self.detectTimeout + 1)
         }
     }
 
     public func send(_ packet: Packet) throws {
-        // RNodeMultiInterface does not send directly — only via a specific sub-interface.
-        // Callers must use processOutgoing(_:subInterface:).
+        // Transport routes outbound through `iface.send(packet)` on whatever it has registered,
+        // and the config path registers *this parent object* — so an empty body here was a
+        // silent 100% transmit loss for a config-constructed multi-radio node, the `bugs/013`
+        // shape inside the change that closed `bugs/031`.
+        //
+        // Python's multi-interface never faces this: it registers each spawned sub-interface
+        // with Transport and the parent is only ever a demultiplexer. Until this port does the
+        // same, the parent transmits on its first enabled sub-interface, which is the one a
+        // single-radio config would have produced anyway.
+        guard let sub = subInterfaces.first else { return }
+        try processOutgoing(wrapIfac(try packet.pack()), subInterface: sub)
     }
 
     // MARK: – Radio configuration commands (Python: setFrequency/setBandwidth/etc.)
