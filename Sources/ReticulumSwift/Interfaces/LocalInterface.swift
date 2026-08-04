@@ -12,7 +12,7 @@ import Network
 /// transport.register(interface: local)
 /// try local.start()
 /// ```
-public final class LocalInterface: Interface {
+public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -26,6 +26,18 @@ public final class LocalInterface: Interface {
     public let host: String
     public let port: UInt16
     public var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
+
+    /// `LocalClientInterface.HW_MTU = 262144` (`LocalInterface.py:71`). Without it this
+    /// interface reported no hardware MTU at all, which disables link-MTU discovery for every
+    /// link that crosses a Swift shared instance — stuck at the 500-byte default where the
+    /// Python pair negotiates upward.
+    public var hwMtu: Int? = 262_144
+
+    /// `AUTOCONFIGURE_MTU = True` (`LocalInterface.py:64`). Python only *runs* the optimiser
+    /// here from the `_force_shared_instance_bitrate` branch (`Reticulum.py:424-428`), so the
+    /// 262144 stands in normal operation.
+    public let autoconfigureMtu: Bool = true
+
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }

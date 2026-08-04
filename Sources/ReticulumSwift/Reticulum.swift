@@ -994,6 +994,12 @@ public final class Reticulum {
             interface.bitrate = bitrate
         }
 
+        // Immediately after the bitrate, as `Reticulum.py:915` does, and unconditionally: the
+        // gate is `autoconfigureMtu`, inside. The class MTU constants never survive Python
+        // startup — a TCP interface runs at 8192, a dialing backbone at 16384 — and the value
+        // is wire-visible in the 3-byte LINKREQUEST MTU signalling.
+        interface.optimiseMtu()
+
         interface.ingressControl = block.bool("ingress_control") ?? true
 
         // Present-only, so an absent key leaves the class default (`Reticulum.py:942-953`).

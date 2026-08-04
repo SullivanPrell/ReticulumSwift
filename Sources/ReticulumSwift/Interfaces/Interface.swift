@@ -253,8 +253,58 @@ public protocol LocalClientServingInterface: Interface {
     var clientCount: Int { get }
 }
 
+/// An interface whose hardware MTU follows its bitrate — Python's `AUTOCONFIGURE_MTU = True`
+/// classes, where `optimise_mtu()` writes `HW_MTU` at runtime (`Interface.py:205-217`).
+///
+/// Adopted by exactly the types whose Python counterparts set the flag (TCP client/server and
+/// their spawned clients, Backbone, both Local classes). The base protocol keeps `hwMtu` as
+/// `{ get }` because the radio and datagram families genuinely never mutate it; the audit's
+/// structural lesson is that a runtime-*written* Python attribute must not be ported `{ get }`-
+/// only, and this conformance is where the setter lives. `OptimiseMtuTests`' structural guard
+/// fails any type that claims `autoconfigureMtu` without adopting it.
+public protocol MtuAutoconfiguringInterface: Interface {
+    var hwMtu: Int? { get set }
+}
+
+/// The `optimise_mtu()` bitrate → `HW_MTU` ladder, verbatim from `Interface.py:207-217`.
+/// One implementation shared by every caller, so no interface can carry its own drifted copy.
+public enum RNSInterfaceMtu {
+    public static func optimised(forBitrate bitrate: Int) -> Int? {
+        if bitrate >= 1_000_000_000 { return 524_288 }   // the one inclusive rung (`:207`)
+        else if bitrate > 750_000_000 { return 262_144 }
+        else if bitrate > 400_000_000 { return 131_072 }
+        else if bitrate > 200_000_000 { return 65_536 }
+        else if bitrate > 100_000_000 { return 32_768 }
+        else if bitrate > 10_000_000 { return 16_384 }
+        else if bitrate > 5_000_000 { return 8_192 }
+        else if bitrate > 2_000_000 { return 4_096 }
+        else if bitrate > 1_000_000 { return 2_048 }
+        else if bitrate > 62_500 { return 1_024 }
+        else { return nil }                              // `else: self.HW_MTU = None`
+    }
+}
+
 /// Default implementations so existing interfaces don't need to add these.
 public extension Interface {
+
+    /// Python `Interface.optimise_mtu()`. Called unconditionally after the configured bitrate
+    /// lands (`Reticulum.py:914-915`) and on spawned server-side clients after the bitrate copy
+    /// (`TCPInterface.py:612-613`); the write is gated on `AUTOCONFIGURE_MTU`, so fixed-MTU
+    /// interfaces keep their class value and this is safe to call on every interface.
+    func optimiseMtu() {
+        guard autoconfigureMtu else { return }
+        guard let mutable = self as? MtuAutoconfiguringInterface else {
+            // A type-level contradiction, not a runtime condition: the claim is inert without
+            // the setter, which is the `{ get }`-only freeze this seam exists to prevent.
+            Reticulum.log("\(displayName) claims autoconfigureMtu but has no settable hwMtu — "
+                          + "its MTU cannot follow its bitrate", level: .error)
+            return
+        }
+        mutable.hwMtu = RNSInterfaceMtu.optimised(forBitrate: bitrate)
+        // Python logs the outcome for every interface at LOG_PATHING (`Interface.py:219`).
+        Reticulum.log("\(displayName) hardware MTU set to \(String(describing: mutable.hwMtu))",
+                      level: .pathing)
+    }
     /// Default `displayName`: the class-qualified form `"Class[name]"`, which is what Python's
     /// `__str__` returns for every interface whose reference string carries no peer address —
     /// `SerialInterface[…]` (`SerialInterface.py:226-227`), `KISSInterface[…]` (`:387-388`),

@@ -12,7 +12,7 @@ import Darwin
 ///
 /// Used only for the shared-instance port (37428). All other server interfaces
 /// can continue to use `TCPServerInterface` + `NWListener`.
-public final class PosixTCPServer: Interface, LocalClientServingInterface {
+public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -31,7 +31,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface {
         set { onlineFlag.value = newValue }
     }
 
-    public let hwMtu: Int? = 262_144
+    public var hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
 
     // Not a mesh routing endpoint: `send()` already fans out to every attached

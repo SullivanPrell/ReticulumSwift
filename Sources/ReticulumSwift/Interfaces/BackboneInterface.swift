@@ -8,7 +8,7 @@ import Network
 ///   - `HW_MTU = 1_048_576` (1 MB vs 262 KB for TCP)
 ///   - `BITRATE_GUESS = 100_000_000` (100 Mbps)
 ///   - Automatic reconnection after disconnect
-public final class BackboneInterface: Interface {
+public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -69,7 +69,7 @@ public final class BackboneInterface: Interface {
     }
 
     /// Python: `HW_MTU = 1_048_576`.
-    public let hwMtu: Int? = BackboneInterface.hwMtuConstant
+    public var hwMtu: Int? = BackboneInterface.hwMtuConstant
 
     /// Python: `AUTOCONFIGURE_MTU = True`.
     public let autoconfigureMtu: Bool = true
