@@ -188,12 +188,6 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     /// Removing the assertion would have left the finding in a session transcript. Deleting the
     /// skip is the RED gate for the fix.
     func testEveryInterfaceTypeTheTemplatesDocumentCanBeBroughtUp() throws {
-        throw XCTSkip("""
-            bugs/031 — RNodeInterface, KISSInterface, AX25KISSInterface and I2PInterface have no \
-            case in synthesizeInterfaces, so a config block naming one is skipped in silence. \
-            Deferred to the follow-up change; remove this skip to re-arm the assertion.
-            """)
-
         let source = try String(
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent().deletingLastPathComponent()
@@ -238,12 +232,6 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     /// server interfaces, which Python resolves to a named device's address — are recorded in
     /// `bugs/031` rather than split into a separate entry for two lines.
     func testEveryInterfaceBlockKeyIsConsultedBySomeConstructionPath() throws {
-        throw XCTSkip("""
-            bugs/031 — 18 interface-block keys the templates emit have no reader in Sources/. \
-            Sixteen belong to the four unconstructible types; `device` applies to UDP and TCP \
-            server interfaces that do construct. Remove this skip to re-arm the assertion.
-            """)
-
         let sourcesDir = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()      // ReticulumSwiftTests
             .deletingLastPathComponent()      // Tests

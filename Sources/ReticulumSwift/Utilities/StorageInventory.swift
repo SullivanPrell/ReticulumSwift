@@ -282,12 +282,21 @@ public extension StorageInventory.Entry {
         authority: .reference("Discovery.py:451-452,510-560")
     )
 
+    /// `storage/i2p` — the I2P interface's own state. The reference composes
+    /// `rns_storagepath + "/i2p"` and creates it on interface construction
+    /// (`I2PInterface.py:90-91`); the port hands it to the embedded i2pd daemon as its data
+    /// directory when a config block constructs the interface (`bugs/031`).
+    static let i2p = StorageInventory.Entry(
+        ["storage", "i2p"], .directory,
+        authority: .reference("I2PInterface.py:90-91")
+    )
+
     static let all: [StorageInventory.Entry] = [
         config, storage, interfaceModules,
         identity, transportIdentity, ratchets, identityRatchets,
         knownDestinations, destinationTable, tunnels, packetHashlist,
         cache, announceCache, resources, identities,
-        blackhole, blackholeLocal, blackholeLocalTemp,
+        blackhole, blackholeLocal, blackholeLocalTemp, i2p,
         discovery, discoveredInterfaces,
     ]
 }

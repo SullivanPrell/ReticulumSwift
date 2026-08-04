@@ -358,7 +358,29 @@ public final class RNodeInterface: Interface {
     public var flowControl:    Bool  = false
     public var packetQueue:    [Data] = []
 
+    // MARK: – Station identification (`id_callsign` / `id_interval`)
+
+    /// Encoded callsign transmitted for station identification, or nil when not configured.
+    /// Python: `self.id_callsign = id_callsign.encode("utf-8")` (`RNodeInterface.py:336`).
+    public var idCallsign: Data? = nil
+    /// Seconds after the first transmission at which the callsign goes out.
+    /// Python: `self.id_interval` (`:337`). Set together with `idCallsign` or not at all —
+    /// the reference treats a lone half of the pair as no configuration (`:333`, `:342-343`).
+    public var idInterval: TimeInterval? = nil
+    /// When the first non-ID transmission since the last ID happened; nil right after an ID.
+    /// Python: `self.first_tx` (`process_outgoing`, `:1018-1023`).
+    private(set) var firstTx: TimeInterval? = nil
+    private var idTimer: Timer? = nil
+
+    /// Python's callsign length gate (`RNodeInterface.py:334`, `CALLSIGN_MAX_LEN`).
+    public static let callsignMaxLength = 32
+
     // MARK: – Init
+
+    /// Keeps a factory-created transport alive: `transport` is `weak` (an application usually
+    /// owns its BLE controller), but a transport minted by `InterfaceTransportFactories` for a
+    /// config block has no other owner, so the config path parks it here (`bugs/031`).
+    internal var ownedTransport: AnyObject? = nil
 
     public init(name: String, transport: RNodeTransport, bitrate: Int = 0) {
         self.name      = name
@@ -372,9 +394,22 @@ public final class RNodeInterface: Interface {
     public func start() throws {
         try transport?.open()
         isOnline = true
+
+        // The reference checks the ID deadline on its ~80 ms read loop (`:1142-1146`); this
+        // port's reads are event-driven, so a coarse timer carries the check. One-second
+        // resolution against intervals measured in minutes.
+        if idCallsign != nil, idInterval != nil, idTimer == nil {
+            let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+                self?.transmitIDIfDue()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            idTimer = timer
+        }
     }
 
     public func stop() {
+        idTimer?.invalidate()
+        idTimer = nil
         transport?.close()
         isOnline = false
     }
@@ -382,7 +417,23 @@ public final class RNodeInterface: Interface {
     public func send(_ packet: Packet) throws {
         guard let transport, isOnline else { return }
         let raw = try packet.pack()
+        // Python tracks the first transmission since the last station ID in `process_outgoing`
+        // (`:1018-1023`): sending the callsign clears the marker, anything else arms it.
+        if firstTx == nil { firstTx = Date().timeIntervalSince1970 }
         try transport.write(KISS.frameData(wrapIfac(raw)))
+    }
+
+    /// `RNodeInterface.py:1142-1146`: once anything has been transmitted, the callsign goes out
+    /// `idInterval` after that first transmission, then the marker resets.
+    private func transmitIDIfDue() {
+        guard let callsign = idCallsign, let interval = idInterval,
+              let first = firstTx, isOnline, let transport else { return }
+        guard Date().timeIntervalSince1970 > first + interval else { return }
+        Reticulum.log("Interface \(name) is transmitting beacon data: "
+                      + (String(data: callsign, encoding: .utf8) ?? callsign.hexString),
+                      level: .debug)
+        firstTx = nil
+        try? transport.write(KISS.frameData(callsign))
     }
 
     // MARK: – Incoming byte handler
