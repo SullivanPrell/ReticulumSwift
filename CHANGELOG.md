@@ -3,9 +3,27 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [1.10.3]
 
-### Every idle low-RTT initiator link died after ten seconds (`bugs/034`)
+### Regressions this day's own releases introduced, found by the post-release audit
+
+- **The RNode redial loop decided success from state it could not yet have.** 1.10.1 made
+  `start()` asynchronous; the redial predicate still read `isOnline` on the next line, so it
+  always saw `false` and always fired a second, spurious bring-up over a radio that had
+  already recovered — `resetRadioState()` wiping the validated parameters mid-flight while
+  `isOnline` was still true. Both RNode interfaces now wait for the outcome the attempt
+  actually produced.
+- **A config-constructed `RNodeMultiInterface` transmitted nothing.** 1.10.0 began
+  registering the parent object with `Transport`, and the parent's `send(_:)` was an empty
+  body — 100% silent outbound loss, the exact `bugs/013` shape inside the change that
+  closed `bugs/031`. Both `send` bodies now have a real transmit path.
+- **`Reticulum.version` reported 1.9.0 from a 1.10.2 build** — every `rn*` tool, `--version`
+  and the RetiOS About screen. Now pinned to this file's newest released heading by a test
+  that reads the file, because all six existing version tests interpolate the constant
+  they are supposed to be checking and none of them can fail.
+
+## [1.10.2] — every idle low-RTT initiator link died after ten seconds
+
 
 `Link.watchdogMaxSleep = 5` was declared and **never used** — its only reference in the whole
 package was a test asserting its value. Python clamps *every* watchdog sleep to it
@@ -38,7 +56,8 @@ and closed — its peer is told rather than left to time out on its own.
 Found by attributing `bugs/034` rather than by a failing test; the defect predates the initial
 public release.
 
-### The RNode bring-up gate must not block its caller's thread
+## [1.10.1] — the RNode bring-up must not block its caller's thread
+
 
 1.10.0's bring-up gate (`bugs/057`) waited for the device's detect response on the thread that
 called `start()`. That is safe for a config-file interface, and **deadlocks** for the port's only
@@ -56,6 +75,8 @@ the new `waitUntilOnline(timeout:)` explicitly, and `synthesizeInterfaces` does.
 
 The fix is the same lesson `bugs/058` records, turned on the fix for `bugs/057`: a component must
 not depend on a scheduling property its callers cannot be relied on to have.
+
+## [1.10.0] — interface construction, bring-up, and device loss
 
 ### Every documented interface type constructs from a config file (`bugs/031`)
 
