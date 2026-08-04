@@ -212,6 +212,35 @@ public struct ReticulumConfig {
         /// Python's `c.as_float(key)`. Used by the `ic_*` / `ec_pr_freq` family, all of which
         /// Python reads as floats (`Reticulum.py:791-813`).
         public func double(_ key: String) -> Double? { parameters[key].flatMap(Double.init) }
+
+        /// Nested `[[[sub]]]` blocks — configobj's third section level, which
+        /// `RNodeMultiInterface` reads as its per-radio rows (`RNodeMultiInterface.py:169-218`).
+        /// Before these existed, a `[[[sub]]]` line satisfied the parser's `[[` / `]]` checks
+        /// and every radio row became a *top-level* interface named `[sub]` with type Unknown.
+        public var subBlocks: [SubBlockConfig] = []
+
+        /// True when this block's enabled state came from the literal `enabled` key.
+        /// RNodeMulti sub-interface gating inherits **only** that spelling
+        /// (`RNodeMultiInterface.py:178`): a parent enabled via `interface_enabled` does not
+        /// blanket-enable its subs.
+        public var enabledViaEnabledKey: Bool = false
+
+        /// One `[[[sub]]]` block: a name and its raw keys, with the same typed accessors the
+        /// parent block offers.
+        public struct SubBlockConfig {
+            public var name: String
+            public var parameters: [String: String]
+
+            public init(name: String, parameters: [String: String]) {
+                self.name = name
+                self.parameters = parameters
+            }
+
+            public subscript(_ key: String) -> String? { parameters[key] }
+            public func int(_ key: String) -> Int? { parameters[key].flatMap(Int.init) }
+            public func bool(_ key: String) -> Bool? { parameters[key].flatMap(parseBool) }
+            public func double(_ key: String) -> Double? { parameters[key].flatMap(Double.init) }
+        }
     }
 
     // MARK: - Parsing
@@ -228,6 +257,39 @@ public struct ReticulumConfig {
         var currentSection: String? = nil
         var currentInterface: [String: String] = [:]
         var currentIfaceName: String? = nil
+        var currentSubBlocks: [InterfaceConfig.SubBlockConfig] = []
+        var currentSubName: String? = nil
+        var currentSub: [String: String] = [:]
+
+        func flushSubBlock() {
+            if let subName = currentSubName {
+                currentSubBlocks.append(.init(name: subName, parameters: currentSub))
+            }
+            currentSubName = nil
+            currentSub = [:]
+        }
+
+        func flushInterface() {
+            flushSubBlock()
+            if let name = currentIfaceName {
+                let enabled = resolveEnabled(currentInterface)
+                let type_ = currentInterface["type"] ?? "Unknown"
+                let viaEnabledKey = currentInterface["enabled"].flatMap(parseBool) == true
+                var params = currentInterface
+                params.removeValue(forKey: "type")
+                params.removeValue(forKey: "enabled")
+                params.removeValue(forKey: "interface_enabled")
+                var block = InterfaceConfig(
+                    name: name, type: type_, enabled: enabled, parameters: params
+                )
+                block.subBlocks = currentSubBlocks
+                block.enabledViaEnabledKey = viaEnabledKey
+                cfg.interfaces.append(block)
+            }
+            currentIfaceName = nil
+            currentInterface = [:]
+            currentSubBlocks = []
+        }
 
         for rawLine in text.components(separatedBy: .newlines) {
             let line = rawLine
@@ -235,42 +297,31 @@ public struct ReticulumConfig {
                 .trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
 
+            // [[[Sub-block]]] — must be tested before `[[`, which its brackets also satisfy;
+            // that precedence inversion is what leaked RNodeMulti radio rows out as top-level
+            // interfaces named `[sub]`.
+            if line.hasPrefix("[[[") && line.hasSuffix("]]]") {
+                // A sub-block outside any interface has nothing to attach to; configobj would
+                // reject the file, this parser stays lenient like the rest of its error paths.
+                guard currentIfaceName != nil else { continue }
+                flushSubBlock()
+                currentSubName = String(line.dropFirst(3).dropLast(3))
+                    .trimmingCharacters(in: .whitespaces)
+                continue
+            }
+
             // [[Interface subsection]]
             if line.hasPrefix("[[") && line.hasSuffix("]]") {
-                // Flush previous interface.
-                if let name = currentIfaceName {
-                    let enabled = resolveEnabled(currentInterface)
-                    let type_ = currentInterface["type"] ?? "Unknown"
-                    var params = currentInterface
-                    params.removeValue(forKey: "type")
-                    params.removeValue(forKey: "enabled")
-                    params.removeValue(forKey: "interface_enabled")
-                    cfg.interfaces.append(InterfaceConfig(
-                        name: name, type: type_, enabled: enabled, parameters: params
-                    ))
-                }
+                flushInterface()
                 currentIfaceName = String(line.dropFirst(2).dropLast(2))
                     .trimmingCharacters(in: .whitespaces)
-                currentInterface = [:]
                 continue
             }
 
             // [Top-level section]
             if line.hasPrefix("[") && line.hasSuffix("]") {
                 // Flush pending interface if we're leaving [interfaces].
-                if currentSection == "interfaces", let name = currentIfaceName {
-                    let enabled = resolveEnabled(currentInterface)
-                    let type_ = currentInterface["type"] ?? "Unknown"
-                    var params = currentInterface
-                    params.removeValue(forKey: "type")
-                    params.removeValue(forKey: "enabled")
-                    params.removeValue(forKey: "interface_enabled")
-                    cfg.interfaces.append(InterfaceConfig(
-                        name: name, type: type_, enabled: enabled, parameters: params
-                    ))
-                    currentIfaceName = nil
-                    currentInterface = [:]
-                }
+                if currentSection == "interfaces" { flushInterface() }
                 currentSection = String(line.dropFirst().dropLast())
                     .trimmingCharacters(in: .whitespaces)
                 continue
@@ -442,23 +493,14 @@ public struct ReticulumConfig {
                     cfg.unrecognisedKeys.append("logging.\(key)")
                 }
             case "interfaces":
-                if currentIfaceName != nil { currentInterface[key] = value }
+                if currentSubName != nil { currentSub[key] = value }
+                else if currentIfaceName != nil { currentInterface[key] = value }
             default: break
             }
         }
 
         // Flush last interface.
-        if let name = currentIfaceName {
-            let enabled = resolveEnabled(currentInterface)
-            let type_ = currentInterface["type"] ?? "Unknown"
-            var params = currentInterface
-            params.removeValue(forKey: "type")
-            params.removeValue(forKey: "enabled")
-            params.removeValue(forKey: "interface_enabled")
-            cfg.interfaces.append(InterfaceConfig(
-                name: name, type: type_, enabled: enabled, parameters: params
-            ))
-        }
+        flushInterface()
         return cfg
     }
 

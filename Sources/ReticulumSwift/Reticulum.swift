@@ -1322,12 +1322,132 @@ public final class Reticulum {
                     peers: peers
                 )
 
+            case "SerialInterface":
+                // Python: `Reticulum.py:1024-1026` → `SerialInterface.py:74-86`. A missing
+                // port is a raise that panics the daemon; everything else defaults
+                // (9600/8/N/1, `:77-80`).
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard let serialFactory = InterfaceTransportFactories.serial else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "serial", device: device,
+                        hint: "no serial transport factory is registered on this platform")
+                }
+                iface = SerialInterface(
+                    name: ifCfg.name,
+                    port: device,
+                    speed: ifCfg.int("speed") ?? 9600,
+                    dataBits: ifCfg.int("databits") ?? 8,
+                    parityString: ifCfg["parity"] ?? "N",
+                    stopBits: ifCfg.int("stopbits") ?? 1,
+                    transport: try serialFactory(device)
+                )
+
+            case "RNodeMultiInterface":
+                // Python: `Reticulum.py:1044-1047` → `RNodeMultiInterface.py:160-233`. The
+                // radio rows are configobj's third section level. No port, no sub-blocks, or
+                // no *enabled* sub-blocks are all raises (`:219-224`, `:229-231`).
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard !ifCfg.subBlocks.isEmpty else {
+                    // `ValueError("No subinterfaces configured for "+name)`
+                    throw InterfaceConstructionError.missingKey(
+                        interface: ifCfg.name, key: "subinterfaces")
+                }
+                // A sub is enabled by its own `interface_enabled`, or by the parent's literal
+                // `enabled` spelling — not by a parent `interface_enabled`
+                // (`RNodeMultiInterface.py:178`).
+                let enabledSubs = ifCfg.subBlocks.filter {
+                    $0.bool("interface_enabled") == true || ifCfg.enabledViaEnabledKey
+                }
+                guard !enabledSubs.isEmpty else {
+                    // `ValueError("No subinterfaces enabled for "+name)`
+                    throw InterfaceConstructionError.invalidValue(
+                        interface: ifCfg.name, key: "subinterfaces", value: "none enabled")
+                }
+                guard let rnodeFactory = InterfaceTransportFactories.rnode else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "RNode", device: device,
+                        hint: "no RNode transport factory is registered on this platform")
+                }
+                var subs: [RNodeSubInterface] = []
+                for (position, sub) in enabledSubs.enumerated() {
+                    let subName = "\(ifCfg.name)/\(sub.name)"
+                    let frequency = sub.int("frequency") ?? 0
+                    let bandwidth = sub.int("bandwidth") ?? 0
+                    let txPower   = sub.int("txpower") ?? 0
+                    let sf        = sub.int("spreadingfactor") ?? 0
+                    let cr        = sub.int("codingrate") ?? 0
+                    // The same `validcfg` gates the single-radio case applies
+                    // (`RNodeMultiInterface.py` mirrors `RNodeInterface.py:305-327`).
+                    guard (137_000_000...3_000_000_000).contains(frequency) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "frequency", value: String(frequency))
+                    }
+                    guard (0...37).contains(txPower) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "txpower", value: String(txPower))
+                    }
+                    guard (7_800...1_625_000).contains(bandwidth) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "bandwidth", value: String(bandwidth))
+                    }
+                    guard (5...12).contains(sf) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "spreadingfactor", value: String(sf))
+                    }
+                    guard (5...8).contains(cr) else {
+                        throw InterfaceConstructionError.invalidValue(
+                            interface: subName, key: "codingrate", value: String(cr))
+                    }
+                    subs.append(RNodeSubInterface(
+                        name: sub.name,
+                        index: sub.int("vport") ?? position,
+                        // The concrete chip type is reported by the device at detect
+                        // (CMD_INTERFACES); Python fills it from that response, never from
+                        // config, so construction has nothing to put here.
+                        interfaceType: "",
+                        frequency: UInt32(frequency),
+                        bandwidth: UInt32(bandwidth),
+                        txPower: txPower,
+                        sf: sf,
+                        cr: cr,
+                        flowControl: sub.bool("flow_control") ?? false,
+                        stAlock: sub.double("airtime_limit_short"),
+                        ltAlock: sub.double("airtime_limit_long")
+                    ))
+                }
+                let radioTransport = try rnodeFactory(device)
+                let multi = try RNodeMultiInterface(
+                    name: ifCfg.name, transport: radioTransport, subInterfaces: subs)
+                multi.ownedTransport = radioTransport
+                iface = multi
+
+            case "WeaveInterface":
+                // Python: `Reticulum.py:1049-1051` → `WeaveInterface.py:849-851`, where
+                // `c["port"]` is a KeyError when absent — a raise that panics the daemon. The
+                // WDCL fabric rides an ordinary serial device, so the serial factory serves it.
+                guard let device = ifCfg["port"] else {
+                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+                }
+                guard let serialFactory = InterfaceTransportFactories.serial else {
+                    throw InterfaceTransportFactories.FactoryError.unavailable(
+                        family: "serial", device: device,
+                        hint: "no serial transport factory is registered on this platform")
+                }
+                iface = WeaveInterface(
+                    name: ifCfg.name, port: device, transport: try serialFactory(device))
+
             default:
                 // The current reference no longer raises here: an unknown type goes through the
                 // external-interface-module lookup, and a missing module is an ERROR log naming
                 // it (`Reticulum.py:1055-1061`). This port loads no external modules, so the
                 // parallel observable is the same loud log — an operator's typo is named, the
-                // other interfaces still come up.
+                // other interfaces still come up. `PipeInterface` deliberately stays on this
+                // path: unimplemented by design (macOS/Linux subprocess pipes, no mobile use
+                // case), pinned by `RemainingConstructionTests`.
                 Reticulum.log("Unsupported interface type '\(ifCfg.type)' for interface "
                               + "'\(ifCfg.name)' — this interface will not be created",
                               level: .error)

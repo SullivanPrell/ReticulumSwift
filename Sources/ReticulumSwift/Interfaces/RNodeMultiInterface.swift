@@ -239,6 +239,12 @@ public final class RNodeMultiInterface: Interface {
     // MARK: – Transport & decoder
 
     public weak var transport: RNodeTransport?
+
+    /// Keeps a factory-created transport alive: `transport` is deliberately `weak` (an
+    /// application owning its BLE/USB stack must not be retained by the interface), so when the
+    /// *config path* creates the transport, the interface is the only candidate owner. Same
+    /// pattern as `RNodeInterface.ownedTransport`.
+    internal var ownedTransport: AnyObject? = nil
     private let decoder = KISS.FrameDecoder()
 
     // MARK: – Hardware / firmware state (shared across all sub-interfaces)
