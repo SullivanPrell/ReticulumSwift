@@ -3,6 +3,35 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Every documented interface type constructs from a config file (`bugs/031`)
+
+`RNodeInterface`, `KISSInterface`, `AX25KISSInterface` and `I2PInterface` fell through
+`synthesizeInterfaces` to `iface = nil` — no throw, no log — so an operator who uncommented a
+documented radio block got a daemon that started, reported healthy, and had no radio.
+
+The four types construct through **`InterfaceTransportFactories`**: device strings resolve
+through per-platform factory registrations, so the construction switch carries no platform
+conditionals and the split (serial on macOS, BLE from the application, embedded i2pd
+everywhere) is expressed as which factories are registered. The unavailable path throws naming
+the family, the device string and where to register support; a missing or out-of-range radio
+parameter throws per the reference's `validcfg` gates, and the propagated throw is this port's
+`RNS.panic()`. Absent *hardware* is not a construction failure: transports open at `start()`,
+so a discovery-written entry with an unfilled `port =` constructs and fails at bring-up with a
+real cause, matching the reference's retry posture.
+
+Ships the package's first concrete serial transport (`POSIXSerialPort`, termios, macOS), the
+serial-backed `RNodeTransport` adapter, RNode station identification
+(`id_callsign`/`id_interval`, the reference's `first_tx` machinery), and all 18 previously
+unread interface-block keys — including `device`, which now binds the named network device's
+address on UDP and TCP server instead of the wildcard. An unknown interface type is a loud
+error naming the type, matching the current reference's external-module miss
+(`Reticulum.py:1055-1061`); it no longer silently vanishes.
+
+New storage inventory entry: `storage/i2p` (`I2PInterface.py:90-91`), the embedded daemon's
+data directory when a config block constructs the interface.
+
 ## [1.9.0] — persisted state, and a node that listened to itself
 
 A minor rather than a patch release: **every persisted state file changes name, encoding or
