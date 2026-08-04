@@ -53,6 +53,14 @@ public final class BackboneInterface: Interface {
         return "BackboneInterface[\(name)/\(ipString):\(port)]"
     }
 
+    /// The stats `type` field is `type(interface).__name__` (`Reticulum.py:1472`), and a dialing
+    /// backbone config constructs `BackboneClientInterface` on Python (`Reticulum.py:994-1000`) —
+    /// the class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener. The Swift
+    /// class name would report the listener's name for a client, so consumers keying on
+    /// `ifstats["type"]` mis-classify it. `displayName` above stays on the client `__str__` form;
+    /// the two are different contracts.
+    public var statsTypeName: String { "BackboneClientInterface" }
+
     public var bitrate: Int = BackboneInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
     public private(set) var isOnline: Bool {
