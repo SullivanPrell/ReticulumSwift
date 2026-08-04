@@ -4090,8 +4090,7 @@ public final class Transport {
         // Mirrors Python: "if destination_type == GROUP and hops > 1: drop"
         if packet.destinationType == .group && packet.hops > 1 { return false }
 
-        guard let hashable = try? packet.hashablePart() else { return false }
-        let hash = Hashes.fullHash(hashable)
+        guard let hash = Self.packetHashlistKey(packet) else { return false }
         hashlistLock.lock()
         defer { hashlistLock.unlock() }
         // Two-generation dedup: drop if seen in current or previous window.
@@ -4167,18 +4166,21 @@ public final class Transport {
         }
     }
 
-    /// Add a packet hash to the deduplication hashlist.
-    /// Mirrors Python `Transport.add_packet_hash(packet_hash)`.
-    public func addPacketHash(_ packetHash: Data) {
-        hashlistLock.lock(); defer { hashlistLock.unlock() }
-        packetHashlist.insert(packetHash)
+    /// The one key the hashlist is keyed on: the **full** 32-byte hash of the packet's hashable
+    /// part, as Python stores `packet.packet_hash` (`Packet.py:342-344`) and `packet_filter`
+    /// compares it (`Transport.py:1417`). Every reader and writer of the hashlist must go
+    /// through this — `bugs/038` was the public filter computing the 16-byte truncated hash
+    /// against a list of 32-byte entries, so "seen" was always false.
+    private static func packetHashlistKey(_ packet: Packet) -> Data? {
+        guard let hashable = try? packet.hashablePart() else { return nil }
+        return Hashes.fullHash(hashable)
     }
 
     /// Returns true if the packet should be processed (not a duplicate, passes type/hop rules).
     /// Mirrors Python `Transport.packet_filter(packet)` — simplified to dedup check only;
     /// full filtering is done inside `handleIncoming`.
     public func packetFilter(_ packet: Packet) -> Bool {
-        guard let hash = try? packet.truncatedPacketHash() else { return true }
+        guard let hash = Self.packetHashlistKey(packet) else { return true }
         hashlistLock.lock()
         let seen = packetHashlist.contains(hash) || packetHashlistPrev.contains(hash)
         hashlistLock.unlock()
