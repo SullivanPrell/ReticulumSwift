@@ -33,7 +33,7 @@ final class AnnounceCapTests: XCTestCase {
         let now = 0.0
 
         let packet = makeAnnounce(hops: 0, dest: 0xAA)
-        let result = queue.shouldTransmit(packet: packet, now: now, bitrate: highBitrate, emitted: 0)
+        let result = queue.shouldTransmit(packet: packet, now: now, bitrate: highBitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
         XCTAssertTrue(result, "high-bitrate interface should transmit immediately")
         XCTAssertTrue(queue.isEmpty, "queue should be empty after immediate transmit")
     }
@@ -46,8 +46,8 @@ final class AnnounceCapTests: XCTestCase {
         let p1 = makeAnnounce(hops: 0, dest: 0xAA)
         let p2 = makeAnnounce(hops: 0, dest: 0xBB)
 
-        let r1 = queue.shouldTransmit(packet: p1, now: now, bitrate: bitrate, emitted: 0)
-        let r2 = queue.shouldTransmit(packet: p2, now: now, bitrate: bitrate, emitted: 0)
+        let r1 = queue.shouldTransmit(packet: p1, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
+        let r2 = queue.shouldTransmit(packet: p2, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         XCTAssertTrue(r1, "first packet should transmit immediately")
         XCTAssertFalse(r2, "second packet should be queued when bandwidth used")
@@ -62,11 +62,11 @@ final class AnnounceCapTests: XCTestCase {
         let p1 = makeAnnounce(hops: 0, dest: 0xAA)
         let p2 = makeAnnounce(hops: 0, dest: 0xBB)
 
-        _ = queue.shouldTransmit(packet: p1, now: now, bitrate: bitrate, emitted: 0)
-        _ = queue.shouldTransmit(packet: p2, now: now, bitrate: bitrate, emitted: 0)
+        _ = queue.shouldTransmit(packet: p1, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
+        _ = queue.shouldTransmit(packet: p2, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         // After sufficient time, drain should release queued packet.
-        let drained = queue.drain(now: now + 1000, bitrate: bitrate)
+        let drained = queue.drain(now: now + 1000, bitrate: bitrate, announceCap: AnnounceQueue.announceCap)
         XCTAssertGreaterThan(drained.count, 0, "queued announce should drain after window")
     }
 
@@ -89,7 +89,7 @@ final class AnnounceCapTests: XCTestCase {
         let now = 1000.0
         let packet = makeAnnounce(hops: 0, dest: 0xCC)
 
-        _ = queue.shouldTransmit(packet: packet, now: now, bitrate: bitrate, emitted: 0)
+        _ = queue.shouldTransmit(packet: packet, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         let txTime = Double(packet.rawByteCount) * 8.0 / Double(bitrate)
         let expectedWindow = txTime / AnnounceQueue.announceCap
@@ -105,7 +105,7 @@ final class AnnounceCapTests: XCTestCase {
         let now = 1000.0
         let packet = makeAnnounce(hops: 0, dest: 0xDD)
 
-        _ = queue.shouldTransmit(packet: packet, now: now, bitrate: bitrate, emitted: 0)
+        _ = queue.shouldTransmit(packet: packet, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         let txTime = Double(packet.rawByteCount) * 8.0 / Double(bitrate)
         let capWindow = txTime / AnnounceQueue.announceCap
@@ -123,8 +123,8 @@ final class AnnounceCapTests: XCTestCase {
         let p1 = makeAnnounce(hops: 0, dest: 0xEE)
         let p2 = makeAnnounce(hops: 0, dest: 0xFF)
 
-        let r1 = queue.shouldTransmit(packet: p1, now: now, bitrate: bitrate, emitted: 0)
-        let r2 = queue.shouldTransmit(packet: p2, now: now, bitrate: bitrate, emitted: 0)
+        let r1 = queue.shouldTransmit(packet: p1, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
+        let r2 = queue.shouldTransmit(packet: p2, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         XCTAssertTrue(r1, "first packet transmits immediately regardless of jitter")
         XCTAssertFalse(r2, "second packet queued — jitter extends the hold window")
@@ -139,7 +139,7 @@ final class AnnounceCapTests: XCTestCase {
         let now = 500.0
         let packet = makeAnnounce(hops: 0, dest: 0x11)
 
-        _ = queue.shouldTransmit(packet: packet, now: now, bitrate: bitrate, emitted: 0)
+        _ = queue.shouldTransmit(packet: packet, now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
 
         let txTime = Double(packet.rawByteCount) * 8.0 / Double(bitrate)
         let minWindow = now + txTime / AnnounceQueue.announceCap
@@ -158,7 +158,7 @@ final class AnnounceCapTests: XCTestCase {
         let now = 0.0
         for d in 0..<100 {
             _ = queue.shouldTransmit(packet: makeAnnounce(hops: 0, dest: UInt8(d)),
-                                     now: now, bitrate: bitrate, emitted: 0)
+                                     now: now, bitrate: bitrate, announceCap: AnnounceQueue.announceCap, emitted: 0)
         }
         XCTAssertEqual(queue.count, 99,
             "queue must hold all distinct queued announces (99 after the first transmits), not cap at 16")

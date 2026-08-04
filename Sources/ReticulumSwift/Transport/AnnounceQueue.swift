@@ -57,10 +57,16 @@ final class AnnounceQueue {
     /// including the random jitter on the fast path:
     ///   `allowed_at = now + tx_time/cap + random() * tx_time/cap`
     @discardableResult
+    /// `announceCap` is the interface's own fraction (`Interface.announceCap`), not this
+    /// type's static: Python divides by `interface.announce_cap` at every rate computation
+    /// (`Transport.py:1284`, `:2893`), so an operator's per-interface value is what shapes the
+    /// window. Passing it in rather than reading a static is the seam — the static stays only
+    /// as the class default the interface itself is initialised from.
     func shouldTransmit(
         packet: Packet,
         now: TimeInterval,
         bitrate: Int,
+        announceCap: Double,
         emitted: TimeInterval
     ) -> Bool {
         // Zero/unknown bitrate: transmit immediately without rate limiting.
@@ -71,7 +77,7 @@ final class AnnounceQueue {
         if !hasQueued && now >= allowedAt {
             // Fast path: no backlog, and we've passed the rate-limit window.
             let txTime = Double(packet.rawByteCount) * 8.0 / Double(bitrate)
-            let capWindow = txTime / AnnounceQueue.announceCap
+            let capWindow = txTime / announceCap
             // Random jitter (0 to capWindow) to prevent synchronized rebroadcast.
             // Mirrors Python: `interface.announce_allowed_at = now + wait + random() * wait`
             let jitter = (AnnounceQueue.jitterMultiplierOverride ?? Double.random(in: 0...1)) * capWindow
@@ -110,7 +116,7 @@ final class AnnounceQueue {
 
     /// Drain entries that are now within their transmission window.
     /// Returns packets that should be sent now, updating `allowedAt`.
-    func drain(now: TimeInterval, bitrate: Int) -> [Packet] {
+    func drain(now: TimeInterval, bitrate: Int, announceCap: Double) -> [Packet] {
         lock.lock(); defer { lock.unlock() }
         guard bitrate > 0 else {
             let all = entries.map { $0.raw }
@@ -127,7 +133,7 @@ final class AnnounceQueue {
             let e = entries.removeFirst()
             queuedDests.remove(e.destinationHash)
             let txTime = Double(e.raw.rawByteCount) * 8.0 / Double(bitrate)
-            let capWindow = txTime / AnnounceQueue.announceCap
+            let capWindow = txTime / announceCap
             let jitter = (AnnounceQueue.jitterMultiplierOverride ?? Double.random(in: 0...1)) * capWindow
             allowedAt = now + capWindow + jitter
             out.append(e.raw)

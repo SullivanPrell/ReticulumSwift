@@ -219,6 +219,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
             switch state {
             case .ready:
                 self.isOnline = true
+                self.noteConnected()
                 self.stateLock.lock(); self.reconnectAttempts = 0; self.stateLock.unlock()
                 self.beginReceiveLoop()
                 Reticulum.log("BackboneInterface \(self.name) connected to \(self.host):\(self.port)",

@@ -287,6 +287,19 @@ public enum RNSInterfaceMtu {
 /// Default implementations so existing interfaces don't need to add these.
 public extension Interface {
 
+    /// Record that a TCP-family connection just came up, which is where Python asks for a
+    /// tunnel: `wants_tunnel = True` on a successful `initial_connect`
+    /// (`TCPInterface.py:179`, `BackboneInterface.py:653`, `I2PInterface.py:428`). The
+    /// transport serves the request on its next sweep, so the paths the remote side holds for
+    /// this client survive the reconnect instead of dying with the socket.
+    ///
+    /// On the protocol rather than per interface so a new dialling type inherits it: this is
+    /// the seam that was missing, not two call sites — the machinery and its consumer both
+    /// existed and nothing ever set the flag.
+    func noteConnected() {
+        wantsTunnel = true
+    }
+
     /// Python `Interface.optimise_mtu()`. Called unconditionally after the configured bitrate
     /// lands (`Reticulum.py:914-915`) and on spawned server-side clients after the bitrate copy
     /// (`TCPInterface.py:612-613`); the write is gated on `AUTOCONFIGURE_MTU`, so fixed-MTU

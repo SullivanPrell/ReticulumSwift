@@ -193,6 +193,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
                 self.everConnected = true
                 self.stateLock.unlock()
                 self.isOnline = true
+                self.noteConnected()
                 if reconnected {
                     // Python: `RNS.log("Reconnected socket for "+str(self)+".", LOG_INFO)`
                     Reticulum.log("Reconnected socket for \(self.displayName).", level: .info)

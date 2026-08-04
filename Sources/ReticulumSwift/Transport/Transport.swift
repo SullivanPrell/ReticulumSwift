@@ -2452,6 +2452,7 @@ public final class Transport {
         drainAnnounceQueues()
         sampleInterfaceSpeeds()
         sweepExpiredBlackholes()
+        synthesizePendingTunnels()
         // Process held announces for each interface (mirrors Python's per-interface job loop).
         // Snapshot under `lock` — register/deregister mutate `interfaces` on
         // network-callback threads while this jobs loop runs.
@@ -2537,7 +2538,8 @@ public final class Transport {
             let queue = announceQueues[iface.name]!
             queueLock.unlock()
             let canSend = queue.shouldTransmit(
-                packet: forwarded, now: now, bitrate: iface.bitrate, emitted: emitted
+                packet: forwarded, now: now, bitrate: iface.bitrate,
+                announceCap: iface.announceCap, emitted: emitted
             )
             if canSend { try? iface.send(forwarded) }
         }
@@ -3735,6 +3737,7 @@ public final class Transport {
                         packet: forwarded,
                         now: now,
                         bitrate: iface.bitrate,
+                        announceCap: iface.announceCap,
                         emitted: emitted
                     )
                     if canSend { try? iface.send(forwarded) }
@@ -4365,7 +4368,8 @@ public final class Transport {
             guard let iface = ifaceSnapshot.first(where: { $0.name == name && $0.isOnline }) else {
                 continue
             }
-            let packets = queue.drain(now: now, bitrate: iface.bitrate)
+            let packets = queue.drain(now: now, bitrate: iface.bitrate,
+                                      announceCap: iface.announceCap)
             for pkt in packets { try? iface.send(pkt) }
         }
     }
@@ -4463,6 +4467,25 @@ public final class Transport {
     ///   [ 64.. 95] 32 bytes: SHA-256 of interface name ("interface hash")
     ///   [ 96..111] 16 bytes: random hash (replay-prevention nonce)
     ///   [112..175] 64 bytes: Ed25519 signature over bytes 0..111
+    /// Serve every interface that has asked for a tunnel since the last sweep.
+    ///
+    /// Python synthesizes at two moments: a startup pass over every interface wanting one
+    /// (`Transport.py:428-433`) and a direct call after each successful redial
+    /// (`TCPInterface.py:298`, `I2PInterface.py:533`). This port's interfaces hold no back-
+    /// reference to their transport and connect asynchronously *after* `register` — so the
+    /// registration-time check saw nothing, and a per-connect direct call has nowhere to
+    /// originate. The jobs loop sweeps instead, which covers startup, connect and reconnect
+    /// with one trigger; `synthesizeTunnel` clears the flag (`Transport.py:2385`), so a served
+    /// request is not repeated and a fresh reconnect asks again.
+    public func synthesizePendingTunnels() {
+        lock.lock()
+        let snapshot = interfaces
+        lock.unlock()
+        for iface in snapshot where iface.wantsTunnel {
+            synthesizeTunnel(iface)
+        }
+    }
+
     public func synthesizeTunnel(_ interface: any Interface) {
         guard let identity = ownerIdentity else { return }
 
