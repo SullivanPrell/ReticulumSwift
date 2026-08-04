@@ -32,6 +32,67 @@ error naming the type, matching the current reference's external-module miss
 New storage inventory entry: `storage/i2p` (`I2PInterface.py:90-91`), the embedded daemon's
 data directory when a config block constructs the interface.
 
+**The rest of the types followed.** `SerialInterface`, `RNodeMultiInterface` and
+`WeaveInterface` construct too — Weave being the aggravated case, since this port's own
+discovery emits `type = WeaveInterface` entries its config path then rejected. The config
+parser gained configobj's third section level: a `[[[sub]]]` line begins with `[[` and ends
+with `]]`, so every RNodeMulti radio row had been leaking out as a *top-level* interface named
+`[sub]` with type Unknown. `PipeInterface` keeps taking the loud unknown-type path by
+documented design (POSIX subprocess pipes, no mobile use case), now pinned by a test.
+
+### An RNode reports online only after a validated bring-up
+
+`start()` was `open(); isOnline = true`, with `detect`, `initRadio` and `validateRadioState`
+carrying **zero production callers** — only tests called them by hand. A host-mode RNode was
+therefore never sent `CMD_FREQUENCY`/…/`CMD_RADIO_STATE ON`: its radio stayed off while
+`rnstatus` reported the interface Up and Transport routed packets into it. `start()` now runs
+the reference's `configure_device` gate (`RNodeInterface.py:424-467`) — detect, bounded wait,
+`initRadio`, validate the echoed parameters, and only then online; any failure closes the
+transport and stays offline. `RNodeMultiInterface` gets the same gate. `validateRadioState`
+now `None`-guards only the frequency comparison as the reference does, because guarding all
+five made validation vacuously true against a device that answered nothing.
+
+### Serial-family interfaces notice device loss, and redial
+
+Nothing in the port could observe a USB flap: the transport seams had no error surface,
+`POSIXSerialPort` discarded device-gone reads and never checked `write()`'s `-1`, and no
+serial-family interface went offline except an explicit `stop()`. The interface stayed Up with
+growing TX counters while every packet went into a dead descriptor — where a Python node
+resumes within ~5 s. Both transport protocols now require `onTransportError`; one shared
+reconnect loop serves all five interfaces, re-running the full `start()` (an RNode re-runs its
+whole bring-up — a re-powered modem lost its configuration with its power); and a failed write
+is no longer counted as transmitted bytes.
+
+### Hardware MTU follows bitrate
+
+`optimise_mtu` (`Interface.py:205-217`) had no port, and the class constants were `let`s that
+could not be recomputed. Swift advertised 262144/1048576 in `LINKREQUEST` MTU signalling where
+Python advertises 8192/16384 in the identical topology. The ladder now runs after the
+configured bitrate and on every spawned server-side client. `LocalInterface` gains the
+`HW_MTU`/`AUTOCONFIGURE_MTU` it never had, which had disabled link-MTU discovery for every
+link crossing a Swift shared instance.
+
+### Two attributes that were written but never read, and one never written
+
+- **`wants_tunnel`**: a TCP or Backbone client never requested tunnel synthesis, so the remote
+  transport never rebuilt the paths it held and every reconnect silently lost them. Requested
+  on connect, served from the jobs loop.
+- **`announce_cap`**: parsed, validated, written onto the interface, inherited by spawned
+  clients — and then every rate computation divided by a hardcoded 2%. Both `AnnounceQueue`
+  paths now use the interface's own cap.
+- **`packetFilter`** (`bugs/038`): keyed on the 16-byte truncated hash against a list of
+  32-byte full hashes, so "seen" was always false. Reader and writer now share one key.
+
+### Smaller corrections
+
+- The instance-control RPC listener binds loopback instead of the wildcard, matching
+  `Reticulum.py:352`. It had been reachable from every network the host was attached to.
+- A dialing backbone reports `BackboneClientInterface` in `ifstats["type"]`; it had been
+  publishing the Python *listener*'s class name to every consumer keying on that field.
+- `prettyshorttime`'s integer-microsecond rounding is recorded as a deliberate divergence with
+  the reference's own float-artifact strings captured beside each pinned assertion, rather
+  than sitting under a file header claiming Python parity it never had.
+
 ## [1.9.0] — persisted state, and a node that listened to itself
 
 A minor rather than a patch release: **every persisted state file changes name, encoding or
