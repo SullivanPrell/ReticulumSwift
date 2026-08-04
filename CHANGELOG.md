@@ -5,6 +5,39 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Every idle low-RTT initiator link died after ten seconds (`bugs/034`)
+
+`Link.watchdogMaxSleep = 5` was declared and **never used** — its only reference in the whole
+package was a test asserting its value. Python clamps *every* watchdog sleep to it
+(`RNS/Link.py:775`), so a status change is observed within five seconds no matter what the
+previous state scheduled. Without the clamp, a link that established scheduled its next tick at
+`requestTime + establishmentTimeout` (~10.4 s) and slept straight through the window in which
+the initiator's keepalive was due (the interval floors at 5 s). No keepalive was ever sent, so
+the first tick after establishment found the link idle past `stale_time` and tore it down
+immediately.
+
+Every idle initiator link on a low-RTT path therefore died at about ten seconds. It surfaced as
+`bugs/034` — intermittent RRC chat-message loss — because the receiver's link expired in the gap
+between joining a room and the hub's fan-out, and the failure looked like message loss rather
+than link loss. The Go hub independently stale-closed both Swift clients at ~17 s idle, having
+received no keepalive from either.
+
+Three Python behaviours were missing alongside the clamp, and are ported with it:
+
+- The keepalive goes out **before** the stale check (`RNS/Link.py:749-751`), so a link crossing
+  `stale_time` still probes its peer instead of being abandoned unasked.
+- Crossing `stale_time` **marks** the link stale and schedules a grace tick
+  (`rtt * KEEPALIVE_TIMEOUT_FACTOR + STALE_GRACE`, `:753-755`) rather than tearing down on the
+  spot; only the tick that follows tears down.
+- Inbound traffic on a stale link **recovers** it to active (`:939`). The port dropped all
+  inbound on a non-active link, so a link that went stale could never come back.
+
+A stale link now also emits `LINKCLOSE` on teardown, as Python does for every status but pending
+and closed — its peer is told rather than left to time out on its own.
+
+Found by attributing `bugs/034` rather than by a failing test; the defect predates the initial
+public release.
+
 ### The RNode bring-up gate must not block its caller's thread
 
 1.10.0's bring-up gate (`bugs/057`) waited for the device's detect response on the thread that

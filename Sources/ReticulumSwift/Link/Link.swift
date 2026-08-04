@@ -1358,18 +1358,8 @@ public final class Link {
             let outboundAge = noOutboundFor()
             let ka = effectiveKeepalive
             let st = effectiveStaleTime
-            if inboundAge >= st {
-                // No traffic for stale_time — tear down. Stale is measured on INBOUND
-                // only (matches Python's last_inbound-based check).
-                _teardownReason = .timeout
-                _status = .stale
-                stateLock.unlock()
-                // Mark path unresponsive on timeout.
-                transport?.markPathUnresponsive(for: destination.hash)
-                try? teardown()
-                return
-            }
             var shouldSendKeepalive = false
+            var shouldMarkStale = false
             let nextTick: TimeInterval
             // Trigger a keepalive when EITHER inbound OR outbound has been idle for
             // `keepalive`. A receive-only initiator (peer sends continuously) would
@@ -1379,18 +1369,46 @@ public final class Link {
             // fixed in RNS 1.4.0 (commit e64d8150).
             if inboundAge >= ka || outboundAge >= ka {
                 // Send a keepalive if we're the initiator and haven't sent one recently.
+                // Python sends it BEFORE the stale check (RNS/Link.py:749-751), so a
+                // link crossing stale_time still probes its peer.
                 if role == .initiator,
                    now.timeIntervalSince(lastKeepalive ?? .distantPast) >= ka {
                     shouldSendKeepalive = true
                 }
-                nextTick = ka
+                if inboundAge >= st {
+                    // No inbound for stale_time: mark stale but do NOT tear down yet.
+                    // The next tick — after rtt*KEEPALIVE_TIMEOUT_FACTOR + STALE_GRACE —
+                    // tears down only if no inbound rescued the link in the meantime.
+                    // Mirrors Python RNS/Link.py:753-755; recovery is in receive()
+                    // (RNS/Link.py:939 `if self.status == Link.STALE: ... ACTIVE`).
+                    shouldMarkStale = true
+                    nextTick = (rtt ?? 0) * Link.keepaliveTimeoutFactor + Link.staleGrace
+                } else {
+                    nextTick = ka
+                }
             } else {
                 // Next wake is when whichever timer is closest next crosses `ka`.
                 nextTick = max(0.5, ka - max(inboundAge, outboundAge))
             }
             stateLock.unlock()
+            // Keepalive goes out while the link is still .active (send() rejects
+            // non-active links); Python's ordering, RNS/Link.py:749-755.
             if shouldSendKeepalive { try? sendKeepalive() }
+            if shouldMarkStale {
+                stateLock.lock()
+                if _status == .active { _status = .stale }
+                stateLock.unlock()
+            }
             rescheduleWatchdog(after: nextTick)
+
+        case .stale:
+            // Grace expired with no inbound recovery — tear down now.
+            // Mirrors Python's STALE watchdog branch (RNS/Link.py:761-765).
+            _teardownReason = .timeout
+            stateLock.unlock()
+            transport?.markPathUnresponsive(for: destination.hash)
+            try? teardown()
+            return
 
         default:
             stateLock.unlock()
@@ -1402,8 +1420,17 @@ public final class Link {
     /// already made the link terminal — in which case the freshly-built timer is
     /// dropped so a stale tick cannot resurrect a torn-down link's watchdog.
     private func rescheduleWatchdog(after nextTick: TimeInterval) {
+        // Every watchdog sleep is clamped to watchdogMaxSleep so a status change
+        // between ticks (pending -> active at establishment) is observed within
+        // 5 s. Python clamps identically for every state: RNS/Link.py:776
+        // `sleep_time = min(sleep_time, Link.WATCHDOG_MAX_SLEEP)`. Without the
+        // clamp, the tick scheduled during .pending sleeps until the
+        // establishment deadline, no keepalive is ever sent on a link that goes
+        // idle right after establishing, and the first .active tick lands past
+        // effectiveStaleTime and kills the healthy link (bugs/034).
+        let tick = min(nextTick, Link.watchdogMaxSleep)
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        timer.schedule(deadline: .now() + nextTick, repeating: .never)
+        timer.schedule(deadline: .now() + tick, repeating: .never)
         timer.setEventHandler { [weak self] in self?.watchdogTick() }
         stateLock.lock()
         guard _status != .closed && _status != .failed else {
@@ -1482,7 +1509,16 @@ public final class Link {
     /// decryption (resource handles its own encryption); decrypts all others.
     /// The optional `receivingInterface` is used to update PHY stats when `trackPhyStats` is true.
     public func receive(_ packet: Packet, from receivingInterface: (any Interface)? = nil) throws {
-        guard status == .active else { throw LinkError.notActive }
+        // A stale link still processes inbound traffic, and any inbound packet
+        // promotes it back to active — Python accepts every non-CLOSED status
+        // and recovers with `if self.status == Link.STALE: self.status =
+        // Link.ACTIVE` (RNS/Link.py:931-939). Rejecting stale here would make
+        // the watchdog's stale grace period meaningless.
+        stateLock.lock()
+        if _status == .stale { _status = .active }
+        let curStatus = _status
+        stateLock.unlock()
+        guard curStatus == .active else { throw LinkError.notActive }
         updatePhyStats(from: receivingInterface)
 
         // RESOURCE data parts — pre-encrypted by the resource layer; pass raw.
@@ -1883,6 +1919,14 @@ public final class Link {
         stateLock.unlock()
     }
 
+    /// Test helper: directly set the measured RTT so tests can pin the
+    /// RTT-scaled keepalive/stale windows (effectiveKeepalive /
+    /// effectiveStaleTime) deterministically. Mirrors what a low-RTT local
+    /// link measures naturally (RNS/Link.py:795-797 scales from self.rtt).
+    func testSetRtt(_ value: TimeInterval) {
+        stateLock.lock(); rtt = value; stateLock.unlock()
+    }
+
     /// Test helper: directly inject PHY stats without a real interface.
     func testSetPhyStats(rssi: Float, snr: Float, quality: Float) {
         stateLock.lock()
@@ -1963,7 +2007,10 @@ public final class Link {
         if _teardownReason == nil {
             _teardownReason = (role == .initiator) ? .initiatorClosed : .destinationClosed
         }
-        let wasActive = (_status == .active)
+        // Python emits the LINKCLOSE packet for any status except PENDING and
+        // CLOSED — including STALE (RNS/Link.py teardown / STALE watchdog
+        // branch __teardown_packet). A stale link's peer must still hear it.
+        let wasActive = (_status == .active || _status == .stale)
         stateLock.unlock()
 
         if wasActive {
