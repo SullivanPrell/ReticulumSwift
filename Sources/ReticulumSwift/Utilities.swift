@@ -112,20 +112,27 @@ public enum RNSUtilities {
         return neg ? "-\(result)" : result
     }
 
-    /// Human-readable sub-second duration. Mirrors Python `RNS.prettyshorttime(time, verbose=False, compact=False)`.
-    /// Breaks input seconds down into seconds, milliseconds, and microseconds.
+    /// Human-readable sub-second duration, after Python `RNS.prettyshorttime(time, verbose, compact)`.
+    ///
+    /// **Deliberate divergence** in the microsecond component. Python keeps microseconds as a
+    /// float — `time*1e6` then `round(time, 2)` (`RNS/__init__.py:296`, `:305`) — so RNS 1.4.2
+    /// emits float artifacts: `1e-6` → `"1.0µs"`, `0.0015` → `"1ms and 500.0µs"`, and `1.001` →
+    /// `"1s and 1000.0µs"` (1.001×1e6 = 1000999.9999…, so a 1000.0µs component beside the
+    /// seconds). This port pre-rounds to integer microseconds instead, which both drops the
+    /// `.0` suffixes and keeps components in range. The function has no production caller in
+    /// Swift, and Python prints it only in local log/profiler strings — nothing crosses the
+    /// wire — so bug-for-bug float artifacts are not worth porting. Pinned as a divergence by
+    /// the annotated assertions in `PrettyTimeTests`.
     public static func prettyshorttime(_ time: TimeInterval, verbose: Bool = false, compact: Bool = false) -> String {
         var t = time
         let neg = t < 0
         if neg { t = -t }
 
-        // Round to nearest integer microsecond to avoid float precision artifacts
+        // Integer microseconds — the divergence described above lives on this line.
         let totalMicros = Int((t * 1_000_000).rounded())
         let seconds = totalMicros / 1_000_000
-        var remaining = totalMicros % 1_000_000
-        let milliseconds = remaining / 1_000
-        remaining = remaining % 1_000
-        let microseconds: Double = compact ? Double(Int(remaining)) : (round(Double(remaining) * 100) / 100)
+        let milliseconds = (totalMicros % 1_000_000) / 1_000
+        let microseconds = totalMicros % 1_000
 
         var components: [String] = []
         var displayed = 0
@@ -138,28 +145,7 @@ public enum RNSUtilities {
 
         maybeAdd(seconds,      singular: "second",      plural: "seconds",      short: "s")
         maybeAdd(milliseconds, singular: "millisecond", plural: "milliseconds", short: "ms")
-
-        if microseconds > 0 && (!compact || displayed < 2) {
-            let usStr: String
-            if verbose {
-                let usInt = Int(microseconds)
-                let plural = microseconds == 1 ? "microsecond" : "microseconds"
-                if microseconds == Double(usInt) {
-                    usStr = "\(usInt) \(plural)"
-                } else {
-                    usStr = "\(microseconds) \(plural)"
-                }
-            } else {
-                let usInt = Int(microseconds)
-                if microseconds == Double(usInt) {
-                    usStr = "\(usInt)µs"
-                } else {
-                    usStr = "\(microseconds)µs"
-                }
-            }
-            components.append(usStr)
-            displayed += 1
-        }
+        maybeAdd(microseconds, singular: "microsecond", plural: "microseconds", short: "µs")
 
         if components.isEmpty { return "0us" }
 
