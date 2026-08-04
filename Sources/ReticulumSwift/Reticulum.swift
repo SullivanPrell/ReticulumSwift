@@ -1488,6 +1488,16 @@ public final class Reticulum {
                 Reticulum.applyInterfaceConfiguration(to: iface, from: ifCfg)
                 transport.register(interface: iface)
                 try? iface.start()
+                // A radio's bring-up completes off the caller's thread (its detect response may
+                // be delivered on the thread that called `start()` — see
+                // `RNodeInterface.bringUpQueue`). This path is the one caller that genuinely
+                // wants the reference's synchronous `__init__` semantics, and it is safe here:
+                // config synthesis owns this thread and no transport delivers on it.
+                if let radio = iface as? RNodeInterface {
+                    radio.waitUntilOnline(timeout: radio.detectTimeout + radio.validateTimeout + 1)
+                } else if let multi = iface as? RNodeMultiInterface {
+                    multi.waitUntilOnline(timeout: multi.detectTimeout + 1)
+                }
             }
         }
     }

@@ -197,7 +197,7 @@ final class SerialReconnectTests: XCTestCase {
         iface.reconnectWaitOverride = 0.05
         transport.echoSource = iface
         try iface.start()
-        XCTAssertTrue(iface.isOnline)
+        XCTAssertTrue(iface.waitUntilOnline(timeout: 3.0))
         XCTAssertEqual(transport.detectResponses, 1)
 
         transport.flap()

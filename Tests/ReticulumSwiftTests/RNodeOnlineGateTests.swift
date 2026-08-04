@@ -81,8 +81,12 @@ final class RNodeOnlineGateTests: XCTestCase {
         let iface = configuredInterface(transport: transport)
         transport.echoSource = iface
         try iface.start()
+        // `start()` no longer blocks — the bring-up runs off the caller's thread, because a
+        // transport may deliver its bytes on that very thread (`RNodeBringUpThreadingTests`).
+        XCTAssertTrue(iface.waitUntilOnline(timeout: 3.0),
+                      "the bring-up must reach online with a device that answers")
 
-        XCTAssertTrue(iface.detected, "the detect response must be consumed during start()")
+        XCTAssertTrue(iface.detected, "the detect response must be consumed during bring-up")
         XCTAssertTrue(iface.isOnline)
         XCTAssertTrue(iface.interfaceReady,
                       "Python sets interface_ready only on a validated bring-up "
@@ -104,6 +108,8 @@ final class RNodeOnlineGateTests: XCTestCase {
         let iface = configuredInterface(transport: transport)
         iface.detectTimeout = 0.05
         try iface.start()
+        XCTAssertFalse(iface.waitUntilOnline(timeout: 2.0),
+                       "a device that never answers must settle as not-online")
 
         XCTAssertFalse(iface.isOnline,
                        """
@@ -122,6 +128,8 @@ final class RNodeOnlineGateTests: XCTestCase {
         transport.bandwidthOverride = 250_000   // hardware reports a bandwidth we did not set
         iface.validateTimeout = 0.1
         try iface.start()
+        XCTAssertFalse(iface.waitUntilOnline(timeout: 2.0),
+                       "a mismatched configuration must settle as not-online")
 
         XCTAssertFalse(iface.isOnline,
                        "Python aborts startup when the reported radio parameters do not match "
@@ -167,7 +175,7 @@ final class RNodeOnlineGateTests: XCTestCase {
         let multi = try RNodeMultiInterface(name: "Dual", transport: transport,
                                             subInterfaces: [sub])
         try multi.start()
-        XCTAssertTrue(multi.isOnline)
+        XCTAssertTrue(multi.waitUntilOnline(timeout: 3.0))
         let allWrites = transport.writes.reduce(Data(), +)
         XCTAssertTrue(allWrites.contains(KISS.cmdSelInt),
                       "start() never configured any sub-interface — initAllRadios() is not in "
@@ -183,6 +191,8 @@ final class RNodeOnlineGateTests: XCTestCase {
                                             subInterfaces: [sub])
         multi.detectTimeout = 0.05
         try multi.start()
+        XCTAssertFalse(multi.waitUntilOnline(timeout: 2.0),
+                       "a multi device that never answers must settle as not-online")
         XCTAssertFalse(multi.isOnline,
                        "the multi interface has the identical gate defect: open(); online = true "
                        + "with detect/initAllRadios production-dead")
