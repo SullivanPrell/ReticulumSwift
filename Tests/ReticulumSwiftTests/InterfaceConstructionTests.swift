@@ -304,6 +304,69 @@ final class InterfaceConstructionTests: XCTestCase {
                         + "factory-created transport")
     }
 
+    // MARK: - 7.7: what discovery writes, a restart constructs
+
+    /// Discovery suggests config entries for discovered RNode, KISS and I2P peers, in the
+    /// reference's own `config_entry` shapes (`Discovery.py:348,360,378,408`) — which is what
+    /// made `bugs/031` self-defeating: the discovery path emitted blocks the config path could
+    /// not construct, so an auto-discovered LoRa peer was written down and then silently
+    /// ignored on the next start.
+    ///
+    /// The radio shapes leave `port = ` empty for the operator's device; this test completes
+    /// it exactly as an operator would and leaves everything else as discovery wrote it —
+    /// including the empty `txpower = ` line the reference's own suggestion carries.
+    func testTheEntriesDiscoveryEmitsConstructOnRestart() throws {
+        registerStubs()
+        let stack = makeStack()
+        try stack.synthesizeInterfaces(from: parse("""
+          [[Discovered RNode]]
+            type = RNodeInterface
+            enabled = yes
+            port = /dev/cu.usbserial-0001
+            frequency = 867200000
+            bandwidth = 125000
+            spreadingfactor = 8
+            codingrate = 5
+            txpower =
+
+          [[Discovered KISS]]
+            type = KISSInterface
+            enabled = yes
+            port = /dev/cu.usbserial-0002
+
+          [[Discovered I2P]]
+            type = I2PInterface
+            enabled = yes
+            peers = discoveredpeer.b32.i2p
+        """))
+        let names = Set(stack.transport.interfaces.map(\.name))
+        XCTAssertEqual(names, ["Discovered RNode", "Discovered KISS", "Discovered I2P"],
+                       "an entry discovery wrote must be an entry the config path constructs — "
+                       + "emitting blocks the daemon then ignores is `bugs/031` eating its own "
+                       + "output")
+    }
+
+    /// The reference constructs an RNode whose port is not yet usable and brings it up later
+    /// (`open_port` failure → log + periodic reconnect, `RNodeInterface.py:354-360`); an
+    /// unfilled discovery suggestion must therefore construct rather than throw — the failure
+    /// belongs to `start()`, where the cause is a real open error.
+    func testAnUnfilledDiscoveryPortStillConstructs() throws {
+        registerStubs()
+        let stack = makeStack()
+        try stack.synthesizeInterfaces(from: parse("""
+          [[Unfilled RNode]]
+            type = RNodeInterface
+            enabled = yes
+            port =
+            frequency = 867200000
+            bandwidth = 125000
+            spreadingfactor = 8
+            codingrate = 5
+            txpower =
+        """))
+        XCTAssertNotNil(stack.transport.interfaces.first { $0.name == "Unfilled RNode" })
+    }
+
     // MARK: - device = <name> on the constructible families (`bugs/031`'s two-line rider)
 
     func testDeviceKeyBindsTheNamedDevicesAddressOnTCPServer() throws {
