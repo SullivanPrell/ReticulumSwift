@@ -237,16 +237,32 @@ public struct Packet: Equatable {
             guard raw.count >= 2 + dstLen + dstLen + 1 else { throw UnpackError.malformed }
             transportID = raw.subdata(in: cursor..<(cursor + dstLen))
             cursor += dstLen
+            // `if len(self.transport_id) != DST_LEN: raise ValueError("Malformed Transport ID
+            // field")` (`Packet.py:266`). The length guard above already makes a short slice
+            // impossible, so this is a structural assertion rather than a reachable branch —
+            // stated explicitly so the two implementations read the same and so a future change
+            // to the guard above cannot silently drop the invariant.
+            guard transportID?.count == dstLen else { throw UnpackError.malformed }
         }
 
         let destinationHash = raw.subdata(in: cursor..<(cursor + dstLen))
         cursor += dstLen
+        // `if len(self.destination_hash) != DST_LEN: raise ValueError(...)` (`Packet.py:267,272`).
+        guard destinationHash.count == dstLen else { throw UnpackError.malformed }
 
         guard cursor < raw.endIndex else { throw UnpackError.malformed }
         guard let context = Context(rawValue: raw[cursor]) else { throw UnpackError.malformed }
         cursor += 1
 
         let data = raw.subdata(in: cursor..<raw.endIndex)
+
+        // `if len(self.data) == 0: raise ValueError("Zero-length data field")` (`Packet.py:274`),
+        // one of RNS 1.5.0's early protocol-violation checks. A structurally complete frame can
+        // still carry no payload, and every 1.5.x peer now drops it. Accepting it here would
+        // admit a packet the rest of the network has already discarded — and on a transport-mode
+        // node, forward it onward. HDLC-framed interfaces separately drop empty *frames*; this
+        // covers every interface, including those that deliver a payload without HDLC framing.
+        guard !data.isEmpty else { throw UnpackError.malformed }
 
         var packet = Packet(
             headerType: headerType,

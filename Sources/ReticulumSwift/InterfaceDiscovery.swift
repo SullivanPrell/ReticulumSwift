@@ -22,6 +22,14 @@ enum DiscoveryFieldKey: UInt64 {
     case channel        = 0x0E
     case name           = 0xFF
     case transportID    = 0xFE
+
+    // Added in RNS 1.5.0. `TRANSPORT_IMPL`/`TRANSPORT_VERS` name the announcing
+    // implementation and its build; 1.5.2 emits both but does not read either back, so they
+    // are staged for a future consumer. `OP_ADDR` carries the operator's LXMF address and
+    // *is* consumed on receive (`Discovery.py:427-430`).
+    case transportImpl  = 0xFD
+    case transportVers  = 0xFC
+    case operatorAddress = 0xF0
 }
 
 /// String keys used when persisting `DiscoveredInterfaceInfo` as a msgpack map.
@@ -54,6 +62,7 @@ private enum PersistKey {
     static let discovered   = "discovered"
     static let lastHeard    = "last_heard"
     static let heardCount   = "heard_count"
+    static let operatorLxmfAddress = "operator_lxmf_address"
 }
 
 // MARK: - DiscoveryStampValidator
@@ -104,6 +113,10 @@ public struct DiscoveredInterfaceInfo {
     public var channel: Int?
     public var configEntry: String?
     public var discoveryHash: Data?
+    /// The announcing operator's LXMF address as undelimited hex, when they published one.
+    /// `info["operator_lxmf_address"]` (`Discovery.py:430`), added in RNS 1.5.0 — optional, so
+    /// every pre-1.5.0 announce and every 1.5.x node that has not configured one leaves it nil.
+    public var operatorLxmfAddress: String? = nil
 
     // Persistence fields (written/read by InterfaceDiscovery)
     public var discovered: TimeInterval
@@ -117,6 +130,21 @@ public struct DiscoveredInterfaceInfo {
 
 /// Pure helper functions used by the interface discovery subsystem.
 public enum InterfaceDiscoveryHelpers {
+
+    /// Short identifier for this implementation, published as `TRANSPORT_IMPL` (0xFD).
+    ///
+    /// Python hardcodes `IMPLEMENTATION_NAME = "RNS"`. The field exists precisely so a
+    /// discovery consumer can tell one stack from another, so this port announces its own name
+    /// rather than impersonating the reference.
+    public static let implementationName = "RNSwift"
+
+    /// Build tag published as `TRANSPORT_VERS` (0xFC).
+    ///
+    /// This is ``Reticulum/version`` — the port's own release line — not
+    /// ``Reticulum/rnsProtocolVersion``. The field identifies *a build of an implementation*,
+    /// which is what a consumer needs to attribute a behaviour or a bug; the protocol level it
+    /// matches is a separate, coarser fact.
+    public static let implementationVersion = Reticulum.version
 
     /// Return true if `address` is a valid IPv4 or IPv6 address string.
     /// Mirrors Python `is_ip_address(address_string)` which uses `ipaddress.ip_address`.
@@ -362,6 +390,25 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
         // discovery_hash = SHA256(transportID_hex + name)
         let hashMaterial = (transportIDHex + name).data(using: .utf8) ?? Data()
         info.discoveryHash = Hashes.fullHash(hashMaterial)
+
+        // `if info and OP_ADDR in unpacked` (`Discovery.py:427-430`). Two different failure
+        // modes, deliberately: a *type* violation raises inside Python's try and abandons the
+        // whole announce, while a merely wrong-*length* value just fails the `==` test and is
+        // dropped on its own. The asymmetry matters — a bad optional field must not be able to
+        // blackhole an otherwise reachable node, but a field of the wrong type means the sender
+        // and this parser disagree about the payload's shape, which is not recoverable.
+        if let opAddr = d[DiscoveryFieldKey.operatorAddress.rawValue] {
+            switch opAddr {
+            case .nil:
+                break
+            case .bytes(let addr):
+                if !addr.isEmpty, addr.count == Constants.truncatedHashLength {
+                    info.operatorLxmfAddress = RNSUtilities.hexrep(addr, delimit: false)
+                }
+            default:
+                return nil
+            }
+        }
 
         return info
     }
@@ -707,6 +754,7 @@ public final class InterfaceDiscovery {
         if let v = info.channel      { pairs.append((.string(PersistKey.channel),     .int(Int64(v)))) }
         if let v = info.configEntry  { pairs.append((.string(PersistKey.configEntry), .string(v))) }
         if let v = info.discoveryHash { pairs.append((.string(PersistKey.discoveryHash), .bytes(v))) }
+        if let v = info.operatorLxmfAddress { pairs.append((.string(PersistKey.operatorLxmfAddress), .string(v))) }
         return .map(pairs)
     }
 
@@ -748,6 +796,7 @@ public final class InterfaceDiscovery {
             channel:      intVal(d[PersistKey.channel]),
             configEntry:  stringVal(d[PersistKey.configEntry]),
             discoveryHash: bytesVal(d[PersistKey.discoveryHash]),
+            operatorLxmfAddress: stringVal(d[PersistKey.operatorLxmfAddress]),
             discovered: discovered, lastHeard: lastHeard, heardCount: heardCount
         )
     }

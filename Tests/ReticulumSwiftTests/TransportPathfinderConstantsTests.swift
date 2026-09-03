@@ -55,8 +55,8 @@ final class TransportPathfinderConstantsTests: XCTestCase {
     }
 
     func testPathRequestGateTimeout() {
-        XCTAssertEqual(Transport.pathRequestGateTimeout, 120,
-                       "PATH_REQUEST_GATE_TIMEOUT must be 120 seconds")
+        XCTAssertEqual(Transport.pathRequestGateTimeout, 45,
+                       "PATH_REQUEST_GATE_TIMEOUT must be 45 seconds — RNS 1.5.0 cut it from 120")
     }
 
     func testPathRequestMinInterval() {

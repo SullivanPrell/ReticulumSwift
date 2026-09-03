@@ -71,8 +71,9 @@ public final class Transport {
     public static let pathRequestGrace: TimeInterval = 0.4
     /// Extra grace time for roaming-mode interfaces. Python: `Transport.PATH_REQUEST_RG = 1.5`.
     public static let pathRequestRG: TimeInterval = 1.5
-    /// Gate control timeout for path requests. Python: `Transport.PATH_REQUEST_GATE_TIMEOUT = 120`.
-    public static let pathRequestGateTimeout: TimeInterval = 120
+    /// Gate control timeout for path requests. Python: `Transport.PATH_REQUEST_GATE_TIMEOUT = 45`
+    /// — RNS 1.5.0 cut it from 120, so a gated client is released in well under half the time.
+    public static let pathRequestGateTimeout: TimeInterval = 45
     /// Minimum interval between automated path requests. Python: `Transport.PATH_REQUEST_MI = 20`.
     public static let pathRequestMinInterval: TimeInterval = 20
     /// Maximum local rebroadcasts of an announce. Python: `Transport.LOCAL_REBROADCASTS_MAX = 2`.
@@ -1736,7 +1737,39 @@ public final class Transport {
         interface.rawInboundHandler = { [weak self] rawBytes, sourceInterface in
             guard let self else { return }
             guard let verified = sourceInterface.unwrapIfac(rawBytes) else { return }
+            // `if interface and len(raw) > interface.HW_MTU + (interface.ifac_size or 0):
+            //      return interface.protocol_violation(...)` (`Transport.py:1789`, RNS 1.5.0).
+            //
+            // A frame past the medium's own hardware MTU cannot have been produced legitimately
+            // by a peer on that medium. This port bounded frame size only inside the HDLC
+            // deframer, which leaves UDP, RNode/KISS, AutoInterface, Weave and the KISS-framed
+            // I2P path with no inbound bound at all. Here — the one funnel every interface's
+            // raw bytes pass through — covers all of them, which is the same reason Python
+            // moved the check to `preprocess_inbound` rather than into each interface.
+            //
+            // Python compares against `HW_MTU`, which its base class leaves as `None`; the
+            // resulting `None + int` would raise, and `inbound`'s blanket `except`
+            // (`Transport.py:1683`) would turn that into a logged drop of every packet on such
+            // an interface. Every shipped interface sets one, so that branch is unreachable
+            // upstream — skipping the check when `hwMtu` is nil keeps the reachable behaviour
+            // and declines to reproduce the unreachable bug.
+            //
+            // The comparison is against the *post-IFAC* bytes on both sides: Python runs
+            // `handle_ifac` first (`:1766`) and still adds `ifac_size` back into the
+            // allowance, so a frame that filled the medium before the tag was stripped is
+            // still accepted.
+            if let hwMtu = sourceInterface.hwMtu,
+               verified.count > hwMtu + sourceInterface.ifacSize { return }
             guard let packet = try? Packet.unpack(verified) else { return }
+            // `if len(raw) > RNS.Reticulum.MTU: return ... protocol_violation("Excessive
+            // announce packet frame size ...")` (`Transport.py:1804`).
+            //
+            // Announces are the one packet type every transport node floods onward, so an
+            // unbounded one is an amplification path rather than merely a large frame. The
+            // ceiling is the protocol MTU, not the interface's — a legitimate announce fits in
+            // 500 bytes on every medium, so a larger one is malformed no matter how wide the
+            // link that carried it.
+            if packet.packetType == .announce, verified.count > Constants.mtu { return }
             self.handleIncoming(packet: packet, from: sourceInterface)
         }
         // Packet handler kept for test-stub loopback interfaces that deliver
@@ -2716,6 +2749,17 @@ public final class Transport {
     /// callbacks.
     @discardableResult
     public func send(_ packet: Packet, generateReceipt: Bool = true) throws -> PacketReceipt? {
+        // `if self.hops >= RNS.Transport.PATHFINDER_M: return False` (`Packet.py:292`, added in
+        // RNS 1.5.0), which `Transport._outbound` restates as `hops > PATHFINDER_M-1`. This is
+        // the single funnel every outbound packet passes through, so the gate lives here rather
+        // than at each construction site.
+        //
+        // `Packet.unpack` already refuses to *parse* a packet at or past the limit, so a peer
+        // discards this frame the moment it arrives. Emitting it is pure waste, and on a
+        // transport-mode node it is an amplification path. Returning nil rather than throwing
+        // mirrors Python's `return False`: a refused send is not an error condition.
+        guard Int(packet.hops) < Transport.pathfinderM else { return nil }
+
         var packet = packet
         // Give the packet the transmit cap of the link it belongs to, mirroring Python's
         // `self.MTU = destination.mtu` for LINK-typed packets (`Packet.py:153-154`). Done here

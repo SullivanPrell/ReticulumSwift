@@ -268,18 +268,25 @@ public protocol MtuAutoconfiguringInterface: Interface {
 
 /// The `optimise_mtu()` bitrate → `HW_MTU` ladder, verbatim from `Interface.py:207-217`.
 /// One implementation shared by every caller, so no interface can carry its own drifted copy.
+///
+/// RNS 1.5.1 made **every** rung inclusive. Through 1.4.2 only the top rung was `>=` and the
+/// other nine were `>`, so a bitrate sitting exactly on a boundary — and the class-constant
+/// guesses do sit exactly on boundaries, 10e6 for TCP and 100e6 for a dialing Backbone —
+/// selected one rung *lower* than Python now selects. That value is advertised to every
+/// directly connected peer in the 3-byte LINKREQUEST MTU signalling, so the stale `>` was a
+/// live disagreement about link MTU with any 1.5.x peer, not a cosmetic difference.
 public enum RNSInterfaceMtu {
     public static func optimised(forBitrate bitrate: Int) -> Int? {
-        if bitrate >= 1_000_000_000 { return 524_288 }   // the one inclusive rung (`:207`)
-        else if bitrate > 750_000_000 { return 262_144 }
-        else if bitrate > 400_000_000 { return 131_072 }
-        else if bitrate > 200_000_000 { return 65_536 }
-        else if bitrate > 100_000_000 { return 32_768 }
-        else if bitrate > 10_000_000 { return 16_384 }
-        else if bitrate > 5_000_000 { return 8_192 }
-        else if bitrate > 2_000_000 { return 4_096 }
-        else if bitrate > 1_000_000 { return 2_048 }
-        else if bitrate > 62_500 { return 1_024 }
+        if bitrate >= 1_000_000_000 { return 524_288 }
+        else if bitrate >= 750_000_000 { return 262_144 }
+        else if bitrate >= 400_000_000 { return 131_072 }
+        else if bitrate >= 200_000_000 { return 65_536 }
+        else if bitrate >= 100_000_000 { return 32_768 }
+        else if bitrate >= 10_000_000 { return 16_384 }
+        else if bitrate >= 5_000_000 { return 8_192 }
+        else if bitrate >= 2_000_000 { return 4_096 }
+        else if bitrate >= 1_000_000 { return 2_048 }
+        else if bitrate >= 62_500 { return 1_024 }
         else { return nil }                              // `else: self.HW_MTU = None`
     }
 }
