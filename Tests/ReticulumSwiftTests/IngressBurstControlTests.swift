@@ -159,9 +159,24 @@ final class IngressBurstControlTests: XCTestCase {
         t.notifyIncomingPathRequest(on: iface, at: nowAfterHold - 4)
         t.notifyIncomingPathRequest(on: iface, at: nowAfterHold - 3)
 
-        XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: nowAfterHold),
+        // RNS 1.5.1 put a cooldown in front of the flag (`Interface.py:220-221`): the first
+        // three qualifying calls spend it and only the fourth clears. This test predates that
+        // and asserted the clear on the call right after the first qualifying one, so the extra
+        // probes below are the behaviour change, not scaffolding. What it was written to pin —
+        // that every one of these calls, the clearing one included, still returns `true` —
+        // is unchanged and is asserted throughout.
+        for probe in 0..<IngressControlState.icPrBurstCooldown {
+            XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: nowAfterHold + Double(probe)),
+                "a cooldown call must still limit")
+            XCTAssertTrue(t.ingressState(for: iface)?.prBurstActive ?? false,
+                "the flag may not clear while cooldown remains")
+        }
+
+        XCTAssertTrue(t.shouldIngressLimitPR(on: iface,
+                                             now: nowAfterHold + Double(IngressControlState.icPrBurstCooldown)),
             "the clearing call must still return true, matching should_ingress_limit_pr")
-        XCTAssertFalse(t.shouldIngressLimitPR(on: iface, now: nowAfterHold + 0.001),
+        XCTAssertFalse(t.shouldIngressLimitPR(on: iface,
+                                              now: nowAfterHold + Double(IngressControlState.icPrBurstCooldown) + 0.001),
             "the following call must not limit")
     }
 

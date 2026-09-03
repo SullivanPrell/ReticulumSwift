@@ -335,14 +335,56 @@ final class RNS141ParityTests: XCTestCase {
 
     // MARK: - Ingress burst control (commit 48388756)
 
+    /// The 1.4.1 fix (commit 48388756) was that the *ingress* burst flag must clear on
+    /// `IC_DEQUE_MIN_SAMPLE`, not on the egress constant: gating deactivation on a sample count
+    /// that a subsiding burst never refills deadlocked the flag on indefinitely.
+    ///
+    /// RNS 1.5.1 then renamed the egress constant to `EC_BURST_MIN_SAMPLES` and dropped it from
+    /// 6 to 2, so the two numbers now coincide. That does not restore the bug and this test is
+    /// not weakened by dropping the inequality: what 1.4.1 guarantees is which *quantity* each
+    /// site reads, so that is what is asserted below. They are equal today by coincidence, and
+    /// either may move again without the other.
     func testEgressLimitRequiresBurstMinSamples() {
-        XCTAssertEqual(IngressControlState.icBurstMinSamples, 6,
-                       "Python Interface.IC_BURST_MIN_SAMPLES = 6")
+        XCTAssertEqual(IngressControlState.ecBurstMinSamples, 2,
+                       "Python Interface.EC_BURST_MIN_SAMPLES = 2 (was IC_BURST_MIN_SAMPLES = 6)")
         XCTAssertEqual(InterfaceFreqTracker.minSamples, 2,
                        "Python Interface.IC_DEQUE_MIN_SAMPLE = 2")
-        XCTAssertNotEqual(IngressControlState.icBurstMinSamples,
-                          InterfaceFreqTracker.minSamples,
-                          "the two thresholds are distinct; conflating them was the bug")
+    }
+
+    /// The structural half of commit 48388756, which the numeric assertions above can no longer
+    /// express now that both constants read 2: a subsiding announce burst must clear even
+    /// though its deque holds fewer samples than the egress floor would demand. Driven with a
+    /// three-sample deque so that raising `ecBurstMinSamples` back to 6 — or repointing the
+    /// deactivation gate at it — fails here.
+    func testIngressBurstClearsOnADequeTooSmallForTheEgressFloor() {
+        let t = Transport()
+        let iface = BurstTestInterface(name: "subsiding",
+                                       createdAt: Date(timeIntervalSinceNow: -(IngressControlState.icNewTime + 1)))
+        t.register(interface: iface)
+
+        // Three announces 10 ms apart: 100 Hz against a 10 Hz threshold, so the burst
+        // activates off a deque holding only three samples — fewer than the six the pre-1.5.1
+        // egress floor demanded, which is the whole point.
+        let t0: TimeInterval = 1000
+        for offset in [0.0, 0.01, 0.02] { t.notifyIncomingAnnounce(on: iface, at: t0 + offset) }
+        XCTAssertTrue(t.shouldIngressLimit(on: iface, now: t0 + 0.03), "the flood must activate a burst")
+
+        // Ninety seconds of silence: 0.03 Hz, and both hold windows long elapsed.
+        XCTAssertTrue(t.shouldIngressLimit(on: iface, now: t0 + 90))
+        XCTAssertFalse(t.ingressState(for: iface)?.burstActive ?? true,
+                       "a subsiding burst must clear on IC_DEQUE_MIN_SAMPLE, not on the egress floor")
+    }
+
+    private final class BurstTestInterface: Interface {
+        var name: String
+        var bitrate: Int = 0
+        var isOnline: Bool = true
+        var inboundHandler: ((Packet, any Interface) -> Void)?
+        var createdAt: Date
+        init(name: String, createdAt: Date) { self.name = name; self.createdAt = createdAt }
+        func start() throws {}
+        func stop() {}
+        func send(_ packet: Packet) throws {}
     }
 
     // MARK: - Link path re-balancing

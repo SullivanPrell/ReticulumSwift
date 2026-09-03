@@ -60,18 +60,20 @@ public final class InterfaceState {
         var icBurstHold: TimeInterval = Reticulum.defaultIcBurstHold()
         var icBurstPenalty: TimeInterval = Reticulum.defaultIcBurstPenalty()
         var icHeldReleaseInterval: TimeInterval = Reticulum.defaultIcHeldReleaseInterval()
-        /// Python reads this as the class constant `IC_BURST_MIN_SAMPLES` (`Interface.py:85`,
-        /// `:201`) and exposes no config key for it, so it stays a constant here too.
-        var icBurstMinSamples: Int = IngressControlState.icBurstMinSamples
+        /// Python reads this as the class constant `EC_BURST_MIN_SAMPLES` (`Interface.py:85`,
+        /// `:246`) and exposes no config key for it, so it stays a constant here too. RNS 1.5.1
+        /// renamed it from `IC_BURST_MIN_SAMPLES`, the single read site having always been the
+        /// egress limiter.
+        var ecBurstMinSamples: Int = IngressControlState.ecBurstMinSamples
         /// Python `interface.ic_max_held_announces` (`Interface.py:126`, config key at
         /// `Reticulum.py:791-792`) — a per-interface instance value, not a class constant.
         ///
         /// This port had it the other way round: `IngressControlState.maxHeldAnnounces` was a
-        /// global `static let 256` that no config could reach, while `icBurstMinSamples` — which
-        /// Python reads as the class constant `self.IC_BURST_MIN_SAMPLES` (`Interface.py:85`,
-        /// `:201`) and exposes no config key for — was the per-interface one. So an operator could
+        /// global `static let 256` that no config could reach, while `ecBurstMinSamples` — which
+        /// Python reads as the class constant `self.EC_BURST_MIN_SAMPLES` (`Interface.py:85`,
+        /// `:246`) and exposes no config key for — was the per-interface one. So an operator could
         /// configure the tunable Python does not expose and not the one it does. Found while
-        /// writing the per-interface parser; `icBurstMinSamples` stays on the box, harmlessly.
+        /// writing the per-interface parser; `ecBurstMinSamples` stays on the box, harmlessly.
         var icMaxHeldAnnounces: Int = Reticulum.defaultIcMaxHeldAnnounces()
 
         var gravity: Int = InterfaceMode.defaultGravity
@@ -219,10 +221,10 @@ public final class InterfaceState {
         get { read(\.icHeldReleaseInterval) }
         set { write(\.icHeldReleaseInterval, newValue) }
     }
-    /// Python: `Interface.IC_BURST_MIN_SAMPLES`.
-    public var icBurstMinSamples: Int {
-        get { read(\.icBurstMinSamples) }
-        set { write(\.icBurstMinSamples, newValue) }
+    /// Python: `Interface.EC_BURST_MIN_SAMPLES`.
+    public var ecBurstMinSamples: Int {
+        get { read(\.ecBurstMinSamples) }
+        set { write(\.ecBurstMinSamples, newValue) }
     }
 
     /// Python: `interface.ic_max_held_announces` — how many announces this interface will hold

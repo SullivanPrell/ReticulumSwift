@@ -74,10 +74,21 @@ public final class InterfaceFreqTracker {
         lock.lock(); defer { lock.unlock() }
         return frequency(&ip, decay: Self.prFreqDecay, minCount: Self.minSamples, now: now)
     }
-    /// Mirrors Python's `Interface.outgoing_pr_frequency()`.
-    public func outgoingPathRequestFrequency(now: TimeInterval = Date().timeIntervalSince1970) -> Double {
+    /// Mirrors Python's `Interface.outgoing_pr_frequency(preemptive:)`.
+    ///
+    /// RNS 1.5.1 added `preemptive`, which counts the request the caller is *about to send*
+    /// (`n = len(self.op_freq_deque)+(1 if preemptive else 0)`, `Interface.py:380`). The
+    /// egress limiter asks what the frequency will be once it authorises this request, so a
+    /// stream sitting exactly on the threshold is stopped rather than allowed to cross it.
+    ///
+    /// The extra sample lands in the numerator only. Python's minimum-count guard on the next
+    /// line reads the real deque length, so a lone recorded request still reports zero and the
+    /// first path request on an interface cannot limit itself.
+    public func outgoingPathRequestFrequency(preemptive: Bool = false,
+                                             now: TimeInterval = Date().timeIntervalSince1970) -> Double {
         lock.lock(); defer { lock.unlock() }
-        return frequency(&op, decay: Self.prFreqDecay, minCount: 1, now: now)
+        return frequency(&op, decay: Self.prFreqDecay, minCount: 1, now: now,
+                         extraSamples: preemptive ? 1 : 0)
     }
 
     // MARK: - Test helpers
@@ -102,9 +113,13 @@ public final class InterfaceFreqTracker {
     private func frequency(_ deque: inout [TimeInterval],
                            decay: Double,
                            minCount: Int,
-                           now: TimeInterval) -> Double {
-        let n = deque.count
-        guard n > minCount else { return 0 }
+                           now: TimeInterval,
+                           extraSamples: Int = 0) -> Double {
+        // `minCount` is checked against the recorded count, `extraSamples` only reaches the
+        // numerator — matching Python, where `n` is incremented on line 380 but the guard on
+        // line 381 re-reads `len(self.op_freq_deque)`.
+        guard deque.count > minCount else { return 0 }
+        let n = deque.count + extraSamples
         let oldest = deque[0]
         let span = now - oldest
         if span > decay { deque.removeFirst() }

@@ -1163,17 +1163,33 @@ public final class Transport {
             // sample requirement against a deque that a subsiding burst never
             // refills, the flag could only ever clear if *new* announces arrived,
             // which is precisely what it was suppressing.
-            if freq < threshold && now > state.burstActivated + interface.interfaceState.icBurstHold {
+            //
+            // RNS 1.5.1 added the second window, `ic_burst_sustained` (`Interface.py:194`).
+            // With only `burstActivated`, a flood that ran for minutes cleared its own flag
+            // fifteen seconds after it *started* — the timer measured the leading edge of the
+            // event, so the longer the flood, the less of it was actually suppressed.
+            // Refreshing `burstSustained` on every above-threshold look moves the window onto
+            // the trailing edge: the burst now expires fifteen seconds after the flood stops.
+            if freq < threshold
+                && now > state.burstActivated + interface.interfaceState.icBurstHold
+                && now > state.burstSustained + interface.interfaceState.icBurstHold {
                 if tracker.incomingAnnounceSampleCount >= InterfaceFreqTracker.minSamples {
                     state.burstActive = false
                     ingressStates[key] = state
                 }
+            } else if freq >= threshold {
+                // `>=`, where activation below uses `>`. The asymmetry is deliberate upstream:
+                // a stream sitting exactly on the threshold is not enough to *start* a burst
+                // but is enough to keep one alive.
+                state.burstSustained = now
+                ingressStates[key] = state
             }
             return true
         } else {
             if freq > threshold {
                 state.burstActive = true
                 state.burstActivated = now
+                state.burstSustained = now
                 state.heldRelease = now + interface.interfaceState.icBurstPenalty
                 ingressStates[key] = state
                 return true
@@ -1201,8 +1217,29 @@ public final class Transport {
         if state.prBurstActive {
             // As in `shouldIngressLimit`, the deactivating call itself still
             // returns `true` — Python's `return True` is outside this branch.
-            if freq < threshold && now > state.prBurstActivated + interface.interfaceState.icBurstHold {
-                state.prBurstActive = false
+            //
+            // RNS 1.5.1 gave path-request bursts the same trailing-edge hold window as
+            // announce bursts (`ic_pr_burst_sustained`) and, on top of it, a cooldown counter
+            // (`Interface.py:216-224`). Even once both windows have elapsed and the frequency
+            // has fallen, three further quiet evaluations are required. Unlike the windows the
+            // cooldown counts *looks*, not seconds, and any single busy evaluation refills it,
+            // so it demands an unbroken run of quiet rather than merely a quiet instant.
+            //
+            // Note there is no sample-count gate on this side; the announce branch above has
+            // one and this never has.
+            if freq < threshold
+                && now > state.prBurstActivated + interface.interfaceState.icBurstHold
+                && now > state.prBurstSustained + interface.interfaceState.icBurstHold {
+                if state.prBurstCooldown <= 0 {
+                    state.prBurstActive = false
+                } else {
+                    state.prBurstCooldown -= 1
+                }
+                ingressStates[key] = state
+            } else {
+                // The refill is unconditional; only the sustained stamp checks the threshold.
+                state.prBurstCooldown = IngressControlState.icPrBurstCooldown
+                if freq >= threshold { state.prBurstSustained = now }
                 ingressStates[key] = state
             }
             return true
@@ -1210,6 +1247,8 @@ public final class Transport {
             if freq > threshold {
                 state.prBurstActive = true
                 state.prBurstActivated = now
+                state.prBurstSustained = now
+                state.prBurstCooldown = IngressControlState.icPrBurstCooldown
                 ingressStates[key] = state
                 return true
             }
@@ -1224,13 +1263,16 @@ public final class Transport {
                                     now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard interface.egressControl else { return false }
         guard let tracker = tracker(for: interface) else { return false }
-        let freq = tracker.outgoingPathRequestFrequency(now: now)
+        // `preemptive: true` (`Interface.py:243`) counts the request this call is about to
+        // authorise, so a stream sitting exactly on the threshold is stopped rather than
+        // allowed to cross it.
+        let freq = tracker.outgoingPathRequestFrequency(preemptive: true, now: now)
         if freq > interface.ecPrFreq {
-            // Python gates egress limiting on `IC_BURST_MIN_SAMPLES` (6), not on
-            // the 2-sample minimum that merely makes a frequency computable —
-            // suppressing our own outbound path requests off two samples would
-            // throttle normal discovery bursts.
-            return tracker.outgoingPathRequestSampleCount >= IngressControlState.icBurstMinSamples
+            // The floor is `EC_BURST_MIN_SAMPLES` (`Interface.py:246`), which RNS 1.5.1 renamed
+            // from `IC_BURST_MIN_SAMPLES` and dropped from 6 to 2. It happens to equal the
+            // 2-sample minimum that makes a frequency computable at all, but remains a separate
+            // knob — see `IngressControlState.ecBurstMinSamples`.
+            return tracker.outgoingPathRequestSampleCount >= IngressControlState.ecBurstMinSamples
         }
         return false
     }
@@ -1442,8 +1484,15 @@ public final class Transport {
     }
 
     /// Outgoing path-request frequency (Hz) for the given interface.
-    public func outgoingPathRequestFrequency(for interface: any Interface) -> Double {
-        tracker(for: interface)?.outgoingPathRequestFrequency() ?? 0
+    ///
+    /// `preemptive` counts the request the caller is about to send; see
+    /// ``InterfaceFreqTracker/outgoingPathRequestFrequency(preemptive:now:)``. It defaults to
+    /// `false` so reporting paths (ifstats) keep quoting the frequency actually observed —
+    /// only the egress limiter asks the forward-looking question.
+    public func outgoingPathRequestFrequency(for interface: any Interface,
+                                             preemptive: Bool = false,
+                                             now: TimeInterval = Date().timeIntervalSince1970) -> Double {
+        tracker(for: interface)?.outgoingPathRequestFrequency(preemptive: preemptive, now: now) ?? 0
     }
 
     /// Look up the frequency tracker for `interface` under `trackersLock`, then
@@ -3967,14 +4016,21 @@ public final class Transport {
         // Extract the optional requesting transport instance ID and tag.
         // Python body shapes: [target||tag] or [target||tx_id||tag]
         let requestorTransportID: Data?
-        let tag: Data
+        let rawTag: Data
         if body.count > hashLen * 2 {
             requestorTransportID = Data(body[body.startIndex + hashLen ..< body.startIndex + hashLen * 2])
-            tag = Data(body.suffix(from: body.startIndex + hashLen * 2))
+            rawTag = Data(body.suffix(from: body.startIndex + hashLen * 2))
         } else {
             requestorTransportID = nil
-            tag = Data(body.suffix(from: body.startIndex + hashLen))
+            rawTag = Data(body.suffix(from: body.startIndex + hashLen))
         }
+        // `if len(tag_bytes) > RNS.Identity.TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`
+        // (`Transport.py:1842-1843`). The excess is not merely ignored — it must not reach the
+        // dedup key. Keyed on the untruncated bytes, a sender defeats deduplication for free by
+        // varying a tail nothing reads, turning one path request into as many recursive
+        // fan-outs as it cares to send. The truncated tag is also what gets forwarded, so every
+        // hop agrees on the identity of the request.
+        let tag = rawTag.count > hashLen ? Data(rawTag.prefix(hashLen)) : rawTag
         let dedupKey = target + tag
 
         lock.lock()
@@ -3992,6 +4048,19 @@ public final class Transport {
         let pathEntry = paths[target]
         lock.unlock()
         if alreadySeen { return }
+
+        // `should_ingress_limit = ingress_limited or attached_interface.should_ingress_limit_pr()`
+        // (`Transport.py:3427`). Evaluated here, unconditionally, rather than at its single use
+        // below: the call advances the burst state machine (it refreshes the sustained stamp
+        // and spends cooldown), so gating the call itself on the branch would make the limiter
+        // observe only the traffic it is already suppressing.
+        //
+        // Python's other half — `preprocess_inbound` setting `TC_INGRESS_LIMITED`
+        // (`Transport.py:1859`), which `path_request_handler` then passes back in as
+        // `ingress_limited` — exists to carry the decision across an inbound queue this port
+        // does not have. Both paths OR into one flag consumed at one place, so a single
+        // evaluation here reaches the same decision.
+        let ingressLimited = shouldIngressLimitPR(on: interface)
 
         if isLocal {
             lock.lock()
@@ -4089,6 +4158,15 @@ public final class Transport {
             }
         }
         if shouldDiscover {
+            // "Abort recursive path request if receiving interface has PR burst active, or
+            // should otherwise ingress limit path requests" (`Transport.py:3543-3550`).
+            //
+            // The gate is on amplification, not on usefulness: the branches above still answer
+            // from a local destination or a known path while limited. It is only the fan-out —
+            // one inbound request becoming one outbound request per interface — that a flooding
+            // peer must not get.
+            if ingressLimited { return }
+
             let now = Date().timeIntervalSince1970
             for iface in interfaces where iface !== interface && iface.isOnline && iface.isRoutingEndpoint {
                 if let filter = searchModeFilter, !filter.contains(iface.mode) { continue }
