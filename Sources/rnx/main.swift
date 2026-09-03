@@ -474,9 +474,13 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
     // Python: rnx.py:348-352. When a path is already known the spinner never draws.
     if !client.hasPath {
         try? client.requestPath()
+        // `timeout=max(timeout, reticulum.get_medium_path_timeout())` (rnx.py:350). Applied
+        // here and nowhere else: `-w` also becomes the *remote* command timeout (rnx.py:381)
+        // and the rexec deadline, and raising those would change what the listener is asked
+        // to do rather than how long this end waits for a path.
         if !spin(until: { client.hasPath },
                  msg: "Path to " + prettyDestination + " requested",
-                 timeout: options.timeout) {
+                 timeout: max(options.timeout, connection.mediumPathTimeout())) {
             print("Path not found")
             exit(Int32(RNXApp.Result.pathNotFound.rawValue))
         }

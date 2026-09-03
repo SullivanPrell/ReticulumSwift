@@ -116,6 +116,13 @@ public final class TransportProbeNetwork: ProbeNetwork {
         return transport.firstHopTimeout(for: destinationHash)
     }
 
+    /// Python: `Reticulum.get_medium_path_timeout()` (Reticulum.py:1766-1784). Shares the
+    /// local-vs-shared routing with every other utility rather than restating it.
+    public func mediumPathTimeout() -> TimeInterval {
+        InstanceConnection.mediumPathTimeout(rpc: isConnectedToSharedInstance ? rpc : nil,
+                                             transport: transport)
+    }
+
     // MARK: Identity and ratchets
 
     /// Python: `RNS.Identity.recall(destination_hash)` (rnprobe.py:97).

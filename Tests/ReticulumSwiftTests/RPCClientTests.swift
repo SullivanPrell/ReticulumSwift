@@ -53,6 +53,26 @@ final class RPCClientTests: XCTestCase {
 
     // MARK: - Handshake + call round trip
 
+    /// `medium_path_timeout` and `lowest_interface_bitrate` (`Reticulum.py:1292-1293`), added
+    /// in RNS 1.5.x. These exist precisely so a local client does not answer from its own
+    /// loopback interface, so the round trip is the behaviour, not an implementation detail.
+    func testMediumPathTimeout_roundTrip() throws {
+        let client = try startServer()
+        // Nothing prioritised yet: Python's `lowest_interface_bitrate` is still None.
+        XCTAssertNil(try client.lowestInterfaceBitrate())
+        XCTAssertEqual(try XCTUnwrap(client.mediumPathTimeout()), 0)
+
+        let transport = try XCTUnwrap(self.transport)
+        transport.register(interface: SlowInterface())
+        transport.prioritizeInterfaces()
+
+        XCTAssertEqual(try client.lowestInterfaceBitrate(), 1200)
+        XCTAssertEqual(try XCTUnwrap(client.mediumPathTimeout()),
+                       transport.mediumPathTimeout(), accuracy: 1e-9)
+        XCTAssertGreaterThan(try XCTUnwrap(client.mediumPathTimeout()), Constants.defaultPerHopTimeout)
+    }
+
+
     func testInterfaceStats_roundTrip() throws {
         let client = try startServer()
         let stats = try client.interfaceStats()
@@ -255,4 +275,14 @@ final class RPCClientTests: XCTestCase {
     private func randomHash() -> Data {
         Data((0..<16).map { _ in UInt8.random(in: 0...255) })
     }
+}
+
+private final class SlowInterface: Interface {
+    var name: String = "lora"
+    var bitrate: Int = 1200
+    var isOnline: Bool = true
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    func start() throws {}
+    func stop() {}
+    func send(_ packet: Packet) throws {}
 }

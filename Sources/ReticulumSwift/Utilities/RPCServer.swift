@@ -369,6 +369,16 @@ public final class RPCServer {
             }
             return msgpack(.double(Transport.pathRequestTimeout))
 
+        case "lowest_interface_bitrate":
+            // Python returns `Transport.lowest_interface_bitrate` verbatim, which is `None`
+            // until the first successful computation.
+            guard let t = transport, let bitrate = t.lowestInterfaceBitrate else { return msgpack(.nil) }
+            return msgpack(.int(Int64(bitrate)))
+
+        case "medium_path_timeout":
+            guard let t = transport else { return msgpack(.double(0)) }
+            return msgpack(.double(t.mediumPathTimeout()))
+
         case "blackholed_identities":
             // Python returns `Transport.blackholed_identities` verbatim, which maps each
             // identity hash to the full entry dict {"source", "until", "reason"}

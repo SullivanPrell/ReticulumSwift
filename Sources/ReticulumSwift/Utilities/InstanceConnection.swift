@@ -77,6 +77,32 @@ public final class InstanceConnection {
         self.localInterface = localInterface
     }
 
+    // MARK: - Shared-instance queries
+
+    /// Python: `Reticulum.get_medium_path_timeout()` (`Reticulum.py:1766-1784`).
+    ///
+    /// The `rn*` utilities floor every path-resolution deadline at this value, so answering
+    /// from the wrong process is not a cosmetic error: a local client's own transport has a
+    /// single loopback interface, and its bitrate would report the network as fast no matter
+    /// what radio the daemon is actually running.
+    public func mediumPathTimeout() -> TimeInterval {
+        InstanceConnection.mediumPathTimeout(rpc: isConnectedToSharedInstance ? rpc : nil,
+                                             transport: reticulum.transport)
+    }
+
+    /// The routing decision on its own, so both arms are reachable from a test without a live
+    /// attachment. `rpc` is non-nil only for a ``Role/localClient``; `transport` may be nil for
+    /// a caller that holds no local stack, and answers `0` — the same "unknown" the accessor
+    /// returns before any bitrate has been computed.
+    public static func mediumPathTimeout(rpc: RPCClient?, transport: Transport?) -> TimeInterval {
+        // Python logs and returns `0` on any RPC failure, deliberately *not* falling back to
+        // the local value: a local client's own loopback bitrate would read as a fast network.
+        // `try?` over an optional-returning throwing call flattens both "the call threw" and
+        // "the daemon answered nil" into that same answer.
+        if let rpc { return (try? rpc.mediumPathTimeout()) ?? 0 }
+        return transport?.mediumPathTimeout() ?? 0
+    }
+
     // MARK: - Path resolution
 
     /// Resolve the configuration directory the way Python does.

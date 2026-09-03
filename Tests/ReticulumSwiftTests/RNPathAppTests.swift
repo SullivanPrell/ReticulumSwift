@@ -902,6 +902,11 @@ private final class MockManagementSource: RNPathManagementSource {
 
     var localTransportIdentityHash: Data?
 
+    /// Zero is the "unknown" answer, so by default the mock leaves `-w` exactly as given and
+    /// every existing expectation about the spinner deadline still describes the same value.
+    var stubMediumPathTimeout: TimeInterval = 0
+    func mediumPathTimeout() -> TimeInterval { stubMediumPathTimeout }
+
     var paths: [RNPathTableEntry] = []
     var rates: [RNPathRateEntry] = []
     var blackholes: [RNPathBlackholeEntry] = []

@@ -165,6 +165,16 @@ public final class RPCClient {
         try get("first_hop_timeout", extra: [("destination_hash", .bytes(destinationHash))]).asDouble
     }
 
+    /// Python: `get_lowest_interface_bitrate()`.
+    public func lowestInterfaceBitrate() throws -> Int? {
+        try get("lowest_interface_bitrate").asInt
+    }
+
+    /// Python: `get_medium_path_timeout()`.
+    public func mediumPathTimeout() throws -> TimeInterval? {
+        try get("medium_path_timeout").asDouble
+    }
+
     /// Python: `get_packet_rssi(packet_hash)`.
     public func packetRSSI(packetHash: Data) throws -> Double? {
         try get("packet_rssi", extra: [("packet_hash", .bytes(packetHash))]).asDouble

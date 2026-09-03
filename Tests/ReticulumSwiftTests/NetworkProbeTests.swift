@@ -314,13 +314,16 @@ final class NetworkProbeFormattingTests: XCTestCase {
     }
 
     func testEffectiveTimeoutPrecedence() {
-        // Python: `timeout or DEFAULT_TIMEOUT + fht` parenthesises as
-        // `timeout or (12 + fht)`, and 0/0.0 are falsy.
-        XCTAssertEqual(NetworkProbe.effectiveTimeout(nil, firstHopTimeout: 6), 18)
-        XCTAssertEqual(NetworkProbe.effectiveTimeout(0, firstHopTimeout: 6), 18)
-        XCTAssertEqual(NetworkProbe.effectiveTimeout(4, firstHopTimeout: 6), 4)
-        // A negative -t yields a deadline in the past: reproduced, not guarded.
-        XCTAssertEqual(NetworkProbe.effectiveTimeout(-5, firstHopTimeout: 6), -5)
+        // Python: `timeout or max(DEFAULT_TIMEOUT+fht, mpt)` parenthesises as
+        // `timeout or max(...)`, and 0/0.0 are falsy. A zero medium timeout — the value on a
+        // node whose interfaces have not been prioritised — leaves the 1.4.x behaviour intact,
+        // which is why these cases still read the same.
+        XCTAssertEqual(NetworkProbe.effectiveTimeout(nil, firstHopTimeout: 6, mediumPathTimeout: 0), 18)
+        XCTAssertEqual(NetworkProbe.effectiveTimeout(0, firstHopTimeout: 6, mediumPathTimeout: 0), 18)
+        XCTAssertEqual(NetworkProbe.effectiveTimeout(4, firstHopTimeout: 6, mediumPathTimeout: 0), 4)
+        // A negative -t yields a deadline in the past: reproduced, not guarded — and the
+        // medium timeout does not rescue it, because an explicit `-t` short-circuits the max.
+        XCTAssertEqual(NetworkProbe.effectiveTimeout(-5, firstHopTimeout: 6, mediumPathTimeout: 900), -5)
     }
 }
 
@@ -1280,6 +1283,8 @@ private final class MockProbeNetwork: ProbeNetwork {
     var interfaceDisplayName: String?
     var firstHop: TimeInterval = 6
     private(set) var firstHopTimeoutCalls = 0
+    var stubMediumPathTimeout: TimeInterval = 0
+    func mediumPathTimeout() -> TimeInterval { stubMediumPathTimeout }
     var isConnectedToSharedInstance = false
     var rssi: MsgPack.Value?
     var snr: MsgPack.Value?

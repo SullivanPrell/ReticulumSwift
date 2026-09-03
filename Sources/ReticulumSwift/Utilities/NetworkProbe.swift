@@ -97,6 +97,10 @@ public protocol ProbeNetwork: AnyObject {
     /// Must return `DEFAULT_PER_HOP_TIMEOUT` (6.0) if the shared-instance RPC fails,
     /// matching Reticulum.py:1570-1572.
     func firstHopTimeout(for destinationHash: Data) -> TimeInterval
+    /// Python: `reticulum.get_medium_path_timeout()` (rnprobe.py:84, 134). Must return `0`
+    /// — the "unknown" answer, which contributes nothing to the `max` — if the
+    /// shared-instance RPC fails, matching Reticulum.py:1780-1781.
+    func mediumPathTimeout() -> TimeInterval
     /// Python: `reticulum.is_connected_to_shared_instance` (rnprobe.py:166).
     var isConnectedToSharedInstance: Bool { get }
     /// Python: `reticulum.get_packet_rssi(packet_hash)` (rnprobe.py:167). Raw MsgPack so
@@ -501,12 +505,19 @@ public final class NetworkProbe {
         }
     }
 
-    /// Python: `timeout or DEFAULT_TIMEOUT + reticulum.get_first_hop_timeout(dh)`
-    /// (rnprobe.py:84, 134). `or` is falsy on `0` and `0.0`, so `-t 0` means "unset"; the
-    /// precedence is `timeout or (12 + fht)`, not `(timeout or 12) + fht`.
-    public static func effectiveTimeout(_ timeout: TimeInterval?, firstHopTimeout: TimeInterval) -> TimeInterval {
+    /// Python: `timeout or max(DEFAULT_TIMEOUT+reticulum.get_first_hop_timeout(dh),
+    /// reticulum.get_medium_path_timeout())` (rnprobe.py:84, 134). `or` is falsy on `0` and
+    /// `0.0`, so `-t 0` means "unset"; the precedence is `timeout or max(...)`, not
+    /// `(timeout or 12) + fht`.
+    ///
+    /// RNS 1.5.x added the `max`. The hop sum is derived from the *next hop's* measured
+    /// latency, so on a node whose only link is slow it can still be shorter than a single
+    /// round trip over that link; the medium timeout is the floor that fixes it.
+    public static func effectiveTimeout(_ timeout: TimeInterval?,
+                                        firstHopTimeout: TimeInterval,
+                                        mediumPathTimeout: TimeInterval) -> TimeInterval {
         if let timeout, timeout != 0 { return timeout }
-        return defaultTimeout + firstHopTimeout
+        return max(defaultTimeout + firstHopTimeout, mediumPathTimeout)
     }
 
     // MARK: - Run
@@ -551,7 +562,8 @@ public final class NetworkProbe {
         // exists. With no path known, first_hop_timeout is DEFAULT_PER_HOP_TIMEOUT = 6,
         // making the usual deadline now + 18.
         var deadline = clock.now() + NetworkProbe.effectiveTimeout(
-            options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash))
+            options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash),
+            mediumPathTimeout: network.mediumPathTimeout())
 
         var glyph = 0
         while !network.hasPath(to: destinationHash) && !(clock.now() > deadline) {
@@ -661,7 +673,8 @@ public final class NetworkProbe {
             // Python: rnprobe.py:134 — recomputed for every probe, after the send, and
             // re-queried (never cached) so a now-known path changes the value.
             deadline = clock.now() + NetworkProbe.effectiveTimeout(
-                options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash))
+                options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash),
+                mediumPathTimeout: network.mediumPathTimeout())
 
             glyph = 0
             while receipt?.status == .sent && !(clock.now() > deadline) {

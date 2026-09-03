@@ -45,6 +45,14 @@ public protocol RNPathManagementSource: AnyObject {
 
     /// Python: `get_next_hop_if_name(destination_hash)`.
     func nextHopInterfaceName(for destinationHash: Data) throws -> String?
+
+    /// Python: `get_medium_path_timeout()`.
+    ///
+    /// Non-throwing, unlike its neighbours: Python catches every RPC failure here and returns
+    /// `0` (`Reticulum.py:1780-1781`), because the value only ever raises a floor. A `rnpath`
+    /// that aborted because it could not *ask* how slow the link is would be worse than one
+    /// that used the user's timeout unchanged.
+    func mediumPathTimeout() -> TimeInterval
 }
 
 // MARK: - Local
@@ -63,6 +71,8 @@ public final class LocalManagementSource: RNPathManagementSource {
     }
 
     public var localTransportIdentityHash: Data? { reticulum.transport.transportIdentity?.hash }
+
+    public func mediumPathTimeout() -> TimeInterval { reticulum.getMediumPathTimeout() }
 
     public func pathTable(maxHops: UInt8?) throws -> [RNPathTableEntry] {
         reticulum.getPathTable(maxHops: maxHops).map {
@@ -130,6 +140,10 @@ public final class RPCManagementSource: RNPathManagementSource {
     public init(client: RPCClient, localTransportIdentityHash: Data?) {
         self.client = client
         self.localTransportIdentityHash = localTransportIdentityHash
+    }
+
+    public func mediumPathTimeout() -> TimeInterval {
+        InstanceConnection.mediumPathTimeout(rpc: client, transport: nil)
     }
 
     public func pathTable(maxHops: UInt8?) throws -> [RNPathTableEntry] {

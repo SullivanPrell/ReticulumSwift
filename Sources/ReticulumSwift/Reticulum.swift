@@ -1519,6 +1519,22 @@ public final class Reticulum {
         transport.firstHopTimeout(for: destinationHash)
     }
 
+    /// Bitrate of the slowest currently online interface, or `nil` when none is known.
+    /// Mirrors Python `Reticulum.get_lowest_interface_bitrate()`.
+    public func getLowestInterfaceBitrate() -> Int? {
+        transport.lowestInterfaceBitrate
+    }
+
+    /// A reasonable minimum path-request timeout for this node's slowest link, or `0` when no
+    /// bitrate is known. Mirrors Python `Reticulum.get_medium_path_timeout()`.
+    ///
+    /// Answers from the in-process transport. A utility attached as a *local client* must ask
+    /// the daemon instead — see ``InstanceConnection/mediumPathTimeout()``, which is where this
+    /// port keeps the `is_connected_to_shared_instance` branch Python folds into the accessor.
+    public func getMediumPathTimeout() -> TimeInterval {
+        transport.mediumPathTimeout()
+    }
+
     // MARK: - Destination retention
 
     /// Mark a destination as recently used. Mirrors Python `Reticulum._used_destination_data(destination_hash)`.

@@ -336,6 +336,14 @@ public final class Transport {
     }
 
     public private(set) var interfaces: [Interface] = []
+
+    /// Lowest bitrate (bits/s) among online interfaces, or `nil` before the first successful
+    /// computation. `Transport.lowest_interface_bitrate` (`Transport.py:294`), refreshed by
+    /// ``prioritizeInterfaces()``.
+    ///
+    /// Recorded unclamped; ``mediumPathTimeout()`` applies ``minimumBitrate`` at the point of
+    /// use, as Python does.
+    public private(set) var lowestInterfaceBitrate: Int?
     public private(set) var registeredDestinations: [Data: Destination] = [:]
     public internal(set) var paths: [Data: PathEntry] = [:]
     public private(set) var knownIdentities: [Data: Identity] = [:] // by destination hash
@@ -792,8 +800,38 @@ public final class Transport {
     /// Mirrors Python's `Transport.prioritize_interfaces()`.
     public func prioritizeInterfaces() {
         lock.lock()
-        interfaces.sort { $0.bitrate > $1.bitrate }
+        // Python sorts with `list.sort`, which is stable, so interfaces sharing a bitrate keep
+        // registration order. Swift's `sort(by:)` is not stable and this now runs on every jobs
+        // pass, so the index is folded into the comparator: without it, same-bitrate interfaces
+        // would be reshuffled every five seconds and announce emission order with them.
+        interfaces = interfaces.enumerated()
+            .sorted { l, r in
+                l.element.bitrate == r.element.bitrate
+                    ? l.offset < r.offset
+                    : l.element.bitrate > r.element.bitrate
+            }
+            .map(\.element)
+        // `if interface.online and interface.bitrate` (`Transport.py:568`) — Python's `bitrate`
+        // is falsy for both `None` and `0`, so an interface that has not reported one is not a
+        // candidate for "slowest".
+        let candidates = interfaces.filter { $0.isOnline && $0.bitrate > 0 }.map(\.bitrate)
+        // Python's `min()` over an empty generator raises and the `except` leaves the previous
+        // value standing (`:569`). Mirrored: a node with nothing online has no paths to resolve
+        // either, so clearing it would only make the utilities give up sooner on a dead network.
+        if let lowest = candidates.min() { lowestInterfaceBitrate = lowest }
         lock.unlock()
+    }
+
+    /// A full round trip for one MTU on the slowest online interface, plus one hop's grace.
+    /// `Transport.medium_path_timeout()` (`Transport.py:3205`), new in RNS 1.5.x.
+    ///
+    /// Returns `0` — not ``Constants/defaultPerHopTimeout`` — while no bitrate is known. Every
+    /// caller wraps this in `max(timeout, …)`, so zero contributes nothing rather than timing
+    /// out immediately.
+    public func mediumPathTimeout() -> TimeInterval {
+        guard let lowest = lowestInterfaceBitrate else { return 0 }
+        let bitrate = Double(max(lowest, Transport.minimumBitrate))
+        return 2 * (Double(Constants.mtu) * 8 / bitrate) + Constants.defaultPerHopTimeout
     }
 
     public func dropAnnounceQueues() {
@@ -2383,6 +2421,9 @@ public final class Transport {
     public func start() throws {
         startTime = Date().timeIntervalSince1970
         for interface in interfaces { try interface.start() }
+        // `Transport.prioritize_interfaces()` (`Transport.py:524`) — after the interfaces are
+        // up, so `isOnline` is meaningful when the lowest bitrate is taken.
+        prioritizeInterfaces()
         setupManagementDestinations()
         isRunning = true
         startJobsLoop()
@@ -2523,7 +2564,13 @@ public final class Transport {
         jobsTimer = timer
     }
 
-    private func runJobs() {
+    /// Internal rather than private so a test can drive one pass directly: the defect this
+    /// visibility exists for is a job that stops being *called*, which no test of the job
+    /// itself can see.
+    func runJobs() {
+        // `Transport.prioritize_interfaces()` in the interface-jobs block (`Transport.py:1151`).
+        // Refreshes both the bitrate ordering and `lowestInterfaceBitrate`.
+        prioritizeInterfaces()
         sweepPendingRestores()
         sweepExpiredPaths()
         sweepExpiredReceipts()

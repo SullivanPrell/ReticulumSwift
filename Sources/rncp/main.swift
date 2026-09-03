@@ -332,6 +332,11 @@ func runSend(file: String, destination: String) -> Never {
 
     let connection = startReticulum()
     let identity = prepareIdentity(connection: connection)
+    // `estab_timeout = time.time()+max(timeout, reticulum.get_medium_path_timeout())`
+    // (rncp.py:404, 660). In `rncp` the `-w` value feeds nothing but that one deadline —
+    // which covers the path wait and the link wait together — so flooring it once here is
+    // exactly Python's expression.
+    let timeout = max(timeout, connection.mediumPathTimeout())
 
     let sender = RNCopySender(
         transport: connection.reticulum.transport,
@@ -444,6 +449,11 @@ func runFetch(file: String, destination: String) -> Never {
 
     let connection = startReticulum()
     let identity = prepareIdentity(connection: connection)
+    // `estab_timeout = time.time()+max(timeout, reticulum.get_medium_path_timeout())`
+    // (rncp.py:404, 660). In `rncp` the `-w` value feeds nothing but that one deadline —
+    // which covers the path wait and the link wait together — so flooring it once here is
+    // exactly Python's expression.
+    let timeout = max(timeout, connection.mediumPathTimeout())
 
     let fetcher = RNCopyFetcher(
         transport: connection.reticulum.transport,

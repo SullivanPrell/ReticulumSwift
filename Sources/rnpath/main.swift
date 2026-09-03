@@ -218,6 +218,12 @@ func finish(_ result: RNPathApp.Result) -> Never {
     exit(result.rawValue)
 }
 
+// `timeout = max(timeout, reticulum.get_medium_path_timeout())` at the top of
+// `connect_remote` (rnpath.py:45). Python re-derives it on each call; the value cannot change
+// between them, so it is applied once here and every `-R` path below inherits it. The default
+// `-W` is PATH_REQUEST_TIMEOUT, which is shorter than a single round trip on a slow link.
+options.remoteTimeout = max(options.remoteTimeout, connection.mediumPathTimeout())
+
 // MARK: - Remote management link (-R)
 
 var remoteLink: Link?

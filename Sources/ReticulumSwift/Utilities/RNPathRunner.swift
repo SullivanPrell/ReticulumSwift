@@ -556,7 +556,11 @@ public final class RNPathRunner {
         }
 
         var index = 0
-        let deadline = now().timeIntervalSince1970 + options.timeout
+        // `limit = time.time()+max(timeout, reticulum.get_medium_path_timeout())`
+        // (rnpath.py:455). `-w` defaults to PATH_REQUEST_TIMEOUT, a constant chosen for a fast
+        // link; on a LoRa-only node one round trip alone can exceed it, so the request was
+        // still in flight when the spinner gave up and printed "Path not found".
+        let deadline = now().timeIntervalSince1970 + max(options.timeout, management.mediumPathTimeout())
         while !resolver.hasPath(to: destinationHash), now().timeIntervalSince1970 < deadline {
             sleep(0.1)
             spinner?("\u{8}\u{8}" + String(RNPathApp.spinnerSymbols[index % RNPathApp.spinnerSymbols.count]) + " ")
