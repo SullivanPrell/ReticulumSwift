@@ -101,11 +101,16 @@ public final class Destination {
         identity?.ratchetInterval = interval
     }
 
-    /// Mirrors Python's `Destination.set_retained_ratchets`. Forwarded
-    /// to the underlying Identity's history depth.
+    /// Mirrors Python's `Destination.set_retained_ratchets`: `count` is the total number of
+    /// ratchets kept for decryption, the active one included — `self.ratchets[:n]`, where
+    /// `ratchets[0]` is the ratchet currently being announced (`Destination.py:209`, `:287`).
+    ///
+    /// This port stores the active ratchet outside the history, so the total sits one above
+    /// ``Identity/ratchetHistoryDepth``. The conversion belongs here, at the boundary with
+    /// Python's counting, rather than in each caller.
     public func setRetainedRatchets(_ count: Int) {
         guard count > 0 else { return }
-        identity?.ratchetHistoryDepth = count
+        identity?.ratchetHistoryDepth = count - 1
         identity?.sweepExpiredRatchets()
     }
 

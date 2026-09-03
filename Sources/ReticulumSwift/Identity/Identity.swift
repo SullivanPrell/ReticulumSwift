@@ -37,17 +37,28 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         set { ratchetLock.lock(); _activeRatchetPrivateKey = newValue; ratchetLock.unlock() }
     }
 
-    /// Recently-rotated ratchet privates. Inbound encrypted messages
-    /// may still be addressed to a previous ratchet for a short window
-    /// after rotation, so we keep a few around for decrypt fallback.
-    /// Bounded by `ratchetHistoryDepth` and aged out per
-    /// `ratchetExpiry`.
+    /// Retired ratchet privates, newest first. A sender keeps using the ratchet it last
+    /// heard announced until that ratchet expires or a newer announce arrives, so inbound
+    /// packets stay addressed to a retired ratchet for as long as the peer stays quiet —
+    /// days, not seconds. Bounded by `ratchetHistoryDepth` and aged out per `ratchetExpiry`.
     private var _previousRatchets: [HistoricalRatchet] = []
     public private(set) var previousRatchets: [HistoricalRatchet] {
         get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return _previousRatchets }
         set { ratchetLock.lock(); _previousRatchets = newValue; ratchetLock.unlock() }
     }
-    public var ratchetHistoryDepth: Int = 8
+    /// How many *previous* ratchets to keep, on top of the active one.
+    ///
+    /// Python keeps a single list with the active ratchet at index 0 and caps the whole
+    /// thing at `Destination.RATCHET_COUNT` (`Destination.py:209`, `:234`, `:287`), so the
+    /// figure that has to agree across implementations is the pool *total* — hence the
+    /// `- 1`. Sized this way, ``ratchetPrivateKeyPool`` holds exactly what Python's
+    /// `self.ratchets` holds.
+    ///
+    /// This was 8, about four hours of rotation at the 30-minute `RATCHET_INTERVAL`. Any
+    /// peer quiet for longer came back encrypting to a ratchet this node had already
+    /// discarded, and the packet failed to decrypt with nothing on the wire to say why —
+    /// while the same peer talking to a Python node was fine for thirty days.
+    public var ratchetHistoryDepth: Int = Destination.ratchetCount - 1
 
     /// Mirrors Python's `RNS.Identity.RATCHET_EXPIRY` (30 days). Historical
     /// ratchet privates older than this are dropped on rotation/sweep.
