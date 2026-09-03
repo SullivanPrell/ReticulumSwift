@@ -20,23 +20,34 @@ public final class Reticulum {
     /// a single version string for both its library and its protocol). Bump only
     /// when parity is verified against a new RNS release. Informational only.
     ///
-    /// 1.4.2 required no changes here, which is why this moved without a
-    /// corresponding port. Its three core diffs against 1.4.1 are:
+    /// Moved 1.4.2 → 1.5.2 across three upstream releases. What landed:
     ///
-    ///  - `Transport.py:3126` — skip offline interfaces when fanning a recursive
-    ///    path request out. Every fan-out loop in this port already filtered on
-    ///    `isOnline`, so the port was ahead of Python here rather than behind.
-    ///  - `Transport.py:1841` — a gravity-replacement log line moved from
-    ///    `LOG_DEBUG` to `LOG_PATHING`. This port does not emit that line.
-    ///  - `Discovery.py` — `list_discovered_interfaces` now caches the blackholed
-    ///    identity set for 60s instead of asking per record. Python pays an RPC
-    ///    round-trip to the shared instance for each `is_blackholed` call; here it
-    ///    is a dictionary lookup under a lock (`Transport.isBlackholed`), so the
-    ///    cache would buy nothing and only make a fresh blackhole take a minute
-    ///    to apply.
+    ///  - **1.5.0**, transport core. `Packet.unpack` now rejects a zero-length data
+    ///    field and validates transport-ID and destination-hash lengths; `Packet.send`
+    ///    refuses `hops >= PATHFINDER_M`; `optimise_mtu`'s ladder boundaries became
+    ///    inclusive; `PATH_REQUEST_GATE_TIMEOUT` fell 120 → 45.
+    ///  - **1.5.1**, ingress control and path timeouts. The announce and path-request
+    ///    burst detectors gained a trailing-edge hold (`ic_burst_sustained`) and a
+    ///    three-evaluation cooldown, `IC_BURST_MIN_SAMPLES` became `EC_BURST_MIN_SAMPLES`
+    ///    and dropped 6 → 2, path requests became ingress-limited, and
+    ///    `Transport.medium_path_timeout()` began flooring every utility's path deadline
+    ///    at one MTU round trip on the slowest link.
+    ///  - **1.5.2**, maintenance. Its `Resource` request-window and `Buffer` MDU fixes
+    ///    were already correct here; `Resource.cancel`'s new membership guards only
+    ///    suppress a Python warning that this port's idempotent removal never emits.
     ///
-    /// The rest of 1.4.2 is `RNS/Utilities/rnsh`, which is not ported.
-    public static let rnsProtocolVersion = "1.4.2"
+    /// Three areas are deliberately not ported because the seam differs, each pinned by
+    /// a test: traffic classes (`TC_DATA`/`TC_ANNOUNCE`/…) presuppose Python's inbound
+    /// queue, where this port is synchronous; `ifac_handled` marks a Transport-level IFAC
+    /// seam, where this port applies IFAC inside `Interface.send`; and the adaptive
+    /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
+    /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
+    ///
+    /// Still outstanding at this version: interface-discovery *publishing*
+    /// (`publishesInterfaceDiscovery == false`, a pre-existing gap — the receive side is
+    /// complete), and the `discovery_path_requests` batching, which needs the announce
+    /// handler that replays to `requesting_interfaces` to be worth anything.
+    public static let rnsProtocolVersion = "1.5.2"
 
     public enum LogLevel: Int, Comparable, Sendable {
         case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme
