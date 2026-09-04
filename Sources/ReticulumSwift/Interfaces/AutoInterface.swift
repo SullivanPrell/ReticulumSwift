@@ -84,6 +84,16 @@ public final class AutoInterface: Interface {
     private var peers: [String: (ifname: String, lastHeard: Date, lastOutbound: Date)] = [:]
     private let peersLock = NSLock()
 
+    /// How many peers this interface holds.
+    ///
+    /// `get_interface_stats` publishes `len(interface.peers)` for every interface that has a
+    /// `peers` attribute (`Reticulum.py:1501-1503`). The table itself stays private because it
+    /// is lock-guarded and mutable; only the count crosses the boundary.
+    public var peerCount: Int {
+        peersLock.lock(); defer { peersLock.unlock() }
+        return peers.count
+    }
+
     private var discoverySocket: Int32 = -1
     private var dataSocket: Int32 = -1
     private let queue = DispatchQueue(label: "AutoInterface", attributes: .concurrent)

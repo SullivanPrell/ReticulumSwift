@@ -3,6 +3,82 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.18.0]—The conditional half of the interface stats payload
+
+`get_interface_stats` publishes two kinds of key: the ones every interface has, and the
+ones it reaches through `hasattr(interface, …)` because only some types carry them
+(`Reticulum.py:1409-1526`). This port covered the first kind. This release covers the
+second, and corrects two places where a key this port already emitted did not match what a
+Python daemon puts in the same field.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2. None of this is a 1.5.x delta; these are
+divergences that reading 1.5.2's stats surface brought to light.
+
+### Interfaces that keep peers report how many
+
+`rnstatus` prints a peer count as "N reachable", and also falls back to it for the client
+column when an interface reports no clients (`rnstatus.py:555, 617, 642`). Upstream
+publishes it for the two interface types that keep a peer table, `AutoInterface` and
+`WeaveInterface` (`Reticulum.py:1501-1503`). This port published neither, so a Swift daemon
+with a busy AutoInterface described it to a Python operator as having no peers and no
+clients.
+
+### A spawned interface names the interface that spawned it
+
+Clients of one server share a display name by design, so the parent is the only thing in
+the listing that says which server, radio or tunnel each row belongs to. Upstream reaches
+it through `hasattr(interface, "parent_interface")` and publishes the name and hash
+(`:1412-1414`).
+
+Duck typing makes that uniform for free in Python. Here it needs a declaration, so this
+release adds a `SpawnedInterface` protocol and conforms the four types that hold a parent:
+`TCPServerClientInterface`, `I2PInterfacePeer`, `RNodeSubInterface` and
+`WeaveInterfacePeer`. The payload makes one cast against the protocol rather than one cast
+per type, so the set of interfaces that publish a parent is the set that declares one. A
+test enumerates the conformers from the type system and pins the set, which is what keeps a
+fifth spawned type from reaching the payload silently parentless.
+
+### A radio reports its temperature, and a Weave switch its load
+
+`cpu_temp` rides on RNode interfaces and reads null until the radio first reports
+(`RNodeInterface.py:237, 1067`). `cpu_load` and `mem_load` ride on Weave interfaces and
+read 0 until the switch does, because upstream initialises both device attributes to 0 and
+assigns the device unconditionally during `final_init` (`WeaveInterface.py:584-588, 883`).
+Publishing null in that state would have made this port's listing disagree with a Python
+daemon describing the same silent switch.
+
+`mem_load` is a percentage rounded to two decimals, mirroring
+`round((memory_used/memory_total)*100, 2)` (`:763`). A switch reporting a zero total
+divides by zero upstream, so this port guards it: the field reads 0 rather than reaching
+`rnstatus` as a printed NaN.
+
+### Two Weave identifiers move to the interface that owns them
+
+`switch_id` and `endpoint_id` are properties of `WeaveInterface` (`:838-845`);
+`via_switch_id` is an attribute only `WeaveInterfacePeer` declares (`:1014`). This port
+published all three from the peer. That described each peer as the switch and left the
+interface actually attached to that switch reporting nothing, which is the row an operator
+reads the switch identity from (`rnstatus.py:543-553`).
+
+Each identifier also now goes through `RNSUtilities.hexrep`, matching `RNS.hexrep`, whose
+`delimit` argument defaults to true (`__init__.py:168-174`). An operator sees
+`de:ad:be:ef` on both implementations instead of plain hex on one.
+
+### Four keys stay unemitted
+
+`interference_last_ts` and `interference_last_dbm` come from `r_interference_l`, which
+upstream initialises to `None` and never assigns—every write is commented out
+(`RNodeInterface.py:281, 957-966`). The guard is `type(...) == list`, so upstream's own keys
+never appear either. Emitting them would put this port ahead of the reference for a field
+with no settled meaning.
+
+`blocked_ips` and `blocked_ip_list` come from `BackboneInterface.blocked_ip_count`, which
+lives on upstream's server side. This port's Backbone support is client-only, so there is
+no ingress blocking to report. `RNStatusRenderer` already renders both keys when a Python
+daemon supplies them, which is the half that matters here.
+
+Tests pin all four as absent, so a later change that starts emitting one has to say why.
+
 ## [1.17.0]—The rest of the protocol-violation sites, and three upstream never reaches
 
 1.16.0 landed the announce violation. This release finishes the survey of the other six

@@ -20,7 +20,7 @@ import Foundation
 /// Failures at any step retry after `retryInterval` (Python: RECONNECT_WAIT),
 /// and a watchdog sends idle keepalives / kills unresponsive tunnels exactly
 /// like Python's `read_watchdog`.
-public final class I2PInterfacePeer: Interface {
+public final class I2PInterfacePeer: Interface, SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -112,6 +112,7 @@ public final class I2PInterfacePeer: Interface {
     /// Python: outbound config peers have `parent_count = False`, so traffic
     /// is *not* rolled up into the parent's counters.
     public weak var parentInterface: I2PInterface?
+    public var spawningInterface: (any Interface)? { parentInterface }
 
     // MARK: - Dial configuration (overridable; defaults mirror Python)
 

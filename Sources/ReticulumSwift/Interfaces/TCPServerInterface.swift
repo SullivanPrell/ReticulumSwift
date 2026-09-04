@@ -261,7 +261,8 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 ///
 /// Mirrors Python's per-connection `TCPServerInterfaceClient` which is registered
 /// with Transport as an independent Interface.
-public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterface {
+public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterface,
+                                              SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -325,6 +326,7 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
 
     // Back-reference to parent server (for IFAC inheritance).
     private weak var parentServer: TCPServerInterface?
+    public var spawningInterface: (any Interface)? { parentServer }
     // The underlying TCP connection.
     fileprivate weak var spawnedClient: SpawnedClient?
 
