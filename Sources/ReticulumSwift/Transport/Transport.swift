@@ -4530,6 +4530,12 @@ public final class Transport {
                 // so the same wire value is one more than the hop count it stored—the
                 // adjustment the known-path answer makes as `entry.hops &+ 1`.
                 replay.hops = packet.hops &+ 1
+                // Upstream replays to every requesting interface (`:2439`); this port skips the
+                // one the announce arrived on. Every other replay here excludes its source—the
+                // mesh relay's `iface !== interface`, the local-client replay's
+                // `localClientServingInterfaces(excluding:)`—and so does upstream's own
+                // local-client replay. The skipped frame can only be redundant: the peer on that
+                // interface is the one that just sent this announce.
                 for target in waiting.requestingInterfaces where target !== interface {
                     try? transmit(replay, on: target)
                 }
