@@ -193,8 +193,8 @@ final class RNStatusStatsTests: XCTestCase {
         XCTAssertEqual(names(.rxs),       ["B", "C", "A"])
         XCTAssertEqual(names(.txs),       ["A", "C", "B"])
         XCTAssertEqual(names(.traffic),   ["B", "A", "C"])   // 31, 11, 10 → B, A, C
-        XCTAssertEqual(names(.announces), ["B", "C", "A"])   // 4, 2, 1
-        XCTAssertEqual(names(.announce),  ["B", "C", "A"])
+        XCTAssertEqual(names(.anns),      ["B", "C", "A"])   // 4, 2, 1
+        XCTAssertEqual(names(.announces), ["B", "C", "A"])
         XCTAssertEqual(names(.arx),       ["C", "A", "B"])
         XCTAssertEqual(names(.atx),       ["B", "A", "C"])   // 4, 0, 0 → stable on the tie
         XCTAssertEqual(names(.prx),       ["A", "C", "B"])

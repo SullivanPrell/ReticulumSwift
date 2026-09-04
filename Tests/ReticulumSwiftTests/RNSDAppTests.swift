@@ -14,7 +14,7 @@ final class RNSDAppTests: XCTestCase {
     // MARK: - Parsing
 
     func testParseEmptyArgvGivesDefaults() throws {
-        let options = try RNSDApp.parse([], allowServiceFlags: true)
+        let options = try RNSDApp.parse([], variant: .rnsd)
         XCTAssertEqual(options, RNSDApp.Options())
         XCTAssertNil(options.configDir)
         XCTAssertEqual(options.verbose, 0)
@@ -28,33 +28,33 @@ final class RNSDAppTests: XCTestCase {
 
     func testVerbosityCounting() throws {
         // Python: `-v', '--verbose', action='count', default=0`.
-        XCTAssertEqual(try RNSDApp.parse(["-v"], allowServiceFlags: true).verbose, 1)
-        XCTAssertEqual(try RNSDApp.parse(["-vv"], allowServiceFlags: true).verbose, 2)
-        XCTAssertEqual(try RNSDApp.parse(["-vvv"], allowServiceFlags: true).verbose, 3)
-        XCTAssertEqual(try RNSDApp.parse(["-v", "-v"], allowServiceFlags: true).verbose, 2)
-        XCTAssertEqual(try RNSDApp.parse(["--verbose", "--verbose"], allowServiceFlags: true).verbose, 2)
+        XCTAssertEqual(try RNSDApp.parse(["-v"], variant: .rnsd).verbose, 1)
+        XCTAssertEqual(try RNSDApp.parse(["-vv"], variant: .rnsd).verbose, 2)
+        XCTAssertEqual(try RNSDApp.parse(["-vvv"], variant: .rnsd).verbose, 3)
+        XCTAssertEqual(try RNSDApp.parse(["-v", "-v"], variant: .rnsd).verbose, 2)
+        XCTAssertEqual(try RNSDApp.parse(["--verbose", "--verbose"], variant: .rnsd).verbose, 2)
     }
 
     func testQuietCountingAndDelta() throws {
-        let quiet = try RNSDApp.parse(["-qq"], allowServiceFlags: true)
+        let quiet = try RNSDApp.parse(["-qq"], variant: .rnsd)
         XCTAssertEqual(quiet.quiet, 2)
         // Python: `targetverbosity = verbosity-quietness` (rnsd.py:41)—may be negative.
         XCTAssertEqual(quiet.verbosityDelta, -2)
 
-        let mixed = try RNSDApp.parse(["-vvv", "-q"], allowServiceFlags: true)
+        let mixed = try RNSDApp.parse(["-vvv", "-q"], variant: .rnsd)
         XCTAssertEqual(mixed.verbose, 3)
         XCTAssertEqual(mixed.quiet, 1)
         XCTAssertEqual(mixed.verbosityDelta, 2)
     }
 
     func testShortFlagClusters() throws {
-        let vq = try RNSDApp.parse(["-vq"], allowServiceFlags: true)
+        let vq = try RNSDApp.parse(["-vq"], variant: .rnsd)
         XCTAssertEqual(vq.verbose, 1)
         XCTAssertEqual(vq.quiet, 1)
         XCTAssertEqual(vq.verbosityDelta, 0)
 
         for argv in [["-vs"], ["-sv"]] {
-            let parsed = try RNSDApp.parse(argv, allowServiceFlags: true)
+            let parsed = try RNSDApp.parse(argv, variant: .rnsd)
             XCTAssertEqual(parsed.verbose, 1, "\(argv)")
             XCTAssertTrue(parsed.service, "\(argv)")
         }
@@ -62,17 +62,17 @@ final class RNSDAppTests: XCTestCase {
 
     func testServiceModeDiscardsVerbosity() throws {
         // Python: `if service: targetlogdest = RNS.LOG_FILE; targetverbosity = None` (rnsd.py:43-45)
-        let options = try RNSDApp.parse(["-s", "-vvv"], allowServiceFlags: true)
+        let options = try RNSDApp.parse(["-s", "-vvv"], variant: .rnsd)
         XCTAssertEqual(options.verbosityDelta, 3)
         XCTAssertNil(options.effectiveVerbosity)
 
-        let noService = try RNSDApp.parse(["-vvv"], allowServiceFlags: true)
+        let noService = try RNSDApp.parse(["-vvv"], variant: .rnsd)
         XCTAssertEqual(noService.effectiveVerbosity, 3)
     }
 
     func testConfigTakesNextArgument() throws {
         for argv in [["--config", "/tmp/x"], ["--config=/tmp/x"]] {
-            XCTAssertEqual(try RNSDApp.parse(argv, allowServiceFlags: true).configDir, "/tmp/x", "\(argv)")
+            XCTAssertEqual(try RNSDApp.parse(argv, variant: .rnsd).configDir, "/tmp/x", "\(argv)")
         }
     }
 
@@ -80,17 +80,17 @@ final class RNSDAppTests: XCTestCase {
         // Not Python spellings—kept because the pre-parity Swift rnsd accepted them with
         // exactly this meaning. They're hidden from --help and from prefix abbreviation.
         for argv in [["--config-dir", "/tmp/x"], ["-d", "/tmp/x"], ["--config-dir=/tmp/x"]] {
-            XCTAssertEqual(try RNSDApp.parse(argv, allowServiceFlags: true).configDir, "/tmp/x", "\(argv)")
+            XCTAssertEqual(try RNSDApp.parse(argv, variant: .rnsd).configDir, "/tmp/x", "\(argv)")
         }
     }
 
     func testEmptyConfigBecomesNil() throws {
         // Python: `if args.config:` is falsy for '' → configarg stays None (rnsd.py:79-82).
-        XCTAssertNil(try RNSDApp.parse(["--config", ""], allowServiceFlags: true).configDir)
+        XCTAssertNil(try RNSDApp.parse(["--config", ""], variant: .rnsd).configDir)
     }
 
     func testConfigMissingValueThrows() {
-        XCTAssertThrowsError(try RNSDApp.parse(["--config"], allowServiceFlags: true)) { error in
+        XCTAssertThrowsError(try RNSDApp.parse(["--config"], variant: .rnsd)) { error in
             XCTAssertEqual(error as? ArgumentError, .missingValue("--config"))
             // Python: "rnsd: error: argument --config: expected one argument"
             XCTAssertEqual((error as? ArgumentError)?.description,
@@ -99,22 +99,22 @@ final class RNSDAppTests: XCTestCase {
     }
 
     func testUnrecognizedArgumentThrows() {
-        XCTAssertThrowsError(try RNSDApp.parse(["--bogus"], allowServiceFlags: true)) { error in
+        XCTAssertThrowsError(try RNSDApp.parse(["--bogus"], variant: .rnsd)) { error in
             XCTAssertEqual(error as? ArgumentError, .unrecognisedArguments(["--bogus"]))
         }
         // Python reports every leftover in one message, in argv order.
-        XCTAssertThrowsError(try RNSDApp.parse(["--bogus", "extra"], allowServiceFlags: true)) { error in
+        XCTAssertThrowsError(try RNSDApp.parse(["--bogus", "extra"], variant: .rnsd)) { error in
             XCTAssertEqual(error as? ArgumentError, .unrecognisedArguments(["--bogus", "extra"]))
         }
         // …but only the leftovers: `-v` is consumed first.
-        XCTAssertThrowsError(try RNSDApp.parse(["-v", "--bogus"], allowServiceFlags: true)) { error in
+        XCTAssertThrowsError(try RNSDApp.parse(["-v", "--bogus"], variant: .rnsd)) { error in
             XCTAssertEqual(error as? ArgumentError, .unrecognisedArguments(["--bogus"]))
         }
     }
 
     func testBarePositionalIsAnError() {
         // Python declares no positionals: `rnsd extra` → "unrecognized arguments: extra", exit 2.
-        XCTAssertThrowsError(try RNSDApp.parse(["extra"], allowServiceFlags: true)) { error in
+        XCTAssertThrowsError(try RNSDApp.parse(["extra"], variant: .rnsd)) { error in
             XCTAssertEqual(error as? ArgumentError, .unrecognisedArguments(["extra"]))
         }
     }
@@ -122,26 +122,26 @@ final class RNSDAppTests: XCTestCase {
     func testShortCIsRejectedLikePython() {
         // Verified against the real parser: `rnsd -c /tmp/x` → exit 2, "unrecognized arguments".
         // The pre-parity Swift rnsd accepted -c as a config *file*; that meaning is dropped.
-        XCTAssertThrowsError(try RNSDApp.parse(["-c", "/tmp/x"], allowServiceFlags: true)) { error in
+        XCTAssertThrowsError(try RNSDApp.parse(["-c", "/tmp/x"], variant: .rnsd)) { error in
             XCTAssertEqual(error as? ArgumentError, .unrecognisedArguments(["-c", "/tmp/x"]))
         }
     }
 
     func testPrefixAbbreviation() throws {
         // Python: argparse's allow_abbrev defaults to True.
-        XCTAssertEqual(try RNSDApp.parse(["--conf", "/tmp/x"], allowServiceFlags: true).configDir, "/tmp/x")
-        XCTAssertEqual(try RNSDApp.parse(["--co", "/tmp/x"], allowServiceFlags: true).configDir, "/tmp/x")
-        XCTAssertEqual(try RNSDApp.parse(["--confi=/tmp/x"], allowServiceFlags: true).configDir, "/tmp/x")
-        XCTAssertEqual(try RNSDApp.parse(["--verb"], allowServiceFlags: true).verbose, 1)
-        XCTAssertTrue(try RNSDApp.parse(["--exam"], allowServiceFlags: true).exampleConfig)
+        XCTAssertEqual(try RNSDApp.parse(["--conf", "/tmp/x"], variant: .rnsd).configDir, "/tmp/x")
+        XCTAssertEqual(try RNSDApp.parse(["--co", "/tmp/x"], variant: .rnsd).configDir, "/tmp/x")
+        XCTAssertEqual(try RNSDApp.parse(["--confi=/tmp/x"], variant: .rnsd).configDir, "/tmp/x")
+        XCTAssertEqual(try RNSDApp.parse(["--verb"], variant: .rnsd).verbose, 1)
+        XCTAssertTrue(try RNSDApp.parse(["--exam"], variant: .rnsd).exampleConfig)
     }
 
     func testAmbiguousAbbreviationThrows() {
-        XCTAssertThrowsError(try RNSDApp.parse(["--ver"], allowServiceFlags: true)) { error in
+        XCTAssertThrowsError(try RNSDApp.parse(["--ver"], variant: .rnsd)) { error in
             XCTAssertEqual(error as? ArgumentError,
                            .ambiguousOption("--ver", ["--verbose", "--version"]))
         }
-        let text = RNSDApp.errorText(program: "rnsd", allowServiceFlags: true,
+        let text = RNSDApp.errorText(.rnsd,
                                      error: ArgumentError.ambiguousOption("--ver", ["--verbose", "--version"]))
         // Python: "rnsd: error: ambiguous option: --ver could match --verbose, --version"
         XCTAssertTrue(text.hasSuffix("rnsd: error: ambiguous option: --ver could match --verbose, --version"),
@@ -149,22 +149,24 @@ final class RNSDAppTests: XCTestCase {
     }
 
     func testServiceAndInteractiveRejectedForRnirAndRnpkg() throws {
-        for argument in ["-s", "-i", "--service", "--interactive"] {
-            XCTAssertThrowsError(try RNSDApp.parse([argument], allowServiceFlags: false),
-                                 "rnir must reject \(argument)") { error in
-                XCTAssertEqual(error as? ArgumentError, .unrecognisedArguments([argument]))
+        for variant in [RNSDApp.Variant.rnir, .rnpkg] {
+            for argument in ["-s", "-i", "--service", "--interactive"] {
+                XCTAssertThrowsError(try RNSDApp.parse([argument], variant: variant),
+                                     "\(variant.appName) must reject \(argument)") { error in
+                    XCTAssertEqual(error as? ArgumentError, .unrecognisedArguments([argument]))
+                }
             }
         }
-        XCTAssertTrue(try RNSDApp.parse(["-s"], allowServiceFlags: true).service)
-        XCTAssertTrue(try RNSDApp.parse(["-i"], allowServiceFlags: true).interactive)
+        XCTAssertTrue(try RNSDApp.parse(["-s"], variant: .rnsd).service)
+        XCTAssertTrue(try RNSDApp.parse(["-i"], variant: .rnsd).interactive)
     }
 
     func testHelpAndVersionFlags() throws {
-        XCTAssertTrue(try RNSDApp.parse(["-h"], allowServiceFlags: true).help)
-        XCTAssertTrue(try RNSDApp.parse(["--help"], allowServiceFlags: true).help)
+        XCTAssertTrue(try RNSDApp.parse(["-h"], variant: .rnsd).help)
+        XCTAssertTrue(try RNSDApp.parse(["--help"], variant: .rnsd).help)
         // argparse recognises -h anywhere in argv.
-        XCTAssertTrue(try RNSDApp.parse(["-v", "--help"], allowServiceFlags: true).help)
-        XCTAssertTrue(try RNSDApp.parse(["--version"], allowServiceFlags: true).version)
+        XCTAssertTrue(try RNSDApp.parse(["-v", "--help"], variant: .rnsd).help)
+        XCTAssertTrue(try RNSDApp.parse(["--version"], variant: .rnsd).version)
     }
 
     // MARK: - Help text
@@ -187,11 +189,28 @@ options:
   --version          show program's version number and exit
 """
 
-    /// Byte-for-byte capture of `rnir --help`.
+    /// Byte-for-byte capture of `rnir --help`. No `--exampleconfig`: `rnir.py:54-58`
+    /// declares four arguments, and the real tool rejects it with exit 2.
     private static let pythonRnirHelp = """
-usage: rnir [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
+usage: rnir [-h] [--config CONFIG] [-v] [-q] [--version]
 
 Reticulum Distributed Identity Resolver
+
+options:
+  -h, --help       show this help message and exit
+  --config CONFIG  path to alternative Reticulum config directory
+  -v, --verbose
+  -q, --quiet
+  --version        show program's version number and exit
+"""
+
+    /// Byte-for-byte capture of `rnpkg --help`. Captured in full rather than derived from
+    /// rnir's: the two pages differ by more than a name now (`rnpkg.py:57` keeps
+    /// `--exampleconfig`), and a derived expectation would have hidden exactly that.
+    private static let pythonRnpkgHelp = """
+usage: rnpkg [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
+
+Reticulum Meta Package Manager
 
 options:
   -h, --help       show this help message and exit
@@ -203,29 +222,15 @@ options:
 """
 
     func testHelpTextMatchesPythonForRnsd() {
-        let rendered = RNSDApp.helpText(program: RNSDApp.appName,
-                                        description: RNSDApp.description,
-                                        allowServiceFlags: true)
-        XCTAssertEqual(rendered, Self.pythonRnsdHelp)
+        XCTAssertEqual(RNSDApp.helpText(.rnsd), Self.pythonRnsdHelp)
     }
 
     func testHelpTextMatchesPythonForRnir() {
-        let rendered = RNSDApp.helpText(program: RNSDApp.rnirAppName,
-                                        description: RNSDApp.rnirDescription,
-                                        allowServiceFlags: false)
-        XCTAssertEqual(rendered, Self.pythonRnirHelp)
+        XCTAssertEqual(RNSDApp.helpText(.rnir), Self.pythonRnirHelp)
     }
 
     func testHelpTextMatchesPythonForRnpkg() {
-        // rnpkg's page is rnir's with the program name and description swapped.
-        let expected = Self.pythonRnirHelp
-            .replacingOccurrences(of: "usage: rnir", with: "usage: rnpkg")
-            .replacingOccurrences(of: "Reticulum Distributed Identity Resolver",
-                                  with: "Reticulum Meta Package Manager")
-        let rendered = RNSDApp.helpText(program: RNSDApp.rnpkgAppName,
-                                        description: RNSDApp.rnpkgDescription,
-                                        allowServiceFlags: false)
-        XCTAssertEqual(rendered, expected)
+        XCTAssertEqual(RNSDApp.helpText(.rnpkg), Self.pythonRnpkgHelp)
     }
 
     func testHelpGutterWidths() {
@@ -241,18 +246,14 @@ options:
             return row.distance(from: row.startIndex, to: start.lowerBound)
         }
 
-        XCTAssertEqual(helpColumn(in: RNSDApp.helpText(program: "rnsd",
-                                                       description: RNSDApp.description,
-                                                       allowServiceFlags: true)), 21)
-        XCTAssertEqual(helpColumn(in: RNSDApp.helpText(program: "rnir",
-                                                       description: RNSDApp.rnirDescription,
-                                                       allowServiceFlags: false)), 19)
+        XCTAssertEqual(helpColumn(in: RNSDApp.helpText(.rnsd)), 21)
+        XCTAssertEqual(helpColumn(in: RNSDApp.helpText(.rnir)), 19)
+        XCTAssertEqual(helpColumn(in: RNSDApp.helpText(.rnpkg)), 19)
     }
 
     func testHelplessRowsHaveNoTrailingWhitespace() {
         // argparse's `if not action.help:` branch emits the bare invocation with no padding.
-        let lines = RNSDApp.helpText(program: "rnsd", description: RNSDApp.description,
-                                     allowServiceFlags: true)
+        let lines = RNSDApp.helpText(.rnsd)
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map(String.init)
         XCTAssertTrue(lines.contains("  -v, --verbose"))
@@ -267,27 +268,27 @@ options:
     func testUsageWrapsLikeArgparse() {
         // rnsd's option list overflows 78 columns, so argparse wraps and indents the
         // continuation to len("usage: ") + len("rnsd") + 1 == 12.
-        XCTAssertEqual(RNSDApp.usageText(program: "rnsd", allowServiceFlags: true), """
+        XCTAssertEqual(RNSDApp.usageText(.rnsd), """
 usage: rnsd [-h] [--config CONFIG] [-v] [-q] [-s] [-i] [--exampleconfig]
             [--version]
 """)
         // rnir's fits, so it stays on one line.
-        XCTAssertEqual(RNSDApp.usageText(program: "rnir", allowServiceFlags: false),
-                       "usage: rnir [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]")
+        XCTAssertEqual(RNSDApp.usageText(.rnir),
+                       "usage: rnir [-h] [--config CONFIG] [-v] [-q] [--version]")
+        XCTAssertEqual(RNSDApp.usageText(.rnpkg),
+                       "usage: rnpkg [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]")
     }
 
     func testErrorText() {
-        let text = RNSDApp.errorText(program: "rnsd", allowServiceFlags: true,
-                                     error: ArgumentError.unrecognisedArguments(["--bogus"]))
-        XCTAssertTrue(text.hasPrefix(RNSDApp.usageText(program: "rnsd", allowServiceFlags: true)))
+        let text = RNSDApp.errorText(.rnsd, error: ArgumentError.unrecognisedArguments(["--bogus"]))
+        XCTAssertTrue(text.hasPrefix(RNSDApp.usageText(.rnsd)))
         XCTAssertTrue(text.hasSuffix("rnsd: error: unrecognized arguments: --bogus"), text)
     }
 
     func testErrorTextForRnirUsesItsOwnUsage() {
-        let text = RNSDApp.errorText(program: "rnir", allowServiceFlags: false,
-                                     error: ArgumentError.unrecognisedArguments(["-s"]))
+        let text = RNSDApp.errorText(.rnir, error: ArgumentError.unrecognisedArguments(["-s"]))
         XCTAssertEqual(text, """
-usage: rnir [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
+usage: rnir [-h] [--config CONFIG] [-v] [-q] [--version]
 rnir: error: unrecognized arguments: -s
 """)
     }

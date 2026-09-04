@@ -18,21 +18,19 @@ let argv = Array(CommandLine.arguments.dropFirst())
 let options: RNSDApp.Options
 do {
     // Python: rnir declares no -s and no -i; both are rejected with exit 2.
-    options = try RNSDApp.parse(argv, allowServiceFlags: false)
+    options = try RNSDApp.parse(argv, variant: .rnir)
 } catch {
-    writeStderr(RNSDApp.errorText(program: RNSDApp.rnirAppName, allowServiceFlags: false, error: error))
+    writeStderr(RNSDApp.errorText(.rnir, error: error))
     exit(RNSDApp.ExitCode.argumentError.rawValue)
 }
 
 if options.help {
-    print(RNSDApp.helpText(program: RNSDApp.rnirAppName,
-                           description: RNSDApp.rnirDescription,
-                           allowServiceFlags: false))
+    print(RNSDApp.helpText(.rnir))
     exit(RNSDApp.ExitCode.ok.rawValue)
 }
 
 if options.version {
-    print(RNSDApp.versionText(program: RNSDApp.rnirAppName))
+    print(RNSDApp.versionText(.rnir))
     exit(RNSDApp.ExitCode.ok.rawValue)
 }
 

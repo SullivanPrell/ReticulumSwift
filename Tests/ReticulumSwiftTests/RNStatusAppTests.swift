@@ -101,12 +101,12 @@ final class RNStatusAppTests: XCTestCase {
     // MARK: - Sort tokens
 
     func testSortTokens() {
-        // Python: the if-chain at rnstatus.py:362-387. `bitrate` and `announce` are
-        // accepted aliases the --help text doesn't list.
-        let expected = ["rate", "bitrate", "rx", "tx", "rxs", "txs", "traffic",
-                        "announces", "announce", "arx", "atx", "prx", "ptx", "held"]
-        XCTAssertEqual(RNStatusApp.Sort.allCases.map(\.rawValue), expected)
-        XCTAssertEqual(RNStatusApp.Sort.allCases.count, 14)
+        // The vocabulary itself is pinned against Python in
+        // `RNStatus152SurfaceTests.testSortVocabularyMatchesPython`; this only holds the
+        // count, so adding a case without extending that list fails here too.
+        XCTAssertEqual(RNStatusApp.Sort.allCases.count, 26)
+        XCTAssertEqual(RNStatusApp.Sort.allCases.map(\.rawValue),
+                       RNStatus152SurfaceTests.pythonSortTokens)
     }
 
     func testUnknownSortTokenIsNil() {

@@ -111,6 +111,17 @@ public struct RNStatusStats {
     /// wire type matters (`prettytime` renders `12s` for an int and `12.0s` for a float).
     public func raw(_ key: String) -> MsgPack.Value? { index[key] }
 
+    /// Python: `"key" in stats`. True even when the value is msgpack nil.
+    public func has(_ key: String) -> Bool { index[key] != nil }
+
+    /// A top-level number, defaulting to zero. Python subscripts the traffic-aggregate,
+    /// packet-rate and queue keys bare, so an absent one raises there; the port renders a
+    /// zero instead, which is what an instance without that counter actually measured.
+    public func double(_ key: String) -> Double { index[key]?.asDouble ?? 0 }
+
+    /// The integer form of ``double(_:)``, for the packet counts and drop counters.
+    public func int(_ key: String) -> Int { index[key]?.asInt ?? 0 }
+
     /// Decode the map returned by `get_interface_stats()`.
     /// Returns nil for anything without an `interfaces` array—which is also the guard
     /// that catches a malformed `/status` response from a remote instance.
@@ -157,14 +168,25 @@ public struct RNStatusStats {
             case .rxs:            return i.double("rxs") ?? 0
             case .txs:            return i.double("txs") ?? 0
             case .traffic:        return (i.double("rxb") ?? 0) + (i.double("txb") ?? 0)
-            case .announces, .announce:
+            case .anns, .announces:
                 return (i.double("incoming_announce_frequency") ?? 0)
                      + (i.double("outgoing_announce_frequency") ?? 0)
             case .arx:            return i.double("incoming_announce_frequency") ?? 0
             case .atx:            return i.double("outgoing_announce_frequency") ?? 0
+            case .arxc:           return i.double("arxc") ?? 0
+            case .atxc:           return i.double("atxc") ?? 0
             case .prx:            return i.double("incoming_pr_frequency") ?? 0
             case .ptx:            return i.double("outgoing_pr_frequency") ?? 0
+            case .prxc:           return i.double("prxc") ?? 0
+            case .ptxc:           return i.double("ptxc") ?? 0
             case .held:           return i.double("held_announces") ?? 0
+            case .pvs:            return i.double("protocol_violations") ?? 0
+            case .ivs:            return i.double("ifac_violations") ?? 0
+            case .flt:            return i.double("packet_filter_hits") ?? 0
+            case .gravity, .g:    return i.double("gravity") ?? 0
+            case .txdrp:          return i.double("txdrp") ?? 0
+            case .txdrb:          return i.double("txdrb") ?? 0
+            case .txbuf:          return i.double("txbuffered") ?? 0
             }
         }
 

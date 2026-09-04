@@ -418,6 +418,16 @@ public final class RPCServer {
             }
             return msgpack(.nil)
 
+        case "profiling_results":
+            // Python: `Reticulum.get_profiling_results()` forwards this verb to the shared
+            // instance (Reticulum.py:1862), which answers `RNS.Profiler.results()` or None.
+            // This port instruments nothing with `@RNS.Profiler.profile`, so there is
+            // never a result to return—the same answer an uninstrumented Python daemon
+            // gives, and `rnstatus -z` prints nothing for either. Handled explicitly rather
+            // than left to the unknown-path default so the answer is a decision, not a
+            // by-product of the fallback.
+            return msgpack(.nil)
+
         case "packet_snr":
             if let t = transport, let hash = binValue(kv["packet_hash"]),
                let snr = t.getPacketSnr(packetHash: hash) {

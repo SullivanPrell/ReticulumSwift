@@ -98,6 +98,17 @@ public enum RNStatusApp {
 
     // MARK: - Command line
 
+    /// The `-s` help string, single-sourced so the option table and ``helpText`` can't
+    /// drift apart. Python: rnstatus.py:845.
+    ///
+    /// `helpText` has to carry the argparse-wrapped form, so the two spellings are
+    /// unavoidably separate strings. `RNStatusAppTests` re-joins the wrapped rows and
+    /// compares them against this one, which is what makes adding a sort key to the enum
+    /// and forgetting one of the two help sites a test failure rather than a silent lie.
+    public static let sortHelp: String =
+        "sort interfaces by [rate, traffic, rx, tx, rxs, txs, anns, arx, atx, arxc, "
+      + "atxc, held, prx, ptx, prxc, ptxc, pvs, ivs, flt, txdrp, txdrb, txbuf]"
+
     /// The `rnstatus` option table, built on the house ``ArgumentParser``.
     ///
     /// Every spelling here is part of the user-facing contract and is asserted in
@@ -112,9 +123,12 @@ public enum RNStatusApp {
         parser.flag(["-P", "--pr-stats"], help: "show path request stats")
         parser.flag(["-l", "--link-stats"], help: "show link stats")
         parser.flag(["-B", "--burst"], help: "only show interfaces with active bursts")
+        parser.flag(["-b", "--blocked-ips"], help: "show blocked IPs per interface")
         parser.flag(["-t", "--totals"], help: "display traffic totals")
-        parser.option(["-s", "--sort"], metavar: "SORT",
-                      help: "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, prx, ptx, held]")
+        parser.flag(["-p", "--pps"], help: "display packets per second in totals")
+        parser.flag(["-q", "--queues"], help: "display queue stats")
+        parser.flag(["-z", "--profiling"], help: "display live profiling results")
+        parser.option(["-s", "--sort"], metavar: "SORT", help: sortHelp)
         parser.flag(["-r", "--reverse"], help: "reverse sorting")
         parser.flag(["-j", "--json"], help: "output in JSON format")
         parser.option(["-R"], metavar: "hash",
@@ -139,8 +153,8 @@ public enum RNStatusApp {
     /// like everything else in this port, it's reproduced literally instead.
     public static let helpText: String = """
     usage: rnstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-P] [-l] [-B]
-                    [-t] [-s SORT] [-r] [-j] [-R hash] [-i path] [-w seconds] [-d]
-                    [-D] [-m] [-I seconds] [-v]
+                    [-b] [-t] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash]
+                    [-i path] [-w seconds] [-d] [-D] [-m] [-I seconds] [-v]
                     [filter]
 
     Reticulum Network Stack Status
@@ -157,9 +171,14 @@ public enum RNStatusApp {
       -P, --pr-stats        show path request stats
       -l, --link-stats      show link stats
       -B, --burst           only show interfaces with active bursts
+      -b, --blocked-ips     show blocked IPs per interface
       -t, --totals          display traffic totals
+      -p, --pps             display packets per second in totals
+      -q, --queues          display queue stats
+      -z, --profiling       display live profiling results
       -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
-                            announces, arx, atx, prx, ptx, held]
+                            anns, arx, atx, arxc, atxc, held, prx, ptx, prxc,
+                            ptxc, pvs, ivs, flt, txdrp, txdrb, txbuf]
       -r, --reverse         reverse sorting
       -j, --json            output in JSON format
       -R hash               transport identity hash of remote instance to get
@@ -208,17 +227,22 @@ public enum RNStatusApp {
     // MARK: - Sort keys
 
     /// Accepted `-s` values. Python lowercases the argument and runs a chain of
-    /// independent `if`s (rnstatus.py:362-387); an unrecognized token is silently ignored,
+    /// independent `if`s (rnstatus.py:377-401); an unrecognized token is silently ignored,
     /// which `Sort(rawValue:)` reproduces by returning nil.
     ///
-    /// `bitrate` and `announce` are accepted aliases that the `--help` text doesn't list.
+    /// The cases appear in the order Python tests them. Four are aliases the `--help`
+    /// text leaves out: `bitrate` for `rate`, `announces` for `anns`, and both
+    /// `gravity` and its `g` short form.
     public enum Sort: String, Equatable, CaseIterable {
         case rate, bitrate
         case rx, tx, rxs, txs
         case traffic
-        case announces, announce
-        case arx, atx
-        case prx, ptx
+        case anns, announces
+        case arx, atx, arxc, atxc
+        case prx, ptx, prxc, ptxc
         case held
+        case pvs, ivs, flt
+        case gravity, g
+        case txdrp, txdrb, txbuf
     }
 }

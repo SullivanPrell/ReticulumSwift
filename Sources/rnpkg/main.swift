@@ -16,21 +16,19 @@ let argv = Array(CommandLine.arguments.dropFirst())
 let options: RNSDApp.Options
 do {
     // Python: rnpkg declares no -s and no -i; both are rejected with exit 2.
-    options = try RNSDApp.parse(argv, allowServiceFlags: false)
+    options = try RNSDApp.parse(argv, variant: .rnpkg)
 } catch {
-    writeStderr(RNSDApp.errorText(program: RNSDApp.rnpkgAppName, allowServiceFlags: false, error: error))
+    writeStderr(RNSDApp.errorText(.rnpkg, error: error))
     exit(RNSDApp.ExitCode.argumentError.rawValue)
 }
 
 if options.help {
-    print(RNSDApp.helpText(program: RNSDApp.rnpkgAppName,
-                           description: RNSDApp.rnpkgDescription,
-                           allowServiceFlags: false))
+    print(RNSDApp.helpText(.rnpkg))
     exit(RNSDApp.ExitCode.ok.rawValue)
 }
 
 if options.version {
-    print(RNSDApp.versionText(program: RNSDApp.rnpkgAppName))
+    print(RNSDApp.versionText(.rnpkg))
     exit(RNSDApp.ExitCode.ok.rawValue)
 }
 

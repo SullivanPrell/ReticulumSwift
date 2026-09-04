@@ -20,22 +20,20 @@ let argv = Array(CommandLine.arguments.dropFirst())
 
 let options: RNSDApp.Options
 do {
-    options = try RNSDApp.parse(argv, allowServiceFlags: true)
+    options = try RNSDApp.parse(argv, variant: .rnsd)
 } catch {
     // Python: argparse writes the usage block plus "prog: error: …" to stderr and exits 2.
-    writeStderr(RNSDApp.errorText(program: RNSDApp.appName, allowServiceFlags: true, error: error))
+    writeStderr(RNSDApp.errorText(.rnsd, error: error))
     exit(RNSDApp.ExitCode.argumentError.rawValue)
 }
 
 if options.help {
-    print(RNSDApp.helpText(program: RNSDApp.appName,
-                           description: RNSDApp.description,
-                           allowServiceFlags: true))
+    print(RNSDApp.helpText(.rnsd))
     exit(RNSDApp.ExitCode.ok.rawValue)
 }
 
 if options.version {
-    print(RNSDApp.versionText(program: RNSDApp.appName))
+    print(RNSDApp.versionText(.rnsd))
     exit(RNSDApp.ExitCode.ok.rawValue)
 }
 

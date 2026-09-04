@@ -146,7 +146,7 @@ final class RNStatusRendererTests: XCTestCase {
           + "    Status    : Up\n"
           + "    Mode      : Full\n"
           + "    Rate      : 10.00 Mbps\n"
-          + "    Path Rqs. : 1.2 Hz↑     \n"
+          + "    Path Rqs. : 1.2 Hz↑    \n"
           + "                0.4 Hz↓     \n"
           + "    Traffic   : ↑1.20 MB    0 bps\n"
           + "                ↓3.40 MB    0 bps\n\n")
@@ -436,7 +436,7 @@ final class RNStatusRendererTests: XCTestCase {
           + "    Rate      : 10.00 Mbps\n"
           + "    Queued    : 3 announces\n"
           + "    Held      : 1 announce\n"
-          + "    Announces : 1.0 Hz↑     \n"
+          + "    Announces : 1.0 Hz↑    \n"
           + "                1.0 Hz↓    (t:1m/p:30s/g:5)\n"
           + "    Traffic   : ↑1.20 MB    0 bps\n"
           + "                ↓3.40 MB    0 bps\n\n")
@@ -464,9 +464,9 @@ final class RNStatusRendererTests: XCTestCase {
           + "    Status    : Up\n"
           + "    Mode      : Full\n"
           + "    Rate      : 10.00 Mbps\n"
-          + "    Path Rqs. : ↑1.0 Hz     \n"
+          + "    Path Rqs. : ↑1.0 Hz    \n"
           + "                ↓1.0 Hz     burst for 12.0s\n"
-          + "    Announces : 1.0 Hz↑     \n"
+          + "    Announces : 1.0 Hz↑    \n"
           + "                1.0 Hz↓     burst for 8.0s\n"
           + "    Traffic   : ↑1.20 MB    0 bps\n"
           + "                ↓3.40 MB    0 bps\n\n")
