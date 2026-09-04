@@ -26,8 +26,14 @@ public struct RNStatusRenderer {
         public var linkStats: Bool = false
         /// `-B, --burst`. Python: `burst_filter`.
         public var burstFilter: Bool = false
+        /// `-b, --blocked-ips`. Python: `blocked_ips`.
+        public var blockedIPs: Bool = false
         /// `-t, --totals`. Python: `traffic_totals`.
         public var trafficTotals: Bool = false
+        /// `-p, --pps`. Python: `pps`. Only has an effect together with ``trafficTotals``.
+        public var pps: Bool = false
+        /// `-q, --queues`. Python: `queue_stats`. Independent of ``trafficTotals``.
+        public var queueStats: Bool = false
         /// Positional `filter`. Python: `name_filter`.
         public var nameFilter: String? = nil
         /// `-s, --sort`. Python: `sorting`.
@@ -83,7 +89,7 @@ public struct RNStatusRenderer {
             }
         }
 
-        // Python: rnstatus.py:650-661.
+        // Python: rnstatus.py:717-780.
         if options.trafficTotals {
             var rxbStr = "↓" + RNSUtilities.prettysize(stats.rxb)
             var txbStr = "↑" + RNSUtilities.prettysize(stats.txb)
@@ -93,9 +99,68 @@ public struct RNStatusRenderer {
             } else if difference < 0 {
                 rxbStr += String(repeating: " ", count: -difference)
             }
-            let rxstat = rxbStr + "  " + RNSUtilities.prettyspeed(stats.rxs)
-            let txstat = txbStr + "  " + RNSUtilities.prettyspeed(stats.txs)
+            var rxstat = rxbStr + "  " + RNSUtilities.prettyspeed(stats.rxs)
+            var txstat = txbStr + "  " + RNSUtilities.prettyspeed(stats.txs)
+
+            // The share of the flow that's neither announces nor path requests
+            // (rnstatus.py:727-737). Python's `100.0 - min(100.0, …)` floors the result at
+            // 0 but leaves it at 100 when the denominator is zero.
+            if options.prStats || options.announceStats,
+               stats.has("prxs"), stats.has("ptxs"), stats.has("arxs"), stats.has("atxs") {
+                let parxs = stats.double("prxs") + stats.double("arxs")
+                let patxs = stats.double("ptxs") + stats.double("atxs")
+                let drxpct = stats.rxs != 0 ? 100.0 - min(100.0, (parxs / stats.rxs) * 100.0) : 100.0
+                let dtxpct = stats.txs != 0 ? 100.0 - min(100.0, (patxs / stats.txs) * 100.0) : 100.0
+                if stats.rxs > 0 {
+                    rxstat += ", \(Self.pythonInt(drxpct))% data (\(RNSUtilities.prettyspeed(stats.rxs * (drxpct / 100.0))))"
+                }
+                if stats.txs > 0 {
+                    txstat += ", \(Self.pythonInt(dtxpct))% data (\(RNSUtilities.prettyspeed(stats.txs * (dtxpct / 100.0))))"
+                }
+            }
+
+            // Python: rnstatus.py:739-744. `prettysize(n, suffix: "pps")` and NOT
+            // `prettyspeed`, so the count is never multiplied by eight.
+            if options.pps {
+                rxstat += ", " + RNSUtilities.prettysize(stats.double("rxpps"), suffix: "pps")
+                txstat += ", " + RNSUtilities.prettysize(stats.double("txpps"), suffix: "pps")
+            }
+
             out += "\n Totals       : \(txstat)\n\(RNStatusApp.continuationIndent)\(rxstat)\n"
+
+            if options.prStats, stats.has("prxb"), stats.has("ptxb"), stats.has("prxs"), stats.has("ptxs") {
+                out += Self.aggregateBlock(label: "Path Rqs.", stats: stats,
+                                           rxb: "prxb", txb: "ptxb",
+                                           rxs: "prxs", txs: "ptxs",
+                                           rxf: "prxf", txf: "ptxf")
+            }
+            if options.announceStats, stats.has("arxb"), stats.has("atxb"), stats.has("arxs"), stats.has("atxs") {
+                out += Self.aggregateBlock(label: "Announces", stats: stats,
+                                           rxb: "arxb", txb: "atxb",
+                                           rxs: "arxs", txs: "atxs",
+                                           rxf: "arxf", txf: "atxf")
+            }
+        }
+
+        // Python: rnstatus.py:786-802—OUTSIDE the traffic-totals guard, so `-q` stands alone.
+        //
+        // Python subscripts all ten counters and all five pressures without a presence
+        // test, so a peer that omits any of them makes its own tool raise a KeyError.
+        // Reading them with a zero default renders the same thing for a peer that has them
+        // and something useful instead of a traceback for one that doesn't.
+        if options.queueStats {
+            func line(_ pressure: String, _ label: String, _ depth: String, _ dropped: String) -> String {
+                let drops = stats.int(dropped)
+                let suffix = drops != 0 ? ", \(drops) dropped" : ""
+                return "\(Self.pythonRound(stats.double(pressure) * 100.0, 1))% \(label), \(stats.int(depth)) pkts\(suffix)"
+            }
+            out += "\n Qu. Pressure : \(line("tqpressure", "total", "rxqt", "rxqtd"))\n"
+            for row in [line("dqpressure", "data", "rxqd", "rxqdd"),
+                        line("aqpressure", "announce", "rxqa", "rxqad"),
+                        line("pqpressure", "path request", "rxqp", "rxqpd"),
+                        line("ilqpressure", "ingress limiter", "rxqil", "rxqild")] {
+                out += "\(RNStatusApp.continuationIndent)\(row)\n"
+            }
         }
 
         // Python: rnstatus.py:663-675.
@@ -152,6 +217,13 @@ public struct RNStatusRenderer {
                     // count is always pluralised.
                     text += "\n    Blocked   : \(blocked) IPs"
                 }
+                // Python: rnstatus.py:473-474—appended outside the `blocked_ips > 0`
+                // branch, so a peer reporting a list but a zero count still prints it.
+                if options.blockedIPs, let list = ifstat.raw("blocked_ip_list")?.asArray, !list.isEmpty {
+                    for entry in list {
+                        text += "\n                \(Self.pythonStr(entry))"
+                    }
+                }
                 clientsString = text
             }
         }
@@ -165,7 +237,13 @@ public struct RNStatusRenderer {
         if ifstat.has("ifac_netname"), let netname = ifstat.string("ifac_netname") {
             out += "    Network   : \(netname)\n"
         }
-        out += "    Status    : \(ifstat.isUp ? "Up" : "Down")\n"
+        // Python: `if "gravity" in ifstat and ifstat["gravity"]: ss += ", gravity "+str(...)`
+        // (rnstatus.py:435). The second test is truthiness, so a gravity of 0 adds nothing.
+        var statusString = ifstat.isUp ? "Up" : "Down"
+        if ifstat.has("gravity"), let gravity = ifstat.raw("gravity"), Self.isTruthy(gravity) {
+            statusString += ", gravity " + Self.pythonStr(gravity)
+        }
+        out += "    Status    : \(statusString)\n"
 
         if let clientsString, clients != nil, !clientsString.isEmpty {
             out += "    " + clientsString + "\n"
@@ -177,8 +255,18 @@ public struct RNStatusRenderer {
             out += "    Mode      : \(ifstat.modeDescription)\n"
         }
 
+        // Python: rnstatus.py:495-496. Subscripted without a presence guard, so a payload
+        // that omits txdrp raises there; here an absent key is simply no drops.
+        if let drops = ifstat.int("txdrp"), drops != 0 {
+            out += "    TX Drops  : \(drops) (\(RNSUtilities.prettysize(ifstat.double("txdrb") ?? 0)))\n"
+        }
+
         if ifstat.has("bitrate"), let bitrate = ifstat.double("bitrate") {
-            out += "    Rate      : \(RNStatusApp.speedStr(bitrate))\n"
+            // Python: `f"… {speed_str(bitrate)}, MTU {ifstat['mtu']}"` (rnstatus.py:499)—the
+            // MTU sits bare inside the bitrate guard, so a payload carrying a bitrate but
+            // no mtu raises there. Rendering the rate alone is the graceful reading.
+            let mtu = ifstat.int("mtu").map { ", MTU \($0)" } ?? ""
+            out += "    Rate      : \(RNStatusApp.speedStr(bitrate))\(mtu)\n"
         }
 
         // --- Radio / host telemetry (rnstatus.py:479-519) ---
@@ -344,8 +432,17 @@ public struct RNStatusRenderer {
                 cspec = "p"
             }
             if let count = clients, count > 0 {
-                // Python divides the RAW outgoing frequency here, not the adjusted one.
-                pcStr = "\(frequency(rawOutgoing / Double(count)))/\(cspec)"
+                // Python divides the RAW outgoing frequency here, not the adjusted one—and
+                // the string carries a LEADING space (rnstatus.py:618), which is why every
+                // print site below interpolates it with a single separating space.
+                pcStr = " \(frequency(rawOutgoing / Double(count)))/\(cspec)"
+            }
+            // Python: rnstatus.py:621-626. The guard tests the PATH-REQUEST speed keys
+            // while the body reads the ANNOUNCE ones—reproduced verbatim, because an
+            // interface reporting arxs/atxs but not prxs/ptxs prints no suffix on Python.
+            if ifstat.has("prxs"), ifstat.has("rxs"), ifstat.has("ptxs"), ifstat.has("txs") {
+                let apctstr = "(↓\(Self.flowPercent(ifstat, "arxs", "rxs"))% / ↑\(Self.flowPercent(ifstat, "atxs", "txs"))% of flow)"
+                pcStr = pcStr.isEmpty ? apctstr : "\(pcStr) \(apctstr)"
             }
             asr = true
         }
@@ -370,7 +467,12 @@ public struct RNStatusRenderer {
                 cspec = "p"
             }
             if let count = clients, count > 0 {
-                rpcStr = "\(frequency(rawOutgoing / Double(count)))/\(cspec)"
+                rpcStr = " \(frequency(rawOutgoing / Double(count)))/\(cspec)"
+            }
+            // Python: rnstatus.py:645-651.
+            if ifstat.has("prxs"), ifstat.has("rxs"), ifstat.has("ptxs"), ifstat.has("txs") {
+                let ppctstr = "(↓\(Self.flowPercent(ifstat, "prxs", "rxs"))% / ↑\(Self.flowPercent(ifstat, "ptxs", "txs"))% of flow)"
+                rpcStr = rpcStr.isEmpty ? ppctstr : "\(rpcStr) \(ppctstr)"
             }
             psr = true
         }
@@ -390,14 +492,47 @@ public struct RNStatusRenderer {
         rxbStr += String(repeating: " ", count: mlen - rxbStr.count)
         txbStr += String(repeating: " ", count: mlen - txbStr.count)
 
+        // Python: rnstatus.py:668-673. Both keys must be present, and the line appears
+        // only when at least one counter is non-zero—but it then prints BOTH, so an
+        // interface with IFAC violations alone still renders "0 protocol, 2 IFAC".
+        if ifstat.has("protocol_violations"), ifstat.has("ifac_violations") {
+            let pv = ifstat.int("protocol_violations") ?? 0
+            let iv = ifstat.int("ifac_violations") ?? 0
+            if pv != 0 || iv != 0 {
+                out += "    Violatns. : \(pv) protocol\(iv != 0 ? ", \(iv) IFAC" : "")\n"
+            }
+        }
+
+        // Python: rnstatus.py:675-676.
+        if ifstat.has("packet_filter_hits"), let hits = ifstat.int("packet_filter_hits"), hits != 0 {
+            out += "    Flt. Hits : \(hits)\n"
+        }
+
         // Path Rqs. is printed BEFORE Announces even though the preceding announce block
-        // computed first (rnstatus.py:626-632).
+        // computed first (rnstatus.py:678-692).
+        //
+        // Each block gains a leading "N↓ M↑ total" header line when BOTH lifetime counters
+        // are non-zero; the frequency pair then moves down onto a continuation line.
         if psr {
-            out += "    Path Rqs. : \(opf)  \(rpcStr)\n"
+            let prxc = ifstat.int("prxc") ?? 0
+            let ptxc = ifstat.int("ptxc") ?? 0
+            if prxc != 0, ptxc != 0 {
+                out += "    Path Rqs. : \(prxc)↓ \(ptxc)↑ total\n"
+                out += "\(RNStatusApp.continuationIndent)\(opf) \(rpcStr)\n"
+            } else {
+                out += "    Path Rqs. : \(opf) \(rpcStr)\n"
+            }
             out += "\(RNStatusApp.continuationIndent)\(ipf)  \(pburstStr)\n"
         }
         if asr {
-            out += "    Announces : \(oaf)  \(pcStr)\n"
+            let arxc = ifstat.int("arxc") ?? 0
+            let atxc = ifstat.int("atxc") ?? 0
+            if arxc != 0, atxc != 0 {
+                out += "    Announces : \(arxc)↓ \(atxc)↑ total\n"
+                out += "\(RNStatusApp.continuationIndent)\(oaf) \(pcStr)\n"
+            } else {
+                out += "    Announces : \(oaf) \(pcStr)\n"
+            }
             out += "\(RNStatusApp.continuationIndent)\(iaf) \(artStr)\(burstStr)\n"
         }
 
@@ -505,6 +640,10 @@ public struct RNStatusRenderer {
 
             if !network.isEmpty            { out += "Network   ID : \(network)\n" }
             if !info.transportID.isEmpty   { out += "Transport ID : \(info.transportID)\n" }
+            // Python: rnstatus.py:246, added with the operator address in RNS 1.5.0.
+            if let lxmf = info.operatorLxmfAddress, !lxmf.isEmpty {
+                out += "LXMF address : \(lxmf)\n"
+            }
 
             out += "Name         : \(info.name)\n"
             out += "Type         : \(info.type)\n"
@@ -646,6 +785,55 @@ public struct RNStatusRenderer {
         if value.isNaN { return "nan" }
         if value.isInfinite { return value < 0 ? "-inf" : "inf" }
         return "\(value)"
+    }
+
+    /// Python `int(float)`—truncation toward zero, not rounding.
+    static func pythonInt(_ value: Double) -> Int {
+        guard value.isFinite else { return 0 }
+        return Int(value.rounded(.towardZero))
+    }
+
+    /// One `int(min(100.0, (a/b)*100.0) if b and a else 0.0)` percentage, as Python spells
+    /// it at rnstatus.py:622-623 and :646-647. Both operands are truthiness-tested, so a
+    /// zero numerator yields 0 rather than dividing.
+    static func flowPercent(_ ifstat: RNStatusInterfaceStats, _ numerator: String, _ denominator: String) -> Int {
+        let a = ifstat.double(numerator) ?? 0
+        let b = ifstat.double(denominator) ?? 0
+        guard a != 0, b != 0 else { return 0 }
+        return pythonInt(min(100.0, (a / b) * 100.0))
+    }
+
+    /// The `-t` Path Rqs. / Announces totals block (rnstatus.py:746-780).
+    ///
+    /// Both blocks are the same six lines of arithmetic over a different key prefix, so
+    /// they share one implementation; Python spells them out twice.
+    static func aggregateBlock(label: String, stats: RNStatusStats,
+                               rxb: String, txb: String,
+                               rxs: String, txs: String,
+                               rxf: String, txf: String) -> String {
+        var rxbStr = "↓" + RNSUtilities.prettysize(stats.double(rxb))
+        var txbStr = "↑" + RNSUtilities.prettysize(stats.double(txb))
+        let difference = rxbStr.count - txbStr.count
+        if difference > 0 {
+            txbStr += String(repeating: " ", count: difference)
+        } else if difference < 0 {
+            rxbStr += String(repeating: " ", count: -difference)
+        }
+
+        // The denominators are the whole-instance speeds, not this block's own.
+        func percent(_ key: String, of total: Double) -> Int {
+            let value = stats.double(key)
+            guard total != 0, value != 0 else { return 0 }
+            return pythonInt(min(100.0, (value / total) * 100.0))
+        }
+
+        let rxstat = rxbStr + "  " + RNSUtilities.prettyspeed(stats.double(rxs))
+            + ", \(percent(rxs, of: stats.rxs))% of flow, \(RNSUtilities.prettyfrequency(stats.double(rxf)))"
+        let txstat = txbStr + "  " + RNSUtilities.prettyspeed(stats.double(txs))
+            + ", \(percent(txs, of: stats.txs))% of flow, \(RNSUtilities.prettyfrequency(stats.double(txf)))"
+
+        let padded = label + String(repeating: " ", count: max(0, 13 - label.count))
+        return "\n \(padded): \(txstat)\n\(RNStatusApp.continuationIndent)\(rxstat)\n"
     }
 
     /// Python `str(round(value, digits))`.

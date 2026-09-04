@@ -30,6 +30,49 @@ public enum RNSDApp {
     /// Python: `rnpkg.py:53`.
     public static let rnpkgDescription: String = "Reticulum Meta Package Manager"
 
+    /// Which of the three tools sharing this parser this value names.
+    ///
+    /// They differ along two independent axes—the service flags and `--exampleconfig`—so a
+    /// single boolean could only ever express one of them. It expressed the service flags,
+    /// and `rnir` silently inherited an `--exampleconfig` that `rnir.py:54-58` doesn't
+    /// declare. Carrying the tool itself, rather than a description of one of its
+    /// properties, is what keeps a third axis from repeating that.
+    ///
+    /// | tool    | `-s`/`-i` | `--exampleconfig` |
+    /// |---------|-----------|-------------------|
+    /// | `rnsd`  | yes       | yes               |
+    /// | `rnpkg` | no        | yes               |
+    /// | `rnir`  | no        | no                |
+    public enum Variant: String, CaseIterable, Equatable, Sendable {
+        case rnsd, rnpkg, rnir
+
+        /// `argparse` infers `prog` from `argv[0]`; each tool installs under this name.
+        public var appName: String {
+            switch self {
+            case .rnsd:  return RNSDApp.appName
+            case .rnpkg: return RNSDApp.rnpkgAppName
+            case .rnir:  return RNSDApp.rnirAppName
+            }
+        }
+
+        /// The `ArgumentParser(description=…)` line, printed between the usage and the
+        /// options table. Named `toolDescription` because `description` is already spoken
+        /// for by `CustomStringConvertible`.
+        public var toolDescription: String {
+            switch self {
+            case .rnsd:  return RNSDApp.description
+            case .rnpkg: return RNSDApp.rnpkgDescription
+            case .rnir:  return RNSDApp.rnirDescription
+            }
+        }
+
+        /// `-s/--service` and `-i/--interactive`: `rnsd.py:68-69` only.
+        public var hasServiceFlags: Bool { self == .rnsd }
+
+        /// `--exampleconfig`: `rnsd.py:70` and `rnpkg.py:57`, but not `rnir`.
+        public var hasExampleConfig: Bool { self != .rnir }
+    }
+
     // MARK: - Runtime constants
 
     /// Python: `RNS.logfile = Reticulum.configdir+"/logfile"` (`Reticulum.py:239`).
@@ -160,7 +203,7 @@ public enum RNSDApp {
 
     /// The declaration list, in `argparse` order. `-h/--help` is `argparse`'s implicit one and
     /// is always listed first.
-    static func optionSpecs(allowServiceFlags: Bool) -> [OptionSpec] {
+    static func optionSpecs(_ variant: Variant) -> [OptionSpec] {
         var specs: [OptionSpec] = [
             OptionSpec(names: ["-h", "--help"], kind: .flag,
                        help: "show this help message and exit"),
@@ -170,14 +213,16 @@ public enum RNSDApp {
             OptionSpec(names: ["-v", "--verbose"], kind: .counted, help: nil),
             OptionSpec(names: ["-q", "--quiet"], kind: .counted, help: nil),
         ]
-        if allowServiceFlags {
+        if variant.hasServiceFlags {
             specs.append(OptionSpec(names: ["-s", "--service"], kind: .flag,
                                     help: "rnsd is running as a service and should log to file"))
             specs.append(OptionSpec(names: ["-i", "--interactive"], kind: .flag,
                                     help: "drop into interactive shell after initialisation"))
         }
-        specs.append(OptionSpec(names: ["--exampleconfig"], kind: .flag,
-                                help: "print verbose configuration example to stdout and exit"))
+        if variant.hasExampleConfig {
+            specs.append(OptionSpec(names: ["--exampleconfig"], kind: .flag,
+                                    help: "print verbose configuration example to stdout and exit"))
+        }
         specs.append(OptionSpec(names: ["--version"], kind: .flag,
                                 help: "show program's version number and exit"))
         return specs
@@ -186,12 +231,10 @@ public enum RNSDApp {
     /// The shared parser configured with this tool's declarations.
     ///
     /// Note the returned parser's own ``ArgumentParser/usage`` is *not* `argparse`-shaped—use
-    /// ``helpText(program:description:allowServiceFlags:)`` for that.
-    public static func parser(program: String,
-                              description: String,
-                              allowServiceFlags: Bool) -> ArgumentParser {
-        var parser = ArgumentParser(program: program, overview: description)
-        for spec in optionSpecs(allowServiceFlags: allowServiceFlags) {
+    /// ``helpText(_:)`` for that.
+    public static func parser(_ variant: Variant) -> ArgumentParser {
+        var parser = ArgumentParser(program: variant.appName, overview: variant.toolDescription)
+        for spec in optionSpecs(variant) {
             if spec.names.contains("-h") { continue }   // ArgumentParser injects -h/--help itself
             switch spec.kind {
             case .flag:
@@ -209,14 +252,14 @@ public enum RNSDApp {
 
     /// Parse argv (**without** the executable name) into ``Options``.
     ///
-    /// - Parameter allowServiceFlags: `true` for `rnsd`; `false` for `rnir`/`rnpkg`, which do
-    ///   not declare `-s` or `-i` and reject them as unrecognized arguments (exit 2).
-    public static func parse(_ argv: [String], allowServiceFlags: Bool) throws -> Options {
-        let specs = optionSpecs(allowServiceFlags: allowServiceFlags)
+    /// - Parameter variant: which tool this parse serves. An option that tool doesn't
+    ///   declare draws an unrecognized-argument error (exit 2), the way `argparse` answers
+    ///   one.
+    public static func parse(_ argv: [String], variant: Variant) throws -> Options {
+        let specs = optionSpecs(variant)
         let normalised = try normalise(argv, specs: specs)
 
-        let argumentParser = parser(program: appName, description: description,
-                                    allowServiceFlags: allowServiceFlags)
+        let argumentParser = parser(variant)
 
         let parsed: ParsedArguments
         do {
@@ -243,9 +286,9 @@ public enum RNSDApp {
         return Options(configDir: configDir,
                        verbose: parsed.count("--verbose"),
                        quiet: parsed.count("--quiet"),
-                       service: allowServiceFlags && parsed.flag("--service"),
-                       interactive: allowServiceFlags && parsed.flag("--interactive"),
-                       exampleConfig: parsed.flag("--exampleconfig"),
+                       service: variant.hasServiceFlags && parsed.flag("--service"),
+                       interactive: variant.hasServiceFlags && parsed.flag("--interactive"),
+                       exampleConfig: variant.hasExampleConfig && parsed.flag("--exampleconfig"),
                        version: parsed.flag("--version"),
                        help: parsed.wantsHelp)
     }
@@ -345,10 +388,11 @@ public enum RNSDApp {
     ///
     /// `argparse` fills greedily to ``helpWidth`` and indents continuation lines to
     /// `len("usage: ") + len(prog) + 1`, which for `rnsd` is 12 columns.
-    public static func usageText(program: String, allowServiceFlags: Bool) -> String {
+    public static func usageText(_ variant: Variant) -> String {
         let prefix = "usage: "
+        let program = variant.appName
         let indent = String(repeating: " ", count: prefix.count + program.count + 1)
-        let parts = [program] + optionSpecs(allowServiceFlags: allowServiceFlags).map(\.usagePart)
+        let parts = [program] + optionSpecs(variant).map(\.usagePart)
 
         var lines: [String] = []
         var current: [String] = []
@@ -380,10 +424,8 @@ public enum RNSDApp {
     ///
     /// Python 3.10 and newer print `options:`; 3.9 and older print `optional arguments:`.
     /// The 3.10+ spelling is the target.
-    public static func helpText(program: String,
-                                description: String,
-                                allowServiceFlags: Bool) -> String {
-        let specs = optionSpecs(allowServiceFlags: allowServiceFlags)
+    public static func helpText(_ variant: Variant) -> String {
+        let specs = optionSpecs(variant)
         let invocations = specs.map(\.invocation)
         let actionMaxLength = (invocations.map(\.count).max() ?? 0) + 2   // + current_indent
         let helpPosition = min(actionMaxLength + 2, 24)
@@ -391,9 +433,9 @@ public enum RNSDApp {
         let helpTextWidth = max(helpWidth - helpPosition, 11)
 
         var lines: [String] = []
-        lines.append(usageText(program: program, allowServiceFlags: allowServiceFlags))
+        lines.append(usageText(variant))
         lines.append("")
-        lines.append(description)
+        lines.append(variant.toolDescription)
         lines.append("")
         lines.append("options:")
 
@@ -425,21 +467,24 @@ public enum RNSDApp {
     /// Python emits `RNS.__version__` (1.4.0). The Swift port emits ``Reticulum/version``—the
     /// port's own release—for consistency with the RetiOS About screen.
     /// ``Reticulum/rnsProtocolVersion`` carries the RNS release this build matches.
+    public static func versionText(_ variant: Variant, version: String = Reticulum.version) -> String {
+        versionText(program: variant.appName, version: version)
+    }
+
     public static func versionText(program: String, version: String = Reticulum.version) -> String {
         "\(program) \(version)"
     }
 
     /// The `argparse` error page, without a trailing newline: the usage block, then
     /// `prog: error: message`. Written to stderr; exit code 2.
-    public static func errorText(program: String, allowServiceFlags: Bool, error: Error) -> String {
+    public static func errorText(_ variant: Variant, error: Error) -> String {
         let message: String
         if let argumentError = error as? ArgumentError {
             message = argumentError.description
         } else {
             message = "\(error)"
         }
-        return usageText(program: program, allowServiceFlags: allowServiceFlags)
-            + "\n\(program): error: \(message)"
+        return usageText(variant) + "\n\(variant.appName): error: \(message)"
     }
 
     /// Greedy word wrap, matching `textwrap.wrap` for the single-space, no-hyphenation case

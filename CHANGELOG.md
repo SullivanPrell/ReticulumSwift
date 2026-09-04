@@ -3,6 +3,68 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.14.0]—The `rnstatus` and `rnir` command surfaces at RNS 1.5.2
+
+1.13.0 taught the daemon to publish the traffic aggregates a Python `rnstatus` reads. This
+release is the other half: the client that renders them, and the flags that ask for them.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2. These are the `rnstatus` and `rnir` parts of
+RNS 1.5.2, not the whole release—the traffic-class queues, the path-request gate and the
+`Reticulum.py` changes are still outstanding.
+
+### `rnir` no longer advertises an option the real tool rejects
+
+`rnsd`, `rnpkg` and `rnir` share one option table, gated by a single `allowServiceFlags`
+boolean. That boolean described one of two independent axes: `rnsd` takes `-s`/`-i` and
+`--exampleconfig`, `rnpkg` takes only `--exampleconfig`, and `rnir` (`rnir.py:54-58`) takes
+neither. The port gave `rnir` an `--exampleconfig` that the real tool rejects.
+
+An `RNSDApp.Variant` enum now carries each tool's whole identity, so a third axis can't
+repeat the mistake. A string substitution had produced the `rnpkg` help expectation from the
+`rnir` one, so it could never have caught this. Both are literal captures now.
+
+### `rnstatus` gains `-b`, `-p`, `-q` and `-z`
+
+- `-b, --blocked-ips` lists the blocked addresses a `BackboneInterface` server reports,
+  under the `Blocked` count that already printed.
+- `-p, --pps` appends the packet rates to both `-t` totals lines.
+- `-q, --queues` prints the five `Qu. Pressure` rows: total, data, announce, path request,
+  and ingress limiter. Each row carries a depth and a drop count.
+- `-z, --profiling` parses. This port instruments nothing, so it prints nothing—the same
+  output an uninstrumented Python daemon gives, because `RNS.Profiler.ran()` is false there
+  too. The RPC server answers the `profiling_results` verb explicitly rather than letting it
+  reach the unknown-verb warning.
+
+The `--sort` vocabulary was twelve keys short: `arxc`, `atxc`, `prxc`, `ptxc`, `pvs`, `ivs`,
+`flt`, `gravity` (and its `g` alias), `txdrp`, `txdrb` and `txbuf`, plus `anns` alongside
+`announces`. It also accepted `announce`, which Python has never had—`-s announce` sorted
+here and left the order untouched there. This release removes that alias.
+
+### The per-interface block was missing six of its lines
+
+Against RNS 1.5.2 the port dropped `TX Drops`, `Violatns.`, `Flt. Hits`, the `, MTU n`
+suffix on `Rate`, the `, gravity n` suffix on `Status`, and the `n↓ m↑ total` header that
+`Path Rqs.` and `Announces` grow once both lifetime counters are non-zero. The `-t` totals
+block was missing the `% data` share, and the whole `Path Rqs.`/`Announces` aggregate
+blocks under `-P` and `-A`. The `-d`/`-D` details never rendered `LXMF address`.
+
+Two of these carried a hazard worth naming. Python builds `pc_str` and `rpc_str` with a
+**leading** space and interpolates them with one more. The port dropped the leading space
+and compensated with a second literal space at each print site. The two errors cancelled
+while the string was always non-empty, and the announce and path-request percentage
+suffixes introduced here are the case where it isn't. The strings now carry the leading
+space, every print site uses one separator, and this release corrects the three goldens
+that had recorded the extra space.
+
+The other is a copy-and-paste in Python worth reproducing rather than fixing. Python guards
+the announce `% of flow` suffix on the **path-request** speed keys while its body reads the
+announce ones (`rnstatus.py:621-626`). An interface reporting `arxs` but not `prxs` prints
+no suffix on Python, and now prints none here.
+
+Where Python subscripts a stats key without a presence test, the port reads it with a zero
+default. `rnstatus -q` against a peer that predates these counters renders zeros here and
+raises a `KeyError` there.
+
 ## [1.13.0]—Traffic aggregates a Python `rnstatus` reads without asking
 
 `Reticulum.get_interface_stats()` publishes thirty-one top-level fields this port never
