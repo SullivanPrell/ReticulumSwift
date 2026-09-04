@@ -3,6 +3,87 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.17.0]—The rest of the protocol-violation sites, and three upstream never reaches
+
+1.16.0 landed the announce violation. This release finishes the survey of the other six
+sites in `Transport.py`: three land here, and three stay out with the reason recorded.
+Reading them also turned up a counter that isn't about violations at all: this port
+counted path requests on arrival rather than when the node acted on one.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2. As in 1.16.0, none of this is a 1.5.x
+delta. These are pre-existing divergences that reading 1.5.2's transport surfaced.
+
+### A tagless path request counts a violation
+
+A path request carries a destination hash and a tag, and the tag is what distinguishes one
+request from a replay of itself. Without it, nothing can deduplicate a request, so upstream
+refuses to act on it and charges the sender
+`protocol_violation("Tagless path request")` (`Transport.py:1838-1840`). This port dropped
+the frame silently.
+
+The two lengths on either side of that boundary are one byte apart and upstream treats
+them differently: a body too short to hold a destination hash returns earlier and costs
+nothing (`:1830`). Both boundaries now have a test.
+
+### An oversized path request tag counts a violation
+
+Upstream truncates a tag longer than the hash length and counts
+`protocol_violation("Excessive path request tag size")` (`:1843-1845`). This port
+truncated and said nothing. The truncation is the part that matters for correctness—keyed
+on untruncated bytes, a sender defeats deduplication for free by varying a tail nothing
+reads—and this port already did it. The counter is the only trace a peer trying leaves behind.
+
+### The path-request counter counts requests this node acted on
+
+`received_path_request(size=…)` sits below the length guard, both tag checks, and the
+duplicate check (`:1857`). This port called it on the opening line of the handler, so the
+path-request columns described path-request-shaped frames that arrived. On any interface
+seeing replays that's a different number: a request repeated ten times moved the counter
+ten times and provoked one lookup. Same shape as the announce counter in 1.16.0, same fix.
+
+### A transport node no longer relays link traffic before validation
+
+A link-table entry appears when a transport node relays a link request, and becomes
+validated only once that node verifies the responder's proof. Upstream refuses to carry
+traffic before that and counts
+`protocol_violation("Link packet received before link validation")`
+(`Transport.py:2124-2128`). This port had no such gate: it relayed on any route it held.
+
+Anyone can create the half-open entry, because pushing a link request through a transport
+node takes no credential. A node that then carries traffic on the resulting route forwards
+packets for a link that may never complete.
+
+Upstream's condition exempts ANNOUNCE, LINKREQUEST and link-request proofs (`:2122`), and
+only the proof reaches this path. A test pins the exemption.
+
+Adding the gate also exposed an ordering assumption worth recording. This port marked a
+route validated on the line after it relayed the proof, matching upstream's line order.
+Upstream can afford that order because its transmit leaves through a socket, so the
+initiator's answer arrives on a later pass. An in-process interface calls straight through:
+the initiator receives the proof and answers with a link RTT packet *inside* the forward,
+and that reply reached the new gate before the flag landed. Five relayed-link test
+classes broke. The flag now goes up before the transmit—the verification it records has happened
+either way, since the signature check precedes both.
+
+### Three upstream counters stay unported
+
+Each of these is reachable in upstream only through behaviour this port doesn't share, so
+porting the counter would charge peers for frames that are fine.
+
+* **Undecodable path MTU** (`:2086`, `:2563`). Upstream reaches these through
+  `min()` raising on a `None`, which happens because it hands the raw field around before
+  decoding it. This port decodes at the boundary and has no such value to trip over. The
+  violation would only ever fire on a peer that had done nothing wrong.
+* **Announce without a random blob** (`:2218`). Unreachable: anything arriving here has
+  already passed a signature gate that requires at least 148 bytes, which is more than
+  enough to contain the blob.
+* **Invalid tunnel synthesis packet** (`:2808-2810`). Fires from the handler's `except`,
+  and once the frame length matches nothing inside can raise. `load_public_key` swallows
+  its own exception, and neither X25519 nor Ed25519 rejects a 32-byte value at
+  construction—Ed25519 defers point decoding to verification time. CryptoKit agrees, so
+  degenerate key bytes load, fail verification, and go unremarked on both sides. A test
+  pins that silence.
+
 ## [1.16.0]—Announce admission runs in upstream's order
 
 The announce counter, the blackhole list and the protocol-violation counter all hang off
