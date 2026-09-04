@@ -7,19 +7,19 @@ import XCTest
 /// Both are wire-visible: a 1.5.x peer now *drops* frames this port previously accepted and
 /// forwarded, and refuses to originate a packet whose hop count already sits at the pathfinder
 /// limit. Without them the port keeps admitting frames the rest of the network has agreed are
-/// malformed, and keeps emitting packets every 1.5.x peer will discard on receipt.
+/// malformed, and keeps emitting packets every 1.5.x peer discards on receipt.
 final class PacketProtocolViolationTests: XCTestCase {
 
     // MARK: - Frame construction
     //
-    // Built byte-by-byte rather than through `pack()`, because `pack()` cannot produce these
-    // frames — that is the point. A HEADER_1 frame is
+    // Built byte-by-byte rather than through `pack()`, because `pack()` can't produce these
+    // frames—that's the point. A HEADER_1 frame is
     //   [0] flags, [1] hops, [2..17] destination hash, [18] context, [19...] data
     // so a 19-byte frame is structurally complete with a zero-length data field.
 
     private static let dstLen = Constants.truncatedHashLength
 
-    /// Flags byte for a plain HEADER_1 / BROADCAST / SINGLE / DATA packet — the shape that
+    /// Flags byte for a plain HEADER_1 / BROADCAST / SINGLE / DATA packet—the shape that
     /// carries application payloads, so the shape an attacker would truncate.
     private static let header1DataFlags: UInt8 = 0x00
 
@@ -55,7 +55,7 @@ final class PacketProtocolViolationTests: XCTestCase {
 
     func testAHeader2FrameWithAZeroLengthDataFieldIsRejected() {
         // HEADER_2 sets bit 6 of the flags byte and carries a transport ID before the
-        // destination hash — the relayed shape, which is exactly what a transport node forwards.
+        // destination hash—the relayed shape, which is exactly what a transport node forwards.
         let raw = frame(flags: 0x40,
                         transportID: Data(repeating: 0xCD, count: Self.dstLen),
                         data: Data())
@@ -79,7 +79,7 @@ final class PacketProtocolViolationTests: XCTestCase {
     func testAHeader2FrameTruncatedInsideItsTransportIDIsRejected() {
         // Flags claim HEADER_2, so the parser expects transport ID + destination hash + context
         // + data. Supply one byte less than two full hashes and the transport ID or destination
-        // hash cannot both be whole.
+        // hash can't both be whole.
         var raw = Data([0x40, 0x00])
         raw.append(Data(repeating: 0xCD, count: Self.dstLen))
         raw.append(Data(repeating: 0xAB, count: Self.dstLen - 1))
@@ -138,7 +138,7 @@ final class PacketProtocolViolationTests: XCTestCase {
                        """)
     }
 
-    /// Records what reached the wire, so the assertions above are about transmission rather
+    /// Records what reached the wire, so the preceding assertions are about transmission rather
     /// than about an internal flag. Same shape as the doubles in the announce-forwarding tests.
     private final class RecordingInterface: Interface {
         var name: String

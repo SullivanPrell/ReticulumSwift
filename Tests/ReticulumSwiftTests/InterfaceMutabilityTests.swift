@@ -1,18 +1,18 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `bugs/025` — Python mutates interface attributes at runtime; this port declared them
+/// `bugs/025`—Python mutates interface attributes at runtime; this port declared them
 /// `{ get }`-only with blanket extension defaults, so a parsed config value has nowhere to be
-/// written. Adding the missing config parser fixes none of them, because `iface.mode = …` does not
+/// written. Adding the missing config parser fixes none of them, because `iface.mode = …` doesn't
 /// compile for `any Interface`.
 ///
 /// Python assigns all of these per interface at `RNS/Reticulum.py:900-941` (the `__apply_config`
 /// interface branch) and `:1092-1130` (`_add_interface`).
 ///
 /// Every assertion here runs over `InterfaceConformers.everyConcreteInterface()` rather than a
-/// test double. That is deliberate: the mode-dependent Transport tests pass today because their
+/// test double. That's deliberate: the mode-dependent Transport tests pass today because their
 /// mock declares its own stored `mode`, while no *real* interface can be anything but `.full`.
-/// **A test double that can do something the real type cannot is not a test of the real type.**
+/// **A test double that can do something the real type can't isn't a test of the real type.**
 final class InterfaceMutabilityTests: XCTestCase {
 
     /// Python: `interface.mode = …` (`Reticulum.py:910`). Every mode alias in
@@ -66,7 +66,7 @@ final class InterfaceMutabilityTests: XCTestCase {
         }
     }
 
-    /// Python: `interface.bitrate = …` (`Reticulum.py:1092-1130`), and it is copied onto every
+    /// Python: `interface.bitrate = …` (`Reticulum.py:1092-1130`), and it's copied onto every
     /// spawned sub-interface (`TCPInterface.py:594-641`).
     func testBitrateIsSettableOnEveryInterface() throws {
         for iface in try InterfaceConformers.everyConcreteInterface() {
@@ -78,8 +78,8 @@ final class InterfaceMutabilityTests: XCTestCase {
 
     /// The no-op-setter half of the same defect, and arguably the worse half: these are declared
     /// `{ get set }` but the `Interface` extension supplies `set { }` (`Interface.swift:281-309`),
-    /// so on any type that does not override them the assignment **compiles and is silently
-    /// discarded**. `bootstrapOnly` is stored by 2 of 19 conformers, so 17 of them accept the
+    /// so on any type that doesn't override them the assignment **compiles and is silently
+    /// discarded**. Only 2 of 19 conformers store `bootstrapOnly`, so 17 of them accept the
     /// write and drop it.
     func testDeclaredSettablePropertiesActuallyStoreTheirValue() throws {
         for iface in try InterfaceConformers.everyConcreteInterface() {
@@ -118,7 +118,7 @@ final class InterfaceMutabilityTests: XCTestCase {
     /// If wrong, IFAC-protected LoRa/serial links between Swift and Python drop 100% of traffic
     /// while reporting Up.
     ///
-    /// `BLEMeshInterface` has no Python counterpart; it is a low-bandwidth radio interface and
+    /// `BLEMeshInterface` has no Python counterpart; it's a low-bandwidth radio interface and
     /// already declared 8 deliberately, so it belongs with the radio family.
     func testDefaultIfacSizeIsPerInterfaceClass() throws {
         let expectEight: Set<String> = [

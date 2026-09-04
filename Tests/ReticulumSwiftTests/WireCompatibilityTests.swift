@@ -8,7 +8,7 @@ final class WireCompatibilityTests: XCTestCase {
     // MARK: - Packet context values
 
     func testContextValues() {
-        // Python: Packet.NONE = 0x00, RESOURCE = 0x01, etc.
+        // Python: Packet.NONE = 0x00, RESOURCE = 0x01, and so on
         XCTAssertEqual(Packet.Context.none.rawValue, 0x00)
         XCTAssertEqual(Packet.Context.resource.rawValue, 0x01)
         XCTAssertEqual(Packet.Context.resourceAdvertisement.rawValue, 0x02)

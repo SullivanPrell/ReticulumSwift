@@ -13,8 +13,8 @@ import XCTest
 /// This port implemented `shouldIngressLimitPR` in full, tested it, and then never called it:
 /// the only ingress-limit call site was the announce one. So a peer could emit path requests
 /// for unknown destinations as fast as it liked and every one of them was amplified onto all
-/// other interfaces. The gate predates 1.5.x — 1.5.1 only added `ingress_limited` as a second
-/// way to arm it — but it lands here because the burst state machine it consumes is what this
+/// other interfaces. The gate predates 1.5.x—1.5.1 only added `ingress_limited` as a second
+/// way to arm it—but it lands here because the burst state machine it consumes is what this
 /// pass rebuilt.
 final class PathRequestIngressLimitTests: XCTestCase {
 
@@ -35,7 +35,7 @@ final class PathRequestIngressLimitTests: XCTestCase {
         func send(_ packet: Packet) throws { sent.append(packet) }
     }
 
-    /// `target || requestor transport id || tag` — the three-field body shape
+    /// `target || requestor transport id || tag`—the three-field body shape
     /// `path_request_handler` parses (`Transport.py:3391-3402`).
     private func request(for target: Data, on t: Transport, tag: Data) -> Packet {
         Packet(destinationType: .plain, packetType: .data,
@@ -48,8 +48,8 @@ final class PathRequestIngressLimitTests: XCTestCase {
     }
 
     /// Fill the incoming path-request deque with a full deque's worth of samples inside the
-    /// last half-second of *real* time, so that the limiter — which reads the wall clock —
-    /// sees a burst well above threshold.
+    /// last half-second of *real* time, so that the limiter—which reads the wall clock—observes
+    /// a burst well above threshold.
     private func floodPathRequests(_ t: Transport, on iface: any Interface) {
         let start = Date().timeIntervalSince1970 - 0.5
         for i in 0..<InterfaceFreqTracker.maxSamples {
@@ -99,7 +99,7 @@ final class PathRequestIngressLimitTests: XCTestCase {
     func testTheGateOnlySuppressesDiscoveryNotAKnownAnswer() throws {
         // Python evaluates `should_ingress_limit` at the top of `path_request` but consumes it
         // only inside the `should_search_for_unknown` branch. A node that can answer from its
-        // own path table still answers while limited — the limit is on amplification, not on
+        // own path table still answers while limited—the limit is on amplification, not on
         // being useful.
         let (t, ingress, egress) = makePair()
         let identity = Identity()
@@ -135,7 +135,7 @@ final class PathRequestIngressLimitTests: XCTestCase {
     // MARK: - Tag truncation (`Transport.py:1843`)
 
     func testTagsDifferingOnlyPastTheSixteenthByteAreOneRequest() {
-        // `if len(tag_bytes) > TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]` — the
+        // `if len(tag_bytes) > TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`—the
         // dedup key is built from the truncated tag. Keying on the untruncated bytes lets a
         // sender defeat deduplication for free by varying a tail Python never reads, turning
         // one path request into as many fan-outs as it cares to send.

@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for Announce wire format validation — with and without ratchets.
+/// Tests for Announce wire format validation—with and without ratchets.
 final class AnnounceValidationTests: XCTestCase {
 
     func testValidateSimpleAnnounce() throws {

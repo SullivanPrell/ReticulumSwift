@@ -7,8 +7,8 @@ import Foundation
 ///
 /// Each configured peer (a `.b32.i2p` address or full base64 destination)
 /// becomes a separate `I2PInterfacePeer` that dials out through the daemon's
-/// SAM bridge and registers with Transport as its own routing endpoint —
-/// the parent interface itself never transmits (Python: `process_outgoing:
+/// SAM bridge and registers with Transport as its own routing endpoint—the
+/// parent interface itself never transmits (Python: `process_outgoing:
 /// pass`). Packets are HDLC-framed (same as BackboneInterface/TCPInterface).
 public final class I2PInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
@@ -33,7 +33,7 @@ public final class I2PInterface: Interface {
 
     // MARK: - Traffic counters
     //
-    // The parent interface performs no I/O of its own — every byte moves
+    // The parent interface performs no I/O of its own—every byte moves
     // through a dialed (`peerInterfaces`) or accepted (`spawned`) peer, and
     // each peer keeps its own lock-guarded counters. These were previously
     // plain stored properties that nothing ever incremented, so the I2P row
@@ -76,7 +76,7 @@ public final class I2PInterface: Interface {
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
     public var rawInboundHandler: ((Data, any Interface) -> Void)?   = nil
 
-    /// The parent interface never routes packets itself — its dialed peers
+    /// The parent interface never routes packets itself—its dialed peers
     /// are the routing endpoints (mirrors Python, where the parent's
     /// `process_outgoing` is a no-op and `OUT = False`).
     public var isRoutingEndpoint: Bool { false }
@@ -102,7 +102,7 @@ public final class I2PInterface: Interface {
     public var samSocketFactory: (() -> SAMSocket)?
 
     /// Called when a dialed peer comes online. Transport wires this to
-    /// `register(interface:)` — mirroring `TCPServerInterface.onClientConnected`.
+    /// `register(interface:)`—mirroring `TCPServerInterface.onClientConnected`.
     public var onPeerConnected:    ((any Interface) -> Void)?
     /// Called when a dialed peer drops offline; Transport deregisters it.
     public var onPeerDisconnected: ((any Interface) -> Void)?
@@ -127,7 +127,7 @@ public final class I2PInterface: Interface {
     // MARK: - Init
 
     /// - Parameters:
-    ///   - name:          Interface name (e.g. `"I2P"`)
+    ///   - name:          Interface name (for example, `"I2P"`)
     ///   - daemon:        Daemon providing the SAM bridge (embedded or external).
     ///   - dataDirectory: Directory for i2pd router data.
     ///   - connectable:   Whether to accept incoming I2P connections.
@@ -147,8 +147,8 @@ public final class I2PInterface: Interface {
     // MARK: - Interface lifecycle
 
     /// Start the embedded i2pd daemon and dial all configured peers.
-    /// Python: `I2PInterface.__init__` peer loop —
-    /// `interface_name = self.name + " to " + peer_addr`.
+    /// Python: `I2PInterface.__init__` peer loop—`interface_name
+    /// = self.name + " to " + peer_addr`.
     public func start() throws {
         try daemon.start(dataDirectory: dataDir)
         isOnline = true
@@ -192,7 +192,7 @@ public final class I2PInterface: Interface {
 
     // MARK: - Packet send
 
-    /// The parent is not a routing endpoint; Transport routes through the
+    /// The parent isn't a routing endpoint; Transport routes through the
     /// individual peers. Kept as a broadcast for API compatibility.
     public func send(_ packet: Packet) throws {
         lock.lock(); let all = peerInterfaces + spawned; lock.unlock()
@@ -205,9 +205,9 @@ public final class I2PInterface: Interface {
         // Inbound (accepted) peers inherit routing preference from the parent
         // just like the outbound ones spawned in `start()`.
         //
-        // Nothing in the library calls this yet — the SAM `STREAM ACCEPT`
-        // inbound-listen path is not implemented, so today only tests reach it.
-        // The assignment belongs here rather than at the future call site: it is
+        // Nothing in the library calls this yet—the SAM `STREAM ACCEPT`
+        // inbound-listen path isn't implemented, so today only tests reach it.
+        // The assignment belongs here rather than at the future call site: it's
         // the parent that knows its own gravity, and an inbound peer that routes
         // without it would quietly ignore the operator's path preference.
         peer.gravity = gravity

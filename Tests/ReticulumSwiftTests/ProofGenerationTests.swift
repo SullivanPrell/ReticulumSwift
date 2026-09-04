@@ -70,7 +70,7 @@ final class ProofGenerationTests: XCTestCase {
         let receipt = try tA.send(packet)
         XCTAssertNotNil(receipt)
 
-        // Wait a little; proof should NOT arrive.
+        // Wait a little; proof shouldn't arrive.
         let noProof = XCTestExpectation(description: "no proof expected")
         noProof.isInverted = true
         receipt?.onDelivery = { _ in noProof.fulfill() }

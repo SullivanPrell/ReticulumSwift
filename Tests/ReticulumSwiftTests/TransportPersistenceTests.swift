@@ -28,14 +28,14 @@ final class TransportPersistenceTests: XCTestCase {
         try rns1.start()
 
         // A persisted path records its interface's hash and is dropped on load when nothing
-        // matches (`bugs/027`, D6), so the same interface is registered on both runs — which is
+        // matches (`bugs/027`, D6), so the same interface is registered on both runs—which is
         // what a real daemon does when it rebuilds interfaces from one config file.
         let iface1 = LoopbackInterface(name: "test0")
         rns1.transport.register(interface: iface1)
 
         // A real destination with its announce in the cache: the reference's entry references
-        // that announce and discards any entry whose announce it cannot load
-        // (`Transport.py:334-345`), so a synthetic destination hash is not a persistable path.
+        // that announce and discards any entry whose announce it can't load
+        // (`Transport.py:334-345`), so a synthetic destination hash isn't a persistable path.
         let (destHash, _, _) = try installPersistablePath(on: rns1.transport,
                                                           through: iface1,
                                                           hops: 2,
@@ -127,7 +127,7 @@ final class TransportPersistenceTests: XCTestCase {
                       "packet hash must survive stop/start cycle")
     }
 
-    // MARK: - Expired paths are NOT restored
+    // MARK: - Expired paths aren't restored
 
     func testExpiredPathsNotRestoredOnStart() throws {
         let dir = try makeTmpDir(tag: "expired")
@@ -136,8 +136,8 @@ final class TransportPersistenceTests: XCTestCase {
 
         // The interface is registered on **both** runs on purpose. Since `bugs/027` a path whose
         // stored interface hash resolves to nothing is dropped on load, so without this the
-        // assertion below would pass for that reason instead of for expiry — the test would stop
-        // testing what it is named for. A live path with the same setup is asserted alongside it
+        // assertion below would pass for that reason instead of for expiry—the test would stop
+        // testing what it's named for. A live path with the same setup is asserted alongside it
         // to keep that honest.
         let iface1 = LoopbackInterface(name: "old0")
         rns1.transport.register(interface: iface1)

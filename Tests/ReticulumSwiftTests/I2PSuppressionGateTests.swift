@@ -1,17 +1,17 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `bugs/022` — the non-connectable-I2P suppression gate, driven from a **real** `I2PInterface`.
+/// `bugs/022`—the non-connectable-I2P suppression gate, driven from a **real** `I2PInterface`.
 ///
 /// `RNStatusStats.shouldHide` is a faithful port of `rnstatus.py:393-403` and its own tests pass
 /// (`RNStatusStatsTests.swift:115-123`). They pass against a hand-built stats dict whose `name`
-/// they set to `"I2PInterface[x]"` — the string the gate keys on. Meanwhile the production path
+/// they set to `"I2PInterface[x]"`—the string the gate keys on. Meanwhile the production path
 /// published `I2PInterface.displayName == name`, so a real interface named `"I2P"` produced the
 /// row name `"I2P"`, the prefix never matched, and the gate was **dead**: it proved its own
 /// predicate while suppressing nothing.
 ///
 /// So this suite never names a row. It registers the interface, builds the payload the way the
-/// daemon does, and asserts on what `rnstatus` renders — which is the only place the defect was
+/// daemon does, and asserts on what `rnstatus` renders—which is the only place the defect was
 /// observable.
 final class I2PSuppressionGateTests: XCTestCase {
 
@@ -31,7 +31,7 @@ final class I2PSuppressionGateTests: XCTestCase {
     }
 
     /// `rnstatus.py:403` re-applies the non-connectable-I2P test *outside* the `dispall` guard,
-    /// so `-a` does not reveal the row.
+    /// so `-a` doesn't reveal the row.
     func testNonConnectableI2PRowIsHiddenIncludingUnderShowAll() {
         let transport = Transport()
         transport.transportIdentity = Identity()

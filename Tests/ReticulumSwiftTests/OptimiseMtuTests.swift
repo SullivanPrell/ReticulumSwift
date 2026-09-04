@@ -1,14 +1,14 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Python recomputes `HW_MTU` from the bitrate on every autoconfiguring interface —
-/// `optimise_mtu()` (`Interface.py:205-217`), called unconditionally after the configured
+/// Python recomputes `HW_MTU` from the bitrate on every autoconfiguring interface—`optimise_mtu()`
+/// (`Interface.py:205-217`), called unconditionally after the configured
 /// bitrate lands (`Reticulum.py:914-915`) and on each spawned server-side client
 /// (`TCPInterface.py:612-613`). The class attributes (262144 for TCP, 1048576 for Backbone)
 /// never survive Python startup: a TCP interface runs at 8192 (bitrate guess 10e6) and a
-/// dialing backbone at 16384 (guess 100e6). The port kept the class constants as `let`s —
-/// the audit's structural class of a runtime-mutated Python attribute frozen at `{ get }` —
-/// so Swift's LINKREQUEST MTU signalling advertised 262144/1048576 where Python advertises
+/// dialing backbone at 16384 (guess 100e6). The port kept the class constants as `let`s—the
+/// audit's structural class of a runtime-mutated Python attribute frozen at `{ get }`—so
+/// Swift's LINKREQUEST MTU signalling advertised 262144/1048576 where Python advertises
 /// 8192/16384 in the identical topology.
 final class OptimiseMtuTests: XCTestCase {
 
@@ -56,7 +56,7 @@ final class OptimiseMtuTests: XCTestCase {
     // MARK: - The ladder itself
 
     /// Every rung, both boundary sides, exactly `Interface.py:207-217`. RNS 1.5.1 made every
-    /// rung inclusive — through 1.4.2 only the top one was `>=` and the other nine were `>`,
+    /// rung inclusive—through 1.4.2 only the top one was `>=` and the other nine were `>`,
     /// so each boundary bitrate fell one rung lower than it does now. Everything strictly
     /// below 62 500 bit/s still has no hardware MTU at all.
     func testTheLadderMatchesThePythonRungs() {
@@ -67,8 +67,8 @@ final class OptimiseMtuTests: XCTestCase {
             (750_000_000, 262_144),     // boundary: was 131_072 under 1.4.2's `>`
             (400_000_000, 131_072),     // boundary: was 65_536
             (200_000_000, 65_536),      // boundary: was 32_768
-            (100_000_000, 32_768),      // boundary: was 16_384 — the dialing-backbone guess
-            (10_000_000, 16_384),       // boundary: was 8_192 — the TCP guess
+            (100_000_000, 32_768),      // boundary: was 16_384—the dialing-backbone guess
+            (10_000_000, 16_384),       // boundary: was 8_192—the TCP guess
             (5_000_000, 8_192),         // boundary: was 4_096
             (2_000_000, 4_096),         // boundary: was 2_048
             (1_000_000, 2_048),         // boundary: was 1_024
@@ -159,7 +159,7 @@ final class OptimiseMtuTests: XCTestCase {
     // MARK: - Structural guard
 
     /// `autoconfigureMtu == true` promises the MTU follows the bitrate; a type that says so
-    /// without a settable `hwMtu` makes `optimiseMtu()` a silent no-op — the exact `{ get }`-only
+    /// without a settable `hwMtu` makes `optimiseMtu()` a silent no-op—the exact `{ get }`-only
     /// freeze this fix removes. Constructed through the same config machinery the daemon uses,
     /// so a new interface type joins this list by being constructible, not by being remembered.
     func testEveryAutoconfiguringTypeHasASettableMtu() throws {
@@ -196,7 +196,7 @@ final class OptimiseMtuTests: XCTestCase {
                           "\(iface.displayName) claims autoconfigureMtu but its hwMtu is not "
                           + "settable — optimiseMtu() cannot write it and the claim is inert")
         }
-        // And the local pair, which the config path does not build.
+        // And the local pair, which the config path doesn't build.
         XCTAssertTrue(LocalInterface(name: "l", port: 0) is MtuAutoconfiguringInterface)
         XCTAssertTrue(PosixTCPServer(name: "ls", port: 0) is MtuAutoconfiguringInterface)
     }

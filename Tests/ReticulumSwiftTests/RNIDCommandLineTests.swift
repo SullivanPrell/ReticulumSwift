@@ -4,7 +4,7 @@ import XCTest
 /// Tests for `rnid`'s command-line surface: flag spellings, `nargs` semantics,
 /// `validate_args` and the generated help text.
 ///
-/// Python reference: RNS/Utilities/rnid.py — the `argparse` block (:106-153) and
+/// Python reference: RNS/Utilities/rnid.py—the `argparse` block (:106-153) and
 /// `validate_args` (:86-102).
 final class RNIDCommandLineTests: XCTestCase {
 
@@ -100,7 +100,7 @@ final class RNIDCommandLineTests: XCTestCase {
     // MARK: - op_requires_identity
 
     /// `args.hash` and `args.validate` are deliberately ABSENT from Python's
-    /// `op_requires_identity`, which is why they are dispatched with `identity or
+    /// `op_requires_identity`, which is why they're dispatched with `identity or
     /// args.identity` and must work with an unresolved bare hex string.
     func testHashAndValidateDoNotRequireAnIdentity() throws {
         XCTAssertFalse(try RNIDCommandLine.parse(["-H", "rns.id"]).operationRequiresIdentity)
@@ -162,7 +162,7 @@ final class RNIDCommandLineTests: XCTestCase {
         XCTAssertEqual(RNIDApp.splitAspects("a..b"), ["a", "", "b"])
     }
 
-    /// The existing library helper is explicitly the WRONG tool here — asserted so nobody
+    /// The existing library helper is explicitly the WRONG tool here—asserted so nobody
     /// refactors `-a`/`-H` back onto it.
     func testDestinationAppAndAspectsCollapsesEmptyComponents() {
         let collapsed = Destination.appAndAspects(fromFullName: "rns.")

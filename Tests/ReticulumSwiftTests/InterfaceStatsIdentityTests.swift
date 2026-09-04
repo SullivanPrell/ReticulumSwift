@@ -6,8 +6,8 @@ import XCTest
 ///
 /// Python builds them as `type(interface).__name__` and `str(interface.name)`
 /// (RNS/Reticulum.py:1425-1427). Deriving `type` reflectively in Swift publishes the Swift
-/// class name, which for the two shared-instance interfaces is not what Python calls them —
-/// so a Python `rnstatus -d` against a Swift daemon shows an interface kind that does not
+/// class name, which for the two shared-instance interfaces isn't what Python calls them—so
+/// a Python `rnstatus -d` against a Swift daemon shows an interface kind that doesn't
 /// exist in RNS.
 ///
 /// Caught by pointing the real Python `rnstatus -j` at a Swift `rnsd`: it reported
@@ -24,7 +24,7 @@ final class InterfaceStatsIdentityTests: XCTestCase {
 
     func testSharedInstanceServerPublishesPythonsShortName() {
         // Python: `self.name = "Reticulum"` (LocalInterface.py:391) while __str__ stays
-        // "Shared Instance[<port>]" — the two are deliberately different strings.
+        // "Shared Instance[<port>]"—the two are deliberately different strings.
         let server = PosixTCPServer(name: "Shared Instance", port: 37428)
         XCTAssertEqual(server.statsShortName, "Reticulum")
         XCTAssertEqual(server.displayName, "Shared Instance[37428]")

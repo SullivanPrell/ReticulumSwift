@@ -4,7 +4,7 @@ import XCTest
 /// Tests for Transport's discovery + blackhole-updater lifecycle methods.
 ///
 /// Mirrors Python's Transport.enable_discovery(), Transport.discover_interfaces(),
-/// and Transport.enable_blackhole_updater() — see RNS/Transport.py lines 449–463.
+/// and Transport.enable_blackhole_updater()—see RNS/Transport.py lines 449–463.
 final class TransportDiscoveryIntegrationTests: XCTestCase {
 
     var transport: Transport!
@@ -70,9 +70,9 @@ final class TransportDiscoveryIntegrationTests: XCTestCase {
         let info = makeBackboneInfo()
         transport.discoveryHandler?.interfaceDiscovered(info)
 
-        // discoveryHandler.interfaceDiscovered persists the entry but does NOT invoke the callback —
-        // the callback is wired to the InterfaceAnnounceHandler, which calls interfaceDiscovered
-        // and then the callback. Here we verify the callback closure was stored on the announce handler.
+        // discoveryHandler.interfaceDiscovered persists the entry but doesn't invoke the callback—the
+        // callback is wired to the InterfaceAnnounceHandler, which calls interfaceDiscovered
+        // and then the callback. This test verifies the callback closure landed on the announce handler.
         XCTAssertNotNil(transport.discoveryAnnounceHandler?.callback,
                         "Announce handler callback must be non-nil after discoverInterfaces with callback")
     }
@@ -151,7 +151,7 @@ final class TransportDiscoveryIntegrationTests: XCTestCase {
     // MARK: - listDiscoveredInterfaces delegate
 
     func testListDiscoveredInterfacesEmptyWhenNoHandler() {
-        // No discoveryHandler — must return [] not crash.
+        // No discoveryHandler—must return [] not crash.
         let result = transport.listDiscoveredInterfaces()
         XCTAssertTrue(result.isEmpty,
                       "listDiscoveredInterfaces must return [] when discoveryHandler is nil")
@@ -163,7 +163,7 @@ final class TransportDiscoveryIntegrationTests: XCTestCase {
         transport.discoverInterfaces(storagePath: dir, stampValidator: validator)
 
         let result = transport.listDiscoveredInterfaces()
-        // No interfaces stored yet — still [] but no crash.
+        // No interfaces stored yet—still [] but no crash.
         XCTAssertTrue(result.isEmpty)
     }
 

@@ -5,7 +5,7 @@ import Darwin
 import Glibc
 #endif
 
-/// Client for the RNS instance-control RPC channel — the counterpart of ``RPCServer``.
+/// Client for the RNS instance-control RPC channel—the counterpart of ``RPCServer``.
 ///
 /// Python reference: `RNS/Reticulum.py`, `get_rpc_client()` and every accessor guarded by
 /// `if self.is_connected_to_shared_instance:` (`get_interface_stats`, `get_path_table`,
@@ -22,7 +22,7 @@ import Glibc
 /// MsgPack-encoded response → close. Every frame is a 4-byte big-endian length followed
 /// by that many bytes, matching CPython's `send_bytes` / `recv_bytes`.
 ///
-/// Calls are blocking, which is what a command-line utility wants. Do not call this from
+/// Calls are blocking, which is what a command-line utility wants. Don't call this from
 /// a UI thread.
 public final class RPCClient {
 
@@ -44,7 +44,7 @@ public final class RPCClient {
     /// - Parameters:
     ///   - host: control-socket host. Python only ever binds `127.0.0.1`.
     ///   - port: control-socket port (`instance_control_port` in the config file).
-    ///   - authkey: shared secret — see ``authkey(storagePath:)``.
+    ///   - authkey: shared secret—see ``authkey(storagePath:)``.
     ///   - timeout: per-operation socket timeout in seconds.
     public init(host: String = "127.0.0.1",
                 port: UInt16 = RPCClient.defaultControlPort,
@@ -89,7 +89,7 @@ public final class RPCClient {
     ///
     /// Python decides this by *trying to become* the shared instance and falling back to
     /// client mode when the bind fails (`Reticulum.__start_local_interface`). A utility
-    /// that only wants to read status does not want to bind anything, so it probes instead.
+    /// that only wants to read status doesn't want to bind anything, so it probes instead.
     public static func isSharedInstanceRunning(host: String = "127.0.0.1",
                                                port: UInt16 = RPCClient.defaultSharedInstancePort,
                                                timeout: TimeInterval = 1) -> Bool {
@@ -102,7 +102,7 @@ public final class RPCClient {
 
     /// Perform one RPC call and return the decoded response.
     ///
-    /// - Parameter request: the request dict, e.g. `.map([(.string("get"), .string("path_table"))])`.
+    /// - Parameter request: the request dict, for example, `.map([(.string("get"), .string("path_table"))])`.
     public func call(_ request: MsgPack.Value) throws -> MsgPack.Value {
         let fd = try RPCClient.openSocket(host: host, port: port, timeout: timeout)
         defer { close(fd) }
@@ -190,7 +190,7 @@ public final class RPCClient {
         try get("packet_q", extra: [("packet_hash", .bytes(packetHash))]).asDouble
     }
 
-    /// Python: `get_blackholed_identities()` — the whole `Transport.blackholed_identities`
+    /// Python: `get_blackholed_identities()`—the whole `Transport.blackholed_identities`
     /// dict, keyed by identity hash, each value carrying `source`, `until` and `reason`.
     public func blackholedIdentities() throws -> [Data: Transport.BlackholeEntry] {
         guard case .map(let pairs) = try get("blackholed_identities") else { return [:] }
@@ -215,13 +215,13 @@ public final class RPCClient {
         return false
     }
 
-    /// Python: `drop_path(destination_hash)` — returns whether a path was actually removed.
+    /// Python: `drop_path(destination_hash)`—returns whether a path was actually removed.
     @discardableResult
     public func dropPath(destinationHash: Data) throws -> Bool {
         try drop("path", extra: [("destination_hash", .bytes(destinationHash))]).asBool ?? false
     }
 
-    /// Python: `drop_all_via(transport_hash)` — returns the number of paths dropped.
+    /// Python: `drop_all_via(transport_hash)`—returns the number of paths dropped.
     @discardableResult
     public func dropAllVia(transportHash: Data) throws -> Int {
         try drop("all_via", extra: [("destination_hash", .bytes(transportHash))]).asInt ?? 0
@@ -247,7 +247,7 @@ public final class RPCClient {
 
     // MARK: - Handshake
 
-    /// Run CPython's mutual authentication: answer the peer's challenge, then issue our own.
+    /// Run CPython's mutual authentication: answer the peer's challenge, then issue a local one.
     ///
     /// Python `multiprocessing.connection.Client`:
     /// ```
@@ -375,15 +375,15 @@ public final class RPCClient {
 public enum RPCClientError: Error, CustomStringConvertible {
     /// No `transport_identity` in the given storage directory, so no auth key can be derived.
     case noInstanceIdentity(URL)
-    /// Could not open a TCP connection to the control socket.
+    /// Couldn't open a TCP connection to the control socket.
     case connectionFailed(String, UInt16)
     /// The peer closed the connection mid-exchange.
     case connectionClosed
-    /// The peer's greeting did not follow the `multiprocessing.connection` protocol.
+    /// The peer's greeting didn't follow the `multiprocessing.connection` protocol.
     case handshakeFailed(String)
-    /// The shared secret did not match — usually a different instance's storage directory.
+    /// The shared secret didn't match—usually a different instance's storage directory.
     case authenticationFailed
-    /// The response was not decodable.
+    /// The response wasn't decodable.
     case malformedResponse(String)
 
     public var description: String {

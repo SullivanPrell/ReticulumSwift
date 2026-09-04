@@ -1,11 +1,11 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// What a daemon does when the state it finds is not state it can use.
+/// What a daemon does when the state it finds isn't state it can use.
 ///
 /// The reference's answer is always the same: start with that structure empty, log it, continue
 /// (`Identity.py:238-240`, `Transport.py:243`, `:357-359`). `bugs/029` adopts it verbatim,
-/// including for the port's *own* earlier formats — a reader for those would be
+/// including for the port's *own* earlier formats—a reader for those would be
 /// implementation-specific code on the exact seam this capability exists to make
 /// implementation-independent, and the reference has no counterpart to it. The old files are
 /// orphans: not read, not deleted, documented as safe to remove.
@@ -104,7 +104,7 @@ final class StorageStartupTests: XCTestCase {
     // MARK: - Damaged files
 
     /// `except Exception … "Could not load destination table from storage"` and continue
-    /// (`Transport.py:357-359`) — a truncated table costs the path table, not the daemon.
+    /// (`Transport.py:357-359`)—a truncated table costs the path table, not the daemon.
     func testTruncatedTableDoesNotPreventStart() throws {
         // A well-formed table, then cut mid-entry.
         let seed = Reticulum(configuration: .init(storagePath: dir))

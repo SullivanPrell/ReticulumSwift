@@ -58,7 +58,7 @@ public enum HDLC {
 
         public init() {}
 
-        /// Discard any partially-received frame.
+        /// Discard any partially received frame.
         ///
         /// Called when the underlying connection is replaced: Python allocates a fresh
         /// read buffer per socket, so a half-decoded frame from the previous session must
@@ -74,7 +74,7 @@ public enum HDLC {
         /// `TCPInterface.check_frame_len` / read-loop (RNS 1.3.9, commit a5ed0a43)
         /// are applied:
         ///  - a completed frame longer than `hwMtu + ifacSize` is dropped
-        ///    (oversized frames that the interface cannot legitimately carry);
+        ///    (oversized frames that the interface can't legitimately carry);
         ///  - an in-frame buffer that grows past `2 * hwMtu` without a closing
         ///    FLAG is discarded, bounding memory against an unterminated/garbage
         ///    partial frame.
@@ -90,7 +90,7 @@ public enum HDLC {
                         if !buffer.isEmpty {
                             let frame = HDLC.unescape(buffer)
                             if let hwMtu, frame.count > hwMtu + ifacSize {
-                                // Oversized frame — drop it (Python check_frame_len
+                                // Oversized frame—drop it (Python check_frame_len
                                 // upper bound). Small frames are still emitted and
                                 // rejected downstream by Packet.unpack.
                             } else {

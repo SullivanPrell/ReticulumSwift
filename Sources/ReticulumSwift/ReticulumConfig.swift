@@ -25,8 +25,8 @@ public struct ReticulumConfig {
     public var logging: LoggingSection = .init()
     public var interfaces: [InterfaceConfig] = []
 
-    /// `"<section>.<key>"` for every key in a recognised top-level section that no branch
-    /// matched — i.e. every key this parser silently discarded.
+    /// `"<section>.<key>"` for every key in a recognized top-level section that no branch
+    /// matched—that is, every key this parser silently discarded.
     ///
     /// `bugs/030`. The parser's `default: break` is invisible from the outside: a key it does
     /// not know is indistinguishable from a key it read and applied, which is how the port
@@ -34,7 +34,7 @@ public struct ReticulumConfig {
     /// "the parser reads this key" an assertable fact rather than an assumption, and gives a
     /// daemon something to warn about when an operator misspells a directive.
     ///
-    /// Interface subsections are not included: they keep every key verbatim in
+    /// Interface subsections aren't included: they keep every key verbatim in
     /// ``InterfaceConfig/parameters``, so nothing is discarded at parse time there.
     public private(set) var unrecognisedKeys: [String] = []
 
@@ -47,7 +47,7 @@ public struct ReticulumConfig {
         /// Mirrors Python's `static_transport_identity = No` (RNS 1.3.7).
         public var staticTransportIdentity: Bool = false
         /// When true, this instance obfuscates the hop count of packets that
-        /// originate locally (its own traffic and directly-connected local
+        /// originate locally (its own traffic and directly connected local
         /// clients) by replacing `hops == 0` with a random per-session delta
         /// when injecting them into the wider network. Privacy hardening for
         /// shared/transport instances. Mirrors Python's `local_hops_delta = No`.
@@ -112,12 +112,12 @@ public struct ReticulumConfig {
         /// Mirrors Python's `autoconnect_announces_to_internal` (RNS 1.4.1).
         public var autoconnectAnnouncesToInternal: Bool? = nil
 
-        // MARK: - `bugs/030` — the rest of the section
+        // MARK: - `bugs/030`—the rest of the section
         //
         // Everything below was emitted by this port's own config templates, or read by the
         // reference, and parsed by nothing. Each is `nil` when the key is absent, so an
         // unconfigured option keeps the built-in default rather than overwriting it with a zero
-        // — which is how Python's `if option ==` chain behaves.
+        //—which is how Python's `if option ==` chain behaves.
 
         /// Shared-instance RPC authentication key, as raw bytes.
         /// Mirrors Python's `rpc_key` (`Reticulum.py:494-499`), specified in hexadecimal.
@@ -147,7 +147,7 @@ public struct ReticulumConfig {
         /// Mirrors Python's `force_shared_instance_bitrate` (`Reticulum.py:560-562`).
         public var forceSharedInstanceBitrate: Int? = nil
 
-        /// Announce-rate defaults applied to any interface that does not set its own, and only
+        /// Announce-rate defaults applied to any interface that doesn't set its own, and only
         /// when transport is enabled (`Reticulum.py:854-857`, accessors at `:1146-1152`).
         /// Python maps a configured `0` target to "no target" (`:643-645`).
         public var defaultArTarget: Int? = nil
@@ -188,16 +188,16 @@ public struct ReticulumConfig {
         public var type: String
         public var enabled: Bool
         /// All raw key-value pairs from the subsection (for type-specific
-        /// parameters like `target_host`, `target_port`, etc.).
+        /// parameters like `target_host`, `target_port`, and so on).
         public var parameters: [String: String]
 
-        /// Explicit rather than relying on the memberwise initialiser, which a `public struct`
+        /// Explicit rather than relying on the memberwise initializer, which a `public struct`
         /// only exposes internally.
         ///
         /// A caller outside this module needs to build one: `Reticulum
         /// .applyInterfaceConfiguration(to:from:)` and `applyIfacConfiguration(to:from:)` take a
-        /// block, and the interfaces RetiOS constructs in code have no config file to come from —
-        /// so without this they could not reach the parser at all, which is the shape of
+        /// block, and the interfaces RetiOS constructs in code have no config file to come from—so
+        /// without this they couldn't reach the parser at all, which is the shape of
         /// `bugs/015` (the API exists; nothing outside can call it).
         public init(name: String, type: String, enabled: Bool, parameters: [String: String]) {
             self.name = name
@@ -213,7 +213,7 @@ public struct ReticulumConfig {
         /// Python reads as floats (`Reticulum.py:791-813`).
         public func double(_ key: String) -> Double? { parameters[key].flatMap(Double.init) }
 
-        /// Nested `[[[sub]]]` blocks — configobj's third section level, which
+        /// Nested `[[[sub]]]` blocks—configobj's third section level, which
         /// `RNodeMultiInterface` reads as its per-radio rows (`RNodeMultiInterface.py:169-218`).
         /// Before these existed, a `[[[sub]]]` line satisfied the parser's `[[` / `]]` checks
         /// and every radio row became a *top-level* interface named `[sub]` with type Unknown.
@@ -221,7 +221,7 @@ public struct ReticulumConfig {
 
         /// True when this block's enabled state came from the literal `enabled` key.
         /// RNodeMulti sub-interface gating inherits **only** that spelling
-        /// (`RNodeMultiInterface.py:178`): a parent enabled via `interface_enabled` does not
+        /// (`RNodeMultiInterface.py:178`): a parent enabled via `interface_enabled` doesn't
         /// blanket-enable its subs.
         public var enabledViaEnabledKey: Bool = false
 
@@ -245,7 +245,7 @@ public struct ReticulumConfig {
 
     // MARK: - Parsing
 
-    /// Parse a config file at `url`. Returns `nil` if the file cannot be read.
+    /// Parse a config file at `url`. Returns `nil` if the file can't be read.
     public static func load(from url: URL) -> ReticulumConfig? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return parse(text)
@@ -297,7 +297,7 @@ public struct ReticulumConfig {
                 .trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
 
-            // [[[Sub-block]]] — must be tested before `[[`, which its brackets also satisfy;
+            // [[[Sub-block]]]—must be tested before `[[`, which its brackets also satisfy;
             // that precedence inversion is what leaked RNodeMulti radio rows out as top-level
             // interfaces named `[sub]`.
             if line.hasPrefix("[[[") && line.hasSuffix("]]]") {
@@ -320,7 +320,7 @@ public struct ReticulumConfig {
 
             // [Top-level section]
             if line.hasPrefix("[") && line.hasSuffix("]") {
-                // Flush pending interface if we're leaving [interfaces].
+                // Flush pending interface when leaving [interfaces].
                 if currentSection == "interfaces" { flushInterface() }
                 currentSection = String(line.dropFirst().dropLast())
                     .trimmingCharacters(in: .whitespaces)
@@ -405,7 +405,7 @@ public struct ReticulumConfig {
                     if let n = Int(value) { cfg.reticulum.defaultGravity = n }
                 case "autoconnect_interface_mode":
                     // Python only assigns when the string matched a known mode,
-                    // so an unrecognised value leaves the default in place.
+                    // so an unrecognized value leaves the default in place.
                     if let m = InterfaceMode(configName: value) {
                         cfg.reticulum.autoconnectInterfaceMode = m
                     }
@@ -414,7 +414,7 @@ public struct ReticulumConfig {
                 case "autoconnect_announces_to_internal":
                     if let b = parseBool(value), b { cfg.reticulum.autoconnectAnnouncesToInternal = true }
 
-                // MARK: `bugs/030` — keys the templates advertised and nothing read
+                // MARK: `bugs/030`—keys the templates advertised and nothing read
 
                 case "rpc_key":
                     // Python logs and falls back to the derived key on a malformed value
@@ -436,14 +436,14 @@ public struct ReticulumConfig {
                 case "link_mtu_discovery":
                     // Divergence from the reference, recorded rather than replicated: Python
                     // assigns only on `True` (`Reticulum.py:537-539`) against a class default of
-                    // `LINK_MTU_DISCOVERY = True` (`:105`), so `link_mtu_discovery = no` cannot
+                    // `LINK_MTU_DISCOVERY = True` (`:105`), so `link_mtu_discovery = no` can't
                     // disable anything there. Every neighbouring option in the same chain
                     // (`use_implicit_proof`, `discover_interfaces`, `publish_blackhole`) assigns
-                    // both directions, so this reads as a slip rather than a decision — and the
+                    // both directions, so this reads as a slip rather than a decision—and the
                     // `interface-configuration` spec requires the key to be able to disable
                     // discovery. Honoured both ways here. Purely local policy: declining to raise
                     // a link's MTU is a case the negotiation already handles, so no peer can tell
-                    // this apart from a node that simply did not offer a larger MTU.
+                    // this apart from a node that simply didn't offer a larger MTU.
                     if let b = parseBool(value) { cfg.reticulum.linkMtuDiscovery = b }
                 case "force_shared_instance_bitrate":
                     if let n = Int(value) { cfg.reticulum.forceSharedInstanceBitrate = n }
@@ -508,7 +508,7 @@ public struct ReticulumConfig {
 
     /// The default configuration file content, written when no config exists.
     ///
-    /// Python: `RNS/Reticulum.py:1818+`, `__default_rns_config__` — written by
+    /// Python: `RNS/Reticulum.py:1818+`, `__default_rns_config__`—written by
     /// `__create_default_config()` on a first run. The byte-exact transcription lives in
     /// ``RNSConfigTemplates/defaultConfig``, next to its SHA-256 regression test.
     /// Previously this was a 17-line abridgement, so a config directory created by

@@ -51,7 +51,7 @@ public enum KISS {
     public static let cmdError:       UInt8 = 0x90
     public static let cmdUnknown:     UInt8 = 0xFE
 
-    // MARK: – KISS TNC protocol aliases (KISSInterface / AX25KISSInterface)
+    // MARK:–KISS TNC protocol aliases (KISSInterface / AX25KISSInterface)
     // 0x01–0x06 overlap with RNode radio cmd bytes; semantics differ per interface type.
     public static let cmdTxDelay:     UInt8 = 0x01   // == cmdFrequency in RNode context
     public static let cmdP:           UInt8 = 0x02   // == cmdBandwidth in RNode context
@@ -67,9 +67,9 @@ public enum KISS {
     /// CMD_INTERFACES: detect response lists hardware interface types
     public static let cmdInterfaces:  UInt8 = 0x71
 
-    /// Incoming data command bytes — one per sub-interface channel
+    /// Incoming data command bytes—one per sub-interface channel
     /// (command byte in KISS frame that carries data FROM a specific channel)
-    public static let cmdInt0Data:  UInt8 = 0x00   // same as cmdData — channel 0
+    public static let cmdInt0Data:  UInt8 = 0x00   // same as cmdData—channel 0
     public static let cmdInt1Data:  UInt8 = 0x10
     public static let cmdInt2Data:  UInt8 = 0x20
     public static let cmdInt3Data:  UInt8 = 0x70
@@ -128,7 +128,7 @@ public enum KISS {
     public static let platformESP32: UInt8 = 0x80
     public static let platformNRF52: UInt8 = 0x70
 
-    // MARK: – KISS escape / frame helpers
+    // MARK:–KISS escape / frame helpers
 
     public static func escape(_ data: Data) -> Data {
         var out = Data()
@@ -156,12 +156,12 @@ public enum KISS {
     /// Equivalent to `frameData(data)` with `CMD_DATA`.
     public static func frame(_ data: Data) -> Data { frameData(data) }
 
-    // MARK: – Frame decoder
+    // MARK:–Frame decoder
 
     /// Stateful KISS frame decoder.
     ///
     /// Feed raw bytes as they arrive; receive `(command, payload)` pairs as
-    /// frames complete.  The command byte is the first byte inside each frame
+    /// frames complete. The command byte is the first byte inside each frame
     /// (after the opening FEND); the payload is everything that follows.
     ///
     /// Used by `RNodeInterface`, `RNodeMultiInterface`, `KISSInterface`, and
@@ -184,7 +184,7 @@ public enum KISS {
             var frames: [(UInt8, Data)] = []
             for byte in bytes {
                 if buffer.count > FrameDecoder.maxFrameBytes {
-                    // Runaway/unterminated frame — discard and resynchronise.
+                    // Runaway/unterminated frame—discard and resynchronize.
                     buffer.removeAll(keepingCapacity: false)
                     inFrame = false
                     pendingEscape = false
@@ -224,8 +224,8 @@ public enum KISS {
 
 // MARK: - RNodeInterface
 
-/// KISS-framed interface to an RNode LoRa modem.  The byte-stream backing
-/// it (USB-serial, CoreBluetooth Nordic UART, TCP, etc.) is supplied by the
+/// KISS-framed interface to an RNode LoRa modem. The byte-stream backing
+/// it (USB-serial, CoreBluetooth Nordic UART, TCP, and so on) comes from the
 /// host application as an `RNodeTransport`. This file owns KISS framing and
 /// the full RNode configuration / telemetry command set.
 public final class RNodeInterface: Interface {
@@ -239,7 +239,7 @@ public final class RNodeInterface: Interface {
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
 
-    // MARK: – Class constants (Python: RNodeInterface.XXXX)
+    // MARK:–Class constants (Python: RNodeInterface.XXXX)
 
     public static let hwMtuValue:       Int    = 508
     public static let freqMin:          UInt32 = 137_000_000
@@ -258,7 +258,7 @@ public final class RNodeInterface: Interface {
     public static let batteryStateCharging:    UInt8 = 0x02
     public static let batteryStateCharged:     UInt8 = 0x03
 
-    // MARK: – Interface protocol
+    // MARK:–Interface protocol
 
     public let name:   String
     public var hwMtu:  Int?    { Self.hwMtuValue }
@@ -275,20 +275,20 @@ public final class RNodeInterface: Interface {
     public var ifacIdentity: Identity?
     public var ifacKey:      Data?
     /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
-    /// `ifac_size` is given. Python declares 8 for the RNode family — `RNodeInterface.py:110`,
-    /// `RNodeMultiInterface.py:137` — where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
+    /// `ifac_size` is given. Python declares 8 for the RNode family—`RNodeInterface.py:110`,
+    /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
     /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
     /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
     public static let defaultIfacSize: Int = 8
 
     public var ifacSize:     Int = RNodeInterface.defaultIfacSize
 
-    // MARK: – Transport
+    // MARK:–Transport
 
     public weak var transport: RNodeTransport?
     private let decoder = KISS.FrameDecoder()
 
-    // MARK: – Configured radio parameters (what we want)
+    // MARK:–Configured radio parameters (the requested values)
 
     public var frequency:  UInt32 = 0
     public var bandwidth:  UInt32 = 0
@@ -299,7 +299,7 @@ public final class RNodeInterface: Interface {
     public var stAlock:    Double? = nil
     public var ltAlock:    Double? = nil
 
-    // MARK: – Reported (echoed) radio parameters (what the device says it has)
+    // MARK:–Reported (echoed) radio parameters (what the device says it has)
 
     public var rFrequency: UInt32? = nil
     public var rBandwidth: UInt32? = nil
@@ -311,7 +311,7 @@ public final class RNodeInterface: Interface {
     public var rStAlock:   Double? = nil
     public var rLtAlock:   Double? = nil
 
-    // MARK: – Firmware / hardware info
+    // MARK:–Firmware / hardware info
 
     public var majVersion:  UInt8 = 0
     public var minVersion:  UInt8 = 0
@@ -321,7 +321,7 @@ public final class RNodeInterface: Interface {
     public var mcu:         UInt8? = nil
     public var hwErrors:    [UInt8] = []
 
-    // MARK: – Telemetry
+    // MARK:–Telemetry
 
     public var rStatRx:    UInt32? = nil
     public var rStatTx:    UInt32? = nil
@@ -352,7 +352,7 @@ public final class RNodeInterface: Interface {
     public var rBatteryPercent: UInt8 = 0
     public var rTemperature:    Int?  = nil
 
-    // MARK: – Flow control / TX queue
+    // MARK:–Flow control / TX queue
 
     /// Python starts this `False` (`RNodeInterface.py:297`) and raises it only after a
     /// validated bring-up (`:459`); defaulting it true was half of the missing online gate.
@@ -360,14 +360,14 @@ public final class RNodeInterface: Interface {
     public var flowControl:    Bool  = false
     public var packetQueue:    [Data] = []
 
-    // MARK: – Station identification (`id_callsign` / `id_interval`)
+    // MARK:–Station identification (`id_callsign` / `id_interval`)
 
     /// Encoded callsign transmitted for station identification, or nil when not configured.
     /// Python: `self.id_callsign = id_callsign.encode("utf-8")` (`RNodeInterface.py:336`).
     public var idCallsign: Data? = nil
     /// Seconds after the first transmission at which the callsign goes out.
-    /// Python: `self.id_interval` (`:337`). Set together with `idCallsign` or not at all —
-    /// the reference treats a lone half of the pair as no configuration (`:333`, `:342-343`).
+    /// Python: `self.id_interval` (`:337`). Set together with `idCallsign` or not at all—the
+    /// reference treats a lone half of the pair as no configuration (`:333`, `:342-343`).
     public var idInterval: TimeInterval? = nil
     /// When the first non-ID transmission since the last ID happened; nil right after an ID.
     /// Python: `self.first_tx` (`process_outgoing`, `:1018-1023`).
@@ -377,7 +377,7 @@ public final class RNodeInterface: Interface {
     /// Python's callsign length gate (`RNodeInterface.py:334`, `CALLSIGN_MAX_LEN`).
     public static let callsignMaxLength = 32
 
-    // MARK: – Init
+    // MARK:–Init
 
     /// Keeps a factory-created transport alive: `transport` is `weak` (an application usually
     /// owns its BLE controller), but a transport minted by `InterfaceTransportFactories` for a
@@ -391,7 +391,7 @@ public final class RNodeInterface: Interface {
         transport.byteHandler = { [weak self] data in self?.handleIncoming(data) }
     }
 
-    // MARK: – Interface lifecycle
+    // MARK:–Interface lifecycle
 
     /// Bound on the wait for the device's detect response. Python polls 5 s over TCP/BLE
     /// (`RNodeInterface.py:434-442`) and sleeps a fixed 0.2 s on serial (`:444`); this port's
@@ -405,7 +405,7 @@ public final class RNodeInterface: Interface {
     public var validateTimeout: TimeInterval = 1.5
 
     /// Seconds between redial attempts after device loss; overridable for tests. Python's
-    /// reconnect loop hardcodes `time.sleep(5)` (`RNodeInterface.py:1178`) — the class
+    /// reconnect loop hardcodes `time.sleep(5)` (`RNodeInterface.py:1178`)—the class
     /// `reconnectWait` constant records the reference value, this carries the live one.
     public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeInterface.reconnectWait)
     private let reconnector = TransportReconnector()
@@ -415,27 +415,27 @@ public final class RNodeInterface: Interface {
     /// **Never the caller's thread.** The bring-up waits for bytes the transport delivers, and
     /// the port's real BLE transport delivers them on the *same* serial queue its owner calls
     /// `start()` from (`RNodeScannerController` hands `CBCentralManager` one queue and calls
-    /// `start()` from `onGATTReady`, which arrives on it). Blocking there waits for work it is
-    /// itself preventing: the detect response cannot be delivered until the wait gives up. A
-    /// queue this interface owns cannot be the delivery queue of any transport, so waiting on it
+    /// `start()` from `onGATTReady`, which arrives on it). Blocking there waits for work it's
+    /// itself preventing: the detect response can't be delivered until the wait gives up. A
+    /// queue this interface owns can't be the delivery queue of any transport, so waiting on it
     /// is always safe.
     private let bringUpQueue = DispatchQueue(label: "ReticulumSwift.RNodeInterface.bringUp")
 
-    /// Signalled when a bring-up reaches a terminal outcome — online, or failed and closed.
+    /// Signalled when a bring-up reaches a terminal outcome—online, or failed and closed.
     private let bringUpSettled = DispatchSemaphore(value: 0)
 
     public func start() throws {
         // Python `configure_device` (`RNodeInterface.py:424-467`): reset state, open, detect,
         // wait bounded; no answer closes the port and stays offline. On detect: initRadio,
         // validate the echoed parameters, and only then interface_ready/online. `online` gates
-        // `process_outgoing` (`:708-710`) — reporting it before the modem is configured is a
+        // `process_outgoing` (`:708-710`)—reporting it before the modem is configured is a
         // healthy-looking interface whose radio is off, the exact `bugs/013` shape.
         //
         // The reference performs all of that synchronously in `__init__`, and it can: Python's
         // reads run in their own thread, so the constructor's sleeps never starve them. Here the
         // sequence is handed to `bringUpQueue` and `start()` returns immediately; a caller that
-        // wants the reference's blocking semantics — and knows it is not on the transport's
-        // delivery thread — calls ``waitUntilOnline(timeout:)``.
+        // wants the reference's blocking semantics—and knows it isn't on the transport's
+        // delivery thread—calls ``waitUntilOnline(timeout:)``.
         transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         resetRadioState()
         try transport?.open()
@@ -444,7 +444,7 @@ public final class RNodeInterface: Interface {
     }
 
     /// Block until the bring-up begun by `start()` finishes, returning whether the interface came
-    /// online. Must not be called from the transport's byte-delivery thread — see
+    /// online. Must not be called from the transport's byte-delivery thread—see
     /// ``bringUpQueue``. `rnsd` bringing a config-file interface up is the intended caller.
     @discardableResult
     public func waitUntilOnline(timeout: TimeInterval) -> Bool {
@@ -516,7 +516,7 @@ public final class RNodeInterface: Interface {
 
     /// Device loss → offline → redial, re-running the whole `start()` gate: a re-powered RNode
     /// lost its radio configuration with its power, so reopening the port alone would bring
-    /// back an interface whose modem is unconfigured — Python's `reconnect_port` ends in
+    /// back an interface whose modem is unconfigured—Python's `reconnect_port` ends in
     /// `configure_device` for the same reason (`RNodeInterface.py:1155-1187`).
     private func handleTransportLoss(_ error: Error) {
         Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
@@ -525,7 +525,7 @@ public final class RNodeInterface: Interface {
         reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
             guard let self else { return true }
             // `start()` returns before the bring-up finishes, so reading `isOnline` on the next
-            // line would report the *previous* attempt's outcome — always false, so the loop
+            // line would report the *previous* attempt's outcome—always false, so the loop
             // would fire a second, spurious bring-up over a radio that had already recovered,
             // wiping its validated parameters mid-flight. Wait for the outcome this attempt
             // actually produced.
@@ -556,7 +556,7 @@ public final class RNodeInterface: Interface {
         try? transport.write(KISS.frameData(callsign))
     }
 
-    // MARK: – Incoming byte handler
+    // MARK:–Incoming byte handler
 
     private func handleIncoming(_ data: Data) {
         let frames = decoder.feed(data)
@@ -577,7 +577,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
-    // MARK: – Command frame dispatcher (Python: readLoop elif chain)
+    // MARK:–Command frame dispatcher (Python: readLoop elif chain)
 
     private func processCommandFrame(cmd: UInt8, payload: Data) {
         switch cmd {
@@ -700,7 +700,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
-    // MARK: – SNR quality
+    // MARK:–SNR quality
 
     private func computeSnrQuality(snr: Float) {
         guard let sf = rSf else { return }
@@ -714,7 +714,7 @@ public final class RNodeInterface: Interface {
         rStatQ = round(quality * 10.0) / 10.0
     }
 
-    // MARK: – Channel timing (CMD_STAT_CHTM, 11 bytes)
+    // MARK:–Channel timing (CMD_STAT_CHTM, 11 bytes)
 
     private func processChannelTiming(_ payload: Data) {
         guard payload.count >= 11 else { return }
@@ -741,7 +741,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
-    // MARK: – PHY parameters (CMD_STAT_PHYPRM, 12 bytes)
+    // MARK:–PHY parameters (CMD_STAT_PHYPRM, 12 bytes)
 
     private func processPhyParams(_ payload: Data) {
         guard payload.count >= 12 else { return }
@@ -761,7 +761,7 @@ public final class RNodeInterface: Interface {
         rCsmaDifsMs      = dft
     }
 
-    // MARK: – Error handling
+    // MARK:–Error handling
 
     /// Record a hardware error code. All known codes and unknown ones are
     /// recorded identically. Bounded to the most recent `maxHwErrors` so a
@@ -774,7 +774,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
-    // MARK: – Bitrate computation (Python: updateBitrate)
+    // MARK:–Bitrate computation (Python: updateBitrate)
 
     public func updateBitrate() {
         guard let sf = rSf, let bw = rBandwidth, let cr = rCr,
@@ -788,9 +788,9 @@ public final class RNodeInterface: Interface {
         bitrate = Int(Double(sf) * (crRat / (sf2 / bwKhz)) * 1000.0)
     }
 
-    // MARK: – Radio configuration commands
+    // MARK:–Radio configuration commands
 
-    /// Python: detect() — sends 4 KISS frames asking for detect / fw / platform / mcu
+    /// Python: detect()—sends 4 KISS frames asking for detect / fw / platform / mcu
     public func detect() throws {
         // Exact byte sequence from Python:
         // [FEND CMD_DETECT DETECT_REQ FEND CMD_FW_VERSION 0x00
@@ -815,34 +815,34 @@ public final class RNodeInterface: Interface {
         try transport?.write(Data([KISS.fend, KISS.cmdReset, 0xF8, KISS.fend]))
     }
 
-    /// Python: setFrequency() — 4-byte big-endian uint32, KISS-escaped
+    /// Python: setFrequency()—4-byte big-endian uint32, KISS-escaped
     public func setFrequency() throws {
         let data = uint32ToData(frequency)
         try sendCommand(KISS.cmdFrequency, data: data)
     }
 
-    /// Python: setBandwidth() — 4-byte big-endian uint32, KISS-escaped
+    /// Python: setBandwidth()—4-byte big-endian uint32, KISS-escaped
     public func setBandwidth() throws {
         let data = uint32ToData(bandwidth)
         try sendCommand(KISS.cmdBandwidth, data: data)
     }
 
-    /// Python: setTXPower() — single byte
+    /// Python: setTXPower()—single byte
     public func setTxPower() throws {
         try sendCommand(KISS.cmdTxpower, data: Data([UInt8(clamping: txPower)]))
     }
 
-    /// Python: setSpreadingFactor() — single byte
+    /// Python: setSpreadingFactor()—single byte
     public func setSpreadingFactor() throws {
         try sendCommand(KISS.cmdSf, data: Data([UInt8(clamping: sf)]))
     }
 
-    /// Python: setCodingRate() — single byte
+    /// Python: setCodingRate()—single byte
     public func setCodingRate() throws {
         try sendCommand(KISS.cmdCr, data: Data([UInt8(clamping: cr)]))
     }
 
-    /// Python: setSTALock — 2-byte big-endian (int(alock*100))
+    /// Python: setSTALock—2-byte big-endian (int(alock*100))
     public func setStAlock() throws {
         guard let at = stAlock else { return }
         let v = Int(at * 100)
@@ -850,7 +850,7 @@ public final class RNodeInterface: Interface {
         try sendCommand(KISS.cmdStAlock, data: data)
     }
 
-    /// Python: setLTALock — 2-byte big-endian (int(alock*100))
+    /// Python: setLTALock—2-byte big-endian (int(alock*100))
     public func setLtAlock() throws {
         guard let at = ltAlock else { return }
         let v = Int(at * 100)
@@ -864,7 +864,7 @@ public final class RNodeInterface: Interface {
         try sendCommand(KISS.cmdRadioState, data: Data([s]))
     }
 
-    /// Python: initRadio() — sends all config in order, then radio ON
+    /// Python: initRadio()—sends all config in order, then radio ON
     public func initRadio() throws {
         try setFrequency()
         try setBandwidth()
@@ -876,7 +876,7 @@ public final class RNodeInterface: Interface {
         try setRadioState(KISS.radioStateOn)
     }
 
-    // MARK: – Firmware validation (Python: validate_firmware)
+    // MARK:–Firmware validation (Python: validate_firmware)
 
     public func validateFirmware() {
         if majVersion > RNodeInterface.requiredFwVerMaj {
@@ -891,13 +891,13 @@ public final class RNodeInterface: Interface {
         firmwareOk = false
     }
 
-    // MARK: – Radio state validation (Python: validateRadioState)
+    // MARK:–Radio state validation (Python: validateRadioState)
 
     public func validateRadioState() -> Bool {
         // Python None-guards only the frequency comparison (`RNodeInterface.py:671`); the
         // bandwidth, txpower, sf and state comparisons are unconditional (`:674-685`), so a
         // device that echoed nothing is a mismatch. Guarding every comparison made validation
-        // vacuously true against total silence — an unconfigured modem "validated".
+        // vacuously true against total silence—an unconfigured modem "validated".
         var valid = true
         if let rf = rFrequency, abs(Int(frequency) - Int(rf)) > 100 { valid = false }
         if rBandwidth != bandwidth { valid = false }
@@ -907,7 +907,7 @@ public final class RNodeInterface: Interface {
         return valid
     }
 
-    // MARK: – Radio state reset (Python: reset_radio_state)
+    // MARK:–Radio state reset (Python: reset_radio_state)
 
     public func resetRadioState() {
         rFrequency = nil
@@ -920,7 +920,7 @@ public final class RNodeInterface: Interface {
         detected   = false
     }
 
-    // MARK: – TX queue (Python: queue / process_queue)
+    // MARK:–TX queue (Python: queue / process_queue)
 
     public func queue(_ data: Data) {
         packetQueue.append(data)
@@ -937,7 +937,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
-    // MARK: – Battery accessors (Python: get_battery_state / get_battery_percent)
+    // MARK:–Battery accessors (Python: get_battery_state / get_battery_percent)
 
     public func getBatteryState() -> UInt8 { rBatteryState }
     public func getBatteryPercent() -> UInt8 { rBatteryPercent }
@@ -951,7 +951,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
-    // MARK: – Private helpers
+    // MARK:–Private helpers
 
     /// Build a KISS command frame: FEND + cmd + escape(data) + FEND
     private func sendCommand(_ cmd: UInt8, data: Data) throws {
@@ -990,8 +990,8 @@ public final class RNodeInterface: Interface {
 public protocol RNodeTransport: AnyObject {
     var byteHandler: ((Data) -> Void)? { get set }
 
-    /// Invoked when the device fails underneath the transport — a read reporting the device
-    /// gone or a failed write. Required (no defaulted no-op): a conformer that cannot report
+    /// Invoked when the device fails underneath the transport—a read reporting the device
+    /// gone or a failed write. Required (no defaulted no-op): a conformer that can't report
     /// loss leaves the interface Up over a dead device forever, which is the defect this seam
     /// closes. Python's equivalent is the read loop raising into `reconnect_port`
     /// (`RNodeInterface.py:1155-1187`).

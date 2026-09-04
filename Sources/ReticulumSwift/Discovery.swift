@@ -168,7 +168,7 @@ public final class BlackholeUpdater {
         // This runs on a Link response-callback thread, concurrently with
         // Transport's own thread and the RPC server. Serialize the whole
         // check-then-insert under Transport's blackhole lock (the loop body has
-        // no callouts, so holding the lock across it is deadlock-free).
+        // no callouts, so holding the lock across it's deadlock-free).
         transport.blackholeLock.lock()
         defer { transport.blackholeLock.unlock() }
         for (k, v) in entries {

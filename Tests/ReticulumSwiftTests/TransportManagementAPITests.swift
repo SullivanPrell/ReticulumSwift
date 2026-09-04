@@ -2,8 +2,8 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Transport management API methods mirroring Python's Transport.
-///   - `Transport.prioritize_interfaces()` — sort by bitrate descending
-///   - `Transport.drop_announce_queues()` — clear all announce queues
+///   - `Transport.prioritize_interfaces()`—sort by bitrate descending
+///   - `Transport.drop_announce_queues()`—clear all announce queues
 final class TransportManagementAPITests: XCTestCase {
 
     final class MockInterface: Interface {
@@ -52,8 +52,8 @@ final class TransportManagementAPITests: XCTestCase {
     func testDropAnnounceQueues() {
         let t = Transport()
         t.dropAnnounceQueues()
-        // Should not crash and queues should be empty
-        // (hard to verify internal state, but at minimum it should not throw)
+        // Shouldn't crash and queues should be empty
+        // (hard to verify internal state, but at minimum it shouldn't throw)
     }
 
     // MARK: - Transport.interfaces public access

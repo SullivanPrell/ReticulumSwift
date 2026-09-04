@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// The join between what a TCP interface *calls itself* and what `rnstatus` does with
-/// that name — the seam bug 013 fell through.
+/// that name—the seam bug 013 fell through.
 ///
 /// `rnstatus` hides interfaces whose name starts with one of a fixed set of prefixes
 /// (`rnstatus.py:395-402`), because those denote sub-interfaces spawned by a listener
@@ -15,20 +15,20 @@ import XCTest
 /// block's own name and is therefore never hidden.
 ///
 /// ReticulumSwift hardcoded the spawned form for *every* `TCPClientInterface`, so every
-/// interface an operator put in their config file was filtered out of `rnstatus` — by
+/// interface an operator put in their config file was filtered out of `rnstatus`—by
 /// both implementations, since both apply the same Python rule. The interface was
 /// online and passing traffic the entire time; only its name was wrong.
 ///
-/// The existing coverage could not catch this: `RNStatusRendererTests` asserts the hide
+/// The existing coverage couldn't catch this: `RNStatusRendererTests` asserts the hide
 /// rule against a hand-written payload, and `InterfaceGetterTests` asserted the name
 /// against the same mistaken belief. Nothing ran an actual interface object through the
-/// renderer. That is what this file does.
+/// renderer. That's what this file does.
 final class TCPInterfaceNamingTests: XCTestCase {
 
     // MARK: - Python name shapes
 
     /// Python: `"TCPInterface["+str(self.name)+"/"+ip_str+":"+str(self.target_port)+"]"`,
-    /// where `target_ip` is the configured `target_host` *verbatim* — Python never
+    /// where `target_ip` is the configured `target_host` *verbatim*—Python never
     /// resolves it for display (`TCPInterface.py:151`, `:456-462`).
     func testConfiguredClientUsesThePythonNameShape() {
         let iface = TCPClientInterface(name: "wisco.network TCP",
@@ -50,7 +50,7 @@ final class TCPInterfaceNamingTests: XCTestCase {
 
     /// Python: `"TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"`
     /// (`TCPInterface.py:680-686`). Not on the hide list, so this one was merely
-    /// mis-named rather than invisible — but the name feeds `Interface.hash`, so a Swift
+    /// mis-named rather than invisible—but the name feeds `Interface.hash`, so a Swift
     /// listener published a different identity than the Python listener beside it.
     func testServerUsesThePythonNameShape() {
         let iface = TCPServerInterface(name: "TCP Server", port: 4242)
@@ -63,7 +63,7 @@ final class TCPInterfaceNamingTests: XCTestCase {
     }
 
     /// The spawned client is the case the hide rule exists for, so it must keep the
-    /// `Client on` form — and carry the *peer* address, as Python does
+    /// `Client on` form—and carry the *peer* address, as Python does
     /// (`spawned_interface.target_ip = handler.client_address[0]`, `TCPInterface.py:609`).
     func testSpawnedServerClientKeepsTheHiddenForm() {
         let server = TCPServerInterface(name: "TCP Server", port: 4242)
@@ -79,7 +79,7 @@ final class TCPInterfaceNamingTests: XCTestCase {
 
     /// Build the payload from a live Transport, exactly as the RPC server does, and run
     /// it through the renderer with default options. This is the end-to-end path the
-    /// operator sees, and it is the assertion that was missing.
+    /// operator sees, and it's the assertion that was missing.
     private func renderRegistered(_ interfaces: [any Interface], showAll: Bool = false) -> String {
         let transport = Transport()
         for iface in interfaces { transport.register(interface: iface) }
@@ -110,7 +110,7 @@ final class TCPInterfaceNamingTests: XCTestCase {
         XCTAssertTrue(rendered.contains("TCPServerInterface[TCP Server/0.0.0.0:4242]"), rendered)
     }
 
-    /// The other half of the contract: the hide rule must still hide what it is for.
+    /// The other half of the contract: the hide rule must still hide what it's for.
     func testSpawnedServerClientIsHiddenFromRnstatus() {
         let server = TCPServerInterface(name: "TCP Server", port: 4242)
         let client = TCPServerClientInterface(name: "Client on TCP Server",
@@ -168,9 +168,9 @@ final class TCPInterfaceNamingTests: XCTestCase {
     }
 
     /// Python builds a plain `TCPClientInterface` from an accepted socket
-    /// (`TCPInterface.py:591`) — there is no separate class — so `type` must say so.
+    /// (`TCPInterface.py:591`)—there is no separate class—so `type` must say so.
     /// `TCPServerClientInterface` is a Swift implementation detail, and publishing it made
-    /// a Swift daemon report an interface class that does not exist in RNS.
+    /// a Swift daemon report an interface class that doesn't exist in RNS.
     func testSpawnedServerClientPublishesPythonsClassName() {
         let server = TCPServerInterface(name: "TCP Server", port: 4242)
         let client = TCPServerClientInterface(name: "Client on TCP Server",

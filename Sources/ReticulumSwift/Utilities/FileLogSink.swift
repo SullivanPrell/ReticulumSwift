@@ -25,7 +25,7 @@ public final class FileLogSink {
     /// `+ loglevelname(level) + " " + msg` (`RNS/__init__.py:131`).
     ///
     /// `loglevelname` returns a **10-character padded** string (`"[Notice]  "`), and `log()`
-    /// then appends one more space — so most levels are followed by more than one space.
+    /// then appends one more space—so most levels are followed by more than one space.
     /// The resulting gap after the bracketed level name is: 1 for `[Critical]`, 2 for
     /// `[Warning]`/`[Verbose]`/`[Pathing]`, 3 for `[Notice]`, 4 for `[Error]`/`[Debug]`/
     /// `[Extra]`, 5 for `[Info]`.
@@ -34,8 +34,8 @@ public final class FileLogSink {
     ///   - message: the raw message.
     ///   - level: severity; supplies the padded level name.
     ///   - timestamps: Python's `RNS.logtimestamps`.
-    ///   - compact: Python's `RNS.compact_log_fmt` — drops the level name, keeps the timestamp.
-    ///   - precise: Python's `pt=True` — millisecond timestamps, and the timestamp is emitted
+    ///   - compact: Python's `RNS.compact_log_fmt`—drops the level name, keeps the timestamp.
+    ///   - precise: Python's `pt=True`—millisecond timestamps, and the timestamp is emitted
     ///     even when `timestamps` is false.
     ///   - date: the instant to format. Python always uses "now"; injectable here for tests.
     public static func formatLogLine(_ message: String,
@@ -46,7 +46,7 @@ public final class FileLogSink {
                                      at date: Date = Date()) -> String {
         if precise {
             // Python: `"["+precise_timestamp_str(time.time())+"] "+loglevelname(level)+" "+msg`
-            // — unconditional timestamp, and `precise_timestamp_str` ignores its argument and
+            //—unconditional timestamp, and `precise_timestamp_str` ignores its argument and
             // formats `datetime.now()`, a quirk `RNSUtilities.preciseTimestampStr()` inherits.
             return "[\(preciseTimestampStr(date))] \(Reticulum.loglevelname(level)) \(message)"
         }
@@ -80,7 +80,7 @@ public final class FileLogSink {
         }
     }
 
-    /// `print` + `fflush`, so a daemon's output is not lost when stdout is a pipe.
+    /// `print` + `fflush`, so a daemon's output isn't lost when stdout is a pipe.
     public static let defaultConsoleWriter: (String) -> Void = { line in
         Swift.print(line)
         fflush(stdout)
@@ -91,7 +91,7 @@ public final class FileLogSink {
     /// `<configdir>/logfile`. Python: `RNS.logfile`.
     public let fileURL: URL
 
-    /// `<configdir>/logfile.1` — the single generation Python keeps.
+    /// `<configdir>/logfile.1`—the single generation Python keeps.
     public let rotatedFileURL: URL
 
     /// Python: `RNS.LOG_MAXSIZE = 5*1024*1024`.
@@ -106,7 +106,7 @@ public final class FileLogSink {
 
     private let fileManager: FileManager
     /// Python holds `logging_lock` across the whole dispatch, and its failure path re-enters
-    /// `log()` three times — recursive is mandatory, not an optimisation.
+    /// `log()` three times—recursive is mandatory, not an optimisation.
     private let lock = NSRecursiveLock()
 
     public init(fileURL: URL,
@@ -154,8 +154,8 @@ public final class FileLogSink {
         do {
             try appendAndRotate(line)
         } catch {
-            // Python sets the latch *before* logging, so the three follow-up messages —
-            // and everything after them — take the console branch.
+            // Python sets the latch *before* logging, so the three follow-up messages—and
+            // everything after them—take the console branch.
             fellBackToConsole = true
             emit("Exception occurred while writing log message to log file: \(error)", level: .critical)
             emit("Dumping future log events to console!", level: .critical)
@@ -168,7 +168,7 @@ public final class FileLogSink {
     /// Python: `with open(logfile,"a") as file: file.write(logstring+"\n")`, then
     /// `if os.path.getsize(logfile) > LOG_MAXSIZE:` unlink `<logfile>.1` and rename.
     /// The size check happens **after** the write, so the live file may exceed the limit by
-    /// one line before it rotates — reproduced deliberately.
+    /// one line before it rotates—reproduced deliberately.
     public func write(_ line: String) {
         lock.lock()
         defer { lock.unlock() }

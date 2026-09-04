@@ -32,8 +32,8 @@ final class HDLCFrameBoundsTests: XCTestCase {
         XCTAssertTrue(frames.isEmpty, "oversized frame must be dropped")
     }
 
-    /// With no bounds supplied (default), oversized frames are still delivered —
-    /// preserving the original unbounded behavior for callers that don't opt in.
+    /// With no bounds supplied (default), oversized frames are still delivered—preserving
+    /// the original unbounded behavior for callers that don't opt in.
     func testUnboundedDecoderStillDeliversLargeFrame() {
         let decoder = HDLC.FrameDecoder()
         let payload = Data(repeating: 0x44, count: hwMtu * 10)

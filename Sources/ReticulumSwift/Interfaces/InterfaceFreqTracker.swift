@@ -4,9 +4,9 @@ import Foundation
 ///
 /// Mirrors Python's `Interface.ia_freq_deque`, `oa_freq_deque`, `ip_freq_deque`,
 /// `op_freq_deque` and the corresponding frequency methods
-/// (`incoming_announce_frequency`, `outgoing_announce_frequency`, etc.).
+/// (`incoming_announce_frequency`, `outgoing_announce_frequency`, and so on).
 ///
-/// Timestamps are stored in a capped circular array.  Frequency is computed as:
+/// Timestamps are stored in a capped circular array. Frequency is computed as:
 ///   n / (now - oldest), pruning the oldest sample if the span exceeds FREQ_DECAY.
 public final class InterfaceFreqTracker {
 
@@ -34,7 +34,7 @@ public final class InterfaceFreqTracker {
     /// Guards the four deques. The tracker is recorded on inbound/outbound
     /// interface threads and read on the jobs/management threads; the frequency
     /// queries also prune (mutate) the deque, so reads and writes must be
-    /// mutually exclusive. Self-contained — this lock never nests with any other.
+    /// mutually exclusive. Self-contained—this lock never nests with any other.
     private let lock = NSLock()
 
     // MARK: - Record events
@@ -78,12 +78,12 @@ public final class InterfaceFreqTracker {
     ///
     /// RNS 1.5.1 added `preemptive`, which counts the request the caller is *about to send*
     /// (`n = len(self.op_freq_deque)+(1 if preemptive else 0)`, `Interface.py:380`). The
-    /// egress limiter asks what the frequency will be once it authorises this request, so a
+    /// egress limiter asks what the frequency becomes once it authorizes this request, so a
     /// stream sitting exactly on the threshold is stopped rather than allowed to cross it.
     ///
     /// The extra sample lands in the numerator only. Python's minimum-count guard on the next
     /// line reads the real deque length, so a lone recorded request still reports zero and the
-    /// first path request on an interface cannot limit itself.
+    /// first path request on an interface can't limit itself.
     public func outgoingPathRequestFrequency(preemptive: Bool = false,
                                              now: TimeInterval = Date().timeIntervalSince1970) -> Double {
         lock.lock(); defer { lock.unlock() }
@@ -116,7 +116,7 @@ public final class InterfaceFreqTracker {
                            now: TimeInterval,
                            extraSamples: Int = 0) -> Double {
         // `minCount` is checked against the recorded count, `extraSamples` only reaches the
-        // numerator — matching Python, where `n` is incremented on line 380 but the guard on
+        // numerator—matching Python, where `n` is incremented on line 380 but the guard on
         // line 381 re-reads `len(self.op_freq_deque)`.
         guard deque.count > minCount else { return 0 }
         let n = deque.count + extraSamples

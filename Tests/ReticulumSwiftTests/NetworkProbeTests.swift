@@ -59,7 +59,7 @@ final class NetworkProbeTests: XCTestCase {
     // MARK: - Terminal-control constants
 
     func testSpinnerGlyphs() {
-        // Python: syms = "⢄⢂⢁⡁⡈⡐⡠" (rnprobe.py:86) — seven code points.
+        // Python: syms = "⢄⢂⢁⡁⡈⡐⡠" (rnprobe.py:86)—seven code points.
         XCTAssertEqual(NetworkProbe.spinnerGlyphs.count, 7)
         let scalars = NetworkProbe.spinnerGlyphs.map { $0.unicodeScalars.first!.value }
         // Verified with ord() against the Python source; guards against a copy-paste of
@@ -97,7 +97,7 @@ final class NetworkProbeTests: XCTestCase {
 
 // MARK: - Validation
 
-/// Python reference: rnprobe.py:44-67 — everything before the Reticulum instance exists.
+/// Python reference: rnprobe.py:44-67—everything before the Reticulum instance exists.
 final class NetworkProbeValidationTests: XCTestCase {
 
     func testMissingFullNameMessage() {
@@ -294,7 +294,7 @@ final class NetworkProbeFormattingTests: XCTestCase {
     }
 
     func testVerbosityMapping() {
-        // Python: rnprobe.py:69-77 — both branches decrement, so loglevel = 3+(count-1).
+        // Python: rnprobe.py:69-77—both branches decrement, so loglevel = 3+(count-1).
         let expected: [(Int, Bool, Reticulum.LogLevel)] = [
             (0, false, .warning), (1, true, .notice), (2, true, .info),
             (3, true, .verbose), (4, true, .debug), (5, true, .pathing), (6, true, .extreme)
@@ -315,14 +315,14 @@ final class NetworkProbeFormattingTests: XCTestCase {
 
     func testEffectiveTimeoutPrecedence() {
         // Python: `timeout or max(DEFAULT_TIMEOUT+fht, mpt)` parenthesises as
-        // `timeout or max(...)`, and 0/0.0 are falsy. A zero medium timeout — the value on a
-        // node whose interfaces have not been prioritised — leaves the 1.4.x behaviour intact,
+        // `timeout or max(...)`, and 0/0.0 are falsy. A zero medium timeout—the value on a
+        // node whose interfaces haven't been prioritised—leaves the 1.4.x behaviour intact,
         // which is why these cases still read the same.
         XCTAssertEqual(NetworkProbe.effectiveTimeout(nil, firstHopTimeout: 6, mediumPathTimeout: 0), 18)
         XCTAssertEqual(NetworkProbe.effectiveTimeout(0, firstHopTimeout: 6, mediumPathTimeout: 0), 18)
         XCTAssertEqual(NetworkProbe.effectiveTimeout(4, firstHopTimeout: 6, mediumPathTimeout: 0), 4)
-        // A negative -t yields a deadline in the past: reproduced, not guarded — and the
-        // medium timeout does not rescue it, because an explicit `-t` short-circuits the max.
+        // A negative -t yields a deadline in the past: reproduced, not guarded—and the
+        // medium timeout doesn't rescue it, because an explicit `-t` short-circuits the max.
         XCTAssertEqual(NetworkProbe.effectiveTimeout(-5, firstHopTimeout: 6, mediumPathTimeout: 900), -5)
     }
 }
@@ -518,7 +518,7 @@ final class NetworkProbeArgumentTests: XCTestCase {
 
 // MARK: - run()
 
-/// Python reference: rnprobe.py:44-206 — the whole of `program_setup`, byte for byte.
+/// Python reference: rnprobe.py:44-206—the whole of `program_setup`, byte for byte.
 final class NetworkProbeRunTests: XCTestCase {
 
     /// A destination hash that really is the hash of ("lxmf", ["delivery"]) for `identity`,
@@ -662,7 +662,7 @@ final class NetworkProbeRunTests: XCTestCase {
 
         let result = harness.probe.run(options: options(f.hex, size: 400))
         XCTAssertEqual(result, .mtuExceeded)
-        // Note "exceed", not "exceeds" — rnprobe's own wording, not the exception's.
+        // Note "exceed", not "exceeds"—rnprobe's own wording, not the exception's.
         XCTAssertEqual(harness.output.stdout,
                        "Error: Probe packet size of 515 bytes exceed MTU of 500 bytes\n")
         XCTAssertFalse(harness.output.stdout.contains("Sent probe"))
@@ -722,7 +722,7 @@ final class NetworkProbeRunTests: XCTestCase {
         for index in 1...3 {
             XCTAssertTrue(harness.output.stdout.contains("Sent probe \(index) (16 bytes) to "))
         }
-        // Python: `if sent > 0: time.sleep(wait)` — N probes incur (N-1) waits.
+        // Python: `if sent > 0: time.sleep(wait)`—N probes incur (N-1) waits.
         XCTAssertEqual(harness.clock.sleeps, [0.5, 0.5])
         XCTAssertEqual(harness.entropy.callCount, 3)
         XCTAssertEqual(Set(network.transmitted).count, 3, "each probe must carry fresh entropy")
@@ -1024,7 +1024,7 @@ final class NetworkProbeCryptoTests: XCTestCase {
         XCTAssertEqual(plaintext.count, 16)
         XCTAssertNotEqual(packet.data, plaintext, "the probe payload must not go out in the clear")
         XCTAssertEqual(try identity.decrypt(packet.data), plaintext)
-        // 32 (ephemeral X25519 pub) + 16 (IV) + 32 (AES-CBC over PKCS7 — a 16-byte
+        // 32 (ephemeral X25519 pub) + 16 (IV) + 32 (AES-CBC over PKCS7—a 16-byte
         // plaintext pads to a FULL extra block) + 32 (HMAC-SHA256)
         XCTAssertEqual(packet.data.count, 112)
         XCTAssertEqual(try packet.pack().count, 19 + 112)   // HEADER_1 is 19 bytes
@@ -1067,7 +1067,7 @@ final class NetworkProbeCryptoTests: XCTestCase {
         XCTAssertNotNil(result.ratchetID, "the probe must be encrypted to the ratchet")
 
         // Negative guard: Destination.encrypt is ratchet-BLIND, so swapping it in would
-        // silently drop ratchet parity. Assert that it genuinely does not use the ratchet.
+        // silently drop ratchet parity. Assert that it genuinely doesn't use the ratchet.
         let destination = try Destination(identity: identity, direction: .out, kind: .single,
                                           appName: "lxmf", aspects: ["delivery"])
         let blind = try destination.encrypt(entropy.produced[0])

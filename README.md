@@ -1,14 +1,14 @@
 # ReticulumSwift
 
 > **Reticulum is the work of [Mark Qvist](https://github.com/markqvist).** This is an
-> independent, community Swift implementation of his protocol — **not an official
+> independent, community Swift implementation of his protocol—**not an official
 > Reticulum project**. The canonical project, protocol specification, and reference
 > (Python) implementation live at **[github.com/markqvist/Reticulum](https://github.com/markqvist/Reticulum)**;
 > please look there first to understand Reticulum itself. ReticulumSwift exists to bring
 > that same network, wire-for-wire, to Apple platforms.
 
-A from-scratch Swift implementation of the [Reticulum Network Stack](https://reticulum.network) —
-wire-compatible with the Python reference implementation, with first-class support
+A from-scratch Swift implementation of the [Reticulum Network Stack](https://reticulum.network)—wire-compatible
+with the Python reference implementation, with first-class support
 for Apple platforms.
 
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2016%2B%20%7C%20macOS%2013%2B%20%7C%20tvOS%2016%2B%20%7C%20watchOS%209%2B-blue)](#requirements)
@@ -18,11 +18,12 @@ for Apple platforms.
 [![License](https://img.shields.io/badge/license-Reticulum-lightgrey)](LICENSE)
 
 Reticulum is a cryptography-based networking stack for building local and wide-area
-networks with readily available hardware — operable over anything from packet radio
-and LoRa to TCP/IP and I2P. Every destination is identified by a self-certifying
-cryptographic address; all traffic is end-to-end encrypted by default.
+networks with readily available hardware—operable over anything from packet radio
+and LoRa to TCP/IP and I2P. A self-certifying cryptographic address
+identifies every destination, and every packet carries end-to-end encryption by
+default.
 
-**ReticulumSwift** ports that stack to idiomatic Swift. It is byte-for-byte
+**ReticulumSwift** ports that stack to idiomatic Swift. It's byte-for-byte
 wire-compatible with Python Reticulum (RNS 1.4.1): a Swift node and a Python node
 interoperate on the same network, exchange announces, establish links, and transfer
 resources transparently.
@@ -34,23 +35,23 @@ resources transparently.
 This repository is the foundation. Four packages build on top of it, mirroring the
 Python ecosystem:
 
-| Package | What it is | Repo |
+| Package | What it's | Repo |
 |---------|-----------|------|
 | **ReticulumSwift** | Core stack: identity, transport, links, resources, interfaces, `rnsd` | *(this repo)* |
-| **LXMFSwift** | Lightweight Extensible Message Format — store-and-forward messaging | [LXMFSwift](https://github.com/SullivanPrell/LXMFSwift) |
+| **LXMFSwift** | Lightweight Extensible Message Format—store-and-forward messaging | [LXMFSwift](https://github.com/SullivanPrell/LXMFSwift) |
 | **LXSTSwift** | Reticulum audio/video streaming (codec2 / opus, Telephone) | [LXSTSwift](https://github.com/SullivanPrell/LXSTSwift) |
 | **NomadNetSwift** | NomadNet: Micron pages, Browser, node, RRC chat rooms | [NomadNetSwift](https://github.com/SullivanPrell/NomadNetSwift) |
 | **RetiOS** | Reference iOS/macOS app consuming all four packages | [RetiOS](https://github.com/SullivanPrell/RetiOS) |
 
-The goal of the stack is a complete iOS/macOS Reticulum experience — think
-"Meshtastic for Reticulum" — that interoperates with every standard Reticulum node.
+The goal of the stack is a complete iOS/macOS Reticulum experience—think
+"Meshtastic for Reticulum"—that interoperates with every standard Reticulum node.
 
 ---
 
 ## Status
 
-ReticulumSwift implements the full Reticulum 1.4.1 protocol — all core layers and
-every standard interface — and is wire-compatible with the Python reference
+ReticulumSwift implements the full Reticulum 1.4.1 protocol—all core layers and
+every standard interface—and is wire-compatible with the Python reference
 implementation.
 
 | Layer | State |
@@ -64,9 +65,8 @@ implementation.
 | IFAC (deterministic Ed25519) | ✅ wire-compatible |
 | `rnsd` daemon + RPC + shared instance | ✅ config-compatible |
 
-Behavior is covered by an extensive XCTest suite (2,358 tests, ~78% line
-coverage), and wire compatibility is verified against Python RNS by a live
-interoperability suite — see [docs/INTEROP.md](docs/INTEROP.md).
+An extensive XCTest suite covers behavior (3,580 tests, ~78% line coverage), and
+a live interoperability suite verifies wire compatibility against Python RNS—see [docs/INTEROP.md](docs/INTEROP.md).
 
 ### Interfaces
 
@@ -82,9 +82,9 @@ See [docs/INTERFACES.md](docs/INTERFACES.md) for configuration of each.
 
 - Swift 5.9+ (Xcode 15+ on Apple platforms)
 - iOS 16+ / macOS 13+ / tvOS 16+ / watchOS 9+
-- The embedded i2pd binary is fetched automatically by SwiftPM from a GitHub
-  Release (a checksummed `binaryTarget`), built from pinned source by the
-  *Build binaries* workflow — a normal `git clone` + `swift build` is all you need.
+- SwiftPM fetches the embedded i2pd binary automatically from a GitHub Release
+  (a checksummed `binaryTarget`), built from pinned source by the
+  *Build binaries* workflow—a normal `git clone` + `swift build` is all you need.
 
 ## Installation
 
@@ -150,8 +150,8 @@ swift run rnsd -v         # info logging
 swift run rnsd --help
 ```
 
-For a full local-network walkthrough — toolchain setup, configuration, connecting
-to the public testnet, and pairing with a Python node — see
+For a full local-network walkthrough—toolchain setup, configuration, connecting
+to the public testnet, and pairing with a Python node—see
 **[docs/RUNNING-LOCALLY.md](docs/RUNNING-LOCALLY.md)**.
 
 ---
@@ -179,7 +179,7 @@ If you hit `SwiftShims` module-cache errors: `rm -rf .build && swift test`.
 
 ## License
 
-ReticulumSwift is released under the **Reticulum License** — a permissive MIT-style
+ReticulumSwift is released under the **Reticulum License**—a permissive MIT-style 
 license with two binding conditions inherited from upstream Reticulum: the software
 **may not be used in systems that can purposefully harm human beings**, and it **may
 not be used to create AI/ML/LLM training datasets**. See [LICENSE](LICENSE).

@@ -3,14 +3,14 @@ import Foundation
 /// Where `rnpath` reads and writes instance state.
 ///
 /// Python hides this behind `RNS.Reticulum`: every `get_*` / `drop_*` / `blackhole_*`
-/// method is guarded by `if self.is_connected_to_shared_instance:` and silently proxies
+/// method sits behind `if self.is_connected_to_shared_instance:` and silently proxies
 /// over the management RPC socket when a daemon owns the state (`Reticulum.py:1470-1692`).
-/// Swift keeps the two apart so the choice is explicit and testable — see
+/// Swift keeps the two apart so the choice is explicit and testable—see
 /// ``RNPathApp/managementSourceKind(role:hasRPC:)``, because getting it wrong makes
 /// `-b`/`-t`/`-r` silently report the *client's* empty tables while a daemon is running.
 public protocol RNPathManagementSource: AnyObject {
 
-    /// Hash of the local transport identity — used only for the blackhole listing's
+    /// Hash of the local transport identity—used only for the blackhole listing's
     /// "by <hash>" suffix, which is suppressed for entries this node issued itself.
     var localTransportIdentityHash: Data? { get }
 
@@ -23,20 +23,20 @@ public protocol RNPathManagementSource: AnyObject {
     /// Python: `get_blackholed_identities()`.
     func blackholedIdentities() throws -> [RNPathBlackholeEntry]
 
-    /// Python: `drop_path(destination_hash)` — true when an entry actually existed.
+    /// Python: `drop_path(destination_hash)`—true when an entry actually existed.
     @discardableResult func dropPath(_ destinationHash: Data) throws -> Bool
 
-    /// Python: `drop_all_via(transport_hash)` — the number of paths removed.
+    /// Python: `drop_all_via(transport_hash)`—the number of paths removed.
     @discardableResult func dropAllVia(_ transportHash: Data) throws -> Int
 
-    /// Python: `drop_announce_queues()`. The return value is ignored by `rnpath`.
+    /// Python: `drop_announce_queues()`. `rnpath` ignores the return value.
     func dropAnnounceQueues() throws
 
-    /// Python: `blackhole_identity(...)` — `True` added, `None` already blackholed,
+    /// Python: `blackhole_identity(...)`—`True` added, `None` already blackholed,
     /// `False` rejected. `rnpath -B` prints a different message for each.
     func blackholeIdentity(_ identityHash: Data, until: TimeInterval?, reason: String?) throws -> Bool?
 
-    /// Python: `unblackhole_identity(...)` — `True` lifted, `None` not blackholed,
+    /// Python: `unblackhole_identity(...)`—`True` lifted, `None` not blackholed,
     /// `False` rejected.
     func unblackholeIdentity(_ identityHash: Data) throws -> Bool?
 
@@ -50,7 +50,7 @@ public protocol RNPathManagementSource: AnyObject {
     ///
     /// Non-throwing, unlike its neighbours: Python catches every RPC failure here and returns
     /// `0` (`Reticulum.py:1780-1781`), because the value only ever raises a floor. A `rnpath`
-    /// that aborted because it could not *ask* how slow the link is would be worse than one
+    /// that aborted because it couldn't *ask* how slow the link is would be worse than one
     /// that used the user's timeout unchanged.
     func mediumPathTimeout() -> TimeInterval
 }
@@ -222,8 +222,8 @@ extension RNPathApp {
     /// accessor. A local client must go over RPC, or it reports its own empty tables.
     ///
     /// When the role is ``InstanceConnection/Role/localClient`` but no ``RPCClient`` could
-    /// be built (an unreadable `transport_identity`, say), this falls back to `.local` —
-    /// the utility still runs, but `-b`, `-t` and `-r` will under-report.
+    /// be built (an unreadable `transport_identity`, say), this falls back to `.local`—the
+    /// utility still runs, but `-b`, `-t` and `-r` under-report.
     public static func managementSourceKind(role: InstanceConnection.Role,
                                             hasRPC: Bool) -> ManagementSourceKind {
         switch role {

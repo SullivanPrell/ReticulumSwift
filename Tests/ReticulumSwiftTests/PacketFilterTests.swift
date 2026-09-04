@@ -1,16 +1,16 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `swift_devel/bugs/038` — the public filter and the production recorder must agree on the key.
+/// `swift_devel/bugs/038`—the public filter and the production recorder must agree on the key.
 ///
 /// Python keys `packet_filter` on `packet.packet_hash`, the **full** 32-byte hash
 /// (`Transport.py:1417`, `Packet.py:342-344`), and every production insertion stores the same
 /// (`Transport.py:1344,1545,1733,2314`). The port's `packetFilter` keyed on the 16-byte
-/// truncated hash while `filterAndRecord` stored full hashes — a 16-byte `Data` never equals a
+/// truncated hash while `filterAndRecord` stored full hashes—a 16-byte `Data` never equals a
 /// 32-byte one, so "seen" was always false and the public filter suppressed nothing.
 ///
-/// The previous tests could not observe this: they pre-inserted `truncatedPacketHash()` by
-/// hand — the same wrong key the function computed — so filter and fixture agreed with each
+/// The previous tests couldn't observe this: they pre-inserted `truncatedPacketHash()` by
+/// hand—the same wrong key the function computed—so filter and fixture agreed with each
 /// other and disagreed with production. Every "seen" state below comes from the production
 /// recording path instead; no test computes a hashlist key.
 final class PacketFilterTests: XCTestCase {

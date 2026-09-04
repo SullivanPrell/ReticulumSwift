@@ -29,7 +29,7 @@ public protocol DataCompressor {
     /// Decompress `data` with a hard upper bound on the output size. Returns
     /// `.exceededMaxLength` if the stream would produce more than `maxLength`
     /// bytes (decompression bomb guard). Default implementation wraps
-    /// `decompress(_:)` and checks the result length afterwards — concrete
+    /// `decompress(_:)` and checks the result length afterwards—concrete
     /// implementations should override with a streaming check that aborts
     /// before allocating the bomb output.
     func decompress(_ data: Data, maxLength: Int) -> DecompressionResult
@@ -46,8 +46,8 @@ public extension DataCompressor {
 /// No-op compressor. When installed as `Resource.compressor`, resources are
 /// sent uncompressed (the `compressed` flag in the advertisement is `false`),
 /// which is compatible with all RNS implementations. Received compressed data
-/// cannot be decompressed while this is installed. Note this is no longer the
-/// default — `Resource.compressor` defaults to `BZip2Compressor` so compressed
+/// can't be decompressed while this is installed. Note this is no longer the
+/// default—`Resource.compressor` defaults to `BZip2Compressor` so compressed
 /// resources from Python peers can be received. Install this only to opt out.
 public struct NoCompressor: DataCompressor {
     public init() {}
@@ -58,17 +58,17 @@ public struct NoCompressor: DataCompressor {
 extension Resource {
     /// The active compressor used for all new Resource transfers.
     ///
-    /// Defaults to `BZip2Compressor` — matching the Python reference, which
+    /// Defaults to `BZip2Compressor`—matching the Python reference, which
     /// always bz2-compresses resource-sized payloads. This is required to
     /// *receive* compressed resources from Python peers: the `compressed` flag
     /// is carried per-resource in the advertisement, and a peer that compresses
     /// (any Python node) sends `compressed = true`, so a receiver whose
-    /// compressor cannot decode bz2 fails to assemble the resource and tears the
+    /// compressor can't decode bz2 fails to assemble the resource and tears the
     /// link down. On send, a resource is compressed only when bz2 actually
     /// shrinks it (and the `compressed` flag records that), so the wire format
     /// is unchanged and remains compatible with every RNS implementation.
     ///
     /// Set to `NoCompressor()` to opt out (resources always sent uncompressed;
-    /// compressed resources from peers cannot be received).
+    /// compressed resources from peers can't be received).
     public static var compressor: any DataCompressor = BZip2Compressor()
 }

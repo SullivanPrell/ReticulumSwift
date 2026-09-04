@@ -11,11 +11,11 @@ public enum RNXApp {
     /// Python: `APP_NAME = "rnx"`.
     public static let appName: String = "rnx"
 
-    /// Response code returned when a fetch request is not allowed.
+    /// Response code returned when a fetch request isn't allowed.
     ///
-    /// Python: `REQ_FETCH_NOT_ALLOWED = 0xF0` in **rncp.py:70** — despite living here,
+    /// Python: `REQ_FETCH_NOT_ALLOWED = 0xF0` in **rncp.py:70**—despite living here,
     /// this constant belongs to `rncp`, not `rnx`; `rnx.py` declares no `0xF0`. Kept
     /// because `RNXProtocolTests.testReqFetchNotAllowed` asserts it, but the rnx port
-    /// does not reference it anywhere.
+    /// doesn't reference it anywhere.
     public static let reqFetchNotAllowed: UInt8 = 0xF0
 }

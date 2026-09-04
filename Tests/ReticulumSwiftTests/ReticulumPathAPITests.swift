@@ -78,7 +78,7 @@ final class ReticulumPathAPITests: XCTestCase {
         XCTAssertFalse(r.usedDestinationData(Data(repeating: 0x11, count: 16)))
     }
 
-    // MARK: - haltInterface / resumeInterface (stubs — must not crash)
+    // MARK: - haltInterface / resumeInterface (stubs—must not crash)
 
     func testHaltInterfaceDoesNotCrash() {
         let r = makeReticulum()

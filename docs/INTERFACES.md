@@ -5,11 +5,11 @@ medium. ReticulumSwift implements every standard Reticulum interface, each
 wire-compatible with its Python counterpart, so a config that works with Python
 `rnsd` works here too.
 
-Interfaces can be brought up two ways:
+Two paths bring an interface up:
 
-- **From config** — declared in the `[interfaces]` section of the INI config and
+- **From config**—declared in the `[interfaces]` section of the INI config and
   synthesized by `rnsd` / `Reticulum.synthesizeInterfaces(from:)`.
-- **Programmatically** — instantiated and registered on `Transport`:
+- **Programmatically**—instantiated and registered on `Transport`:
   ```swift
   let tcp = TCPClientInterface(name: "hub", host: "example.com", port: 4242)
   stack.transport.register(interface: tcp)
@@ -33,7 +33,7 @@ Interfaces can be brought up two ways:
 | `KISSInterface` | ✅ | KISS TNCs |
 | `AX25KISSInterface` | ✅ | AX.25 over KISS |
 | `WeaveInterface` | ✅ | Weave links |
-| `PipeInterface` | ⏭ not supported | POSIX subprocess pipes — no Apple-platform use case |
+| `PipeInterface` | ⏭ not supported | POSIX subprocess pipes—no Apple-platform use case |
 
 ## Common config example
 
@@ -68,7 +68,7 @@ Interfaces can be brought up two ways:
 Every interface accepts the standard Reticulum knobs where applicable:
 `enabled`, `interface_enabled`, `mode` (`full` / `gateway` / `access_point` /
 `roaming` / `boundary`), `bitrate`, `announce_cap`, and IFAC settings
-(`network_name`, `passphrase`, `ifac_size`). `ifac_size` is specified in **bits**.
+(`network_name`, `passphrase`, `ifac_size`). `ifac_size` counts **bits**.
 
 ## Platform notes
 
@@ -77,7 +77,7 @@ Every interface accepts the standard Reticulum knobs where applicable:
   initializes on macOS and iOS; see [docs/THIRD-PARTY.md](THIRD-PARTY.md) for the
   bundled-binary licensing.
 - **RNode** interfaces require an `RNodeTransport` adapter that the host app
-  supplies (e.g. a CoreBluetooth Nordic-UART transport, or a USB serial
+  supplies (for example, a CoreBluetooth Nordic-UART transport, or a USB serial
   transport). The radio state machine lives in `RNodeInterface`; I/O is
   delegated to the transport, so the same interface drives BLE and USB radios.
 

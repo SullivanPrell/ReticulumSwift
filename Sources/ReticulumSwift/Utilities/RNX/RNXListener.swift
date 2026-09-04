@@ -17,19 +17,19 @@ import Foundation
 ///    format is identical either way: `msgpack([request_id, array8])`.
 /// 2. **The allow-list gate is inside the handler.** Python registers with `ALLOW_LIST`
 ///    and a list of raw 16-byte identity hashes; `Destination.registerNativeRequestHandler`
-///    only accepts `[Identity]` objects, which `rnx` never has — an `-a` argument is a
-///    hash, and an `Identity` cannot be reconstructed from one. Registering with `.all`
+///    only accepts `[Identity]` objects, which `rnx` never has—an `-a` argument is a
+///    hash, and an `Identity` can't be reconstructed from one. Registering with `.all`
 ///    and checking `link.remoteIdentity?.hash` here reproduces `ALLOW_LIST` exactly,
 ///    including the silent drop (no response at all) for an unidentified peer.
 public final class RNXListener {
 
     public enum ListenerError: Error, Equatable {
         /// Python: "Allowed destination length is invalid, must be 32 hexadecimal
-        /// characters (16 bytes)." — rnx.py:85. Carries the length actually seen.
+        /// characters (16 bytes)."—rnx.py:85. Carries the length actually seen.
         case invalidAllowedHashLength(Int)
-        /// Python: "Invalid destination entered. Check your input." — rnx.py:90.
+        /// Python: "Invalid destination entered. Check your input."—rnx.py:90.
         case invalidAllowedHashHex(String)
-        /// The identity loaded from disk carries no private key, so it cannot sign.
+        /// The identity loaded from disk carries no private key, so it can't sign.
         case missingPrivateKey
     }
 
@@ -38,10 +38,10 @@ public final class RNXListener {
     /// Python: the `identity` module global.
     public let identity: Identity
 
-    /// Python: `RNS.Destination(identity, IN, SINGLE, "rnx", "execute")` — rnx.py:70.
+    /// Python: `RNS.Destination(identity, IN, SINGLE, "rnx", "execute")`—rnx.py:70.
     public let destination: Destination
 
-    /// Python: `allowed_identity_hashes` — 16-byte **identity** hashes, despite the
+    /// Python: `allowed_identity_hashes`—16-byte **identity** hashes, despite the
     /// "destination" wording in the error messages.
     public private(set) var allowedIdentityHashes: Set<Data>
 
@@ -90,18 +90,18 @@ public final class RNXListener {
     /// Register the destination with `transport`, wire the link callbacks and install the
     /// `"command"` request handler.
     ///
-    /// Python gets the transport registration for free — `Destination.__init__` calls
+    /// Python gets the transport registration for free—`Destination.__init__` calls
     /// `RNS.Transport.register_destination(self)` for IN destinations (Destination.py:196)
-    /// — whereas ReticulumSwift requires it explicitly.
+    ///—whereas ReticulumSwift requires it explicitly.
     public func register() {
         transport.register(destination: destination)
 
-        // Python: destination.set_link_established_callback(command_link_established) — rnx.py:116
+        // Python: destination.set_link_established_callback(command_link_established)—rnx.py:116
         destination.setLinkEstablishedCallback { [weak self] link in
             self?.commandLinkEstablished(link)
         }
 
-        // Python: register_request_handler(path="command", ...) — rnx.py:118-130
+        // Python: register_request_handler(path="command", ...)—rnx.py:118-130
         destination.registerNativeRequestHandler(path: RNXApp.requestPath,
                                                  allow: .all) { [weak self] _, value, requestID, link, _ in
             self?.handleCommandRequest(value, requestID: requestID, link: link)
@@ -111,7 +111,7 @@ public final class RNXListener {
         }
     }
 
-    /// Python: `destination.announce()` — rnx.py:135, skipped under `-b/--no-announce`.
+    /// Python: `destination.announce()`—rnx.py:135, skipped under `-b/--no-announce`.
     ///
     /// Goes through `transport.announce(destination:)` rather than `Destination.announce()`,
     /// which silently returns nil when `Reticulum.shared` is nil.
@@ -128,14 +128,14 @@ public final class RNXListener {
             self?.initiatorIdentified(l, identity)
         }
         link.setLinkClosedCallback { [weak self] l in
-            // Python: rnx.py:145-146 — str(link) is prettyhexrep(link_id).
+            // Python: rnx.py:145-146—str(link) is prettyhexrep(link_id).
             self?.log("Command link \(RNSUtilities.prettyhexrep(l.linkID ?? Data())) closed")
         }
         log("Command link \(RNSUtilities.prettyhexrep(link.linkID ?? Data())) established")
     }
 
     private func initiatorIdentified(_ link: Link, _ identity: Identity) {
-        // Python: rnx.py:148-153 — belt-and-braces on top of the ALLOW_LIST handler gate.
+        // Python: rnx.py:148-153—belt-and-braces on top of the ALLOW_LIST handler gate.
         log("Initiator of link \(RNSUtilities.prettyhexrep(link.linkID ?? Data())) "
             + "identified as \(RNSUtilities.prettyhexrep(identity.hash))")
         if !allowAll && !allowedIdentityHashes.contains(identity.hash) {
@@ -146,7 +146,7 @@ public final class RNXListener {
 
     // MARK: - Request handling
 
-    /// Python: `execute_received_command` — rnx.py:155-252, minus the process handling
+    /// Python: `execute_received_command`—rnx.py:155-252, minus the process handling
     /// (which lives behind ``RNXCommandExecutor``).
     private func handleCommandRequest(_ value: MsgPack.Value, requestID: Data, link: Link) {
         // ALLOW_LIST semantics: an unidentified peer, or one not on the list, gets no
@@ -161,7 +161,7 @@ public final class RNXListener {
             log("Executing command [\(request.command)] for unknown requestor")
         }
 
-        // Python: `result[6] = time.time()` is captured before Popen — rnx.py:174.
+        // Python: `result[6] = time.time()` is captured before Popen—rnx.py:174.
         let startedAt = now()
         let executor = self.executor
         executionQueue.async { [weak self] in
@@ -198,8 +198,8 @@ public final class RNXListener {
     ///   `result[4] = len(stdout)` raise `TypeError` at rnx.py:240 unconditionally. Here a
     ///   nil stream is treated as empty, so a well-formed result is still delivered.
     /// - a negative `--stdout`/`--stderr` reaches Python as `stdout[0:-1]`, dropping the
-    ///   last byte. That *is* reproduced (Python slice semantics), because it is harmless
-    ///   — `Data.prefix(-1)` would trap, so the index is computed the Python way instead.
+    ///   last byte. That *is* reproduced (Python slice semantics), because it's harmless
+    ///—`Data.prefix(-1)` would trap, so the index is computed the Python way instead.
     public func makeResult(for request: RNXRequest,
                            execution: RNXExecution,
                            startedAt: TimeInterval,
@@ -213,7 +213,7 @@ public final class RNXListener {
         let stdout = execution.stdout ?? Data()
         let stderr = execution.stderr ?? Data()
 
-        // Python: rnx.py:218-219 — a concluded timestamp is written ONLY when a timeout
+        // Python: rnx.py:218-219—a concluded timestamp is written ONLY when a timeout
         // was requested AND the deadline had not passed. A request with timeout == nil
         // therefore never gets one, and neither does a command killed by the deadline.
         var concludedAt: TimeInterval?
@@ -227,7 +227,7 @@ public final class RNXListener {
             returnCode: execution.returnCode,
             stdout: RNXListener.applyLimit(request.stdoutLimit, to: stdout),
             stderr: RNXListener.applyLimit(request.stderrLimit, to: stderr),
-            totalStdoutLength: stdout.count,      // Python: result[4] = len(stdout) — pre-truncation
+            totalStdoutLength: stdout.count,      // Python: result[4] = len(stdout)—pre-truncation
             totalStderrLength: stderr.count,      // Python: result[5] = len(stderr)
             startedAt: startedAt,
             concludedAt: concludedAt
@@ -235,7 +235,7 @@ public final class RNXListener {
     }
 
     /// Python: `if limit != None and len(buf) > limit: buf[0:limit] (or b"" when limit == 0)`
-    /// — rnx.py:224-238. `limit == nil` short-circuits and the buffer passes through whole.
+    ///—rnx.py:224-238. `limit == nil` short-circuits and the buffer passes through whole.
     static func applyLimit(_ limit: Int?, to buffer: Data) -> Data {
         guard let limit, buffer.count > limit else { return buffer }
         if limit == 0 { return Data() }
@@ -275,13 +275,13 @@ public final class RNXListener {
         return bytes
     }
 
-    /// Python: rnx.py:94-108 — search `/etc/rnx`, `~/.config/rnx`, `~/.rnx` in order for
+    /// Python: rnx.py:94-108—search `/etc/rnx`, `~/.config/rnx`, `~/.rnx` in order for
     /// `allowed_identities`; first hit wins. Strip every `\r`, split on `\n`, and keep only
     /// lines whose length is exactly 32, so blank lines and comments are tolerated.
     ///
     /// A 32-character non-hex line raises in Python (`bytes.fromhex`) and the utility
     /// prints `str(e)` and exits 1. CPython's wording
-    /// ("non-hexadecimal number found in fromhex() arg at position N") cannot be
+    /// ("non-hexadecimal number found in fromhex() arg at position N") can't be
     /// reproduced, so this throws ``ListenerError/invalidAllowedHashHex(_:)`` instead and
     /// the executable prints its own message. Unlike the spec's sketch this method
     /// therefore `throws`, so that `exit(1)` path survives.
@@ -316,13 +316,13 @@ public final class RNXListener {
     // MARK: - Identity
 
     /// `<configDir>/storage/identities/rnx`.
-    /// Python: `RNS.Reticulum.identitypath+"/"+APP_NAME` — rnx.py:53.
+    /// Python: `RNS.Reticulum.identitypath+"/"+APP_NAME`—rnx.py:53.
     public static func defaultIdentityURL(configDir: URL) -> URL {
         StorageInventory.url(.identities, in: configDir)
             .appendingPathComponent(RNXApp.identityFileName)
     }
 
-    /// Python: `prepare_identity` — rnx.py:50-61. Loads the 64-byte raw private blob if
+    /// Python: `prepare_identity`—rnx.py:50-61. Loads the 64-byte raw private blob if
     /// the file exists, otherwise logs at LOG_INFO, generates one and writes it.
     ///
     /// The parent directory is created first: Python's `Reticulum.__init__` does that

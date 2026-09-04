@@ -50,7 +50,7 @@ final class RatchetParityTests: XCTestCase {
         let recipient = Identity()
         recipient.rotateRatchet()
         let pubOnly = try Identity(publicKeyBytes: recipient.publicKeyBytes)
-        // Encrypt to the static key — no ratchet pub passed.
+        // Encrypt to the static key—no ratchet pub passed.
         let token = try pubOnly.encrypt(Data("nope".utf8))
 
         XCTAssertThrowsError(try recipient.decrypt(

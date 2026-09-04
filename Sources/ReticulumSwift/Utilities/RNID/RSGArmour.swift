@@ -7,13 +7,13 @@ import Foundation
 /// RSG is ASCII, so this port collapses them into one `String`-based implementation.
 public enum RSGArmour {
 
-    /// `"#### Start of rsg data #########################################"` — exactly 64
+    /// `"#### Start of rsg data #########################################"`—exactly 64
     /// characters, 41 trailing `#`.
     /// Python: `RSG_ASCII_HEADER + b"#"*(RSG_ASCII_ROW_WIDTH-len(RSG_ASCII_HEADER))`.
     public static let header: String = RNIDApp.rsgAsciiHeader
         + String(repeating: "#", count: RNIDApp.rsgAsciiRowWidth - RNIDApp.rsgAsciiHeader.count)
 
-    /// `"########################################### End of rsg data ####"` — exactly 64
+    /// `"########################################### End of rsg data ####"`—exactly 64
     /// characters, 43 leading `#`.
     /// Python: `b"#"*(RSG_ASCII_ROW_WIDTH-len(RSG_ASCII_FOOTER)) + RSG_ASCII_FOOTER`.
     public static let footer: String =
@@ -53,12 +53,12 @@ public enum RSGArmour {
     ///
     /// Skips blank lines and any line starting with `#` (which discards both the header and
     /// the footer), concatenating the rest with no separator. The trailing `=` padding is
-    /// **not** stripped here — Python leaves that to `get_rsg_data`.
+    /// **not** stripped here—Python leaves that to `get_rsg_data`.
     ///
     /// This is **dead code in the reference tree**: `grep` finds exactly one occurrence, the
-    /// `def` line. It is not called anywhere in `rnid.py` and is not among the symbols
-    /// `rngit` imports. Ported for API parity only — no `rnid` code path ever accepts
-    /// armoured text as input, and wiring this in would add a behaviour Python does not have.
+    /// `def` line. It isn't called anywhere in `rnid.py` and isn't among the symbols
+    /// `rngit` imports. Ported for API parity only—no `rnid` code path ever accepts
+    /// armoured text as input, and wiring this in would add a behaviour Python doesn't have.
     public static func unwrap(_ wrapped: String) -> String? {
         var unwrapped = ""
         for line in wrapped.split(separator: "\n", omittingEmptySubsequences: false) {

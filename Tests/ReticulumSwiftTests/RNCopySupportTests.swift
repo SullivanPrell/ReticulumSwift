@@ -4,9 +4,9 @@ import XCTest
 /// Pure-logic tests for the `rncp` port.
 ///
 /// Python reference: `RNS/Utilities/rncp.py` (Reticulum File Transfer Utility).
-/// Golden byte strings and formatted values were produced by running the real
-/// Python — `RNS.vendor.umsgpack.packb`, `hashlib.sha256`, `os.path.*` and rncp's own
-/// `size_str` — against the installed RNS on this machine.
+/// Running the real Python produced these golden byte strings and formatted values:
+/// Python—`RNS.vendor.umsgpack.packb`, `hashlib.sha256`, `os.path.*` and rncp's own
+/// `size_str`—against the installed RNS on this machine.
 
 // MARK: - File-system double
 
@@ -21,7 +21,7 @@ class MockRNCopyFileSystem: RNCopyFileSystem {
     var directories: Set<String>
     var nonWritableDirectories: Set<String>
 
-    /// When true, ``removeFile(atPath:)`` throws — used to prove `-O` falls back to renaming.
+    /// When true, ``removeFile(atPath:)`` throws—used to prove `-O` falls back to renaming.
     var removeFails = false
     /// When true, ``writeFile(_:toPath:)`` throws.
     var writeFails = false
@@ -79,7 +79,7 @@ class MockRNCopyFileSystem: RNCopyFileSystem {
 final class RNCopySizeStrTests: XCTestCase {
 
     func testBaseUnitNoDecimals() {
-        // Python: size_str(512) == '512 B'  (rncp.py:898-899 — the empty-unit branch)
+        // Python: size_str(512) == '512 B'  (rncp.py:898-899—the empty-unit branch)
         XCTAssertEqual(RNCopyApp.sizeStr(512), "512 B")
         XCTAssertEqual(RNCopyApp.sizeStr(0), "0 B")
         XCTAssertEqual(RNCopyApp.sizeStr(999), "999 B")
@@ -102,7 +102,7 @@ final class RNCopySizeStrTests: XCTestCase {
     }
 
     func testOverflowBranchHasNoSpace() {
-        // Python: return "%.2f%s%s" — the ONE branch with no space before the unit.
+        // Python: return "%.2f%s%s"—the ONE branch with no space before the unit.
         // Verified against the real helper: size_str(1e27) == '1000.00YB'.
         let rendered = RNCopyApp.sizeStr(1e27)
         XCTAssertEqual(rendered, "1000.00YB")
@@ -132,7 +132,7 @@ final class RNCopySizeStrTests: XCTestCase {
 final class RNCopyPathHelperTests: XCTestCase {
 
     func testBasenamePosixRule() {
-        // Python posixpath.basename is p[p.rfind('/')+1:] — no backslash handling.
+        // Python posixpath.basename is p[p.rfind('/')+1:]—no backslash handling.
         XCTAssertEqual(RNCopyApp.basename("a/b/c.txt"), "c.txt")
         XCTAssertEqual(RNCopyApp.basename("c.txt"), "c.txt")
         XCTAssertEqual(RNCopyApp.basename("a/b/"), "")
@@ -322,7 +322,7 @@ final class RNCopyAllowedIdentitiesTests: XCTestCase {
 
     func testLogLineIsEmittedEvenWhenTheFileYieldsNothing() {
         // Python emits the "Loaded N allowed identities" line for ANY located file, including
-        // one whose every line was dropped by the length filter — with the plural "ies".
+        // one whose every line the length filter dropped—with the plural "ies".
         let fs = allowListFS("/h/.rncp/allowed_identities", "# only a comment\n")
         let load = RNCopyApp.loadAllowedIdentities(commandLineEntries: [], fileSystem: fs)
         XCTAssertEqual(load.fileEntryCount, 0)
@@ -394,9 +394,9 @@ final class RNCopyFetchJailTests: XCTestCase {
     }
 
     func testBareAbsolutePathIsRebasedUnderTheJailNotRejected() {
-        // Quirk worth pinning down: a request that does NOT start with "<jail>/" is joined
+        // Quirk worth pinning down: a request that doesn't start with "<jail>/" is joined
         // under the jail regardless, so "/etc/passwd" becomes abspath("/j//etc/passwd")
-        // == "/j/etc/passwd" — inside the jail, hence "not found" rather than "not allowed".
+        // == "/j/etc/passwd"—inside the jail, hence "not found" rather than "not allowed".
         // Confirmed against Python's fetch_request (rncp.py:177-183).
         let fs = MockRNCopyFileSystem(filePaths: ["/etc/passwd"])
         XCTAssertEqual(RNCopyApp.resolveFetchPath(requested: "/etc/passwd", jail: "/j", fileSystem: fs),
@@ -424,7 +424,7 @@ final class RNCopyFetchJailTests: XCTestCase {
 final class RNCopySaveTargetTests: XCTestCase {
 
     func testNoSavePathIsRelative() {
-        // Python: saved_filename = filename — a RELATIVE path, so the file lands in the CWD.
+        // Python: saved_filename = filename—a RELATIVE path, so the file lands in the CWD.
         let fs = MockRNCopyFileSystem()
         XCTAssertEqual(RNCopyApp.resolveSaveTarget(filename: "a.txt", savePath: nil,
                                                    allowOverwrite: false, fileSystem: fs),
@@ -433,11 +433,11 @@ final class RNCopySaveTargetTests: XCTestCase {
 
     func testSavePathContainment() {
         let fs = MockRNCopyFileSystem()
-        // Python: abspath("/s" + "/" + "..") == "/", which does not start with "/s/".
+        // Python: abspath("/s" + "/" + "..") == "/", which doesn't start with "/s/".
         XCTAssertEqual(RNCopyApp.resolveSaveTarget(filename: "..", savePath: "/s",
                                                    allowOverwrite: false, fileSystem: fs),
                        .rejected(path: "/"))
-        // Python: abspath("/s" + "/" + "") == "/s", which also does not start with "/s/".
+        // Python: abspath("/s" + "/" + "") == "/s", which also doesn't start with "/s/".
         XCTAssertEqual(RNCopyApp.resolveSaveTarget(filename: "", savePath: "/s",
                                                    allowOverwrite: false, fileSystem: fs),
                        .rejected(path: "/s"))
@@ -545,7 +545,7 @@ final class RNCopyProgressMeterTests: XCTestCase {
     }
 
     func testWindowCapsAt32() {
-        // Python: while len(stats) > stats_max: stats.pop(0) — 40 updates keep the last 32,
+        // Python: while len(stats) > stats_max: stats.pop(0)—40 updates keep the last 32,
         // so the span is measured from sample 8, not sample 0.
         var meter = RNCopyProgressMeter()
         for index in 0..<40 {
@@ -558,13 +558,13 @@ final class RNCopyProgressMeterTests: XCTestCase {
     }
 
     func testNonPositivePhyDiffLeavesPhySpeedUnchanged() {
-        // Python: `if phy_diff > 0:` — otherwise phy_speed keeps its previous value
+        // Python: `if phy_diff > 0:`—otherwise phy_speed keeps its previous value
         // rather than being zeroed (rncp.py:348-350).
         var meter = RNCopyProgressMeter()
         meter.update(now: 0, got: 0, phyGot: 400)
         meter.update(now: 1, got: 100, phyGot: 800)   // phy_diff = 400 over 1 s
         XCTAssertEqual(meter.phySpeed, 400, accuracy: 0.0001)
-        // Window head is still (t=0, phy=400), so phy_diff is now 0 — Python's
+        // Window head is still (t=0, phy=400), so phy_diff is now 0—Python's
         // `if phy_diff > 0:` leaves phy_speed at its previous value instead of zeroing it,
         // while the application-layer speed keeps being recomputed.
         meter.update(now: 2, got: 200, phyGot: 400)
@@ -664,7 +664,7 @@ final class RNCopyIdentityTests: XCTestCase {
                 return XCTFail("wrong error type")
             }
             XCTAssertEqual(error, .corruptIdentityFile(path.path))
-            // Python: RNS.log(f"Could not load identity for rncp. The identity file at
+            // Python: RNS.log(f"Couldn't load identity for rncp. The identity file at
             //          \"{identity_path}\" may be corrupt or unreadable.") then exit(2)
             XCTAssertEqual(error.message,
                            "Could not load identity for rncp. The identity file at \"\(path.path)\" may be corrupt or unreadable.")

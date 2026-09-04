@@ -11,7 +11,7 @@ import XCTest
 /// the slowest online interface instead of assumed.
 ///
 /// The value is recomputed in `prioritizeInterfaces()`, which this port declared and then
-/// never called — Python calls it at transport start and again on every jobs pass
+/// never called—Python calls it at transport start and again on every jobs pass
 /// (`Transport.py:524`, `:1151`). Without a caller the sort never ran either, so the
 /// interface list was in registration order rather than bitrate order.
 final class MediumPathTimeoutTests: XCTestCase {
@@ -27,7 +27,7 @@ final class MediumPathTimeoutTests: XCTestCase {
         func send(_ packet: Packet) throws {}
     }
 
-    /// `2*(MTU*8/bitrate) + DEFAULT_PER_HOP_TIMEOUT` — a full round trip for one MTU.
+    /// `2*(MTU*8/bitrate) + DEFAULT_PER_HOP_TIMEOUT`—a full round trip for one MTU.
     private func expected(bitrate: Int) -> TimeInterval {
         2 * (Double(Constants.mtu) * 8 / Double(max(bitrate, Transport.minimumBitrate)))
             + Constants.defaultPerHopTimeout
@@ -37,9 +37,9 @@ final class MediumPathTimeoutTests: XCTestCase {
 
     /// Python returns a bare `0` when `lowest_interface_bitrate` is still `None`, *before*
     /// adding the per-hop constant (`Transport.py:3207`). Every caller wraps this in
-    /// `max(timeout, …)`, so zero means "contribute nothing", not "time out immediately" —
-    /// returning `DEFAULT_PER_HOP_TIMEOUT` here would silently raise the floor under every
-    /// utility on a node whose interfaces have not been prioritised yet.
+    /// `max(timeout, …)`, so zero means "contribute nothing", not "time out immediately"—returning
+    /// `DEFAULT_PER_HOP_TIMEOUT` here would silently raise the floor under every
+    /// utility on a node whose interfaces haven't been prioritised yet.
     func testMediumPathTimeoutIsZeroBeforeAnyBitrateIsKnown() {
         XCTAssertEqual(Transport().mediumPathTimeout(), 0)
     }
@@ -77,7 +77,7 @@ final class MediumPathTimeoutTests: XCTestCase {
 
     /// Python's generator filters on `if interface.online and interface.bitrate`, and
     /// `bitrate` is falsy for both `None` and `0`. An offline LoRa radio must not go on
-    /// inflating every timeout on a node that is actually running over TCP.
+    /// inflating every timeout on a node that's actually running over TCP.
     func testOfflineAndZeroBitrateInterfacesAreExcluded() {
         let t = Transport()
         let offline = Iface(name: "lora", bitrate: 1200)
@@ -92,7 +92,7 @@ final class MediumPathTimeoutTests: XCTestCase {
     /// Python's `min()` over an empty generator raises, and the `except` leaves the previous
     /// value in place rather than clearing it (`Transport.py:568-569`). Mirrored deliberately:
     /// a node whose interfaces have all dropped has no paths to resolve either, so the only
-    /// observable difference would be utilities giving up *sooner* on a network that is down.
+    /// observable difference would be utilities giving up *sooner* on a network that's down.
     func testTheLastKnownBitrateSurvivesEveryInterfaceGoingOffline() {
         let t = Transport()
         let iface = Iface(name: "lora", bitrate: 1200)
@@ -107,13 +107,13 @@ final class MediumPathTimeoutTests: XCTestCase {
 
     // MARK: - The sort
 
-    /// The ordering contract: fastest first, registration order among equals — Python's
+    /// The ordering contract: fastest first, registration order among equals—Python's
     /// `list.sort` is stable, and this now runs on every jobs pass, so a reshuffle of
     /// same-bitrate interfaces would change announce emission order every five seconds.
     ///
     /// This pins the contract, not the comparator. Swift's `sort(by:)` is documented as *not*
     /// guaranteed stable, but today's implementation preserves order even at forty equal keys,
-    /// so replacing the index-decorated comparator with a bare `>` does not make this fail.
+    /// so replacing the index-decorated comparator with a bare `>` doesn't make this fail.
     /// The comparator stays because the guarantee is the thing being relied on, and a future
     /// stdlib is free to withdraw the accident.
     func testEqualBitratesKeepRegistrationOrder() {

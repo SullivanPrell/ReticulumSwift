@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Mirrors Python's `Interface.MODE_*` constants (0x01–0x07).
 /// The mode controls how a transport node interacts with the interface,
-/// e.g. whether unknown-path requests are propagated outward.
+/// for example, whether unknown-path requests are propagated outward.
 public enum InterfaceMode: UInt8, Sendable, Equatable {
     case full         = 0x01
     case pointToPoint = 0x02
@@ -24,8 +24,8 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
 
     /// Interface modes a *boundary*-mode interface is allowed to propagate
     /// recursive path requests onto. RNS 1.4.1 lets boundary interfaces search
-    /// for unknown destinations, but only towards boundary and gateway peers —
-    /// never back out over access-point/roaming/internal segments.
+    /// for unknown destinations, but only towards boundary and gateway peers—never
+    /// back out over access-point/roaming/internal segments.
     /// Mirrors Python's `Interface.BOUNDARY_SEARCH_MODES`.
     public static let boundarySearchModes: Set<InterfaceMode> = [.boundary, .gateway]
 
@@ -36,7 +36,7 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
     /// Parse a config-file mode string, accepting every alias Python does
     /// (`Reticulum._config_interface_mode` / the `autoconnect_interface_mode`
     /// parser). Comparison is case-insensitive; returns `nil` for an
-    /// unrecognised value so callers can leave their default in place, matching
+    /// unrecognized value so callers can leave their default in place, matching
     /// Python's `if v != None:` assignment guard.
     public init?(configName: String) {
         switch configName.trimmingCharacters(in: .whitespaces).lowercased() {
@@ -70,7 +70,7 @@ public protocol Interface: AnyObject {
 
     var isOnline: Bool { get }
 
-    /// Per-interface mutable configuration — mode, announce rate control, ingress/egress
+    /// Per-interface mutable configuration—mode, announce rate control, ingress/egress
     /// control and the `ic_*` tunables.
     ///
     /// One stored property is the entire requirement; `Interface`'s extension forwards each
@@ -84,9 +84,9 @@ public protocol Interface: AnyObject {
     var interfaceState: InterfaceState { get }
 
     /// Human-readable display name matching Python's `str(interface)` format,
-    /// e.g. `"AutoInterface[local]"`, `"TCPClientInterface[...]"`.
+    /// for example, `"AutoInterface[local]"`, `"TCPClientInterface[...]"`.
     /// Declared as a protocol requirement (rather than left to the extension)
-    /// so that `hash`/`getHash()` dispatch dynamically to overrides — a plain
+    /// so that `hash`/`getHash()` dispatch dynamically to overrides—a plain
     /// extension member here would be statically dispatched and always resolve
     /// to the default, silently hashing `name` instead of the type-qualified string.
     /// Mirrors Python's `Interface.__str__`.
@@ -98,7 +98,7 @@ public protocol Interface: AnyObject {
     /// Declared here, rather than left to reflection over the Swift type, because a handful
     /// of Swift classes are named differently from their Python counterparts. `rnstatus -d`
     /// prints this string, and Reticulum's own config reconstruction branches on it, so a
-    /// Swift-only name reaches Python consumers as an interface kind they do not recognise.
+    /// Swift-only name reaches Python consumers as an interface kind they don't recognize.
     var statsTypeName: String { get }
 
     /// The `short_name` reported in the interface-stats payload (Python:
@@ -130,11 +130,11 @@ public protocol Interface: AnyObject {
     /// Mirrors Python's `Interface.AUTOCONFIGURE_MTU`.
     var autoconfigureMtu: Bool { get }
 
-    /// True when this interface has a fixed hardware MTU that cannot be exceeded.
+    /// True when this interface has a fixed hardware MTU that can't be exceeded.
     /// Mirrors Python's `Interface.FIXED_MTU`.
     var fixedMtu: Bool { get }
 
-    /// Fraction of interface capacity announces may consume (e.g. `0.02` for 2%).
+    /// Fraction of interface capacity announces may consume (for example, `0.02` for 2%).
     /// Mirrors Python's `Interface.announce_cap`, assigned from config at
     /// `Reticulum.py:834-837` / `:912` where the config value is a percentage in `(0, 100]`.
     var announceCap: Double { get set }
@@ -170,7 +170,7 @@ public protocol Interface: AnyObject {
     var createdAt: Date { get }
 
     /// Set to true before registering with Transport to request that a tunnel be synthesized
-    /// for this interface. Transport will call `synthesizeTunnel` and then clear this flag.
+    /// for this interface. Transport calls `synthesizeTunnel` and then clears this flag.
     /// Mirrors Python's `Interface.wants_tunnel`.
     var wantsTunnel: Bool { get set }
 
@@ -187,7 +187,7 @@ public protocol Interface: AnyObject {
     var ifacNetname: String? { get set }
 
     /// When true, a transport node searches for unknown paths on path requests
-    /// received here regardless of this interface's `mode` (i.e. even when the
+    /// received here regardless of this interface's `mode` (that is, even when the
     /// mode isn't in `discoverPathsFor`). Mirrors Python's RNS 1.3.6
     /// `Interface.recursive_prs`. Defaults to `false`.
     var recursivePrs: Bool { get set }
@@ -215,7 +215,7 @@ public protocol Interface: AnyObject {
     func send(_ packet: Packet) throws
 
     /// Set by Transport when the interface is registered. The interface
-    /// invokes this for every successfully-decoded inbound packet.
+    /// invokes this for every successfully decoded inbound packet.
     var inboundHandler: ((Packet, any Interface) -> Void)? { get set }
 
     /// Set by Transport when IFAC is needed. When non-nil the interface
@@ -223,7 +223,7 @@ public protocol Interface: AnyObject {
     /// Transport verifies the IFAC code and parses the packet internally.
     var rawInboundHandler: ((Data, any Interface) -> Void)? { get set }
 
-    // MARK: - IFAC properties (optional — nil means no IFAC on this interface)
+    // MARK: - IFAC properties (optional—nil means no IFAC on this interface)
 
     /// Ed25519 identity derived from the network name / access key.
     var ifacIdentity: Identity? { get set }
@@ -241,19 +241,19 @@ public protocol Interface: AnyObject {
     func stop()
 }
 
-/// An interface that can front multiple locally-connected shared-instance
+/// An interface that can front multiple locally connected shared-instance
 /// clients (rnstatus, nomadnet, MeshChatX, …). Mirrors Python's
-/// `Transport.local_client_interfaces` — a list of one per-connection
-/// `LocalClientInterface` spawned per accepted socket — collapsed here into
-/// a single object per listening server (e.g. `PosixTCPServer`) since Swift
+/// `Transport.local_client_interfaces`—a list of one per-connection
+/// `LocalClientInterface` spawned per accepted socket—collapsed here into
+/// a single object per listening server (for example, `PosixTCPServer`) since Swift
 /// fans a whole accept-loop out from one `Interface`. `clientCount` is the
-/// number of currently attached local clients; `Transport` only treats the
+/// number of attached local clients; `Transport` only treats the
 /// interface as "serving local clients" while this is greater than zero.
 public protocol LocalClientServingInterface: Interface {
     var clientCount: Int { get }
 }
 
-/// An interface whose hardware MTU follows its bitrate — Python's `AUTOCONFIGURE_MTU = True`
+/// An interface whose hardware MTU follows its bitrate—Python's `AUTOCONFIGURE_MTU = True`
 /// classes, where `optimise_mtu()` writes `HW_MTU` at runtime (`Interface.py:205-217`).
 ///
 /// Adopted by exactly the types whose Python counterparts set the flag (TCP client/server and
@@ -270,9 +270,9 @@ public protocol MtuAutoconfiguringInterface: Interface {
 /// One implementation shared by every caller, so no interface can carry its own drifted copy.
 ///
 /// RNS 1.5.1 made **every** rung inclusive. Through 1.4.2 only the top rung was `>=` and the
-/// other nine were `>`, so a bitrate sitting exactly on a boundary — and the class-constant
-/// guesses do sit exactly on boundaries, 10e6 for TCP and 100e6 for a dialing Backbone —
-/// selected one rung *lower* than Python now selects. That value is advertised to every
+/// other nine were `>`, so a bitrate sitting exactly on a boundary—and the class-constant
+/// guesses do sit exactly on boundaries, 10e6 for TCP and 100e6 for a dialing Backbone—selected
+/// one rung *lower* than Python now selects. That value is advertised to every
 /// directly connected peer in the 3-byte LINKREQUEST MTU signalling, so the stale `>` was a
 /// live disagreement about link MTU with any 1.5.x peer, not a cosmetic difference.
 public enum RNSInterfaceMtu {
@@ -301,7 +301,7 @@ public extension Interface {
     /// this client survive the reconnect instead of dying with the socket.
     ///
     /// On the protocol rather than per interface so a new dialling type inherits it: this is
-    /// the seam that was missing, not two call sites — the machinery and its consumer both
+    /// the seam that was missing, not two call sites—the machinery and its consumer both
     /// existed and nothing ever set the flag.
     func noteConnected() {
         wantsTunnel = true
@@ -326,8 +326,8 @@ public extension Interface {
                       level: .pathing)
     }
     /// Default `displayName`: the class-qualified form `"Class[name]"`, which is what Python's
-    /// `__str__` returns for every interface whose reference string carries no peer address —
-    /// `SerialInterface[…]` (`SerialInterface.py:226-227`), `KISSInterface[…]` (`:387-388`),
+    /// `__str__` returns for every interface whose reference string carries no peer address—`SerialInterface[…]`
+    /// (`SerialInterface.py:226-227`), `KISSInterface[…]` (`:387-388`),
     /// `AX25KISSInterface[…]` (`:400-401`), `RNodeInterface[…]` (`:1247-1248`),
     /// `RNodeMultiInterface[…]` (`:923-924`), `I2PInterface[…]` (`:890`),
     /// `I2PInterfacePeer[…]` (`:713-714`), `AutoInterface[…]` (`:609`),
@@ -335,14 +335,14 @@ public extension Interface {
     ///
     /// It composes `statsTypeName`, which is already the RNS class name, so a new interface type
     /// gets the correct shape by declaring nothing. **The previous default was the bare `name`**,
-    /// and that is why `bugs/022` exists: 1.7.0 fixed the nine wrong publishers by adding
-    /// overrides to the TCP and UDP families only, and every type it did not touch kept silently
-    /// inheriting a name that is neither the identity Python computes
+    /// and that's why `bugs/022` exists: 1.7.0 fixed the nine wrong publishers by adding
+    /// overrides to the TCP and UDP families only, and every type it didn't touch kept silently
+    /// inheriting a name that's neither the identity Python computes
     /// (`hash` is `fullHash(displayName)`) nor a string `rnstatus`' class-prefix filters match.
     /// Composing here rather than overriding per file is the seam: the tenth interface type
-    /// cannot repeat it.
+    /// can't repeat it.
     ///
-    /// Override only where the reference string is genuinely a different shape — a peer address
+    /// Override only where the reference string is genuinely a different shape—a peer address
     /// in the tail (`TCPInterface[name/ip:port]`), a form that ignores `name`
     /// (`LocalInterface[port]`, `Shared Instance[port]`), or one derived from a parent or peer
     /// address (`RNodeSubInterface`, `WeaveInterfacePeer`). `InterfaceDisplayNameTests` asserts
@@ -369,7 +369,7 @@ public extension Interface {
     /// Mirrors Python's `Interface.bitrate` direct attribute access.
     func getBitrate() -> Int { bitrate }
 
-    /// Returns the interface mode (full, access-point, roaming, etc.).
+    /// Returns the interface mode (full, access-point, roaming, and so on).
     /// Mirrors Python's `Interface.mode` direct attribute access.
     func getMode() -> InterfaceMode { mode }
 
@@ -378,16 +378,16 @@ public extension Interface {
     var rxPackets: Int { 0 }
     var txPackets: Int { 0 }
 
-    // HW MTU — unknown by default
+    // HW MTU—unknown by default
     var hwMtu: Int? { nil }
     var autoconfigureMtu: Bool { false }
     var fixedMtu: Bool { false }
 
-    /// Default `interfaceState` for conformers that do not declare their own.
+    /// Default `interfaceState` for conformers that don't declare their own.
     ///
     /// Every interface this library ships declares `public let interfaceState = InterfaceState()`,
     /// which is the intended form. This default keeps the protocol adoptable by conformers defined
-    /// elsewhere, and still yields genuine per-instance state — see
+    /// elsewhere, and still yields genuine per-instance state—see
     /// `InterfaceState.FallbackStorage`.
     var interfaceState: InterfaceState {
         InterfaceState.fallbackStorage.state(for: self)
@@ -475,12 +475,12 @@ public extension Interface {
 
     var isRoutingEndpoint: Bool { true }
 
-    // PHY stats — no radio hardware by default
+    // PHY stats—no radio hardware by default
     var rssi: Float? { nil }
     var snr: Float? { nil }
     var quality: Float? { nil }
 
-    // IFAC defaults — no IFAC enabled (no-op storage for types that don't override)
+    // IFAC defaults—no IFAC enabled (no-op storage for types that don't override)
     var rawInboundHandler: ((Data, any Interface) -> Void)? {
         get { nil }
         set { }
@@ -542,7 +542,7 @@ public extension Interface {
         let hasIfacFlag = raw.count >= 1 && (raw[0] & 0x80) == 0x80
 
         guard let key = ifacKey else {
-            // No IFAC on this interface — drop if IFAC flag is set.
+            // No IFAC on this interface—drop if IFAC flag is set.
             return hasIfacFlag ? nil : raw
         }
 
@@ -559,7 +559,7 @@ public extension Interface {
             if i <= 1 || i > ifacSize + 1 {
                 unmasked.append(raw[i] ^ mask[i])
             } else {
-                unmasked.append(raw[i])   // IFAC bytes — not unmasked
+                unmasked.append(raw[i])   // IFAC bytes—not unmasked
             }
         }
 

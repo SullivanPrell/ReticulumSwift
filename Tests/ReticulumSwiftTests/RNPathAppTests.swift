@@ -5,7 +5,7 @@ import XCTest
 ///
 /// Python reference: `reference_implementations/reticulum/RNS/Utilities/rnpath.py`
 /// (RNS 1.4.0). Golden strings come from running the installed `rnpath` and `RNS` on this
-/// machine — the help block was captured under Python 3.11.3 with `COLUMNS=80`, and every
+/// machine—the help block was captured under Python 3.11.3 with `COLUMNS=80`, and every
 /// `pretty_date` / `hour_rate` value was read back from `RNS.Utilities.rnpath.pretty_date`
 /// and Python's own `round`/`str` directly.
 
@@ -29,7 +29,7 @@ final class RNPathAppConstantsTests: XCTestCase {
 
     func testDestinationNames() {
         XCTAssertEqual(RNPathApp.appName, "rnpath")
-        // Python: RNS.Destination(..., "rnstransport", "remote", "management") — rnpath.py:87
+        // Python: RNS.Destination(..., "rnstransport", "remote", "management")—rnpath.py:87
         XCTAssertEqual(RNPathApp.transportAppName, "rnstransport")
         XCTAssertEqual(RNPathApp.managementAspects, ["remote", "management"])
         XCTAssertEqual(RNPathApp.blackholeAspects, ["info", "blackhole"])
@@ -57,7 +57,7 @@ final class RNPathAppConstantsTests: XCTestCase {
         XCTAssertTrue(RNPathApp.outputResetString.hasSuffix("\r"))
         XCTAssertEqual(RNPathApp.outputResetString.filter { $0 == " " }.count, 58)
 
-        // Python: the DIFFERENT inline string at rnpath.py:465 and 476 — 55 spaces, not 58.
+        // Python: the DIFFERENT inline string at rnpath.py:465 and 476—55 spaces, not 58.
         XCTAssertEqual(RNPathApp.lineClearString.count, 57)
         XCTAssertEqual(RNPathApp.lineClearString.filter { $0 == " " }.count, 55)
         XCTAssertNotEqual(RNPathApp.lineClearString, RNPathApp.outputResetString)
@@ -86,13 +86,13 @@ final class RNPathAppConstantsTests: XCTestCase {
     }
 
     func testVersionReportsThePackageVersionLikeEveryOtherUtility() {
-        // Python: argparse version="rnpath {RNS._version.__version__}" (rnpath.py:484) —
-        // the version of the software actually running. The Swift analogue is this port's
+        // Python: argparse version="rnpath {RNS._version.__version__}" (rnpath.py:484)—the
+        // version of the software actually running. The Swift analogue is this port's
         // own release, and all nine utilities must answer identically, so that a version
         // pasted into a bug report identifies one build rather than nine.
         //
-        // Reticulum.rnsProtocolVersion is a different fact — the RNS release this build is
-        // wire-compatible with — and is deliberately NOT what --version reports.
+        // Reticulum.rnsProtocolVersion is a different fact—the RNS release this build is
+        // wire-compatible with—and is deliberately NOT what --version reports.
         XCTAssertEqual(RNPathApp.versionString, "rnpath \(Reticulum.version)")
         XCTAssertNotEqual(Reticulum.rnsProtocolVersion, Reticulum.version)
     }
@@ -103,7 +103,7 @@ final class RNPathAppConstantsTests: XCTestCase {
 final class RNPathParseTests: XCTestCase {
 
     func testParseHashWording() {
-        // Python: rnpath.py:95 — used by -p/-B/-U, whose failures exit 20.
+        // Python: rnpath.py:95—used by -p/-B/-U, whose failures exit 20.
         XCTAssertThrowsError(try RNPathApp.parseHash("")) { error in
             XCTAssertEqual(error as? RNPathApp.ParseError, .invalidHashLength)
             XCTAssertEqual((error as? RNPathApp.ParseError)?.message,
@@ -121,7 +121,7 @@ final class RNPathParseTests: XCTestCase {
     }
 
     func testParseDestinationWording() {
-        // Python: rnpath.py:247/249 — the -t/-r/-d/-x/default copies, whose failures exit 1.
+        // Python: rnpath.py:247/249—the -t/-r/-d/-x/default copies, whose failures exit 1.
         XCTAssertThrowsError(try RNPathApp.parseDestination("abc")) { error in
             XCTAssertEqual((error as? RNPathApp.ParseError)?.message,
                            "Destination length is invalid, must be 32 hexadecimal characters (16 bytes).")
@@ -140,7 +140,7 @@ final class RNPathParseTests: XCTestCase {
     }
 
     /// Regression guard: `Data(hex:)` delegates to `UInt8(_:radix: 16)`, which accepts a
-    /// leading "+" where Python's `bytes.fromhex` does not.
+    /// leading "+" where Python's `bytes.fromhex` doesn't.
     func testLeadingPlusIsRejected() {
         XCTAssertEqual(UInt8("+a", radix: 16), 10, "precondition: the Swift hole still exists")
         XCTAssertThrowsError(try RNPathApp.parseHash("+a" + String(repeating: "0", count: 30))) { error in
@@ -181,7 +181,7 @@ final class RNPathPrettyDateTests: XCTestCase {
         XCTAssertEqual(ago(59), "59 seconds")
         XCTAssertEqual(ago(60), "1 minute")
         XCTAssertEqual(ago(69), "1 minute")
-        // Python: int(70/60) == 1 with no singularisation — "1 minutes", sic.
+        // Python: int(70/60) == 1 with no singularisation—"1 minutes", sic.
         XCTAssertEqual(ago(70), "1 minutes")
         XCTAssertEqual(ago(7199), "119 minutes")
         XCTAssertEqual(ago(7200), "2 hours")
@@ -350,7 +350,7 @@ final class RNPathRateLineTests: XCTestCase {
         let line = RNPathFormatter.rateLine(entry(), now: now)
         XCTAssertEqual(line,
                        "<aabbccddeeff00112233445566778899> last heard 30 seconds ago, "
-                       // pretty_date(3600 ago) is "60 minutes" — Python's minutes branch
+                       // pretty_date(3600 ago) is "60 minutes"—Python's minutes branch
                        // runs all the way to 7200 seconds, verified against the live helper.
                        + "3 announces/hour in the last 60 minutes")
     }
@@ -367,12 +367,12 @@ final class RNPathRateLineTests: XCTestCase {
     func testBlockedUntil() {
         XCTAssertFalse(RNPathFormatter.rateLine(entry(blockedUntil: now - 10), now: now)!
             .contains("new announces allowed in"))
-        // Python: bli = now - (int(blocked_until) - now) — 600s ahead reads back as 600s past.
+        // Python: bli = now - (int(blocked_until) - now)—600 seconds ahead reads back as 600 seconds past.
         XCTAssertTrue(RNPathFormatter.rateLine(entry(blockedUntil: now + 600), now: now)!
             .hasSuffix(", new announces allowed in 10 minutes"))
     }
 
-    /// Python: span = max(now - timestamps[0], 3600.0) — the one-hour floor means a
+    /// Python: span = max(now - timestamps[0], 3600.0)—the one-hour floor means a
     /// destination first heard 30 minutes ago still reports per hour, not per half-hour.
     func testSpanIsFlooredAtOneHour() {
         let recent = entry(timestamps: [now - 1800, now - 900])
@@ -416,7 +416,7 @@ final class RNPathBlackholeLineTests: XCTestCase {
 
     func testIndefinite() {
         XCTAssertEqual(line(), "<aabbccddeeff00112233445566778899> blackholed indefinitely")
-        // Python tests `if until:` — a zero is falsy, so it is "indefinitely", not "for 0s".
+        // Python tests `if until:`—a zero is falsy, so it's "indefinitely", not "for 0s".
         XCTAssertEqual(line(until: 0), "<aabbccddeeff00112233445566778899> blackholed indefinitely")
     }
 
@@ -434,7 +434,7 @@ final class RNPathBlackholeLineTests: XCTestCase {
     }
 
     func testBySuffix() {
-        // Python: no " by …" when the source is our own transport identity.
+        // Python: no " by …" when the source is the local transport identity.
         XCTAssertFalse(line(source: hashC, local: hashC).contains(" by "))
         XCTAssertTrue(line(source: hashB, local: hashC)
             .hasSuffix(" by <0102030405060708090a0b0c0d0e0f10>"))
@@ -454,8 +454,8 @@ final class RNPathBlackholeFilterTests: XCTestCase {
         RNPathBlackholeEntry(identityHash: hashA, source: source, until: nil, reason: reason)
     }
 
-    /// Python: filter_str = f"{hash} {until_str} {reason_str} {by_str}" (rnpath.py:192) —
-    /// a space-join over fragments that already carry leading spaces.
+    /// Python: filter_str = f"{hash} {until_str} {reason_str} {by_str}" (rnpath.py:192)—a
+    /// space-join over fragments that already carry leading spaces.
     func testFilterStringDiffersFromThePrintedLine() {
         let filterString = RNPathFormatter.blackholeFilterString(
             entry(), now: now, localTransportIdentityHash: hashC)
@@ -491,8 +491,8 @@ final class RNPathBlackholeFilterTests: XCTestCase {
 
 final class RNPathFilterSourceTests: XCTestCase {
 
-    /// Python: the FETCH source is chosen by `blackholed` first (rnpath.py:131) but the
-    /// FILTER source by `remote_blackhole_list` (rnpath.py:194) — different flags.
+    /// Python: `blackholed` chooses the FETCH source first (rnpath.py:131) but the
+    /// FILTER source by `remote_blackhole_list` (rnpath.py:194)—different flags.
     func testFilterSourceSplit() {
         var options = RNPathOptions()
         options.blackholed = true
@@ -621,7 +621,7 @@ final class RNPathModelCodecTests: XCTestCase {
     }
 
     /// The bridging init must convert Dates to epoch seconds and resolve the interface's
-    /// short config name to its display name — before sorting, since that string is the key.
+    /// short config name to its display name—before sorting, since that string is the key.
     func testBridgingFromTransportEntry() {
         let transport = Transport()
         let interface = UDPInterface(name: "Bridge", listenPort: 0)
@@ -629,7 +629,7 @@ final class RNPathModelCodecTests: XCTestCase {
         defer { transport.deregister(interface: interface) }
 
         // `via` is non-optional: Python's path_table never stores None there, falling back
-        // to the destination's own hash for a directly-heard announce.
+        // to the destination's own hash for a directly heard announce.
         let source = Transport.PathTableEntry(destinationHash: hashA, via: hashA, hops: 1,
                                               interfaceName: "Bridge",
                                               lastHeard: Date(timeIntervalSince1970: 10),
@@ -679,7 +679,7 @@ final class RNPathBlackholeDecodeTests: XCTestCase {
     }
 
     func testNonMapResponseIsRejected() {
-        // Python: `if type(response) == dict:` — an array is not a dict.
+        // Python: `if type(response) == dict:`—an array isn't a dict.
         XCTAssertNil(RNPathBlackholeEntry.decodeList(.array([])))
         // …but an EMPTY map IS a dict, and is accepted.
         XCTAssertEqual(RNPathBlackholeEntry.decodeList(.map([]))?.count, 0)
@@ -708,7 +708,7 @@ final class RNPathRemotePayloadTests: XCTestCase {
         XCTAssertEqual(empty, .array([.string("table"), .nil, .nil]))
     }
 
-    /// Python: data = ["rates", destination_hash] — TWO elements, no max_hops (rnpath.py:313).
+    /// Python: data = ["rates", destination_hash]—TWO elements, no max_hops (rnpath.py:313).
     func testRatesPayloadHasTwoElements() {
         let payload = RNPathRemoteClient.pathRequestPayload(command: "rates",
                                                             destinationHash: hashA,
@@ -735,7 +735,7 @@ final class RNPathDestinationHashTests: XCTestCase {
     }
 
     /// Cross-check: driving the raw-bytes path with a real Identity's hash must agree with
-    /// the Identity-based overload, proving the two derivations cannot drift.
+    /// the Identity-based overload, proving the two derivations can't drift.
     func testAgreesWithTheIdentityBasedOverload() {
         let identity = Identity()
         XCTAssertEqual(
@@ -747,7 +747,7 @@ final class RNPathDestinationHashTests: XCTestCase {
     }
 
     /// The same destination `BlackholeUpdater` builds (Discovery.swift), so the two client
-    /// paths cannot diverge.
+    /// paths can't diverge.
     func testAgreesWithTheDiscoveryBlackholeDestination() throws {
         let identity = Identity()
         let destination = try Destination(identity: identity, direction: .out, kind: .single,
@@ -792,7 +792,7 @@ final class RNPathJSONTests: XCTestCase {
         XCTAssertEqual(RNPathFormatter.jsonNumber(9.0), "9.0")
         XCTAssertEqual(RNPathFormatter.jsonNumber(0.0), "0.0")
         XCTAssertEqual(RNPathFormatter.jsonNumber(1.5), "1.5")
-        // Shortest round-trip repr, matching Python — this exact value appears in the
+        // Shortest round-trip repr, matching Python—this exact value appears in the
         // captured `rnpath -t -j` reference output.
         XCTAssertEqual(RNPathFormatter.jsonNumber(1784759441.9780102), "1784759441.9780102")
     }
@@ -1075,7 +1075,7 @@ final class RNPathRunnerTableTests: XCTestCase {
         XCTAssertEqual(recorder.lines, ["No path known"])
     }
 
-    /// Python quirk: the positional filter is NOT applied in JSON mode for the local case,
+    /// Python quirk: the positional filter isn't applied in JSON mode for the local case,
     /// but max_hops IS.
     func testJSONModeIgnoresTheDestinationFilterButHonoursMaxHops() {
         var options = RNPathOptions()
@@ -1088,7 +1088,7 @@ final class RNPathRunnerTableTests: XCTestCase {
 
         XCTAssertEqual(makeRunner(options, management: management, recorder: recorder).run(), .ok)
         XCTAssertEqual(recorder.lines.count, 1)
-        // Both 3-hop and 1-hop rows survive; the 5-hop row is filtered by max_hops.
+        // Both 3-hop and 1-hop rows survive; max_hops filters out the 5-hop row.
         XCTAssertTrue(recorder.lines[0].contains("aabbccddeeff00112233445566778899"))
         XCTAssertTrue(recorder.lines[0].contains("0102030405060708090a0b0c0d0e0f10"))
         XCTAssertFalse(recorder.lines[0].contains(String(repeating: "5a", count: 16)))
@@ -1107,7 +1107,7 @@ final class RNPathRunnerTableTests: XCTestCase {
                        ["Destination length is invalid, must be 32 hexadecimal characters (16 bytes)."])
     }
 
-    /// Python: `if response:` — an empty remote table is falsy and reported as a failure,
+    /// Python: `if response:`—an empty remote table is falsy and reported as a failure,
     /// indistinguishably from an ACL rejection or a request timeout.
     func testEmptyRemoteTableIsTreatedAsAFailure() {
         var options = RNPathOptions()
@@ -1176,8 +1176,8 @@ final class RNPathRunnerRatesTests: XCTestCase {
         XCTAssertTrue(recorder.lines[2].hasPrefix("<aabb"))
     }
 
-    /// Python: `if len(table) == 0: print(...)` and then simply *returns* — main()'s
-    /// sys.exit(0) runs, so this is not a failure.
+    /// Python: `if len(table) == 0: print(...)` and then simply *returns*—main()'s
+    /// sys.exit(0) runs, so this isn't a failure.
     func testEmptyTableExitsZero() {
         var options = RNPathOptions()
         options.rates = true
@@ -1232,7 +1232,7 @@ final class RNPathRunnerRatesTests: XCTestCase {
         XCTAssertTrue(recorder.lines[2].hasPrefix("<0102"))
     }
 
-    /// Python: ["rates", destination_hash] — no max_hops element.
+    /// Python: ["rates", destination_hash]—no max_hops element.
     func testRemoteRatesPayloadHasNoMaxHops() {
         var options = RNPathOptions()
         options.rates = true
@@ -1273,7 +1273,7 @@ final class RNPathRunnerDropTests: XCTestCase {
         }
     }
 
-    /// Python: `if reticulum.drop_all_via(hash):` — an Int, and 0 is falsy.
+    /// Python: `if reticulum.drop_all_via(hash):`—an Int, and 0 is falsy.
     func testDropAllViaTreatsZeroAsFailure() {
         for (count, expectedCode) in [(3, RNPathApp.Result.ok), (0, RNPathApp.Result.generalFailure)] {
             var options = RNPathOptions()
@@ -1378,8 +1378,8 @@ final class RNPathRunnerBlackholeTests: XCTestCase {
         }
     }
 
-    /// Python: `until = time.time()+duration*60*60 if blackhole_duration else None` —
-    /// `--duration` is in HOURS, and 0 is falsy.
+    /// Python: `until = time.time()+duration*60*60 if blackhole_duration else None`—`--duration`
+    /// is in HOURS, and 0 is falsy.
     func testDurationIsInHoursAndZeroMeansIndefinite() {
         var options = RNPathOptions()
         options.blackhole = true
@@ -1412,8 +1412,8 @@ final class RNPathRunnerBlackholeTests: XCTestCase {
         XCTAssertTrue(recorder.lines[0].hasPrefix("Could not blackhole identity: "))
     }
 
-    /// A bad hash for -B is caught by the same try, so it reports the "Could not blackhole"
-    /// wrapper rather than the bare parse message — and exits 20, not 1.
+    /// The same try catches a bad hash for -B, so it reports the "Could not blackhole"
+    /// wrapper rather than the bare parse message—and exits 20, not 1.
     func testBadHashIsWrappedInTheBlackholeMessage() {
         var options = RNPathOptions()
         options.blackhole = true
@@ -1443,7 +1443,7 @@ final class RNPathRunnerBlackholeTests: XCTestCase {
         XCTAssertEqual(recorder.lines[0],
                        "<aabbccddeeff00112233445566778899> blackholed indefinitely (spam) "
                        + "by <0102030405060708090a0b0c0d0e0f10>")
-        // Source == our own transport identity, so no " by " suffix.
+        // Source == the local transport identity, so no " by " suffix.
         XCTAssertEqual(recorder.lines[1], "<0102030405060708090a0b0c0d0e0f10> blackholed indefinitely")
 
         // Filtering runs against filter_str, so "spam" keeps only the first entry…
@@ -1452,7 +1452,7 @@ final class RNPathRunnerBlackholeTests: XCTestCase {
         XCTAssertEqual(makeRunner(options, management: management, recorder: filtered, now: now).run(), .ok)
         XCTAssertEqual(filtered.lines.count, 1)
 
-        // …and " blackholed " — which is only in the printed line — matches nothing.
+        // …and " blackholed "—which is only in the printed line—matches nothing.
         options.destination = "blackholed"
         let none = OutputRecorder()
         XCTAssertEqual(makeRunner(options, management: management, recorder: none, now: now).run(), .ok)
@@ -1482,8 +1482,8 @@ final class RNPathRunnerBlackholeTests: XCTestCase {
         XCTAssertTrue(recorder.lines[0].hasPrefix("Could not get blackholed identities from RNS instance: "))
     }
 
-    /// Python's `-p` accepts an EMPTY dict (it is still a dict) and then falls through to
-    /// "No blackholed identity data available" + exit 20 — not the exit-10 failure path.
+    /// Python's `-p` accepts an EMPTY dict (it's still a dict) and then falls through to
+    /// "No blackholed identity data available" + exit 20—not the exit-10 failure path.
     func testRemoteEmptyMapIsSuccessThenEmpty() {
         var options = RNPathOptions()
         options.blackholedList = true
@@ -1557,17 +1557,17 @@ final class RNPathRunnerNotImplementedTests: XCTestCase {
              { $0.blackholed = true }),
             ("Blackholing identity on remote instances not yet implemented",
              { $0.blackhole = true; $0.destination = hexA }),
-            // sic — -U reuses the -B wording verbatim (rnpath.py:228).
+            // sic—-U reuses the -B wording verbatim (rnpath.py:228).
             ("Blackholing identity on remote instances not yet implemented",
              { $0.unblackhole = true; $0.destination = hexA }),
             ("Dropping announce queues on remote instances not yet implemented",
              { $0.dropAnnounces = true }),
             ("Dropping path on remote instances not yet implemented",
              { $0.drop = true; $0.destination = hexA }),
-            // sic — "yet not implemented" word order (rnpath.py:414).
+            // sic—"yet not implemented" word order (rnpath.py:414).
             ("Dropping all paths via specific transport instance on remote instances yet not implemented",
              { $0.dropVia = true; $0.destination = hexA }),
-            // sic — no "yet" at all in the default mode (rnpath.py:435).
+            // sic—no "yet" at all in the default mode (rnpath.py:435).
             ("Requesting paths on remote instances not implemented",
              { $0.destination = hexA }),
         ]
@@ -1771,7 +1771,7 @@ final class RNPathArgumentParsingTests: XCTestCase {
         XCTAssertEqual(try makeParser().parse(["--max", "3"]).int("--max"), 3)
         XCTAssertEqual(try makeParser().parse(["-t"]).flag("--table"), true)
         XCTAssertEqual(try makeParser().parse(["--table"]).flag("--table"), true)
-        // -B and -b are distinct flags — case matters.
+        // -B and -b are distinct flags—case matters.
         let parsed = try makeParser().parse(["-B"])
         XCTAssertTrue(parsed.flag("--blackhole"))
         XCTAssertFalse(parsed.flag("--blackholed"))
@@ -1793,7 +1793,7 @@ final class RNPathArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try makeParser().parse(["-m"]))
     }
 
-    /// The literal must stay byte-identical to argparse's own 80-column rendering — the
+    /// The literal must stay byte-identical to argparse's own 80-column rendering—the
     /// captured `rnpath --help` from Python 3.11.3.
     func testHelpTextMatchesArgparse() {
         let expected = """

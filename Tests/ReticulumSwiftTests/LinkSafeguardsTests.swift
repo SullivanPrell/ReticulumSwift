@@ -8,8 +8,8 @@ import XCTest
 final class LinkSafeguardsTests: XCTestCase {
 
     /// Holds every object the link depends on. `Link.transport` is a weak
-    /// reference, so the Transport instances must be retained by the caller for
-    /// the duration of the test — otherwise link sends fail with `.invalidState`.
+    /// reference, so the caller must retain the Transport instances for
+    /// the duration of the test—otherwise link sends fail with `.invalidState`.
     private final class LinkPair {
         let tA: Transport; let tB: Transport
         let iA: LoopbackInterface; let iB: LoopbackInterface
@@ -45,7 +45,7 @@ final class LinkSafeguardsTests: XCTestCase {
         return LinkPair(tA: tA, tB: tB, iA: iA, iB: iB, dst: dst, initiator: link, responder: responderLink)
     }
 
-    /// A second, validly-signed LINKIDENTIFY from a different identity must be
+    /// A second, validly signed LINKIDENTIFY from a different identity must be
     /// ignored: the responder keeps the first identity and fires the callback once.
     func testRemoteIdentifyAppliedOnlyOnce() throws {
         let identityA = Identity()
@@ -71,7 +71,7 @@ final class LinkSafeguardsTests: XCTestCase {
 
         try link.identify(as: identityA)
         Thread.sleep(forTimeInterval: 0.1)
-        // Second identify with a different identity must be ignored by the responder.
+        // Second identify with a different identity: the responder must ignore it.
         try link.identify(as: identityB)
         Thread.sleep(forTimeInterval: 0.1)
 

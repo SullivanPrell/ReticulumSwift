@@ -26,7 +26,7 @@ public indirect enum PickleValue {
 
 /// Serializes `PickleValue` trees into Python pickle protocol 4 bytes.
 ///
-/// The output is accepted by Python's `pickle.loads()` and is wire-compatible
+/// Python's `pickle.loads()` accepts the output, which is wire-compatible
 /// with every response format the Python RNS RPC clients expect.
 ///
 /// Opcodes used:

@@ -16,9 +16,9 @@ public enum SAMSocketError: Error, Equatable {
 /// One TCP connection to the SAM bridge of a running i2pd daemon.
 ///
 /// SAM connections have two phases:
-///  1. **Handshake** — line-oriented request/reply (`HELLO`, `SESSION CREATE`,
+///  1. **Handshake**—line-oriented request/reply (`HELLO`, `SESSION CREATE`,
 ///     `NAMING LOOKUP`, `STREAM CONNECT`), driven by `write` + `readLine`.
-///  2. **Data** — after `STREAM CONNECT` succeeds the same TCP connection
+///  2. **Data**—after `STREAM CONNECT` succeeds the same TCP connection
 ///     becomes the raw byte pipe to the remote I2P destination; entered with
 ///     `startStreaming`.
 ///
@@ -36,8 +36,8 @@ public protocol SAMSocket: AnyObject {
     /// calling thread up to `timeout`.
     func readLine(timeout: TimeInterval) throws -> String
 
-    /// Switch to the data phase: every received byte from now on — including
-    /// any bytes that arrived after the last reply line — is passed to
+    /// Switch to the data phase: every received byte from now on—including
+    /// any bytes that arrived after the last reply line—is passed to
     /// `handler`. `onClose` fires once when the connection dies remotely or
     /// errors (not on local `close()`).
     func startStreaming(_ handler: @escaping (Data) -> Void,
@@ -51,8 +51,8 @@ public protocol SAMSocket: AnyObject {
 
 /// `SAMSocket` over `NWConnection`, always to the local SAM bridge
 /// (`127.0.0.1:<samPort>`). The blocking handshake calls are intended to run
-/// on a peer's dedicated dial queue — mirroring Python's thread-per-peer
-/// `tunnel_job` model — while NWConnection callbacks run on an internal queue.
+/// on a peer's dedicated dial queue—mirroring Python's thread-per-peer
+/// `tunnel_job` model—while NWConnection callbacks run on an internal queue.
 public final class NWSAMSocket: SAMSocket {
 
     private let host: String
@@ -61,7 +61,7 @@ public final class NWSAMSocket: SAMSocket {
     private var conn: NWConnection?
 
     private let cond = NSCondition()
-    // All state below is guarded by `cond`.
+    // `cond` guards all state below.
     private var buffer = Data()
     private var ready = false
     private var failed = false
@@ -71,7 +71,7 @@ public final class NWSAMSocket: SAMSocket {
     private var closeHandler: (() -> Void)?
 
     /// The exact `NWProtocolTCP.Options` instance the last connect handed to Network.framework,
-    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
     private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
     public init(host: String = "127.0.0.1", port: UInt16) {
@@ -89,7 +89,7 @@ public final class NWSAMSocket: SAMSocket {
         // (`I2PInterface.py:356`, `:742`), which selects `I2P_USER_TIMEOUT`/`I2P_PROBE_*` in
         // `TCPClientInterface.set_timeouts_*` (`TCPInterface.py:190-194`, `:204-207`). I2P
         // round-trips are long enough that the direct-TCP timers would tear down a healthy
-        // tunnel. This line passed `.tcp` — framework defaults, keepalive off — so a SAM bridge
+        // tunnel. This line passed `.tcp`—framework defaults, keepalive off—so a SAM bridge
         // that stopped answering left the peer online forever. Found by the construction-site
         // guard; not in `bugs/023` as filed.
         let socketOptions = RNSSocketOptions.i2pParameters()
@@ -155,7 +155,7 @@ public final class NWSAMSocket: SAMSocket {
         streamHandler = handler
         closeHandler = onClose
         // Bytes pipelined by the remote right behind the STREAM STATUS line
-        // must not be lost — drain them into the data phase first.
+        // must not be lost—drain them into the data phase first.
         let leftover = buffer
         buffer.removeAll()
         let alreadyClosed = closed && !locallyClosed

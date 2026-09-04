@@ -19,15 +19,15 @@ final class UtilitiesMissingTests: XCTestCase {
     func testTimestampStrContainsYear() {
         // epoch 0 → 1970-01-01 in the formatter
         let s = RNSUtilities.timestampStr(0)
-        // The format is "%Y-%m-%d %H:%M:%S" — year field must be present.
+        // The format is "%Y-%m-%d %H:%M:%S"—year field must be present.
         let hasYearDigits = s.range(of: #"\d{4}"#, options: .regularExpression) != nil
         XCTAssertTrue(hasYearDigits, "timestampStr result should contain a 4-digit year")
     }
 
     func testTimestampStrMatchesExpectedFormat() {
         // A known POSIX timestamp: 2026-01-01 00:00:00 UTC = 1767225600
-        // We can't assert the exact hour because it depends on locale TZ,
-        // but we can assert the format yyyy-mm-dd hh:mm:ss.
+        // The exact hour depends on the locale time zone, so only the
+        // format yyyy-mm-dd hh:mm:ss is assertable.
         let s = RNSUtilities.timestampStr(1_767_225_600)
         let pattern = #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"#
         XCTAssertNotNil(s.range(of: pattern, options: .regularExpression),

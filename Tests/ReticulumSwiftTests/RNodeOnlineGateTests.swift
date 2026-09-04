@@ -4,17 +4,17 @@ import XCTest
 /// Python gates `online` on the full bring-up chain: `configure_device` sends detect, waits
 /// (bounded), and on no answer closes the port and stays offline (`RNodeInterface.py:432-448`);
 /// on detect it runs `initRadio()` then `validateRadioState()`, and only then sets
-/// `interface_ready = True` / `online = True` (`:457-462`) — a parameter mismatch aborts
+/// `interface_ready = True` / `online = True` (`:457-462`)—a parameter mismatch aborts
 /// startup and closes the port (`:463-467`). The port's `start()` was `open(); isOnline = true`
 /// with `detect`/`initRadio`/`validateRadioState` production-dead (zero call sites): a
 /// host-mode RNode never received CMD_FREQUENCY/…/CMD_RADIO_STATE ON, so its radio stayed off
 /// while `rnstatus` reported the interface Up. These tests drive `start()` end to end against
-/// mock transports — the existing tests called the helpers by hand, which is exactly how the
+/// mock transports—the existing tests called the helpers by hand, which is exactly how the
 /// dead path hid behind green.
 final class RNodeOnlineGateTests: XCTestCase {
 
-    /// Answers a detect write with a detect response plus echoes of every radio parameter —
-    /// what real firmware does as each `set*` command lands. Echo values are configurable so a
+    /// Answers a detect write with a detect response plus echoes of every radio parameter—what
+    /// real firmware does as each `set*` command lands. Echo values are configurable so a
     /// mismatch can be staged; defaults echo whatever the interface was configured with.
     private final class EchoingRNodeTransport: RNodeTransport {
         var onTransportError: ((Error) -> Void)?
@@ -55,7 +55,7 @@ final class RNodeOnlineGateTests: XCTestCase {
         }
     }
 
-    /// Accepts everything, answers nothing — an absent or dead device.
+    /// Accepts everything, answers nothing—an absent or dead device.
     private final class SilentRNodeTransport: RNodeTransport {
         var onTransportError: ((Error) -> Void)?
         var byteHandler: ((Data) -> Void)?
@@ -81,7 +81,7 @@ final class RNodeOnlineGateTests: XCTestCase {
         let iface = configuredInterface(transport: transport)
         transport.echoSource = iface
         try iface.start()
-        // `start()` no longer blocks — the bring-up runs off the caller's thread, because a
+        // `start()` no longer blocks—the bring-up runs off the caller's thread, because a
         // transport may deliver its bytes on that very thread (`RNodeBringUpThreadingTests`).
         XCTAssertTrue(iface.waitUntilOnline(timeout: 3.0),
                       "the bring-up must reach online with a device that answers")
@@ -91,7 +91,7 @@ final class RNodeOnlineGateTests: XCTestCase {
         XCTAssertTrue(iface.interfaceReady,
                       "Python sets interface_ready only on a validated bring-up "
                       + "(RNodeInterface.py:459)")
-        // The radio must actually have been configured and turned on — the defect was a
+        // The radio must actually have been configured and turned on—the defect was a
         // healthy-looking interface whose modem never received a single command.
         let allWrites = transport.writes.reduce(Data(), +)
         for (cmd, label) in [(KISS.cmdFrequency, "frequency"), (KISS.cmdBandwidth, "bandwidth"),
@@ -125,7 +125,7 @@ final class RNodeOnlineGateTests: XCTestCase {
         let transport = EchoingRNodeTransport()
         let iface = configuredInterface(transport: transport)
         transport.echoSource = iface
-        transport.bandwidthOverride = 250_000   // hardware reports a bandwidth we did not set
+        transport.bandwidthOverride = 250_000   // hardware reports a bandwidth the config never set
         iface.validateTimeout = 0.1
         try iface.start()
         XCTAssertFalse(iface.waitUntilOnline(timeout: 2.0),

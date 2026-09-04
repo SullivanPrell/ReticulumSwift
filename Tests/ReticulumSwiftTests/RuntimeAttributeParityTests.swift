@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `fix-013 §7.8/§7.9`. The reference mutates interface attributes at runtime — `Reticulum`
+/// `fix-013 §7.8/§7.9`. The reference mutates interface attributes at runtime—`Reticulum`
 /// writes config, `Transport` writes routing and rate state, the interfaces write their own
 /// connection state. The audit's structural finding was that many of those were ported as
 /// `{ get }`-only, which makes the write *impossible to express*: no amount of parser work can
@@ -14,13 +14,13 @@ import XCTest
 final class RuntimeAttributeParityTests: XCTestCase {
 
     /// Every attribute the §7.8 sweep classified as parity must round-trip through a live
-    /// interface — **written through the protocol, read back off the concrete type**.
+    /// interface—**written through the protocol, read back off the concrete type**.
     ///
     /// That asymmetry is the whole point, and this suite got it wrong once: writing *and*
     /// reading through `any Interface` only ever exercises the protocol's `InterfaceState`
     /// storage, so a concrete type that shadows an attribute with a get-only property still
-    /// passes — the write lands in the box and the read comes from the box, while every real
-    /// consumer holding the concrete type sees the class's constant. Deliberately falsified by
+    /// passes—the write lands in the box and the read comes from the box, while every real
+    /// consumer holding the concrete type reads the class's constant. Deliberately falsified by
     /// making `TCPClientInterface.gravity` get-only: the original form passed, this one fails.
     func testEveryRuntimeWrittenAttributeIsWritable() throws {
         let concrete = TCPClientInterface(name: "probe", host: "127.0.0.1", port: 4965)
@@ -76,11 +76,11 @@ final class RuntimeAttributeParityTests: XCTestCase {
     }
 
     /// The attributes the reference writes that this port has **no counterpart for**, each
-    /// tied to a subsystem that is not implemented rather than to a missing setter.
+    /// tied to a subsystem that isn't implemented rather than to a missing setter.
     ///
-    /// Kept as a test so the inventory cannot drift into folklore: when a subsystem lands, its
+    /// Kept as a test so the inventory can't drift into folklore: when a subsystem lands, its
     /// entry here fails to describe reality and has to be updated deliberately. The gaps are
-    /// recorded in `swift_devel/bugs/` — this is the index, not the analysis.
+    /// recorded in `swift_devel/bugs/`—this is the index, not the analysis.
     func testTheKnownGapsAreStillTheKnownGaps() {
         // Interface discovery, publish side: Python's `Discovery.InterfaceAnnouncer` announces
         // an interface as a discoverable endpoint, carrying `discoverable`,

@@ -3,7 +3,7 @@ import ReticulumSwift
 
 #if os(macOS)
 
-/// The only `Foundation.Process` user in the rnx port — macOS-only, because `Process` does
+/// The only `Foundation.Process` user in the rnx port—macOS-only, because `Process` does
 /// not exist on iOS, tvOS or watchOS.
 ///
 /// Python reference: `subprocess.Popen(shlex.split(command), stdin=PIPE, stdout=PIPE,
@@ -11,7 +11,7 @@ import ReticulumSwift
 ///
 /// **No shell is involved.** Pipes, redirects, globs, `&&` and `$VAR` all arrive as literal
 /// argv elements, exactly as in Python. Routing through `/bin/sh` would be a wire-visible
-/// behaviour change, so it is deliberately not done.
+/// behaviour change, so it's deliberately not done.
 final class ProcessCommandExecutor: RNXCommandExecutor {
 
     /// Poll cadence while waiting for the child.
@@ -23,7 +23,7 @@ final class ProcessCommandExecutor: RNXCommandExecutor {
     private static let pollInterval: TimeInterval = 0.05
 
     /// Collector for one pipe. A background reader is required: a child that writes more
-    /// than the 64 KB pipe buffer would deadlock if we only read after `waitUntilExit()`.
+    /// than the 64 KB pipe buffer would deadlock if the reader ran only after `waitUntilExit()`.
     private final class OutputCollector {
         private let lock = NSLock()
         private var buffer = Data()
@@ -73,7 +73,7 @@ final class ProcessCommandExecutor: RNXCommandExecutor {
             errCollector.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
         }
 
-        // Python: `process.stdin.write(stdin)` with no flush and no close — communicate()
+        // Python: `process.stdin.write(stdin)` with no flush and no close—communicate()
         // is what actually closes it and delivers EOF. Closing here is the same net effect.
         if let stdin, !stdin.isEmpty {
             try? stdinPipe.fileHandleForWriting.write(contentsOf: stdin)
@@ -84,7 +84,7 @@ final class ProcessCommandExecutor: RNXCommandExecutor {
         var timedOut = false
         while process.isRunning {
             if let timeout, Date().timeIntervalSince(startedAt) > timeout {
-                // Python: rnx.py:206-216 — log, terminate(), wait(), harvest.
+                // Python: rnx.py:206-216—log, terminate(), wait(), harvest.
                 Reticulum.log("Command [\(command)] timed out and is being killed...")
                 timedOut = true
                 process.terminate()

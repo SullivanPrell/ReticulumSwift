@@ -6,13 +6,13 @@ import Darwin
 import Glibc
 #endif
 
-// rnprobe — Reticulum Probe Utility.
+// rnprobe—Reticulum Probe Utility.
 //
 // Python reference: RNS/Utilities/rnprobe.py, `main()` (rnprobe.py:209-249).
 //
 // This target does argument handling, stack bring-up, signal handling and exit codes and
 // nothing else. Every byte of probe output, and all protocol work, lives in
-// `NetworkProbe` inside the library, where it is drivable from XCTest with no terminal
+// `NetworkProbe` inside the library, where it's drivable from XCTest with no terminal
 // and no network.
 
 /// Python: `--version` prints `rnprobe {RNS.__version__}`. The port prints the Swift
@@ -32,13 +32,13 @@ struct rnprobe {
         switch NetworkProbe.Arguments.parse(CommandLine.arguments) {
 
         case .help:
-            // Python: argparse's -h action — print_help(), then exit 0.
+            // Python: argparse's -h action—print_help(), then exit 0.
             output.write(NetworkProbe.Arguments.helpText)
             output.flush()
             exit(0)
 
         case .missingDestination:
-            // Python: rnprobe.py:231-234 — print(""), print_help(), print("").
+            // Python: rnprobe.py:231-234—print(""), print_help(), print("").
             output.write("\n" + NetworkProbe.Arguments.helpText + "\n")
             output.flush()
             exit(0)
@@ -49,7 +49,7 @@ struct rnprobe {
             exit(0)
 
         case .usageError(let detail):
-            // Python: argparse's parser.error() — usage block then the message, on
+            // Python: argparse's parser.error()—usage block then the message, on
             // stderr, exit 2. Note that 2 is also the packet-loss status; the collision
             // is inherited from Python and deliberately not "fixed".
             output.writeError(NetworkProbe.Arguments.usageErrorText(detail))
@@ -64,8 +64,8 @@ struct rnprobe {
     private static func run(_ options: NetworkProbe.Options,
                             output: StandardProbeOutput) -> NetworkProbe.Result {
 
-        // Python validates the full name and the destination hash at rnprobe.py:45-67 —
-        // all of it BEFORE `RNS.Reticulum(...)` at :77. Checking first here keeps a bad
+        // Python validates the full name and the destination hash at rnprobe.py:45-67—all
+        // of it BEFORE `RNS.Reticulum(...)` at :77. Checking first here keeps a bad
         // command line from attaching to a running daemon at all.
         if let error = NetworkProbe.validate(options: options) {
             output.write(error.message + "\n")
@@ -100,7 +100,7 @@ struct rnprobe {
         runningProbe = probe
 
         // Ctrl-C: flip the cooperative cancellation flag the wait loops poll. Signal
-        // handling may only live here — the library must keep compiling for iOS, tvOS and
+        // handling may only live here—the library must keep compiling for iOS, tvOS and
         // watchOS, where none of this exists.
         signal(SIGINT, SIG_IGN)
         let interrupts = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())

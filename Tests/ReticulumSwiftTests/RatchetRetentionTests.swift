@@ -3,14 +3,14 @@ import XCTest
 
 /// How far back a destination can still decrypt.
 ///
-/// Python keeps the active ratchet and its predecessors in one list — `rotate_ratchets`
+/// Python keeps the active ratchet and its predecessors in one list—`rotate_ratchets`
 /// does `self.ratchets.insert(0, new_ratchet)` (`Destination.py:234`) and the announce
-/// advertises `self.ratchets[0]` (`:287`) — capped by `_clean_ratchets` at
+/// advertises `self.ratchets[0]` (`:287`)—capped by `_clean_ratchets` at
 /// `retained_ratchets`, default `RATCHET_COUNT = 512` (`:209`, `:166`, `:85`).
 ///
 /// Swift splits the same list in two: `Identity.activeRatchetPrivateKey` plus
 /// `previousRatchets`, recombined by `ratchetPrivateKeyPool`. So the retained *total* is
-/// `ratchetHistoryDepth + 1`, and the Python-facing number is the total — which is what
+/// `ratchetHistoryDepth + 1`, and the Python-facing number is the total—which is what
 /// `Destination.setRetainedRatchets` takes and what these tests assert.
 final class RatchetRetentionTests: XCTestCase {
 
@@ -51,7 +51,7 @@ final class RatchetRetentionTests: XCTestCase {
         // A sender caches an announced ratchet until it expires (30 days) or it hears a
         // newer announce. At the 30-minute RATCHET_INTERVAL a receiver that announces
         // steadily burns 48 ratchets a day, so "a few hundred rotations behind" is an
-        // ordinary sender that was simply offline for a week — not a pathological case.
+        // ordinary sender that was simply offline for a week—not a pathological case.
         rotate(recipient, times: 400)
 
         let recovered = try recipient.decrypt(

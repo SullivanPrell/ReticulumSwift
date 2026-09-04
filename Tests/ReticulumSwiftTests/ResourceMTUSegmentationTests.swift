@@ -1,22 +1,22 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Resource segmentation derives from the negotiated link MTU — `bugs/016`, tasks 6.2–6.4.
+/// Resource segmentation derives from the negotiated link MTU—`bugs/016`, tasks 6.2–6.4.
 ///
 /// The reference sizes every part from the per-link MTU on **both** sides
-/// (`Resource.py:335`: `link.mtu - HEADER_MAXSIZE - IFAC_MIN_SIZE`) and the receiver does not
-/// trust the advertised part count — it recomputes `total_parts = ceil(size / sdu)` from its own
+/// (`Resource.py:335`: `link.mtu - HEADER_MAXSIZE - IFAC_MIN_SIZE`) and the receiver doesn't
+/// trust the advertised part count—it recomputes `total_parts = ceil(size / sdu)` from its own
 /// `sdu` (`:187`).
 ///
 /// This port split at a fixed `Constants.mdu` (464), which equals the reference's value only at
 /// the base MTU of 500. Once MTU discovery raises a link above that, the two sides compute
 /// different part counts: the receiver's `hashmap_update` walks off the end of its map, the
 /// `IndexError` is swallowed at debug level (`Resource.py:240`), and the fetch simply times out
-/// with the link still ACTIVE. A transfer that never happens, silently — design D1 records why
+/// with the link still ACTIVE. A transfer that never happens, silently—design D1 records why
 /// that makes this a correctness break rather than the "efficiency, deferred" it was filed as.
 ///
 /// Swift↔Swift never noticed because the Swift receiver trusted `adv.partCount`: two
-/// consistently-wrong halves interoperate with each other and with nothing else. Both halves are
+/// consistently wrong halves interoperate with each other and with nothing else. Both halves are
 /// asserted here.
 final class ResourceMTUSegmentationTests: XCTestCase {
 
@@ -71,10 +71,10 @@ final class ResourceMTUSegmentationTests: XCTestCase {
 
     // MARK: - The receiver
 
-    /// Spec: "A receiver derives the part count independently" — and "a mismatch between the two
+    /// Spec: "A receiver derives the part count independently"—and "a mismatch between the two
     /// is surfaced rather than silently accepted".
     ///
-    /// Trusting the advertisement is exactly why two consistently-wrong implementations
+    /// Trusting the advertisement is exactly why two consistently wrong implementations
     /// interoperate with each other and with nothing else.
     func testReceiverDerivesThePartCountAndSurfacesADisagreement() throws {
         let mtu = 8156
@@ -97,7 +97,7 @@ final class ResourceMTUSegmentationTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Random bytes, so bz2 cannot shrink the payload below one part and hide the defect.
+    /// Random bytes, so bz2 can't shrink the payload below one part and hide the defect.
     private static func incompressibleData(count: Int) -> Data {
         var bytes = Data(count: count)
         _ = bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
@@ -131,7 +131,7 @@ final class ResourceMTUSegmentationTests: XCTestCase {
         wait(for: [established], timeout: 2.0)
 
         // Both ends must agree, exactly as MTU discovery leaves them; sizing from one side only
-        // is the defect, so a test that raised only the sender's could not see it.
+        // is the defect, so a test that raised only the sender's couldn't see it.
         link.establishedMtu = mtu
         responderTransport.links[link.linkID!]?.establishedMtu = mtu
         transportsUnderTest.append(contentsOf: [initiatorTransport, responderTransport])

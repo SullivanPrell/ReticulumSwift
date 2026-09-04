@@ -1,20 +1,20 @@
 import Foundation
 @testable import ReticulumSwift
 
-/// Install a path the way the stack actually learns one — with the announce that established it
-/// sitting in the announce cache — so a persistence test exercises the state the reference
+/// Install a path the way the stack actually learns one—with the announce that established it
+/// sitting in the announce cache—so a persistence test exercises the state the reference
 /// persists rather than a shape only the port could restore.
 ///
 /// Before `bugs/029` the path table inlined the identity and the ratchet and carried no announce
 /// reference at all, so a test could install
-/// `PathEntry(destinationHash: Data(repeating: 0xAA, count: 16), …)` — a hash belonging to no
-/// destination, established by no announce — and still watch it round-trip. Every persistence
-/// test in the suite was built that way, and that is a large part of why four files could diverge
+/// `PathEntry(destinationHash: Data(repeating: 0xAA, count: 16), …)`—a hash belonging to no
+/// destination, established by no announce—and still watch it round-trip. Every persistence
+/// test in the suite was built that way, and that's a large part of why four files could diverge
 /// from the reference for the life of the port with the suite green: the tests round-tripped the
 /// port's own shape through the port's own codec and never touched the property that mattered.
 ///
-/// The reference discards any `destination_table` entry whose announce cannot be loaded
-/// (`Transport.py:334-345`), so a synthetic entry is now — correctly — neither persisted nor
+/// The reference discards any `destination_table` entry whose announce can't be loaded
+/// (`Transport.py:334-345`), so a synthetic entry is now—correctly—neither persisted nor
 /// restored. A test that wants to observe persistence has to install a real one.
 ///
 /// `transport.cacheDirectory` must be set; `Reticulum.start()` does it, a bare `Transport()` does

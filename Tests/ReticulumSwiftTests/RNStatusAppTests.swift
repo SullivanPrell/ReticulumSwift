@@ -11,7 +11,7 @@ final class RNStatusAppTests: XCTestCase {
 
     func testIdentityConstants() {
         XCTAssertEqual(RNStatusApp.appName, "rnstatus")
-        // Python: argparse(description="Reticulum Network Stack Status") — rnstatus.py:689
+        // Python: argparse(description="Reticulum Network Stack Status")—rnstatus.py:689
         XCTAssertEqual(RNStatusApp.description, "Reticulum Network Stack Status")
     }
 
@@ -29,12 +29,12 @@ final class RNStatusAppTests: XCTestCase {
     }
 
     func testDestinationHexLength() {
-        // Python: dest_len = (RNS.Reticulum.TRUNCATED_HASHLENGTH//8)*2 = 32 — rnstatus.py:315
+        // Python: dest_len = (RNS.Reticulum.TRUNCATED_HASHLENGTH//8)*2 = 32—rnstatus.py:315
         XCTAssertEqual(RNStatusApp.destinationHexLength, 32)
     }
 
     func testEraseSequenceIsExactlyFiftyEightSpaces() {
-        // Python: print("\r" + 58 spaces + "\r", end="") — rnstatus.py:80 and 7 more sites
+        // Python: print("\r" + 58 spaces + "\r", end="")—rnstatus.py:80 and 7 more sites
         XCTAssertEqual(RNStatusApp.eraseSequence.count, 60)
         XCTAssertTrue(RNStatusApp.eraseSequence.hasPrefix("\r"))
         XCTAssertTrue(RNStatusApp.eraseSequence.hasSuffix("\r"))
@@ -74,7 +74,7 @@ final class RNStatusAppTests: XCTestCase {
     }
 
     func testSpeedStrOverflowBranchKeepsItsSpace() {
-        // Python: speed_str's last-unit return is "%.2f %s%s" — WITH a space, unlike
+        // Python: speed_str's last-unit return is "%.2f %s%s"—WITH a space, unlike
         // prettysize's "%.2f%s%s". Verified live: speed_str(1e27) == "1000.00 Ybps".
         XCTAssertEqual(RNStatusApp.speedStr(1e27), "1000.00 Ybps")
     }
@@ -102,7 +102,7 @@ final class RNStatusAppTests: XCTestCase {
 
     func testSortTokens() {
         // Python: the if-chain at rnstatus.py:362-387. `bitrate` and `announce` are
-        // accepted aliases the --help text does not list.
+        // accepted aliases the --help text doesn't list.
         let expected = ["rate", "bitrate", "rx", "tx", "rxs", "txs", "traffic",
                         "announces", "announce", "arx", "atx", "prx", "ptx", "held"]
         XCTAssertEqual(RNStatusApp.Sort.allCases.map(\.rawValue), expected)
@@ -110,7 +110,7 @@ final class RNStatusAppTests: XCTestCase {
     }
 
     func testUnknownSortTokenIsNil() {
-        // Python silently ignores an unrecognised -s value.
+        // Python silently ignores an unrecognized -s value.
         XCTAssertNil(RNStatusApp.Sort(rawValue: "sideways"))
         XCTAssertNil(RNStatusApp.Sort(rawValue: ""))
     }
@@ -146,7 +146,7 @@ final class RNStatusAppTests: XCTestCase {
 
     func testVerboseIsCounted() throws {
         let parser = RNStatusApp.makeParser()
-        // Python: action="count", default=0 — and argparse accepts the bundled form.
+        // Python: action="count", default=0—and argparse accepts the bundled form.
         XCTAssertEqual(try parser.parse([]).count("--verbose"), 0)
         XCTAssertEqual(try parser.parse(["-v"]).count("--verbose"), 1)
         XCTAssertEqual(try parser.parse(["-vv"]).count("--verbose"), 2)

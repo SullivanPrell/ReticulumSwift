@@ -29,7 +29,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
 
     /// `LocalClientInterface.HW_MTU = 262144` (`LocalInterface.py:71`). Without it this
     /// interface reported no hardware MTU at all, which disables link-MTU discovery for every
-    /// link that crosses a Swift shared instance — stuck at the 500-byte default where the
+    /// link that crosses a Swift shared instance—stuck at the 500-byte default where the
     /// Python pair negotiates upward.
     public var hwMtu: Int? = 262_144
 
@@ -50,7 +50,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -60,16 +60,16 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public var reconnectWait: TimeInterval = 8
     /// Maximum reconnect attempts. nil = unlimited (mirrors Python's `RECONNECT_MAX_TRIES = None`).
     public var maxReconnectTries: Int?
-    /// Seconds `start()` will wait for the initial connection before giving up.
+    /// Seconds `start()` waits for the initial connection before giving up.
     /// Python's `connect()` is a blocking `socket.connect()` with no explicit
     /// deadline of its own; the cap here plays the role of the OS connect timeout
-    /// so a wedged shared instance cannot hang a utility's startup forever.
+    /// so a wedged shared instance can't hang a utility's startup forever.
     public var connectTimeout: TimeInterval = 5
 
-    /// Raised by ``start()`` when the shared instance could not be reached.
+    /// Raised by ``start()`` when the shared instance couldn't be reached.
     /// Python raises out of `LocalClientInterface.connect()`, which
     /// `Reticulum.__start_local_client` turns into "Local shared instance appears
-    /// to be running, but it could not be connected".
+    /// to be running, but it couldn't be connected".
     public enum ConnectionError: Error, CustomStringConvertible {
         case couldNotConnect(host: String, port: UInt16)
 
@@ -84,7 +84,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     private var connection: NWConnection?
 
     /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
-    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
     private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
     private let queue: DispatchQueue
     private let decoder = HDLC.FrameDecoder()
@@ -101,10 +101,10 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     private var isStopped: Bool { stateLock.lock(); defer { stateLock.unlock() }; return stopped }
 
     /// Python `LocalClientInterface.__str__` returns `"LocalInterface[<port>]"`.
-    /// This is used by rnstatus to filter out the client-side local interface.
+    /// `rnstatus` uses this to filter out the client-side local interface.
     public var displayName: String { "LocalInterface[\(port)]" }
 
-    /// This class is Python's `LocalClientInterface` — the client half of the shared
+    /// This class is Python's `LocalClientInterface`—the client half of the shared
     /// instance. The Swift name says "LocalInterface", which is Python's `__str__`, not its
     /// class name, so the stats payload would otherwise publish the wrong kind.
     public var statsTypeName: String { "LocalClientInterface" }
@@ -121,14 +121,14 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     }
 
     /// Connect to the shared instance, returning only once the interface can
-    /// actually send — or throwing if it cannot connect at all.
+    /// actually send—or throwing if it can't connect at all.
     ///
     /// Python's `LocalClientInterface.connect()` is a blocking `socket.connect()`
     /// that sets `online = True` on the line after it returns, so by the time
     /// `Reticulum.__start_local_client` hands back, the client can send. Swift's
     /// `NWConnection` is asynchronous, so returning as soon as it had been
-    /// *started* left a window in which `send()` silently discarded everything —
-    /// including the announce every utility fires immediately after attaching,
+    /// *started* left a window in which `send()` silently discarded everything—including
+    /// the announce every utility fires immediately after attaching,
     /// which is how a Swift local client ended up invisible to the path table of
     /// the Swift shared instance it was attached to.
     public func start() throws {
@@ -174,7 +174,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     /// - Parameter signalling: when non-nil, this is the *initial* connect made
     ///   on behalf of ``start()``. The semaphore is signalled once the outcome is
     ///   known, and a failure is reported back rather than retried, matching
-    ///   Python — where a first connect that fails raises instead of entering the
+    ///   Python—where a first connect that fails raises instead of entering the
     ///   reconnect loop. Reconnects pass nil and keep the existing retry behaviour.
     private func connect(signalling readySignal: DispatchSemaphore? = nil) {
         // Consumed by whichever state arrives first; cleared so that a later
@@ -187,25 +187,25 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
             port: NWEndpoint.Port(rawValue: port)!
         )
         // Re-check `stopped` and publish the new connection atomically so a
-        // concurrent stop() either wins (we bail) or cancels the connection we
-        // just assigned (the .cancelled handler then sees stopped and bails).
+        // concurrent stop() either wins (this path bails) or cancels the connection
+        // just assigned (the .cancelled handler then reads stopped and bails).
         stateLock.lock()
         guard !stopped else {
             stateLock.unlock()
-            // Nothing will ever reach the state handler, so release start()
+            // Nothing ever reaches the state handler, so release start()
             // now rather than leaving it to time out.
             pendingReady?.signal(); pendingReady = nil
             return
         }
         // Python's `LocalClientInterface.connect()` sets `TCP_NODELAY` on its TCP socket
         // (`LocalInterface.py:147`), as does the branch that adopts an accepted one (`:98-100`).
-        // It sets no keepalive — its only one is the application-level `phy_keepalive` flag on
-        // Android — so this takes the shared-instance option set rather than the full TCP one.
+        // It sets no keepalive—its only one is the application-level `phy_keepalive` flag on
+        // Android—so this takes the shared-instance option set rather than the full TCP one.
         // Through 1.7.0 this line passed `.tcp`: framework defaults, Nagle on (`bugs/023`).
         let socketOptions = RNSSocketOptions.localParameters()
         handedOverTCPOptionsForTesting = socketOptions.options
         let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
-        // Cancel whatever we are replacing. A reconnect fires from a timer, not
+        // Cancel whatever is being replaced. A reconnect fires from a timer, not
         // from stop(), so the predecessor is still live here; leaving it dangling
         // leaks the socket and the shared instance keeps counting it as an
         // attached client.
@@ -218,8 +218,8 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
             guard let self else { return }
             // Every arm below acts on "the interface's connection". After a
             // stop()/start() cycle this handler can still fire for a superseded
-            // connection — its .cancelled arrives after the replacement is already
-            // live — and acting on that would take the *healthy* connection
+            // connection—its .cancelled arrives after the replacement is already
+            // live—and acting on that would take the *healthy* connection
             // offline and schedule a reconnect that abandons it uncancelled: a
             // leaked socket the shared instance still counts as an attached
             // client, plus two concurrent receive loops on one HDLC decoder.
@@ -243,9 +243,9 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
                 pendingReady?.signal(); pendingReady = nil
                 self.beginReceiveLoop()
             case .waiting:
-                // A refused connection surfaces as .waiting, not .failed —
-                // NWConnection keeps retrying a connect that has no listener.
-                // For the initial connect that is precisely the "nothing is
+                // A refused connection surfaces as .waiting, not .failed—NWConnection
+                // keeps retrying a connect that has no listener.
+                // For the initial connect that's precisely the "nothing is
                 // running on 37428" case, which must fail fast: start() is called
                 // sequentially for every configured interface, so blocking here
                 // for the full connectTimeout stalls all of them (and freezes the

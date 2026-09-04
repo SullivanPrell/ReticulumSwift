@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for `Reticulum.reloadInterface(named:)`.
-/// Python parity: `Reticulum.reload_interface(name)` — stop + restart a named interface.
+/// Python parity: `Reticulum.reload_interface(name)`—stop + restart a named interface.
 final class ReticulumReloadInterfaceTests: XCTestCase {
 
     // MARK: - Minimal stub interface
@@ -36,7 +36,7 @@ final class ReticulumReloadInterfaceTests: XCTestCase {
     func testReloadInterfaceReturnsFalseForUnknownName() {
         let transport = Transport()
         // Wrap Transport in a minimal Reticulum-like context.
-        // We test via Transport directly since Reticulum.reloadInterface delegates to transport.
+        // Tests go through Transport directly since Reticulum.reloadInterface delegates to transport.
         // Instead, test directly on a Reticulum instance without a registered interface.
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("rns-reload-\(UUID().uuidString)")
@@ -84,7 +84,7 @@ final class ReticulumReloadInterfaceTests: XCTestCase {
             "getInterfaceStats should still include the interface after reload")
     }
 
-    // MARK: - Test 4: Reload on an already-halted interface does not crash, returns true
+    // MARK: - Test 4: Reload on an already-halted interface doesn't crash, returns true
 
     func testReloadInterfaceOnHaltedInterfaceDoesNotCrash() {
         let tmpDir = FileManager.default.temporaryDirectory
@@ -100,7 +100,7 @@ final class ReticulumReloadInterfaceTests: XCTestCase {
         rns.transport.halt(interfaceName: "halted-interface")
         XCTAssertFalse(iface.isOnline, "interface should be offline after halt")
 
-        // Now reload — should not crash and should return true
+        // Now reload—shouldn't crash and should return true
         let result = rns.reloadInterface(named: "halted-interface")
         XCTAssertTrue(result, "reloadInterface on a halted interface should return true (not crash)")
     }

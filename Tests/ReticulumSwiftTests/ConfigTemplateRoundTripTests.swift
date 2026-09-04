@@ -5,18 +5,18 @@ import XCTest
 /// example config, feed it back to the parser, and assert every key it emits is a key the
 /// parser reads and applies (design D8).
 ///
-/// Spec: `interface-configuration` — "The generated config template makes no promise it does
-/// not keep". Advertising a control that is silently ignored is worse than omitting it,
-/// because an absent key fails visibly and an ignored one does not.
+/// Spec: `interface-configuration`—"The generated config template makes no promise it does
+/// not keep". Advertising a control that's silently ignored is worse than omitting it,
+/// because an absent key fails visibly and an ignored one doesn't.
 ///
 /// Why this shape. The existing guard for this exact path,
 /// `RNSConfigTemplatesTests.testExampleConfigRoundTripsThroughParser`, asserts the interface
 /// *names* the template declares and three booleans. It passes identically whether the parser
-/// understands four keys or twenty-four, so it cannot fail for the reason `bugs/030` predicts —
-/// the D10 pathology, in the very test named "round trips through parser".
+/// understands four keys or twenty-four, so it can't fail for the reason `bugs/030` predicts—the
+/// D10 pathology, in the very test named "round trips through parser".
 ///
 /// The key list here is derived mechanically from `RNSConfigTemplates` rather than written out,
-/// so a key added to a template cannot escape the check by nobody remembering to list it.
+/// so a key added to a template can't escape the check by nobody remembering to list it.
 final class ConfigTemplateRoundTripTests: XCTestCase {
 
     // MARK: - Extracting what the templates actually emit
@@ -31,8 +31,8 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     /// Every `key = value` the two templates emit, **commented or not**.
     ///
     /// Commented keys count. The spec says so explicitly, and the reason is that a commented
-    /// directive in an example config is not a comment — it is documentation of a supported
-    /// control, which a user uncomments. `RNSConfigTemplatesTests` currently reasons the other
+    /// directive in an example config isn't a comment—it's documentation of a supported
+    /// control, which a user uncomments. `RNSConfigTemplatesTests` reasons the other
     /// way round ("They are commented out, so nothing parses them"), which is precisely the
     /// premise D8 rejects.
     private func templateKeys() -> (top: Set<TemplateKey>, interface: Set<String>,
@@ -66,7 +66,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
                 let key = String(line[line.startIndex..<eq.lowerBound])
                     .trimmingCharacters(in: .whitespaces).lowercased()
                 let value = String(line[eq.upperBound...]).trimmingCharacters(in: .whitespaces)
-                // Prose that happens to contain "=" is not a directive.
+                // Prose that happens to contain "=" isn't a directive.
                 guard !key.isEmpty, key.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" })
                 else { continue }
 
@@ -122,12 +122,12 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
             """)
     }
 
-    // MARK: - Reading is not applying
+    // MARK: - Reading isn't applying
 
     /// A key the parser recognises must also *land* somewhere: parsing a config that sets it
-    /// must produce a different result from parsing one that does not.
+    /// must produce a different result from parsing one that doesn't.
     ///
-    /// The gate above proves a branch matched the key. It cannot prove the branch did anything,
+    /// The preceding gate proves a branch matched the key. It can't prove the branch did anything,
     /// and a branch that matches and discards is the same defect wearing a different hat.
     func testEveryTopLevelTemplateKeyChangesTheParsedResult() {
         var inert: [String] = []
@@ -171,8 +171,8 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     /// bring up.
     ///
     /// `synthesizeInterfaces` switches on `type` and falls through to `iface = nil` for anything
-    /// it does not know — no throw, no log. So an operator who enables a documented interface
-    /// block gets a daemon that starts, reports healthy, and does not have that interface. That
+    /// it doesn't know—no throw, no log. So an operator who enables a documented interface
+    /// block gets a daemon that starts, reports healthy, and doesn't have that interface. That
     /// is this change's defect class exactly, applied to the interface the operator cares most
     /// about: the radio.
     ///
@@ -183,8 +183,8 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     /// **Skipped against `bugs/031`, not deleted.** It failed on first run naming
     /// `RNodeInterface`, `KISSInterface`, `AX25KISSInterface` and `I2PInterface`. Closing it needs
     /// config-string → transport factories (`ble://` and `/dev/tty…` → `RNodeTransport`, and the
-    /// serial families are desktop-only while BLE is not), which is a design decision rather than
-    /// four switch cases — so it was scoped out of `fix-013-defect-class-core` deliberately.
+    /// serial families are desktop-only while BLE isn't), which is a design decision rather than
+    /// four switch cases—so it was scoped out of `fix-013-defect-class-core` deliberately.
     /// Removing the assertion would have left the finding in a session transcript. Deleting the
     /// skip is the RED gate for the fix.
     func testEveryInterfaceTypeTheTemplatesDocumentCanBeBroughtUp() throws {
@@ -196,7 +196,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
             encoding: .utf8)
 
         // The body of `synthesizeInterfaces`, so a `case "RNodeInterface"` belonging to some
-        // other switch in the file cannot be mistaken for config-path support.
+        // other switch in the file can't be mistaken for config-path support.
         guard let start = source.range(of: "public func synthesizeInterfaces(from cfg:") else {
             return XCTFail("synthesizeInterfaces not found — this guard has stopped guarding")
         }
@@ -219,17 +219,17 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
             """)
     }
 
-    /// Every key an interface block emits must be read by something.
+    /// Something must read every key an interface block emits.
     ///
     /// Weaker than the top-level gate on purpose: interface keys are kept verbatim in
     /// `parameters`, so the parser discards nothing and "did the parser read it" is vacuously
     /// true. What matters is whether any construction path consults the key, which is a
-    /// structural question — the same admission `HomeResolutionTests`' guard makes for `$HOME`.
+    /// structural question—the same admission `HomeResolutionTests`' guard makes for `$HOME`.
     ///
-    /// **Skipped against `bugs/031`**, for the same reason as the type check above: sixteen of the
-    /// eighteen belong to the four types that cannot be constructed at all, so this cannot go
-    /// green before that does. The two that do not — `device` on the constructible UDP and TCP
-    /// server interfaces, which Python resolves to a named device's address — are recorded in
+    /// **Skipped against `bugs/031`**, for the same reason as the preceding type check: sixteen of the
+    /// eighteen belong to the four types that can't be constructed at all, so this can't go
+    /// green before that does. The two that don't—`device` on the constructible UDP and TCP
+    /// server interfaces, which Python resolves to a named device's address—are recorded in
     /// `bugs/031` rather than split into a separate entry for two lines.
     func testEveryInterfaceBlockKeyIsConsultedBySomeConstructionPath() throws {
         let sourcesDir = URL(fileURLWithPath: #filePath)
@@ -270,13 +270,13 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     // MARK: - Task 4.4: what the resolution had to be
 
     /// The templates stay byte-identical to Python's, so "stop emitting the key" was never an
-    /// available resolution — every unimplemented key had to be implemented instead.
+    /// available resolution—every unimplemented key had to be implemented instead.
     ///
     /// Task 4.4 says to remove any key that remains unimplemented. Taken literally that would
     /// delete four interface blocks and eighteen keys from `exampleConfig`, breaking the
     /// byte-for-byte transcription of Python's `__example_rns_config__` that
     /// `RNSConfigTemplatesTests` pins with a SHA-256, a byte length and a newline count, and that
-    /// the 1.7.0 CHANGELOG advertises as a parity win. The two instructions cannot both hold.
+    /// the 1.7.0 CHANGELOG advertises as a parity win. The two instructions can't both hold.
     ///
     /// They only conflict in one direction, though: Python implements every key Python emits, so
     /// as long as the templates *are* Python's, "implement it" is always the correct resolution
@@ -297,8 +297,8 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     private enum Probe {
         /// Set the key to this value and require the parsed result to change.
         case value(String)
-        /// The key is read, but its effect is not observable in the parsed structure.
-        /// Carries why, so an exemption cannot be silent.
+        /// The key is read, but its effect isn't observable in the parsed structure.
+        /// Carries why, so an exemption can't be silent.
         case notObservableInParsedState(String)
     }
 
@@ -336,8 +336,8 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
 
         // Python appends the raw hash bytes to its ACL (`Reticulum.py:545-552`); this port
         // resolves each hash to a known `Identity` first, so an entry for an identity the node
-        // has not yet heard from lands nowhere. Probing it here would assert that resolution
-        // failed, not that the key was read — so it is exempted, and the divergence recorded.
+        // hasn't yet heard from lands nowhere. Probing it here would assert that resolution
+        // failed, not that the key was read—so it's exempted, and the divergence recorded.
         "reticulum.remote_management_allowed":
             .notObservableInParsedState("resolves through Identity.recall, which needs a known identity"),
     ]
@@ -345,7 +345,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     /// `String(describing:)` of every stored property of one parsed section.
     ///
     /// Reflection rather than `Equatable` so a field added to `ReticulumSection` is compared
-    /// without anyone updating this test — the same reason the key list is derived rather than
+    /// without anyone updating this test—the same reason the key list is derived rather than
     /// listed.
     private static func dump(_ config: ReticulumConfig, section: String) -> String {
         let subject: Any = section == "logging" ? config.logging : config.reticulum

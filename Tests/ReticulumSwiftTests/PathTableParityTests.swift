@@ -3,16 +3,16 @@ import XCTest
 
 /// The path table must be the file the reference writes, in name *and* shape.
 ///
-/// `bugs/029` — the port writes `storage/paths.json`, a JSON document whose entries inline the
+/// `bugs/029`—the port writes `storage/paths.json`, a JSON document whose entries inline the
 /// destination's public key and ratchet. The reference writes `storage/destination_table`,
 /// msgpack, whose entries are an 8-element list carrying a *reference* to a cached announce and
 /// nothing else about the identity: the public key comes back through `known_destinations` and the
 /// ratchet through `storage/ratchets/`. Re-encoding the port's shape as msgpack under the
-/// reference's name would produce a file Python still cannot read, which is why the shape changes
+/// reference's name would produce a file Python still can't read, which is why the shape changes
 /// too (design D2).
 ///
 /// The announce reference is what makes this a *gated* change rather than a sibling of the
-/// announce-cache fix: the reference discards any entry whose announce cannot be loaded
+/// announce-cache fix: the reference discards any entry whose announce can't be loaded
 /// (`Transport.py:334-345`), so field 7 has to name a file that actually parses.
 final class PathTableParityTests: XCTestCase {
 
@@ -32,8 +32,8 @@ final class PathTableParityTests: XCTestCase {
 
     // MARK: - Fixture
 
-    /// A transport holding one learned path, with the announce that established it in the cache —
-    /// the state the reference persists and restores from.
+    /// A transport holding one learned path, with the announce that established it in the cache—the
+    /// state the reference persists and restores from.
     private struct Fixture {
         let transport: Transport
         let interface: LoopbackInterface
@@ -108,8 +108,8 @@ final class PathTableParityTests: XCTestCase {
         try PathStore.snapshot(of: fixture.transport).write(to: tableURL)
 
         // Deliberately no `fileExists(atPath: tableURL.path)` assertion here. `write(to:)` writes
-        // wherever it is pointed, so such a check would pass for any filename this test chose and
-        // observe nothing — the name is decided by the *call sites*. The name is guarded where it
+        // wherever it's pointed, so such a check would pass for any filename this test chose and
+        // observe nothing—the *call sites* decide the name. The name is guarded where it
         // is actually decided: `StorageInventoryTests` (no call site composes its own literal) and
         // task 2.9 (the created file set matches the reference's).
         let decoded = try MsgPack.decode(Data(contentsOf: tableURL))
@@ -176,7 +176,7 @@ final class PathTableParityTests: XCTestCase {
                        """)
     }
 
-    /// Field 7 is not merely present: the reference resolves it through `get_cached_packet` and
+    /// Field 7 isn't merely present: the reference resolves it through `get_cached_packet` and
     /// discards the entry when that returns None (`Transport.py:334-345`). A hash naming nothing
     /// is a hash that restores nothing.
     func testAnnounceHashResolvesInTheCache() throws {
@@ -229,8 +229,8 @@ final class PathTableParityTests: XCTestCase {
     }
 
     /// `announce_packet.hops += 1` (`Transport.py:337-339`), asserted at the step that produces
-    /// the packet — the gate `apply` gets its go/no-go from — because that is the only place the
-    /// value exists. The hop count is not part of a packet's hashable part, so the increment
+    /// the packet—the gate `apply` gets its go/no-go from—because that's the only place the
+    /// value exists. The hop count isn't part of a packet's hashable part, so the increment
     /// leaves the announce hash alone and the restored path still names the same cache entry.
     func testRestoredAnnounceHopCountIsIncremented() throws {
         let fixture = try makeFixture()
@@ -257,7 +257,7 @@ final class PathTableParityTests: XCTestCase {
                        "the increment must not move the announce hash — hops is not hashable")
     }
 
-    /// `if announce_packet != None and receiving_interface != None` — an entry failing either
+    /// `if announce_packet != None and receiving_interface != None`—an entry failing either
     /// gate is dropped whole, not installed with a placeholder (`Transport.py:334-345`).
     func testEntryWithNoCachedAnnounceIsDropped() throws {
         let fixture = try makeFixture(cacheAnnounce: false)
@@ -275,8 +275,8 @@ final class PathTableParityTests: XCTestCase {
                      """)
     }
 
-    /// The identity comes back through `known_destinations`, not through the path entry —
-    /// `Identity.recall(destination_hash)`, loaded at `Reticulum.py:344` *before* the path table
+    /// The identity comes back through `known_destinations`, not through the path entry—`Identity.recall(destination_hash)`,
+    /// loaded at `Reticulum.py:344` *before* the path table
     /// is read at `:346`. The entry carries no public key of its own.
     func testEntryCarriesNoIdentityMaterial() throws {
         let fixture = try makeFixture()
@@ -289,8 +289,8 @@ final class PathTableParityTests: XCTestCase {
             Inlining them makes the file the port's shape under the reference's name.
             """
         // Both encodings, because the defect stores it hex-encoded. Checking only for the raw
-        // 64 bytes passes against `paths.json` — they genuinely are not in that file, they are
-        // 128 ASCII characters — so that assertion alone reports "no identity material" about the
+        // 64 bytes passes against `paths.json`—they genuinely aren't in that file, they're
+        // 128 ASCII characters—so that assertion alone reports "no identity material" about the
         // very file that inlines it. Observed: it passed before the fix.
         XCTAssertNil(raw.range(of: fixture.identity.publicKeyBytes), explanation)
         XCTAssertNil(raw.range(of: Data(fixture.identity.publicKeyBytes.hexString.utf8)),

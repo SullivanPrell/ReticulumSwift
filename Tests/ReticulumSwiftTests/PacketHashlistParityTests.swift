@@ -3,12 +3,12 @@ import XCTest
 
 /// `storage/packet_hashlist.raw` must be the file the reference writes.
 ///
-/// `bugs/029` — the port writes `storage/packet_hashlist`, a JSON array of hex strings. The
+/// `bugs/029`—the port writes `storage/packet_hashlist`, a JSON array of hex strings. The
 /// reference writes the hashes themselves, concatenated with no framing at all
 /// (`Transport.py:3314-3316`), and reads them back by fixed-width chunks until a short read ends
 /// the file (`:242-251`).
 ///
-/// This is the replay window. A Python daemon that starts on a directory whose hashlist it cannot
+/// This is the replay window. A Python daemon that starts on a directory whose hashlist it can't
 /// parse starts with an empty one, so every packet still in flight is accepted a second time.
 final class PacketHashlistParityTests: XCTestCase {
 
@@ -30,8 +30,8 @@ final class PacketHashlistParityTests: XCTestCase {
         tmpDir.appendingPathComponent(StorageInventory.Entry.packetHashlist.components.last!)
     }
 
-    /// `for packet_hash in Transport.packet_hashlist.copy(): file.write(packet_hash)` —
-    /// `Transport.py:3315-3323`. No delimiters, no length prefix, no encoding.
+    /// `for packet_hash in Transport.packet_hashlist.copy(): file.write(packet_hash)`—`Transport.py:3315-3323`.
+    /// No delimiters, no length prefix, no encoding.
     func testFileIsRawConcatenatedHashes() throws {
         let transport = Transport()
         let hashes = (0..<4).map { Data(repeating: UInt8($0 + 1), count: Constants.fullHashLength) }
@@ -48,7 +48,7 @@ final class PacketHashlistParityTests: XCTestCase {
                        (:246-250).
                        """)
 
-        // Order is a set's order on both sides, so compare as sets — but every 32-byte window
+        // Order is a set's order on both sides, so compare as sets—but every 32-byte window
         // must be one of the hashes, which is the property the framing question turns on.
         var recovered: Set<Data> = []
         var cursor = raw.startIndex
@@ -62,7 +62,7 @@ final class PacketHashlistParityTests: XCTestCase {
     }
 
     /// `packet_hash = file.read(hashlen); if len(packet_hash) == hashlen: add … else: done = True`
-    /// (`Transport.py:246-250`) — a file whose length is not a multiple of the hash length gives
+    /// (`Transport.py:246-250`)—a file whose length isn't a multiple of the hash length gives
     /// up the trailing partial record and keeps everything before it.
     func testTrailingPartialRecordIsConsumed() throws {
         let whole = (0..<3).map { Data(repeating: UInt8($0 + 10), count: Constants.fullHashLength) }
@@ -91,10 +91,10 @@ final class PacketHashlistParityTests: XCTestCase {
 
     func testRoundTrip() throws {
         let transport = Transport()
-        // Full 32-byte hashes, because that is what the live filter stores:
+        // Full 32-byte hashes, because that's what the live filter stores:
         // `Hashes.fullHash(packet.hashablePart())`, mirroring Python's `packet.packet_hash`.
         // `Hashes.randomHash()` is 16 bytes and would be a record the reference's fixed-width
-        // read cannot even see.
+        // read can't even see.
         let hashes = (0..<8).map { _ in Hashes.fullHash(Hashes.randomHash()) }
         hashes.forEach { transport.testInsertPacketHash($0) }
         try transport.savePacketHashlist(to: fileURL)

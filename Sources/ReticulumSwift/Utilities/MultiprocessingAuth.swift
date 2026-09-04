@@ -5,7 +5,7 @@ import CryptoKit
 /// RNS instance-control RPC channel.
 ///
 /// Python reference: CPython `Lib/multiprocessing/connection.py`. RNS itself never
-/// implements this — it hands the socket to `multiprocessing.connection.Listener` /
+/// implements this—it hands the socket to `multiprocessing.connection.Listener` /
 /// `Client` with `authkey = RNS.Identity.full_hash(internal_identity.get_private_key())`
 /// (`RNS/Reticulum.py`, `rpc_key`), so the Swift side must speak CPython's protocol
 /// byte-for-byte to interoperate with `rnstatus`, `rnpath` and friends.
@@ -19,18 +19,18 @@ import CryptoKit
 ///   and the response is a bare HMAC-MD5 digest with no prefix.
 /// - **Modern** (CPython ≥ 3.12): the challenge payload is `{digest}` followed by 40
 ///   random bytes, and the response is `{digest}` followed by an HMAC taken over the
-///   *entire* message — the `{digest}` prefix included, which is what prevents a
+///   *entire* message—the `{digest}` prefix included, which is what prevents a
 ///   downgrade attack.
 ///
 /// A peer that sends a legacy challenge may still receive a modern (prefixed) response:
 /// CPython deliberately allows the answering side to upgrade to a stronger digest when
-/// the challenger did not pin one.
+/// the challenger didn't pin one.
 ///
 /// ## Digest support
 ///
 /// CPython allows `md5`, `sha256`, `sha384`, `sha3_256` and `sha3_384`. CryptoKit has no
-/// SHA-3, so the two SHA-3 names are recognised and then explicitly rejected rather than
-/// silently mis-computed. This is not a practical limitation: `deliver_challenge` defaults
+/// SHA-3, so the two SHA-3 names are recognized and then explicitly rejected rather than
+/// silently mis-computed. This isn't a practical limitation: `deliver_challenge` defaults
 /// to `sha256` and nothing in RNS overrides it.
 public enum MultiprocessingAuth {
 
@@ -57,11 +57,11 @@ public enum MultiprocessingAuth {
     /// Python: `_LEGACY_LENGTHS = frozenset({16, 20})`.
     static let legacyLengths: Set<Int> = [16, 20]
 
-    /// Longest allowed digest name — `len("sha3_256")`.
+    /// Longest allowed digest name—`len("sha3_256")`.
     /// Python: `_MAX_DIGEST_LEN = max(len(_) for _ in _ALLOWED_DIGESTS)`.
     static let maxDigestNameLength = 8
 
-    /// Digest names CPython permits but CryptoKit cannot compute.
+    /// Digest names CPython permits but CryptoKit can't compute.
     static let unsupportedDigestNames: Set<String> = ["sha3_256", "sha3_384"]
 
     // MARK: - Digest
@@ -88,11 +88,11 @@ public enum MultiprocessingAuth {
         /// The message was neither a legacy-length payload nor a validly prefixed one.
         /// Python raises `AuthenticationError` with the same meaning.
         case malformedMessage
-        /// The digest name is one CPython allows but CryptoKit cannot compute (SHA-3).
+        /// The digest name is one CPython allows but CryptoKit can't compute (SHA-3).
         case unsupportedDigest(String)
-        /// The peer did not prefix its challenge with `#CHALLENGE#`.
+        /// The peer didn't prefix its challenge with `#CHALLENGE#`.
         case missingChallengePrefix
-        /// The peer rejected our digest, or sent something other than `#WELCOME#`.
+        /// The peer rejected the digest, or sent something other than `#WELCOME#`.
         case rejected
     }
 
@@ -126,7 +126,7 @@ public enum MultiprocessingAuth {
             throw AuthError.malformedMessage
         }
 
-        // Recognised by CPython but not computable here — reject loudly.
+        // Recognized by CPython but not computable here—reject loudly.
         if unsupportedDigestNames.contains(name) { throw AuthError.unsupportedDigest(name) }
 
         guard let digest = Digest(rawValue: name) else { throw AuthError.malformedMessage }
@@ -140,7 +140,7 @@ public enum MultiprocessingAuth {
     /// Compute the response to a peer's challenge.
     ///
     /// Python: `_create_response(authkey, message)`. Note that the MAC covers the whole
-    /// message including any `{digest}` prefix — not just the payload.
+    /// message including any `{digest}` prefix—not just the payload.
     ///
     /// - Parameters:
     ///   - authkey: the shared secret (RNS uses `full_hash(internal_identity_private_key)`).
@@ -157,17 +157,17 @@ public enum MultiprocessingAuth {
 
     // MARK: - Response verification
 
-    /// Verify a peer's response to a challenge we issued.
+    /// Verify a peer's response to a locally issued challenge.
     ///
     /// Python: `_verify_challenge(authkey, message, response)`, which raises on failure;
     /// this returns `false` instead, since every caller here treats a failure the same way.
     ///
     /// - Parameters:
     ///   - authkey: the shared secret.
-    ///   - message: the challenge message we sent, *without* the `#CHALLENGE#` prefix.
+    ///   - message: the challenge message this side sent, *without* the `#CHALLENGE#` prefix.
     ///   - response: the peer's reply.
     public static func verifyChallenge(authkey: Data, message: Data, response: Data) -> Bool {
-        // Python reads the digest from the RESPONSE, not from our challenge, so that a
+        // Python reads the digest from the RESPONSE, not from the issued challenge, so that a
         // peer answering an unprefixed challenge may upgrade to a stronger digest.
         guard let (responseDigest, responseMAC) = try? digestNameAndPayload(response) else {
             return false
@@ -203,7 +203,7 @@ public enum MultiprocessingAuth {
         }
     }
 
-    /// Length-independent, early-exit-free comparison.
+    /// Length-independent, early exit-free comparison.
     /// Python uses `hmac.compare_digest` for the same reason.
     static func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
         guard lhs.count == rhs.count else { return false }

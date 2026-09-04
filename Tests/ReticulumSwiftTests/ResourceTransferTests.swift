@@ -98,7 +98,7 @@ final class ResourceTransferTests: XCTestCase {
         // 150 bytes at 50-byte parts = 3 parts. Driven by lowering the link's MTU rather than
         // by overriding the part size on the sender: the receiver derives its own part count
         // from the link (`bugs/016`, `Resource.py:187`), so an override on one side only is a
-        // disagreement — exactly the one that makes a real transfer time out. A low-MTU link is
+        // disagreement—exactly the one that makes a real transfer time out. A low-MTU link is
         // also the realistic way to get small parts.
         aLink.establishedMtu = 50 + Constants.headerMaxSize + Constants.ifacMinSize
         bLink.establishedMtu = aLink.establishedMtu
@@ -121,7 +121,7 @@ final class ResourceTransferTests: XCTestCase {
         let payload = Data("hello resource".utf8)
         let resource = try Resource(link: aLink, payload: payload, segmentSize: 500)
 
-        // resource.resourceHash should be sha256(payload + randomHash) — 32 bytes.
+        // resource.resourceHash should be sha256(payload + randomHash)—32 bytes.
         XCTAssertEqual(resource.resourceHash.count, 32)
         let expected = Hashes.fullHash(payload + resource.randomHash)
         XCTAssertEqual(resource.resourceHash, expected)

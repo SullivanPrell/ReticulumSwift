@@ -3,9 +3,9 @@ import XCTest
 
 /// The announce cache must be the file the reference writes, not merely a file by the same name.
 ///
-/// `bugs/029` — this is the fifth divergence, and it **gates the fourth**. The reference stores a
+/// `bugs/029`—this is the fifth divergence, and it **gates the fourth**. The reference stores a
 /// path table entry's announce by hash in `storage/cache/announces/` and discards any entry whose
-/// announce cannot be loaded (`Transport.py:334-345`). So a correctly-encoded `destination_table`
+/// announce can't be loaded (`Transport.py:334-345`). So a correctly encoded `destination_table`
 /// beside a JSON announce cache restores *nothing*: the names would look right, the path table
 /// would parse, and every path would still be dropped. The cache comes first.
 final class AnnounceCacheParityTests: XCTestCase {
@@ -70,7 +70,7 @@ final class AnnounceCacheParityTests: XCTestCase {
     }
 
     /// An announce cached with no receiving interface stores `None` in field 1, not a placeholder:
-    /// Python initialises `interface_reference = None` and only assigns when the packet has one
+    /// Python initializes `interface_reference = None` and only assigns when the packet has one
     /// (`Transport.py:2650-2651`).
     func testAbsentInterfaceIsStoredAsNil() throws {
         let transport = Transport()
@@ -114,7 +114,7 @@ final class AnnounceCacheParityTests: XCTestCase {
     }
 
     /// A stored name that matches no registered interface leaves the packet without one, rather
-    /// than failing the read — Python's loop simply finds no match (`Transport.py:2680-2683`).
+    /// than failing the read—Python's loop simply finds no match (`Transport.py:2680-2683`).
     func testUnknownInterfaceNameLeavesPacketWithoutOne() throws {
         let transport = Transport()
         transport.cacheDirectory = tmpDir

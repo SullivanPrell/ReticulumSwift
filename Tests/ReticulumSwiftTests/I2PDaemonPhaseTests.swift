@@ -3,7 +3,7 @@ import XCTest
 
 // MARK: - Process-global i2pd lifecycle rules
 //
-// `I2PDaemon` itself can't be unit-tested — starting it starts a real i2pd and
+// `I2PDaemon` itself can't be unit-tested—starting it starts a real i2pd and
 // stopping it terminates the process's crypto globals for good. The rule that
 // keeps callers away from those two cliffs is factored out into
 // `I2PDaemonPhase`, which is pure and testable.

@@ -155,11 +155,11 @@ final class InterfaceModeTests: XCTestCase {
     /// `EC_BURST_MIN_SAMPLES` (`Interface.py:85`). This test previously asserted the six, on
     /// the reasoning that five rapid requests already compute above `EC_PR_FREQ` and
     /// suppressing them would throttle an ordinary startup discovery burst. Upstream decided
-    /// the opposite — a burst of two *is* a burst — so what remains testable through sample
+    /// the opposite—a burst of two *is* a burst—so what remains testable through sample
     /// count is the bottom of the range.
     ///
     /// At two, the floor coincides with the count that makes a frequency computable at all, so
-    /// it is no longer independently observable here. The structural distinction between the
+    /// it's no longer independently observable here. The structural distinction between the
     /// two quantities is pinned instead by
     /// `RNS141ParityTests.testIngressBurstClearsOnADequeTooSmallForTheEgressFloor`.
     func testShouldEgressLimitPRNeedsTwoSamples() {
@@ -174,7 +174,7 @@ final class InterfaceModeTests: XCTestCase {
                        + "interface must never suppress itself")
 
         // The second sample crosses the floor, and only then does the (already-exceeded)
-        // frequency threshold take effect — which is what proves the one-sample case above was
+        // frequency threshold take effect—which is what proves the preceding one-sample case was
         // over the threshold all along and was held back by the floor, not by the rate.
         t.notifyOutgoingPathRequest(on: iface, at: base - 0.48)
         XCTAssertTrue(t.shouldEgressLimitPR(on: iface, now: base),

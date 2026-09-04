@@ -1,16 +1,16 @@
-# Third-Party Notices
+# Third-party notices
 
 ReticulumSwift is a Swift port of, and a derivative work of, the original
 Reticulum Network Stack:
 
-> **Reticulum** — Copyright (c) 2016-2026 Mark Qvist — Reticulum License
+> **Reticulum**—Copyright (c) 2016-2026 Mark Qvist—Reticulum License
 > https://github.com/markqvist/Reticulum
 
 ReticulumSwift adopts the same **Reticulum License** (see [`LICENSE`](../LICENSE)).
 
 This repository also ships a **prebuilt binary** of the i2pd daemon, used to
-implement the I2P interface. Its license and the licenses of the libraries it
-statically links are reproduced below.
+implement the I2P interface. The sections below reproduce its license and the
+licenses of the libraries it statically links.
 
 ---
 
@@ -21,7 +21,7 @@ statically links are reproduced below.
 > Release asset (not committed to git).
 
 
-**i2pd** — Copyright (c) 2013-2026, The PurpleI2P Project — BSD 3-Clause License
+**i2pd**—Copyright (c) 2013-2026, The PurpleI2P Project—BSD 3-Clause License
 https://github.com/PurpleI2P/i2pd
 
 ```
@@ -64,13 +64,13 @@ The `CI2PD.xcframework` static library also embeds:
 | OpenSSL   | Apache License 2.0 (OpenSSL 3.x) | https://www.openssl.org |
 | zlib      | zlib License (linked from the platform SDK) | https://zlib.net |
 
-To rebuild the xcframework from source — and produce your own attribution for
-the exact versions you link — see [`CONTRIBUTING.md`](../CONTRIBUTING.md#rebuilding-ci2pd).
+To rebuild the xcframework from source—and produce your own attribution for
+the exact versions you link—see [`CONTRIBUTING.md`](../CONTRIBUTING.md#rebuilding-ci2pd).
 
 ---
 
 ## CryptoKit / libbz2 / libz
 
 ReticulumSwift links the system **CryptoKit** framework and the system
-**libbz2** / **libz** libraries that ship with every Apple SDK. These are not
+**libbz2** / **libz** libraries that ship with every Apple SDK. These aren't
 redistributed by this project.

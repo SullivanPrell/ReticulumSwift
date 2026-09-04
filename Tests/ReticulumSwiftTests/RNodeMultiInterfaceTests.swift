@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-// MARK: - Local mock transport (do not import from RNodeInterfaceTests)
+// MARK: - Local mock transport (don't import from RNodeInterfaceTests)
 
 private final class MockMultiTransport: RNodeTransport {
     var onTransportError: ((Error) -> Void)?
@@ -30,10 +30,10 @@ private final class MockMultiTransport: RNodeTransport {
 // MARK: - KISS multi-interface command constants
 
 final class KISSMultiInterfaceConstantsTests: XCTestCase {
-    // CMD_SEL_INT 0x1F — prefix frame that selects the current subinterface
+    // CMD_SEL_INT 0x1F—prefix frame that selects the current subinterface
     func testCmdSelInt()      { XCTAssertEqual(KISS.cmdSelInt,      0x1F) }
 
-    // CMD_INTERFACES 0x71 — detect response carries interface type list
+    // CMD_INTERFACES 0x71—detect response carries interface type list
     func testCmdInterfaces()  { XCTAssertEqual(KISS.cmdInterfaces,  0x71) }
 
     // Incoming data command bytes per channel (CMD_INTn_DATA)
@@ -532,7 +532,7 @@ final class RNodeMultiInterfaceOutgoingTests: XCTestCase {
         let sub0 = RNodeSubInterface(name: "ch0", index: 0, interfaceType: "SX127X",
                                      frequency: 868_000_000, bandwidth: 125_000, txPower: 14, sf: 7, cr: 5)
         let multi = try RNodeMultiInterface(name: "test", transport: transport, subInterfaces: [sub0])
-        // Calling without a subinterface (direct call on multi) should not write
+        // Calling without a subinterface (direct call on multi) shouldn't write
         try multi.processOutgoing(Data([0x01]), subInterface: nil)
         XCTAssertEqual(transport.writtenData.count, 0)
     }
@@ -551,7 +551,7 @@ final class RNodeMultiInterfaceIncomingDispatchTests: XCTestCase {
     // OR the hardware can use the CMD_INTn_DATA command byte directly to indicate which interface:
     //   CMD_INT0_DATA = 0x00 → sub 0
     //   CMD_INT1_DATA = 0x10 → sub 1
-    //   etc.
+    //   and so on
 
     func testIncomingFrameWithSelIntDispatchesToCorrectSubInterface() throws {
         let transport = MockMultiTransport()
@@ -621,7 +621,7 @@ final class RNodeMultiInterfaceIncomingDispatchTests: XCTestCase {
             }
         }
 
-        // Use CMD_INT1_DATA (0x10) directly — maps to subinterface 1
+        // Use CMD_INT1_DATA (0x10) directly—maps to subinterface 1
         transport.inject([0xC0, KISS.cmdInt1Data, 0xDE, 0xAD, 0xC0])
 
         XCTAssertEqual(receivedBySub1, Data([0xDE, 0xAD]))
@@ -668,7 +668,7 @@ final class RNodeMultiInterfaceIncomingDispatchTests: XCTestCase {
             0xC0, KISS.cmdFrequency, 0x36, 0x89, 0xCA, 0xC0, 0xC0   // 915_000_000 but last byte 0xC0 ends frame
         ])
         // 915_000_000 = 0x3689CAC0 but FEND at 0xC0 position would need escaping. Use a simpler frequency.
-        // Let's inject 868_000_000 = 0x33BCA100 instead for sub1.
+        // Inject 868_000_000 = 0x33BCA100 instead for sub1.
         // First reset writtenData for clarity
         transport.inject([
             0xC0, KISS.cmdSelInt, 0x01, 0xC0,
@@ -879,7 +879,7 @@ final class RNodeMultiInterfaceDetectResponseTests: XCTestCase {
         let sub0 = RNodeSubInterface(name: "ch0", index: 0, interfaceType: "SX127X",
                                      frequency: 868_000_000, bandwidth: 125_000, txPower: 14, sf: 7, cr: 5)
         let multi = try RNodeMultiInterface(name: "test", transport: transport, subInterfaces: [sub0])
-        transport.inject([0xC0, KISS.cmdFwVersion, 0x01, 0x30, 0xC0])  // v1.48 — too old
+        transport.inject([0xC0, KISS.cmdFwVersion, 0x01, 0x30, 0xC0])  // v1.48—too old
         XCTAssertFalse(multi.firmwareOk)
     }
 
@@ -1040,7 +1040,7 @@ final class RNodeMultiInterfaceEnumerationTests: XCTestCase {
 // MARK: - KISS escape in config commands (regression)
 
 final class RNodeMultiInterfaceKISSEscapeTests: XCTestCase {
-    // 915_000_000 = 0x3689CAC0 — last byte is 0xC0 (FEND), must be escaped
+    // 915_000_000 = 0x3689CAC0—last byte is 0xC0 (FEND), must be escaped
     // Frame: [FEND CMD_SEL_INT 0 FEND FEND CMD_FREQUENCY 0x36 0x89 0xCA 0xDB 0xDC FEND]
     func testSetFrequency915MHzEscapedInMultiFrame() throws {
         let transport = MockMultiTransport()

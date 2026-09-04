@@ -24,7 +24,7 @@ enum DiscoveryFieldKey: UInt64 {
     case transportID    = 0xFE
 
     // Added in RNS 1.5.0. `TRANSPORT_IMPL`/`TRANSPORT_VERS` name the announcing
-    // implementation and its build; 1.5.2 emits both but does not read either back, so they
+    // implementation and its build; 1.5.2 emits both but doesn't read either back, so they
     // are staged for a future consumer. `OP_ADDR` carries the operator's LXMF address and
     // *is* consumed on receive (`Discovery.py:427-430`).
     case transportImpl  = 0xFD
@@ -114,8 +114,8 @@ public struct DiscoveredInterfaceInfo {
     public var configEntry: String?
     public var discoveryHash: Data?
     /// The announcing operator's LXMF address as undelimited hex, when they published one.
-    /// `info["operator_lxmf_address"]` (`Discovery.py:430`), added in RNS 1.5.0 — optional, so
-    /// every pre-1.5.0 announce and every 1.5.x node that has not configured one leaves it nil.
+    /// `info["operator_lxmf_address"]` (`Discovery.py:430`), added in RNS 1.5.0—optional, so
+    /// every pre-1.5.0 announce and every 1.5.x node that hasn't configured one leaves it nil.
     public var operatorLxmfAddress: String? = nil
 
     // Persistence fields (written/read by InterfaceDiscovery)
@@ -140,7 +140,7 @@ public enum InterfaceDiscoveryHelpers {
 
     /// Build tag published as `TRANSPORT_VERS` (0xFC).
     ///
-    /// This is ``Reticulum/version`` — the port's own release line — not
+    /// This is ``Reticulum/version``—the port's own release line—not
     /// ``Reticulum/rnsProtocolVersion``. The field identifies *a build of an implementation*,
     /// which is what a consumer needs to attribute a behaviour or a bug; the protocol level it
     /// matches is a separate, coarser fact.
@@ -234,7 +234,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
                                   announcePacketHash: Data, isPathResponse: Bool) {
         // `interface_discovery_sources` is an allowlist of announcing identities.
         // Python rejects at reception, before any of the work below
-        // (Discovery.py:248-251) — enforcing it only when pruning stored records,
+        // (Discovery.py:248-251)—enforcing it only when pruning stored records,
         // as this used to, means a non-authorised peer is still dialled for the
         // whole interval between its announce and the next prune.
         let discoverySources = Reticulum.interfaceDiscoverySources()
@@ -250,7 +250,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
         let encrypted = (flags & Self.flagEncrypted) != 0
         if encrypted {
             // Encrypted discovery announces require the network identity for decryption;
-            // without it we can't decode, so silently skip.
+            // without it decoding is impossible, so silently skip.
             return
         }
 
@@ -394,9 +394,9 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
         // `if info and OP_ADDR in unpacked` (`Discovery.py:427-430`). Two different failure
         // modes, deliberately: a *type* violation raises inside Python's try and abandons the
         // whole announce, while a merely wrong-*length* value just fails the `==` test and is
-        // dropped on its own. The asymmetry matters — a bad optional field must not be able to
+        // dropped on its own. The asymmetry matters—a bad optional field must not be able to
         // blackhole an otherwise reachable node, but a field of the wrong type means the sender
-        // and this parser disagree about the payload's shape, which is not recoverable.
+        // and this parser disagree about the payload's shape, which isn't recoverable.
         if let opAddr = d[DiscoveryFieldKey.operatorAddress.rawValue] {
             switch opAddr {
             case .nil:
@@ -426,9 +426,9 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
         //     connection_interface = "BackboneInterface" if backbone_support else "TCPClientInterface"
         //
         // BackboneInterface's client side relies on epoll/kqueue semantics that
-        // do not hold on Darwin, so a discovered peer must be dialled as a plain
+        // don't hold on Darwin, so a discovered peer must be dialled as a plain
         // TCPClientInterface instead. This is the whole platform ReticulumSwift
-        // targets, so every discovered peer takes the TCP path here — and the
+        // targets, so every discovered peer takes the TCP path here—and the
         // key changes with it: TCPClientInterface reads `target_host`, whereas
         // BackboneInterface reads `remote`.
         #if canImport(Darwin)
@@ -580,7 +580,7 @@ public final class InterfaceDiscovery {
     /// the owner injects the check. Left `nil` the blackhole clauses are skipped,
     /// which is the pre-1.4.1 behaviour.
     ///
-    /// Hold this weakly at the call site — `Transport.isBlackholed` is the
+    /// Hold this weakly at the call site—`Transport.isBlackholed` is the
     /// intended implementation and `Transport` may outlive nothing here.
     public var isBlackholed: ((Data) -> Bool)?
 
@@ -608,7 +608,7 @@ public final class InterfaceDiscovery {
 
         var persistedInfo = info
         if FileManager.default.fileExists(atPath: filepath.path) {
-            // Update existing entry — preserve discovered timestamp, increment heard_count
+            // Update existing entry—preserve discovered timestamp, increment heard_count
             if let existing = loadFile(at: filepath) {
                 persistedInfo.discovered  = existing.discovered
                 persistedInfo.heardCount  = (existing.heardCount) + 1
@@ -645,7 +645,7 @@ public final class InterfaceDiscovery {
                 if heardDelta > Self.thresholdRemove { return true }
                 // A record without a transport or network identity can never be
                 // matched against the discovery-source allowlist or the blackhole
-                // list, so it is unusable rather than merely unverified.
+                // list, so it's unusable rather than merely unverified.
                 if entry.transportID.isEmpty { return true }
                 if entry.networkID.isEmpty   { return true }
                 guard let networkIDData = Data(hex: entry.networkID) else { return true }

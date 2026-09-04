@@ -2,21 +2,21 @@ import XCTest
 import Network
 @testable import ReticulumSwift
 
-/// `bugs/023` — every socket this port opens must carry the reference socket options, in both
+/// `bugs/023`—every socket this port opens must carry the reference socket options, in both
 /// directions.
 ///
 /// The gate here is unusual, and deliberately so (design D4 / risk R5). There is no authoritative
 /// way to ask a live connection whether keepalive is on: Network.framework publishes no getters
 /// for TCP options, and `NWParameters.defaultProtocolStack.transportProtocol` hands back a
 /// *different* `NWProtocolTCP.Options` instance than the one given to `NWParameters(tls:tcp:)`,
-/// reporting framework defaults on some OS versions. That is what CI's one deliberately-skipped
+/// reporting framework defaults on some OS versions. That's what CI's one deliberately skipped
 /// test from 1.7.0 records. And proving keepalive *fires* needs a peer that stops answering
-/// without the kernel sending FIN — packet-level filtering, not `close()`.
+/// without the kernel sending FIN—packet-level filtering, not `close()`.
 ///
 /// So the enforceable invariant is **construction-site uniqueness**: one factory builds the
-/// options, and every socket-opening site takes them from it. That is a weaker claim than
-/// "keepalive works", and it is stated as such rather than dressed up. Where a real readback
-/// exists — the POSIX shared-instance server — this suite uses it.
+/// options, and every socket-opening site takes them from it. That's a weaker claim than
+/// "keepalive works", and it's stated as such rather than dressed up. Where a real readback
+/// exists—the POSIX shared-instance server—this suite uses it.
 final class SocketOptionsTests: XCTestCase {
 
     // MARK: - The factory's values
@@ -43,8 +43,8 @@ final class SocketOptionsTests: XCTestCase {
                        + "application-level phy_keepalive flag on Android, not a socket option")
     }
 
-    /// A fresh instance per call, because one already handed to a live connection cannot be
-    /// reused — and because a shared mutable options object would let one interface's
+    /// A fresh instance per call, because one already handed to a live connection can't be
+    /// reused—and because a shared mutable options object would let one interface's
     /// configuration leak into another's socket.
     func testFactoryReturnsAFreshInstancePerCall() {
         XCTAssertFalse(RNSSocketOptions.tcpOptions() === RNSSocketOptions.tcpOptions())
@@ -89,7 +89,7 @@ final class SocketOptionsTests: XCTestCase {
 
     func testLocalInterfaceDialIsBuiltFromTheSharedInstanceOptionSet() throws {
         let local = LocalInterface(name: "optlocal", port: 45_933)
-        // Nothing is listening, so start() will not come up; the dial still happens.
+        // Nothing is listening, so start() won't come up; the dial still happens.
         try? local.start()
         defer { local.stop() }
 
@@ -101,8 +101,8 @@ final class SocketOptionsTests: XCTestCase {
         XCTAssertFalse(handed.enableKeepalive, "matches LocalInterface.py, which sets no keepalive")
     }
 
-    /// An accepted connection is not constructed by this port at all — Network.framework derives
-    /// it from the listener's parameters — so routing the listener through the factory is what
+    /// An accepted connection isn't constructed by this port at all—Network.framework derives
+    /// it from the listener's parameters—so routing the listener through the factory is what
     /// covers every accepted connection. Asserted rather than assumed.
     func testAcceptedConnectionInheritsTheListenerParameters() throws {
         let server = TCPServerInterface(name: "optaccept", port: 45_934)
@@ -165,7 +165,7 @@ final class SocketOptionsTests: XCTestCase {
 
     /// The structural guard, and the actual enforcement (D4).
     ///
-    /// A behavioural test cannot see this defect — that is why 1.7.0 shipped claiming "every
+    /// A behavioural test can't see this defect—that's why 1.7.0 shipped claiming "every
     /// socket" while two of the four sites still took framework defaults. A test that fails on
     /// any socket opened with stock parameters, anywhere in `Sources/`, can.
     func testNoSocketIsOpenedOutsideTheSharedFactory() throws {
@@ -175,11 +175,11 @@ final class SocketOptionsTests: XCTestCase {
             .deletingLastPathComponent()      // package root
             .appendingPathComponent("Sources")
 
-        /// The file that is *allowed* to construct options — the factory itself.
+        /// The file that's *allowed* to construct options—the factory itself.
         let sanctioned = "SocketOptions.swift"
 
         /// Patterns that mean "a socket configured by something other than the factory".
-        /// `.udp` is not listed: Python opens its UDP sockets with no TCP options at all
+        /// `.udp` isn't listed: Python opens its UDP sockets with no TCP options at all
         /// (`UDPInterface.py`), so a stock UDP parameter set is correct.
         let banned: [(pattern: String, why: String)] = [
             ("NWProtocolTCP.Options(",

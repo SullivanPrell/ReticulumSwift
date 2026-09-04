@@ -3,15 +3,15 @@ import Foundation
 /// The Reticulum stack. Owns the Transport, persistent identity storage,
 /// and lifecycle of the registered interfaces.
 public final class Reticulum {
-    /// This library's own release version — the tag published to
+    /// This library's own release version—the tag published to
     /// `github.com/SullivanPrell/ReticulumSwift` and pinned by consumers (RetiOS).
     /// Bump this on every release. This is the value surfaced in UI ("About")
-    /// and by `rnsd --version`; it is informational only and never travels on
+    /// and by `rnsd --version`; it's informational only and never travels on
     /// the wire.
     ///
     /// Distinct from ``rnsProtocolVersion``: the two happen to share a lineage
     /// (releases are cut to mirror the RNS version they reach parity with) but
-    /// advance independently — a patch release fixes the port without changing
+    /// advance independently—a patch release fixes the port without changing
     /// the protocol it targets.
     public static let version = "1.10.3"
 
@@ -44,7 +44,7 @@ public final class Reticulum {
     /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
     ///
     /// Still outstanding at this version: interface-discovery *publishing*
-    /// (`publishesInterfaceDiscovery == false`, a pre-existing gap — the receive side is
+    /// (`publishesInterfaceDiscovery == false`, a pre-existing gap—the receive side is
     /// complete), and the `discovery_path_requests` batching, which needs the announce
     /// handler that replays to `requesting_interfaces` to be worth anything.
     public static let rnsProtocolVersion = "1.5.2"
@@ -121,8 +121,8 @@ public final class Reticulum {
 
     public struct Configuration {
         public var storagePath: URL
-        /// Config file path. If nil and a file exists at the standard location
-        /// (`storagePath/../config`), it is loaded automatically by `start()`.
+        /// Config filepath. If nil and a file exists at the standard location
+        /// (`storagePath/../config`), it's loaded automatically by `start()`.
         public var configPath: URL?
         public var shareInstance: Bool
         public var logLevel: LogLevel
@@ -235,7 +235,7 @@ public final class Reticulum {
 
     /// A complete example Reticulum configuration file as a string.
     ///
-    /// Python: `rnsd.py:90-583`, `__example_rns_config__` — the blob that
+    /// Python: `rnsd.py:90-583`, `__example_rns_config__`—the blob that
     /// `rnsd --exampleconfig` prints. The byte-exact transcription lives in
     /// ``RNSConfigTemplates/exampleConfig``, next to its SHA-256 regression test.
     public static let exampleConfig: String = RNSConfigTemplates.exampleConfig
@@ -251,7 +251,7 @@ public final class Reticulum {
     public static func getTransportInstance() -> Transport? { shared?.transport }
 
     /// Returns whether this process is connected to a shared Reticulum instance
-    /// (i.e. whether `Reticulum.shared` has been initialised).
+    /// (that is, whether `Reticulum.shared` has been initialized).
     /// Mirrors Python's `Reticulum.is_connected_to_shared_instance()`.
     public static func isConnectedToSharedInstance() -> Bool { shared != nil }
 
@@ -267,7 +267,7 @@ public final class Reticulum {
 
     // MARK: - Module-level utility functions (mirrors Python RNS module-level functions)
 
-    /// Returns a cryptographically-random `Double` in `[0, 1)`.
+    /// Returns a cryptographically random `Double` in `[0, 1)`.
     /// Mirrors Python's `RNS.rand()`.
     public static func rand() -> Double {
         var bytes = [UInt8](repeating: 0, count: 8)
@@ -302,7 +302,7 @@ public final class Reticulum {
     }
 
     /// Returns the human-readable name string for a log level.
-    /// Mirrors Python's `RNS.loglevelname(level)` — note Python uses fixed-width
+    /// Mirrors Python's `RNS.loglevelname(level)`—note Python uses fixed-width
     /// padded strings to align log output.
     public static func loglevelname(_ level: LogLevel) -> String {
         switch level {
@@ -325,7 +325,7 @@ public final class Reticulum {
     ///
     /// Settable because Python reads `link_mtu_discovery` from the `[reticulum]` config section
     /// (`Reticulum.py:537-539`). It was `private(set)` with no writer anywhere, so the option had
-    /// nowhere to be applied — the same shape as the get-only interface attributes, and the reason
+    /// nowhere to be applied—the same shape as the get-only interface attributes, and the reason
     /// adding the config parser alone would not have been enough. See `swift_devel/bugs/025-*.md`
     /// and `bugs/030-*.md`.
     public static var linkMtuDiscoveryEnabled: Bool = true
@@ -364,7 +364,7 @@ public final class Reticulum {
     public static func blackholeSources() -> [Data] { blackholeSources_ }
 
     /// Interval (seconds) between blackhole list re-fetches from each source.
-    /// Default 3600 (1 hour). Minimum 120s. Configurable via the
+    /// Default 3600 (1 hour). Minimum 120 seconds. Configurable via the
     /// `blackhole_update_interval` config key (value in minutes).
     /// Mirrors Python's `Reticulum.blackhole_update_interval()` accessor +
     /// `BlackholeUpdater.UPDATE_INTERVAL` default (RNS commit 02924656).
@@ -401,7 +401,7 @@ public final class Reticulum {
     /// Configured `default_gravity`, or `nil` when unset.
     public static var defaultGravity_: Int? = nil
 
-    /// Gravity for an interface that does not configure its own.
+    /// Gravity for an interface that doesn't configure its own.
     /// Mirrors Python's `Reticulum._default_gravity()`.
     public static func defaultGravity() -> Int {
         defaultGravity_ ?? InterfaceMode.defaultGravity
@@ -430,11 +430,11 @@ public final class Reticulum {
     // section sets the value every interface *starts* from, and a per-interface block overrides
     // it. Both halves are needed: the parser alone leaves the value inert.
     //
-    // The fallbacks below are `??` where Python writes `or`, which differ on zero — see
+    // The fallbacks below are `??` where Python writes `or`, which differ on zero—see
     // `configuredOrDefault(_:_:)`.
 
     /// Python's `or` treats `0` and `0.0` as absent, so a configured zero falls back to the
-    /// class constant rather than taking effect. Replicated deliberately: it is observable
+    /// class constant rather than taking effect. Replicated deliberately: it's observable
     /// behaviour of the reference, and an operator copying a working Python config onto a Swift
     /// node must get the same tuning. Recorded here rather than left as a silent `??`.
     @inline(__always)
@@ -457,7 +457,7 @@ public final class Reticulum {
     public static var instanceName_: String? = nil
     public static func instanceName() -> String { instanceName_ ?? "default" }
 
-    /// Configured `shared_instance_type` — `"tcp"` or `"unix"` (`Reticulum.py:479-484`).
+    /// Configured `shared_instance_type`—`"tcp"` or `"unix"` (`Reticulum.py:479-484`).
     public static var sharedInstanceType_: String? = nil
 
     /// Configured `force_shared_instance_bitrate` (`Reticulum.py:560-562`), applied to the
@@ -474,20 +474,20 @@ public final class Reticulum {
     public static func forceSharedInstanceBitrate() -> Int? { forceSharedInstanceBitrate_ }
 
     /// **Known gap** (`fix-013 §7.8`): whether this port announces its own interfaces as
-    /// discoverable endpoints — Python's `Discovery.InterfaceAnnouncer`. The *receive* side is
-    /// implemented (a Swift node discovers Python interfaces); the publish side is not, so the
+    /// discoverable endpoints—Python's `Discovery.InterfaceAnnouncer`. The *receive* side is
+    /// implemented (a Swift node discovers Python interfaces); the publish side isn't, so the
     /// eleven `discovery_*`/`reachable_on`/`discoverable` interface attributes have no
     /// counterpart here. `RuntimeAttributeParityTests` fails if this ever becomes true without
     /// those attributes landing with it.
     public static let publishesInterfaceDiscovery = false
 
     /// **Known gap** (`fix-013 §7.8`): whether this port dials and monitors discovered
-    /// endpoints — Python's `Discovery.py:574-742`, which writes `autoconnect_hash`,
+    /// endpoints—Python's `Discovery.py:574-742`, which writes `autoconnect_hash`,
     /// `autoconnect_source` and `autoconnect_down`. The `autoconnect_*` policy keys parse into
     /// statics that nothing consumes, because the subsystem is absent.
     public static let autoconnectsDiscoveredInterfaces = false
 
-    /// Announce-rate defaults for interfaces that do not configure their own.
+    /// Announce-rate defaults for interfaces that don't configure their own.
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
     public static var defaultArTarget_: Int? = nil
     public static var defaultArPenalty_: Int? = nil
@@ -546,7 +546,7 @@ public final class Reticulum {
 
     /// Copy one parsed `[reticulum]` section onto the global defaults.
     ///
-    /// Split out of `applyConfig` so the one call site cannot be the missing thing again — the
+    /// Split out of `applyConfig` so the one call site can't be the missing thing again—the
     /// same reason `applyIfacConfiguration` and `applyInterfaceConfiguration` are separate
     /// (`bugs/015`, `bugs/025`). Every value is applied only when the key was present, so an
     /// absent option leaves the built-in default rather than zeroing it.
@@ -606,10 +606,10 @@ public final class Reticulum {
 
     /// The key utilities must present to reach this daemon's control socket.
     ///
-    /// Configured value first, derived value as fallback — `Reticulum.py:494-499` sets
-    /// `self.rpc_key` from the config and `:508-511` derives one only when it is still `None`
+    /// Configured value first, derived value as fallback—`Reticulum.py:494-499` sets
+    /// `self.rpc_key` from the config and `:508-511` derives one only when it's still `None`
     /// (task 4.3, design D8). The configured form exists for platforms where two instances
-    /// cannot share a config directory, so ignoring it locks the operator out of their own
+    /// can't share a config directory, so ignoring it locks the operator out of their own
     /// daemon on exactly the systems the option was added for.
     ///
     /// Returns `nil` when no identity is available and no key is configured.
@@ -731,7 +731,7 @@ public final class Reticulum {
             do {
                 try PathStore.read(from: pathStoreURL).apply(to: transport)
             } catch {
-                // `Transport.py:357-359` — log and start with an empty path table.
+                // `Transport.py:357-359`—log and start with an empty path table.
                 Reticulum.log("Could not load destination table from storage, the contained "
                               + "exception was: \(error)", level: .error)
             }
@@ -745,7 +745,7 @@ public final class Reticulum {
             do {
                 try TunnelStore.read(from: tunnelStoreURL).apply(to: transport)
             } catch {
-                // `Transport.py:406-407` — log and start with an empty tunnel table.
+                // `Transport.py:406-407`—log and start with an empty tunnel table.
                 Reticulum.log("Could not load tunnel table from storage, the contained "
                               + "exception was: \(error)", level: .error)
             }
@@ -796,19 +796,19 @@ public final class Reticulum {
         // `Transport.detach_interfaces()` before anything else: each established link is closed,
         // the queue is given 150 ms to drain, then each interface is stopped
         // (`Transport.py:3171-3183`). A node that exits without it leaves every peer holding the
-        // link ACTIVE until its own keepalive watchdog expires — up to `KEEPALIVE_MAX` = 360 s —
-        // with the LXMF, NomadNet and LXST sessions riding those links hanging rather than
+        // link ACTIVE until its own keepalive watchdog expires—up to `KEEPALIVE_MAX` = 360 s—with
+        // the LXMF, NomadNet and LXST sessions riding those links hanging rather than
         // failing (`bugs/028`).
         //
         // Here rather than in each caller, deliberately (D9). There are at least three exit paths
-        // — `rnsd`'s signal handlers via `InstanceConnection.stop()`, the shared-instance stop,
-        // and an application's own teardown — and wiring them individually leaves whichever one is
-        // added next broken. That is not hypothetical for this subsystem: `detachInterfaces()`
+        //—`rnsd`'s signal handlers via `InstanceConnection.stop()`, the shared-instance stop,
+        // and an application's own teardown—and wiring them individually leaves whichever one is
+        // added next broken. That isn't hypothetical for this subsystem: `detachInterfaces()`
         // itself sat here with no callers, and RetiOS shipped `StackController.tearDown()` with
         // none until v0.3.9.
         //
         // Order matters as much as the call. `transport.stop()` stops every interface, so running
-        // it first would leave the close packets handed to dead interfaces — satisfying "teardown
+        // it first would leave the close packets handed to dead interfaces—satisfying "teardown
         // was called" while emitting nothing, which is the same silence the defect produced.
         transport.detachInterfaces()
         transport.stop()
@@ -887,7 +887,7 @@ public final class Reticulum {
         return transport.unblackholeIdentity(identityHash)
     }
 
-    /// Returns all currently blackholed identity hashes with their entries.
+    /// Returns all blackholed identity hashes with their entries.
     /// Mirrors Python's `Reticulum.get_blackholed_identities()`.
     public func getBlackholedIdentities() -> [Data: Transport.BlackholeEntry] {
         transport.blackholeLock.lock(); defer { transport.blackholeLock.unlock() }
@@ -918,7 +918,7 @@ public final class Reticulum {
         transport.getPacketQ(packetHash: packetHash)
     }
 
-    /// Force-checkpoint the path table without stopping the stack — useful
+    /// Force-checkpoint the path table without stopping the stack—useful
     /// from `applicationWillResignActive` on iOS.
     public func checkpoint() throws {
         let pathStoreURL = StorageInventory.url(.destinationTable,
@@ -957,26 +957,26 @@ public final class Reticulum {
     /// values, `announce_cap`, `bitrate`, `ingress_control`, `egress_control`/`ec_pr_freq` and the
     /// nine `ic_*` tunables settable, because Python mutates all of them at runtime and this port
     /// had declared them get-only. That removed the compile-time blocker and left the values with
-    /// nowhere to come *from*: this function did not exist, and `synthesizeInterfaces` applied
-    /// exactly two attributes — `gravity` and `announces_to_internal`. Which is the same defect one
+    /// nowhere to come *from*: this function didn't exist, and `synthesizeInterfaces` applied
+    /// exactly two attributes—`gravity` and `announces_to_internal`. Which is the same defect one
     /// step earlier, in the spec's words: "a configuration value with nowhere to be written is
-    /// indistinguishable from a configuration value that is never read, and both are failures of
+    /// indistinguishable from a configuration value that's never read, and both are failures of
     /// this requirement."
     ///
     /// Mirrors `Reticulum.py:735-857` (extraction) and `:906-953` (application). Python applies the
     /// first group unconditionally, from resolved defaults, and the `egress_control` / `ic_*`
-    /// group only where the key is present — so an absent key leaves the class default rather than
+    /// group only where the key is present—so an absent key leaves the class default rather than
     /// overwriting it with a zero.
     ///
     /// Called before `Transport.register` and `Interface.start`, matching `Reticulum.py:975`.
     public static func applyInterfaceConfiguration(to interface: any Interface,
                                                    from block: ReticulumConfig.InterfaceConfig) {
         // `interface_mode` first, then `mode` (`Reticulum.py:736-768`). Case-insensitive, and an
-        // unrecognised value falls through leaving the default — Python's if/elif chain has no
+        // unrecognized value falls through leaving the default—Python's if/elif chain has no
         // else branch, so `interface_mode` stays MODE_FULL.
         //
         // Divergence worth recording: Python's `interface_mode` branch reads `c["mode"]` for its
-        // `gateway` and `internal` cases (`Reticulum.py:748-751`) — a typo in the reference. With
+        // `gateway` and `internal` cases (`Reticulum.py:748-751`)—a typo in the reference. With
         // `interface_mode = gateway` and no `mode` key, configobj raises `KeyError` there. This
         // port resolves both aliases from whichever key was given, which is what the branch plainly
         // intends and what the spec table describes.
@@ -1021,8 +1021,8 @@ public final class Reticulum {
         interface.announceRateGrace = grace ?? 0
         interface.announceRatePenalty = TimeInterval(penalty ?? 0)
 
-        // A configured bitrate replaces the class guess when it is at least `MINIMUM_BITRATE`
-        // (`Reticulum.py:815-816`, applied at `:914`). It is not merely reported: announce capacity
+        // A configured bitrate replaces the class guess when it's at least `MINIMUM_BITRATE`
+        // (`Reticulum.py:815-816`, applied at `:914`). It isn't merely reported: announce capacity
         // and resource timings derive from it.
         if let bitrate = block.int("bitrate"), bitrate >= Reticulum.minimumBitrate {
             interface.bitrate = bitrate
@@ -1030,7 +1030,7 @@ public final class Reticulum {
 
         // Immediately after the bitrate, as `Reticulum.py:915` does, and unconditionally: the
         // gate is `autoconfigureMtu`, inside. The class MTU constants never survive Python
-        // startup — a TCP interface runs at 8192, a dialing backbone at 16384 — and the value
+        // startup—a TCP interface runs at 8192, a dialing backbone at 16384—and the value
         // is wire-visible in the 3-byte LINKREQUEST MTU signalling.
         interface.optimiseMtu()
 
@@ -1066,9 +1066,9 @@ public final class Reticulum {
     /// spoke.
     ///
     /// Python does this inline in `__apply_config` (`Reticulum.py:770-788` for the extraction,
-    /// `:955-973` for the derivation). Factored out here so the one call site cannot be the thing
-    /// that is missing again, and so `RetiOS` — which builds interfaces without a config file —
-    /// can reach the same code.
+    /// `:955-973` for the derivation). Factored out here so the one call site can't be the thing
+    /// that's missing again, and so `RetiOS`—which builds interfaces without a config file—can
+    /// reach the same code.
     ///
     /// Must be called **before** `Transport.register` and `Interface.start`, matching
     /// `Reticulum.py:975`: the key has to be installed before the first frame moves, or the
@@ -1089,7 +1089,7 @@ public final class Reticulum {
         let netkey = nonEmpty("passphrase", "pass_phrase")
 
         // `ifac_size` in the config is in **bits** (`Reticulum.py:776`). A value below
-        // `IFAC_MIN_SIZE * 8` is *ignored* — the assignment sits inside the `>=` guard — so the
+        // `IFAC_MIN_SIZE * 8` is *ignored*—the assignment sits inside the `>=` guard—so the
         // class default stays in place rather than being clamped to the minimum.
         var size = interface.ifacSize
         if let bits = block.int("ifac_size"), bits >= Constants.ifacMinSize * 8 {
@@ -1125,9 +1125,9 @@ public final class Reticulum {
             case "BackboneInterface", "BackboneClientInterface":
                 // Python accepts a set of aliases for this interface family before
                 // constructing it (Reticulum.py:988-992): `remote` → `target_host`,
-                // `port` → both `listen_port` and `target_port`. Written configs —
-                // including the one RNS's own discovery emits for a backbone peer —
-                // use `remote`/`port`, so without the aliases the entry parsed to
+                // `port` → both `listen_port` and `target_port`. Written configs—including
+                // the one RNS's own discovery emits for a backbone peer—use
+                // `remote`/`port`, so without the aliases the entry parsed to
                 // nothing and the interface was silently skipped.
                 guard let host = ifCfg["target_host"] ?? ifCfg["remote"],
                       let port = ifCfg.int("target_port") ?? ifCfg.int("port") else { continue }
@@ -1200,7 +1200,7 @@ public final class Reticulum {
             case "RNodeInterface":
                 // Python: `RNodeInterface.py:139-360`. A missing or out-of-range radio
                 // parameter fails construction (`validcfg` → raise → `RNS.panic()`,
-                // `Reticulum.py:1087-1090`); absent *hardware* does not — the port opens at
+                // `Reticulum.py:1087-1090`); absent *hardware* doesn't—the port opens at
                 // `start()`, and a failed open leaves the interface registered and offline.
                 guard let device = ifCfg["port"] else {
                     throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
@@ -1390,8 +1390,8 @@ public final class Reticulum {
                     throw InterfaceConstructionError.missingKey(
                         interface: ifCfg.name, key: "subinterfaces")
                 }
-                // A sub is enabled by its own `interface_enabled`, or by the parent's literal
-                // `enabled` spelling — not by a parent `interface_enabled`
+                // A sub's own `interface_enabled` enables it, as does the parent's literal
+                // `enabled` spelling—not by a parent `interface_enabled`
                 // (`RNodeMultiInterface.py:178`).
                 let enabledSubs = ifCfg.subBlocks.filter {
                     $0.bool("interface_enabled") == true || ifCfg.enabledViaEnabledKey
@@ -1439,7 +1439,7 @@ public final class Reticulum {
                     subs.append(RNodeSubInterface(
                         name: sub.name,
                         index: sub.int("vport") ?? position,
-                        // The concrete chip type is reported by the device at detect
+                        // The device reports the concrete chip type at detect
                         // (CMD_INTERFACES); Python fills it from that response, never from
                         // config, so construction has nothing to put here.
                         interfaceType: "",
@@ -1461,7 +1461,7 @@ public final class Reticulum {
 
             case "WeaveInterface":
                 // Python: `Reticulum.py:1049-1051` → `WeaveInterface.py:849-851`, where
-                // `c["port"]` is a KeyError when absent — a raise that panics the daemon. The
+                // `c["port"]` is a KeyError when absent—a raise that panics the daemon. The
                 // WDCL fabric rides an ordinary serial device, so the serial factory serves it.
                 guard let device = ifCfg["port"] else {
                     throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
@@ -1478,7 +1478,7 @@ public final class Reticulum {
                 // The current reference no longer raises here: an unknown type goes through the
                 // external-interface-module lookup, and a missing module is an ERROR log naming
                 // it (`Reticulum.py:1055-1061`). This port loads no external modules, so the
-                // parallel observable is the same loud log — an operator's typo is named, the
+                // parallel observable is the same loud log—an operator's typo is named, the
                 // other interfaces still come up. `PipeInterface` deliberately stays on this
                 // path: unimplemented by design (macOS/Linux subprocess pipes, no mobile use
                 // case), pinned by `RemainingConstructionTests`.
@@ -1489,8 +1489,8 @@ public final class Reticulum {
             }
             if let iface {
                 // Everything the block configures, applied before registration so Transport never
-                // sees an unconfigured interface, and before `start()` so the IFAC key is installed
-                // before the first frame moves — matching `Reticulum.py:975`. Spawned
+                // observes an unconfigured interface, and before `start()` so the IFAC key is installed
+                // before the first frame moves—matching `Reticulum.py:975`. Spawned
                 // sub-interfaces pick it all up through `InterfaceState.inherit(from:)`.
                 //
                 // This used to apply `gravity` and `announces_to_internal` and nothing else, which
@@ -1500,9 +1500,9 @@ public final class Reticulum {
                 transport.register(interface: iface)
                 try? iface.start()
                 // A radio's bring-up completes off the caller's thread (its detect response may
-                // be delivered on the thread that called `start()` — see
+                // be delivered on the thread that called `start()`—see
                 // `RNodeInterface.bringUpQueue`). This path is the one caller that genuinely
-                // wants the reference's synchronous `__init__` semantics, and it is safe here:
+                // wants the reference's synchronous `__init__` semantics, and it's safe here:
                 // config synthesis owns this thread and no transport delivers on it.
                 if let radio = iface as? RNodeInterface {
                     radio.waitUntilOnline(timeout: radio.detectTimeout + radio.validateTimeout + 1)
@@ -1530,7 +1530,7 @@ public final class Reticulum {
         transport.firstHopTimeout(for: destinationHash)
     }
 
-    /// Bitrate of the slowest currently online interface, or `nil` when none is known.
+    /// Bitrate of the slowest online interface, or `nil` when none is known.
     /// Mirrors Python `Reticulum.get_lowest_interface_bitrate()`.
     public func getLowestInterfaceBitrate() -> Int? {
         transport.lowestInterfaceBitrate
@@ -1540,7 +1540,7 @@ public final class Reticulum {
     /// bitrate is known. Mirrors Python `Reticulum.get_medium_path_timeout()`.
     ///
     /// Answers from the in-process transport. A utility attached as a *local client* must ask
-    /// the daemon instead — see ``InstanceConnection/mediumPathTimeout()``, which is where this
+    /// the daemon instead—see ``InstanceConnection/mediumPathTimeout()``, which is where this
     /// port keeps the `is_connected_to_shared_instance` branch Python folds into the accessor.
     public func getMediumPathTimeout() -> TimeInterval {
         transport.mediumPathTimeout()
@@ -1589,7 +1589,7 @@ public final class Reticulum {
     /// Python parity: `Reticulum.reload_interface(name)`
     @discardableResult
     public func reloadInterface(named name: String) -> Bool {
-        // 1. Check if the interface is currently registered.
+        // 1. Check if the interface is registered.
         guard transport.interfaces.first(where: { $0.name == name }) != nil else {
             return false
         }
@@ -1640,15 +1640,15 @@ public final class Reticulum {
         if let a  = cfg.reticulum.autoconnectAnnouncesToInternal { Reticulum.autoconnectAnnouncesToInternal_ = a }
 
         // A key in a section this parser owns that no branch matched is a directive the operator
-        // wrote and the daemon will not honour. D8's rationale for `bugs/030` is that an absent
-        // key fails visibly and an ignored one does not — so say so, rather than leaving the
+        // wrote and the daemon won't honour. D8's rationale for `bugs/030` is that an absent
+        // key fails visibly and an ignored one doesn't—so say so, rather than leaving the
         // operator to discover it from behaviour.
         for key in cfg.unrecognisedKeys {
             Reticulum.log("Unrecognised configuration directive '\(key)' — it will be ignored",
                           level: .warning)
         }
 
-        // MARK: `bugs/030` — the rest of the `[reticulum]` section
+        // MARK: `bugs/030`—the rest of the `[reticulum]` section
         //
         // Assigned before `synthesizeInterfaces` runs, matching Python's ordering: the whole
         // section is applied in `__apply_config` and interfaces are constructed afterwards, so

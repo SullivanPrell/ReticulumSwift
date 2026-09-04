@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Cluster A3: a non-transport shared instance must still carry DATA traffic
-/// to and from its directly-connected local clients. Mirrors Python's inbound
+/// to and from its directly connected local clients. Mirrors Python's inbound
 /// relay gate `transport_enabled or from_local_client or for_local_client`
 /// (RNS/Transport.py:1573).
 final class LocalClientDataRelayTests: XCTestCase {
@@ -53,7 +53,7 @@ final class LocalClientDataRelayTests: XCTestCase {
         serving.inboundHandler?(try Announce.make(for: dest), serving)
         serving.sent.removeAll(); mesh.sent.removeAll()
 
-        // A mesh peer sends DATA addressed to D (HEADER_2, addressed to us as relay).
+        // A mesh peer sends DATA addressed to D (HEADER_2, addressed to this node as relay).
         mesh.inboundHandler?(dataPacket(to: dest.hash, headerType: .type2, transportID: t.transportInstanceID), mesh)
 
         let delivered = serving.sent.filter { $0.destinationHash == dest.hash && $0.packetType == .data }
@@ -70,7 +70,7 @@ final class LocalClientDataRelayTests: XCTestCase {
         t.register(interface: serving)
         t.register(interface: mesh)
 
-        // We know a mesh destination E via the mesh interface (hops ≥ 1).
+        // This node knows a mesh destination E via the mesh interface (hops ≥ 1).
         let id = Identity()
         let dest = try Destination(identity: id, direction: .in, kind: .single, appName: "meshpeer")
         t.injectPath(dest.hash, nextHop: Data(repeating: 0xBB, count: 16),
@@ -94,14 +94,14 @@ final class LocalClientDataRelayTests: XCTestCase {
         t.register(interface: meshA)
         t.register(interface: meshB)
 
-        // Known mesh destination F via meshA (hops ≥ 1 — NOT a local client).
+        // Known mesh destination F via meshA (hops ≥ 1—NOT a local client).
         let id = Identity()
         let dest = try Destination(identity: id, direction: .in, kind: .single, appName: "peer")
         t.injectPath(dest.hash, nextHop: Data(repeating: 0xCC, count: 16),
                      receivedOn: meshA, hops: 2, announcePacketHash: nil)
         meshA.sent.removeAll(); meshB.sent.removeAll()
 
-        // DATA for F arrives from meshB. We are not transport, not from/for a
+        // DATA for F arrives from meshB. This node isn't transport, and it's not from or for a
         // local client → must NOT relay.
         meshB.inboundHandler?(dataPacket(to: dest.hash, headerType: .type2, transportID: t.transportInstanceID), meshB)
 

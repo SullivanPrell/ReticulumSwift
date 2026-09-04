@@ -10,7 +10,7 @@ import Darwin
 ///   the IPv6 multicast address every `announceInterval` seconds.
 /// - Verifies received beacons and tracks peers by their link-local address.
 /// - Exchanges raw Reticulum packet bytes with peers via unicast UDP on
-///   `dataPort`. No HDLC framing — each datagram is one packet.
+///   `dataPort`. No HDLC framing—each datagram is one packet.
 ///
 /// Default group: "reticulum" (matches Python default).
 /// Default ports: discovery=29716, data=42671.
@@ -57,7 +57,7 @@ public final class AutoInterface: Interface {
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -78,7 +78,7 @@ public final class AutoInterface: Interface {
 
     /// IPv6 link-local address per interface name.
     private var adoptedInterfaces: [String: String] = [:]
-    /// All our own link-local addresses (to ignore our own beacons).
+    /// All of this host's link-local addresses (to ignore its own beacons).
     private var ownLinkLocalAddresses: Set<String> = []
     /// Peer table: link-local addr → (ifname, lastHeard, lastOutbound).
     private var peers: [String: (ifname: String, lastHeard: Date, lastOutbound: Date)] = [:]
@@ -97,9 +97,9 @@ public final class AutoInterface: Interface {
 
     // MARK: - Init
 
-    // `displayName` is not declared here: Python's `AutoInterface[<name>]`
+    // `displayName` isn't declared here: Python's `AutoInterface[<name>]`
     // (`AutoInterface.py:609`) is exactly the protocol's class-qualified default, and one
-    // shared composition is the point of `bugs/022` — see `Interface.displayName`.
+    // shared composition is the point of `bugs/022`—see `Interface.displayName`.
 
     public init(
         name: String,
@@ -131,7 +131,7 @@ public final class AutoInterface: Interface {
     public func start() throws {
         discoverInterfaces()
         guard !adoptedInterfaces.isEmpty else {
-            return // No suitable IPv6 interfaces — stay offline but don't throw
+            return // No suitable IPv6 interfaces—stay offline but don't throw
         }
         try setupDataSocket()
         try setupDiscoverySocket()
@@ -191,10 +191,10 @@ public final class AutoInterface: Interface {
             }
             var addr = String(cString: host)
 
-            // We only want link-local addresses (fe80::).
+            // Only link-local addresses (fe80::) are wanted.
             guard addr.lowercased().hasPrefix("fe80:") else { continue }
 
-            // Strip the scope suffix (e.g. %en0) for storage.
+            // Strip the scope suffix (for example, %en0) for storage.
             if let pct = addr.firstIndex(of: "%") {
                 addr = String(addr[..<pct])
             }
@@ -297,11 +297,11 @@ public final class AutoInterface: Interface {
     // MARK: - Receive loops
 
     private func startReceiveLoops() {
-        // Discovery socket — receive peer beacons.
+        // Discovery socket—receive peer beacons.
         queue.async { [weak self] in
             self?.discoveryReceiveLoop()
         }
-        // Data socket — receive packet datagrams.
+        // Data socket—receive packet datagrams.
         queue.async { [weak self] in
             self?.dataReceiveLoop()
         }
@@ -335,7 +335,7 @@ public final class AutoInterface: Interface {
             // Don't add ourselves.
             if ownLinkLocalAddresses.contains(addrStr) { continue }
 
-            // Find which of our interfaces is on the same link.
+            // Find which local interface is on the same link.
             let ifIdx = src.sin6_scope_id
             let ifname = findInterface(byIndex: ifIdx) ?? adoptedInterfaces.keys.first ?? ""
             addPeer(addr: addrStr, ifname: ifname)

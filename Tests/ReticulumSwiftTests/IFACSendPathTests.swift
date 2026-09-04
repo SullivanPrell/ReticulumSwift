@@ -7,7 +7,7 @@ import XCTest
 /// interfaces previously framed packets WITHOUT applying the IFAC mask, so a
 /// Python peer dropped every outbound frame ("IFAC flag not set but should be").
 /// Inbound was unwrapped centrally (Transport hooks `rawInboundHandler` →
-/// `unwrapIfac`), so the break was asymmetric — a silent one-way link.
+/// `unwrapIfac`), so the break was asymmetric—a silent one-way link.
 ///
 /// Python applies IFAC centrally in `Transport.transmit`; the Swift port wraps
 /// per-interface inside `send()` (mirroring `RNodeInterface` and the
@@ -15,7 +15,7 @@ import XCTest
 /// path and assert the bytes that hit the wire are IFAC-flagged and unwrap back
 /// to the original packet. The existing `IFACTests` only exercise the
 /// wrap/unwrap extension methods directly, never through an interface's send
-/// path — which is why this regression was invisible.
+/// path—which is why this regression was invisible.
 final class IFACSendPathTests: XCTestCase {
 
     private let netname = "ifac-send-path"
@@ -136,7 +136,7 @@ final class IFACSendPathTests: XCTestCase {
 
         let raw = try makePacket().pack()
         // `framePacketBytes` is exactly the transformation `send(_:)` applies to
-        // the on-wire bytes (IFAC-wrap then HDLC-frame), factored out so it is
+        // the on-wire bytes (IFAC-wrap then HDLC-frame), factored out so it's
         // testable without a live NWConnection.
         let framed = iface.framePacketBytes(raw)
         let wrapped = try XCTUnwrap(HDLC.FrameDecoder().feed(framed).first)
@@ -153,22 +153,22 @@ final class IFACSendPathTests: XCTestCase {
 
     // MARK: - Cross-interface interop (wrap on KISS, unwrap on TCP)
 
-    /// The IFAC mask is interface-agnostic **in its derivation** — same network name and
-    /// passphrase, same key — but its *length* is per-interface-class, so two classes only
+    /// The IFAC mask is interface-agnostic **in its derivation**—same network name and
+    /// passphrase, same key—but its *length* is per-interface-class, so two classes only
     /// cross-verify when `ifac_size` is configured explicitly on both.
     ///
     /// This test previously claimed the opposite ("must unwrap on any other interface configured
     /// with the same network name / passphrase") and passed, because it called
     /// `Transport.configureIfac` directly and that call's `size:` parameter defaulted to a uniform
-    /// 16 — overriding each class's own default. Python does not: `Reticulum.py:917-918` assigns
+    /// 16—overriding each class's own default. Python doesn't: `Reticulum.py:917-918` assigns
     /// `interface.ifac_size = interface.DEFAULT_IFAC_SIZE` whenever the config omits the key, and
-    /// that is 8 for the radio family and 16 for TCP (`bugs/025` task 1.5). So the test asserted
-    /// something the reference does not do, and its construction is what hid the per-class
+    /// that's 8 for the radio family and 16 for TCP (`bugs/025` task 1.5). So the test asserted
+    /// something the reference doesn't do, and its construction is what hid the per-class
     /// difference.
     ///
     /// Nothing in the protocol requires cross-class unwrapping, either: IFAC masks a frame on the
     /// wire of *one* interface. A frame arriving over TCP is unmasked there and re-masked by KISS
-    /// when it is forwarded. These are separate links.
+    /// when it's forwarded. These are separate links.
     func testCrossInterfaceUnwrapRequiresAMatchingConfiguredIFACSize() throws {
         // Without an explicit `ifac_size`, each class keeps its own default and the masks differ.
         let defaultsMock = MockSerialPort()
@@ -183,7 +183,7 @@ final class IFACSendPathTests: XCTestCase {
         XCTAssertNil(defaultTcp.unwrapIfac(try wrapOnKiss(defaultKiss, mock: defaultsMock)),
                      "different mask lengths must not cross-verify, as in Python")
 
-        // With `ifac_size` set on both — what an operator spanning a mixed segment must do — the
+        // With `ifac_size` set on both—what an operator spanning a mixed segment must do—the
         // key derivation is identical and the frame crosses.
         let mock = MockSerialPort()
         let kiss = KISSInterface(name: "K1", port: "/dev/null", transport: mock)
@@ -210,7 +210,7 @@ final class IFACSendPathTests: XCTestCase {
     }
 
     /// A wrong netkey is rejected. `ifac_size` is set explicitly on both sides so the *only*
-    /// difference between them is the passphrase — otherwise a mismatched mask length would
+    /// difference between them is the passphrase—otherwise a mismatched mask length would
     /// reject the frame regardless and this would pass without testing the key at all.
     func testCrossInterfaceMismatchedNetkeyRejected() throws {
         let mock = MockSerialPort()

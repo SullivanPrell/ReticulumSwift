@@ -10,7 +10,7 @@ final class RNStatusStatsTests: XCTestCase {
     // MARK: - Fixtures
 
     /// One interface map. Only the keys a test cares about are supplied, which is exactly
-    /// how Python's builder behaves — most fields are `hasattr`-gated.
+    /// how Python's builder behaves—most fields are `hasattr`-gated.
     static func interface(_ pairs: [(String, MsgPack.Value)]) -> MsgPack.Value {
         .map(pairs.map { (.string($0.0), $0.1) })
     }
@@ -54,7 +54,7 @@ final class RNStatusStatsTests: XCTestCase {
         XCTAssertNil(stats.networkID)                       // present but nil
         XCTAssertEqual(stats.transportUptime, 3600)
         XCTAssertEqual(stats.probeResponder, Data(repeating: 0xCD, count: 16))
-        // Python: `"transport_id" in stats and stats["transport_id"] != None` — an absent
+        // Python: `"transport_id" in stats and stats["transport_id"] != None`—an absent
         // key and a nil value must both read as "no transport".
         XCTAssertFalse(RNStatusStats(Self.stats([]))!.hasTransportID)
     }
@@ -77,7 +77,7 @@ final class RNStatusStatsTests: XCTestCase {
     }
 
     func testModeDescription() {
-        // Python: rnstatus.py:421-427. Anything unrecognised — including MODE_FULL — is "Full".
+        // Python: rnstatus.py:421-427. Anything unrecognized—including MODE_FULL—is "Full".
         let cases: [(Int64, String)] = [
             (0x01, "Full"), (0x02, "Point-to-Point"), (0x03, "Access Point"),
             (0x04, "Roaming"), (0x05, "Boundary"), (0x06, "Gateway"),
@@ -155,7 +155,7 @@ final class RNStatusStatsTests: XCTestCase {
     }
 
     func testBurstFilterWithEmptyNameFilterDoesNotMatch() {
-        // Python: `nfilt = … if name_filter else False` — the empty string is falsy here,
+        // Python: `nfilt = … if name_filter else False`—the empty string is falsy here,
         // unlike in the plain name-filter branch.
         let quiet = Self.named("X", [("burst_active", .bool(false)), ("pr_burst_active", .bool(false))])
         XCTAssertFalse(RNStatusStats.passesFilters(quiet, nameFilter: "", burstFilter: true))
@@ -185,7 +185,7 @@ final class RNStatusStatsTests: XCTestCase {
     }
 
     func testEverySortTokenOrdersDescendingByDefault() {
-        // Python: `reverse = not sort_reverse` — descending unless -r is given.
+        // Python: `reverse = not sort_reverse`—descending unless -r is given.
         XCTAssertEqual(names(.rate),      ["B", "C", "A"])
         XCTAssertEqual(names(.bitrate),   ["B", "C", "A"])
         XCTAssertEqual(names(.rx),        ["A", "C", "B"])

@@ -427,7 +427,7 @@ final class I2PDaemonTests: XCTestCase {
 
     func testDoubleStopIsNoop() {
         let daemon = I2PDaemon()
-        daemon.stop()   // stop when not running — must not crash
+        daemon.stop()   // stop when not running—must not crash
         daemon.stop()
     }
 }

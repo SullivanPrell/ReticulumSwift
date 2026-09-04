@@ -3,7 +3,7 @@ import Network
 
 /// Bidirectional UDP transport for Reticulum packets, wire-compatible
 /// with `RNS.Interfaces.UDPInterface`. One datagram carries exactly one
-/// raw `Packet` — no HDLC framing.
+/// raw `Packet`—no HDLC framing.
 ///
 /// Provide a `listenPort` to receive datagrams, and a
 /// `forwardHost`/`forwardPort` to address outbound traffic. Either
@@ -39,7 +39,7 @@ public final class UDPInterface: Interface {
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -58,8 +58,8 @@ public final class UDPInterface: Interface {
     /// Python `UDPInterface.__str__` (`UDPInterface.py:131-132`):
     /// `"UDPInterface["+self.name+"/"+self.bind_ip+":"+str(self.bind_port)+"]"`, where
     /// `bind_ip` is the configured `listen_ip` (`UDPInterface.py:63`, `:91`). Hardcoding
-    /// `0.0.0.0` here made a loopback-bound Swift interface report a different name — and
-    /// so a different `Interface.hash` — than the Python interface beside it.
+    /// `0.0.0.0` here made a loopback-bound Swift interface report a different name—and
+    /// so a different `Interface.hash`—than the Python interface beside it.
     public var displayName: String {
         let ip = bindIP.contains(":") ? "[\(bindIP)]" : bindIP
         let port = listenPort ?? forwardPort ?? 0
@@ -144,7 +144,7 @@ public final class UDPInterface: Interface {
             if error == nil {
                 self.beginReceiveLoop(on: conn)
             } else {
-                // Receive loop ended — drop and cancel this inbound connection
+                // Receive loop ended—drop and cancel this inbound connection
                 // so it doesn't accumulate.
                 self.connLock.lock()
                 self.inboundConnections.removeAll { $0 === conn }

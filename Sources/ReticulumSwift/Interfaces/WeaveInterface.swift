@@ -6,28 +6,28 @@ import CryptoKit
 /// Weave Device Control Layer packet-type byte values.
 /// Python: `WDCL.WDCL_T_*`
 public enum WDCL {
-    /// Discovery broadcast.  Python: `WDCL_T_DISCOVER = 0x00`
+    /// Discovery broadcast. Python: `WDCL_T_DISCOVER = 0x00`
     public static let tDiscover:    UInt8 = 0x00
-    /// Connection handshake.  Python: `WDCL_T_CONNECT = 0x01`
+    /// Connection handshake. Python: `WDCL_T_CONNECT = 0x01`
     public static let tConnect:     UInt8 = 0x01
-    /// Command frame.  Python: `WDCL_T_CMD = 0x02`
+    /// Command frame. Python: `WDCL_T_CMD = 0x02`
     public static let tCmd:         UInt8 = 0x02
-    /// Log / event frame.  Python: `WDCL_T_LOG = 0x03`
+    /// Log / event frame. Python: `WDCL_T_LOG = 0x03`
     public static let tLog:         UInt8 = 0x03
-    /// Display update frame.  Python: `WDCL_T_DISP = 0x04`
+    /// Display update frame. Python: `WDCL_T_DISP = 0x04`
     public static let tDisp:        UInt8 = 0x04
     /// Endpoint packet (data plane).  Python: `WDCL_T_ENDPOINT_PKT = 0x05`
     public static let tEndpointPkt: UInt8 = 0x05
-    /// Encapsulated protocol frame.  Python: `WDCL_T_ENCAP_PROTO = 0x06`
+    /// Encapsulated protocol frame. Python: `WDCL_T_ENCAP_PROTO = 0x06`
     public static let tEncapProto:  UInt8 = 0x06
 
     /// Broadcast destination address (4 × 0xFF).  Python: `WDCL_BROADCAST`
     public static let broadcast: Data = Data([0xFF, 0xFF, 0xFF, 0xFF])
 
-    /// Minimum frame size: 4-byte switch_id + 1-byte type.  Python: `HEADER_MINSIZE = 4+1`
+    /// Minimum frame size: 4-byte switch_id + 1-byte type. Python: `HEADER_MINSIZE = 4+1`
     public static let headerMinSize: Int = 5
 
-    /// Seconds to wait for the WDCL handshake before giving up.  Python: `WDCL_HANDSHAKE_TIMEOUT = 2`
+    /// Seconds to wait for the WDCL handshake before giving up. Python: `WDCL_HANDSHAKE_TIMEOUT = 2`
     public static let handshakeTimeout: TimeInterval = 2.0
 }
 
@@ -36,13 +36,13 @@ public enum WDCL {
 /// Two-byte command codes sent inside `WDCL_T_CMD` frames.
 /// Python: `Cmd.*`
 public enum WeaveCmd {
-    /// Deliver a packet to a specific endpoint.  Python: `WDCL_CMD_ENDPOINT_PKT = 0x0001`
+    /// Deliver a packet to a specific endpoint. Python: `WDCL_CMD_ENDPOINT_PKT = 0x0001`
     public static let endpointPkt:    UInt16 = 0x0001
-    /// Request a list of known endpoints.  Python: `WDCL_CMD_ENDPOINTS_LIST = 0x0100`
+    /// Request a list of known endpoints. Python: `WDCL_CMD_ENDPOINTS_LIST = 0x0100`
     public static let endpointsList:  UInt16 = 0x0100
-    /// Enable / disable remote display output.  Python: `WDCL_CMD_REMOTE_DISPLAY = 0x0A00`
+    /// Enable / disable remote display output. Python: `WDCL_CMD_REMOTE_DISPLAY = 0x0A00`
     public static let remoteDisplay:  UInt16 = 0x0A00
-    /// Remote input command.  Python: `WDCL_CMD_REMOTE_INPUT = 0x0A01`
+    /// Remote input command. Python: `WDCL_CMD_REMOTE_INPUT = 0x0A01`
     public static let remoteInput:    UInt16 = 0x0A01
 }
 
@@ -68,17 +68,17 @@ public enum WeaveEvt {
     public static let etKrnUiInit:               UInt16 = 0x2010
     public static let etProtocolWdclInit:        UInt16 = 0x3000
     public static let etProtocolWdclRunning:     UInt16 = 0x3001
-    /// Raised when WDCL connection is established.  Sets `wdclConnected = true`.
+    /// Raised when WDCL connection is established. Sets `wdclConnected = true`.
     public static let etProtocolWdclConnection:  UInt16 = 0x3002
     /// Raised when the remote device reports the host's endpoint ID.
     public static let etProtocolWdclHostEndpoint: UInt16 = 0x3003
     public static let etProtocolWeaveInit:       UInt16 = 0x3100
     public static let etProtocolWeaveRunning:    UInt16 = 0x3101
-    /// Raised when a Weave endpoint is still alive.  Payload: 8-byte endpoint_id.
+    /// Raised when a Weave endpoint is still alive. Payload: 8-byte endpoint_id.
     public static let etProtocolWeaveEpAlive:    UInt16 = 0x3102
     /// Raised when a Weave endpoint has timed out.
     public static let etProtocolWeaveEpTimeout:  UInt16 = 0x3103
-    /// Raised when a Weave endpoint route is known.  Payload: 8-byte endpoint_id + 4-byte switch_id.
+    /// Raised when a Weave endpoint route is known. Payload: 8-byte endpoint_id + 4-byte switch_id.
     public static let etProtocolWeaveEpVia:      UInt16 = 0x3104
     public static let etSrvctlRemoteDisplay:     UInt16 = 0xA000
     public static let etInterfaceRegistered:     UInt16 = 0xD000
@@ -112,7 +112,7 @@ public struct WeaveLogFrame {
 /// Represents one remote endpoint (an RNS interface peer) discovered via a Weave switch.
 /// Python: `WeaveEndpoint`
 public final class WeaveEndpoint {
-    /// Maximum number of packets held in the receive queue.  Python: `QUEUE_LEN = 1024`
+    /// Maximum number of packets held in the receive queue. Python: `QUEUE_LEN = 1024`
     public static let queueLen: Int = 1024
 
     public let endpointAddr: Data
@@ -131,7 +131,7 @@ public final class WeaveEndpoint {
 /// Handles the HDLC-framed serial connection to a Weave device.
 ///
 /// Owns the `SerialPortTransport` and an `HDLC.FrameDecoder`.  Provides
-/// helpers to send WDCL broadcast / unicast frames.  Feeds decoded HDLC
+/// helpers to send WDCL broadcast / unicast frames. Feeds decoded HDLC
 /// frames to a `WeaveDevice` state machine.
 ///
 /// Python: the `WDCL` class (the serial + framing side of it).
@@ -139,16 +139,16 @@ public final class WDCLTransport {
 
     // MARK: - Class constants
 
-    /// Baud rate for Weave devices.  Python: `self.speed = 3000000`
+    /// Baud rate for Weave devices. Python: `self.speed = 3000000`
     public static let speed:         Int = 3_000_000
 
-    /// Length of a switch_id in bytes.  Python: `WEAVE_SWITCH_ID_LEN = 4`
+    /// Length of a switch_id in bytes. Python: `WEAVE_SWITCH_ID_LEN = 4`
     public static let switchIDLen:   Int = 4
 
-    /// Size of a Curve25519 public key.  Python: `WEAVE_PUBKEY_SIZE = 32`
+    /// Size of a Curve25519 public key. Python: `WEAVE_PUBKEY_SIZE = 32`
     public static let pubkeySize:    Int = 32
 
-    /// Length of an Ed25519 signature.  Python: `WEAVE_SIGNATURE_LEN = 64`
+    /// Length of an Ed25519 signature. Python: `WEAVE_SIGNATURE_LEN = 64`
     public static let signatureLen:  Int = 64
 
     // MARK: - Identity
@@ -157,7 +157,7 @@ public final class WDCLTransport {
     /// Python: `self.switch_identity = RNS.Identity()`
     private let signingKey:     Curve25519.Signing.PrivateKey
 
-    /// Last 4 bytes of the signing public key — used as our switch_id.
+    /// Last 4 bytes of the signing public key—used as this switch_id.
     /// Python: `self.switch_id = self.switch_identity.sig_pub_bytes[-4:]`
     public  let switchID:       Data
 
@@ -195,7 +195,7 @@ public final class WDCLTransport {
         self.decoder        = HDLC.FrameDecoder()
     }
 
-    /// Wire in the `WeaveDevice` that will receive decoded frames.
+    /// Wire in the `WeaveDevice` that receives decoded frames.
     public func attach(device: WeaveDevice) { self.device = device }
 
     // MARK: - Port management
@@ -223,7 +223,7 @@ public final class WDCLTransport {
         return try transport.write(framed)
     }
 
-    /// Sign `data` with our switch identity.
+    /// Sign `data` with this switch identity.
     /// Python: `self.switch_identity.sign(data)`
     public func sign(_ data: Data) -> Data {
         let sig = try! signingKey.signature(for: data)
@@ -271,21 +271,21 @@ public final class WeaveDevice {
 
     // MARK: - Class constants (wire sizes)
 
-    /// Bytes in a switch_id.  Python: `WEAVE_SWITCH_ID_LEN = 4`
+    /// Bytes in a switch_id. Python: `WEAVE_SWITCH_ID_LEN = 4`
     public static let switchIDLen:   Int = 4
-    /// Bytes in an endpoint_id.  Python: `WEAVE_ENDPOINT_ID_LEN = 8`
+    /// Bytes in an endpoint_id. Python: `WEAVE_ENDPOINT_ID_LEN = 8`
     public static let endpointIDLen: Int = 8
-    /// Bytes in the flow-sequence field.  Python: `WEAVE_FLOWSEQ_LEN = 2`
+    /// Bytes in the flow-sequence field. Python: `WEAVE_FLOWSEQ_LEN = 2`
     public static let flowseqLen:    Int = 2
     /// Bytes in the per-packet HMAC.  Python: `WEAVE_HMAC_LEN = 8`
     public static let hmacLen:       Int = 8
-    /// Bytes in the full auth field.  Python: `WEAVE_AUTH_LEN = 16`
+    /// Bytes in the full auth field. Python: `WEAVE_AUTH_LEN = 16`
     public static let authLen:       Int = 16
-    /// Bytes in a Curve25519 public key.  Python: `WEAVE_PUBKEY_SIZE = 32`
+    /// Bytes in a Curve25519 public key. Python: `WEAVE_PUBKEY_SIZE = 32`
     public static let pubkeySize:    Int = 32
-    /// Bytes in a Curve25519 private key.  Python: `WEAVE_PRVKEY_SIZE = 64`
+    /// Bytes in a Curve25519 private key. Python: `WEAVE_PRVKEY_SIZE = 64`
     public static let prvkeySize:    Int = 64
-    /// Bytes in an Ed25519 signature.  Python: `WEAVE_SIGNATURE_LEN = 64`
+    /// Bytes in an Ed25519 signature. Python: `WEAVE_SIGNATURE_LEN = 64`
     public static let signatureLen:  Int = 64
 
     // MARK: - WDCL state
@@ -304,14 +304,14 @@ public final class WeaveDevice {
     /// The registry is mutated from the WDCL receive thread (`endpointAlive` /
     /// `endpointVia`, reached via `incomingFrame`) and both read and pruned
     /// from the periodic jobs thread (`WeaveInterface.peerJobs` →
-    /// `pruneEndpoints`). Those run on *different* threads — the Python
+    /// `pruneEndpoints`). Those run on *different* threads—the Python
     /// reference gets away with it under the GIL, but Swift has none, so an
     /// unsynchronized `Dictionary` here races and can crash ("Fatal error:
     /// Duplicate keys" / heap corruption). Every touch of `_endpoints` funnels
     /// through this lock.
     private let endpointsLock = NSLock()
 
-    /// Backing store for the endpoint registry. Never touch directly — go
+    /// Backing store for the endpoint registry. Never touch directly—go
     /// through `endpoints` (reads) or the locked mutators below (writes).
     private var _endpoints: [Data: WeaveEndpoint] = [:]
 
@@ -342,14 +342,14 @@ public final class WeaveDevice {
 
     // MARK: - Discovery / Handshake
 
-    /// Send a WDCL DISCOVER broadcast containing our switch_id.
+    /// Send a WDCL DISCOVER broadcast containing this switch_id.
     /// Python: `WeaveDevice.discover()`
     public func discover() {
         guard let conn = connection else { return }
         try? conn.broadcast(packetType: WDCL.tDiscover, data: conn.switchID)
     }
 
-    /// Send a WDCL CONNECT unicast to `switchID` carrying our pub-key + signature.
+    /// Send a WDCL CONNECT unicast to `switchID` carrying this pub-key + signature.
     /// Python: `WeaveDevice.handshake()`
     public func handshake() {
         guard let conn = connection, let remoteID = switchID else { return }
@@ -388,7 +388,7 @@ public final class WeaveDevice {
     /// A refresh installs a *fresh* `WeaveEndpoint` rather than mutating the
     /// existing one in place: any snapshot handed out by `endpoints` keeps
     /// pointing at the old, now-immutable instance, so a concurrent reader
-    /// never races our field write. The `rnsInterface` callback runs after
+    /// never races the field write. The `rnsInterface` callback runs after
     /// the lock is released to avoid holding it across foreign code.
     public func endpointAlive(endpointID: Data) {
         endpointsLock.lock()
@@ -422,13 +422,13 @@ public final class WeaveDevice {
 
     /// Drop endpoints last heard from more than `timeout` seconds before `now`.
     ///
-    /// The registry is otherwise append-only — the Python reference never
+    /// The registry is otherwise append-only—the Python reference never
     /// prunes `WeaveDevice.endpoints`, so on a long-lived link it grows
     /// unbounded as endpoints come and go. `WeaveInterface.peerJobs()` calls
     /// this on the same `PEERING_TIMEOUT` it uses to expire peers, so the
     /// device registry and the interface peer table stay in lock-step.
     ///
-    /// Internally synchronized (via `endpointsLock`), so it is safe to invoke
+    /// Internally synchronized (via `endpointsLock`), so it's safe to invoke
     /// from the jobs thread while the WDCL receive thread keeps learning
     /// endpoints. Wire-neutral: this touches only local bookkeeping.
     ///
@@ -443,7 +443,7 @@ public final class WeaveDevice {
         return expired
     }
 
-    /// An RNS packet arrived from `source` — deliver it to the interface.
+    /// An RNS packet arrived from `source`—deliver it to the interface.
     /// Python: `WeaveDevice.received_packet(source, data)`
     public func receivedPacket(source: Data, data: Data) {
         endpointAlive(endpointID: source)
@@ -466,7 +466,7 @@ public final class WeaveDevice {
 
         switch packetType {
 
-        // ── ENDPOINT_PKT: device → host (our packets arrive here) ────────────
+        // ── ENDPOINT_PKT: device → host (inbound packets arrive here) ────────────
         case WDCL.tEndpointPkt where frameSwitchID == conn.switchID:
             // layout: rns_data + src_endpoint_id(8)
             guard payload.count > WeaveDevice.endpointIDLen else { return }
@@ -570,17 +570,17 @@ public final class WeaveInterface: Interface {
 
     // MARK: - Class constants
 
-    /// Maximum payload the hardware can carry.  Python: `HW_MTU = 1024`
+    /// Maximum payload the hardware can carry. Python: `HW_MTU = 1024`
     public static let hwMtuValue:      Int          = 1024
-    /// Default IFAC frame size.  Python: `DEFAULT_IFAC_SIZE = 16`
+    /// Default IFAC frame size. Python: `DEFAULT_IFAC_SIZE = 16`
     public static let defaultIfacSize: Int          = 16
-    /// Seconds before a silent peer is declared timed out.  Python: `PEERING_TIMEOUT = 20.0`
+    /// Seconds before a silent peer is declared timed out. Python: `PEERING_TIMEOUT = 20.0`
     public static let peeringTimeout:  TimeInterval = 20.0
-    /// Estimated line rate.  Python: `BITRATE_GUESS = 250*1000`
+    /// Estimated line rate. Python: `BITRATE_GUESS = 250*1000`
     public static let bitrateGuess:    Int          = 250_000
-    /// Duplicate-suppression time window in seconds.  Python: `MULTI_IF_DEQUE_TTL = 0.75`
+    /// Duplicate-suppression time window in seconds. Python: `MULTI_IF_DEQUE_TTL = 0.75`
     public static let multiIfDequeTTL: TimeInterval = 0.75
-    /// Maximum number of packet hashes held in the dedup deque.  Python: `MULTI_IF_DEQUE_LEN = 48`
+    /// Maximum number of packet hashes held in the dedup deque. Python: `MULTI_IF_DEQUE_LEN = 48`
     public static let multiIfDequeLen: Int          = 48
 
     // MARK: - Interface protocol
@@ -594,7 +594,7 @@ public final class WeaveInterface: Interface {
         set { onlineFlag.value = newValue }
     }
 
-    /// Lock-guarded — a peer accumulates into its parent's counters from the
+    /// Lock-guarded—a peer accumulates into its parent's counters from the
     /// WDCL transport queue while the UI reads them. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
@@ -643,9 +643,9 @@ public final class WeaveInterface: Interface {
 
     // MARK: - Injection points for Transport integration / tests
 
-    /// Called when a new `WeaveInterfacePeer` is spawned.  Register with Transport here.
+    /// Called when a new `WeaveInterfacePeer` is spawned. Register with Transport here.
     public var onPeerAdded:   ((WeaveInterfacePeer) -> Void)? = nil
-    /// Called when a peer is timed out and removed.  De-register from Transport here.
+    /// Called when a peer is timed out and removed. De-register from Transport here.
     public var onPeerRemoved: ((WeaveInterfacePeer) -> Void)? = nil
 
     // MARK: - Init
@@ -665,7 +665,7 @@ public final class WeaveInterface: Interface {
     }
 
     // Called after init to close the circular reference
-    // (cannot set in init body because WeaveDevice.rnsInterface is weak var to WeaveInterface)
+    // (can't set in init body because WeaveDevice.rnsInterface is weak var to WeaveInterface)
 
     /// Bring the interface online: open the serial port and initiate discovery.
     public func start() throws {
@@ -695,7 +695,7 @@ public final class WeaveInterface: Interface {
         let peer = WeaveInterfacePeer(owner: self, endpointAddr: endpointAddr)
         peer.bitrate = bitrate
         // Mirrors Python's `spawned_interface.gravity = self.gravity`
-        // (RNS 1.4.1, commit 3ca71527) — the peer, not the parent, is what
+        // (RNS 1.4.1, commit 3ca71527)—the peer, not the parent, is what
         // Transport records as a path's receiving interface.
         peer.gravity = gravity
         spawnedInterfaces[endpointAddr] = peer
@@ -722,13 +722,13 @@ public final class WeaveInterface: Interface {
         peer.processIncoming(data: data, endpointAddr: endpointAddr)
     }
 
-    /// Not used on the parent interface — peers handle outgoing traffic.
+    /// Not used on the parent interface—peers handle outgoing traffic.
     public func send(_ packet: Packet) throws {}
     public func processOutgoing(_ data: Data) {}
 
     // MARK: - Peer count
 
-    /// Number of currently active peer interfaces.
+    /// Number of active peer interfaces.
     /// Python: `WeaveInterface.peer_count`
     public var peerCount: Int { spawnedInterfaces.count }
 
@@ -749,7 +749,7 @@ public final class WeaveInterface: Interface {
     // MARK: - Peer timeout job
 
     /// Remove any peers that haven't been heard from in `peeringTimeout` seconds.
-    /// Called periodically (e.g. every `PEERING_TIMEOUT × 1.1` seconds).
+    /// Called periodically (for example, every `PEERING_TIMEOUT × 1.1` seconds).
     /// Python: `WeaveInterface.peer_jobs()`
     public func peerJobs() {
         let now     = Date()
@@ -781,7 +781,7 @@ public final class WeaveInterface: Interface {
 /// A per-endpoint child interface spawned by `WeaveInterface`.
 ///
 /// Outgoing packets are routed through the parent's `WeaveDevice` to the
-/// remote endpoint.  Incoming packets are deduplicated (time-windowed) and
+/// remote endpoint. Incoming packets are deduplicated (time-windowed) and
 /// forwarded to `rawInboundHandler`.
 ///
 /// Python: `WeaveInterfacePeer`
@@ -807,7 +807,7 @@ public final class WeaveInterfacePeer: Interface {
         set { onlineFlag.value = newValue }
     }
 
-    /// Lock-guarded — a peer accumulates into its parent's counters from the
+    /// Lock-guarded—a peer accumulates into its parent's counters from the
     /// WDCL transport queue while the UI reads them. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
@@ -839,7 +839,7 @@ public final class WeaveInterfacePeer: Interface {
     ///
     /// This does **not** compose `name`, even though `name` already carries a bracketed form:
     /// `init` builds it with undelimited hex, so publishing it gave
-    /// `WeaveInterfacePeer[01020304]` against Python's `WeaveInterfacePeer[01:02:03:04]` — a
+    /// `WeaveInterfacePeer[01020304]` against Python's `WeaveInterfacePeer[01:02:03:04]`—a
     /// correct-looking string with a different `Interface.hash`. Found by the
     /// enumerate-every-conformer test in `bugs/022`; not in the audit's list of nine.
     public var displayName: String {
@@ -849,7 +849,7 @@ public final class WeaveInterfacePeer: Interface {
     /// The parent WeaveInterface's device switch ID (mirrors Python `peer.switch_id`).
     public var switchID: Data? { owner?.device.switchID }
     /// The endpoint ID for this peer, derived from the endpoint address.
-    /// Mirrors Python `peer.endpoint_id` — the 8-byte endpoint address.
+    /// Mirrors Python `peer.endpoint_id`—the 8-byte endpoint address.
     public var endpointID: Data? { endpointAddr }
 
     // MARK: - Back-reference

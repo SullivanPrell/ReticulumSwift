@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for link establishment rate, destination deregistration, and
-/// request handler deregistration — parity with Python Link/Transport/Destination.
+/// request handler deregistration—parity with Python Link/Transport/Destination.
 final class LinkEstablishmentRateTests: XCTestCase {
 
     final class Loopback: Interface {
@@ -115,7 +115,7 @@ final class LinkEstablishmentRateTests: XCTestCase {
         a.paired = b; b.paired = a
         aT.register(interface: a); bT.register(interface: b)
 
-        // Deregister before initiating — link should not be answered.
+        // Deregister before initiating—link shouldn't be answered.
         bT.deregister(destination: bDest)
 
         let established = expectation(description: "established")

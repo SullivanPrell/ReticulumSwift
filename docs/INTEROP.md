@@ -1,6 +1,6 @@
 # Interoperability with Python Reticulum
 
-ReticulumSwift is built to be **wire- and crypto-compatible** with the Python
+ReticulumSwift targets **wire- and crypto-compatibility** with the Python
 reference implementation (RNS 1.4.1). A Swift node and a Python node are peers on
 the same network: they exchange announces, establish links, transfer resources,
 and route for each other with no bridge or translation layer.
@@ -20,7 +20,7 @@ and route for each other with no bridge or translation layer.
 
 ## Trying it yourself
 
-The simplest interop check:
+The shortest interop check:
 
 1. Run a Python node:
    ```sh
@@ -37,8 +37,8 @@ The simplest interop check:
 ## How the project verifies interop
 
 Beyond the in-package unit tests (which assert against captured Python wire
-bytes), interoperability is exercised by a separate **live Python↔Swift test
-harness**. It stands up a Python `TCPServer` backbone and runs both Python and
+bytes), a separate **live Python↔Swift test harness** exercises
+interoperability. It stands up a Python `TCPServer` backbone and runs both Python and
 Swift nodes as clients against it, then asserts end-to-end behavior across:
 
 - announce / path / link / packet / resource / channel flows,
@@ -46,14 +46,14 @@ Swift nodes as clients against it, then asserts end-to-end behavior across:
 - LXMF in both directions (opportunistic, direct, and propagated),
 - RNSH / RNX wire formats.
 
-That harness lives in its own repository and is not required to build or use
+That harness lives in its own repository and isn't required to build or use
 ReticulumSwift. If you are contributing protocol-level changes and want to run it,
-open an issue — the methodology above (Python `rnsd` ⟷ Swift `rnsd`) reproduces
+open an issue—the preceding methodology (Python `rnsd` ⟷ Swift `rnsd`) reproduces
 the same coverage manually.
 
 ## Reporting an interop bug
 
 If a Swift node and a Python node disagree on the wire, that's a bug worth
 reporting. A packet capture (or a failing test with the expected Python bytes) is
-the most useful report — see [SECURITY.md](../SECURITY.md) for anything with a
+the most useful report—see [SECURITY.md](../SECURITY.md) for anything with a
 security dimension, otherwise open a GitHub issue.

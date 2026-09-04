@@ -1,11 +1,11 @@
 import Foundation
 
 /// A subset of msgpack large enough to encode the dictionaries Reticulum
-/// puts on the wire — `ResourceAdvertisement`, link RTT floats, request /
-/// response envelopes — without pulling in a third-party dependency.
+/// puts on the wire—`ResourceAdvertisement`, link RTT floats, request /
+/// response envelopes—without pulling in a third-party dependency.
 ///
 /// Supported types: nil, bool, int (all widths, signed and unsigned),
-/// double, str, bin, array, map. Ext types and timestamp are not
+/// double, str, bin, array, map. Ext types and timestamp aren't
 /// implemented because Reticulum doesn't use them.
 public enum MsgPack {
 
@@ -179,7 +179,7 @@ public enum MsgPack {
 
     /// Maximum msgpack nesting depth. Legitimate Reticulum payloads are shallow
     /// (a few levels at most); bounding recursion means a maliciously deeply
-    /// nested wire payload (e.g. thousands of nested 1-element arrays in a tiny
+    /// nested wire payload (for example, thousands of nested 1-element arrays in a tiny
     /// packet) can't overflow the stack and crash the process. Wire-neutral: no
     /// valid packet approaches this depth.
     private static let maxDepth = 64
@@ -267,7 +267,7 @@ public enum MsgPack {
         // never exceed the remaining byte count. Without this bound, a tiny packet
         // carrying a 32-bit length (~4e9) forces a multi-gigabyte reserveCapacity
         // and crashes the process. Wire-neutral: valid data still reserves enough,
-        // and the loop reads exactly `count` elements — throwing .truncated as soon
+        // and the loop reads exactly `count` elements—throwing .truncated as soon
         // as the bytes run out, so a malformed count can't spin either.
         values.reserveCapacity(min(count, max(0, data.endIndex - cursor)))
         for _ in 0..<count { values.append(try read(data, cursor: &cursor, depth: depth + 1)) }
@@ -313,8 +313,8 @@ public enum MsgPack {
 ///
 /// Python's `umsgpack.unpackb` yields plain Python scalars, so reference code can write
 /// `response["hops"]` and get an `int` regardless of which integer encoding was on the
-/// wire. These accessors give Swift callers — the RPC client, the `rn*` utilities and the
-/// rnsh/rnx message types — the same convenience without a `switch` at every use site.
+/// wire. These accessors give Swift callers—the RPC client, the `rn*` utilities and the
+/// rnsh/rnx message types—the same convenience without a `switch` at every use site.
 public extension MsgPack.Value {
 
     /// Integer value, accepting both signed and unsigned encodings.
@@ -337,25 +337,25 @@ public extension MsgPack.Value {
         }
     }
 
-    /// String value, or `nil` if this is not a msgpack string.
+    /// String value, or `nil` if this isn't a msgpack string.
     var asString: String? {
         if case .string(let s) = self { return s }
         return nil
     }
 
-    /// Binary value, or `nil` if this is not a msgpack bin.
+    /// Binary value, or `nil` if this isn't a msgpack bin.
     var asData: Data? {
         if case .bytes(let d) = self { return d }
         return nil
     }
 
-    /// Boolean value, or `nil` if this is not a msgpack bool.
+    /// Boolean value, or `nil` if this isn't a msgpack bool.
     var asBool: Bool? {
         if case .bool(let b) = self { return b }
         return nil
     }
 
-    /// Array elements, or `nil` if this is not a msgpack array.
+    /// Array elements, or `nil` if this isn't a msgpack array.
     var asArray: [MsgPack.Value]? {
         if case .array(let items) = self { return items }
         return nil

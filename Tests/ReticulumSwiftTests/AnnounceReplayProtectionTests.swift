@@ -35,7 +35,7 @@ final class AnnounceReplayProtectionTests: XCTestCase {
         XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "iface1")
 
         // The SAME announce (same random blob) replayed on iface2 must be
-        // rejected — the path must NOT move to the replay interface.
+        // rejected—the path must NOT move to the replay interface.
         iface2.inboundHandler?(announce, iface2)
         XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "iface1",
             "replayed announce (already-seen random blob) must not move the path")
@@ -58,7 +58,7 @@ final class AnnounceReplayProtectionTests: XCTestCase {
         XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "iface1")
 
         // A genuinely new announce (fresh random blob) from the same source on
-        // iface2 is a legitimate re-announce / move and MUST update the path. It is
+        // iface2 is a legitimate re-announce / move and MUST update the path. It's
         // emitted later, so it carries a strictly newer timestamp (the freshness
         // gate would tie a same-second announce and keep the first-heard path).
         let second = try Announce.make(for: dest, timestamp: t0 + 2)

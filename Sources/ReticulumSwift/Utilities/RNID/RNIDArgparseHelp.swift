@@ -22,13 +22,13 @@ import Foundation
 ///
 /// `width` is fixed rather than read from the terminal so the output is deterministic;
 /// `argparse` uses `shutil.get_terminal_size().columns - 2`, which is 78 in an 80-column
-/// terminal — the value the reference output was captured at.
+/// terminal—the value the reference output was captured at.
 /// rnid's own argparse help renderer.
 ///
 /// Distinct from ``ArgparseHelp`` (which rnprobe uses): that one models argparse's
 /// `HelpFormatter` around its own `Entry` type, while this one renders from
 /// ``ArgumentParser/OptionSpec``. Both reproduce argparse's layout byte-for-byte for
-/// their own tool and are covered by their own tests. Consolidating them is worthwhile
+/// their own tool, and their own tests cover them. Consolidating them is worthwhile
 /// but is a refactor in its own right, not a merge artefact to rush.
 public enum RNIDArgparseHelp {
 
@@ -146,7 +146,7 @@ public enum RNIDArgparseHelp {
 
     // MARK: - Text wrapping
 
-    /// Python: `textwrap.wrap(text, width)` — greedy, breaking only on whitespace.
+    /// Python: `textwrap.wrap(text, width)`—greedy, breaking only on whitespace.
     static func wrap(_ text: String, to width: Int) -> [String] {
         let words = text.split(separator: " ").map(String.init)
         guard !words.isEmpty else { return [""] }

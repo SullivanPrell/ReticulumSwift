@@ -2,7 +2,7 @@ import XCTest
 import CryptoKit
 @testable import ReticulumSwift
 
-/// In-memory loopback interface — `send` on one side delivers straight to
+/// In-memory loopback interface—`send` on one side delivers straight to
 /// the inbound handler of the paired interface, on the same Transport.
 final class LoopbackInterface: Interface {
     var name: String

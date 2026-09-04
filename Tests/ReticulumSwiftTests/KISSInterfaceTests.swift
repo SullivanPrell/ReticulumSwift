@@ -58,7 +58,7 @@ final class KISSEscapeTests: XCTestCase {
     }
 
     func testFramePayloadEscaped() {
-        // Payload with 0xC0 — should be escaped in the frame
+        // Payload with 0xC0—should be escaped in the frame
         let frame = KISS.frame(Data([0xC0]))
         // Expected: FEND + CMD_DATA + FESC + TFEND + FEND
         XCTAssertEqual(frame, Data([KISS.fend, KISS.cmdData, KISS.fesc, KISS.tfend, KISS.fend]))
@@ -566,7 +566,7 @@ final class AX25KISSInterfaceOutgoingTests: XCTestCase {
         let frames  = decoder.feed(written)
         let inner   = frames[0].data
 
-        // First 7 bytes: dst addr — each char of "APZRNS" shifted left 1
+        // First 7 bytes: dst addr—each char of "APZRNS" shifted left 1
         let dstBytes = Array(inner[0..<6])
         let expected = "APZRNS".utf8.map { $0 << 1 }
         XCTAssertEqual(dstBytes, expected)
@@ -602,7 +602,7 @@ final class AX25KISSInterfaceIncomingTests: XCTestCase {
         var received: Data?
         i.rawInboundHandler = { data, _ in received = data }
 
-        // Frame with only 8 bytes — shorter than AX25.headerSize (16)
+        // Frame with only 8 bytes—shorter than AX25.headerSize (16)
         let kissFrame = KISS.frame(Data(repeating: 0x00, count: 8))
         i.feedBytes(kissFrame)
 

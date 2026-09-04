@@ -4,19 +4,19 @@ import Foundation
 ///
 /// ## Why this exists
 ///
-/// Every interface reports four running totals — `rxBytes`, `txBytes`,
+/// Every interface reports four running totals—`rxBytes`, `txBytes`,
 /// `rxPackets`, `txPackets` (Python's `Interface.rxb`/`txb`/`rxp`/`txp`). They
 /// are written from whichever queue that interface's I/O happens to run on:
 /// CoreBluetooth's dispatch queue for `BLEMeshInterface`, an `NWConnection`
 /// queue for the TCP/UDP family, a serial read thread for `SerialInterface`.
-/// They are *read* from somewhere else entirely — the app polls them on the
+/// They're *read* from somewhere else entirely—the app polls them on the
 /// main thread to draw the interface list, and `rnstatus`-style reporting reads
 /// them from the caller's thread.
 ///
-/// `Int` is not atomic in Swift, and `counter += 1` is a load-modify-store. Two
+/// `Int` isn't atomic in Swift, and `counter += 1` is a load-modify-store. Two
 /// queues incrementing concurrently silently drop updates, and a reader racing
-/// a writer can observe a torn value. That is undefined behaviour under the
-/// Swift memory model — not merely an inaccurate statistic — and it is exactly
+/// a writer can observe a torn value. That's undefined behaviour under the
+/// Swift memory model—not merely an inaccurate statistic—and it's exactly
 /// what the Thread Sanitizer flags on these properties.
 ///
 /// Rather than bolt a lock onto each of the fourteen interfaces independently
@@ -27,22 +27,22 @@ import Foundation
 ///
 /// ## Cost
 ///
-/// One uncontended `NSLock` acquisition per packet — tens of nanoseconds
+/// One uncontended `NSLock` acquisition per packet—tens of nanoseconds
 /// against packet handling measured in microseconds, and far below the cost of
 /// the framing and crypto already on the same path. `NSLock` is the same
 /// primitive the interfaces already use for their peer tables, so this
 /// introduces no new synchronization mechanism.
-/// A `Bool` that is safe to read and write from different threads.
+/// A `Bool` that's safe to read and write from different threads.
 ///
 /// Exists for `Interface.isOnline`, which every interface flips from its own
 /// I/O queue (an `NWConnection` state handler, a CoreBluetooth callback, a
-/// serial reader) while callers read it from elsewhere — `Transport` consults
+/// serial reader) while callers read it from elsewhere—`Transport` consults
 /// it before routing, and apps read it for every row of an interface list.
 /// A racing `Bool` is undefined behaviour just as a racing `Int` is.
 ///
 /// Interfaces keep `isOnline` as a computed property over one of these, which
-/// means every existing `isOnline = ...` assignment keeps working unchanged —
-/// the setter is simply guarded now.
+/// means every existing `isOnline = ...` assignment keeps working unchanged—the
+/// setter is simply guarded now.
 public final class LockedFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var _value: Bool
@@ -59,7 +59,7 @@ public final class InterfaceCounters: @unchecked Sendable {
 
     /// A consistent view of all four counters, taken under a single lock
     /// acquisition. Reading the properties one at a time is safe but can
-    /// straddle an update — a snapshot cannot, so `txBytes` and `txPackets`
+    /// straddle an update—a snapshot can't, so `txBytes` and `txPackets`
     /// always describe the same set of packets.
     public struct Snapshot: Sendable, Equatable {
         public let rxBytes: Int
@@ -106,8 +106,8 @@ public final class InterfaceCounters: @unchecked Sendable {
 
     // MARK: - Writing
 
-    /// Records inbound traffic. `packets` defaults to 1 — pass 0 when adding
-    /// bytes that do not correspond to a whole packet (e.g. counting raw
+    /// Records inbound traffic. `packets` defaults to 1—pass 0 when adding
+    /// bytes that don't correspond to a whole packet (for example, counting raw
     /// stream bytes on an interface that tallies packets elsewhere).
     public func addRx(bytes: Int, packets: Int = 1) {
         lock.lock()

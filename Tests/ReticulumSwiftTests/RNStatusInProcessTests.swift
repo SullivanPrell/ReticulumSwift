@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `rnstatus` running against its own in-process stack — the standalone / shared-instance
+/// `rnstatus` running against its own in-process stack—the standalone / shared-instance
 /// path, where there is no RPC hop and `InterfaceStatsPayload.build` supplies the dict
 /// directly.
 ///
@@ -45,7 +45,7 @@ final class RNStatusInProcessTests: XCTestCase {
         transport.transportEnabled = true
         transport.register(interface: StubInterface(name: "stub"))
 
-        // Python: Reticulum.py:1459-1467 — rss is appended AFTER the transport block, and
+        // Python: Reticulum.py:1459-1467—rss is appended AFTER the transport block, and
         // `rnstatus -j` preserves insertion order, so the position is contractual.
         let ordered = keys(InterfaceStatsPayload.build(transport))
         XCTAssertEqual(ordered,
@@ -102,7 +102,7 @@ final class RNStatusInProcessTests: XCTestCase {
         let transport = Transport()
         // PosixTCPServer's displayName is the literal "Shared Instance[<port>]"
         // (LocalInterface.py:496-498), which is the prefix rnstatus keys the Serving /
-        // subtraction branches off. It no longer depends on the `name` passed here — see
+        // subtraction branches off. It no longer depends on the `name` passed here—see
         // `bugs/022`, where building it from `name` made it correct only at this one call site.
         let server = PosixTCPServer(name: "Shared Instance", port: 37428)
         transport.register(interface: server)
@@ -128,7 +128,7 @@ final class RNStatusInProcessTests: XCTestCase {
         let rendered = RNStatusRenderer(options: options, now: 1_700_000_000)
             .render(stats: stats!, linkCount: 0)
         // The rendered row is the interface's `displayName`, which is class-qualified for every
-        // conformer including test doubles since `bugs/022` — not the bare configured `name`.
+        // conformer including test doubles since `bugs/022`—not the bare configured `name`.
         XCTAssertTrue(rendered.contains(" StubInterface[stub]\n"))
         XCTAssertTrue(rendered.contains("    Status    : Up\n"))
         XCTAssertTrue(rendered.contains("    Rate      : 9.60 kbps\n"))

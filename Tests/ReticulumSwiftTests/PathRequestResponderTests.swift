@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for path request handling — verifying that Transport correctly responds
+/// Tests for path request handling—verifying that Transport correctly responds
 /// to path requests for locally registered destinations.
 final class PathRequestResponderTests: XCTestCase {
 

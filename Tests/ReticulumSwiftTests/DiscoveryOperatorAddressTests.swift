@@ -3,16 +3,16 @@ import XCTest
 
 /// RNS 1.5.0 added three fields to the interface-discovery announce: an implementation
 /// identifier (`TRANSPORT_IMPL 0xFD`), its version (`TRANSPORT_VERS 0xFC`), and the operator's
-/// LXMF address (`OP_ADDR 0xF0`) — `Discovery.py:21,22,38`.
+/// LXMF address (`OP_ADDR 0xF0`)—`Discovery.py:21,22,38`.
 ///
 /// This port implements the discovery *receive* side only; the publish side is a documented gap
-/// (`Reticulum.publishesInterfaceDiscovery == false`, `fix-013 §7.8`). So what is testable —
-/// and what matters for interop today — is that a Swift node parses an announce from a Python
-/// 1.5.x node correctly: it must surface the operator address and must not be confused by the
-/// two fields 1.5.2 writes but does not itself read back.
+/// (`Reticulum.publishesInterfaceDiscovery == false`, `fix-013 §7.8`). So what's testable—and
+/// what matters for interop today—is that a Swift node parses an announce from a Python
+/// 1.5.x node correctly: it must surface the operator address and must not trip over the
+/// two fields 1.5.2 writes but doesn't itself read back.
 final class DiscoveryOperatorAddressTests: XCTestCase {
 
-    /// These tests are about payload decoding, so the proof-of-work gate is stubbed out — a
+    /// These tests are about payload decoding, so the proof-of-work gate is stubbed out—a
     /// real stamp would make every fixture below depend on a mining run. Named locally rather
     /// than shared, matching the file-private doubles in the other discovery suites.
     private final class AcceptAnyStamp: DiscoveryStampValidator {
@@ -27,7 +27,7 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
     private static let stamp = Data(repeating: 0xAB, count: 32)
     private static let transportID = Data(repeating: 0x11, count: 16)
 
-    /// A 16-byte LXMF destination hash — `RNS.Identity.TRUNCATED_HASHLENGTH//8`, the only
+    /// A 16-byte LXMF destination hash—`RNS.Identity.TRUNCATED_HASHLENGTH//8`, the only
     /// length `Discovery.py:429` accepts.
     private static let operatorAddress = Data((0..<16).map { UInt8(0xA0 + $0) })
 
@@ -76,7 +76,7 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
 
     /// Python hardcodes `IMPLEMENTATION_NAME = "RNS"` and its own `__version__`. The field is
     /// documented as "a short, unique implementation-specific identifier and version tag", so
-    /// this port announces its own rather than impersonating the reference — a discovery
+    /// this port announces its own rather than impersonating the reference—a discovery
     /// consumer must be able to tell a Swift node from a Python one.
     func testThisPortHasItsOwnImplementationIdentity() {
         XCTAssertEqual(InterfaceDiscoveryHelpers.implementationName, "RNSwift",
@@ -116,7 +116,7 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
     }
 
     func testAnExplicitlyNilOperatorAddressIsAccepted() throws {
-        // `type(unpacked[OP_ADDR]) not in [type(None), bytes]` (Discovery.py:428) — None is
+        // `type(unpacked[OP_ADDR]) not in [type(None), bytes]` (Discovery.py:428)—None is
         // explicitly permitted, so a nil here must not reject the whole announce.
         let info = try XCTUnwrap(decode(backbone(extra: [(.uint(0xF0), .nil)])),
                                  "an explicit nil OP_ADDR is legal and must not drop the announce")
@@ -126,7 +126,7 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
     func testAWrongLengthOperatorAddressIsIgnoredButTheAnnounceSurvives() throws {
         // `if unpacked[OP_ADDR] and len(unpacked[OP_ADDR]) == TRUNCATED_HASHLENGTH//8`
         // (Discovery.py:429): a short or long value simply fails the length test. The
-        // surrounding announce is still valid and must still be discovered — dropping it would
+        // surrounding announce is still valid and must still be discovered—dropping it would
         // let one malformed optional field blackhole an otherwise reachable node.
         for wrong in [Data(repeating: 0x0F, count: 15), Data(repeating: 0x0F, count: 17), Data()] {
             let info = try XCTUnwrap(decode(backbone(extra: [(.uint(0xF0), .bytes(wrong))])),
@@ -140,7 +140,7 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
     func testANonBytesOperatorAddressRejectsTheAnnounce() {
         // `raise ValueError("Invalid data in operator LXMF address field of announce")`
         // (Discovery.py:428). Python raises *inside* the handler's try, so the announce is
-        // abandoned — a type violation is treated as a malformed announce, unlike a merely
+        // abandoned—a type violation is treated as a malformed announce, unlike a merely
         // wrong-length one.
         XCTAssertNil(decode(backbone(extra: [(.uint(0xF0), .string("deadbeef"))])),
                      "a non-bytes OP_ADDR is a type violation and abandons the announce "
@@ -150,7 +150,7 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
     // MARK: - Forward compatibility with the two write-only fields
 
     func testTheImplementationFieldsDoNotDisturbDecoding() throws {
-        // 1.5.2 writes TRANSPORT_IMPL and TRANSPORT_VERS but does not read them back — they are
+        // 1.5.2 writes TRANSPORT_IMPL and TRANSPORT_VERS but doesn't read them back—they're
         // staged for a future consumer. Every real 1.5.x announce carries them, so decoding must
         // be unaffected by their presence whether or not this port ever surfaces them.
         let info = try XCTUnwrap(decode(backbone(extra: [

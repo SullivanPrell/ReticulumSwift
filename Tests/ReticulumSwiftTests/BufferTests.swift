@@ -178,7 +178,7 @@ final class BufferTests: XCTestCase {
         // Raise window so all chunks can go out.
         let writer = Buffer.createWriter(streamID: 0, channel: channel)
 
-        // Write 50 bytes — needs 3 chunks at 22 bytes each (22+22+6=50).
+        // Write 50 bytes—needs 3 chunks at 22 bytes each (22+22+6=50).
         let data = Data(repeating: 0xCC, count: 50)
         try writer.write(data)
 

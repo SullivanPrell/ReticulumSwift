@@ -10,7 +10,7 @@ public enum SerialParity: Equatable {
     case odd
 
     /// Parse from an INI / Python config string.
-    /// "N", "n", or anything unrecognised → `.none`
+    /// "N", "n", or anything unrecognized → `.none`
     /// "E", "e", "even", "Even", … → `.even`
     /// "O", "o", "odd",  "Odd",  … → `.odd`
     public init(string: String) {
@@ -30,9 +30,9 @@ public enum SerialParity: Equatable {
 public protocol SerialPortTransport: AnyObject {
     var isOpen: Bool { get }
 
-    /// Invoked when the device fails underneath the port — a read reporting the device gone
+    /// Invoked when the device fails underneath the port—a read reporting the device gone
     /// (EOF or an errno) or a failed write. Required, with no defaulted no-op: a conformer
-    /// that cannot report loss leaves its interface Up over a dead descriptor forever, which
+    /// that can't report loss leaves its interface Up over a dead descriptor forever, which
     /// is the defect this seam closes. Python's equivalent is the blocking read loop raising
     /// into `reconnect_port` (`SerialInterface.py:196-221`).
     var onTransportError: ((Error) -> Void)? { get set }
@@ -51,7 +51,7 @@ public protocol SerialPortTransport: AnyObject {
     @discardableResult
     func write(_ data: Data) throws -> Int
 
-    /// Register a callback that is invoked whenever bytes arrive on the port.
+    /// Register a callback that's invoked whenever bytes arrive on the port.
     func setReadCallback(_ callback: @escaping (Data) -> Void)
 }
 
@@ -60,8 +60,8 @@ public protocol SerialPortTransport: AnyObject {
 /// Python's `reconnect_port` loop, shared by every serial-family interface: on device loss the
 /// interface goes offline and redials every `wait` seconds until an attempt succeeds or the
 /// interface is stopped (`SerialInterface.py:203-221`, `KISSInterface.py:371-380`,
-/// `AX25KISSInterface.py:384-393`, `RNodeInterface.py:1167-1187` — all `while True:
-/// sleep(5); try open`). One implementation so five interfaces cannot drift.
+/// `AX25KISSInterface.py:384-393`, `RNodeInterface.py:1167-1187`—all `while True:
+/// sleep(5); try open`). One implementation so five interfaces can't drift.
 final class TransportReconnector {
     private let queue = DispatchQueue(label: "rns.transport.reconnect")
     private let lock = NSLock()

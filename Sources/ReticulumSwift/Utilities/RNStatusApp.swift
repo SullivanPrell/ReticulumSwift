@@ -5,7 +5,7 @@ import Foundation
 ///
 /// `rnstatus` prints the state of a running Reticulum instance: per-interface
 /// traffic / announce / path-request / radio statistics, optional traffic totals, the link
-/// count and a transport-instance footer — plus two side modes (`-d`/`-D` list discovered
+/// count and a transport-instance footer—plus two side modes (`-d`/`-D` list discovered
 /// interfaces, `-R` fetches status from a remote transport instance over a `Link`).
 ///
 /// Everything terminal-facing (printing, `exit`, ANSI clear, SIGINT) lives in
@@ -134,9 +134,9 @@ public enum RNStatusApp {
     /// `--help` output, transcribed byte for byte from the installed Python utility.
     ///
     /// The house ``ArgumentParser`` generates a usage block of its own, but its layout is
-    /// not argparse's (it pads the option column to 26 rather than 24 and does not wrap the
+    /// not argparse's (it pads the option column to 26 rather than 24 and doesn't wrap the
     /// `usage:` line across the declared flags). Since the help text is user-facing output
-    /// like everything else in this port, it is reproduced literally instead.
+    /// like everything else in this port, it's reproduced literally instead.
     public static let helpText: String = """
     usage: rnstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-P] [-l] [-B]
                     [-t] [-s SORT] [-r] [-j] [-R hash] [-i path] [-w seconds] [-d]
@@ -176,7 +176,7 @@ public enum RNStatusApp {
     """
 
     /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
-    /// error. Taken from ``helpText`` rather than restated, so the two cannot drift.
+    /// error. Taken from ``helpText`` rather than restated, so the two can't drift.
     public static var usageText: String {
         helpText.components(separatedBy: "\n\n")[0]
     }
@@ -191,7 +191,7 @@ public enum RNStatusApp {
 
     /// Process exit codes. Python calls `exit(n)` directly at each site.
     public enum Result: Int32, Equatable, CaseIterable {
-        /// Success — also `--version`, `--help`, `-j`, `-d`/`-D` and `KeyboardInterrupt`.
+        /// Success—also `--version`, `--help`, `-j`, `-d`/`-D` and `KeyboardInterrupt`.
         case ok = 0
         /// "No shared RNS instance available to get status from" (rnstatus.py:171).
         case noSharedInstance = 1
@@ -201,17 +201,17 @@ public enum RNStatusApp {
         case linkFailed = 10
         /// Path request to the remote management destination timed out (rnstatus.py:82).
         case pathRequestTimeout = 12
-        /// Remote setup error — missing `-i`, bad `-R`, unloadable identity (rnstatus.py:332).
+        /// Remote setup error—missing `-i`, bad `-R`, unloadable identity (rnstatus.py:332).
         case remoteError = 20
     }
 
     // MARK: - Sort keys
 
     /// Accepted `-s` values. Python lowercases the argument and runs a chain of
-    /// independent `if`s (rnstatus.py:362-387); an unrecognised token is silently ignored,
+    /// independent `if`s (rnstatus.py:362-387); an unrecognized token is silently ignored,
     /// which `Sort(rawValue:)` reproduces by returning nil.
     ///
-    /// `bitrate` and `announce` are accepted aliases that the `--help` text does not list.
+    /// `bitrate` and `announce` are accepted aliases that the `--help` text doesn't list.
     public enum Sort: String, Equatable, CaseIterable {
         case rate, bitrate
         case rx, tx, rxs, txs

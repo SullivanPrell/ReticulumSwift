@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Unit tests for LocalInterface — verify properties, not network connectivity
+/// Unit tests for LocalInterface—verify properties, not network connectivity
 /// (no actual rnsd daemon is required).
 final class LocalInterfaceTests: XCTestCase {
 
@@ -31,7 +31,7 @@ final class LocalInterfaceTests: XCTestCase {
 
     func testStopBeforeStartIsHarmless() {
         let iface = LocalInterface()
-        iface.stop()  // should not crash
+        iface.stop()  // shouldn't crash
         XCTAssertFalse(iface.isOnline)
     }
 

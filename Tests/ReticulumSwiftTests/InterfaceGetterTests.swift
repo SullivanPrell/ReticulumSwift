@@ -41,7 +41,7 @@ final class InterfaceGetterTests: XCTestCase {
     /// Mirrors Python's `Interface.get_hash()` = `full_hash(str(self).encode("utf-8"))`:
     /// the hash must be derived from the type-qualified `displayName` (Python's
     /// `__str__`), not the bare `name`. This must hold via dynamic dispatch for
-    /// every concrete interface that overrides `displayName` — `displayName` is
+    /// every concrete interface that overrides `displayName`—`displayName` is
     /// declared as a protocol requirement specifically so these resolve to the
     /// override rather than the `Interface` extension's `{ name }` default.
     func testHashDerivesFromOverriddenDisplayNameViaDynamicDispatch() {

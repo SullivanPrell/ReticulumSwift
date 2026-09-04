@@ -26,7 +26,7 @@ final class LinkIdentifyTests: XCTestCase {
         let identified = expectation(description: "remote identified")
         var identifiedIdentity: Identity?
 
-        // Must set destination callback BEFORE initiating — loopback is synchronous.
+        // Must set destination callback BEFORE initiating—loopback is synchronous.
         dst.onLinkEstablished = { responderLink in
             responderLink.onRemoteIdentified = { _, identity in
                 identifiedIdentity = identity
@@ -80,7 +80,7 @@ final class LinkIdentifyTests: XCTestCase {
     }
 
     func testIdentifySignatureVerification() throws {
-        // Tampered identify packet should not set remoteIdentity.
+        // Tampered identify packet shouldn't set remoteIdentity.
         let srcIdentity = Identity()
         let dstIdentity = Identity()
         let dst = try Destination(

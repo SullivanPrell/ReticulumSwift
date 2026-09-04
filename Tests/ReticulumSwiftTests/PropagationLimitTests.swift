@@ -33,7 +33,7 @@ final class PropagationLimitTests: XCTestCase {
         t.register(interface: in1)
         t.register(interface: out)
 
-        // Announce with hops = propagationLimit (128) should NOT be forwarded
+        // Announce with hops = propagationLimit (128) shouldn't be forwarded
         let packet = try Announce.make(for: dest)
         var maxHopPacket = packet
         maxHopPacket.hops = UInt8(t.propagationLimit)

@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for ResourceTransfer accessor properties mirroring Python's
-/// Resource.get_progress(), get_transfer_size(), get_data_size(), etc.
+/// Resource.get_progress(), get_transfer_size(), get_data_size(), and so on
 final class ResourceAccessorTests: XCTestCase {
 
     final class LoopbackInterface: Interface {
@@ -85,7 +85,7 @@ final class ResourceAccessorTests: XCTestCase {
         XCTAssertGreaterThan(receiver.transferSize, 0, "transferSize should be populated")
         // dataSize is the logical (uncompressed) payload size; transferSize is the
         // encrypted wire size. The default BZip2Compressor shrinks this highly
-        // compressible payload, so transferSize < dataSize here — the accessors are
+        // compressible payload, so transferSize < dataSize here—the accessors are
         // independent, so assert each is populated as expected rather than ordering them.
         XCTAssertEqual(receiver.dataSize, payload.count, "dataSize should reflect the uncompressed payload")
     }

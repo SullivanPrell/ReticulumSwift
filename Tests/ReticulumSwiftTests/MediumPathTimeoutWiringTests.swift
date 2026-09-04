@@ -5,7 +5,7 @@ import XCTest
 ///
 /// A utility attached as a local client has its own `Transport`, whose only interface is the
 /// loopback `LocalInterface`. Asking it for the slowest online bitrate reports the loopback's,
-/// so the timeout would never be extended on exactly the nodes that need it — the daemon
+/// so the timeout would never be extended on exactly the nodes that need it—the daemon
 /// holding the LoRa radio is a different process. Python guards the accessor with
 /// `if self.is_connected_to_shared_instance:` and proxies over the management socket
 /// (`Reticulum.py:1766-1784`); these tests pin both arms.
@@ -38,7 +38,7 @@ final class MediumPathTimeoutWiringTests: XCTestCase {
         XCTAssertGreaterThan(t.mediumPathTimeout(), Constants.defaultPerHopTimeout)
     }
 
-    /// Python logs the exception and returns `0` (`Reticulum.py:1780-1781`) — not the local
+    /// Python logs the exception and returns `0` (`Reticulum.py:1780-1781`)—not the local
     /// value. Falling back to the local transport here would be worse than useless: it would
     /// answer with the client's loopback bitrate and read as a successful, fast link.
     func testAFailedRPCAnswersZeroRatherThanTheClientsOwnBitrate() {

@@ -5,7 +5,7 @@ import XCTest
 ///
 /// Golden value below was captured from the installed Python utility on this machine:
 ///     $ rnx --help
-/// (RNS 1.4.0, `~/anaconda3/bin/rnx`). Every space in it is load-bearing.
+/// (RNS 1.4.0, `~/anaconda3/bin/rnx`). Every space in it's load-bearing.
 final class RNXHelpTextTests: XCTestCase {
 
     /// Captured verbatim from `rnx --help`.

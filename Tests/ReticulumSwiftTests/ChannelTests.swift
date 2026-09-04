@@ -170,12 +170,12 @@ final class ChannelTests: XCTestCase {
     func testUnknownTypeDroppedSilently() throws {
         let outlet = MockChannelOutlet()
         let channel = Channel(outlet: outlet)
-        // Do NOT register PingMessage.
+        // Don't register PingMessage.
 
         var handlerCalled = false
         channel.addMessageHandler { _ in handlerCalled = true; return true }
 
-        // Feed a PingMessage packet — should be silently dropped.
+        // Feed a PingMessage packet—should be silently dropped.
         let raw = Data([0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x42])
         channel.receive(raw)
 
@@ -220,7 +220,7 @@ final class ChannelTests: XCTestCase {
     func testSystemReservedTypeCannotBeRegisteredByUser() throws {
         let outlet = MockChannelOutlet()
         let channel = Channel(outlet: outlet)
-        // StreamDataMessage typeID=0xFF00 — user-level registration should fail.
+        // StreamDataMessage typeID=0xFF00—user-level registration should fail.
         XCTAssertThrowsError(try channel.registerMessageType(StreamDataMessage.self)) { error in
             XCTAssertEqual(error as? ChannelError, .invalidMsgType)
         }

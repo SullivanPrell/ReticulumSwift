@@ -20,7 +20,7 @@ final class LinkGetterTests: XCTestCase {
 
     func testGetExpectedRateNilOnPendingLink() throws {
         let link = try makeInitiatedLink()
-        // Link is pending (not yet established) — expected rate should be nil.
+        // Link is pending (not yet established)—expected rate should be nil.
         XCTAssertNil(link.getExpectedRate())
     }
 
@@ -113,7 +113,7 @@ final class LinkGetterTests: XCTestCase {
     func testGetRemoteIdentityMatchesRemoteIdentityProperty() throws {
         // Remote identity is only populated on the responder side after
         // the initiator calls identify(). Without a full identify exchange
-        // we verify structural parity: both getters return the same value.
+        // this test verifies structural parity: both getters return the same value.
         let (initiator, responder) = try makeEstablishedPair()
         XCTAssertEqual(initiator.getRemoteIdentity() == nil, initiator.remoteIdentity == nil)
         XCTAssertEqual(responder.getRemoteIdentity() == nil, responder.remoteIdentity == nil)

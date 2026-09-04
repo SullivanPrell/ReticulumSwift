@@ -52,7 +52,7 @@ final class AnnounceRateTableTests: XCTestCase {
         let destHash = Data(repeating: 0x01, count: 16)
         let now = Date().timeIntervalSince1970
 
-        // Even if we send 10 rapid announces, none should be blocked.
+        // Even after 10 rapid announces, none should be blocked.
         for _ in 0..<10 {
             let blocked = t.isAnnounceRateBlocked(destinationHash: destHash,
                                                    interface: iface,
@@ -79,7 +79,7 @@ final class AnnounceRateTableTests: XCTestCase {
 
     func testRateViolationAccumulates() throws {
         let t = Transport()
-        // Target: 10s between announces. Grace: 0 violations allowed. Penalty: 0.
+        // Target: 10 seconds between announces. Grace: 0 violations allowed. Penalty: 0.
         let iface = RateLimitedInterface(name: "strict", rateTarget: 10.0, grace: 0, penalty: 0)
         t.register(interface: iface)
 
@@ -89,7 +89,7 @@ final class AnnounceRateTableTests: XCTestCase {
         // First announce (always allowed, seeds the table)
         _ = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
 
-        // Second announce 1s later — violates 10s target
+        // Second announce 1 second later—violates 10 seconds target
         now += 1.0
         let blocked = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
         // With grace=0, first violation should block.
@@ -100,7 +100,7 @@ final class AnnounceRateTableTests: XCTestCase {
 
     func testGraceAllowsViolationsBeforeBlocking() throws {
         let t = Transport()
-        // Target: 10s. Grace: 2 (first 2 violations pass, 3rd blocks). Penalty: 0.
+        // Target: 10 seconds. Grace: 2 (first 2 violations pass, third blocks). Penalty: 0.
         let iface = RateLimitedInterface(name: "grace", rateTarget: 10.0, grace: 2, penalty: 0)
         t.register(interface: iface)
 
@@ -110,12 +110,12 @@ final class AnnounceRateTableTests: XCTestCase {
         // Seed with first announce.
         _ = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
 
-        // Violation 1 (arrives 1s later, within target): should NOT be blocked (within grace)
+        // Violation 1 (arrives 1 second later, within target): shouldn't be blocked (within grace)
         now += 1.0
         var blocked = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
         XCTAssertFalse(blocked, "violation 1 within grace should pass")
 
-        // Violation 2: should NOT be blocked (within grace)
+        // Violation 2: shouldn't be blocked (within grace)
         now += 1.0
         blocked = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
         XCTAssertFalse(blocked, "violation 2 within grace should pass")
@@ -130,7 +130,7 @@ final class AnnounceRateTableTests: XCTestCase {
 
     func testBlockExpiresAfterRateTargetPlusPenalty() throws {
         let t = Transport()
-        // Target: 10s. Grace: 0. Penalty: 5s.
+        // Target: 10 seconds. Grace: 0. Penalty: 5 seconds.
         let iface = RateLimitedInterface(name: "penalty", rateTarget: 10.0, grace: 0, penalty: 5.0)
         t.register(interface: iface)
 
@@ -158,7 +158,7 @@ final class AnnounceRateTableTests: XCTestCase {
 
     func testViolationCountDecreasesOnCompliantAnnounce() throws {
         let t = Transport()
-        // Target: 5s. Grace: 3.
+        // Target: 5 seconds. Grace: 3.
         let iface = RateLimitedInterface(name: "recover", rateTarget: 5.0, grace: 3, penalty: 0)
         t.register(interface: iface)
 
@@ -168,11 +168,11 @@ final class AnnounceRateTableTests: XCTestCase {
         // Seed.
         _ = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
 
-        // Accumulate 2 violations (each 1s apart)
+        // Accumulate 2 violations (each 1 second apart)
         now += 1.0; _ = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
         now += 1.0; _ = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
 
-        // Now send a compliant announce (6s gap > target 5s) — violation count decreases
+        // Now send a compliant announce (6 seconds gap > target 5 seconds)—violation count decreases
         now += 6.0
         let blocked = t.isAnnounceRateBlocked(destinationHash: dest, interface: iface, now: now)
         XCTAssertFalse(blocked, "compliant announce after violations should pass and reduce violation count")
@@ -208,7 +208,7 @@ final class AnnounceRateTableTests: XCTestCase {
         // This test registered the destination it then announced to itself, so it was passing only
         // because that gate was missing; the registration was never what it was testing.
 
-        // Interface with tight rate limiting: target=60s, grace=0
+        // Interface with tight rate limiting: target=60 seconds, grace=0
         let iface = RateLimitedInterface(name: "tight", rateTarget: 60.0, grace: 0, penalty: 0)
         t.register(interface: iface)
 

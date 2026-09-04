@@ -8,18 +8,18 @@ import XCTest
 ///     if packet.transport_id != None: received_from = packet.transport_id
 ///     else:                           received_from = packet.destination_hash
 ///
-/// and stores it at `path_table[dst][1]`, which `get_path_table` publishes as `via`. It is
+/// and stores it at `path_table[dst][1]`, which `get_path_table` publishes as `via`. It's
 /// therefore **never None**, and consumers rely on that: `rnpath -t` calls
-/// `RNS.prettyhexrep(path["via"])` with no guard, so a null there is not a blank column —
-/// it is `TypeError: 'NoneType' object is not iterable` and the tool dies.
+/// `RNS.prettyhexrep(path["via"])` with no guard, so a null there isn't a blank column—it's
+/// `TypeError: 'NoneType' object is not iterable` and the tool dies.
 ///
-/// Swift stores the transport id alone, which is legitimately nil for a directly-attached
+/// Swift stores the transport id alone, which is legitimately nil for a directly attached
 /// destination, so the published value has to fall back the way Python's does. Caught by
 /// running the real Python `rnpath -t` against a Swift `rnsd` that had learned a single
 /// 0-hop path: it crashed with exactly that TypeError.
 ///
 /// `RNPathModels` already compensated for this in its own `resolvedVia`, which is why
-/// Swift's own `rnpath` rendered correctly throughout — the gap was only ever visible to a
+/// Swift's own `rnpath` rendered correctly throughout—the gap was only ever visible to a
 /// Python client, because the fix sat on the consumer instead of the producer.
 final class PathTableViaTests: XCTestCase {
 
@@ -67,7 +67,7 @@ final class PathTableViaTests: XCTestCase {
     // MARK: - Transport.getPathTable
 
     func testDirectPathReportsTheDestinationItself() throws {
-        // No transport id — Python's `else` branch stores the destination hash.
+        // No transport id—Python's `else` branch stores the destination hash.
         let transport = try makeTransport()
         addPath(transport, hops: 0, nextHop: nil)
 
@@ -87,10 +87,10 @@ final class PathTableViaTests: XCTestCase {
     // MARK: - interface
 
     func testInterfaceIsPublishedAsItsDisplayName() throws {
-        // Python: `"interface": str(receiving_interface)` (Reticulum.py:1485), i.e. the
-        // display name — "LocalInterface[56156]", not the short config name. A path entry
+        // Python: `"interface": str(receiving_interface)` (Reticulum.py:1485), that is, the
+        // display name—"LocalInterface[56156]", not the short config name. A path entry
         // stores only the short name, so the producer has to resolve it, exactly as `via`
-        // has to fall back. Same failure mode: visible only to a client that is not
+        // has to fall back. Same failure mode: visible only to a client that isn't
         // Swift's own rnpath, which compensated for this in its bridging init.
         let transport = try makeTransport()
         let iface = UDPInterface(name: "Bridge", listenPort: 0)

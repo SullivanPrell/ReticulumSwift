@@ -3,13 +3,13 @@ import XCTest
 
 /// `Reticulum.version` is what every `rn*` tool prints for `--version`, what `rnsd` logs at
 /// startup and what the RetiOS About screen shows. Its doc comment says "bump this on every
-/// release", and it was left at 1.9.0 across three releases — so a 1.10.2 build introduced
+/// release", and it was left at 1.9.0 across three releases—so a 1.10.2 build introduced
 /// itself as 1.9.0 everywhere.
 ///
-/// It survived because **every existing test interpolates the constant it is checking**:
+/// It survived because **every existing test interpolates the constant it's checking**:
 /// `XCTAssertFalse(Reticulum.version.isEmpty)`, `Reticulum.version.split(separator: ".")`, and a
 /// log-format test that builds its expected string from `Reticulum.version` itself. All six pass
-/// for any value, including a stale one. A version test that cannot detect staleness is not a
+/// for any value, including a stale one. A version test that can't detect staleness isn't a
 /// version test.
 ///
 /// So this compares the constant against something outside the source: the newest released
@@ -46,8 +46,8 @@ final class VersionConstantTests: XCTestCase {
                        """)
     }
 
-    /// The protocol version is a *different* contract — the Python RNS release whose wire
-    /// behaviour the port matches — and must not be quietly dragged along by a library bump.
+    /// The protocol version is a *different* contract—the Python RNS release whose wire
+    /// behaviour the port matches—and must not be quietly dragged along by a library bump.
     func testTheProtocolVersionIsNotTheLibraryVersion() {
         XCTAssertNotEqual(Reticulum.version, Reticulum.rnsProtocolVersion,
                           "the library version and the RNS protocol version advance "

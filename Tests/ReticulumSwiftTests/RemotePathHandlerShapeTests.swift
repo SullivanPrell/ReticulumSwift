@@ -61,7 +61,7 @@ final class RemotePathHandlerShapeTests: XCTestCase {
         func send(_ packet: Packet) throws {}
     }
 
-    /// A link object is required by the handler signature but never inspected by it.
+    /// The handler signature requires a link object but never inspects it.
     private func makeMinimalLink() -> Link {
         let identity = Identity()
         let destination = try! Destination(identity: identity, direction: .in, kind: .single,
@@ -168,7 +168,7 @@ final class RemotePathHandlerShapeTests: XCTestCase {
     // MARK: - /status
 
     /// `/status` is registered as a NATIVE handler, so its response is embedded in the
-    /// envelope as a msgpack value rather than a BIN blob — Python's `rnstatus` does
+    /// envelope as a msgpack value rather than a BIN blob—Python's `rnstatus` does
     /// `isinstance(request_receipt.response, list)` and rejects the bytes form.
     private func invokeStatusHandler(_ transport: Transport, includeLinkStats: Bool) throws -> [MsgPack.Value] {
         let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
@@ -181,7 +181,7 @@ final class RemotePathHandlerShapeTests: XCTestCase {
     }
 
     func testStatusReturnsTheFullInterfaceStatsPayload() throws {
-        // Python: response.append(Transport.owner.get_interface_stats()) — the whole dict,
+        // Python: response.append(Transport.owner.get_interface_stats())—the whole dict,
         // which rnstatus then indexes by "interfaces", "rxb", "txs" and so on. Returning a
         // summarised list of per-interface names would leave rnstatus -R with nothing to read.
         let transport = try makeTransport()
@@ -221,7 +221,7 @@ final class RemotePathHandlerShapeTests: XCTestCase {
 
         // `announce_queue` is deliberately NOT in that list. Python creates the attribute
         // lazily, the first time an announce is queued on an interface (Transport.py:1277),
-        // and `get_interface_stats` emits the key only when `hasattr` succeeds — so on a
+        // and `get_interface_stats` emits the key only when `hasattr` succeeds—so on a
         // freshly registered interface Python omits it, and rnstatus's `if "announce_queue"
         // in ifstat` guard is what makes that meaningful.
         XCTAssertNil(iface["announce_queue"],
@@ -232,7 +232,7 @@ final class RemotePathHandlerShapeTests: XCTestCase {
         // `rnstatus -j` serialises this dictionary with json.dumps, which preserves
         // insertion order, so the order is part of the -j output contract. This is Python's
         // sequence in get_interface_stats (Reticulum.py:1326-1443) for an interface with no
-        // optional blocks — checked against a live Python daemon's own -j output.
+        // optional blocks—checked against a live Python daemon's own -j output.
         let transport = try makeTransport()
         transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
 
@@ -255,7 +255,7 @@ final class RemotePathHandlerShapeTests: XCTestCase {
             "burst_active", "burst_activated", "pr_burst_active", "pr_burst_activated",
             "status", "mode",
             // RNS 1.4.1 appended both after `mode`, and Python still emits them last
-            // in 1.4.2 — so they extend this sequence rather than reordering it.
+            // in 1.4.2—so they extend this sequence rather than reordering it.
             "gravity", "announces_to_internal",
         ])
     }

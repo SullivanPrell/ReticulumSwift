@@ -40,7 +40,7 @@ final class CacheRequestOutboundTests: XCTestCase {
         func send(_ packet: Packet) throws { sentPackets.append(packet) }
     }
 
-    // MARK: - Local cache hit: replay locally, do NOT send over interface
+    // MARK: - Local cache hit: replay locally, don't send over interface
 
     func testCacheRequestReplayesLocallyOnCacheHit() throws {
         let (t, spy) = makeTransportWithIface()

@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `bugs/022` — every interface must publish the name its Python counterpart's `__str__`
+/// `bugs/022`—every interface must publish the name its Python counterpart's `__str__`
 /// produces, because `Interface.hash` is `fullHash(displayName)` and `rnstatus` filters and
 /// hides rows by prefix. A bare configuration name is a different identity on the wire than
 /// the Python interface sitting beside it.
@@ -9,14 +9,14 @@ import XCTest
 /// This suite exists in this shape because the 1.7.0 fix covered the TCP/UDP families only and
 /// the rest came straight back (`bugs/013` → `bugs/022`). It enumerates
 /// `InterfaceConformers.everyConcreteInterface()` rather than a hand-listed subset, and a
-/// conformer with no entry in the expectation table below is a **failure**, not a skip — so a
-/// type added next month cannot escape the requirement by never being listed.
+/// conformer with no entry in the expectation table below is a **failure**, not a skip—so a
+/// type added next month can't escape the requirement by never being listed.
 final class InterfaceDisplayNameTests: XCTestCase {
 
     /// The published form for each conformer, against the Python `__str__` it must match.
     ///
     /// Returns `nil` for a conformer with no entry, which the test reports as a coverage
-    /// failure. Every entry cites the reference line it is transcribed from.
+    /// failure. Every entry cites the reference line it's transcribed from.
     private func expectedDisplayName(for iface: any Interface,
                                      among all: [any Interface]) -> String? {
         /// Python brackets an IPv6 literal before joining (`TCPInterface.py:457-460`).
@@ -24,7 +24,7 @@ final class InterfaceDisplayNameTests: XCTestCase {
 
         switch iface {
 
-        // MARK: – Class-qualified bare name: `Class[name]`
+        // MARK:–Class-qualified bare name: `Class[name]`
 
         case let i as AutoInterface:
             // AutoInterface.py:609
@@ -54,11 +54,11 @@ final class InterfaceDisplayNameTests: XCTestCase {
             // WeaveInterface.py:1005-1006
             return "WeaveInterface[\(i.name)]"
         case let i as BLEMeshInterface:
-            // No Python counterpart — BLEMesh is Swift-only. Held to the same class-qualified
-            // shape so it cannot become the one interface that publishes a bare name.
+            // No Python counterpart—BLEMesh is Swift-only. Held to the same class-qualified
+            // shape so it can't become the one interface that publishes a bare name.
             return "BLEMeshInterface[\(i.name)]"
 
-        // MARK: – Forms with a peer address in the tail
+        // MARK:–Forms with a peer address in the tail
 
         case let i as BackboneInterface:
             // BackboneInterface.py:870-873 (the connecting form; Swift's BackboneInterface
@@ -70,7 +70,7 @@ final class InterfaceDisplayNameTests: XCTestCase {
             // (TCPInterface.py:456-462) with the peer address in the tail.
             return "TCPInterface[\(i.name)/\(ipString(i.peerHost)):\(i.peerPort)]"
         case let i as TCPClientInterface:
-            // TCPInterface.py:456-462 — note the string is "TCPInterface[…]", not the
+            // TCPInterface.py:456-462—note the string is "TCPInterface[…]", not the
             // Swift/Python class name "TCPClientInterface".
             return "TCPInterface[\(i.name)/\(ipString(i.host)):\(i.port)]"
         case let i as TCPServerInterface:
@@ -81,24 +81,24 @@ final class InterfaceDisplayNameTests: XCTestCase {
             let port = i.listenPort ?? i.forwardPort ?? 0
             return "UDPInterface[\(i.name)/\(ipString(i.bindIP)):\(port)]"
 
-        // MARK: – Forms that ignore `name` entirely
+        // MARK:–Forms that ignore `name` entirely
 
         case let i as LocalInterface:
-            // LocalInterface.py:372-374 — the port, not the name.
+            // LocalInterface.py:372-374—the port, not the name.
             return "LocalInterface[\(i.port)]"
         case let i as PosixTCPServer:
             // Swift's PosixTCPServer is Python's LocalServerInterface, whose __str__ is
-            // "Shared Instance[<bind_port>]" (LocalInterface.py:496-498) — a literal,
+            // "Shared Instance[<bind_port>]" (LocalInterface.py:496-498)—a literal,
             // independent of `name`. Python hardcodes name = "Reticulum" (:391), so a Swift
             // form built from `name` only matches while the caller happens to pass
             // "Shared Instance".
             return "Shared Instance[\(i.port)]"
 
-        // MARK: – Forms derived from a parent or a peer address
+        // MARK:–Forms derived from a parent or a peer address
 
         case let i as RNodeSubInterface:
-            // RNodeMultiInterface.py:1152-1153 — the *parent's* name, then the sub's own.
-            // Resolved from the registry so this does not hardcode the parent's name.
+            // RNodeMultiInterface.py:1152-1153—the *parent's* name, then the sub's own.
+            // Resolved from the registry so this doesn't hardcode the parent's name.
             let parent = all.compactMap { $0 as? RNodeMultiInterface }.first
             guard let parentName = parent?.name else {
                 XCTFail("Registry constructs no RNodeMultiInterface for the sub-interface to "
@@ -107,7 +107,7 @@ final class InterfaceDisplayNameTests: XCTestCase {
             }
             return "\(parentName)[\(i.name)]"
         case let i as WeaveInterfacePeer:
-            // WeaveInterface.py:1022-1023 — `RNS.hexrep(endpoint_addr)`, which is
+            // WeaveInterface.py:1022-1023—`RNS.hexrep(endpoint_addr)`, which is
             // colon-delimited by default (RNS/__init__.py:176-183).
             return "WeaveInterfacePeer[\(RNSUtilities.hexrep(i.endpointAddr))]"
 

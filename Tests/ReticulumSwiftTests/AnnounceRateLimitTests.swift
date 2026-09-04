@@ -5,7 +5,7 @@ final class AnnounceRateLimitTests: XCTestCase {
 
     func testFastPathTransmitsImmediatelyWithNoBitrateCap() {
         let q = AnnounceQueue()
-        // bitrate=0 means "unknown" — always transmit.
+        // bitrate=0 means "unknown"—always transmit.
         let pkt = Packet(destinationType: .single, packetType: .announce,
                          destinationHash: Data(repeating: 0x01, count: 16), data: Data(count: 100))
         let ok = q.shouldTransmit(packet: pkt, now: 1_000, bitrate: 0, announceCap: AnnounceQueue.announceCap, emitted: 999)
@@ -30,7 +30,7 @@ final class AnnounceRateLimitTests: XCTestCase {
         let p2 = Packet(destinationType: .single, packetType: .announce,
                         destinationHash: Data(repeating: 0x04, count: 16), data: Data(count: 100))
         _ = q.shouldTransmit(packet: p1, now: 1_000, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999)
-        // Second announce arrives before allowedAt — must be queued.
+        // Second announce arrives before allowedAt—must be queued.
         let ok2 = q.shouldTransmit(packet: p2, now: 1_000.001, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 999)
         XCTAssertFalse(ok2)
         XCTAssertEqual(q.count, 1)
@@ -62,7 +62,7 @@ final class AnnounceRateLimitTests: XCTestCase {
 
         // First announce occupies the slot.
         _ = q.shouldTransmit(packet: old, now: 1_000, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 900)
-        // Same destination with a newer emitted ts — should replace old entry.
+        // Same destination with a newer emitted ts—should replace old entry.
         _ = q.shouldTransmit(packet: new, now: 1_000.001, bitrate: 9600, announceCap: AnnounceQueue.announceCap, emitted: 950)
         XCTAssertEqual(q.count, 1)
         let drained = q.drain(now: q.allowedAt + 100, bitrate: 9600, announceCap: AnnounceQueue.announceCap)

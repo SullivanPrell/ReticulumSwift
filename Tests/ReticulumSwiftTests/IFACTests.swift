@@ -96,7 +96,7 @@ final class IFACTests: XCTestCase {
         configureIfacFromConfigBlock(on: iface, netname: "testnet")
 
         let raw = try makePacket().pack()
-        // IFAC flag not set — must be dropped when interface has IFAC enabled
+        // IFAC flag not set—must be dropped when interface has IFAC enabled
         XCTAssertNil(iface.unwrapIfac(raw))
     }
 

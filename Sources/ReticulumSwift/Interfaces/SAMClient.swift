@@ -111,7 +111,7 @@ public enum SAMClient {
         return result == "OK" ? .ok : .failure(result)
     }
 
-    /// Parse `NAMING REPLY …` — the resolved destination is in `VALUE=`.
+    /// Parse `NAMING REPLY …`—the resolved destination is in `VALUE=`.
     public static func parseNamingReply(_ line: String) -> SAMNamingResult {
         guard let result = extractValue(for: "RESULT", in: line) else {
             return .failure("missing RESULT")

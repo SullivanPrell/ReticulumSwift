@@ -9,7 +9,7 @@ import XCTest
 ///       `return … protocol_violation(f"Excessive announce packet frame size …")` (`:1804`)
 ///
 /// Both sit at the transport seam, so they cover *every* interface. This port had only the
-/// first one, only inside the HDLC deframer — which means UDP, RNode/KISS, AutoInterface,
+/// first one, only inside the HDLC deframer—which means UDP, RNode/KISS, AutoInterface,
 /// Weave and the KISS-framed I2P path had no inbound frame bound at all, and no interface at
 /// all bounded announces. A 1.5.x peer now drops these frames, so admitting them means
 /// accepting packets the rest of the network has discarded and, on a transport-mode node,
@@ -74,7 +74,7 @@ final class InboundFrameSizeGuardTests: XCTestCase {
                             destinationHash: destinationHash,
                             data: Data(repeating: 0x5A, count: total - overhead))
         // `packedBytes()`, not `pack()`: `pack()` enforces the 500-byte packet MTU, so it
-        // cannot produce the frames under test — which is the point. A peer on a
+        // can't produce the frames under test—which is the point. A peer on a
         // large-MTU medium (Backbone's HW_MTU is 1 MiB) legitimately puts frames this size
         // on the wire, and an attacker can put any size there at all.
         let raw = try packet.packedBytes()
@@ -184,7 +184,7 @@ final class InboundFrameSizeGuardTests: XCTestCase {
         let destination = try Destination(identity: Identity(), direction: .in,
                                           kind: .single, appName: "bloat")
         // Push the announce past `Reticulum.MTU` with oversized app data. Everything else
-        // about the announce — signature, ratchet, name hash — stays valid, so the *only*
+        // about the announce—signature, ratchet, name hash—stays valid, so the *only*
         // reason for a drop is the size.
         try sender.announce(destination: destination,
                             appData: Data(repeating: 0x42, count: Constants.mtu))

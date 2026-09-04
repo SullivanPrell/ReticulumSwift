@@ -101,6 +101,7 @@ LEAF
 LINE
 LINK
 LIST
+LLM
 LOCAL
 LOCK
 LOG
@@ -117,6 +118,7 @@ MAX
 MDU
 MESH
 MIN
+MIT
 MORE
 MTU
 MUST
@@ -142,6 +144,7 @@ OUT
 OUTER
 OWN
 Opus
+PARTY
 PHY
 PID
 PIPE
@@ -151,6 +154,7 @@ POSIX
 PRK
 PROOF
 PROTO
+PascalCase
 QUIRK
 RAW
 RCL
@@ -162,9 +166,11 @@ REST
 RFC
 RNID
 RNS
+RNSH
 RNX
 RNode
 RPC
+RRC
 RSG
 RSM
 RSSI
@@ -195,6 +201,7 @@ TEST
 TFEND
 TFESC
 THAT
+THIRD
 THREE
 TIME
 TIMES
@@ -231,6 +238,7 @@ YAML
 Yggdrasil
 ZWJ
 bzip2
+camelCase
 epoll
 gomobile
 i2pd
@@ -239,5 +247,6 @@ libbz2
 libopus
 mDNS
 macOS
+snake_case
 tvOS
 watchOS

@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `swift_devel/bugs/047` — a node ignores announces for destinations it owns.
+/// `swift_devel/bugs/047`—a node ignores announces for destinations it owns.
 ///
 /// Python computes `local_destination` from `destinations_map` and gates the **entire** announce
 /// block on it being nil (`RNS/Transport.py:1767-1772`): path table, identity caching, announce
@@ -9,13 +9,13 @@ import XCTest
 /// path-table admission test (`:1806-1807`), which tells you how load-bearing it is.
 ///
 /// This matters because a transport-enabled neighbour **reflects announces back to their
-/// originator** by design — `Transport.outbound`'s broadcast loop (`:1197`) has no
+/// originator** by design—`Transport.outbound`'s broadcast loop (`:1197`) has no
 /// receiving-interface exclusion, and the PATHFINDER_R retransmission re-sends with
 /// `attached_interface = None` (`:604-637`). Every node hears its own announces come back. Python
-/// drops them here; without this gate they are processed in full.
+/// drops them here; without this gate they're processed in full.
 ///
 /// The symptom that surfaced it: a lone Swift LXMF propagation node, on a mesh with nobody else on
-/// it, ended with exactly one peer — itself.
+/// it, ended with exactly one peer—itself.
 final class OwnAnnounceTests: XCTestCase {
 
     // MARK: - The gate
@@ -53,8 +53,8 @@ final class OwnAnnounceTests: XCTestCase {
     func testAnAnnounceForADestinationTheNodeDoesNotOwnStillArrives() throws {
         let net = try makeReflectingPair()
 
-        // Same wire path, same handler, one input changed: a destination the node does not own.
-        // Without this, `received.isEmpty` above would pass against a transport that had simply
+        // Same wire path, same handler, one input changed: a destination the node doesn't own.
+        // Without this, the preceding `received.isEmpty` would pass against a transport that had simply
         // stopped dispatching announces at all.
         let strangerIdentity = Identity()
         let stranger = try Destination(identity: strangerIdentity, direction: .in, kind: .single,

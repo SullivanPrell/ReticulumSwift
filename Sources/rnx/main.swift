@@ -1,7 +1,7 @@
 import Foundation
 import ReticulumSwift
 
-// rnx — Reticulum Remote Execution Utility.
+// rnx—Reticulum Remote Execution Utility.
 //
 // Python reference: RNS/Utilities/rnx.py (740 lines).
 //
@@ -16,7 +16,7 @@ let APP_NAME = RNXApp.appName
 
 /// Set from the SIGINT handler. Python catches KeyboardInterrupt around the whole of
 /// `main()`, prints an empty line, tears the link down and exits 0 (rnx.py:671-676).
-/// A signal handler cannot do that safely, so the spin loops poll this flag instead.
+/// A signal handler can't do that safely, so the spin loops poll this flag instead.
 nonisolated(unsafe) var rnxInterrupted: sig_atomic_t = 0
 
 // MARK: - Raw terminal output
@@ -53,7 +53,7 @@ func writeErrLine(_ text: String) {
 
 /// Python keeps `identity`, `reticulum`, `link`, `listener_destination`, `stats`,
 /// `current_progress` and `speed` as module globals, which is precisely what lets an
-/// interactive session reuse one Link — and what makes the transfer meter carry over
+/// interactive session reuse one Link—and what makes the transfer meter carry over
 /// between commands. Same lifetime here.
 final class Session {
     var connection: InstanceConnection?
@@ -81,7 +81,7 @@ let session = Session()
 
 // MARK: - Spinners
 
-/// Python: `spin(until, msg, timeout)` — rnx.py:254-272.
+/// Python: `spin(until, msg, timeout)`—rnx.py:254-272.
 ///
 /// Reproduced byte for byte, quirks included: the initial write happens *before* `until()`
 /// is first evaluated, so even an already-satisfied predicate draws and erases; and the
@@ -92,7 +92,7 @@ func spin(until: () -> Bool, msg: String, timeout: TimeInterval?) -> Bool {
     let symbols = RNXApp.spinnerSymbols
     let deadline = timeout.map { Date().timeIntervalSince1970 + $0 }
 
-    writeOut(msg + "   ")   // Python: print(msg+"  ", end=" ") — msg plus three spaces.
+    writeOut(msg + "   ")   // Python: print(msg+"  ", end=" ")—msg plus three spaces.
     while (deadline == nil || Date().timeIntervalSince1970 < deadline!) && !until() {
         if rnxInterrupted != 0 { break }
         Thread.sleep(forTimeInterval: 0.1)
@@ -108,7 +108,7 @@ func spin(until: () -> Bool, msg: String, timeout: TimeInterval?) -> Bool {
     return true
 }
 
-/// Python: `spin_stat(until, timeout)` — rnx.py:277-299. No initial write, a fixed
+/// Python: `spin_stat(until, timeout)`—rnx.py:277-299. No initial write, a fixed
 /// 82-column blank field before each frame, and a trailing space from `print(end=" ")`.
 @discardableResult
 func spinStat(until: () -> Bool, timeout: TimeInterval?) -> Bool {
@@ -133,7 +133,7 @@ func spinStat(until: () -> Bool, timeout: TimeInterval?) -> Bool {
     return true
 }
 
-/// Python: `except KeyboardInterrupt: print(""); link.teardown(); exit()` — rnx.py:671-676.
+/// Python: `except KeyboardInterrupt: print(""); link.teardown(); exit()`—rnx.py:671-676.
 func handleInterruptIfNeeded() {
     guard rnxInterrupted != 0 else { return }
     print("")
@@ -193,7 +193,7 @@ struct Options {
     var noID = false
     var detailed = false
     var mirror = false
-    /// Python: `default=RNS.Transport.PATH_REQUEST_TIMEOUT` — an **int**, not coerced by
+    /// Python: `default=RNS.Transport.PATH_REQUEST_TIMEOUT`—an **int**, not coerced by
     /// `type=float`, so the defaulted value goes on the wire as msgpack fixint 15.
     var timeout: TimeInterval = 15
     var timeoutWasDefaulted = true
@@ -294,7 +294,7 @@ func parseOptions() -> Options {
 
 /// Python's `RNS.log` line shape (`__init__.py:131`):
 /// `"[" + timestamp + "] " + loglevelname(level) + " " + msg`, where `loglevelname` is
-/// ten columns wide — so a notice line carries three spaces before the message.
+/// ten columns wide—so a notice line carries three spaces before the message.
 /// ReticulumSwift's default printer emits `"[\(Date())] [NOTICE] msg"` instead.
 func installPythonLogFormat() {
     Reticulum.logHandler = { message, level in
@@ -306,7 +306,7 @@ func installPythonLogFormat() {
     }
 }
 
-/// Python: `RNS.Reticulum(configdir=configdir, loglevel=targetloglevel)` — rnx.py:67, 343.
+/// Python: `RNS.Reticulum(configdir=configdir, loglevel=targetloglevel)`—rnx.py:67, 343.
 /// Built exactly once per process, matching the `reticulum` module global.
 func bringUpStack(_ options: Options) -> InstanceConnection {
     if let existing = session.connection { return existing }
@@ -317,7 +317,7 @@ func bringUpStack(_ options: Options) -> InstanceConnection {
                                                        synthesizeInterfaces: true)
         // MUST come after start(): applyConfig() assigns globalLogLevel from the config
         // file (default `loglevel = 4`), so anything set beforehand is silently discarded
-        // and -v/-q become no-ops. Python does the reverse — a requested loglevel
+        // and -v/-q become no-ops. Python does the reverse—a requested loglevel
         // suppresses the config value entirely (Reticulum.py:455).
         Reticulum.globalLogLevel = options.logLevel
         session.connection = connection
@@ -328,7 +328,7 @@ func bringUpStack(_ options: Options) -> InstanceConnection {
     }
 }
 
-/// Python: `prepare_identity(identitypath)` — rnx.py:50-61. Created once per process.
+/// Python: `prepare_identity(identitypath)`—rnx.py:50-61. Created once per process.
 func prepareIdentity(_ options: Options, configDirectory: URL) -> Identity {
     if let existing = session.identity { return existing }
     let url = options.identityPath.map {
@@ -346,7 +346,7 @@ func prepareIdentity(_ options: Options, configDirectory: URL) -> Identity {
 
 // MARK: - Listener
 
-/// Python: `listen(...)` — rnx.py:63-138. Never returns; `-p` exits 0 partway through.
+/// Python: `listen(...)`—rnx.py:63-138. Never returns; `-p` exits 0 partway through.
 func runListener(_ options: Options) -> Never {
     let connection = bringUpStack(options)
     let identity = prepareIdentity(options, configDirectory: connection.configDirectory)
@@ -388,7 +388,7 @@ func runListener(_ options: Options) -> Never {
         do {
             allowedHashes.append(contentsOf: try RNXListener.loadAllowedIdentitiesFile())
         } catch {
-            // Python prints CPython's own fromhex message here; the wording cannot be
+            // Python prints CPython's own fromhex message here; the wording can't be
             // reproduced, so a descriptive substitute is used. The exit code matches.
             print("Invalid entry in allowed_identities file. Check your input.")
             exit(Int32(RNXApp.Result.argumentError.rawValue))
@@ -426,7 +426,7 @@ func runListener(_ options: Options) -> Never {
 
     if !options.noAnnounce { try? listener.announce() }
 
-    // Python: `while True: time.sleep(1)` — no periodic re-announce, no clean shutdown.
+    // Python: `while True: time.sleep(1)`—no periodic re-announce, no clean shutdown.
     while true {
         if rnxInterrupted != 0 { print(""); exit(0) }
         Thread.sleep(forTimeInterval: 1)
@@ -435,7 +435,7 @@ func runListener(_ options: Options) -> Never {
 
 // MARK: - Client
 
-/// Python: `execute(...)` — rnx.py:326-551.
+/// Python: `execute(...)`—rnx.py:326-551.
 ///
 /// Returns the remote return code in interactive mode (only ever non-nil under `-m`);
 /// exits the process in every other case, exactly as Python does.
@@ -443,7 +443,7 @@ func runListener(_ options: Options) -> Never {
 func runClient(_ options: Options, command: String, stdin: String?, interactive: Bool) -> Int? {
     let hexLength = RNXApp.destinationHexLength
 
-    // Unconditional, and BEFORE the stack comes up — an invalid destination never
+    // Unconditional, and BEFORE the stack comes up—an invalid destination never
     // brings Reticulum up, even under -x.
     let destinationHash: Data
     do {
@@ -489,7 +489,7 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
     do {
         try client.openLinkIfNeeded()
     } catch {
-        // Python does not check the recall result and silently builds a destination with
+        // Python doesn't check the recall result and silently builds a destination with
         // the wrong hash; Swift throws, which is mapped onto the same visible outcome.
         print("Could not establish link with " + prettyDestination)
         exit(Int32(RNXApp.Result.linkFailed.rawValue))
@@ -518,7 +518,7 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
     let receipt: RequestReceipt
     do {
         receipt = try client.sendCommand(request, timeout: rexecTimeout) { progress, r in
-            // Python: remote_execution_progress — rnx.py:304-321.
+            // Python: remote_execution_progress—rnx.py:304-321.
             session.recordProgress(progress, transferSize: r.responseTransferSize ?? 0)
         }
     } catch {
@@ -582,7 +582,7 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
     }
 
     guard result.executed else {
-        // Python prints nothing else on this path — both output blocks are inside
+        // Python prints nothing else on this path—both output blocks are inside
         // `if executed:`.
         print("Remote could not execute command")
         if interactive { return nil }
@@ -600,7 +600,7 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
                                             stderrLimitArg: options.stderrLimit)
     // Raw bytes, no trailing newline added. Python decodes as UTF-8 with no error handler
     // and tracebacks on binary output; writing raw bytes is better behaviour but means
-    // binary payloads will not match Python byte for byte on stdout.
+    // binary payloads won't match Python byte for byte on stdout.
     if !rendered.stdoutBytes.isEmpty { writeOut(rendered.stdoutBytes) }
     if !rendered.stderrBytes.isEmpty { writeErr(rendered.stderrBytes) }
     fflush(stdout)
@@ -611,7 +611,7 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
     if !interactive && options.mirror {
         if let code = result.returnCode {
             // Python passes the value to exit(), so a negative signal code (-15) is taken
-            // mod 256 by the shell — which is exactly what exit(Int32) does here too.
+            // mod 256 by the shell—which is exactly what exit(Int32) does here too.
             exit(Int32(truncatingIfNeeded: code))
         }
         exit(Int32(RNXApp.Result.mirrorNoReturnCode.rawValue))
@@ -623,13 +623,13 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
 // MARK: - Interactive REPL
 
 /// Python: rnx.py:611-664. Command history and cbreak mode are commented out there and
-/// are not implemented here either.
+/// aren't implemented here either.
 func runREPL(_ options: Options) -> Never {
     var code: Int?
     while true {
         let prefix = (code != nil && code != 0) ? String(code!) : ""
         writeOut(prefix + "> ")
-        // Python relies on input() flushing stdout; readLine() does not, so flush here.
+        // Python relies on input() flushing stdout; readLine() doesn't, so flush here.
         fflush(stdout)
 
         guard let command = readLine(strippingNewline: true) else {
@@ -641,7 +641,7 @@ func runREPL(_ options: Options) -> Never {
         if rnxInterrupted != 0 { handleInterruptIfNeeded() }
         if lowered == "clear" {
             writeOut("\u{1B}c")
-            continue    // Python does not execute, and does not reset `code`
+            continue    // Python doesn't execute, and doesn't reset `code`
         }
         // Python passes stdin=None in interactive mode (rnx.py:658).
         code = runClient(options, command: command, stdin: nil, interactive: true)
@@ -657,7 +657,7 @@ struct rnx {
 
         let options = parseOptions()
 
-        // Python: rnx.py:580-590 — -p goes through listen() too, and exits 0 from inside.
+        // Python: rnx.py:580-590—-p goes through listen() too, and exits 0 from inside.
         if options.listen || options.printIdentity {
             runListener(options)
         } else if options.destination != nil, let command = options.command {
@@ -665,7 +665,7 @@ struct rnx {
                       interactive: options.interactive)
         }
 
-        // Deliberately a separate statement, not an `elif` — `rnx <dest> <cmd> -x` runs the
+        // Deliberately a separate statement, not an `elif`—`rnx <dest> <cmd> -x` runs the
         // command once and then drops into the REPL on the same Link (rnx.py:611).
         if options.destination != nil && options.interactive {
             runREPL(options)

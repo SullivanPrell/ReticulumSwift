@@ -4,7 +4,7 @@ import XCTest
 /// Config-directory resolution, the storage tree and the log-level arithmetic every
 /// `rnsd`-family process performs before a stack exists.
 ///
-/// Python reference: `RNS/Reticulum.py` — `__init__` lines 229-236 (config-dir search),
+/// Python reference: `RNS/Reticulum.py`—`__init__` lines 229-236 (config-dir search),
 /// 316-322 (`makedirs`), 329-333 (default config creation), 298-305 (explicit `loglevel=`)
 /// and `__apply_config` lines 452-460 (the `[logging] loglevel` + verbosity arithmetic).
 final class DaemonBootstrapTests: XCTestCase {
@@ -40,7 +40,7 @@ final class DaemonBootstrapTests: XCTestCase {
     }
 
     func testResolveConfigDirTreatsEmptyStringAsAbsent() {
-        // Python: `if args.config:` — '' is falsy, so the search order runs (rnsd.py:79-82).
+        // Python: `if args.config:`—'' is falsy, so the search order runs (rnsd.py:79-82).
         let resolved = DaemonBootstrap.resolveConfigDir(explicit: "",
                                                         home: temporaryDirectory,
                                                         systemConfigDir: temporaryDirectory)
@@ -83,7 +83,7 @@ final class DaemonBootstrapTests: XCTestCase {
     }
 
     func testResolveConfigDirFallsBackToDotReticulum() {
-        // Python: `else: Reticulum.configdir = Reticulum.userdir+"/.reticulum"` — unconditional,
+        // Python: `else: Reticulum.configdir = Reticulum.userdir+"/.reticulum"`—unconditional,
         // even though nothing exists there yet.
         let resolved = DaemonBootstrap.resolveConfigDir(
             explicit: nil,
@@ -157,7 +157,7 @@ final class DaemonBootstrapTests: XCTestCase {
     }
 
     func testEffectiveLogLevelClampsAtSeven() {
-        // Python: `if RNS.loglevel > 7: RNS.loglevel = 7` — LOG_EXTREME (8) is unreachable
+        // Python: `if RNS.loglevel > 7: RNS.loglevel = 7`—LOG_EXTREME (8) is unreachable
         // through the config file or -v, only through an explicit loglevel= argument.
         XCTAssertEqual(DaemonBootstrap.effectiveLogLevel(configLogLevel: 4, verbosity: 10), .pathing)
         XCTAssertEqual(DaemonBootstrap.effectiveLogLevel(configLogLevel: 7, verbosity: 1), .pathing)
@@ -185,7 +185,7 @@ final class DaemonBootstrapTests: XCTestCase {
 
     func testRequestedLogLevelWinsAndClampsAtEight() {
         // Python: an explicit loglevel= suppresses the config value and the delta, and its
-        // ceiling really is LOG_EXTREME (Reticulum.py:298-305) — unlike the config path's 7.
+        // ceiling really is LOG_EXTREME (Reticulum.py:298-305)—unlike the config path's 7.
         XCTAssertEqual(DaemonBootstrap.effectiveLogLevel(configLogLevel: 4,
                                                          requestedLogLevel: .extreme,
                                                          verbosity: 3), .extreme)
@@ -205,7 +205,7 @@ final class DaemonBootstrapTests: XCTestCase {
         XCTAssertEqual(DaemonBootstrap.configuredLogLevel(inConfigText: "[logging]\nloglevel = 6\n"), 6)
         XCTAssertNil(DaemonBootstrap.configuredLogLevel(inConfigText: "[logging]\nlogtimestamps = no\n"))
         XCTAssertNil(DaemonBootstrap.configuredLogLevel(inConfigText: "[reticulum]\nloglevel = 6\n"))
-        // Commented-out keys do not count — the example config's legend is all comments.
+        // Commented-out keys don't count—the example config's legend is all comments.
         XCTAssertNil(DaemonBootstrap.configuredLogLevel(inConfigText: "[logging]\n# loglevel = 6\n"))
     }
 

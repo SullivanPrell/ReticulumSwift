@@ -31,7 +31,7 @@ final class CryptoTests: XCTestCase {
         XCTAssertEqual(try PKCS7.unpad(decrypted), Data("hello aes cbc".utf8))
     }
 
-    // MARK: HKDF — RFC 5869 test vector A.1
+    // MARK: HKDF—RFC 5869 test vector A.1
 
     func testHKDFTestVectorA1() {
         let ikm = Data([

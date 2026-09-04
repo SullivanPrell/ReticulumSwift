@@ -3,14 +3,14 @@ import XCTest
 
 /// Concurrency smoke tests for the Transport bookkeeping locks introduced in the
 /// 2026-07-19 data-race hardening pass. The rest of the suite is single-threaded
-/// and cannot exercise these races; here we hammer the lock-protected accessors
+/// and can't exercise these races; this suite hammers the lock-protected accessors
 /// from many threads at once. A lock-order inversion or reentrant self-deadlock
 /// would make the test TIME OUT; a torn dictionary/array access would CRASH.
 /// Passing proves neither happens on these paths.
 final class TransportConcurrencyStressTests: XCTestCase {
 
     /// Minimal interface with ingress + rate control enabled so the ingress /
-    /// rate-table code paths actually execute (not just early-return).
+    /// rate-table code paths actually execute (not just early return).
     private final class StressIface: Interface {
         var name: String
         var bitrate: Int = 9600
@@ -28,7 +28,7 @@ final class TransportConcurrencyStressTests: XCTestCase {
     func testConcurrentBookkeepingDoesNotDeadlockOrCrash() {
         let transport = Transport()
 
-        // A fixed pool of interfaces we churn in/out concurrently.
+        // A fixed pool of interfaces churned in and out concurrently.
         let pool = (0..<6).map { StressIface(name: "if\($0)") }
         for iface in pool { transport.register(interface: iface) }
 

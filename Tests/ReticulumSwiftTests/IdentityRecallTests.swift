@@ -44,7 +44,7 @@ final class IdentityRecallTests: XCTestCase {
         XCTAssertEqual(recalled?.hash, bId.hash)
 
         // Static Identity.recall should also work via shared transport
-        // (requires Reticulum.shared — skip that form; test transport directly)
+        // (requires Reticulum.shared—skip that form; test transport directly)
         _ = (aT, bT)
     }
 

@@ -3,7 +3,7 @@ import Foundation
 /// Per-interface ingress burst control state.
 ///
 /// Mirrors Python's per-interface ingress control fields
-/// (`ic_burst_active`, `ic_burst_activated`, `ic_held_release`, etc.)
+/// (`ic_burst_active`, `ic_burst_activated`, `ic_held_release`, and so on)
 /// and the held-announce table (`held_announces`).
 public struct IngressControlState {
 
@@ -38,15 +38,15 @@ public struct IngressControlState {
     /// declared. `Interface.EC_BURST_MIN_SAMPLES = 2` (`Interface.py:85`).
     ///
     /// RNS 1.5.1 renamed this from `IC_BURST_MIN_SAMPLES` and dropped it from 6 to 2. The
-    /// rename is upstream conceding what the single remaining read site already showed — it
+    /// rename is upstream conceding what the single remaining read site already showed—it
     /// only ever gated `should_egress_limit_pr`, never anything on the ingress side. The value
     /// change means a burst of two outbound path requests is now enough to throttle: at six,
     /// a node could emit five requests at any rate whatsoever before the limiter could speak.
     ///
     /// It now coincides numerically with `InterfaceFreqTracker.minSamples` (Python's
-    /// `IC_DEQUE_MIN_SAMPLE`), but the two remain separate knobs measuring different things —
-    /// one is "enough samples to throttle egress", the other "enough samples for a frequency to
-    /// mean anything". Conflating them was the 1.4.1 bug (commit 48388756); they are equal
+    /// `IC_DEQUE_MIN_SAMPLE`), but the two remain separate knobs measuring different things—one
+    /// is "enough samples to throttle egress", the other "enough samples for a frequency to
+    /// mean anything". Conflating them was the 1.4.1 bug (commit 48388756); they're equal
     /// today by coincidence, not by identity.
     ///
     /// Deliberately **not** per-interface, unlike the tunables around it: Python reads it as the
@@ -54,7 +54,7 @@ public struct IngressControlState {
     public static let ecBurstMinSamples: Int = 2
 
     /// Consecutive qualifying evaluations a path-request burst must survive before its flag may
-    /// clear. Python has no named constant — it writes the literal `3` at both
+    /// clear. Python has no named constant—it writes the literal `3` at both
     /// `Interface.py:221` and `:232`.
     ///
     /// This is a second, coarser layer on top of the hold windows: even once both have elapsed

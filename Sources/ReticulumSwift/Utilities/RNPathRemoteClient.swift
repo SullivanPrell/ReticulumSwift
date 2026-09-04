@@ -7,8 +7,8 @@ import Foundation
 /// `while remote_link == None: time.sleep(0.1)` spin (rnpath.py:127, 151).
 ///
 /// ``connect(destinationHash:authIdentity:purpose:progress:)`` and
-/// ``request(over:path:value:timeout:)`` block by design — that is what a one-shot CLI
-/// wants — so no XCTest drives them. Everything that *can* be asserted without a network
+/// ``request(over:path:value:timeout:)`` block by design—that's what a one-shot CLI
+/// wants—so no XCTest drives them. Everything that *can* be asserted without a network
 /// (the destination-hash derivation, the request payloads, the response decoders) is
 /// `static` for exactly that reason.
 public final class RNPathRemoteClient {
@@ -17,9 +17,9 @@ public final class RNPathRemoteClient {
 
     /// Which of the two remote destinations to link to.
     public enum Purpose: Equatable {
-        /// `rnstransport.remote.management` — requires `link.identify()`.
+        /// `rnstransport.remote.management`—requires `link.identify()`.
         case management
-        /// `rnstransport.info.blackhole` — an ALLOW_ALL handler, so no identify is sent.
+        /// `rnstransport.info.blackhole`—an ALLOW_ALL handler, so no identify is sent.
         case blackhole
 
         var aspects: [String] {
@@ -33,21 +33,21 @@ public final class RNPathRemoteClient {
     // MARK: - Errors
 
     public enum RemoteError: Error, Equatable, CustomStringConvertible {
-        /// rnpath.py:56 — the `-W` deadline elapsed waiting for a path to the remote.
+        /// rnpath.py:56—the `-W` deadline elapsed waiting for a path to the remote.
         case pathRequestTimedOut
-        /// rnpath.py:66 — `Link.TIMEOUT`.
+        /// rnpath.py:66—`Link.TIMEOUT`.
         case linkTimedOut
-        /// rnpath.py:70 — `Link.DESTINATION_CLOSED`.
+        /// rnpath.py:70—`Link.DESTINATION_CLOSED`.
         case linkClosedByServer
-        /// rnpath.py:74 — any other teardown reason.
+        /// rnpath.py:74—any other teardown reason.
         case linkClosedUnexpectedly
-        /// The request concluded without a usable response. Python cannot tell this apart
-        /// from an ACL rejection or an empty table; neither can we.
+        /// The request concluded without a usable response. Python can't tell this apart
+        /// from an ACL rejection or an empty table; and neither can this client.
         case requestFailed
         /// `RNS.Identity.recall` returned nil. Python passes the None straight into
         /// `RNS.Destination(...)` and raises there.
         case unknownIdentity
-        /// `-i` was missing, or the file did not contain an identity.
+        /// `-i` was missing, or the file didn't contain an identity.
         case identityUnavailable(String)
 
         public var message: String {
@@ -85,7 +85,7 @@ public final class RNPathRemoteClient {
     /// (rnpath.py:114, 149).
     ///
     /// Note that `-R` and `-p` do **not** use the recalled `Identity` object to derive the
-    /// destination hash — they use the raw 16 bytes decoded from the hex argument. Python's
+    /// destination hash—they use the raw 16 bytes decoded from the hex argument. Python's
     /// `Destination.hash` accepts either an `RNS.Identity` or exactly `TRUNCATED_HASHLENGTH//8`
     /// raw bytes (Destination.py:116-131); Swift's overloads only take `Identity?`, so this
     /// reassembles the same digest from the pieces:
@@ -104,7 +104,7 @@ public final class RNPathRemoteClient {
     /// Python: `data = ["table", destination_hash, max_hops]` (rnpath.py:260) and
     /// `data = ["rates", destination_hash]` (rnpath.py:313).
     ///
-    /// The rates form is deliberately **two** elements — `Transport.remote_path_handler`
+    /// The rates form is deliberately **two** elements—`Transport.remote_path_handler`
     /// reads `data[2]` only when present, and appending a third element there would be a
     /// silent wire divergence.
     public static func pathRequestPayload(command: String,
@@ -127,7 +127,7 @@ public final class RNPathRemoteClient {
     ///
     /// `Link.handleIncomingResponse` normalises both wire shapes to `Data`: a Python server
     /// embeds a **native** msgpack array in the `[request_id, response]` envelope, while
-    /// Swift's own `/path` handler currently returns a msgpack `bin`. Decoding the bytes and,
+    /// Swift's own `/path` handler returns a msgpack `bin`. Decoding the bytes and,
     /// if that yields a `bin`, decoding again covers both.
     static func decodeResponseValue(_ response: Data) -> MsgPack.Value? {
         guard let value = try? MsgPack.decode(response) else { return nil }
@@ -135,19 +135,19 @@ public final class RNPathRemoteClient {
         return value
     }
 
-    /// Python: the `"table"` reply — a list of path dicts.
+    /// Python: the `"table"` reply—a list of path dicts.
     public static func decodePathTable(_ response: Data) -> [RNPathTableEntry]? {
         guard let value = decodeResponseValue(response) else { return nil }
         return RNPathTableEntry.decodeTable(value)
     }
 
-    /// Python: the `"rates"` reply — a list of rate dicts.
+    /// Python: the `"rates"` reply—a list of rate dicts.
     public static func decodeRateTable(_ response: Data) -> [RNPathRateEntry]? {
         guard let value = decodeResponseValue(response) else { return nil }
         return RNPathRateEntry.decodeTable(value)
     }
 
-    /// Python: the `/list` reply — `Transport.blackholed_identities` verbatim, a map keyed
+    /// Python: the `/list` reply—`Transport.blackholed_identities` verbatim, a map keyed
     /// by 16-byte identity hash. `nil` here is Python's `type(response) != dict`.
     public static func decodeBlackholeList(_ response: Data) -> [RNPathBlackholeEntry]? {
         guard let value = decodeResponseValue(response) else { return nil }
@@ -177,7 +177,7 @@ public final class RNPathRemoteClient {
                         progress: ((String) -> Void)? = nil) throws -> Link {
 
         if !transport.hasPath(to: destinationHash) {
-            // Python: ONE trailing space here — contrast the default branch's three.
+            // Python: ONE trailing space here—contrast the default branch's three.
             progress?("Path to " + RNSUtilities.prettyhexrep(destinationHash) + " requested ")
             try? transport.requestPath(for: destinationHash)
             let deadline = Date().timeIntervalSince1970 + pathRequestTimeout
@@ -208,7 +208,7 @@ public final class RNPathRemoteClient {
         link.onClosed = { closed in
             // Python: INITIATOR_CLOSED returns silently; every other reason exits 10.
             // `teardownReason` is nil while the link is still active, which maps to the
-            // `else` branch — Python's `teardown_reason` is likewise None there.
+            // `else` branch—Python's `teardown_reason` is likewise None there.
             switch closed.teardownReason {
             case .some(.initiatorClosed):   break
             case .some(.timeout):           state.set(.linkTimedOut)
@@ -233,7 +233,7 @@ public final class RNPathRemoteClient {
     /// Issue one request and block until it concludes.
     ///
     /// Python spins on `receipt.concluded()`, which becomes true for FAILED as well as
-    /// READY while `get_response()` stays None — so a timeout and an ACL rejection are
+    /// READY while `get_response()` stays None—so a timeout and an ACL rejection are
     /// indistinguishable. Both land on ``RemoteError/requestFailed`` here.
     public func request(over link: Link,
                         path: String,
@@ -248,7 +248,7 @@ public final class RNPathRemoteClient {
                              failedCallback:   { _, _ in gate.signal() },
                              timeout: timeout)
 
-        // Guard the blocking wait so a link that never calls back cannot hang the CLI.
+        // Guard the blocking wait so a link that never calls back can't hang the CLI.
         if gate.wait(timeout: .now() + timeout + 5) == .timedOut { throw RemoteError.requestFailed }
         guard let response = box.value else { throw RemoteError.requestFailed }
         return response

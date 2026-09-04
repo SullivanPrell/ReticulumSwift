@@ -12,9 +12,9 @@ import CryptoKit
 /// challenge-response (the same in every RNS version).  The RPC payloads
 /// (both call and response) are **MsgPack**-encoded using Python's
 /// `RNS.vendor.umsgpack` (RNS ≥ 1.3.0).  Each payload is preceded by a
-/// 4-byte big-endian signed-int length — Python `send_bytes` / `recv_bytes`.
+/// 4-byte big-endian signed-int length—Python `send_bytes` / `recv_bytes`.
 ///
-/// Protocol: each connection is one-shot — one call, one response, close.
+/// Protocol: each connection is one-shot—one call, one response, close.
 public final class RPCServer {
     private let port: UInt16
     private let authkey: Data
@@ -25,7 +25,7 @@ public final class RPCServer {
     // a one-shot low-volume management call, so throughput is a non-issue.
     private let queue = DispatchQueue(label: "ReticulumSwift.RPCServer")
 
-    /// Live transport reference — set by `Reticulum.startRPC` after creation.
+    /// Live transport reference—set by `Reticulum.startRPC` after creation.
     /// Weak to avoid a retain cycle (Transport → Reticulum → RPCServer → Transport).
     public weak var transport: Transport?
 
@@ -42,8 +42,8 @@ public final class RPCServer {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw RPCError.invalidPort
         }
-        // A loopback control socket, so it takes the shared-instance option set — `TCP_NODELAY`,
-        // no keepalive — the same one `LocalInterface` uses. Python's RPC listener is a
+        // A loopback control socket, so it takes the shared-instance option set—`TCP_NODELAY`,
+        // no keepalive—the same one `LocalInterface` uses. Python's RPC listener is a
         // `multiprocessing.connection.Listener` and sets nothing, but this is still a socket this
         // port opens, and it had the same defect as the rest: `.tcp` meant Nagle held small
         // control frames behind the delayed-ACK timer. Found by the construction-site guard;
@@ -51,7 +51,7 @@ public final class RPCServer {
         //
         // "Loopback" is a property of the parameters, not of intent: Python constructs its
         // listener on `("127.0.0.1", port)` (`Reticulum.py:352`, `:359`), and parameters without
-        // a required local endpoint bind the wildcard — which put this authenticated management
+        // a required local endpoint bind the wildcard—which put this authenticated management
         // socket on every network the host was attached to. The port travels inside the
         // endpoint, so no `on:` argument here.
         let listener = try NWListener(
@@ -63,12 +63,12 @@ public final class RPCServer {
         //
         // `NWListener.start(queue:)` returns before the bind is attempted and reports the result
         // asynchronously through `stateUpdateHandler`. With no handler set, a listener that never
-        // bound still reached the log line below — so a daemon whose control port was taken
+        // bound still reached the log line below—so a daemon whose control port was taken
         // announced "RPC server started on port N", ran normally, and answered every `rnstatus`,
-        // `rnpath`, `rnprobe`, `rnid -r` and `rnx` with "Could not connect to instance control
-        // socket". A component reporting success it did not achieve; `bugs/040`.
+        // `rnpath`, `rnprobe`, `rnid -r` and `rnx` with "Couldn't connect to instance control
+        // socket". A component reporting success it didn't achieve; `bugs/040`.
         //
-        // Python raises here — `SocketListener.__init__` does `except OSError: … raise` — and
+        // Python raises here—`SocketListener.__init__` does `except OSError: … raise`—and
         // `rnsd` exits rather than running without a control socket. Blocking until the state is
         // known also means a caller may connect as soon as `start()` returns, instead of racing
         // the bind.
@@ -106,7 +106,7 @@ public final class RPCServer {
     }
 
     /// How long `start()` waits for the listener to reach a terminal state. Generous: this is a
-    /// loopback bind, so anything approaching it means the framework is not going to answer.
+    /// loopback bind, so anything approaching it means the framework isn't going to answer.
     private static let bindTimeout: DispatchTimeInterval = .seconds(5)
 
     public func stop() {
@@ -130,7 +130,7 @@ public final class RPCServer {
     private func deliverChallenge(_ conn: NWConnection) {
         // Modern (CPython ≥ 3.12) challenge: "{sha256}" + 40 random bytes. Legacy
         // clients (≤ 3.11) answer this with a bare HMAC-MD5 over the whole message,
-        // which `verifyChallenge` also accepts — so one challenge serves both.
+        // which `verifyChallenge` also accepts—so one challenge serves both.
         let message = MultiprocessingAuth.makeChallengeMessage(digest: .sha256)
         let challenge = RPCServer.challengePrefix + message
 
@@ -161,7 +161,7 @@ public final class RPCServer {
     // MARK: - Mutual authentication (step 2 of 2)
 
     // Python's connection.Client runs: answer_challenge (client proves itself to server)
-    // then deliver_challenge (client verifies the server). We must respond to that second
+    // then deliver_challenge (client verifies the server). The server must respond to that second
     // challenge or every RPC call fails with AuthenticationError before it starts.
     private func answerChallenge(_ conn: NWConnection) {
         receiveBytes(from: conn) { [weak self] challengeMsg, err in
@@ -240,7 +240,7 @@ public final class RPCServer {
             return respondGet(path: path, kv: kv)
         }
 
-        // Drop calls — {"drop": "<target>", ...}
+        // Drop calls—{"drop": "<target>", ...}
         if let dropKey = kv["drop"], case .string(let target) = dropKey {
             return respondDrop(target: target, kv: kv)
         }
@@ -285,7 +285,7 @@ public final class RPCServer {
             // Python's rpc_loop returns the call's value verbatim (Reticulum.py:1234):
             // True lifted, None not blackholed, False rejected. `rnpath -U` prints a
             // different message for each, so replying .nil unconditionally would make
-            // every success read as "not blackholed" — in both directions.
+            // every success read as "not blackholed"—in both directions.
             if let t = transport, let hash = binValue(ubhKey) {
                 return msgpack(triState(t.unblackholeIdentity(hash)))
             }
@@ -309,8 +309,8 @@ public final class RPCServer {
                     guard let r = kv["reason"], case .string(let s) = r else { return nil }
                     return s
                 }()
-                // Python: Reticulum.py:1230 returns the tri-state verbatim — see the
-                // unblackhole_identity note above.
+                // Python: Reticulum.py:1230 returns the tri-state verbatim—see the
+                // unblackhole_identity note earlier.
                 return msgpack(triState(t.blackholeIdentity(hash, until: until, reason: reason)))
             }
             return msgpack(.nil)
@@ -352,7 +352,7 @@ public final class RPCServer {
             return msgpack(.nil)
 
         case "next_hop_if_name":
-            // Python: `str(RNS.Transport.next_hop_interface(destination))` — the
+            // Python: `str(RNS.Transport.next_hop_interface(destination))`—the
             // interface's `__str__` (Swift: `displayName`, NOT `Interface.name`), and the
             // literal string "None" when there is no interface. A Python `rnprobe` tests
             // the response against the *string* "None", so answering msgpack nil made it

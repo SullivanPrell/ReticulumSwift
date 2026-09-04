@@ -127,7 +127,7 @@ public final class RawChannelReader {
         return Data(slice)
     }
 
-    /// All buffered bytes currently available.
+    /// All buffered bytes available.
     public var availableBytes: Int {
         lock.lock(); defer { lock.unlock() }
         return buffer.count
@@ -140,11 +140,11 @@ public final class RawChannelReader {
 
     // MARK: - io.RawIOBase metadata (Python parity)
 
-    /// Always `true` — readers are readable. Mirrors Python `RNSInputBuffer.readable()`.
+    /// Always `true`—readers are readable. Mirrors Python `RNSInputBuffer.readable()`.
     public var readable:  Bool { true  }
-    /// Always `false` — readers are not writable. Mirrors Python `RNSInputBuffer.writable()`.
+    /// Always `false`—readers aren't writable. Mirrors Python `RNSInputBuffer.writable()`.
     public var writable:  Bool { false }
-    /// Always `false` — readers are not seekable. Mirrors Python `RNSInputBuffer.seekable()`.
+    /// Always `false`—readers aren't seekable. Mirrors Python `RNSInputBuffer.seekable()`.
     public var seekable:  Bool { false }
 
     /// Whether `close()` has been called.
@@ -201,11 +201,11 @@ public final class RawChannelWriter {
 
     // MARK: - io.RawIOBase metadata (Python parity)
 
-    /// Always `false` — writers are not readable. Mirrors Python `RNSOutputBuffer.readable()`.
+    /// Always `false`—writers aren't readable. Mirrors Python `RNSOutputBuffer.readable()`.
     public var readable:  Bool { false }
-    /// Always `true` — writers are writable. Mirrors Python `RNSOutputBuffer.writable()`.
+    /// Always `true`—writers are writable. Mirrors Python `RNSOutputBuffer.writable()`.
     public var writable:  Bool { true  }
-    /// Always `false` — writers are not seekable. Mirrors Python `RNSOutputBuffer.seekable()`.
+    /// Always `false`—writers aren't seekable. Mirrors Python `RNSOutputBuffer.seekable()`.
     public var seekable:  Bool { false }
 
     /// Whether `close()` has been called.

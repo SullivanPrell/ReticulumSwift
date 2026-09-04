@@ -2,18 +2,18 @@ import Foundation
 
 /// Per-interface mutable configuration, held in one place so it can be written.
 ///
-/// **Why this type exists.** Python mutates interface attributes at runtime — `Reticulum.py`
+/// **Why this type exists.** Python mutates interface attributes at runtime—`Reticulum.py`
 /// assigns `mode`, `announce_cap`, the three `announce_rate_*` values, `bitrate`,
 /// `ingress_control`, `egress_control` and the nine `ic_*` tunables per interface at
 /// `:900-941` (the `__apply_config` interface branch) and `:1092-1130` (`_add_interface`).
 /// This port originally declared those as `{ get }`-only protocol requirements with blanket
 /// extension defaults, so a value parsed out of a config file had nowhere to be written and
-/// `iface.mode = …` did not compile for `any Interface`. Adding the config parser would have
+/// `iface.mode = …` didn't compile for `any Interface`. Adding the config parser would have
 /// fixed none of them. See `swift_devel/bugs/025-*.md`.
 ///
 /// **Why a box rather than `{ get set }` requirements.** One stored property per conformer
 /// instead of a dozen, so a newly added interface type gets the whole set for free rather than
-/// silently omitting it — which is the mechanism that produced `bugs/022`. It also makes
+/// silently omitting it—which is the mechanism that produced `bugs/022`. It also makes
 /// spawned-interface inheritance a single call: Python copies nineteen attributes onto each
 /// accepted client (`TCPInterface.py:594-641`, `BackboneInterface.py:467-485`,
 /// `AutoInterface.py:559`), and `inherit(from:)` below is that copy, in one place, for all three.
@@ -45,7 +45,7 @@ public final class InterfaceState {
         // Python reads these from `Reticulum._default_*()` in `Interface.__init__`
         // (`Interface.py:126-136`), so the `[reticulum]` section sets what every interface
         // *starts* from and a per-interface block overrides it. They were hardcoded here, so the
-        // global half of `bugs/030` had nowhere to land even once the parser read it — the same
+        // global half of `bugs/030` had nowhere to land even once the parser read it—the same
         // "configuration value with nowhere to be written" shape as `bugs/025`. Each accessor
         // falls back to the `IngressControlState` constant holding the Python class value, so
         // the numbers are still written down exactly once.
@@ -66,13 +66,13 @@ public final class InterfaceState {
         /// egress limiter.
         var ecBurstMinSamples: Int = IngressControlState.ecBurstMinSamples
         /// Python `interface.ic_max_held_announces` (`Interface.py:126`, config key at
-        /// `Reticulum.py:791-792`) — a per-interface instance value, not a class constant.
+        /// `Reticulum.py:791-792`)—a per-interface instance value, not a class constant.
         ///
         /// This port had it the other way round: `IngressControlState.maxHeldAnnounces` was a
-        /// global `static let 256` that no config could reach, while `ecBurstMinSamples` — which
+        /// global `static let 256` that no config could reach, while `ecBurstMinSamples`—which
         /// Python reads as the class constant `self.EC_BURST_MIN_SAMPLES` (`Interface.py:85`,
-        /// `:246`) and exposes no config key for — was the per-interface one. So an operator could
-        /// configure the tunable Python does not expose and not the one it does. Found while
+        /// `:246`) and exposes no config key for—was the per-interface one. So an operator could
+        /// configure the tunable Python doesn't expose and not the one it does. Found while
         /// writing the per-interface parser; `ecBurstMinSamples` stays on the box, harmlessly.
         var icMaxHeldAnnounces: Int = Reticulum.defaultIcMaxHeldAnnounces()
 
@@ -84,10 +84,10 @@ public final class InterfaceState {
         var wantsTunnel: Bool = false
         var tunnelID: Data?
 
-        /// Python `interface.ifac_netname` (`Reticulum.py:955`) — the IFAC segment's name.
+        /// Python `interface.ifac_netname` (`Reticulum.py:955`)—the IFAC segment's name.
         ///
-        /// Lives on the box rather than as a per-conformer stored property because it is a
-        /// config value like the rest, it must be inherited by spawned interfaces alongside the
+        /// Lives on the box rather than as a per-conformer stored property because it's a
+        /// config value like the rest, spawned interfaces must inherit it alongside the
         /// key and size (`TCPInterface.py:594-641`), and `rnstatus` reports it. Nothing stored
         /// it before, so `InterfaceStatsPayload` hardcoded `ifac_netname` to nil (`bugs/015`).
         var ifacNetname: String?
@@ -129,7 +129,7 @@ public final class InterfaceState {
 
     // MARK: - Announce rate control
 
-    /// Fraction of interface capacity announces may consume, e.g. `0.02` for 2%.
+    /// Fraction of interface capacity announces may consume, for example, `0.02` for 2%.
     /// Python: `announce_cap = Reticulum.ANNOUNCE_CAP/100.0` (`Reticulum.py:834-837`, `:912`),
     /// where the config value is a percentage in `(0, 100]`.
     public var announceCap: Double {
@@ -155,9 +155,9 @@ public final class InterfaceState {
         set { write(\.announceRatePenalty, newValue) }
     }
 
-    // Note: `bitrate` is deliberately **not** held here. Several interfaces derive theirs —
-    // `RNodeInterface` computes it from spreading factor, bandwidth and coding rate — and that
-    // computation must stay in force when no config value is supplied. It is instead a settable
+    // Note: `bitrate` is deliberately **not** held here. Several interfaces derive theirs—`RNodeInterface`
+    // computes it from spreading factor, bandwidth and coding rate—and that
+    // computation must stay in force when no config value is supplied. It's instead a settable
     // requirement on `Interface`, stored by each conformer, and copied explicitly by the spawn
     // paths (Python does the same: `bitrate` is a class attribute the config may overwrite).
 
@@ -227,7 +227,7 @@ public final class InterfaceState {
         set { write(\.ecBurstMinSamples, newValue) }
     }
 
-    /// Python: `interface.ic_max_held_announces` — how many announces this interface will hold
+    /// Python: `interface.ic_max_held_announces`—how many announces this interface holds
     /// during an ingress burst before dropping them.
     public var icMaxHeldAnnounces: Int {
         get { read(\.icMaxHeldAnnounces) }
@@ -238,7 +238,7 @@ public final class InterfaceState {
     //
     // These were previously `{ get set }` protocol requirements with `set { }` no-op extension
     // defaults, which is worse than get-only: the assignment compiles and is silently discarded
-    // on every type that does not override it. `bootstrapOnly` was stored by 2 of 19 conformers.
+    // on every type that doesn't override it. only 2 of 19 conformers stored `bootstrapOnly`.
 
     /// Python: `interface.gravity` (RNS 1.4.1, `DEFAULT_GRAVITY = 0`).
     public var gravity: Int {
@@ -252,7 +252,7 @@ public final class InterfaceState {
         set { write(\.bootstrapOnly, newValue) }
     }
 
-    /// Python: `interface.ifac_netname` (`Reticulum.py:955`) — the name of the IFAC segment this
+    /// Python: `interface.ifac_netname` (`Reticulum.py:955`)—the name of the IFAC segment this
     /// interface is on, reported by `rnstatus`. See `bugs/015`.
     public var ifacNetname: String? {
         get { read(\.ifacNetname) }
@@ -293,18 +293,18 @@ public final class InterfaceState {
 
     /// Copy every inheritable attribute from a parent interface's state onto this one.
     ///
-    /// Python does this explicitly for each accepted connection — `TCPInterface.py:594-641`
+    /// Python does this explicitly for each accepted connection—`TCPInterface.py:594-641`
     /// copies nineteen attributes, and `BackboneInterface.py:467-485`, `AutoInterface.py:559`
     /// and `I2PInterface.py:846` carry the same block. Having it here means all three spawn
     /// paths inherit the same set, and a value added to `InterfaceState` is inherited without
     /// anyone remembering to extend three copies of the list.
     ///
     /// `tunnelID` and `wantsTunnel` are deliberately **not** inherited: a tunnel belongs to the
-    /// specific connection that established it, and Python does not copy them either.
-    /// Per-instance fallback storage for conformers that do not declare their own
+    /// specific connection that established it, and Python doesn't copy them either.
+    /// Per-instance fallback storage for conformers that don't declare their own
     /// `interfaceState`.
     ///
-    /// Every interface this library ships declares one explicitly — that is the intended form and
+    /// Every interface this library ships declares one explicitly—that's the intended form and
     /// keeps the value on the object itself. This table exists so that a conformer defined
     /// elsewhere (a test double, or a downstream interface) still gets **real per-instance state**
     /// rather than failing to compile or, worse, silently sharing a global.

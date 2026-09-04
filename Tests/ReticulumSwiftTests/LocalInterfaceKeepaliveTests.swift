@@ -3,12 +3,12 @@ import XCTest
 
 /// RNS 1.5.0/1.5.2 changes around empty frames on the shared-instance and TCP paths.
 ///
-/// Python 1.5.0 rewrote `LocalClientInterface.send_keepalive` to emit a bare `7E 7E` — an
-/// empty HDLC frame — and 1.5.2 added `if not data: return` at the top of `process_incoming`
+/// Python 1.5.0 rewrote `LocalClientInterface.send_keepalive` to emit a bare `7E 7E`—an
+/// empty HDLC frame—and 1.5.2 added `if not data: return` at the top of `process_incoming`
 /// on the TCP and I2P interfaces. Neither is a change this port has to *make*: Swift already
-/// drops empty frames in the deframer, and `Packet.unpack` cannot parse an empty payload. What
+/// drops empty frames in the deframer, and `Packet.unpack` can't parse an empty payload. What
 /// the tests below do is pin that, because the two implementations now depend on it in a way
-/// they previously did not — an Android Python client on a Swift shared instance sends these
+/// they previously didn't—an Android Python client on a Swift shared instance sends these
 /// keepalives, and a decoder that mishandled them would desync the whole stream.
 final class LocalInterfaceKeepaliveTests: XCTestCase {
 
@@ -29,7 +29,7 @@ final class LocalInterfaceKeepaliveTests: XCTestCase {
     func testABareFlagPairYieldsNoFrame() {
         // `data = bytes([HDLC.FLAG])+bytes([HDLC.FLAG])` (`LocalInterface.py:198`). Python's
         // deframer discards it via `frame_len > HEADER_MINSIZE`; this port discards it because
-        // the accumulated buffer is empty. Same outcome, and it has to be — a keepalive that
+        // the accumulated buffer is empty. Same outcome, and it has to be—a keepalive that
         // surfaced as a frame would be handed to the transport core as a zero-byte packet.
         XCTAssertEqual(decode(Data([HDLC.flag, HDLC.flag])), [],
                        "the shared-instance keepalive is an empty frame and must be absorbed")
@@ -41,7 +41,7 @@ final class LocalInterfaceKeepaliveTests: XCTestCase {
     }
 
     func testAKeepaliveBetweenTwoRealFramesDisturbsNeither() {
-        // The case that actually costs something if it is wrong. A stray flag pair mid-stream
+        // The case that actually costs something if it's wrong. A stray flag pair mid-stream
         // must not shift the decoder's notion of where the next frame starts; if it did, every
         // subsequent packet from that peer would be garbage rather than just one.
         let stream = HDLC.frame(Self.realPacket)
@@ -74,9 +74,9 @@ final class LocalInterfaceKeepaliveTests: XCTestCase {
     }
 
     func testAFrameShorterThanAHeaderCannotBeParsedAsAPacket() {
-        // Python's deframer drops these before `process_incoming` ever sees them
+        // Python's deframer drops these before `process_incoming` ever receives them
         // (`frame_len > HEADER_MINSIZE`); this port lets them through the deframer and rejects
-        // them at unpack. Different seam, identical outcome — nothing reaches the core.
+        // them at unpack. Different seam, identical outcome—nothing reaches the core.
         for length in 1...(Constants.headerMinSize - 1) {
             XCTAssertThrowsError(try Packet.unpack(Data(repeating: 0x00, count: length)),
                                  "a \(length)-byte frame is shorter than a header")
@@ -87,7 +87,7 @@ final class LocalInterfaceKeepaliveTests: XCTestCase {
 
     func testLocalInterfaceUsesTheSixteenByteDefaultIfacSize() {
         // 1.5.0 hoisted `DEFAULT_IFAC_SIZE = 16` onto the `Interface` base class and made both
-        // LocalInterface halves set `ifac_size` from it explicitly — previously they inherited
+        // LocalInterface halves set `ifac_size` from it explicitly—previously they inherited
         // no value at all. 16 bytes is what a Swift shared instance already uses, so a Python
         // 1.5.x client and this port agree on the IFAC field width.
         let iface = LocalInterface(name: "shared", port: 37428)

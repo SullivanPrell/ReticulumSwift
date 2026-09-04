@@ -97,7 +97,7 @@ final class InterfaceFreqTrackingTests: XCTestCase {
 
     func testMaxSamplesCapPreservesNewest() {
         let t = InterfaceFreqTracker()
-        // Insert 50 samples — only last 48 kept.
+        // Insert 50 samples—only last 48 kept.
         for i in 0..<50 { t.recordIncomingAnnounce(at: Double(i)) }
         XCTAssertLessThanOrEqual(t.incomingAnnounceSampleCount, InterfaceFreqTracker.maxSamples)
     }
@@ -136,7 +136,7 @@ final class InterfaceFreqTrackingTests: XCTestCase {
         t.notifyIncomingAnnounce(on: iface, at: base + 0.3)
         t.notifyIncomingAnnounce(on: iface, at: base + 0.6)
 
-        // Query at base+0.6 — 3 samples over 0.6s → freq = 5 Hz.
+        // Query at base+0.6—3 samples over 0.6 seconds → freq = 5 Hz.
         let freq = t.incomingAnnounceFrequency(for: iface)
         XCTAssertGreaterThan(freq, 0.0, "3 announces spread over 0.6 s → non-zero frequency")
     }

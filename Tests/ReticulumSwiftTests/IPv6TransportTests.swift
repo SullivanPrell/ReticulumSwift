@@ -1,14 +1,14 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Proves Reticulum rides over IPv6 — the transport a Yggdrasil node provides.
+/// Proves Reticulum rides over IPv6—the transport a Yggdrasil node provides.
 ///
 /// Reticulum-over-Yggdrasil (both Python and Swift) is simply TCP/Backbone over
 /// the node's IPv6 address: Python config uses `device = tun0` /
-/// `target_host = 201:…`. The Yggdrasil address space is `0200::/7`. Here we
-/// exercise IPv6 loopback (`::1`), which is the same code path — `NWEndpoint.Host`
+/// `target_host = 201:…`. The Yggdrasil address space is `0200::/7`. This suite
+/// exercises IPv6 loopback (`::1`), which is the same code path—`NWEndpoint.Host`
 /// parses a bare IPv6 literal into an `.ipv6` host and `NWListener` binds on IPv6
-/// too — so a green test here means the existing TCP/Backbone interfaces already
+/// too—so a green test here means the existing TCP/Backbone interfaces already
 /// work over a Yggdrasil address once the tunnel is up.
 final class IPv6TransportTests: XCTestCase {
 
@@ -22,9 +22,9 @@ final class IPv6TransportTests: XCTestCase {
         var got: Packet?
 
         // Transport normally wires *and retains* the spawned per-connection
-        // sub-interface (it is only weakly referenced internally). Here we do both:
+        // sub-interface (it's only weakly referenced internally). This test does both:
         // retain it and install an inbound handler ourselves. `Interface` is a
-        // class-constrained protocol, so we can set the property on the value.
+        // class-constrained protocol, so the test can set the property on the value.
         var serverClient: (any Interface)?
         server.onClientConnected = { iface in
             serverClient = iface

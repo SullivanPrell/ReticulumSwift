@@ -34,7 +34,7 @@ final class AnnounceHopPriorityTests: XCTestCase {
 
         XCTAssertEqual(queue.count, 2, "both should be queued")
 
-        // Drain entries: sort should happen, and we get items as window allows.
+        // Drain entries: sort should happen, and items arrive as the window allows.
         // Drain at t=100, t=200 to get both (each drain gets one due to rate limiting).
         var drained: [Packet] = []
         for t in stride(from: 100.0, through: 10000.0, by: 100.0) {

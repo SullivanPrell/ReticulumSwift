@@ -5,7 +5,7 @@ import Foundation
 /// Everything `main()` hands to `program_setup` (rnpath.py:101-104), one field per argument.
 public struct RNPathOptions: Equatable {
 
-    /// `--config` — a Reticulum *config directory*, not a config file.
+    /// `--config`—a Reticulum *config directory*, not a config file.
     public var configDirectory: URL?
     /// `-t` / `--table`
     public var table: Bool = false
@@ -19,13 +19,13 @@ public struct RNPathOptions: Equatable {
     public var dropAnnounces: Bool = false
     /// `-x` / `--drop-via`
     public var dropVia: Bool = false
-    /// `-w` — spinner deadline in the default mode. Default 15.
+    /// `-w`—spinner deadline in the default mode. Default 15.
     public var timeout: TimeInterval = RNPathApp.defaultTimeout
-    /// `-R` — transport identity hash of the remote instance to manage.
+    /// `-R`—transport identity hash of the remote instance to manage.
     public var remote: String?
-    /// `-i` — identity file used to authenticate remote management.
+    /// `-i`—identity file used to authenticate remote management.
     public var managementIdentityPath: String?
-    /// `-W` — timeout for the path request toward the remote instance. Default 15.
+    /// `-W`—timeout for the path request toward the remote instance. Default 15.
     public var remoteTimeout: TimeInterval = RNPathApp.defaultTimeout
     /// `-b` / `--blackholed`
     public var blackholed: Bool = false
@@ -40,13 +40,13 @@ public struct RNPathOptions: Equatable {
     public var blackholeReason: String?
     /// `-p` / `--blackholed-list`
     public var blackholedList: Bool = false
-    /// `-j` / `--json` — read only by `-t` and `-r`.
+    /// `-j` / `--json`—read only by `-t` and `-r`.
     public var json: Bool = false
     /// First positional. Overloaded per mode: a destination hash for `-t`/`-r`/`-d`/`-x`
     /// and the default mode, an identity hash for `-B`/`-U`/`-p`, and a plain substring
     /// *filter* for `-b`.
     public var destination: String?
-    /// Second positional — the filter for the remote blackhole list view.
+    /// Second positional—the filter for the remote blackhole list view.
     public var listFilter: String?
     /// `-v`, repeatable. Log level is `clamp(3 + verbosity, 0, 8)`.
     public var verbosity: Int = 0
@@ -64,7 +64,7 @@ public struct RNPathOptions: Equatable {
     /// ```
     ///
     /// Note which flags are *absent* from it: `-B`, `-U`, `-d`, `-p`, `-j`, `-m`, `-R`,
-    /// `-i`, `-w`, `-W` and `-v` do not suppress the help block on their own — though the
+    /// `-i`, `-w`, `-W` and `-v` don't suppress the help block on their own—though the
     /// first four all need a positional destination, which does.
     public var shouldPrintHelp: Bool {
         !dropAnnounces && !table && !rates && destination == nil && !dropVia && !blackholed
@@ -72,7 +72,7 @@ public struct RNPathOptions: Equatable {
 
     /// Python's blackhole filter-source split (rnpath.py:194-197).
     ///
-    /// The *fetch* source is chosen by `blackholed` first, but the *filter* is chosen by
+    /// `blackholed` chooses the *fetch* source first, but the *filter* comes from
     /// `blackholedList`. So `rnpath -b -p <x> <y>` fetches locally yet filters on `<y>`,
     /// and `<x>` is ignored entirely.
     public var activeBlackholeFilter: String? {
@@ -84,7 +84,7 @@ public struct RNPathOptions: Equatable {
 
 /// The three `RNS.Transport` calls the default path-request mode makes.
 ///
-/// Python keeps these **local** even when attached to a shared instance — only
+/// Python keeps these **local** even when attached to a shared instance—only
 /// `get_next_hop` / `get_next_hop_if_name` go over RPC (rnpath.py:447-474). Splitting them
 /// out here keeps that asymmetry explicit, and lets the spinner loop be driven from tests
 /// without a stack.
@@ -109,7 +109,7 @@ public final class TransportPathResolver: RNPathPathResolver {
 
 // MARK: - Runner
 
-/// `program_setup` (rnpath.py:101-477) — the mode dispatcher.
+/// `program_setup` (rnpath.py:101-477)—the mode dispatcher.
 ///
 /// Reproduces the `if`/`elif` chain in order, because the order is observable: `rnpath -t -d
 /// <hash>` shows the table and drops nothing, and `rnpath -b -B <hash>` lists rather than
@@ -117,8 +117,8 @@ public final class TransportPathResolver: RNPathPathResolver {
 ///
 /// Never calls `exit()` or `print()`. Output goes to two sinks:
 ///
-/// - `output` — Python's `print(x)`: one line, terminated.
-/// - `progress` — Python's `print(x, end="")` / `end=" "`: raw, unterminated, flushed.
+/// - `output`—Python's `print(x)`: one line, terminated.
+/// - `progress`—Python's `print(x, end="")` / `end=" "`: raw, unterminated, flushed.
 ///   The trailing space `end=" "` adds is baked into the strings passed here.
 ///
 /// The remote (`-R` / `-p`) half is injected as closures rather than a `Link`, so every
@@ -132,8 +132,8 @@ public final class RNPathRunner {
 
     /// Establishes a *fresh* blackhole link and issues `/list`.
     ///
-    /// Returns `nil` when the response was not a map — Python's `if type(response) == dict`
-    /// gate — and an empty array when the remote genuinely has nothing blackholed, which
+    /// Returns `nil` when the response wasn't a map—Python's `if type(response) == dict`
+    /// gate—and an empty array when the remote genuinely has nothing blackholed, which
     /// Python accepts and then reports as "No blackholed identity data available".
     public typealias BlackholeListFetcher = () throws -> [RNPathBlackholeEntry]?
 
@@ -188,7 +188,7 @@ public final class RNPathRunner {
         progressSink?(text)
     }
 
-    /// `print(output_rst_str, end=""); print(message)` — the shape every remote failure uses.
+    /// `print(output_rst_str, end=""); print(message)`—the shape every remote failure uses.
     private func resetThen(_ message: String) {
         progress(RNPathApp.outputResetString)
         guard !options.noOutput else { return }
@@ -199,7 +199,7 @@ public final class RNPathRunner {
 
     /// Run the selected mode and return its exit code.
     public func run() -> RNPathApp.Result {
-        // Python: rnpath.py:129, 205, 224, 242, 295, 379, 389, 410, 431 — a strict if/elif
+        // Python: rnpath.py:129, 205, 224, 242, 295, 379, 389, 410, 431—a strict if/elif
         // chain whose order is user-visible.
         if options.blackholed || options.blackholedList { return runBlackholeList() }
         if options.blackhole      { return runBlackholeAdd() }
@@ -254,7 +254,7 @@ public final class RNPathRunner {
                     return .remoteFailure
                 }
                 list = fetched
-                // Python: rnpath.py:162 — ungated.
+                // Python: rnpath.py:162—ungated.
                 progressUngated(RNPathApp.outputResetString)
             } catch let error as RNPathRemoteClient.RemoteError {
                 return report(error)
@@ -265,7 +265,7 @@ public final class RNPathRunner {
         }
 
         // Python: `if not blackholed_list:` catches both None and an empty dict, and the
-        // message is NOT gated on no_output.
+        // message isn't gated on no_output.
         guard let entries = list, !entries.isEmpty else {
             output("No blackholed identity data available")
             return .setupFailure
@@ -277,7 +277,7 @@ public final class RNPathRunner {
 
         for entry in entries {
             if let filter, !filter.isEmpty {
-                // Python matches against filter_str, which is NOT the printed line.
+                // Python matches against filter_str, which isn't the printed line.
                 let haystack = RNPathFormatter.blackholeFilterString(
                     entry, now: reference, localTransportIdentityHash: localHash)
                 guard RNPathFormatter.filterMatches(filter, in: haystack) else { continue }
@@ -300,7 +300,7 @@ public final class RNPathRunner {
         do {
             let identityHash = try RNPathApp.parseHash(raw)
             // Python: `until = time.time()+duration*60*60 if blackhole_duration else None`
-            // — `--duration 0` is falsy, so it means "indefinitely".
+            //—`--duration 0` is falsy, so it means "indefinitely".
             let until: TimeInterval? = {
                 guard let hours = options.blackholeDuration, hours != 0 else { return nil }
                 return now().timeIntervalSince1970 + hours * 60 * 60
@@ -322,7 +322,7 @@ public final class RNPathRunner {
 
     private func runBlackholeLift() -> RNPathApp.Result {
         if remoteLinkPresent {
-            // sic — rnpath.py:228 reuses the -B wording verbatim, with no "Unblackholing"
+            // sic—rnpath.py:228 reuses the -B wording verbatim, with no "Unblackholing"
             // variant.
             resetThen("Blackholing identity on remote instances not yet implemented")
             return .notImplemented
@@ -355,7 +355,7 @@ public final class RNPathRunner {
         if !remoteLinkPresent {
             do {
                 // Python sorts by (interface, hops); the interface string must already be
-                // the display form, since it is the primary sort key.
+                // the display form, since it's the primary sort key.
                 table = RNPathTableEntry.sortedForDisplay(try management.pathTable(maxHops: options.maxHops))
             } catch {
                 output("\(message(for: error))")
@@ -369,14 +369,14 @@ public final class RNPathRunner {
                                                                maxHops: options.maxHops)
             do {
                 let response = try requireRemoteRequest()(RNPathApp.pathRequestPath, payload)
-                // Python: `if response:` — an EMPTY list is falsy, so a remote with no paths
+                // Python: `if response:`—an EMPTY list is falsy, so a remote with no paths
                 // is reported as a failure, indistinguishably from an ACL rejection or a
                 // request timeout. Faithful, if confusing.
                 guard let decoded = RNPathRemoteClient.decodePathTable(response), !decoded.isEmpty else {
                     resetThen("The remote request failed. Likely authentication failure.")
                     return .remoteFailure
                 }
-                // The remote table is NOT re-sorted — rnpath.py:254's sort is local-only.
+                // The remote table isn't re-sorted—rnpath.py:254's sort is local-only.
                 table = decoded
                 progressUngated(RNPathApp.outputResetString)   // rnpath.py:265, ungated
             } catch let error as RNPathRemoteClient.RemoteError {
@@ -388,7 +388,7 @@ public final class RNPathRunner {
         }
 
         if options.json {
-            // Python quirk: the destination filter is NOT applied in JSON mode for the local
+            // Python quirk: the destination filter isn't applied in JSON mode for the local
             // case (max_hops IS). Reproduced.
             output(RNPathFormatter.pathTableJSON(table))
             return .ok
@@ -422,7 +422,7 @@ public final class RNPathRunner {
         } else {
             progress(RNPathApp.outputResetString)
             progress("Sending request... ")
-            // Python: ["rates", destination_hash] — TWO elements, no max_hops.
+            // Python: ["rates", destination_hash]—TWO elements, no max_hops.
             let payload = RNPathRemoteClient.pathRequestPayload(command: RNPathApp.commandRates,
                                                                destinationHash: destinationHash,
                                                                maxHops: nil,
@@ -443,8 +443,8 @@ public final class RNPathRunner {
             }
         }
 
-        // Python: this sort applies in BOTH the local and the remote case (rnpath.py:326) —
-        // unlike the path table's, which is local-only.
+        // Python: this sort applies in BOTH the local and the remote case (rnpath.py:326)—unlike
+        // the path table's, which is local-only.
         table = RNPathRateEntry.sortedByLast(table)
 
         if options.json {
@@ -466,7 +466,7 @@ public final class RNPathRunner {
             if let line = RNPathFormatter.rateLine(entry, now: reference) {
                 output(line)
             } else {
-                // Python: a per-entry exception prints two lines and CONTINUES — contrast
+                // Python: a per-entry exception prints two lines and CONTINUES—contrast
                 // the blackhole loop, whose single try wraps the whole thing and aborts.
                 output(RNPathFormatter.rateErrorLine(entry))
                 output(RNPathFormatter.emptyTimestampsErrorMessage)
@@ -501,7 +501,7 @@ public final class RNPathRunner {
         }
         guard let destinationHash = parsedDestinationOrFailure() else { return .generalFailure }
 
-        // Python does not catch here; a thrown RPC error is reported as "unable to drop",
+        // Python doesn't catch here; a thrown RPC error is reported as "unable to drop",
         // which is the same user-visible outcome.
         let dropped = (try? management.dropPath(destinationHash)) ?? false
         if dropped {
@@ -516,13 +516,13 @@ public final class RNPathRunner {
 
     private func runDropVia() -> RNPathApp.Result {
         if remoteLinkPresent {
-            // sic — "yet not implemented", verbatim from rnpath.py:414.
+            // sic—"yet not implemented", verbatim from rnpath.py:414.
             resetThen("Dropping all paths via specific transport instance on remote instances yet not implemented")
             return .notImplemented
         }
         guard let transportHash = parsedDestinationOrFailure() else { return .generalFailure }
 
-        // Python: `if reticulum.drop_all_via(hash):` — an Int, and 0 is falsy.
+        // Python: `if reticulum.drop_all_via(hash):`—an Int, and 0 is falsy.
         let dropped = (try? management.dropAllVia(transportHash)) ?? 0
         if dropped != 0 {
             output("Dropped all paths via " + RNSUtilities.prettyhexrep(transportHash))
@@ -537,7 +537,7 @@ public final class RNPathRunner {
 
     private func runPathRequest() -> RNPathApp.Result {
         if remoteLinkPresent {
-            // sic — no "yet" in this one (rnpath.py:435).
+            // sic—no "yet" in this one (rnpath.py:435).
             resetThen("Requesting paths on remote instances not implemented")
             return .notImplemented
         }
@@ -572,7 +572,7 @@ public final class RNPathRunner {
             return .generalFailure
         }
 
-        // hops_to is LOCAL even when attached to a shared instance; get_next_hop is not.
+        // hops_to is LOCAL even when attached to a shared instance; get_next_hop isn't.
         let hops = resolver.hopsTo(destinationHash) ?? RNPathApp.unknownHops
 
         let nextHopBytes: Data?
@@ -582,7 +582,7 @@ public final class RNPathRunner {
             return .generalFailure
         }
 
-        // Python's next hop is never None for a known path — Transport.py:1796 stores the
+        // Python's next hop is never None for a known path—Transport.py:1796 stores the
         // destination hash itself for a direct peer, where Swift stores nil. Substitute it
         // rather than reporting invalid path data.
         let nextHop = nextHopBytes ?? destinationHash
@@ -618,7 +618,7 @@ public final class RNPathRunner {
         return error.result
     }
 
-    /// `str(e)` — ``RNPathApp/ParseError`` carries the exact Python wording; anything else
+    /// `str(e)`—``RNPathApp/ParseError`` carries the exact Python wording; anything else
     /// falls back to the Swift description.
     private func message(for error: Error) -> String {
         if let parseError = error as? RNPathApp.ParseError { return parseError.message }

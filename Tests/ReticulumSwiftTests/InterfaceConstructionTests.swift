@@ -1,12 +1,12 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `swift_devel/bugs/031` — the four documented interface types a config file could not build.
+/// `swift_devel/bugs/031`—the four documented interface types a config file couldn't build.
 ///
 /// `ConfigTemplateRoundTripTests` proves the *switch* has the cases and the *keys* have readers,
 /// structurally. These tests drive `synthesizeInterfaces` for real, through stub transport
-/// factories (design D6): the availability split — serial on macOS, BLE from an application —
-/// lives in `InterfaceTransportFactories`, so a stub registration exercises both the
+/// factories (design D6): the availability split—serial on macOS, BLE from an application—lives
+/// in `InterfaceTransportFactories`, so a stub registration exercises both the
 /// constructed and the unavailable path on any platform, which an `#if os(iOS)` in the switch
 /// never could.
 final class InterfaceConstructionTests: XCTestCase {
@@ -31,7 +31,7 @@ final class InterfaceConstructionTests: XCTestCase {
         func close() { opened = false }
         func write(_ data: Data) throws {
             // Behave like firmware, which `start()`'s bring-up gate now requires: answer a
-            // detect request, and echo every configuration command back verbatim — that echo
+            // detect request, and echo every configuration command back verbatim—that echo
             // is exactly what real RNode firmware sends as each parameter is applied.
             let bytes = [UInt8](data)
             if bytes.count > 1, bytes[1] == KISS.cmdDetect {
@@ -181,7 +181,7 @@ final class InterfaceConstructionTests: XCTestCase {
     // MARK: - 7.2: an unknown type is loud, and takes nothing else down
 
     /// The current reference routes an unknown type through the external-interface-module
-    /// lookup and logs an ERROR when no module exists (`Reticulum.py:1055-1061`) — it does not
+    /// lookup and logs an ERROR when no module exists (`Reticulum.py:1055-1061`)—it doesn't
     /// raise, and the other interfaces still come up. This port loads no external modules, so
     /// the observable is the same: named error, everything else constructed.
     func testUnknownTypeIsSkippedLoudlyWhileOthersConstruct() throws {
@@ -266,7 +266,7 @@ final class InterfaceConstructionTests: XCTestCase {
     }
 
     /// BLE is an application concern (CoreBluetooth), so the *default* RNode factory refuses
-    /// `ble://` with the registration hint rather than pretending — on every platform.
+    /// `ble://` with the registration hint rather than pretending—on every platform.
     func testBLEDeviceStringWithoutAnAppFactoryNamesTheRegistration() {
         registerStubs()
         InterfaceTransportFactories.rnode = InterfaceTransportFactories.defaultRNodeFactory
@@ -292,7 +292,7 @@ final class InterfaceConstructionTests: XCTestCase {
         }
     }
 
-    /// A factory-created transport has no owner but the interface — `RNodeInterface.transport`
+    /// A factory-created transport has no owner but the interface—`RNodeInterface.transport`
     /// is `weak` (applications own their BLE controllers), so without an owning reference the
     /// transport deallocates before `start()` and the radio is silently gone: the zombie-
     /// interface shape, one level down.
@@ -319,14 +319,14 @@ final class InterfaceConstructionTests: XCTestCase {
     // MARK: - 7.7: what discovery writes, a restart constructs
 
     /// Discovery suggests config entries for discovered RNode, KISS and I2P peers, in the
-    /// reference's own `config_entry` shapes (`Discovery.py:348,360,378,408`) — which is what
+    /// reference's own `config_entry` shapes (`Discovery.py:348,360,378,408`)—which is what
     /// made `bugs/031` self-defeating: the discovery path emitted blocks the config path could
     /// not construct, so an auto-discovered LoRa peer was written down and then silently
     /// ignored on the next start.
     ///
     /// The radio shapes leave `port = ` empty for the operator's device; this test completes
-    /// it exactly as an operator would and leaves everything else as discovery wrote it —
-    /// including the empty `txpower = ` line the reference's own suggestion carries.
+    /// it exactly as an operator would and leaves everything else as discovery wrote it—including
+    /// the empty `txpower = ` line the reference's own suggestion carries.
     func testTheEntriesDiscoveryEmitsConstructOnRestart() throws {
         registerStubs()
         let stack = makeStack()
@@ -358,9 +358,9 @@ final class InterfaceConstructionTests: XCTestCase {
                        + "output")
     }
 
-    /// The reference constructs an RNode whose port is not yet usable and brings it up later
+    /// The reference constructs an RNode whose port isn't yet usable and brings it up later
     /// (`open_port` failure → log + periodic reconnect, `RNodeInterface.py:354-360`); an
-    /// unfilled discovery suggestion must therefore construct rather than throw — the failure
+    /// unfilled discovery suggestion must therefore construct rather than throw—the failure
     /// belongs to `start()`, where the cause is a real open error.
     func testAnUnfilledDiscoveryPortStillConstructs() throws {
         registerStubs()

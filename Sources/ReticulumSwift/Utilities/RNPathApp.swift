@@ -1,16 +1,16 @@
 import Foundation
 
 /// Constants, exit codes and argument parsing for `RNS/Utilities/rnpath.py`
-/// — the Reticulum Path Management Utility.
+///—the Reticulum Path Management Utility.
 ///
 /// Python reference: `reference_implementations/reticulum/RNS/Utilities/rnpath.py`
-/// (RNS 1.4.0). `rnpath` is a single-shot CLI whose nine modes are selected by a strict
+/// (RNS 1.4.0). `rnpath` is a single-shot CLI whose nine modes come from a strict
 /// `if`/`elif` chain in `program_setup` (rnpath.py:129-477); the order of that chain is
-/// user-visible, so it is reproduced exactly by ``RNPathRunner``.
+/// user-visible, so it's reproduced exactly by ``RNPathRunner``.
 ///
 /// This namespace holds the pieces that are pure data: the destination names it links to,
 /// the two carriage-return "clear the line" strings, the Braille spinner glyphs, the
-/// reason-truncation length, and the two subtly-different hash parsers.
+/// reason-truncation length, and the two subtly different hash parsers.
 public enum RNPathApp {
 
     // MARK: - Application identity
@@ -50,7 +50,7 @@ public enum RNPathApp {
 
     // MARK: - Terminal control strings
 
-    /// Python: `output_rst_str = "\r" + 58 spaces + "\r"` (rnpath.py:42 — verified by regex
+    /// Python: `output_rst_str = "\r" + 58 spaces + "\r"` (rnpath.py:42—verified by regular expression
     /// over the source: exactly 58 spaces, total length 60).
     ///
     /// Emitted with `end=""` before every remote-progress message, so the previous
@@ -58,17 +58,17 @@ public enum RNPathApp {
     public static let outputResetString: String = "\r" + String(repeating: " ", count: 58) + "\r"
 
     /// Python: the *different* inline clear string used by the default path-request branch,
-    /// `"\r" + 55 spaces + "\r"` (rnpath.py:465 and rnpath.py:476 — verified: 55, not 58).
+    /// `"\r" + 55 spaces + "\r"` (rnpath.py:465 and rnpath.py:476—verified: 55, not 58).
     public static let lineClearString: String = "\r" + String(repeating: " ", count: 55) + "\r"
 
-    /// Python: `syms = "⢄⢂⢁⡁⡈⡐⡠"` (rnpath.py:453) — 7 Braille glyphs,
+    /// Python: `syms = "⢄⢂⢁⡁⡈⡐⡠"` (rnpath.py:453)—7 Braille glyphs,
     /// U+2884 U+2882 U+2881 U+2841 U+2848 U+2850 U+2860.
     public static let spinnerSymbols: [Character] = ["\u{2884}", "\u{2882}", "\u{2881}",
                                                     "\u{2841}", "\u{2848}", "\u{2850}", "\u{2860}"]
 
     // MARK: - Numeric constants
 
-    /// Python: `rmlen = 64` — the blackhole reason truncation length (rnpath.py:178).
+    /// Python: `rmlen = 64`—the blackhole reason truncation length (rnpath.py:178).
     public static let reasonMaxLength: Int = 64
 
     /// Python: `RNS.Transport.PATH_REQUEST_TIMEOUT` == 15, the default for both `-w` and `-W`.
@@ -78,10 +78,10 @@ public enum RNPathApp {
     ///
     /// - Important: this must be derived from ``Constants/truncatedHashLength`` (16 **bytes**).
     ///   `Reticulum.truncatedHashLength` and `Identity.truncatedHashLength` are both 128
-    ///   (**bits**) and would yield 256 — a trap that silently rejects every valid hash.
+    ///   (**bits**) and would yield 256—a trap that silently rejects every valid hash.
     public static let hexHashLength: Int = Constants.truncatedHashLength * 2
 
-    /// Python: `RNS.Transport.PATHFINDER_M` — the hop count `Transport.hops_to()` returns
+    /// Python: `RNS.Transport.PATHFINDER_M`—the hop count `Transport.hops_to()` returns
     /// for an unknown destination (Transport.py:2676-2683). Swift's ``Transport/hopsTo(_:)``
     /// returns `nil` there instead, so callers map `nil` → 128.
     public static let unknownHops: UInt8 = 128
@@ -90,11 +90,11 @@ public enum RNPathApp {
 
     /// Every exit code `rnpath` can produce.
     ///
-    /// Note that Python collapses several distinct causes onto the same code — a remote
-    /// request that timed out, one that was rejected by the ACL, and one that legitimately
-    /// returned an empty table all exit 10 with the same message. That is reproduced.
+    /// Note that Python collapses several distinct causes onto the same code—a remote
+    /// request that timed out, one the ACL rejected, and one that legitimately
+    /// returned an empty table all exit 10 with the same message. That's reproduced.
     ///
-    /// **Known divergence — these codes actually reach the shell, and Python's do not.**
+    /// **Known divergence—these codes actually reach the shell, and Python's don't.**
     /// `RNS/__init__.py` defines its own `exit(code)` that ends in `os._exit(code)`, and
     /// Reticulum registers `Reticulum.exit_handler` with `atexit`. Once the stack is up,
     /// the hard `os._exit(0)` during teardown wins over the pending `SystemExit`, so every
@@ -119,7 +119,7 @@ public enum RNPathApp {
         /// Every `sys.exit(1)`: malformed destination, "No path known", "Path not found",
         /// a drop that removed nothing, "Error: Invalid path data returned".
         case generalFailure = 1
-        /// `argparse` parse errors — unrecognised option, missing value, bad int/float.
+        /// `argparse` parse errors—unrecognized option, missing value, bad int/float.
         case usageError = 2
         /// Remote link failure, or "The remote request failed…".
         case remoteFailure = 10
@@ -153,7 +153,7 @@ public enum RNPathApp {
                 // Python: rnpath.py:99
                 return "Invalid hash entered. Check your input."
             case .invalidDestinationLength:
-                // Python: rnpath.py:247 (and 300, 398, 419, 440 — all identical)
+                // Python: rnpath.py:247 (and 300, 398, 419, 440—all identical)
                 return "Destination length is invalid, must be \(RNPathApp.hexHashLength) hexadecimal characters (\(Constants.truncatedHashLength) bytes)."
             case .invalidDestination:
                 // Python: rnpath.py:249
@@ -178,8 +178,8 @@ public enum RNPathApp {
     private static func decodeHash(_ input: String,
                                    lengthError: ParseError,
                                    contentError: ParseError) throws -> Data {
-        // Python's len() counts code points, not grapheme clusters — use unicodeScalars so a
-        // combining mark in argv cannot make a 32-character string look like 31 to Swift.
+        // Python's len() counts code points, not grapheme clusters—use unicodeScalars so a
+        // combining mark in argv can't make a 32-character string look like 31 to Swift.
         guard input.unicodeScalars.count == hexHashLength else { throw lengthError }
         guard isStrictHex(input) else { throw contentError }
         let scalars = Array(input.unicodeScalars)
@@ -221,12 +221,12 @@ public enum RNPathApp {
     ///
     /// `argparse` wraps to the terminal width (defaulting to 80 when `COLUMNS` is unset) and
     /// its section header changed across Python releases, so this literal is pinned to the
-    /// **80-column, Python 3.10–3.12** rendering — captured from the installed `rnpath` under
+    /// **80-column, Python 3.10–3.12** rendering—captured from the installed `rnpath` under
     /// Python 3.11.3. (Python ≤ 3.9 prints `optional arguments:`; Python ≥ 3.13 renders
     /// value-taking options as `-m, --max hops`.)
     ///
-    /// It is a literal rather than generated because ``ArgumentParser/usage`` is not
-    /// argparse-shaped — it emits `usage: rnpath [options] …` and pads to a fixed 24 columns.
+    /// It's a literal rather than generated because ``ArgumentParser/usage`` isn't
+    /// argparse-shaped—it emits `usage: rnpath [options] …` and pads to a fixed 24 columns.
     /// Parsing still goes through ``ArgumentParser``; only the rendering is hand-pinned.
     public static let helpText: String = """
     usage: rnpath [-h] [--config CONFIG] [--version] [-t] [-m hops] [-r] [-d] [-D]
@@ -267,7 +267,7 @@ public enum RNPathApp {
     """
 
     /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
-    /// error. Taken from ``helpText`` rather than restated, so the two cannot drift.
+    /// error. Taken from ``helpText`` rather than restated, so the two can't drift.
     public static var usageText: String {
         helpText.components(separatedBy: "\n\n")[0]
     }
@@ -280,10 +280,10 @@ public enum RNPathApp {
 
     /// `rnpath {version}`, printed by `--version`.
     ///
-    /// Python prints `RNS.__version__` — the version of the software actually running — so
+    /// Python prints `RNS.__version__`—the version of the software actually running—so
     /// the Swift analogue is ``Reticulum/version``, this port's own release, and every one
     /// of the nine utilities reports it identically. ``Reticulum/rnsProtocolVersion`` is a
-    /// different fact (the RNS release this build is wire-compatible with) and is not what
+    /// different fact (the RNS release this build is wire-compatible with) and isn't what
     /// `--version` answers.
     public static var versionString: String { "\(appName) \(Reticulum.version)" }
 }

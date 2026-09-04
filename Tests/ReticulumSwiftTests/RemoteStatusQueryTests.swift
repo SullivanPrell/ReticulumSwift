@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `rnstatus -R <hash>` — destination derivation, the `/status` request wire format and
+/// `rnstatus -R <hash>`—destination derivation, the `/status` request wire format and
 /// response decoding.
 ///
 /// Python reference: `get_remote_status` (`RNS/Utilities/rnstatus.py:66-153`) and the
@@ -94,7 +94,7 @@ final class RemoteStatusQueryTests: XCTestCase {
     /// REGRESSION GUARD for the wire mismatch this port had to fix.
     ///
     /// The old Swift `/status` handler answered with an ARRAY of `{name, rxb, txb}` stubs.
-    /// Python detects that with `isinstance(response, list)`; a Swift client cannot, because
+    /// Python detects that with `isinstance(response, list)`; a Swift client can't, because
     /// `Link.handleIncomingResponse` transparently unwraps a `.bytes` payload into a
     /// structurally valid array. So the guard has to be "does slot 0 decode as a stats
     /// dict", not "is the response an array".
@@ -105,7 +105,7 @@ final class RemoteStatusQueryTests: XCTestCase {
             (.string("txb"), .int(2)),
         ])
         let payload = MsgPack.encode(.array([stub, stub]))
-        // It IS an array, and slot 0 is a perfectly good map — only the missing
+        // It's an array, and slot 0 is a perfectly good map—only the missing
         // "interfaces" key catches it.
         assertMalformed(payload, "an array of interface stubs must not decode as stats")
     }
@@ -136,7 +136,7 @@ final class RemoteStatusQueryTests: XCTestCase {
     }
 
     /// Stands up a responder with a real `rnstransport.remote.management` destination and
-    /// an identified initiator link to it — the exact arrangement `rnstatus -R` creates.
+    /// an identified initiator link to it—the exact arrangement `rnstatus -R` creates.
     private func makeIdentifiedLink(allowClient: Bool = true) throws -> Fixture {
         let serverIdentity = Identity()
         let clientIdentity = Identity()
@@ -176,7 +176,7 @@ final class RemoteStatusQueryTests: XCTestCase {
 
         let responded = expectation(description: "response")
         var payload: Data?
-        // Python: link.request("/status", data=[include_lstats], …) — a NATIVE array
+        // Python: link.request("/status", data=[include_lstats], …)—a NATIVE array
         // holding one boolean. The `data: Data?` overload would wrap it as msgpack BIN and
         // the responder's `isinstance(data, list)` check would fail.
         let receipt = try fixture.link.request(path: RNStatusApp.statusRequestPath,
@@ -191,7 +191,7 @@ final class RemoteStatusQueryTests: XCTestCase {
         let stats = try XCTUnwrap(RNStatusStats(parts[0]))
         XCTAssertEqual(stats.interfaces.count, 1)
         // The published name is `displayName`, class-qualified for every conformer since
-        // `bugs/022` — the bare configured `name` here is "server".
+        // `bugs/022`—the bare configured `name` here is "server".
         XCTAssertEqual(stats.interfaces.first?.name, "LoopbackInterface[server]")
         XCTAssertNotNil(parts[1].asInt)
 
@@ -247,7 +247,7 @@ final class RemoteStatusQueryTests: XCTestCase {
 
     func testRequestBodyIsANativeArrayNotBytes() throws {
         // Python's Link.request packs [time.time(), truncated_hash(path), data]
-        // (RNS/Link.py:485-487). Slot 2 must be the native array — the `data: Data?`
+        // (RNS/Link.py:485-487). Slot 2 must be the native array—the `data: Data?`
         // overload would put a msgpack BIN there instead.
         let pathHash = Hashes.truncatedHash(Data(RNStatusApp.statusRequestPath.utf8))
         XCTAssertEqual(pathHash.count, Constants.truncatedHashLength)

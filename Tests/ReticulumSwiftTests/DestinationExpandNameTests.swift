@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Destination.expandName / expandName-derived helpers and
-/// Destination.loadPublicKey() — all mirroring Python Destination class methods.
+/// Destination.loadPublicKey()—all mirroring Python Destination class methods.
 ///
 /// Python reference (Destination.py):
 ///   Destination.expand_name(identity, app_name, *aspects)
@@ -10,11 +10,11 @@ import XCTest
 ///   Destination.load_public_key(key)
 ///     → always raises TypeError; SINGLE keys live in Identity, not Destination
 ///
-/// Swift already has expandName(identity:appName:aspects:) — these tests
+/// Swift already has expandName(identity:appName:aspects:)—these tests
 /// document its contract and cover the missing loadPublicKey(_:) method.
 final class DestinationExpandNameTests: XCTestCase {
 
-    // MARK: - expandName (already implemented — contract tests)
+    // MARK: - expandName (already implemented—contract tests)
 
     func testExpandNameWithoutIdentity() {
         let name = Destination.expandName(identity: nil, appName: "myapp", aspects: ["service", "node"])
@@ -48,7 +48,7 @@ final class DestinationExpandNameTests: XCTestCase {
         XCTAssertEqual(a, b, "expand_name must be deterministic for same inputs")
     }
 
-    // MARK: - loadPublicKey (new — was missing)
+    // MARK: - loadPublicKey (new—was missing)
 
     /// Python: `load_public_key` on a SINGLE destination always raises TypeError
     /// ("A single destination holds keys through an Identity instance").

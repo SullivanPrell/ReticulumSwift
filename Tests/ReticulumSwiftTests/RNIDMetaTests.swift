@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for the `-E`/`--embed-meta` metadata parser.
 ///
-/// Python reference: RNS/Utilities/rnid.py — `rsg_meta_from_file` (:566-575) and
+/// Python reference: RNS/Utilities/rnid.py—`rsg_meta_from_file` (:566-575) and
 /// `rsg_meta_from_str` (:577-586), which parse with RNS's vendored ConfigObj and optionally
 /// coerce through `Validator()`.
 final class RNIDMetaTests: XCTestCase {
@@ -80,7 +80,7 @@ final class RNIDMetaTests: XCTestCase {
     }
 
     func testUnknownSpecCheckIsRejectedRatherThanSilentlyAccepted() {
-        // Full Validator parity is out of scope; an unrecognised check must not pass silently.
+        // Full Validator parity is out of scope; an unrecognized check must not pass silently.
         XCTAssertThrowsError(try RNIDMeta.parse("x = 1", spec: "x = ip_addr")) { error in
             XCTAssertEqual(error as? RNIDMeta.MetaError, .unsupportedCheck("ip_addr"))
         }

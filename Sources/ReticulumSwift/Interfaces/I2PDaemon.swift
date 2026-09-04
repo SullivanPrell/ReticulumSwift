@@ -30,12 +30,12 @@ public protocol I2PDaemonProtocol: AnyObject {
 
 /// Which state the *process-global* i2pd router is in.
 ///
-/// i2pd's router is not per-instance: `C_InitI2P` / `C_StartI2P` initialise
+/// i2pd's router isn't per-instance: `C_InitI2P` / `C_StartI2P` initialize
 /// dylib-scope singletons and `C_TerminateI2P` tears down the crypto subsystem
 /// for the whole process. Two rules follow, and `I2PDaemon` is the only place
 /// that can enforce them:
 ///
-///   1. At most one daemon owns the globals at a time — a second `C_InitI2P`
+///   1. At most one daemon owns the globals at a time—a second `C_InitI2P`
 ///      while one is running would silently reconfigure the running router.
 ///   2. Once `C_TerminateI2P` has run there is no supported way back; i2pd has
 ///      no re-init path, so a second `C_InitI2P` is undefined behaviour.
@@ -63,7 +63,7 @@ enum I2PDaemonPhase {
 
 // MARK: - I2PDaemon (embedded i2pd via CI2PD xcframework)
 //
-// Currently ships a macOS arm64 slice only.
+// Ships a macOS arm64 slice only.
 // Run build_ci2pd_ios.sh to add iOS arm64 + iOS-Simulator arm64 slices;
 // that script also patches the #if guard below and Package.swift to enable iOS.
 
@@ -74,20 +74,20 @@ import CI2PD
 /// Wraps the lifecycle C calls exposed by `capi.h` / `capi_client.h`.
 ///
 /// Startup sequence:
-///  1. `C_InitI2P` — parse config, set up file-system paths
-///  2. `C_StartI2P` — start NetDB, Transports, Tunnels, RouterContext
-///  3. `C_StartClientServices` — start SAM bridge (port `samPort`), address book
+///  1. `C_InitI2P`—parse config, set up file-system paths
+///  2. `C_StartI2P`—start NetDB, Transports, Tunnels, RouterContext
+///  3. `C_StartClientServices`—start SAM bridge (port `samPort`), address book
 ///
 /// Shutdown sequence:
-///  4. `C_StopClientServices` — stop SAM, clean up tunnels
-///  5. `C_StopI2P` — stop routing
-///  6. `C_TerminateI2P` — release crypto / global state
+///  4. `C_StopClientServices`—stop SAM, clean up tunnels
+///  5. `C_StopI2P`—stop routing
+///  6. `C_TerminateI2P`—release crypto / global state
 ///
-/// The shutdown sequence is not optional. i2pd runs a dozen threads of its own
+/// The shutdown sequence isn't optional. i2pd runs a dozen threads of its own
 /// (Tunnels, NetDB, Transports, SSU2, NTCP2, …) that live on *dylib-scope C++
 /// singletons*. If the process reaches `exit()` with those threads still
 /// running, the C++ runtime destroys the singletons out from under them and one
-/// of the workers segfaults on freed state — reliably `Tunnels::Run` reading a
+/// of the workers segfaults on freed state—reliably `Tunnels::Run` reading a
 /// half-destroyed `i2p::transport::transports`. `stop()` is what prevents that,
 /// and `atexit` (below) is the net for every path that forgets to call it.
 public final class I2PDaemon: I2PDaemonProtocol {
@@ -99,7 +99,7 @@ public final class I2PDaemon: I2PDaemonProtocol {
 
     private static let globalLock = NSLock()
     private static var globalPhase: I2PDaemonPhase = .idle
-    /// The daemon that currently owns the globals. Weak: ownership of the
+    /// The daemon that owns the globals. Weak: ownership of the
     /// *object* stays with whoever created it, and `deinit` still stops i2pd.
     private static weak var activeDaemon: I2PDaemon?
 
@@ -108,7 +108,7 @@ public final class I2PDaemon: I2PDaemonProtocol {
     /// Registered on first `start()` rather than at load time, deliberately:
     /// `atexit`/`__cxa_atexit` handlers run in reverse registration order, and
     /// i2pd's singletons register their destructors during image
-    /// initialisation — so anything we register after `main` is guaranteed to
+    /// initialization—so anything registered after `main` is guaranteed to
     /// run *before* them. Registering earlier would invert that and defeat the
     /// whole point.
     ///
@@ -141,7 +141,7 @@ public final class I2PDaemon: I2PDaemonProtocol {
 
     // MARK: - Properties
 
-    /// SAM bridge TCP port.  Default matches i2pd's own default (sam.port=7656).
+    /// SAM bridge TCP port. Default matches i2pd's own default (sam.port=7656).
     public let samPort: Int
 
     /// `true` after `start()` returns and before `stop()` is called.
@@ -184,8 +184,8 @@ public final class I2PDaemon: I2PDaemonProtocol {
         isRunning = true
         Self.globalLock.unlock()
 
-        // Build argv for i2pd.  We enable SAM on the configured port.
-        // C_InitI2P copies what it needs; we free the strings afterwards.
+        // Build argv for i2pd. SAM is enabled on the configured port.
+        // C_InitI2P copies what it needs; the strings are freed afterwards.
         let args: [String] = [
             "--datadir=\(dataDirectory.path)",
             "--sam.enabled=true",
@@ -207,7 +207,7 @@ public final class I2PDaemon: I2PDaemonProtocol {
         // `isRunning` *is* the ownership test: `start()` refuses to run while
         // another daemon holds the globals, so at most one instance can have it
         // set while the phase is `.running`. (Identity against `activeDaemon`
-        // would be wrong here — it is weak, and weak loads already read nil by
+        // would be wrong here—it's weak, and weak loads already read nil by
         // the time `deinit` calls this.)
         guard isRunning else { return }
         isRunning = false
@@ -215,9 +215,9 @@ public final class I2PDaemon: I2PDaemonProtocol {
         Self.performGlobalStop()
     }
 
-    /// Stops i2pd if this instance still owns it. A last resort — the owner
+    /// Stops i2pd if this instance still owns it. A last resort—the owner
     /// (`I2PInterface`) calls `stop()` explicitly and the `atexit` hook covers
-    /// process exit — but dropping the last reference to a running daemon has
+    /// process exit—but dropping the last reference to a running daemon has
     /// always meant "shut i2pd down", and silently leaking the router threads
     /// instead would just recreate the exit crash from a different direction.
     deinit { stop() }

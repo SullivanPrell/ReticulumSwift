@@ -29,7 +29,7 @@ public enum RNXResultRenderer {
     public struct Rendered: Equatable {
         /// Raw remote stdout. Python does `stdout.decode("utf-8")` with no error handler,
         /// so non-UTF-8 remote output tracebacks the client; writing the raw bytes is
-        /// better behaviour but means binary payloads will not match Python.
+        /// better behaviour but means binary payloads won't match Python.
         public var stdoutBytes: Data
         public var stderrBytes: Data
         /// Everything printed to stdout *after* the raw output, with no trailing newline.
@@ -45,14 +45,14 @@ public enum RNXResultRenderer {
 
     /// - Parameters:
     ///   - stdoutLimitArg: the local `--stdout` value, **not** the one echoed by the
-    ///     remote. Python compares `stdoutl != 0`, and `None != 0` is True — so an
+    ///     remote. Python compares `stdoutl != 0`, and `None != 0` is True—so an
     ///     unset limit still enables the truncation notice.
     public static func render(result: RNXResult,
                               detailed: Bool,
                               metrics: Metrics,
                               stdoutLimitArg: Int?,
                               stderrLimitArg: Int?) -> Rendered {
-        // Python: nothing at all is printed on the not-executed path — both output blocks
+        // Python: nothing at all is printed on the not-executed path—both output blocks
         // live inside `if executed:` (rnx.py:459). The caller prints
         // "Remote could not execute command" and exits 248.
         guard result.executed else {
@@ -69,7 +69,7 @@ public enum RNXResultRenderer {
         var lines: [String] = []
 
         if detailed {
-            // Python: print("\n--- End of remote output, rnx done ---") — a blank line,
+            // Python: print("\n--- End of remote output, rnx done ---")—a blank line,
             // then the marker.
             lines.append("")
             lines.append("--- End of remote output, rnx done ---")
@@ -132,13 +132,13 @@ public enum RNXResultRenderer {
 
     // MARK: - Python number formatting
 
-    /// Python's `round(value, decimals)` — round-half-to-even on the exact binary value,
+    /// Python's `round(value, decimals)`—round-half-to-even on the exact binary value,
     /// which is what `printf("%.*f")` does under the default rounding mode.
     public static func pythonRound(_ value: Double, decimals: Int) -> Double {
         Double(String(format: "%.\(decimals)f", value)) ?? value
     }
 
-    /// Python's `str(float)` — the shortest representation that round-trips, always
+    /// Python's `str(float)`—the shortest representation that round-trips, always
     /// carrying at least one decimal digit. Swift's default `Double` description matches.
     public static func pythonRepr(_ value: Double) -> String { "\(value)" }
 
@@ -161,12 +161,12 @@ public enum RNXResultRenderer {
     ///
     /// Deliberately **not** `RNSUtilities.prettytime`, which differs in two visible ways:
     /// - it collapses a whole-number seconds component to `"5s"`, where Python formats
-    ///   `str(round(t, 2))` — always a float repr — giving `"5.0s"`;
+    ///   `str(round(t, 2))`—always a float repr—giving `"5.0s"`;
     /// - it returns `"0s"` for an all-zero duration, where rnx's local copy ends with a
     ///   bare `return tstr` and yields `""`.
     ///
     /// Python's `//` and `%` are floor-based, so a negative input wraps into a large
-    /// positive remainder rather than staying negative. That is reproduced too.
+    /// positive remainder rather than staying negative. That's reproduced too.
     public static func rnxPrettyTime(_ seconds: Double, verbose: Bool = false) -> String {
         var time = seconds
         let days = Int(pythonFloorDiv(time, 24 * 3600))
@@ -195,7 +195,7 @@ public enum RNXResultRenderer {
         for (index, component) in components.enumerated() {
             let position = index + 1
             if position == 1 {
-                // Python: `pass` — no separator before the first component.
+                // Python: `pass`—no separator before the first component.
             } else if position < components.count {
                 result += ", "
             } else {

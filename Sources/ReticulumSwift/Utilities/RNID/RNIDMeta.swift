@@ -7,8 +7,8 @@ import Foundation
 /// vendored `ConfigObj`, optionally validate against a `configspec` with `Validator()`, and
 /// return `parsed.dict()`.
 ///
-/// `ReticulumConfig.parse` cannot be reused: it returns a fixed struct
-/// (`ReticulumSection` / `LoggingSection` / `[InterfaceConfig]`) and cannot represent
+/// `ReticulumConfig.parse` can't be reused: it returns a fixed struct
+/// (`ReticulumSection` / `LoggingSection` / `[InterfaceConfig]`) and can't represent
 /// arbitrary user metadata, let alone preserve the file order that `create_rsg` depends on
 /// when merging into the envelope's `meta` map.
 ///
@@ -21,14 +21,14 @@ import Foundation
 ///   unspecced siblings stay strings
 ///
 /// Full `Validator` parity (every check type, `min`/`max` constraints) is out of scope; an
-/// unrecognised check raises ``MetaError/unsupportedCheck(_:)`` rather than being silently
+/// unrecognized check raises ``MetaError/unsupportedCheck(_:)`` rather than being silently
 /// accepted.
 public enum RNIDMeta {
 
     public enum MetaError: Error, Equatable, CustomStringConvertible {
         /// Python: `ValueError("Metadata did not pass spec validation")`.
         case specValidationFailed
-        /// No Python equivalent — Python's Validator supports far more checks than this port.
+        /// No Python equivalent—Python's Validator supports far more checks than this port.
         case unsupportedCheck(String)
 
         public var description: String {
@@ -57,7 +57,7 @@ public enum RNIDMeta {
                 let name = line
                     .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
                     .trimmingCharacters(in: .whitespaces)
-                // A [[sub]] under nothing is malformed; ConfigObj errors, we clamp.
+                // A [[sub]] under nothing is malformed; ConfigObj errors; this parser clamps.
                 let parentIndex = min(depth - 1, stack.count - 1)
                 stack = Array(stack.prefix(parentIndex + 1))
                 let child = Node()
@@ -128,8 +128,8 @@ public enum RNIDMeta {
                 let coerced = try coerce(childEntries, spec: specEntries)
                 result.append((key, .map(coerced.map { (MsgPack.Value.string($0.0), $0.1) })))
             default:
-                // The rule text is itself a ConfigObj scalar, e.g. `integer` or
-                // `integer(default=4242)`; a list-valued rule cannot be a check.
+                // The rule text is itself a ConfigObj scalar, for example, `integer` or
+                // `integer(default=4242)`; a list-valued rule can't be a check.
                 guard let ruleText = rule.asString else { throw MetaError.specValidationFailed }
                 result.append((key, try apply(check: ruleText, to: value)))
             }
@@ -181,7 +181,7 @@ public enum RNIDMeta {
             }
             return .array(converted)
         case "option":
-            // `option("a", "b")` — the raw value must be one of the listed alternatives.
+            // `option("a", "b")`—the raw value must be one of the listed alternatives.
             guard let text = value.asString else { throw MetaError.specValidationFailed }
             let inside = rawCheck.drop(while: { $0 != "(" }).dropFirst().dropLast()
             let allowed = inside.split(separator: ",").map {

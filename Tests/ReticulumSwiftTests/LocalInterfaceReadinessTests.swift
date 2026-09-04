@@ -6,7 +6,7 @@ import XCTest
 /// Bug: `LocalInterface.start()` returned as soon as `NWConnection.start()` had
 /// been called, long before the connection reached `.ready`. Since `send()`
 /// silently discards packets while `isOnline == false`, everything a local
-/// client emitted in that window went nowhere — most visibly the announce that
+/// client emitted in that window went nowhere—most visibly the announce that
 /// every utility fires immediately after attaching (`rncp -l`, `rnid -a`, the
 /// LXMF delivery announce in RetiOS). The daemon accepted the socket and
 /// reported "Serving: 1 program", but its path table stayed empty, so a Swift
@@ -17,8 +17,8 @@ import XCTest
 /// Python has no such window: `LocalClientInterface.connect()`
 /// (RNS/Interfaces/LocalInterface.py:140) calls a blocking `socket.connect()`
 /// and only then sets `self.online = True`, so by the time
-/// `Reticulum.__start_local_client` returns the interface can already send —
-/// and if it cannot connect at all it raises rather than coming up dead.
+/// `Reticulum.__start_local_client` returns the interface can already send—and
+/// if it can't connect at all it raises rather than coming up dead.
 final class LocalInterfaceReadinessTests: XCTestCase {
 
     private var servers: [PosixTCPServer] = []
@@ -59,7 +59,7 @@ final class LocalInterfaceReadinessTests: XCTestCase {
     // MARK: - The interface itself
 
     /// The core contract: once `start()` returns, `send()` must actually put
-    /// bytes on the wire. No sleep, no polling for `isOnline` — exactly what a
+    /// bytes on the wire. No sleep, no polling for `isOnline`—exactly what a
     /// utility does when it announces on the line after attaching.
     func testStartBlocksUntilTheInterfaceCanSend() throws {
         let server = try startServer()
@@ -80,9 +80,9 @@ final class LocalInterfaceReadinessTests: XCTestCase {
         wait(for: [received], timeout: 5)
     }
 
-    /// Python raises out of `connect()` when the shared instance is not there;
+    /// Python raises out of `connect()` when the shared instance isn't there;
     /// `InstanceConnection.attach` already documents that outcome as
-    /// `couldNotConnect`, which was unreachable while `start()` could not fail.
+    /// `couldNotConnect`, which was unreachable while `start()` couldn't fail.
     func testStartThrowsWhenNothingIsListening() throws {
         let client = makeClient(port: freePort())
         client.connectTimeout = 1
@@ -116,13 +116,13 @@ final class LocalInterfaceReadinessTests: XCTestCase {
     func testStartupAnnounceReachesTheSharedInstancePathTable() throws {
         let server = try startServer()
 
-        // Daemon side — a non-transport shared instance, as most rnsd installs are.
+        // Daemon side—a non-transport shared instance, as most rnsd installs are.
         let daemon = Transport()
         daemon.transportEnabled = false
         daemon.register(interface: server)
         defer { daemon.stop() }
 
-        // Client side — exactly what InstanceConnection.attach does for a local client.
+        // Client side—exactly what InstanceConnection.attach does for a local client.
         let client = Transport()
         client.transportEnabled = false
         client.isConnectedToSharedInstance = true
@@ -135,7 +135,7 @@ final class LocalInterfaceReadinessTests: XCTestCase {
         let destination = try Destination(identity: identity, direction: .in, kind: .single, appName: "rncp")
         client.register(destination: destination)
 
-        // No sleep between attaching and announcing — this is the window the bug lived in.
+        // No sleep between attaching and announcing—this is the window the bug lived in.
         _ = try client.announce(destination: destination, appData: Data("startup".utf8))
 
         let learned = expectation(description: "daemon learned a path")

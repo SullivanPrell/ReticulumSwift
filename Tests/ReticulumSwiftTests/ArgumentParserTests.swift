@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for ``ArgumentParser`` — the `argparse` subset the `rn*` utilities need.
+/// Tests for ``ArgumentParser``—the `argparse` subset the `rn*` utilities need.
 ///
 /// Python reference: the `argparse` setup in each of `RNS/Utilities/rn*.py`.
 /// Flag spellings are user-facing contract, so these tests pin the behaviours the
@@ -34,7 +34,7 @@ final class ArgumentParserTests: XCTestCase {
 
     func testFlag_shortFormResolvesToSameKey() throws {
         // A caller should be able to ask by the long name regardless of which
-        // spelling the user typed — argparse stores under a single dest.
+        // spelling the user typed—argparse stores under a single dest.
         let result = try makeParser().parse(["-j"])
         XCTAssertTrue(result.flag("--json"))
     }
@@ -177,7 +177,7 @@ final class ArgumentParserTests: XCTestCase {
     }
 
     func testUnrecognisedBundle_throws() {
-        // "-vz" — z is not declared, so the whole bundle is rejected rather than
+        // "-vz"—z isn't declared, so the whole bundle is rejected rather than
         // silently applying the half that parsed.
         XCTAssertThrowsError(try makeParser().parse(["-vz"])) { error in
             XCTAssertEqual(error as? ArgumentError, .unrecognisedOption("-vz"))
@@ -185,9 +185,9 @@ final class ArgumentParserTests: XCTestCase {
     }
 
     func testBundleEndingInValueOption_takesTheRestAsItsValue() throws {
-        // "-wj" is not a bundle of two flags: argparse stops at the first
+        // "-wj" isn't a bundle of two flags: argparse stops at the first
         // value-taking option in a cluster and hands it everything that follows,
-        // so this is `-w j` — and `-j` is never set. The value is not validated
+        // so this is `-w j`—and `-j` is never set. The value isn't validated
         // here; a tool that wants a number reports its own conversion error, which
         // is what argparse does too (`argument -w/--timeout: invalid int value: 'j'`).
         let result = try makeParser().parse(["-wj", "abc"])
@@ -298,14 +298,14 @@ final class ArgumentParserTests: XCTestCase {
     // MARK: - argparse error wording
 
     func testUnrecognisedOptionRendersAsPlural() {
-        // argparse always says "unrecognized arguments" — plural, even for a single token.
+        // argparse always says "unrecognized arguments"—plural, even for a single token.
         XCTAssertEqual(ArgumentError.unrecognisedOption("--bogus").description,
                        "unrecognized arguments: --bogus")
     }
 
     func testMessageNamesAnOptionByEverySpelling() {
         // Python: "argument -w/--timeout: expected one argument". The parser owns the
-        // declarations, so it is the only thing that can expand a name into that form.
+        // declarations, so it's the only thing that can expand a name into that form.
         let parser = makeParser()
         XCTAssertEqual(parser.message(for: .missingValue("--timeout")),
                        "argument -w/--timeout: expected one argument")

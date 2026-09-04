@@ -3,17 +3,17 @@ import CryptoKit
 
 /// The RSG (Reticulum SiGnature) container.
 ///
-/// Python reference: `RNS/Utilities/rnid.py` — `get_rsg_data` (:397), `extract_signed_rsg_data`
+/// Python reference: `RNS/Utilities/rnid.py`—`get_rsg_data` (:397), `extract_signed_rsg_data`
 /// (:413), `get_rsg_hash` (:421), `rsg_is_legacy_format` (:431), `validate_rsg` (:436),
 /// `create_rsg` (:488) and `check_release_rsm_structure` (:588).
 ///
 /// Two on-disk layouts exist and the **only** discriminator between them is the file length:
 ///
-/// - **Legacy** — exactly 64 bytes, containing nothing but `Ed25519_sign(entire target file)`.
+/// - **Legacy**—exactly 64 bytes, containing nothing but `Ed25519_sign(entire target file)`.
 ///   Produced only by `rnid -s --raw`, and unverifiable without an explicitly supplied Identity.
-/// - **Modern** — `[64-byte Ed25519 signature][msgpack envelope]`. The signature covers the
-///   envelope bytes *exactly as stored*, so cross-implementation validation does not require
-///   byte-identical msgpack — but ReticulumSwift's encoder is byte-identical to RNS's vendored
+/// - **Modern**—`[64-byte Ed25519 signature][msgpack envelope]`. The signature covers the
+///   envelope bytes *exactly as stored*, so cross-implementation validation doesn't require
+///   byte-identical msgpack—but ReticulumSwift's encoder is byte-identical to RNS's vendored
 ///   umsgpack for every type an envelope can hold, and ``SignedData/envelope()`` reproduces
 ///   Python's dict insertion order.
 public enum RSG {
@@ -37,7 +37,7 @@ public enum RSG {
         /// Build the envelope `create_rsg` produces (rnid.py:492-506).
         ///
         /// Insertion order: `hashtype`, `hash`, `meta` (itself `signer`, `pubkey`, then any
-        /// extras), and finally `message` when embedding — `message` is assigned after the
+        /// extras), and finally `message` when embedding—`message` is assigned after the
         /// `meta` key already exists, so it always lands last at top level.
         public init(hashType: String, hash: Data, meta: [(String, MsgPack.Value)], message: Data?) {
             var entries: [(String, MsgPack.Value)] = [
@@ -49,7 +49,7 @@ public enum RSG {
             self.entries = entries
         }
 
-        /// Wrap already-ordered entries, e.g. from ``decode(envelope:)``.
+        /// Wrap already-ordered entries, for example, from ``decode(envelope:)``.
         public init(entries: [(String, MsgPack.Value)]) {
             self.entries = entries
         }
@@ -67,7 +67,7 @@ public enum RSG {
         /// Python: `signed_data["hashtype"]`. Empty when absent or not a string.
         public var hashType: String { value("hashtype")?.asString ?? "" }
 
-        /// Python: `signed_data["hash"]` — a 32-byte SHA-256 digest.
+        /// Python: `signed_data["hash"]`—a 32-byte SHA-256 digest.
         public var hash: Data { value("hash")?.asData ?? Data() }
 
         /// Python: `signed_data["meta"]`, in insertion order.
@@ -85,13 +85,13 @@ public enum RSG {
             return false
         }
 
-        /// Python: `signed_data["message"]` — present only in `.rsm` files.
+        /// Python: `signed_data["message"]`—present only in `.rsm` files.
         public var message: Data? { value("message")?.asData }
 
-        /// Python: `signed_data["meta"]["signer"]` — the signer's 16-byte identity hash.
+        /// Python: `signed_data["meta"]["signer"]`—the signer's 16-byte identity hash.
         public var signer: Data? { metaValue("signer")?.asData }
 
-        /// Python: `signed_data["meta"]["pubkey"]` — the signer's 64-byte public blob.
+        /// Python: `signed_data["meta"]["pubkey"]`—the signer's 64-byte public blob.
         public var pubkey: Data? { metaValue("pubkey")?.asData }
 
         public func metaValue(_ key: String) -> MsgPack.Value? {
@@ -108,7 +108,7 @@ public enum RSG {
         }
 
         /// Python: `mp.unpackb(envelope)`.
-        /// - Throws: ``RSG/RSGError/malformedEnvelope`` when the bytes are not a msgpack map.
+        /// - Throws: ``RSG/RSGError/malformedEnvelope`` when the bytes aren't a msgpack map.
         public static func decode(envelope: Data) throws -> SignedData {
             guard let decoded = try? MsgPack.decode(envelope), case .map(let pairs) = decoded else {
                 throw RSGError.malformedEnvelope
@@ -176,7 +176,7 @@ public enum RSG {
             }
         }
 
-        /// Python: `if identity:` — used for the `signer_description` suffix.
+        /// Python: `if identity:`—used for the `signer_description` suffix.
         var isTruthy: Bool {
             switch self {
             case .identity: return true
@@ -235,16 +235,16 @@ public enum RSG {
 
     // MARK: - get_rsg_data
 
-    /// Python: `get_rsg_data(rsg)` for `bytes` input — returned as-is.
+    /// Python: `get_rsg_data(rsg)` for `bytes` input—returned as-is.
     public static func data(from rsg: Data) -> Data? { rsg }
 
-    /// Python: `get_rsg_data(rsg)` for `str` input, corrected — see
+    /// Python: `get_rsg_data(rsg)` for `str` input, corrected—see
     /// ``RNIDEncoding/decodeLadder(_:)`` for why this diverges.
     public static func data(fromText rsg: String) -> Data? { RNIDEncoding.decodeLadder(rsg) }
 
     // MARK: - get_rsg_hash
 
-    /// Python: `get_rsg_hash(message)` (rnid.py:421-429) — always a 32-byte SHA-256 digest.
+    /// Python: `get_rsg_hash(message)` (rnid.py:421-429)—always a 32-byte SHA-256 digest.
     ///
     /// The `.file` case streams, matching `hashlib.file_digest`; the digest is identical to
     /// the one-shot form.
@@ -274,8 +274,8 @@ public enum RSG {
         return rsgData.count == signatureLength
     }
 
-    /// Python: the legacy branch of `validate` (rnid.py:660-671) —
-    /// `identity.validate(signature, fh.read())` over the whole target file.
+    /// Python: the legacy branch of `validate` (rnid.py:660-671)—`identity.validate(signature,
+    /// fh.read())` over the whole target file.
     public static func validateLegacy(signature: Data, fileData: Data, identity: Identity) -> Bool {
         identity.validate(signature: signature, for: fileData)
     }
@@ -286,7 +286,7 @@ public enum RSG {
     ///
     /// Reads an `.rsm`'s embedded message *before* the signature is validated. Note the slice
     /// `rsg_data[siglen:]` sits **outside** the `try`, so a `None` from `get_rsg_data`
-    /// propagates a `TypeError` to the caller rather than yielding `None` — modelled here as
+    /// propagates a `TypeError` to the caller rather than yielding `None`—modelled here as
     /// ``RSGError/undecodableInput``, which the operation layer maps to exit code 254.
     /// A truncated (<64 byte) input yields an empty envelope, which fails to unpack → `nil`.
     public static func extractSignedData(_ rsgData: Data?) throws -> SignedData? {
@@ -311,13 +311,13 @@ public enum RSG {
 
         let messageHash = try hash(of: message)
 
-        // Python: {"signer": …, "pubkey": …} then any extras that are not already present,
+        // Python: {"signer": …, "pubkey": …} then any extras that aren't already present,
         // so the two canonical keys can never be overridden.
         var metaEntries: [(String, MsgPack.Value)] = [
             ("signer", .bytes(signer.hash)),
             ("pubkey", .bytes(signer.getPublicKey()))
         ]
-        // Python: `if meta and type(meta) == dict:` — an empty mapping is silently ignored.
+        // Python: `if meta and type(meta) == dict:`—an empty mapping is silently ignored.
         if let meta, !meta.isEmpty {
             for (key, value) in meta where !metaEntries.contains(where: { $0.0 == key }) {
                 metaEntries.append((key, value))
@@ -428,7 +428,7 @@ public enum RSG {
     /// Python: `check_release_rsm_structure(signed_data)` (rnid.py:588-600).
     ///
     /// Returns `nil` where Python returns `True`, otherwise the human-readable error string.
-    /// Not reachable from the `rnid` CLI — `RNS/Utilities/rngit/server.py:54` imports it.
+    /// Not reachable from the `rnid` CLI—`RNS/Utilities/rngit/server.py:54` imports it.
     public static func checkReleaseRSMStructure(_ signedData: SignedData) -> String? {
         let meta = signedData.meta
         if meta.isEmpty { return "No release metadata in manifest" }

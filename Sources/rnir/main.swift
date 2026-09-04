@@ -1,11 +1,11 @@
 import Foundation
 import ReticulumSwift
 
-/// `rnir` — the Reticulum Distributed Identity Resolver.
+/// `rnir`—the Reticulum Distributed Identity Resolver.
 ///
 /// Python reference: `RNS/Utilities/rnir.py` (79 lines). The tool is trivial: parse five
 /// flags, construct `RNS.Reticulum(...)` and immediately `exit(0)`. Because RNS registers an
-/// `atexit` handler, that exit runs the full shutdown — so the net effect is "resolve or
+/// `atexit` handler, that exit runs the full shutdown—so the net effect is "resolve or
 /// create the config directory, storage tree and default config, start Transport, then
 /// persist and stop".
 
@@ -37,8 +37,8 @@ if options.version {
 }
 
 if options.exampleConfig {
-    // DIVERGENCE: `rnir.py:64` prints `__example_rns_config__`, a name rnir never defines —
-    // the real tool raises NameError, dumps a traceback and exits 1. The port prints the RNS
+    // DIVERGENCE: `rnir.py:64` prints `__example_rns_config__`, a name rnir never defines—the
+    // real tool raises NameError, dumps a traceback and exits 1. The port prints the RNS
     // example config and exits 0 rather than reproducing the crash.
     print(Reticulum.exampleConfig)
     exit(RNSDApp.ExitCode.ok.rawValue)
@@ -52,7 +52,7 @@ let paths = DaemonBootstrap.Paths(
         // `DaemonBootstrap.homeDirectory()`, not `homeDirectoryForCurrentUser`: the latter
         // reports the account's real home regardless of `$HOME`, so this utility read the
         // developer's real ~/.reticulum under a relocated HOME (`bugs/024`). `rnsd` already
-        // resolved it correctly; only rnir and rnpkg did not.
+        // resolved it correctly; only rnir and rnpkg didn't.
         home: DaemonBootstrap.homeDirectory()))
 
 FileLogSink.installStdoutHandler()
@@ -76,8 +76,8 @@ Reticulum.log("Configuration loaded from \(paths.configFile.path)", level: .verb
 
 do {
     // `synthesizeInterfaces: false`: rnir constructs a stack and immediately tears it down,
-    // so opening every configured interface — an AutoInterface, a listening TCP server —
-    // only to close it a moment later would be disruptive for no benefit. Python's own gate
+    // so opening every configured interface—an AutoInterface, a listening TCP server—only
+    // to close it a moment later would be disruptive for no benefit. Python's own gate
     // (`Reticulum.py:936`) already skips synthesis whenever an instance is already running.
     let connection = try InstanceConnection.attach(configDirectory: paths.configDir,
                                                    logLevel: bootstrapped.logLevel,

@@ -3,16 +3,16 @@ import XCTest
 
 /// A restored path must survive interfaces that register *after* the tables are read.
 ///
-/// `bugs/041` — the reference builds every configured interface in `__apply_config()` and only
+/// `bugs/041`—the reference builds every configured interface in `__apply_config()` and only
 /// then calls `Transport.start()`, which reads the tables (`Reticulum.py:340` before `:346`), so
 /// `find_interface_from_hash` always has something to find. In this port the daemon's interfaces
-/// are synthesised by `rnsd` *after* `Reticulum.start()` returns, so the restore ran against an
+/// `rnsd` synthesises them *after* `Reticulum.start()` returns, so the restore ran against an
 /// empty interface set and dropped every entry, every time. The path table had never survived a
-/// restart in a real daemon — under any on-disk format, which is why the `bugs/029` format work
+/// restart in a real daemon—under any on-disk format, which is why the `bugs/029` format work
 /// alone would not have fixed it.
 ///
 /// Found by `tri-test`'s `test_python_state_read_by_swift`, not by a unit test: every unit test
-/// registered its interface before calling `start()`, which is the one order the daemon does not
+/// registered its interface before calling `start()`, which is the one order the daemon doesn't
 /// use.
 final class DeferredRestoreTests: XCTestCase {
 
@@ -70,7 +70,7 @@ final class DeferredRestoreTests: XCTestCase {
         XCTAssertEqual(revived.paths[destHash]?.nextHopInterfaceName, "eth0")
     }
 
-    /// The order the unit suite has always used still works, and does not leave the entry parked.
+    /// The order the unit suite has always used still works, and doesn't leave the entry parked.
     func testAPathIsInstalledImmediatelyWhenItsInterfaceIsAlreadyThere() throws {
         let destHash = try seedTable()
 
@@ -83,7 +83,7 @@ final class DeferredRestoreTests: XCTestCase {
                       "an entry installed on the spot must not also be held pending")
     }
 
-    /// An interface that never arrives costs the entry, as it does in the reference — the wait is
+    /// An interface that never arrives costs the entry, as it does in the reference—the wait is
     /// bounded, not indefinite. Otherwise a discovered interface registering minutes later would
     /// install a path the reference had already discarded.
     func testAnEntryWhoseInterfaceNeverArrivesIsGivenUpOn() throws {
@@ -107,9 +107,9 @@ final class DeferredRestoreTests: XCTestCase {
                      + "drops such an entry permanently (Transport.py:334,348)")
     }
 
-    /// An entry that failed for a reason an interface cannot fix is *not* parked. Otherwise the
+    /// An entry that failed for a reason an interface can't fix is *not* parked. Otherwise the
     /// pending set fills with entries that can never install, and the sweep's log line reports a
-    /// problem that is not one.
+    /// problem that isn't one.
     func testAnEntryWithNoCachedAnnounceIsNotParked() throws {
         let live = makeTransport()
         let iface = LoopbackInterface(name: "eth0")
@@ -126,15 +126,15 @@ final class DeferredRestoreTests: XCTestCase {
                       "a missing announce is final; only a missing interface is recoverable")
     }
 
-    // MARK: - Tunnels do not need this, and must not get it
+    // MARK: - Tunnels don't need this, and must not get it
 
-    /// A tunnel restores whether or not its interface is present, so it is never parked.
+    /// A tunnel restores whether or not its interface is present, so it's never parked.
     ///
     /// The reference restores a tunnel path with `receiving_interface = None` and gates only on
     /// the announce (`Transport.py:398-400`), attaching an interface to every one of the tunnel's
     /// paths when the endpoint reappears (`:2440-2447`). Deferring it would delay a tunnel that
     /// was ready, and would leave `TunnelStore`'s share of the pending machinery permanently
-    /// empty — dead code that reads as coverage.
+    /// empty—dead code that reads as coverage.
     func testATunnelRestoresWithoutWaitingForAnInterface() throws {
         let live = makeTransport()
         let iface = LoopbackInterface(name: "tun0")

@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying PLAIN destination behavior matches Python's protocol.
-/// Python: PLAIN packets are NOT transported over multiple hops.
+/// Python: PLAIN packets aren't transported over multiple hops.
 final class PlainDestinationTests: XCTestCase {
 
     final class RecordingInterface: Interface {
@@ -55,7 +55,7 @@ final class PlainDestinationTests: XCTestCase {
         // Inject on in1
         in1.inboundHandler?(packet, in1)
 
-        // out should NOT receive the packet (PLAIN not forwarded over multiple hops)
+        // out shouldn't receive the packet (PLAIN not forwarded over multiple hops)
         let forwardedData = out.sent.filter { $0.destinationType == .plain }
         XCTAssertEqual(forwardedData.count, 0, "PLAIN destination packets must NOT be forwarded")
     }

@@ -3,7 +3,7 @@ import Foundation
 /// RFC 4648 base32, byte-compatible with Python's `base64.b32encode` / `base64.b32decode`.
 ///
 /// Python reference: `RNS/Utilities/rnid.py` uses `base64.b32encode(...)` and
-/// `base64.b32decode(...)` on five separate code paths — identity import (`-m`/`-M`),
+/// `base64.b32decode(...)` on five separate code paths—identity import (`-m`/`-M`),
 /// identity info (`-p`), both key exports (`-x`/`-X`) and RSG output (`-B`). Nothing in
 /// ReticulumSwift provided base32 before this file.
 ///
@@ -61,7 +61,7 @@ public enum Base32 {
     }
 
     /// Decode uppercase RFC 4648 base32. Returns `nil` for any character outside the
-    /// alphabet — including lowercase, which Python rejects too (`casefold=False`).
+    /// alphabet—including lowercase, which Python rejects too (`casefold=False`).
     ///
     /// Unlike CPython this tolerates a *missing* trailing `=` run, because the RSG decode
     /// ladder (``RNIDEncoding/decodeLadder(_:)``) strips `=` before probing candidates.
@@ -77,7 +77,7 @@ public enum Base32 {
         // No '=' may survive in the middle of the payload.
         if characters.contains(UInt8(ascii: "=")) { return nil }
 
-        // Only these residues can be produced by a valid encoding of 1…5 bytes.
+        // Only a valid encoding of 1…5 bytes produces these residues.
         let remainder = characters.count % 8
         guard [0, 2, 4, 5, 7].contains(remainder) else { return nil }
 

@@ -1,7 +1,7 @@
 import Foundation
 import CommonCrypto
 
-/// AES-CBC primitives. CryptoKit doesn't expose CBC mode, so we use
+/// AES-CBC primitives. CryptoKit doesn't expose CBC mode, so this uses
 /// CommonCrypto. Reticulum uses AES-128-CBC for 32-byte token keys and
 /// AES-256-CBC for 64-byte token keys; the key length determines the
 /// algorithm.
@@ -37,7 +37,7 @@ public enum AESCBC {
                         CCCrypt(
                             operation,
                             CCAlgorithm(kCCAlgorithmAES),
-                            CCOptions(0), // No padding — caller does PKCS7
+                            CCOptions(0), // No padding—caller does PKCS7
                             keyBytes.baseAddress, key.count,
                             ivBytes.baseAddress,
                             inputBytes.baseAddress, input.count,

@@ -46,7 +46,7 @@ private final class RNCopyFixture {
     }
 
     /// Announce `destination` from the server so the client learns both the path and the
-    /// listener identity — the two things `RNCopyLinkOpener` needs.
+    /// listener identity—the two things `RNCopyLinkOpener` needs.
     func publish(_ destination: Destination, on test: XCTestCase) throws {
         let announced = test.expectation(description: "announce")
         clientTransport.onAnnounceReceived = { _, _ in announced.fulfill() }
@@ -182,7 +182,7 @@ final class RNCopyListenerTests: XCTestCase {
         try fixture.publish(listener.destination, on: self)
         let serverLink = try makeIdentifiedServerLink(fixture)
 
-        // Python: return REQ_FETCH_NOT_ALLOWED (0xF0) — msgpack cc f0.
+        // Python: return REQ_FETCH_NOT_ALLOWED (0xF0)—msgpack cc f0.
         XCTAssertEqual(listener.serveFetchRequest(requested: "../x", link: serverLink),
                        .uint(UInt64(RNCopyApp.reqFetchNotAllowed)))
     }
@@ -257,7 +257,7 @@ final class RNCopySenderTests: XCTestCase {
                                                       filePath: "~/nope.txt",
                                                       timeout: 0.2),
             tick: 0.01)
-        // Python: print("File not found"); sys.exit(1) — before Reticulum is even started.
+        // Python: print("File not found"); sys.exit(1)—before Reticulum is even started.
         XCTAssertEqual(sender.run(), .fileNotFound)
     }
 
@@ -311,7 +311,7 @@ final class RNCopySenderTests: XCTestCase {
         XCTAssertEqual(serverFileSystem.writtenPaths, ["hello.txt"])
         XCTAssertEqual(serverFileSystem.files["hello.txt"], payload)
 
-        // Sender-side progress must actually move — it is derived from sent parts.
+        // Sender-side progress must actually move—it's derived from sent parts.
         XCTAssertFalse(progressSamples.isEmpty)
         XCTAssertEqual(progressSamples.last?.fraction, 1.0)
         XCTAssertTrue(progressSamples.last?.done ?? false)
@@ -525,7 +525,7 @@ final class RNCopyWireFormatTests: XCTestCase {
         _ = fixture
 
         // rncp's responses are the bare scalars True / False / 0xF0. A BYTES handler would
-        // emit msgpack([id, bin(...)]) — `c4 01 c3` where Python expects `c3` — and a Python
+        // emit msgpack([id, bin(...)])—`c4 01 c3` where Python expects `c3`—and a Python
         // fetcher would mis-classify. Only registerNativeRequestHandler is correct.
         destination.registerNativeRequestHandler(path: RNCopyApp.fetchRequestPath,
                                                  allow: .all) { _, _, _, _, _ in .bool(true) }
@@ -585,7 +585,7 @@ final class RNCopyWireFormatTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
 
         // Python: msgpack([float64 time, bin16 path_hash, str filename]). The listener does
-        // data.startswith(...) on element 2 — a msgpack bin would raise remotely.
+        // data.startswith(...) on element 2—a msgpack bin would raise remotely.
         let parts = try XCTUnwrap(try MsgPack.decode(try XCTUnwrap(requestPlaintext)).asArray)
         XCTAssertEqual(parts.count, 3)
         XCTAssertEqual(parts[1].asData, RNCopyApp.fetchRequestPathHash)

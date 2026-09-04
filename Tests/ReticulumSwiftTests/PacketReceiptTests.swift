@@ -139,7 +139,7 @@ final class PacketReceiptTests: XCTestCase {
             destinationHash: dst.hash,
             data: Data("receipt test".utf8)
         )
-        // Transport has no interfaces attached — send will silently no-op
+        // Transport has no interfaces attached—send silently no-ops
         // but should still produce a receipt.
         let receipt = try transport.send(packet)
         XCTAssertNotNil(receipt)

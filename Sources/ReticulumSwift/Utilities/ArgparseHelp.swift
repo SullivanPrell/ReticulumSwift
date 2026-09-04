@@ -3,12 +3,12 @@ import Foundation
 /// Byte-faithful reproduction of Python `argparse.HelpFormatter`'s layout.
 ///
 /// The `rn*` utilities are all argparse programs, and their `--help` output is part of
-/// their user-facing contract — column positions, the wrapped usage block and the
+/// their user-facing contract—column positions, the wrapped usage block and the
 /// "invocation on its own line" rule for long flag spellings are all reproduced here so a
 /// Swift port can be diffed byte-for-byte against the installed Python tool.
 ///
 /// ``ArgumentParser/usage`` deliberately renders a simpler, hand-padded table; it predates
-/// this type and is kept as-is so existing callers do not shift. New utilities that need
+/// this type and is kept as-is so existing callers don't shift. New utilities that need
 /// exact parity should render through ``ArgparseHelp`` instead.
 ///
 /// Python reference: `Lib/argparse.py`, `HelpFormatter._format_usage`,
@@ -16,16 +16,16 @@ import Foundation
 ///
 /// Fidelity notes (all verified against CPython 3.12's argparse):
 /// - `text_width` is `columns - 2`; argparse reads `COLUMNS`/`shutil.get_terminal_size()`,
-///   which is 80 when stdout is not a terminal, hence the default of 78 here.
+///   which is 80 when stdout isn't a terminal, hence the default of 78 here.
 /// - `help_position = min(action_max_length + 2, max_help_position)` with
 ///   `max_help_position = 24` and `current_indent = 2`.
 /// - The `options:` heading is the Python 3.10+ spelling; 3.9 and earlier said
-///   `optional arguments:`. RNS 1.4.0 ships against 3.10+, so that is what is used.
+///   `optional arguments:`. RNS 1.4.0 ships against 3.10+, so that's what's used.
 public enum ArgparseHelp {
 
     /// One row of a help section: the flag/positional spelling and its help string.
     public struct Entry: Equatable {
-        /// The rendered invocation, e.g. `"-s SIZE, --size SIZE"` or `"full_name"`.
+        /// The rendered invocation, for example, `"-s SIZE, --size SIZE"` or `"full_name"`.
         /// Python: `HelpFormatter._format_action_invocation`.
         public let invocation: String
         /// The help string, or `""` for an action declared without one (argparse then
@@ -49,14 +49,14 @@ public enum ArgparseHelp {
 
     /// Render the `usage: …` block, including its trailing blank line.
     ///
-    /// Python: `HelpFormatter._format_usage`. When the single-line form does not fit in
+    /// Python: `HelpFormatter._format_usage`. When the single-line form doesn't fit in
     /// `width`, argparse wraps the optionals as one group and the positionals as another,
     /// each continuation line indented to `len("usage: ") + len(prog) + 1`.
     ///
     /// - Parameters:
     ///   - program: `parser.prog`.
-    ///   - optionals: usage fragments for the flags, in declaration order, e.g. `"[-h]"`.
-    ///   - positionals: usage fragments for the positionals, e.g. `"[full_name]"`.
+    ///   - optionals: usage fragments for the flags, in declaration order, for example, `"[-h]"`.
+    ///   - positionals: usage fragments for the positionals, for example, `"[full_name]"`.
     public static func usage(program: String,
                              optionals: [String],
                              positionals: [String],
@@ -64,10 +64,10 @@ public enum ArgparseHelp {
         let prefix = "usage: "
         let flat = ([program] + optionals + positionals).joined(separator: " ")
 
-        // Python: `if len(prefix) + len(usage) > text_width:` — otherwise one line.
+        // Python: `if len(prefix) + len(usage) > text_width:`—otherwise one line.
         guard prefix.count + flat.count > width else { return prefix + flat + "\n\n" }
 
-        // Python: `if len(prefix) + len(prog) <= 0.75 * text_width:` — a short program
+        // Python: `if len(prefix) + len(prog) <= 0.75 * text_width:`—a short program
         // name lets the first group ride along on the `usage:` line.
         guard Double(prefix.count + program.count) <= 0.75 * Double(width) else {
             // Long program name: every group starts on its own indented line.
@@ -100,7 +100,7 @@ public enum ArgparseHelp {
         var lines: [String] = []
         var line: [String] = []
         // Python seeds the running length with `len(prefix) - 1` (or `len(indent) - 1`),
-        // because every part contributes `1 + len(part)` — the leading separator space.
+        // because every part contributes `1 + len(part)`—the leading separator space.
         var lineLength = (firstPrefix?.count ?? indent.count) - 1
 
         for part in parts {
@@ -113,7 +113,7 @@ public enum ArgparseHelp {
             lineLength += 1 + part.count
         }
         if !line.isEmpty { lines.append(indent + line.joined(separator: " ")) }
-        // Python: `lines[0] = lines[0][len(indent):]` — the caller re-prepends `prefix`.
+        // Python: `lines[0] = lines[0][len(indent):]`—the caller re-prepends `prefix`.
         if firstPrefix != nil, let first = lines.first {
             lines[0] = String(first.dropFirst(indent.count))
         }
@@ -124,7 +124,7 @@ public enum ArgparseHelp {
 
     /// Render the complete `--help` text, terminated by exactly one newline.
     ///
-    /// Python: `ArgumentParser.format_help` — usage block, description, then each
+    /// Python: `ArgumentParser.format_help`—usage block, description, then each
     /// non-empty section. `format_help` collapses runs of blank lines and finishes with
     /// `formatted.strip('\n') + '\n'`, which is why there is no trailing blank line.
     public static func help(program: String,

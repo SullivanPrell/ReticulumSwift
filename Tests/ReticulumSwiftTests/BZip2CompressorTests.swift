@@ -2,7 +2,7 @@ import XCTest
 import CBZip2
 @testable import ReticulumSwift
 
-/// Tests for BZip2Compressor — wire-compatible bz2 round-trip,
+/// Tests for BZip2Compressor—wire-compatible bz2 round-trip,
 /// correct StreamDataMessage compressed flag handling, and fallback
 /// when no compressor is registered.
 final class BZip2CompressorTests: XCTestCase {

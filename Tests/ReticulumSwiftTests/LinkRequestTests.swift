@@ -109,7 +109,7 @@ final class LinkRequestTests: XCTestCase {
     /// Regression for bug 011: an over-MDU RESPONSE goes back as a Resource whose
     /// payload must be the msgpack envelope `[request_id, response]` (same as the
     /// single-packet path), and the initiator must decode it and deliver the bare
-    /// response — mirroring Python Link.handle_request / response_resource_concluded.
+    /// response—mirroring Python Link.handle_request / response_resource_concluded.
     /// A NATIVE handler (the NomadNet page path) previously resourced the bare
     /// msgpack-encoded value and the initiator delivered it un-decoded, so the caller
     /// received msgpack-wrapped bytes (or, cross-impl to Python, the request timed out).
@@ -159,7 +159,7 @@ final class LinkRequestTests: XCTestCase {
 
         let handlerCalled = expectation(description: "handler-blocked")
         handlerCalled.isInverted = true
-        // Default allow policy is .none — handler should never fire.
+        // Default allow policy is .none—handler should never fire.
         bDestination.registerRequestHandler(path: "secret") { _, _, _, _, _ in
             handlerCalled.fulfill()
             return Data("secret".utf8)
@@ -227,7 +227,7 @@ final class LinkRequestTests: XCTestCase {
 
     func testRequestReceiptTimeoutFiresFailedCallback() throws {
         let (aLink, _, _) = try establishLink()
-        // No handler registered — response will never arrive.
+        // No handler registered—response never arrives.
         let failed = expectation(description: "timeout")
         let receipt = try aLink.request(path: "noreply", timeout: 0.1)
         receipt.onFailed = { _, _ in failed.fulfill() }
@@ -303,8 +303,8 @@ final class LinkRequestTests: XCTestCase {
         guard let rtt = aLink.rtt else { return }
         let expected = rtt * Link.trafficTimeoutFactor + Link.requestTimeoutGrace
 
-        // Fire a request with no explicit timeout — the receipt should have the RTT-derived timeout.
-        // We can't inspect the timeout directly, but we can verify it's sane.
+        // Fire a request with no explicit timeout—the receipt should have the RTT-derived timeout.
+        // Direct inspection of the timeout isn't possible; check that it's sane.
         // If rtt is very small (in-process loopback), expected ≈ requestTimeoutGrace + ε.
         XCTAssertGreaterThan(expected, Link.requestTimeoutGrace - 0.001)
     }
@@ -312,7 +312,7 @@ final class LinkRequestTests: XCTestCase {
     func testExplicitTimeoutOverridesDefault() throws {
         let (aLink, bLink, bDest) = try establishLink()
         bDest.registerRequestHandler(path: "/slow", allow: .all) { _, _, _, _, _ in
-            // Don't respond — let the explicit timeout fire.
+            // Don't respond—let the explicit timeout fire.
             return nil
         }
 
@@ -334,7 +334,7 @@ final class LinkRequestTests: XCTestCase {
     // MARK: - Native request handler (Python-compatible)
 
     /// A native handler receives the raw MsgPack value (not re-encoded bytes)
-    /// and returns a native value that is embedded directly in the response array.
+    /// and returns a native value that's embedded directly in the response array.
     func testNativeRequestHandlerReceivesArrayValue() throws {
         let (aLink, _, bDestination) = try establishLink()
 
@@ -371,7 +371,7 @@ final class LinkRequestTests: XCTestCase {
         }
         let receipt = try aLink.request(path: "/nil-native", nativeValue: .nil)
         XCTAssertEqual(receipt.status, .sent)
-        // Brief wait — no response expected.
+        // Brief wait—no response expected.
         let noResp = expectation(description: "no-resp")
         noResp.isInverted = true
         receipt.onResponse = { _, _ in noResp.fulfill() }

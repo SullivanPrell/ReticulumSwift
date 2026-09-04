@@ -99,7 +99,7 @@ public final class RNIDOperations {
     @discardableResult
     public func exportPublicIdentity() -> RNIDApp.Result {
         guard let identity else { return .noIdentity }
-        // Python's `if not k: … exit(R_NO_PUBKEY)` is unreachable in Swift — Identity's
+        // Python's `if not k: … exit(R_NO_PUBKEY)` is unreachable in Swift—Identity's
         // publicKeyBytes is non-optional, so every Identity holds a public key.
         output.line("Public Identity Keys  : " + encodeKeyBlob(identity.getPublicKey()))
         return .ok
@@ -132,7 +132,7 @@ public final class RNIDOperations {
         if let identity {
             identityHash = identity.hash
             // Python's Destination.__init__ ends with Transport.register_destination(self);
-            // Swift's does not, so register explicitly to match.
+            // Swift's doesn't, so register explicitly to match.
             let components = RNIDApp.splitAspects(dottedName)
             let appName = components[0]
             let rest = Array(components.dropFirst())
@@ -182,7 +182,7 @@ public final class RNIDOperations {
     /// Python: `announce` (rnid.py:377-390).
     ///
     /// The aspect gate is `len(aspects) > 1`, so a single bare token like `"rns"` is rejected
-    /// while `"rns."` — which Python's `str.split` turns into `['rns','']` — is accepted.
+    /// while `"rns."`—which Python's `str.split` turns into `['rns','']`—is accepted.
     /// See ``RNIDApp/splitAspects(_:)``.
     @discardableResult
     public func announce(aspects dottedName: String) -> RNIDApp.Result {
@@ -233,7 +233,7 @@ public final class RNIDOperations {
         for path in paths {
             let code = validateSingle(path: path)
             // Python's per-path failures call exit(), which raises SystemExit and unwinds
-            // straight past the caller's `if code != 0` check — so the sequence-error branch
+            // straight past the caller's `if code != 0` check—so the sequence-error branch
             // below is unreachable in practice. Reproduce the exit, not the sequence error.
             guard code == .ok else { return code }
             validated += 1
@@ -265,7 +265,7 @@ public final class RNIDOperations {
         }
 
         // The .rsm delegation happens AFTER both existence probes are computed but BEFORE
-        // they are tested, so a .rsm path never hits the two "does not exist" messages.
+        // they're tested, so a .rsm path never hits the two "does not exist" messages.
         if pathIsMsgFile { return validateMessage(path: path) }
         guard fileSystem.fileExists(atPath: filePath) else {
             output.line("The validation target \"\(filePath)\" does not exist")
@@ -276,8 +276,8 @@ public final class RNIDOperations {
             return .noFile
         }
 
-        // Python opens the signature file TWICE — once for format detection and once to read
-        // the content — and each open has its own error message. Reproduced so an I/O failure
+        // Python opens the signature file TWICE—once for format detection and once to read
+        // the content—and each open has its own error message. Reproduced so an I/O failure
         // reports the same string Python would.
         let detection: Data
         do {
@@ -332,7 +332,7 @@ public final class RNIDOperations {
 
     /// Python: the legacy branch of `validate` (rnid.py:660-671).
     ///
-    /// A bare hex hash is not sufficient here — a legacy rsg has no embedded pubkey, so an
+    /// A bare hex hash isn't sufficient here—a legacy rsg has no embedded pubkey, so an
     /// explicit Identity is required.
     private func validateLegacy(signaturePath: String, filePath: String) -> RNIDApp.Result {
         guard let identity else {
@@ -435,7 +435,7 @@ public final class RNIDOperations {
     /// Python: the nested `recurse(entry, key, level)` inside `validate_message`.
     ///
     /// Type tags: `s` str, `b` bytes, `l` list, `d` dict, `i` int, `f` float, `N` None,
-    /// `u` anything else — and **bool lands on `u`**, because `type(True) == int` is `False`
+    /// `u` anything else—and **bool lands on `u`**, because `type(True) == int` is `False`
     /// in Python.
     private func renderMetaEntry(_ entry: MsgPack.Value, key: String, level: Int) {
         let indent = String(repeating: "  ", count: level)
@@ -458,10 +458,10 @@ public final class RNIDOperations {
         case .int, .uint:    typeTag = "i"
         case .double:        typeTag = "f"
         case .nil:           typeTag = "N"
-        case .bool:          typeTag = "u"   // Python: bool is not `type(entry) == int`
+        case .bool:          typeTag = "u"   // Python: bool isn't `type(entry) == int`
         }
 
-        // Python: `if key == "note" and entry == None: return` — checked AFTER etype
+        // Python: `if key == "note" and entry == None: return`—checked AFTER etype
         // selection. Marked "TODO: Remove this check in 1.3.3" upstream.
         if key == "note", entry.isNil { return }
 
@@ -551,7 +551,7 @@ public final class RNIDOperations {
         for path in paths {
             let code = signSingle(path: path)
             // Python's per-path failures call exit(), which raises SystemExit and unwinds
-            // straight past the caller's `if code != 0` check — so the sequence-error branch
+            // straight past the caller's `if code != 0` check—so the sequence-error branch
             // below is unreachable in practice. Reproduce the exit, not the sequence error.
             guard code == .ok else { return code }
             signed += 1
@@ -648,7 +648,7 @@ public final class RNIDOperations {
                 body = .text(try fileSystem.readText(atPath: signPath))
             } catch {
                 // DIVERGENCE: Python's open/read here sits outside any try, so a
-                // UnicodeDecodeError is an uncaught traceback (shell exit 1). We report
+                // UnicodeDecodeError is an uncaught traceback (shell exit 1). This port reports
                 // R_READ_ERROR (252) instead.
                 output.line("Could not sign message: \(error)")
                 return .readError
@@ -687,7 +687,7 @@ public final class RNIDOperations {
                 output.line("Metadata file \(metaPath) does not exist")
                 return .noFile
             }
-            // A missing spec is silently nulled — including an explicitly supplied one.
+            // A missing spec is silently nulled—including an explicitly supplied one.
             if let candidate = metaSpecPath, !fileSystem.fileExists(atPath: candidate) {
                 metaSpecPath = nil
             }
@@ -721,7 +721,7 @@ public final class RNIDOperations {
                 return .ok
             case .text(let text):
                 output.line("\n\(RSGArmour.wrap(text))\n")
-                // Python FALLS THROUGH to the shorter line here — no "saved to".
+                // Python FALLS THROUGH to the shorter line here—no "saved to".
                 output.line("Message signed with \(RNIDRender.identity(identity))")
                 return .ok
             }
@@ -740,7 +740,7 @@ public final class RNIDOperations {
         for path in paths {
             let code = encryptSingle(path: path)
             // Python's per-path failures call exit(), which raises SystemExit and unwinds
-            // straight past the caller's `if code != 0` check — so the sequence-error branch
+            // straight past the caller's `if code != 0` check—so the sequence-error branch
             // below is unreachable in practice. Reproduce the exit, not the sequence error.
             guard code == .ok else { return code }
             encrypted += 1
@@ -755,14 +755,14 @@ public final class RNIDOperations {
     private func encryptSingle(path: String) -> RNIDApp.Result {
         let encExt = ".\(RNIDApp.encryptExt)"
         let encryptPath = fileSystem.expandTilde(path)
-        // `args.write` is used RAW here — unlike decrypt, which expands it (rnid.py:862 vs :907).
+        // `args.write` is used RAW here—unlike decrypt, which expands it (rnid.py:862 vs :907).
         let rfePath = options.write ?? (encryptPath + encExt)
 
         guard let identity else {
             output.line("Cannot encrypt \"\(encryptPath)\", no identity specified")
             return .noIdentity
         }
-        // Python's R_NO_PUBKEY branch is unreachable in Swift — Identity always holds a
+        // Python's R_NO_PUBKEY branch is unreachable in Swift—Identity always holds a
         // public key.
         guard fileSystem.fileExists(atPath: encryptPath) else {
             output.line("The file \"\(encryptPath)\" does not exist")
@@ -778,7 +778,7 @@ public final class RNIDOperations {
             reader = try fileSystem.makeReader(atPath: encryptPath)
         } catch {
             // Python's OUTER try only wraps opening the input, so this is the one failure
-            // reported as a read error — and it still exits R_WRITE_ERROR.
+            // reported as a read error—and it still exits R_WRITE_ERROR.
             output.line("\nError reading \(encryptPath) for encryption: \(error)")
             return .writeError
         }
@@ -806,7 +806,7 @@ public final class RNIDOperations {
         for path in paths {
             let code = decryptSingle(path: path)
             // Python's per-path failures call exit(), which raises SystemExit and unwinds
-            // straight past the caller's `if code != 0` check — so the sequence-error branch
+            // straight past the caller's `if code != 0` check—so the sequence-error branch
             // below is unreachable in practice. Reproduce the exit, not the sequence error.
             guard code == .ok else { return code }
             decrypted += 1
@@ -865,7 +865,7 @@ public final class RNIDOperations {
                 self.output.partial("\rWrote \(RNSUtilities.prettysize(wrote)) to \(decryptPath)   ")
             }
         } catch is RNIDFileCrypto.CryptoError {
-            // Python's `if not decrypted:` cannot distinguish causes, so every crypto failure
+            // Python's `if not decrypted:` can't distinguish causes, so every crypto failure
             // lands on R_DECRYPT_FAILED (12).
             output.line("The provided identity could not decrypt the file")
             return .decryptFailed

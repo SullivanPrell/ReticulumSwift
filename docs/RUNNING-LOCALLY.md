@@ -1,19 +1,19 @@
 # Running ReticulumSwift locally
 
 This guide takes you from a fresh checkout to a running Reticulum node that
-talks to other nodes — including Python ones.
+talks to other nodes—including Python ones.
 
 ## 1. Prerequisites
 
 - **Xcode 15+** (or the Swift 5.9+ toolchain) on macOS.
-- Clone the repo. The prebuilt i2pd binary (~90 MB) is committed directly, so a
+- Clone the repo. The repository commits the prebuilt i2pd binary (~90 MB) directly, so a
   normal clone is all you need:
   ```sh
   git clone https://github.com/SullivanPrell/ReticulumSwift.git
   cd ReticulumSwift
   ```
 
-## 2. Build & test
+## 2. Build and test
 
 ```sh
 swift build                 # debug build
@@ -25,7 +25,7 @@ swift test                  # runs the full test suite
 
 ## 3. Run the `rnsd` daemon
 
-`rnsd` is a Reticulum node daemon. It is configuration-compatible with Python's
+`rnsd` is a Reticulum node daemon. It's configuration-compatible with Python's
 `rnsd`, and uses the same default config directory:
 
 ```sh
@@ -36,12 +36,12 @@ swift run rnsd --help
 ```
 
 On first run, if no config exists at `~/.reticulum/config`, `rnsd` writes a
-default one and starts with sane defaults. It will:
+default one and starts with sane defaults. It does the following:
 
 - create `~/.reticulum/storage/` for identity, path table, and ratchet state;
 - if `share_instance` is enabled, bind the **shared-instance** port `37428` and
-  the **RPC** port `37429` (same as Python — so a Python `rnsd` and a Swift
-  `rnsd` will not both try to be the shared instance);
+  the **RPC** port `37429` (same as Python—so a Python `rnsd` and a Swift
+  `rnsd` won't both try to be the shared instance);
 - bring up every interface declared in the config file.
 
 ## 4. Configuration
@@ -70,7 +70,7 @@ that joins the public testnet over TCP looks like:
     target_port = 4965
 ```
 
-- `AutoInterface` discovers peers on your LAN over IPv6 multicast — two nodes on
+- `AutoInterface` discovers peers on your LAN over IPv6 multicast—two nodes on
   the same network find each other with no further config.
 - A `TCPClientInterface` reaches a remote hub or another node over the internet.
 
@@ -85,14 +85,14 @@ swift run rnsd -d ~/.reticulum-a &
 swift run rnsd -d ~/.reticulum-b &
 ```
 
-Give each an `AutoInterface` (they will discover each other on the loopback /
+Give each an `AutoInterface` (they discover each other on the loopback /
 LAN), or point a `TCPClientInterface` in one at a `TCPServerInterface` in the
-other. With `-v` you will see announces propagate between them.
+other. With `-v` you see announces propagate between them.
 
 ## 6. Talking to a Python node
 
 Because ReticulumSwift is wire-compatible, a Python `rnsd` and a Swift `rnsd`
-interoperate directly — put them on the same `AutoInterface` LAN, or connect one
+interoperate directly—put them on the same `AutoInterface` LAN, or connect one
 to the other over TCP. Announces, links, and resource transfers cross the
 boundary transparently. See [docs/INTEROP.md](INTEROP.md) for details and for how
 the project verifies this automatically.

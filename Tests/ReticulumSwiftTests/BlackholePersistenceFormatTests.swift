@@ -3,7 +3,7 @@ import XCTest
 
 /// Pins the on-disk format of the blackhole source files.
 ///
-/// Python reference: `RNS/Transport.py` — `persist_blackhole()` (writes
+/// Python reference: `RNS/Transport.py`—`persist_blackhole()` (writes
 /// `umsgpack.packb({identity_hash: entry})`) and `reload_blackhole()` (reads it back
 /// with `umsgpack.unpackb`, iterating raw 16-byte keys).
 ///
@@ -175,7 +175,7 @@ final class BlackholePersistenceFormatTests: XCTestCase {
 
     func testFileBytesAreDeterministic() throws {
         // Two runs over the same table must produce identical bytes, so that a published
-        // list does not appear to change when it has not.
+        // list doesn't appear to change when it hasn't.
         let owner = Identity()
         let transport = makeTransport(owner: owner)
         transport.blackholeLock.lock()

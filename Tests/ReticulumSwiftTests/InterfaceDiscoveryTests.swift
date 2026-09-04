@@ -269,7 +269,7 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
     /// `interface_discovery_sources` is an allowlist of announcing identities.
     /// Python applies it at the top of `received_announce` (Discovery.py:248-251);
     /// applying it only when pruning stored records left an unauthorised peer
-    /// discoverable — and dialable — until the next prune.
+    /// discoverable—and dialable—until the next prune.
     func testAnnounceFromUnauthorizedIdentityIsIgnored() {
         let previous = Reticulum.interfaceDiscoverySources_
         defer { Reticulum.interfaceDiscoverySources_ = previous }
@@ -337,7 +337,7 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
     func testPayloadTooShortIgnored() {
         var called = false
         let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough) { _ in called = true }
-        // Only 3 bytes — shorter than flags(1) + stamp(32)
+        // Only 3 bytes—shorter than flags(1) + stamp(32)
         let shortPayload = Data([0x00, 0x01, 0x02])
         handler.receivedAnnounce(destinationHash: Data(repeating: 0, count: 16),
                                  identity: Identity(), appData: shortPayload,
@@ -555,7 +555,7 @@ final class InterfaceDiscoveryPersistenceTests: XCTestCase {
 
     func testListDiscoveredInterfacesRemovesVeryOld() {
         let disc = InterfaceDiscovery(storagePath: tempDir.path)
-        // 8 days ago — beyond THRESHOLD_REMOVE
+        // 8 days ago—beyond THRESHOLD_REMOVE
         let veryOld = Date().timeIntervalSince1970 - 8 * 24 * 3600
         let info = makeInfo(lastHeard: veryOld)
         disc.interfaceDiscovered(info)

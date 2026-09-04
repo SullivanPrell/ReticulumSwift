@@ -52,7 +52,7 @@ public final class ChannelPacketHandle {
     public enum State { case sent, delivered, failed }
 
     /// Written from whichever thread the outlet confirms delivery on (a link
-    /// proof callback, a timeout work item) and read from another — `Channel`
+    /// proof callback, a timeout work item) and read from another—`Channel`
     /// polls it via `ChannelOutlet.getPacketState`, and `Link` filters its
     /// proof waiters on it. The writes below were already under `lock`, but
     /// while this was a stored property every *read* still raced them.
@@ -86,7 +86,7 @@ public final class ChannelPacketHandle {
         lock.unlock()
     }
 
-    /// See `setTimeoutWork` — same reasoning.
+    /// See `setTimeoutWork`—same reasoning.
     func setDeliveredCallback(_ callback: ((ChannelPacketHandle) -> Void)?) {
         lock.lock()
         deliveredCallback = callback
@@ -177,7 +177,7 @@ final class Envelope {
         guard let raw, raw.count >= 6 else { throw ChannelError.invalidMsgType }
         let msgtype = UInt16(raw[0]) << 8 | UInt16(raw[1])
         sequence    = UInt16(raw[2]) << 8 | UInt16(raw[3])
-        // bytes 4-5 are length (unused — body is remainder)
+        // bytes 4-5 are length (unused—body is remainder)
         let body    = raw.dropFirst(6)
         guard let ctor = messageFactories[msgtype] else {
             throw ChannelError.notRegistered(msgtype)
@@ -313,9 +313,9 @@ public final class Channel {
     /// Send a message over the channel.
     ///
     /// Mirrors the Python 1.3.0 race-condition fix: sequence reservation and
-    /// `outlet.send()` are serialised by `sendLock` so that `_tx_ring` never
-    /// holds an envelope whose `packet` is nil.  After registering callbacks we
-    /// also check whether the packet was already delivered (proof arrived before
+    /// `sendLock` serialises `outlet.send()` calls so that `_tx_ring` never
+    /// holds an envelope whose `packet` is nil. After registering callbacks, `send()` also checks whether the packet was
+    /// already delivered (proof arrived before
     /// the callback was installed) and synthesise the delivery call if so.
     public func send(_ message: MessageBase) throws {
         guard outlet.isUsable else { throw ChannelError.linkNotReady }
@@ -351,8 +351,8 @@ public final class Channel {
         // --- Phase 2: transmit (outside main lock to avoid re-entrancy) ---
         let pkt = outlet.send(raw)
 
-        // If the outlet could not transmit (link dropped), rewind sequence.
-        // In our Swift outlet, send() always returns a handle, but we guard
+        // If the outlet couldn't transmit (link dropped), rewind sequence.
+        // In this Swift outlet, send() always returns a handle, but the code guards
         // defensively to mirror Python's check for packet.raw == None.
         guard pkt.raw.count > 0 else {
             lock.lock()
@@ -389,11 +389,11 @@ public final class Channel {
             let envelope = Envelope(outlet: outlet, raw: raw)
 
             // Unpack BEFORE taking the lock. `unpack` is fallible (unknown msgtype,
-            // short frame, decompression failure — all remotely triggerable) and
+            // short frame, decompression failure—all remotely triggerable) and
             // only reads the registry-stable `messageFactories` while mutating the
             // envelope's own local state. Decoding outside the lock guarantees a
             // malformed or unknown frame can NEVER unwind to the catch with the
-            // Channel's non-recursive lock still held — previously that leaked the
+            // Channel's non-recursive lock still held—previously that leaked the
             // lock permanently, deadlocking every subsequent send/receive/shutdown
             // (a single unknown-msgtype packet from a peer was enough).
             _ = try envelope.unpack(messageFactories: messageFactories)
@@ -411,7 +411,7 @@ public final class Channel {
 
             // Deliver all contiguous envelopes from nextRxSequence onward. A `defer`
             // releases the lock even if an envelope's lazy unpack throws (defensive:
-            // envelopes are already unpacked above before emplacement, so the else
+            // envelopes are already unpacked before emplacement, so the else
             // branch is effectively unreachable, but the lock must never leak).
             var toDeliver: [MessageBase] = []
             lock.lock()
@@ -430,7 +430,7 @@ public final class Channel {
             for m in toDeliver { _runCallbacks(m) }
 
         } catch {
-            // Unknown message type or decode failure — drop silently.
+            // Unknown message type or decode failure—drop silently.
         }
     }
 
@@ -460,17 +460,17 @@ public final class Channel {
     ///
     /// Two cases:
     ///
-    /// * **Below `nextRxSequence`** — normally stale (already delivered), and
+    /// * **Below `nextRxSequence`**—normally stale (already delivered), and
     ///   dropped. The exception is a sequence that has *wrapped*: when
     ///   `nextRxSequence + WINDOW_MAX` overflows the 16-bit sequence space,
     ///   sequence numbers from 0 up to that overflow point are legitimately
     ///   **future** frames and must be accepted, not dropped.
-    /// * **Above `nextRxSequence + WINDOW_MAX`** — too far in the future to be
+    /// * **Above `nextRxSequence + WINDOW_MAX`**—too far in the future to be
     ///   real, so dropped (RNS 1.4.1, commit a29a0871). This bounds how much a
-    ///   peer can make us buffer by sending a wild sequence number.
+    ///   peer can force buffering by sending a wild sequence number.
     ///
     /// Both the window bound and the future guard use the class-level
-    /// `WINDOW_MAX` (48), not the adaptive per-instance `windowMax` — Python
+    /// `WINDOW_MAX` (48), not the adaptive per-instance `windowMax`—Python
     /// reads `self.WINDOW_MAX`, which resolves to the class attribute because
     /// the adaptive value lives under the distinct lowercase name `window_max`.
     /// The future comparison is deliberately non-modular, matching Python: near
@@ -645,10 +645,10 @@ public final class LinkChannelOutlet: ChannelOutlet {
 
     public func send(_ raw: Data) -> ChannelPacketHandle {
         let handle = ChannelPacketHandle(raw: raw)
-        // Send via the Link's channel path so we learn the sent packet's hash and
+        // Send via the Link's channel path so the sent packet's hash is learned and
         // can match the returning delivery proof (see Link.channelProofWaiters).
         // Without this the handle would never transition to .delivered, the
-        // Channel send window (WINDOW = 2) would never drain, and the 3rd send
+        // Channel send window (WINDOW = 2) would never drain, and the third send
         // would throw linkNotReady. See swift_devel bug 005.
         if let hash = link?.sendChannelData(raw) {
             link?.trackChannelProof(hash: hash, handle: handle)
@@ -668,7 +668,7 @@ public final class LinkChannelOutlet: ChannelOutlet {
     ///
     /// Python reads `self.link.mdu` here (`Link.py:569`), which tracks the negotiated MTU. Part
     /// of the same seam as `bugs/016`: fixing only the Resource splitter would leave channel and
-    /// buffer chunking sized for a 500-byte link on a link that negotiated far more — the
+    /// buffer chunking sized for a 500-byte link on a link that negotiated far more—the
     /// "corrected at the call sites the failing test touched" mistake that brought three of
     /// `bugs/013`'s sub-defects back.
     public var mdu: Int { link?.mdu ?? Constants.linkMdu }

@@ -2,8 +2,8 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for the Transport tunnel system:
-///   * synthesizeTunnel() — sends a PLAIN DATA packet to rnstransport.tunnel.synthesize
-///   * tunnel_synthesize_handler — validates the packet, creates a TunnelEntry
+///   * synthesizeTunnel()—sends a PLAIN DATA packet to rnstransport.tunnel.synthesize
+///   * tunnel_synthesize_handler—validates the packet, creates a TunnelEntry
 ///   * Announces received on a tunneled interface are recorded in tunnel paths
 /// Matches Python's Transport.synthesize_tunnel / tunnel_synthesize_handler.
 final class TunnelTests: XCTestCase {
@@ -44,7 +44,7 @@ final class TunnelTests: XCTestCase {
 
     func testSynthesizeTunnelNilIdentityDoesNothing() {
         let transport = Transport()
-        // No ownerIdentity set — should not crash or send
+        // No ownerIdentity set—shouldn't crash or send
         let iface = TunnelTestIface(name: "no-id")
         transport.synthesizeTunnel(iface)
         XCTAssertNil(iface.lastSentPacket)

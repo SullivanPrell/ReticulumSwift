@@ -7,11 +7,11 @@ import Foundation
 /// `Transport.clean_announce_cache()`.
 ///
 /// Storage layout (under `Transport.cacheDirectory`):
-///   announces/<32-byte-hash-hex>   — umsgpack [raw, interface_name | nil]
+///   announces/<32-byte-hash-hex>—umsgpack [raw, interface_name | nil]
 ///
 /// The encoding is the reference's, byte for byte (`Transport.py:2646-2657`): a Python daemon
 /// must be able to read what this writes, because a path table entry names its announce by
-/// hash and the reference discards any entry whose announce it cannot load (`:334-345`).
+/// hash and the reference discards any entry whose announce it can't load (`:334-345`).
 /// Storing the receiving interface's name is what lets a restored packet say where it came from.
 extension Transport {
 
@@ -37,7 +37,7 @@ extension Transport {
         let hexName = hash.hexString
         let raw = try packet.pack()
 
-        // `umsgpack.packb([packet.raw, interface_reference])` — Transport.py:2655. A packet with
+        // `umsgpack.packb([packet.raw, interface_reference])`—Transport.py:2655. A packet with
         // no receiving interface stores None, not a placeholder (:2650-2651).
         let entry = MsgPack.Value.array([
             .bytes(raw),
@@ -64,7 +64,7 @@ extension Transport {
 
         // Resolve the stored reference back to a live interface, as Python does at
         // `Transport.py:2680-2683`. A name matching nothing leaves the packet without an
-        // interface — the reference's loop simply finds no match.
+        // interface—the reference's loop simply finds no match.
         if case .string(let interfaceName) = fields[1] {
             lock.lock()
             let match = interfaces.first { $0.name == interfaceName }
@@ -128,7 +128,7 @@ extension Transport {
 
     /// Satisfy a cache request for `packetHash` against `destination`.
     ///
-    /// If the packet is found in the local announce cache it is replayed directly
+    /// If the packet is found in the local announce cache it's replayed directly
     /// into the inbound pipeline (no network hop needed). Otherwise a CACHE_REQUEST
     /// DATA packet is sent to `destination` asking the peer to replay the packet.
     ///

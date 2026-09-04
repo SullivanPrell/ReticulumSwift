@@ -61,13 +61,13 @@ final class AnnounceRetryTests: XCTestCase {
         XCTAssertEqual(outbound.sent[1].hops, firstHops, "retransmit carries the same hop count as the first forward")
         XCTAssertEqual(outbound.sent[1].transportID, t.transportInstanceID)
 
-        // No further retries — the retry limit has been reached.
+        // No further retries—the retry limit has been reached.
         t.processAnnounceRetries(now: Date().timeIntervalSince1970 + 120)
         XCTAssertEqual(outbound.sent.count, 2, "no further retransmissions beyond PATHFINDER_R")
     }
 
     /// Hearing the announce passed on by a downstream node (hops == stored+2)
-    /// before our retry fires cancels the pending retransmission.
+    /// before the retry fires cancels the pending retransmission.
     func testPassedOnDownstreamCancelsRetry() throws {
         let (t, inbound, outbound) = makeNode()
         let (announce, _) = try makeAnnounce("passedon")
@@ -75,7 +75,7 @@ final class AnnounceRetryTests: XCTestCase {
         inbound.inboundHandler?(announce, inbound)
         XCTAssertEqual(outbound.sent.count, 1)
 
-        // A downstream node re-broadcast our forward one hop further on.
+        // A downstream node re-broadcast the forward one hop further on.
         var passedOn = announce
         passedOn.headerType = .type2
         passedOn.transportID = Data(repeating: 0xAB, count: 16)
@@ -95,7 +95,7 @@ final class AnnounceRetryTests: XCTestCase {
         inbound.inboundHandler?(announce, inbound)
         XCTAssertEqual(outbound.sent.count, 1)
 
-        // Two sibling transport nodes at our own distance re-broadcast it.
+        // Two sibling transport nodes at the same distance re-broadcast it.
         for _ in 0..<Transport.localRebroadcastsMax {
             var sibling = announce
             sibling.headerType = .type2
@@ -108,7 +108,7 @@ final class AnnounceRetryTests: XCTestCase {
         XCTAssertEqual(outbound.sent.count, 1, "retry cancelled after enough local rebroadcasts heard")
     }
 
-    /// An edge (non-transport) node never schedules a retry — it does not
+    /// An edge (non-transport) node never schedules a retry—it doesn't
     /// forward announces at all.
     func testNonTransportNodeSchedulesNoRetry() throws {
         let t = Transport()

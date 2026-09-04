@@ -5,10 +5,10 @@ import Foundation
 /// AX.25 frame constants.
 /// Mirrors the `AX25` class in Python `AX25KISSInterface.py`.
 public struct AX25 {
-    /// No-layer-3 protocol identifier.  Python: `PID_NOLAYER3 = 0xF0`
+    /// No-layer-3 protocol identifier. Python: `PID_NOLAYER3 = 0xF0`
     public static let pidNoLayer3: UInt8 = 0xF0
 
-    /// Unnumbered Information control field.  Python: `CTRL_UI = 0x03`
+    /// Unnumbered Information control field. Python: `CTRL_UI = 0x03`
     public static let ctrlUI: UInt8 = 0x03
 
     /// AX.25 frame-check-sequence bytes (reference only; not validated here).
@@ -26,7 +26,7 @@ public struct AX25 {
 
     /// Encode a 6-character (padded) AX.25 callsign + SSID into 7 bytes.
     ///
-    /// Each character is left-shifted 1 bit.  Padding is ASCII space (0x20)
+    /// Each character is left-shifted 1 bit. Padding is ASCII space (0x20)
     /// left-shifted (0x40).  The SSID byte is `0x60 | (ssid << 1)`,
     /// plus `0x01` (end-of-address bit) when `endOfAddress = true`.
     public static func encodeAddress(callsign: String,
@@ -91,7 +91,7 @@ public final class AX25KISSInterface: Interface {
         set { onlineFlag.value = newValue }
     }
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
@@ -146,8 +146,8 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Init
 
-    /// - Throws: `AX25KISSInterfaceError.invalidCallsign` if `callsign` is not 3–6 characters.
-    ///           `AX25KISSInterfaceError.invalidSSID` if `ssid` is not 0–15.
+    /// - Throws: `AX25KISSInterfaceError.invalidCallsign` if `callsign` isn't 3–6 characters.
+    ///           `AX25KISSInterfaceError.invalidSSID` if `ssid` isn't 0–15.
     public init(name:     String,
                 port:     String,
                 speed:    Int          = 9600,
@@ -282,7 +282,7 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Outgoing
 
-    /// Send a Reticulum packet.  Called by Transport.
+    /// Send a Reticulum packet. Called by Transport.
     ///
     /// Applies the IFAC mask (when an IFAC key is configured) to the packet
     /// before the AX.25 header is prepended and the frame is KISS-escaped,
@@ -297,7 +297,7 @@ public final class AX25KISSInterface: Interface {
 
     /// Prepend AX.25 header, KISS-frame, and write to the TNC.
     ///
-    /// Python: `process_outgoing(data)` — builds AX.25 UI frame then KISS-escapes.
+    /// Python: `process_outgoing(data)`—builds AX.25 UI frame then KISS-escapes.
     public func processOutgoing(_ data: Data) {
         // Decide send-vs-enqueue atomically under `lock` (see KISSInterface):
         // `interfaceReady` and `packetQueue` are one flow-control state.
@@ -324,7 +324,7 @@ public final class AX25KISSInterface: Interface {
             ax25.append(data)
 
             let framed = KISS.frame(ax25)
-            // Counted only on success — a failed write is not traffic (the failure reaches
+            // Counted only on success—a failed write isn't traffic (the failure reaches
             // `handleTransportLoss` through the transport's error callback).
             guard (try? transport.write(framed)) != nil else { return }
             counters.addTx(bytes: data.count)   // Python counts original payload

@@ -7,7 +7,7 @@ import XCTest
 ///
 /// The golden strings below were captured from the *installed* Python utilities on this
 /// machine (`rnsd --help`, `rnir --help`, `rnpkg --help`, and the three `argparse` error
-/// pages) under Python 3.11 — not hand-written. Python 3.9 and older print
+/// pages) under Python 3.11—not hand-written. Python 3.9 and older print
 /// `optional arguments:` where 3.10+ prints `options:`; 3.10+ is the target.
 final class RNSDAppTests: XCTestCase {
 
@@ -38,7 +38,7 @@ final class RNSDAppTests: XCTestCase {
     func testQuietCountingAndDelta() throws {
         let quiet = try RNSDApp.parse(["-qq"], allowServiceFlags: true)
         XCTAssertEqual(quiet.quiet, 2)
-        // Python: `targetverbosity = verbosity-quietness` (rnsd.py:41) — may be negative.
+        // Python: `targetverbosity = verbosity-quietness` (rnsd.py:41)—may be negative.
         XCTAssertEqual(quiet.verbosityDelta, -2)
 
         let mixed = try RNSDApp.parse(["-vvv", "-q"], allowServiceFlags: true)
@@ -77,8 +77,8 @@ final class RNSDAppTests: XCTestCase {
     }
 
     func testSwiftOnlyConfigDirectoryAliases() throws {
-        // Not Python spellings — kept because the pre-parity Swift rnsd accepted them with
-        // exactly this meaning. They are hidden from --help and from prefix abbreviation.
+        // Not Python spellings—kept because the pre-parity Swift rnsd accepted them with
+        // exactly this meaning. They're hidden from --help and from prefix abbreviation.
         for argv in [["--config-dir", "/tmp/x"], ["-d", "/tmp/x"], ["--config-dir=/tmp/x"]] {
             XCTAssertEqual(try RNSDApp.parse(argv, allowServiceFlags: true).configDir, "/tmp/x", "\(argv)")
         }
@@ -306,7 +306,7 @@ rnir: error: unrecognized arguments: -s
     // MARK: - rnpkg's own example config
 
     func testRnpkgExampleConfigByteLength() {
-        // Python: `__example_rnpkg_config__` (rnpkg.py:75) — NOT the RNS config.
+        // Python: `__example_rnpkg_config__` (rnpkg.py:75)—NOT the RNS config.
         XCTAssertEqual(RNSDApp.rnpkgExampleConfig,
                        "# This is an example package manager configuration file.\n")
         XCTAssertEqual(RNSDApp.rnpkgExampleConfig.utf8.count, 57)

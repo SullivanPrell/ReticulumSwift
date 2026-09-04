@@ -1,7 +1,7 @@
 import Foundation
 import ReticulumSwift
 
-// `rnstatus` — Reticulum Network Stack Status.
+// `rnstatus`—Reticulum Network Stack Status.
 //
 // Python reference: RNS/Utilities/rnstatus.py (main + program_setup).
 //
@@ -13,7 +13,7 @@ import ReticulumSwift
 
 let parser = RNStatusApp.makeParser()
 
-/// Python: `parser.error(msg)` — the usage block and `rnstatus: error: …` on stderr, exit 2.
+/// Python: `parser.error(msg)`—the usage block and `rnstatus: error: …` on stderr, exit 2.
 func usageError(_ detail: String) -> Never {
     FileHandle.standardError.write(Data((RNStatusApp.errorText(detail) + "\n").utf8))
     exit(RNStatusApp.Result.noStatus.rawValue)
@@ -28,8 +28,8 @@ do {
     usageError("\(error)")
 }
 
-/// Python: argparse `type=float` converts as it consumes the option, so a value it cannot
-/// parse is a usage error rather than a silently-ignored argument.
+/// Python: argparse `type=float` converts as it consumes the option, so a value it can't
+/// parse is a usage error rather than a silently ignored argument.
 func requiredDouble(_ name: String, default defaultValue: Double) -> Double {
     guard let raw = arguments.value(name) else { return defaultValue }
     guard let value = Double(raw) else {
@@ -97,7 +97,7 @@ func fail(_ message: String, _ code: RNStatusApp.Result) -> Never {
     exit(code.rawValue)
 }
 
-// Python: `except KeyboardInterrupt: print(""); exit()` — exit code 0.
+// Python: `except KeyboardInterrupt: print(""); exit()`—exit code 0.
 signal(SIGINT) { _ in
     FileHandle.standardOutput.write(Data("\n".utf8))
     exit(RNStatusApp.Result.ok.rawValue)
@@ -106,8 +106,8 @@ signal(SIGINT) { _ in
 // MARK: - Stack
 
 // Python: `if remote: require_shared = False else: require_shared = True` (rnstatus.py:159).
-// Local status only ever reports on a daemon that is already running; remote status stands
-// up its own stack in order to make the link.
+// Local status only ever reports on a daemon that's already running; remote status stands
+// up its own stack to make the link.
 let requireSharedInstance = (remoteHex == nil)
 
 let connection: InstanceConnection
@@ -134,15 +134,15 @@ if discoveredMode {
     let discovery = InterfaceDiscovery(storagePath: discoveryPath)
 
     func renderDiscovered() -> String {
-        // NOTE: listing is not a pure read — it unlinks discovery files older than seven
-        // days or of a type that is no longer discoverable, exactly as Python's
+        // NOTE: listing isn't a pure read—it unlinks discovery files older than seven
+        // days or of a type that's no longer discoverable, exactly as Python's
         // `list_discovered_interfaces()` does. Under -m it re-lists every refresh, because
         // Python re-enters program_setup each interval.
         let discovered = discovery.listDiscoveredInterfaces()
         let renderer = RNStatusRenderer(options: options)
         if jsonOutput {
-            // Python prints the blank line first, unconditionally, then the JSON array —
-            // and does NOT apply the positional name filter in this mode.
+            // Python prints the blank line first, unconditionally, then the JSON array—and
+            // doesn't apply the positional name filter in this mode.
             return "\n" + RNStatusJSON.encodeDiscovered(discovered) + "\n"
         }
         return detailsRequested ? renderer.renderDiscoveredDetails(discovered)
@@ -177,7 +177,7 @@ var remoteQuery: RemoteStatusQuery?
 var remoteIdentityHash = Data()
 
 if let remoteHex {
-    // Python: rnstatus.py:311-333 — every failure here prints the message and exits 20.
+    // Python: rnstatus.py:311-333—every failure here prints the message and exits 20.
     guard let identityPath = managementIdentity else {
         fail("Remote management requires an identity file. Use -i to specify the path to a management identity.",
              .remoteError)
@@ -214,7 +214,7 @@ func snapshot() -> Snapshot? {
         do {
             let (stats, linkCount) = try remoteQuery.requestBlocking(includeLinkStats: linkStats,
                                                                      progress: progressBanner)
-            emit(RNStatusApp.eraseSequence)   // rnstatus.py:151 — not guarded by no_output
+            emit(RNStatusApp.eraseSequence)   // rnstatus.py:151—not guarded by no_output
             return Snapshot(stats: stats, linkCount: linkCount)
         } catch RemoteStatusQuery.QueryError.linkTimedOut {
             if !jsonOutput { emit(RNStatusApp.eraseSequence); print("The link timed out, exiting now") }

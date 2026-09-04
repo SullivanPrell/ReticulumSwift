@@ -9,7 +9,7 @@ final class AutoInterfaceTests: XCTestCase {
         // Python: sha256("reticulum") → "ff12:0:d70b:fb1c:16e4:5e39:485e:31e1"
         let iface = AutoInterface(name: "test")
         // Access the mcast address via reflection by initializing and checking send.
-        // We verify the group hash calculation matches the Python reference.
+        // Verifies the group hash calculation matches the Python reference.
         let groupID = AutoInterface.defaultGroupID
         let hash = Hashes.fullHash(groupID)
         let g = Array(hash)
@@ -29,7 +29,7 @@ final class AutoInterfaceTests: XCTestCase {
         XCTAssertEqual(token.count, 32)
         // Verify it matches Python:
         // sha256(b"reticulum" + b"fe80::1")
-        // We can't easily run Python here, but we can verify structure.
+        // Running Python here isn't practical, but the structure is checkable.
         let expected = Hashes.fullHash(groupID + Data(linkLocal.utf8))
         XCTAssertEqual(token, expected)
     }

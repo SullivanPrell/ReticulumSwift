@@ -5,17 +5,17 @@ import Foundation
 /// Resolves the device strings in a config file to the transports interface construction needs.
 ///
 /// `RNodeInterface`, `KISSInterface`, `AX25KISSInterface` and `I2PInterface` all take an injected
-/// transport by design — radio I/O is decoupled from BLE/USB, and serial ports exist on macOS
+/// transport by design—radio I/O is decoupled from BLE/USB, and serial ports exist on macOS
 /// while BLE exists on iOS. That availability split lives *here*, as which factories are
 /// registered, so `synthesizeInterfaces` contains no platform conditionals: it asks the registry
-/// and either gets a transport or a thrown error naming what is missing.
+/// and either gets a transport or a thrown error naming what's missing.
 ///
-/// The alternative — `#if os(iOS)` inside the construction switch — was rejected because the iOS
+/// The alternative—`#if os(iOS)` inside the construction switch—was rejected because the iOS
 /// branch could never be exercised from a host-platform test run and would ship unobserved. With
 /// a registry, a test registers a stub factory and drives both the constructed and the
 /// unavailable path on any platform.
 ///
-/// An application substitutes its own factory to extend a family — e.g. RetiOS registering a
+/// An application substitutes its own factory to extend a family—for example, RetiOS registering a
 /// CoreBluetooth-backed `rnode` factory for `ble://` device strings. Registration is
 /// whole-closure replacement; a custom factory that wants the platform default for other device
 /// strings calls `defaultRNodeFactory` from its own closure.
@@ -23,7 +23,7 @@ public enum InterfaceTransportFactories {
 
     /// Serial families (`KISSInterface`, `AX25KISSInterface`): a device path such as
     /// `/dev/ttyUSB0` becomes an unopened serial transport. Opening happens in the interface's
-    /// own `start()`, so constructing an interface never touches hardware — absent hardware
+    /// own `start()`, so constructing an interface never touches hardware—absent hardware
     /// fails at bring-up with the cause, exactly as the reference's open failure does, while
     /// invalid *configuration* fails at construction (`RNodeInterface.py:346` vs `:354-360`).
     public static var serial: ((_ device: String) throws -> SerialPortTransport)? = defaultSerialFactory
@@ -37,8 +37,8 @@ public enum InterfaceTransportFactories {
     public static var i2pDaemon: (() throws -> I2PDaemonProtocol)? = { I2PDaemon() }
 
     /// What construction throws when a family has no registered factory, or the registered one
-    /// cannot serve the device string. Deliberately loud: the defect class this closes is a
-    /// daemon that starts, reports healthy, and silently does not have the radio the operator
+    /// can't serve the device string. Deliberately loud: the defect class this closes is a
+    /// daemon that starts, reports healthy, and silently doesn't have the radio the operator
     /// enabled.
     public enum FactoryError: Error, LocalizedError, Equatable {
         case unavailable(family: String, device: String, hint: String)
@@ -53,7 +53,7 @@ public enum InterfaceTransportFactories {
 
     // MARK: Platform defaults
 
-    /// POSIX serial on macOS; nothing elsewhere — iOS and its relatives have no serial devices,
+    /// POSIX serial on macOS; nothing elsewhere—iOS and its relatives have no serial devices,
     /// and the honest answer there is a thrown error, not a stub that opens nothing.
     static var defaultSerialFactory: ((String) throws -> SerialPortTransport)? {
         #if os(macOS)
@@ -64,7 +64,7 @@ public enum InterfaceTransportFactories {
     }
 
     /// `/dev/…` → the serial factory wrapped in the KISS-framing adapter an RNode speaks.
-    /// `ble://…` is refused with the registration hint, on every platform — BLE lives in the
+    /// `ble://…` is refused with the registration hint, on every platform—BLE lives in the
     /// application layer.
     static var defaultRNodeFactory: ((String) throws -> RNodeTransport)? {
         return { device in
@@ -127,8 +127,8 @@ enum NetworkDeviceAddress {
 
 // MARK: - Construction errors
 
-/// A config block that names an interface but cannot produce it. Thrown from
-/// `synthesizeInterfaces`, whose callers propagate — taking the daemon down with the cause,
+/// A config block that names an interface but can't produce it. Thrown from
+/// `synthesizeInterfaces`, whose callers propagate—taking the daemon down with the cause,
 /// which is the reference's own behaviour for a failed interface construction
 /// (`Reticulum.py:1087-1090` logs and calls `RNS.panic()`).
 public enum InterfaceConstructionError: Error, LocalizedError, Equatable {
@@ -147,7 +147,7 @@ public enum InterfaceConstructionError: Error, LocalizedError, Equatable {
 
 // MARK: - Serial-backed RNode transport
 
-/// An `RNodeTransport` over a plain serial port — the USB half of the BLE/USB split.
+/// An `RNodeTransport` over a plain serial port—the USB half of the BLE/USB split.
 ///
 /// RNode framing (KISS escaping and command bytes) is the interface's business; this adapter
 /// only moves bytes, matching what the reference's `self.serial` does for its
@@ -160,7 +160,7 @@ public final class SerialRNodeTransport: RNodeTransport {
 
     public var byteHandler: ((Data) -> Void)?
 
-    /// Forwarded straight to the serial port — this adapter adds no failure modes of its own,
+    /// Forwarded straight to the serial port—this adapter adds no failure modes of its own,
     /// so the interface hears exactly what the device layer reports.
     public var onTransportError: ((Error) -> Void)? {
         get { serial.onTransportError }
@@ -186,7 +186,7 @@ public final class SerialRNodeTransport: RNodeTransport {
 
 // MARK: - POSIX serial port (macOS)
 
-/// A real serial port over POSIX termios — the first concrete `SerialPortTransport` in the
+/// A real serial port over POSIX termios—the first concrete `SerialPortTransport` in the
 /// package. Until it existed, every serial-family interface could only ever be constructed with
 /// a test mock, which is half of how `bugs/031` stayed invisible: there was nothing a real
 /// config *could* construct.
@@ -293,9 +293,9 @@ public final class POSIXSerialPort: SerialPortTransport {
             var buffer = [UInt8](repeating: 0, count: 4096)
             let count = Darwin.read(descriptor, &buffer, buffer.count)
             guard count > 0 else {
-                // 0 is EOF — the device side is gone; -1 with EAGAIN is a spurious wakeup on
+                // 0 is EOF—the device side is gone; -1 with EAGAIN is a spurious wakeup on
                 // this non-blocking descriptor and nothing else. Anything else is the device
-                // failing underneath us. This `guard … return` used to swallow both cases,
+                // failing underneath it. This `guard … return` used to swallow both cases,
                 // which is why nothing above this layer could ever notice a USB flap: the
                 // interface stayed Up writing into a dead descriptor.
                 if count < 0 && errno == EAGAIN { return }
@@ -313,7 +313,7 @@ public final class POSIXSerialPort: SerialPortTransport {
         readSource = source
     }
 
-    /// Close the descriptor and surface the loss exactly once — the read source can fire
+    /// Close the descriptor and surface the loss exactly once—the read source can fire
     /// repeatedly against a dead fd before the interface reacts.
     private func reportLoss(_ cause: Error) {
         lock.lock()

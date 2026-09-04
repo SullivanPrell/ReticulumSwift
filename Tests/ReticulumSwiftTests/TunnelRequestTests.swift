@@ -9,7 +9,7 @@ import XCTest
 /// The port had the machinery and neither writer: `TCPClientInterface` and `BackboneInterface`
 /// set `isOnline = true` on connect and nothing else, so a Swift client never requested a
 /// tunnel and its paths died with each reconnect. Compounding it, the only synthesis trigger
-/// was registration time — and `register` runs before `start()`, so a write in the async
+/// was registration time—and `register` runs before `start()`, so a write in the async
 /// connect callback would still have been missed.
 final class TunnelRequestTests: XCTestCase {
 
@@ -76,7 +76,7 @@ final class TunnelRequestTests: XCTestCase {
 
     /// Python re-synthesizes on every reconnect (`TCPInterface.py:298` calls
     /// `Transport.synthesize_tunnel` directly after the redial succeeds). The port's connect
-    /// happens asynchronously *after* `register`, so a registration-time check alone cannot
+    /// happens asynchronously *after* `register`, so a registration-time check alone can't
     /// see it: the transport sweeps its interfaces instead.
     func testTheTransportSynthesizesForAnInterfaceThatAsksAfterRegistration() {
         let transport = makeTransport()

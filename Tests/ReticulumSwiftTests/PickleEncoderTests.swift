@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for PickleEncoder and PickleDecoder.
 ///
-/// Every encoded value is verified by comparing against the exact bytes produced by:
+/// Each encoded value is checked against the exact bytes this command produces:
 ///   python3 -c "import pickle, sys; sys.stdout.buffer.write(pickle.dumps(X, protocol=4))"
 ///
 /// The decoder tests verify that round-trip extraction works on realistic RPC payloads.
@@ -139,7 +139,7 @@ final class PickleEncoderTests: XCTestCase {
     // MARK: - Realistic pickle interface_stats shape (smoke test)
 
     func testInterfaceStatsDictDecodable() throws {
-        // Build a minimal interface_stats dict (pickle format — for future use)
+        // Build a minimal interface_stats dict (pickle format—for future use)
         let ifaceDict = PickleValue.stringDict([
             ("name",       .string("AutoInterface[local]")),
             ("short_name", .string("local")),
@@ -353,7 +353,7 @@ final class PickleEncoderTests: XCTestCase {
     func testIngressStateNilForUnregisteredInterface() {
         let t = Transport()
         let iface = MockInterface(name: "unregistered")
-        // No register() call — state should not exist.
+        // No register() call—state shouldn't exist.
         XCTAssertNil(t.ingressState(for: iface))
     }
 

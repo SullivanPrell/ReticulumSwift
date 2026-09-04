@@ -26,7 +26,7 @@ public enum UtilityFormatting {
     /// - Parameters:
     ///   - value: the quantity to format.
     ///   - suffix: `"B"` for bytes (default). Passing `"b"` multiplies by 8 first, so a
-    ///     byte count can be rendered as bits — exactly what the Python helper does.
+    ///     byte count can be rendered as bits—exactly what the Python helper does.
     public static func sizeStr(_ value: Double, suffix: String = "B") -> String {
         let units = ["", "K", "M", "G", "T", "P", "E", "Z"]
         var number = value
@@ -41,7 +41,7 @@ public enum UtilityFormatting {
             }
             number /= 1000.0
         }
-        // Python: "%.2f%s%s" — note the missing space, unlike every branch above.
+        // Python: "%.2f%s%s"—note the missing space, unlike every preceding branch.
         return String(format: "%.2fY%@", number, suffix)
     }
 
@@ -70,7 +70,7 @@ public enum UtilityFormatting {
 
         for unit in units {
             if abs(number) < 1000.0 {
-                // Python: "%3.2f %s%s" — two decimals at every magnitude, base included.
+                // Python: "%3.2f %s%s"—two decimals at every magnitude, base included.
                 return String(format: "%3.2f %@%@", number, unit, suffix)
             }
             number /= 1000.0
@@ -82,8 +82,8 @@ public enum UtilityFormatting {
 
     /// Coarse "time ago" phrasing, matching `pretty_date` in rnpath.py:528.
     ///
-    /// The Python original returns the bare quantity with no "ago" suffix — callers add
-    /// their own wording — and its thresholds are irregular (two identical `< 10` and
+    /// The Python original returns the bare quantity with no "ago" suffix—callers add
+    /// their own wording—and its thresholds are irregular (two identical `< 10` and
     /// `< 60` branches, a `< 70` special case for "1 minute", minutes up to two hours).
     /// Those quirks are reproduced rather than tidied, so output matches.
     ///

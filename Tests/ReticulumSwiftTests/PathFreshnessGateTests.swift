@@ -1,12 +1,12 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Cluster B + D2 — the path-table freshness gate.
+/// Cluster B + D2—the path-table freshness gate.
 ///
 /// Ports Python's `should_add` ladder (Transport.inbound, Transport.py:1801-1875)
-/// exactly. The invariant: an announce only replaces an existing path when it is
+/// exactly. The invariant: an announce only replaces an existing path when it's
 /// genuinely NEWER (emission second strictly greater than the max emission across
-/// the path's recorded random blobs), or when it is the same announce arriving via
+/// the path's recorded random blobs), or when it's the same announce arriving via
 /// an alternate route to revive a path previously marked unresponsive. Emission
 /// timestamps are second-resolution, so same-second announces tie and neither
 /// displaces the other; hop-count convergence happens across successive (later)
@@ -27,7 +27,7 @@ final class PathFreshnessGateTests: XCTestCase {
     // MARK: - Freshness gate (B1/B2/B3)
 
     /// A fewer-hop announce emitted in the SAME second as the existing path must
-    /// NOT replace it. (Old "fewer hops always wins" behavior — the bug.)
+    /// NOT replace it. (Old "fewer hops always wins" behavior—the bug.)
     func testSameSecondFewerHopsDoesNotReplace() throws {
         let t = Transport()
         let a = NamedInterface(name: "A"); let b = NamedInterface(name: "B")
@@ -145,7 +145,7 @@ final class PathFreshnessGateTests: XCTestCase {
     }
 
     /// Control: while the path is RESPONSIVE, the same announce via a longer route
-    /// must NOT move the path (the duplicate early-return handles it).
+    /// must NOT move the path (the duplicate early return handles it).
     func testSameBlobMoreHopsDoesNotReplaceResponsivePath() throws {
         let t = Transport()
         let a = NamedInterface(name: "A"); let b = NamedInterface(name: "B")

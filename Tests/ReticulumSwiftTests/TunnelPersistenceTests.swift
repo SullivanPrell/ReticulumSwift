@@ -1,17 +1,17 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `storage/tunnels` — the one file in `bugs/029` that is not a divergence but an absence.
+/// `storage/tunnels`—the one file in `bugs/029` that isn't a divergence but an absence.
 ///
 /// The reference writes the tunnel table on the same clock as the path table
 /// (`Transport.persist_data` at `Transport.py:3510-3512`) and restores it at start (`:368-405`).
 /// The port writes no counterpart at all, so a node with an established tunnel loses every tunnel
-/// path across a restart and cannot serve them again until the peer re-announces — which for a
-/// tunnel endpoint that is itself waiting is not guaranteed to happen at all.
+/// path across a restart and can't serve them again until the peer re-announces—which for a
+/// tunnel endpoint that's itself waiting isn't guaranteed to happen at all.
 ///
 /// The entry is `[tunnel_id, interface_hash, paths, expires]` (`:3487`), where each path is the
 /// same 8-element list the destination table uses. So the two files share a codec, and the tunnel
-/// restore has the same announce-cache dependency: a path whose announce cannot be loaded is
+/// restore has the same announce-cache dependency: a path whose announce can't be loaded is
 /// dropped (`:398`).
 final class TunnelPersistenceTests: XCTestCase {
 
@@ -87,8 +87,8 @@ final class TunnelPersistenceTests: XCTestCase {
 
     // MARK: - The shape
 
-    /// `serialised_tunnel = [tunnel_id, interface_hash, serialised_paths, expires]` —
-    /// `Transport.py:3487`, indexed positionally at `:373-376`.
+    /// `serialised_tunnel = [tunnel_id, interface_hash, serialised_paths, expires]`—`Transport.py:3487`,
+    /// indexed positionally at `:373-376`.
     func testEntryIsTheReferenceFourElementList() throws {
         let (live, iface) = makeTransport()
         let tunnelID = Hashes.fullHash(Data("shape".utf8))
@@ -119,7 +119,7 @@ final class TunnelPersistenceTests: XCTestCase {
     }
 
     /// `if interface != None: interface_hash = interface.get_hash() else: interface_hash = None`
-    /// (`Transport.py:3456-3457`) — a tunnel whose interface has gone is still written, with a
+    /// (`Transport.py:3456-3457`)—a tunnel whose interface has gone is still written, with a
     /// null interface. `TunnelEntry.iface` is weak here, so this is the state after the interface
     /// is deregistered, not a hypothetical.
     func testTunnelWithNoInterfaceIsStillWritten() throws {
@@ -139,8 +139,8 @@ final class TunnelPersistenceTests: XCTestCase {
     }
 
     /// `if announce_packet != None: … tunnel_paths[destination_hash] = tunnel_path` and
-    /// `if len(tunnel_paths) > 0` (`Transport.py:398-404`) — a tunnel all of whose paths lost
-    /// their announce is not restored at all.
+    /// `if len(tunnel_paths) > 0` (`Transport.py:398-404`)—a tunnel all of whose paths lost
+    /// their announce isn't restored at all.
     func testTunnelWithNoRestorablePathIsDropped() throws {
         let (live, iface) = makeTransport()
         let tunnelID = Hashes.fullHash(Data("noannounce".utf8))

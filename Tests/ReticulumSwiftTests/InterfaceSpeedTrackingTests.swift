@@ -47,10 +47,10 @@ final class InterfaceSpeedTrackingTests: XCTestCase {
         iface.txBytes = 500
         t.sampleInterfaceSpeeds(now: 1.0)
 
-        // RX: 1000 bytes in 1s = 8000 bits/s
+        // RX: 1000 bytes in 1 second = 8000 bits/s
         XCTAssertEqual(t.currentRxSpeed(for: iface), 8000.0, accuracy: 1.0,
             "RX speed should be 8000 bits/s (1000 bytes × 8 / 1s)")
-        // TX: 500 bytes in 1s = 4000 bits/s
+        // TX: 500 bytes in 1 second = 4000 bits/s
         XCTAssertEqual(t.currentTxSpeed(for: iface), 4000.0, accuracy: 1.0,
             "TX speed should be 4000 bits/s (500 bytes × 8 / 1s)")
     }
@@ -74,7 +74,7 @@ final class InterfaceSpeedTrackingTests: XCTestCase {
         a.rxBytes = 500; b.rxBytes = 500
         t.sampleInterfaceSpeeds(now: 1.0)
 
-        // Both interfaces together = 1000 bytes in 1s = 8000 bits/s aggregate
+        // Both interfaces together = 1000 bytes in 1 second = 8000 bits/s aggregate
         XCTAssertEqual(t.speedRx, 8000.0, accuracy: 1.0,
             "aggregate speedRx should sum both interfaces")
     }

@@ -50,7 +50,7 @@ final class IdentityRememberTests: XCTestCase {
         let bad = Data(repeating: 0x00, count: 64) // zeroed-out key is invalid
         let destHash = Data(repeating: 0xAB, count: 16)
         // May return nil OR a (degenerate but parsable) identity depending on the
-        // Curve25519 implementation.  We only assert it doesn't crash.
+        // Curve25519 implementation. The only assertion is that it doesn't crash.
         _ = Identity.remember(destinationHash: destHash, publicKeyBytes: bad)
     }
 
@@ -79,7 +79,7 @@ final class IdentityRememberTests: XCTestCase {
 
     func testRememberWithPacketHashArgIgnored() {
         // Python's API takes packet_hash as first positional arg; Swift accepts it
-        // for parity but ignores it.  Smoke-test that passing a non-nil value
+        // for parity but ignores it. Smoke-test that passing a non-nil value
         // doesn't break anything.
         let remote   = Identity()
         let destHash = Identity.truncatedHash(remote.publicKeyBytes)

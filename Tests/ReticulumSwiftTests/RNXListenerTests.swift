@@ -12,7 +12,7 @@ final class MockRNXCommandExecutor: RNXCommandExecutor {
 
     var result: RNXExecution = RNXExecution(spawned: true, returnCode: 0,
                                             stdout: Data(), stderr: Data())
-    /// When set, `execute` blocks on it — used to prove the receive thread is not held.
+    /// When set, `execute` blocks on it—used to prove the receive thread isn't held.
     var gate: DispatchSemaphore?
 
     func execute(command: String, stdin: Data?, timeout: TimeInterval?) -> RNXExecution {
@@ -53,7 +53,7 @@ final class RNXListenerTests: XCTestCase {
         XCTAssertEqual(result.returnCode, 0)
         XCTAssertEqual(result.stdout, Data("hi\n".utf8))
         XCTAssertEqual(result.stderr, Data())
-        // Python: result[4] = len(stdout) — the FULL, pre-truncation length.
+        // Python: result[4] = len(stdout)—the FULL, pre-truncation length.
         XCTAssertEqual(result.totalStdoutLength, 3)
         XCTAssertEqual(result.totalStderrLength, 0)
         XCTAssertEqual(result.startedAt, 1000)
@@ -65,7 +65,7 @@ final class RNXListenerTests: XCTestCase {
         let listener = try makeListener()
         let execution = RNXExecution(spawned: true, returnCode: 0, stdout: Data(), stderr: Data())
 
-        // Python: `if timeout != None and time.time() < result[6]+timeout` — a request
+        // Python: `if timeout != None and time.time() < result[6]+timeout`—a request
         // with no timeout NEVER gets a concluded timestamp.
         let noTimeout = listener.makeResult(for: RNXRequest(command: "x"),
                                             execution: execution,
@@ -101,7 +101,7 @@ final class RNXListenerTests: XCTestCase {
         XCTAssertEqual(result(10).stdout?.count, 10)
         XCTAssertEqual(result(10).stderr?.count, 10)
         XCTAssertEqual(result(10).totalStdoutLength, 100)
-        // Python: `if o_limit == 0: result[2] = b""` — empty Data, never nil.
+        // Python: `if o_limit == 0: result[2] = b""`—empty Data, never nil.
         XCTAssertEqual(result(0).stdout, Data())
         XCTAssertEqual(result(0).totalStdoutLength, 100)
         // A limit above the length short-circuits and the buffer passes through whole.
@@ -115,7 +115,7 @@ final class RNXListenerTests: XCTestCase {
 
     func testNilOutputProducesAWellFormedResult() throws {
         // Python's terminate-but-still-running branch sets stdout/stderr to None, and
-        // `result[4] = len(stdout)` at rnx.py:240 then raises TypeError — killing the
+        // `result[4] = len(stdout)` at rnx.py:240 then raises TypeError—killing the
         // response generator so the client gets nothing at all. Treated as empty here.
         let listener = try makeListener()
         let execution = RNXExecution(spawned: true, returnCode: -15,
@@ -132,7 +132,7 @@ final class RNXListenerTests: XCTestCase {
     }
 
     func testSpawnFailureResult() throws {
-        // Python: rnx.py:182-184 — result[0] = False and an immediate return, so every
+        // Python: rnx.py:182-184—result[0] = False and an immediate return, so every
         // other field stays None. This is what an empty interactive line produces.
         let listener = try makeListener()
         let result = listener.makeResult(for: RNXRequest(command: "", timeout: 15),
@@ -184,8 +184,8 @@ final class RNXListenerTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        // Python: strip every \r, split on \n, keep only lines of exactly 32 characters —
-        // so blank lines, comments and short lines are silently ignored.
+        // Python: strip every \r, split on \n, keep only lines of exactly 32 characters—so
+        // blank lines, comments and short lines are silently ignored.
         let valid = String(repeating: "ab", count: 16)
         let contents = "\r\n# a comment\r\n\(valid)\r\n0123456789\r\n\r\n"
         try contents.write(to: directory.appendingPathComponent(RNXApp.allowedIdentitiesFileName),
@@ -203,7 +203,7 @@ final class RNXListenerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // Python: a 32-character non-hex line raises inside bytes.fromhex, and rnx prints
-        // str(e) and exits 1. The wording differs; the failure does not.
+        // str(e) and exits 1. The wording differs; the failure doesn't.
         try String(repeating: "z", count: 32)
             .write(to: directory.appendingPathComponent(RNXApp.allowedIdentitiesFileName),
                    atomically: true, encoding: .utf8)
@@ -258,7 +258,7 @@ final class RNXListenerTests: XCTestCase {
         XCTAssertNotNil(entry)
         XCTAssertEqual(entry?.path, "command")
         // Registered with .all because Destination's .list policy takes [Identity], which
-        // rnx never has — the ALLOW_LIST check happens inside the handler instead.
+        // rnx never has—the ALLOW_LIST check happens inside the handler instead.
         if case .all = entry!.allow {} else { XCTFail("expected .all") }
     }
 

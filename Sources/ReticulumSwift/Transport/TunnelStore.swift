@@ -1,32 +1,32 @@
 import Foundation
 
-/// On-disk snapshot of Transport's tunnel table — `storage/tunnels`.
+/// On-disk snapshot of Transport's tunnel table—`storage/tunnels`.
 ///
 /// `bugs/029`'s one *absence* rather than divergence: the reference writes this file on the same
 /// clock as the path table (`Transport.persist_data`, `Transport.py:3510-3512`) and restores it at
 /// start (`:368-405`); the port wrote no counterpart at all. A node with an established tunnel
-/// therefore lost every tunnel path across a restart, and could not serve them again until the
-/// peer re-announced — which for a tunnel endpoint that is itself waiting is not guaranteed.
+/// therefore lost every tunnel path across a restart, and couldn't serve them again until the
+/// peer re-announced—which for a tunnel endpoint that's itself waiting isn't guaranteed.
 ///
 /// `umsgpack.packb` of a list of `[tunnel_id, interface_hash, paths, expires]` (`:3487`), where
 /// each path is the same 8-element list a `destination_table` entry uses. That shared shape is
-/// shared here too: both go through ``PathStore/Entry``'s codec, so the two files cannot drift
+/// shared here too: both go through ``PathStore/Entry``'s codec, so the two files can't drift
 /// into disagreeing about what a field means.
 public struct TunnelStore {
 
     public struct Entry {
-        /// 0 — `IDX_TT_TUNNEL_ID`.
+        /// 0—`IDX_TT_TUNNEL_ID`.
         public var tunnelID: Data
-        /// 1 — `IDX_TT_IF`, the tunnel's `interface.get_hash()`, or `nil` when the interface has
+        /// 1—`IDX_TT_IF`, the tunnel's `interface.get_hash()`, or `nil` when the interface has
         /// gone (`Transport.py:3456-3457`).
         ///
-        /// The reference reads this field on restore and then does not use it: it rebuilds each
+        /// The reference reads this field on restore and then doesn't use it: it rebuilds each
         /// path's interface from that path's own field 6 and sets the tunnel's own to `None`
         /// (`:374`, `:403`). Written because the entry is positional.
         public var interfaceHash: Data?
-        /// 2 — `IDX_TT_PATHS`.
+        /// 2—`IDX_TT_PATHS`.
         public var paths: [PathStore.Entry]
-        /// 3 — `IDX_TT_EXPIRES`, unix seconds.
+        /// 3—`IDX_TT_EXPIRES`, unix seconds.
         public var expires: TimeInterval
 
         public init(tunnelID: Data,
@@ -53,14 +53,14 @@ public struct TunnelStore {
 
         var entries: [Entry] = []
         for (tunnelID, tunnel) in tunnels {
-            // A tunnel whose interface has gone is still written, with a null interface hash —
-            // `Transport.py:3456-3457`. Unlike the path table, which skips such entries, a tunnel
+            // A tunnel whose interface has gone is still written, with a null interface hash—`Transport.py:3456-3457`.
+            // Unlike the path table, which skips such entries, a tunnel
             // exists to be re-attached when its endpoint reappears.
             let interfaceHash = tunnel.iface?.hash
             let paths = tunnel.paths.compactMap { destHash, path -> PathStore.Entry? in
                 guard let announceHash = path.cachedAnnounceHash else { return nil }
-                // Field 6 is the *tunnel's* interface hash, not the path's — `Transport.py:3476`
-                // reuses the one computed for the tunnel above.
+                // Field 6 is the *tunnel's* interface hash, not the path's—`Transport.py:3476`
+                // reuses the one computed for the preceding tunnel.
                 return PathStore.Entry(path,
                                        destinationHash: destHash,
                                        interfaceHash: interfaceHash,
@@ -77,16 +77,16 @@ public struct TunnelStore {
     // MARK: - Restore
 
     /// Unlike ``PathStore/apply(to:)`` this needs no deferral for a late interface, because a
-    /// tunnel path does not depend on one: the reference restores it with
+    /// tunnel path doesn't depend on one: the reference restores it with
     /// `receiving_interface = None` and gates only on the announce (`Transport.py:398-400`), then
     /// attaches an interface to every one of the tunnel's paths when the endpoint reappears
-    /// (`:2440-2447`). So every entry here is resolved on the spot — installed or finally
-    /// dropped — and nothing is parked.
+    /// (`:2440-2447`). So every entry here is resolved on the spot—installed or finally
+    /// dropped—and nothing is parked.
     public func apply(to transport: Transport) {
         for entry in entries {
             var paths: [Data: Transport.PathEntry] = [:]
             for path in entry.paths {
-                // Only the announce gates a tunnel path — `if announce_packet != None`
+                // Only the announce gates a tunnel path—`if announce_packet != None`
                 // (`Transport.py:398`). Deliberately weaker than the destination table's gate,
                 // which also requires a live interface (`:334`): a tunnel path with no interface
                 // is exactly what a restored tunnel holds until its endpoint reappears and
@@ -103,15 +103,15 @@ public struct TunnelStore {
                 paths[path.destinationHash] = path.pathEntry(interface: interface,
                                                              identityHash: identityHash)
             }
-            // `if len(tunnel_paths) > 0` (`Transport.py:402`) — a tunnel none of whose paths came
-            // back is not installed. An empty tunnel can route nothing.
+            // `if len(tunnel_paths) > 0` (`Transport.py:402`)—a tunnel none of whose paths came
+            // back isn't installed. An empty tunnel can route nothing.
             //
             // Left pending rather than resolved when *any* of its paths named an interface that
-            // is not registered yet: the tunnel becomes installable when that interface arrives.
+            // isn't registered yet: the tunnel becomes installable when that interface arrives.
             // A tunnel whose paths all failed on their announce is final, and is dropped.
             guard !paths.isEmpty else { continue }
-            // `tunnel = [tunnel_id, None, tunnel_paths, expires]` (`:403`) — the interface is
-            // null until the endpoint reappears; the restore does not re-attach one.
+            // `tunnel = [tunnel_id, None, tunnel_paths, expires]` (`:403`)—the interface is
+            // null until the endpoint reappears; the restore doesn't re-attach one.
             transport.restore(tunnel: Transport.TunnelEntry(
                 tunnelID: entry.tunnelID,
                 iface: nil,
@@ -123,7 +123,7 @@ public struct TunnelStore {
 
     // MARK: - Codec
 
-    /// `umsgpack.packb(serialised_tunnels)` — `Transport.py:3491`.
+    /// `umsgpack.packb(serialised_tunnels)`—`Transport.py:3491`.
     public func encoded() -> Data {
         MsgPack.encode(.array(entries.map { entry in
             .array([
@@ -135,7 +135,7 @@ public struct TunnelStore {
         }))
     }
 
-    /// `umsgpack.unpackb(file.read())` — `Transport.py:371`.
+    /// `umsgpack.unpackb(file.read())`—`Transport.py:371`.
     public static func decode(_ data: Data) throws -> TunnelStore {
         guard case .array(let serialised) = try MsgPack.decode(data) else {
             throw MsgPack.Error.typeMismatch

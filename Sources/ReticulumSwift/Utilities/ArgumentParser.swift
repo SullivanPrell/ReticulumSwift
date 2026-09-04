@@ -4,8 +4,8 @@ import Foundation
 /// behaviour the `rn*` utilities actually rely on.
 ///
 /// The Python utilities are all built with `argparse`, and their flag spellings are part
-/// of their user-facing contract — `rnstatus -A`, `rnid -e`, `rncp --allowed`, and so on.
-/// ReticulumSwift takes no external SPM dependencies, so `swift-argument-parser` is not
+/// of their user-facing contract—`rnstatus -A`, `rnid -e`, `rncp --allowed`, and so on.
+/// ReticulumSwift takes no external SPM dependencies, so `swift-argument-parser` isn't
 /// available; this is the minimum needed to reproduce those interfaces faithfully.
 ///
 /// Supported, matching `argparse`:
@@ -28,11 +28,11 @@ public struct ArgumentParser {
         case flag
         case counted
         case value(metavar: String, defaultValue: String?)
-        /// `nargs="*"` — zero or more values, collected until the next option.
+        /// `nargs="*"`—zero or more values, collected until the next option.
         case variadic(metavar: String)
-        /// `nargs="?"` — an optional value; `const` is stored when the flag is given bare.
+        /// `nargs="?"`—an optional value; `const` is stored when the flag is given bare.
         case optionalValue(metavar: String, const: String?)
-        /// Python: `action="append"` — the option may repeat and every value is kept.
+        /// Python: `action="append"`—the option may repeat and every value is kept.
         case appended(metavar: String)
     }
 
@@ -40,7 +40,7 @@ public struct ArgumentParser {
         let names: [String]
         let kind: Kind
         let help: String
-        /// `help=argparse.SUPPRESS` — parsed, but omitted from usage and the option list.
+        /// `help=argparse.SUPPRESS`—parsed, but omitted from usage and the option list.
         var hidden: Bool = false
     }
 
@@ -49,7 +49,7 @@ public struct ArgumentParser {
     public struct OptionSpec {
         /// Every spelling, in declaration order. Python: `action.option_strings`.
         public let names: [String]
-        /// Python: `_format_args(action, metavar)` — `nil` for `store_true`/`count`.
+        /// Python: `_format_args(action, metavar)`—`nil` for `store_true`/`count`.
         public let metavar: String?
         /// Python: `action.nargs`.
         public let nargs: Nargs
@@ -101,7 +101,7 @@ public struct ArgumentParser {
     /// Declare an option collecting zero or more values. Python: `nargs="*"`.
     ///
     /// The empty case is meaningful and must survive to the caller: Python's bare `-e`
-    /// yields `[]`, which is *falsy*, so the operation is skipped entirely **and** does not
+    /// yields `[]`, which is *falsy*, so the operation is skipped entirely **and** doesn't
     /// count toward `rnid`'s mutual-exclusion tally. ``ParsedArguments/values(_:)``
     /// distinguishes absent (`nil`) from present-but-empty (`[]`) for exactly that reason.
     public mutating func variadic(_ names: [String], metavar: String = "VALUE",
@@ -112,7 +112,7 @@ public struct ArgumentParser {
 
     /// Declare an option whose value is optional. Python: `nargs="?", const=…`.
     ///
-    /// When the flag appears without a value, `const` is stored — matching argparse, where
+    /// When the flag appears without a value, `const` is stored—matching argparse, where
     /// `-a` alone yields `DEFAULT_ASPECTS`. A `nil` const stores nothing but still records
     /// the flag as provided (``ParsedArguments/wasProvided(_:)``).
     public mutating func optionalValue(_ names: [String], metavar: String = "VALUE",
@@ -182,7 +182,7 @@ public struct ArgumentParser {
 
             // argparse's `allow_abbrev`, which every RNS utility inherits: expand an
             // unambiguous long-option prefix to its full spelling before anything else
-            // inspects the token, so the rest of the loop only ever sees canonical names.
+            // inspects the token, so the rest of the loop only ever receives canonical names.
             argument = try expandingAbbreviation(argument)
 
             // argparse adds -h/--help implicitly unless the program declares them itself.
@@ -249,9 +249,9 @@ public struct ArgumentParser {
             // right: flag/count options are consumed one character at a time (so "-vv" is two
             // counts and "-qv" is quiet-then-verbose), and the FIRST value-taking option
             // consumes the REST of the token as its value ("-s16" is "-s 16", "-vvs16" is
-            // "-v -v -s 16") — or, if it is the last character, the next argument ("-vs 16").
+            // "-v -v -s 16")—or, if it's the last character, the next argument ("-vs 16").
             // A bare "-h" anywhere in the cluster is the implicit help option. The whole token
-            // is resolved before anything is applied, so an unrecognised character rejects the
+            // is resolved before anything is applied, so an unrecognized character rejects the
             // entire argument (argparse reports the original token) rather than half-applying it.
             if !argument.hasPrefix("--"), argument.count > 2, let steps = shortCluster(argument) {
                 for step in steps {
@@ -294,7 +294,7 @@ public struct ArgumentParser {
             throw ArgumentError.unrecognisedOption(argument)
         }
 
-        // Fill in declared defaults for options the caller did not pass.
+        // Fill in declared defaults for options the caller didn't pass.
         for declaration in declarations {
             if case .value(_, let defaultValue) = declaration.kind,
                let defaultValue,
@@ -322,9 +322,9 @@ public struct ArgumentParser {
     }
 
     /// Resolve a `-xyz…` token into its constituent short options, or `nil` if any
-    /// character is not a known single-character option. The first value-taking option
+    /// character isn't a known single-character option. The first value-taking option
     /// terminates the walk and claims the rest of the token as its (possibly empty)
-    /// attached value; `-h` resolves to the implicit help option when the program has not
+    /// attached value; `-h` resolves to the implicit help option when the program hasn't
     /// declared its own. Mirrors argparse's `_parse_optional` / short-option consumption.
     private func shortCluster(_ token: String) -> [ClusterStep]? {
         let chars = Array(token.dropFirst())
@@ -355,9 +355,9 @@ public struct ArgumentParser {
     }
 
     /// Expand a single `--abbrev` token to its unambiguous long-option name under
-    /// `allow_abbrev`, or return it unchanged when it is not a long option, not a unique
+    /// `allow_abbrev`, or return it unchanged when it isn't a long option, not a unique
     /// prefix, or ambiguous. Lets a tool that pre-scans for `--help`/`--version` before full
-    /// parsing (e.g. rnprobe) honour abbreviations — `--hel`, `--vers` — exactly as argparse
+    /// parsing (for example, rnprobe) honour abbreviations—`--hel`, `--vers`—exactly as argparse
     /// does, instead of only matching the spelled-out forms.
     public func expandedLongOption(_ argument: String) -> String {
         (try? expandingAbbreviation(argument)) ?? argument
@@ -394,9 +394,9 @@ public struct ArgumentParser {
 
     // MARK: - Long-option abbreviation
 
-    /// Every long spelling the parser will answer to, in declaration order.
+    /// Every long spelling the parser answers to, in declaration order.
     ///
-    /// `--help` joins the pool only when the program has not declared it itself, matching
+    /// `--help` joins the pool only when the program hasn't declared it itself, matching
     /// `argparse` adding its own help action in exactly that case.
     private var abbreviatableLongNames: [String] {
         var names = declarations.flatMap { $0.names }.filter { $0.hasPrefix("--") }
@@ -411,12 +411,12 @@ public struct ArgumentParser {
     /// An exact match is never treated as an abbreviation, so a program declaring both
     /// `--log` and `--logfile` can still be given `--log`.
     ///
-    /// Any token that is not a long option, or that matches nothing, is returned untouched —
-    /// the caller then fails it the way it would have anyway.
+    /// Any token that isn't a long option, or that matches nothing, is returned untouched—the
+    /// caller then fails it the way it would have anyway.
     private func expandingAbbreviation(_ argument: String) throws -> String {
         guard argument.hasPrefix("--"), argument.count > 2 else { return argument }
 
-        // Split "--conf=/tmp/x" so the prefix search sees only the name.
+        // Split "--conf=/tmp/x" so the prefix search receives only the name.
         let name: String
         let suffix: String
         if let equals = argument.firstIndex(of: "=") {
@@ -459,7 +459,7 @@ public struct ArgumentParser {
 
     /// An option named the way `argparse` names it: all its spellings joined with "/".
     ///
-    /// Public because a `type=`/`choices=` conversion failure is raised by the caller, not
+    /// Public because a `type=`/`choices=` conversion failure comes from the caller, not
     /// by ``parse(_:)``, and argparse names the option identically in those messages.
     public func spelling(for name: String) -> String {
         guard let declaration = declaration(for: name) else { return name }
@@ -548,8 +548,8 @@ public struct ParsedArguments {
 
     /// The values of an `nargs="*"` option.
     ///
-    /// `nil` means the option was never given; `[]` means it was given with no values —
-    /// Python's falsy empty list, which callers must treat as "skip this operation".
+    /// `nil` means the option was never given; `[]` means it was given with no values—Python's
+    /// falsy empty list, which callers must treat as "skip this operation".
     public func values(_ name: String) -> [String]? { lists[name] }
 
     /// Whether an option appeared on the command line at all, regardless of its value.
@@ -563,15 +563,15 @@ public struct ParsedArguments {
 // MARK: - Errors
 
 public enum ArgumentError: Error, CustomStringConvertible, Equatable {
-    /// An option that was not declared. Python: "unrecognized arguments".
+    /// An option that wasn't declared. Python: "unrecognized arguments".
     case unrecognisedOption(String)
     /// An option that takes a value was given none. Python: "expected one argument".
     case missingValue(String)
     /// `--flag=value` where `--flag` takes no value. Python: "ignored explicit argument".
     case unexpectedValue(String)
-    /// A required positional was not supplied. Python: "the following arguments are required".
+    /// A required positional wasn't supplied. Python: "the following arguments are required".
     case missingPositional(String)
-    /// Every token `argparse` could not consume, in argv order. Python's `parse_args`
+    /// Every token `argparse` couldn't consume, in argv order. Python's `parse_args`
     /// reports all leftovers in one message: "unrecognized arguments: --bogus extra".
     /// Distinct from ``unrecognisedOption(_:)``, which names a single option and is what
     /// ``ArgumentParser/parse(_:)`` throws as soon as it hits one.

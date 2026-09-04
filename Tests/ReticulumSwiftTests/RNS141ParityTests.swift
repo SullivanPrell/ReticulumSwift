@@ -58,7 +58,7 @@ final class RNS141ParityTests: XCTestCase {
         }
     }
 
-    /// Feed an announce into Transport the way the wire does — through the
+    /// Feed an announce into Transport the way the wire does—through the
     /// interface's `inboundHandler`, which `register(interface:)` installs.
     private static func deliver(_ announce: Packet, on iface: any Interface) throws {
         let raw = try announce.pack()
@@ -162,7 +162,7 @@ final class RNS141ParityTests: XCTestCase {
             outboundMode: .internal, nextHopMode: .boundary,
             nextHopAnnouncesToInternal: true))
 
-        // Only an explicit true counts — Python tests `== True`, so nil/false
+        // Only an explicit true counts—Python tests `== True`, so nil/false
         // both keep the block.
         XCTAssertFalse(Transport.shouldForwardAnnounce(
             outboundMode: .internal, nextHopMode: .boundary,
@@ -267,8 +267,8 @@ final class RNS141ParityTests: XCTestCase {
     /// are redundant with it, so the gravity branch omitting one means nothing.
     ///
     /// This is asserted via `markPathUnresponsive` rather than
-    /// `markPathResponsive`, because `pathIsUnresponsive` cannot distinguish
-    /// `stateResponsive` from `stateUnknown` — starting from *responsive* the
+    /// `markPathResponsive`, because `pathIsUnresponsive` can't distinguish
+    /// `stateResponsive` from `stateUnknown`—starting from *responsive* the
     /// assertion would hold whether or not the reset happened, and would pass
     /// with the behaviour it exists to pin removed.
     func testGravitySwapResetsPathState() throws {
@@ -340,9 +340,9 @@ final class RNS141ParityTests: XCTestCase {
     /// that a subsiding burst never refills deadlocked the flag on indefinitely.
     ///
     /// RNS 1.5.1 then renamed the egress constant to `EC_BURST_MIN_SAMPLES` and dropped it from
-    /// 6 to 2, so the two numbers now coincide. That does not restore the bug and this test is
+    /// 6 to 2, so the two numbers now coincide. That doesn't restore the bug and this test is
     /// not weakened by dropping the inequality: what 1.4.1 guarantees is which *quantity* each
-    /// site reads, so that is what is asserted below. They are equal today by coincidence, and
+    /// site reads, so that's what's asserted below. They're equal today by coincidence, and
     /// either may move again without the other.
     func testEgressLimitRequiresBurstMinSamples() {
         XCTAssertEqual(IngressControlState.ecBurstMinSamples, 2,
@@ -351,11 +351,11 @@ final class RNS141ParityTests: XCTestCase {
                        "Python Interface.IC_DEQUE_MIN_SAMPLE = 2")
     }
 
-    /// The structural half of commit 48388756, which the numeric assertions above can no longer
+    /// The structural half of commit 48388756, which the preceding numeric assertions can no longer
     /// express now that both constants read 2: a subsiding announce burst must clear even
     /// though its deque holds fewer samples than the egress floor would demand. Driven with a
-    /// three-sample deque so that raising `ecBurstMinSamples` back to 6 — or repointing the
-    /// deactivation gate at it — fails here.
+    /// three-sample deque so that raising `ecBurstMinSamples` back to 6—or repointing the
+    /// deactivation gate at it—fails here.
     func testIngressBurstClearsOnADequeTooSmallForTheEgressFloor() {
         let t = Transport()
         let iface = BurstTestInterface(name: "subsiding",
@@ -363,7 +363,7 @@ final class RNS141ParityTests: XCTestCase {
         t.register(interface: iface)
 
         // Three announces 10 ms apart: 100 Hz against a 10 Hz threshold, so the burst
-        // activates off a deque holding only three samples — fewer than the six the pre-1.5.1
+        // activates off a deque holding only three samples—fewer than the six the pre-1.5.1
         // egress floor demanded, which is the whole point.
         let t0: TimeInterval = 1000
         for offset in [0.0, 0.01, 0.02] { t.notifyIncomingAnnounce(on: iface, at: t0 + offset) }
@@ -396,10 +396,10 @@ final class RNS141ParityTests: XCTestCase {
 
     /// A link opened with no path entry has `expectedHops == nil`, which maps onto
     /// Python's PATHFINDER_M sentinel and therefore always disagrees with the
-    /// proof — so an ordinary establishment over a direct interface exercises the
+    /// proof—so an ordinary establishment over a direct interface exercises the
     /// re-balance path. The corrected hop count must be in place *before* the link
     /// activates: Python re-balances ahead of `validate_proof`
-    /// (Transport.py:2276-2317), so no `onEstablished` observer ever sees the
+    /// (Transport.py:2276-2317), so no `onEstablished` observer ever receives the
     /// stale count.
     func testLinkRebalancesBeforeEstablishedCallbackFires() throws {
         let (aLink, _, hopsAtCallback) = try establishRebalancingLink()
@@ -410,7 +410,7 @@ final class RNS141ParityTests: XCTestCase {
     }
 
     /// With re-balancing disabled, Python's `packet.hops == link.expected_hops`
-    /// gate is never satisfied for a mismatched proof, so `validate_proof` is not
+    /// gate is never satisfied for a mismatched proof, so `validate_proof` isn't
     /// reached and the link stays pending until it times out. Swift used to
     /// validate the proof first and re-balance afterwards, which established the
     /// link in a case Python leaves dead.
@@ -538,10 +538,10 @@ final class RNS141ParityTests: XCTestCase {
 
         // A far-future sequence must be DROPPED, not merely left undelivered.
         //
-        // Distinguishing the two takes care: an out-of-window frame that is
-        // buffered still delivers nothing on arrival (it is not contiguous), so
-        // filling only 0..<WINDOW_MAX cannot tell "dropped" from "buffered" —
-        // both yield WINDOW_MAX deliveries. Fill 0...WINDOW_MAX instead, which
+        // Distinguishing the two takes care: an out-of-window frame that's
+        // buffered still delivers nothing on arrival (it isn't contiguous), so
+        // filling only 0..<WINDOW_MAX can't tell "dropped" from "buffered"—both
+        // yield WINDOW_MAX deliveries. Fill 0...WINDOW_MAX instead, which
         // advances nextRxSequence to WINDOW_MAX+1: if the frame had been
         // buffered it would now become contiguous and deliver too.
         ch.receive(Self.frame(seq: UInt16(Channel.WINDOW_MAX + 1), value: 0x01))

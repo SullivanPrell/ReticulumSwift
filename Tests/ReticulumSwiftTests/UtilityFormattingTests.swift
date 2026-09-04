@@ -3,9 +3,9 @@ import XCTest
 
 /// Golden-value tests for ``UtilityFormatting``.
 ///
-/// Every expected string below was produced by running the Python helper itself —
-/// `size_str` (rnstatus.py:42), `speed_str` (rnstatus.py:760) and `pretty_date`
-/// (rnpath.py:528) — so these pin byte-identical output rather than a Swift
+/// Running the Python helper itself produced every expected string below—`size_str`
+/// (rnstatus.py:42), `speed_str` (rnstatus.py:760) and `pretty_date`
+/// (rnpath.py:528)—so these pin byte-identical output rather than a Swift
 /// approximation of it.
 final class UtilityFormattingTests: XCTestCase {
 
@@ -26,7 +26,7 @@ final class UtilityFormattingTests: XCTestCase {
     }
 
     func testSizeStr_isDecimalNotBinary() {
-        // 1 MiB is 1.05 MB on a 1000-based scale — not "1.00 MB".
+        // 1 MiB is 1.05 MB on a 1000-based scale—not "1.00 MB".
         XCTAssertEqual(UtilityFormatting.sizeStr(1_048_576), "1.05 MB")
     }
 
@@ -42,7 +42,7 @@ final class UtilityFormattingTests: XCTestCase {
     }
 
     func testSizeStr_yottaBranchOmitsTheSpace() {
-        // Python's fall-through is "%.2f%s%s" — the only branch without a space.
+        // Python's fall-through is "%.2f%s%s"—the only branch without a space.
         // Reproduced deliberately; "fixing" it would diverge from rnstatus output.
         XCTAssertEqual(UtilityFormatting.sizeStr(1e24), "1.00YB")
         XCTAssertEqual(UtilityFormatting.sizeStr(1e24, suffix: "b"), "8.00Yb")
@@ -82,7 +82,7 @@ final class UtilityFormattingTests: XCTestCase {
     }
 
     func testSpeedStr_divergesFromLibraryPrettyspeed() {
-        // Guards the reason this type exists at all: the library helper is not a
+        // Guards the reason this type exists at all: the library helper isn't a
         // drop-in replacement for the utility-local one.
         XCTAssertEqual(UtilityFormatting.speedStr(1500), "1.50 kbps")
         XCTAssertNotEqual(RNSUtilities.prettyspeed(1500), UtilityFormatting.speedStr(1500))
@@ -111,7 +111,7 @@ final class UtilityFormattingTests: XCTestCase {
     }
 
     func testPrettyDate_minutesRunToTwoHours() {
-        // Python: if second_diff < 7200: minutes — so 90 minutes is "90 minutes",
+        // Python: if second_diff < 7200: minutes—so 90 minutes is "90 minutes",
         // not "1 hour".
         XCTAssertEqual(ago(70), "1 minutes")
         XCTAssertEqual(ago(600), "10 minutes")

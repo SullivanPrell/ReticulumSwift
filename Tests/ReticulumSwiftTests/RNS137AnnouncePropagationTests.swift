@@ -35,7 +35,7 @@ final class RNS137AnnouncePropagationTests: XCTestCase {
     // MARK: - missing next hop
 
     func testBlockWhenNextHopMissingAndNotLocal() {
-        // No next-hop interface toward the source and the destination is not
+        // No next-hop interface toward the source and the destination isn't
         // instance-local → block on every outbound mode.
         for mode in [InterfaceMode.full, .gateway, .roaming, .boundary, .internal] {
             XCTAssertFalse(Transport.shouldForwardAnnounce(

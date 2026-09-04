@@ -48,12 +48,12 @@ final class TransportUtilityTests: XCTestCase {
     // Semantics mirror Python RNS exactly (Transport.is_local_client_interface /
     // interface_to_shared_instance):
     //   * is_local_client_interface  → the SERVER side: an interface serving a
-    //     locally-connected shared-instance client. In Swift that is a
-    //     `LocalClientServingInterface` (e.g. PosixTCPServer on port 37428).
+    //     locally connected shared-instance client. In Swift that's a
+    //     `LocalClientServingInterface` (for example, PosixTCPServer on port 37428).
     //   * interface_to_shared_instance → the CLIENT side: this node's own
-    //     connection *to* a shared instance. In Swift that is `LocalInterface`.
-    // A `LocalInterface` is therefore NOT a local-client interface (it is the
-    // client end), and a serving interface is NOT an interface-to-shared-instance.
+    //     connection *to* a shared instance. In Swift that's `LocalInterface`.
+    // A `LocalInterface` is therefore NOT a local-client interface (it's the
+    // client end), and a serving interface isn't an interface-to-shared-instance.
 
     /// Minimal stand-in for PosixTCPServer's serving role.
     private final class MockServingInterface: Interface, LocalClientServingInterface {

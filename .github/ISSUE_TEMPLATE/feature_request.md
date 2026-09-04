@@ -12,4 +12,4 @@ The use case it enables.
 
 **Reference implementation**
 If this exists in Python Reticulum (or LXMF / LXST / NomadNet), link to the
-relevant code or docs — parity with upstream is the project's north star.
+relevant code or docs—parity with upstream is the project's north star.

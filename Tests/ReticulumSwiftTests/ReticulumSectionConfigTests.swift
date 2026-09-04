@@ -1,16 +1,16 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// The `[reticulum]` section must be honoured — `bugs/030`, tasks 4.2 and 4.3.
+/// The `[reticulum]` section must be honoured—`bugs/030`, tasks 4.2 and 4.3.
 ///
-/// Reading a key is not honouring it. `ConfigTemplateRoundTripTests` proves the parser no longer
+/// Reading a key isn't honouring it. `ConfigTemplateRoundTripTests` proves the parser no longer
 /// discards these keys and that each changes the parsed result; this file proves the parsed
 /// result reaches the thing that acts on it. The two halves are separate on purpose: `bugs/015`
-/// was a correct, thoroughly-tested API with no caller, and a parser that fills a struct nobody
+/// was a correct, thoroughly tested API with no caller, and a parser that fills a struct nobody
 /// reads is the same defect wearing a different hat.
 ///
 /// Global state note: these options are statics on `Reticulum`, matching Python's class
-/// attributes. Every test restores them, so ordering cannot leak a configured value into an
+/// attributes. Every test restores them, so ordering can't leak a configured value into an
 /// unrelated suite.
 final class ReticulumSectionConfigTests: XCTestCase {
 
@@ -108,7 +108,7 @@ final class ReticulumSectionConfigTests: XCTestCase {
 
     /// A config file on disk, through `Reticulum.start()`, reaches the globals.
     ///
-    /// The one assertion here that `applyGlobalDefaults` cannot make for itself. Every other test
+    /// The one assertion here that `applyGlobalDefaults` can't make for itself. Every other test
     /// in this file drives that function directly for economy; if `applyConfig` ever stops
     /// calling it, this is what notices.
     func testAConfigFileOnDiskReachesTheGlobalsThroughStart() throws {
@@ -177,11 +177,11 @@ final class ReticulumSectionConfigTests: XCTestCase {
     /// Spec scenario: "MTU discovery can be disabled".
     ///
     /// A documented divergence, not an oversight. Python assigns only on `True`
-    /// (`Reticulum.py:537-539`) against a default that is already `True` (`:105`), so
-    /// `link_mtu_discovery = no` cannot disable anything in the reference. Every neighbouring
-    /// option in the same chain assigns both directions, and the spec requires this one to. It is
-    /// local policy — a node that declines to raise a link's MTU is indistinguishable to a peer
-    /// from one that never offered a larger MTU — so honouring it cannot break interop.
+    /// (`Reticulum.py:537-539`) against a default that's already `True` (`:105`), so
+    /// `link_mtu_discovery = no` can't disable anything in the reference. Every neighbouring
+    /// option in the same chain assigns both directions, and the spec requires this one to. It's
+    /// local policy—a node that declines to raise a link's MTU is indistinguishable to a peer
+    /// from one that never offered a larger MTU—so honouring it can't break interop.
     func testLinkMtuDiscoveryCanBeDisabled() {
         XCTAssertTrue(Reticulum.linkMtuDiscovery(), "default matches Python's LINK_MTU_DISCOVERY")
         apply("link_mtu_discovery = no")
@@ -194,7 +194,7 @@ final class ReticulumSectionConfigTests: XCTestCase {
 
     /// The `ic_*` and egress values are what every interface *starts* from, because Python reads
     /// them in `Interface.__init__` (`Interface.py:126-136`). Asserted on a freshly constructed
-    /// interface, not on the globals — reading the globals back would prove only that the parser
+    /// interface, not on the globals—reading the globals back would prove only that the parser
     /// filled a struct.
     func testConfiguredIngressAndEgressDefaultsReachANewInterface() {
         apply("""
@@ -263,7 +263,7 @@ final class ReticulumSectionConfigTests: XCTestCase {
     // MARK: - Announce-rate defaults
 
     /// `default_ar_*` is the announce-rate policy an interface inherits when its own block is
-    /// silent — and only when transport is enabled (`Reticulum.py:854-857`). Without the
+    /// silent—and only when transport is enabled (`Reticulum.py:854-857`). Without the
     /// application half these keys would parse into a value no interface ever reads, which is
     /// the defect, not the fix.
     func testDefaultAnnounceRatesReachAnInterfaceWhenTransportIsEnabled() throws {
@@ -313,7 +313,7 @@ final class ReticulumSectionConfigTests: XCTestCase {
 
     // MARK: - Network identity
 
-    /// `network_identity` names a file that is loaded if present and generated if not
+    /// `network_identity` names a file that's loaded if present and generated if not
     /// (`Reticulum.py:513-534`), then handed to Transport so discovery announces are signed
     /// with it.
     func testNetworkIdentityIsGeneratedThenReloadedFromTheConfiguredPath() throws {
@@ -347,7 +347,7 @@ final class ReticulumSectionConfigTests: XCTestCase {
     // MARK: - RPC key (task 4.3)
 
     /// Spec: "a utility presenting the configured key authenticates, and a utility presenting
-    /// the key derived from the transport identity does not".
+    /// the key derived from the transport identity doesn't".
     func testAConfiguredRPCKeyReplacesTheDerivedOne() throws {
         let dir = scratchDirectory()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -384,7 +384,7 @@ final class ReticulumSectionConfigTests: XCTestCase {
         XCTAssertEqual(reticulum.rpcAuthenticationKey(), derived)
     }
 
-    /// Python logs and falls back to the derived key when the hex will not decode
+    /// Python logs and falls back to the derived key when the hex won't decode
     /// (`Reticulum.py:494-499`). A malformed key must not become a *working* key made of
     /// whatever decoded, and must not silently look like an absent one either.
     func testAMalformedRPCKeyFallsBackButStaysDistinguishableFromAbsent() {

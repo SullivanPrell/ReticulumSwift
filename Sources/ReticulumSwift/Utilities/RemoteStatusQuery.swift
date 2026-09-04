@@ -7,7 +7,7 @@ import Foundation
 /// responder half, `Transport.remote_status_handler` (`RNS/Transport.py:2849-2864`).
 ///
 /// Python keeps `remote_destination` / `remote_link` / `first_remote_req` in module
-/// globals so monitor mode can reuse one established link across refreshes; here they are
+/// globals so monitor mode can reuse one established link across refreshes; here they're
 /// instance state, and the executable holds the instance for the life of the loop.
 ///
 /// The `transport` reference is deliberately **strong**: `Link.transport` is weak, so
@@ -20,7 +20,7 @@ public final class RemoteStatusQuery {
         /// No path to the management destination within the timeout. Python: exit 12.
         case noPath
         /// `RNS.Identity.recall(destination_hash)` returned nothing, so the outbound
-        /// SINGLE destination cannot be built. Python: the `Destination(...)` raises.
+        /// SINGLE destination can't be built. Python: the `Destination(...)` raises.
         case noRemoteIdentity
         /// `Link.TIMEOUT`. Python: "The link timed out, exiting now", exit 10.
         case linkTimedOut
@@ -28,13 +28,13 @@ public final class RemoteStatusQuery {
         case linkClosedByServer
         /// Any other teardown reason. Python: "Link closed unexpectedly, exiting now", exit 10.
         case linkClosedUnexpectedly
-        /// The responder refused the request — usually an authentication failure.
+        /// The responder refused the request—usually an authentication failure.
         /// Python: `request_failed`, which leaves `request_result` nil → exit 2.
         case requestFailed
-        /// The response decoded, but slot 0 was not a stats dict.
+        /// The response decoded, but slot 0 wasn't a stats dict.
         ///
         /// This is the guard that matters on the Swift side: `Link.handleIncomingResponse`
-        /// transparently unwraps a `.bytes`-wrapped payload, so a Swift client cannot
+        /// transparently unwraps a `.bytes`-wrapped payload, so a Swift client can't
         /// detect the double-wrapping the way Python's `isinstance(response, list)` does.
         /// The malformed check therefore has to be "does slot 0 contain an `interfaces`
         /// key", not "is it an array".
@@ -51,7 +51,7 @@ public final class RemoteStatusQuery {
     /// The link reused across monitor refreshes. Python: the `remote_link` global.
     public private(set) var link: Link?
     private var destination: Destination?
-    /// Python: the `first_remote_req` global — controls the "Sending request…" banner only.
+    /// Python: the `first_remote_req` global—controls the "Sending request…" banner only.
     public private(set) var isFirstRequest: Bool = true
 
     private let lock = NSLock()
@@ -82,13 +82,13 @@ public final class RemoteStatusQuery {
 
     // MARK: - Path
 
-    /// Python: rnstatus.py:70-82 — request a path if we have none and poll until it lands.
+    /// Python: rnstatus.py:70-82—request a path if none is known and poll until it lands.
     ///
     /// DELIBERATE DIVERGENCE: Python's timeout message *and* its `exit(12)` both sit inside
     /// `if not no_output:`, so `rnstatus -j -R <unreachable>` spins forever. This always
     /// throws ``QueryError/noPath`` and lets the caller exit 12.
     ///
-    /// Blocks. Never call this from a test — `Transport.awaitPath` sleeps on a real clock.
+    /// Blocks. Never call this from a test—`Transport.awaitPath` sleeps on a real clock.
     public func ensurePath(progress: ((String) -> Void)? = nil) throws {
         if transport.hasPath(to: destinationHash) { return }
         progress?("Path to " + RNSUtilities.prettyhexrep(destinationHash) + " requested")
@@ -113,7 +113,7 @@ public final class RemoteStatusQuery {
 
         // Python: `if not remote_destination: remote_destination = RNS.Destination(...)`.
         // The recall is what supplies the responder's public key; without it the OUT
-        // SINGLE destination cannot be constructed and Python raises out of get_remote_status.
+        // SINGLE destination can't be constructed and Python raises out of get_remote_status.
         if destination == nil {
             guard let remoteIdentity = transport.recall(identity: destinationHash) else {
                 completion(.failure(.noRemoteIdentity)); return
@@ -141,8 +141,8 @@ public final class RemoteStatusQuery {
         lock.lock(); link = fresh; lock.unlock()
 
         fresh.onClosed = { [weak self] closed in
-            // Python: INITIATOR_CLOSED returns silently; every other reason exits 10 —
-            // and that exit is outside the no_output guards, so it fires under -j too.
+            // Python: INITIATOR_CLOSED returns silently; every other reason exits 10—and
+            // that exit is outside the no_output guards, so it fires under -j too.
             switch closed.teardownReason {
             case .initiatorClosed: return
             case .timeout:            completion(.failure(.linkTimedOut))
@@ -154,7 +154,7 @@ public final class RemoteStatusQuery {
         fresh.onEstablished = { [weak self] established in
             guard let self else { return }
             if self.isFirstRequest { progress?("Sending request...") }
-            // Python does not wait for the identify to be acknowledged.
+            // Python doesn't wait for the identify to be acknowledged.
             try? established.identify(as: self.managementIdentity)
             self.send(on: established, includeLinkStats: includeLinkStats, completion: completion)
             self.isFirstRequest = false
@@ -165,7 +165,7 @@ public final class RemoteStatusQuery {
                       includeLinkStats: Bool,
                       completion: @escaping (Swift.Result<(MsgPack.Value, Int?), QueryError>) -> Void) {
         // Python: `link.request("/status", data=[include_lstats], …)`. The payload is a
-        // NATIVE msgpack array holding one boolean — the `data: Data?` overload would wrap
+        // NATIVE msgpack array holding one boolean—the `data: Data?` overload would wrap
         // it as msgpack BIN and the Python responder's `isinstance(data, list)` would fail.
         do {
             try link.request(path: RNStatusApp.statusRequestPath,
@@ -227,7 +227,7 @@ public final class RemoteStatusQuery {
         }
     }
 
-    /// Close the reused link. Python never does this explicitly — the process exits.
+    /// Close the reused link. Python never does this explicitly—the process exits.
     public func teardown() {
         lock.lock(); let current = link; link = nil; lock.unlock()
         try? current?.teardown()

@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for Destination.rotateRatchets() — mirrors Python's Destination.rotate_ratchets().
+/// Tests for Destination.rotateRatchets()—mirrors Python's Destination.rotate_ratchets().
 final class DestinationRotateRatchetTests: XCTestCase {
 
     private func tempDir() -> URL {

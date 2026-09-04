@@ -21,14 +21,14 @@ extension PacketReceipt: ProbeReceipt {
     /// Python: `receipt.proof_packet.snr` (rnprobe.py:185).
     public var proofSnr: Float? { proofPacket?.snr }
 
-    /// Python: `receipt.proof_packet.packet_hash` — the FULL 32-byte SHA-256
+    /// Python: `receipt.proof_packet.packet_hash`—the FULL 32-byte SHA-256
     /// (Packet.py:342-344), which is what rnprobe passes to `get_packet_rssi` and friends.
     public var proofPacketFullHash: Data? {
         guard let proofPacket else { return nil }
         return try? proofPacket.packetHash()
     }
 
-    /// The 16-byte form of the same hash — the key a Swift daemon's PHY caches use.
+    /// The 16-byte form of the same hash—the key a Swift daemon's PHY caches use.
     public var proofPacketTruncatedHash: Data? {
         guard let proofPacket else { return nil }
         return try? proofPacket.truncatedPacketHash()
@@ -92,7 +92,7 @@ public final class TransportProbeNetwork: ProbeNetwork {
         return transport.nextHop(to: destinationHash)
     }
 
-    /// Python: `str(RNS.Transport.next_hop_interface(dh))` — the interface's `__str__`.
+    /// Python: `str(RNS.Transport.next_hop_interface(dh))`—the interface's `__str__`.
     /// `Transport.nextHopInterfaceName(for:)` returns `Interface.name`, which is a
     /// different string, so the live object's `displayName` is used instead.
     public func nextHopInterfaceDisplayName(for destinationHash: Data) -> String? {
@@ -142,7 +142,7 @@ public final class TransportProbeNetwork: ProbeNetwork {
 
     /// Python: `RNS.Packet(request_destination, payload)` → `pack()` → `send()`.
     ///
-    /// The MTU is enforced through `pack()` itself, not `Packet.rawByteCount` — the latter
+    /// The MTU is enforced through `pack()` itself, not `Packet.rawByteCount`—the latter
     /// omits the one-byte context field and is a byte short of the real packed length.
     /// Defaults match Python's: DATA / SINGLE / HEADER_1 / BROADCAST / context NONE / hops 0.
     public func transmit(ciphertext: Data, to destinationHash: Data) throws -> (any ProbeReceipt)? {
@@ -185,7 +185,7 @@ public final class TransportProbeNetwork: ProbeNetwork {
             // Python always sends the FULL 32-byte hash. A Python daemon caches under that
             // key; a Swift daemon caches under the truncated one and narrows the key on
             // lookup, so the full hash works against both. The truncated retry keeps this
-            // working against an older Swift daemon that does not narrow.
+            // working against an older Swift daemon that doesn't narrow.
             if let value = try? rpc.get(call, extra: [("packet_hash", .bytes(packetHash))]),
                !isNil(value) {
                 return value
@@ -223,7 +223,7 @@ public final class SystemProbeClock: ProbeClock {
 /// Python: `os.urandom(size)`.
 ///
 /// `SecRandomCopyBytes` is the package's existing CSPRNG of choice; `UInt8.random(in:)`
-/// is not cryptographically secure and would make probe payloads predictable.
+/// isn't cryptographically secure and would make probe payloads predictable.
 public final class SecureProbeEntropy: ProbeEntropy {
     public init() {}
     public func randomBytes(_ count: Int) -> Data {
@@ -244,7 +244,7 @@ public final class SecureProbeEntropy: ProbeEntropy {
 /// Unbuffered stdout/stderr sink.
 ///
 /// The tool emits bare `\r` and `\b` control characters with no newline, so every fragment
-/// is flushed. Python only flushes at rnprobe.py:82, :90, :139 and :147 — flushing
+/// is flushed. Python only flushes at rnprobe.py:82, :90, :139 and :147—flushing
 /// everywhere changes on-screen timing, never the byte stream.
 public final class StandardProbeOutput: ProbeOutput {
     public init() {}

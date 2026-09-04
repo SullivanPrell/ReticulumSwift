@@ -3,8 +3,8 @@ import XCTest
 
 // MARK: - MockSerialPort
 
-/// In-memory serial port for unit testing.  Tracks all writes; read callbacks
-/// are driven by `simulateReceive`.
+/// In-memory serial port for unit testing. Tracks all writes; read callbacks
+/// come from `simulateReceive`.
 final class MockSerialPort: SerialPortTransport {
     var onTransportError: ((Error) -> Void)?
     var isOpen = false

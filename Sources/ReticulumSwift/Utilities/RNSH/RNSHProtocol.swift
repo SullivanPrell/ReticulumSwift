@@ -72,8 +72,8 @@ public enum RNSHSessionState: Int {
 
 // MARK: - RNSHNoopMessage (typeID 0xac00)
 
-/// No-operation message — used as a keepalive / heartbeat.
-/// Python: class NoopMessage — pack returns empty bytes, unpack is a no-op.
+/// No-operation message—used as a keepalive / heartbeat.
+/// Python: class NoopMessage—pack returns empty bytes, unpack is a no-op.
 public final class RNSHNoopMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(0) }
     public override func pack() throws -> Data { Data() }
@@ -83,7 +83,7 @@ public final class RNSHNoopMessage: MessageBase {
 // MARK: - RNSHWindowSizeMessage (typeID 0xac02)
 
 /// Terminal window-size notification.
-/// Python: class WindowSizeMessage — pack/unpack as 4-element msgpack tuple.
+/// Python: class WindowSizeMessage—pack/unpack as 4-element msgpack tuple.
 public final class RNSHWindowSizeMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(2) }
 
@@ -116,7 +116,7 @@ public final class RNSHWindowSizeMessage: MessageBase {
 // MARK: - RNSHExecuteCommandMessage (typeID 0xac03)
 
 /// Request to execute a command on the remote host.
-/// Python: class ExecuteCommandMesssage (sic) — 10-element msgpack tuple.
+/// Python: class ExecuteCommandMesssage (sic)—10-element msgpack tuple.
 public final class RNSHExecuteCommandMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(3) }
 
@@ -130,7 +130,7 @@ public final class RNSHExecuteCommandMessage: MessageBase {
     public var pipeStderr: Bool = false
     /// Raw termios flags (preserved as MsgPack value; nil for no-tty).
     public var tcflags: MsgPack.Value? = nil
-    /// Terminal type string (e.g. "xterm-256color").
+    /// Terminal type string (for example, "xterm-256color").
     public var term: String? = nil
     /// Terminal size: rows, cols, horizontal pixels, vertical pixels.
     public var rows: Int? = nil
@@ -190,7 +190,7 @@ public final class RNSHExecuteCommandMessage: MessageBase {
 // MARK: - RNSHStreamDataMessage (typeID 0xac04)
 
 /// Carries stdin/stdout/stderr bytes between initiator and listener.
-/// Python: class StreamDataMessage(RNSStreamDataMessage) — inherits the same
+/// Python: class StreamDataMessage(RNSStreamDataMessage)—inherits the same
 ///         2-byte header wire format as RNS.Buffer.StreamDataMessage but has
 ///         a different typeID (0xac04 vs 0xFF00).
 ///
@@ -227,7 +227,7 @@ public final class RNSHStreamDataMessage: MessageBase {
 // MARK: - RNSHVersionInfoMessage (typeID 0xac05)
 
 /// Protocol handshake: software version + protocol version.
-/// Python: class VersionInfoMessage — 2-element msgpack tuple.
+/// Python: class VersionInfoMessage—2-element msgpack tuple.
 public final class RNSHVersionInfoMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(5) }
 
@@ -255,7 +255,7 @@ public final class RNSHVersionInfoMessage: MessageBase {
 // MARK: - RNSHErrorMessage (typeID 0xac06)
 
 /// Protocol error notification.
-/// Python: class ErrorMessage — 3-element msgpack tuple (msg, fatal, data).
+/// Python: class ErrorMessage—3-element msgpack tuple (msg, fatal, data).
 public final class RNSHErrorMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(6) }
 
@@ -304,7 +304,7 @@ public final class RNSHErrorMessage: MessageBase {
 // MARK: - RNSHCommandExitedMessage (typeID 0xac07)
 
 /// Notification that the remote command has exited.
-/// Python: class CommandExitedMessage — packs a *single* msgpack int (not an array).
+/// Python: class CommandExitedMessage—packs a *single* msgpack int (not an array).
 public final class RNSHCommandExitedMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(7) }
 

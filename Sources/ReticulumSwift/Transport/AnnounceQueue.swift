@@ -35,15 +35,15 @@ final class AnnounceQueue {
     static var jitterMultiplierOverride: Double? = nil
 
     private(set) var entries: [Entry] = []
-    /// Destination hashes currently queued, for O(1) duplicate detection. Kept in
-    /// sync with `entries` — required now that `maxQueued` is 16384, where an
+    /// Destination hashes queued, for O(1) duplicate detection. Kept in
+    /// sync with `entries`—required now that `maxQueued` is 16384, where an
     /// O(n) linear dedup scan per enqueue would be O(n²) to fill the queue.
     private var queuedDests: Set<Data> = []
     var allowedAt: TimeInterval = 0   // wall clock when next announce may go out
 
     /// Guards `entries`, `queuedDests`, and `allowedAt`. The Transport fetches a
     /// queue object (under its own `queueLock`), releases that lock, then calls
-    /// `shouldTransmit`/`drain` here — so the same queue is mutated concurrently
+    /// `shouldTransmit`/`drain` here—so the same queue is mutated concurrently
     /// by the inbound thread and the jobs-timer thread. Self-contained leaf lock:
     /// the bodies below make no callouts, so it never nests with any other lock.
     private let lock = NSLock()
@@ -60,8 +60,8 @@ final class AnnounceQueue {
     /// `announceCap` is the interface's own fraction (`Interface.announceCap`), not this
     /// type's static: Python divides by `interface.announce_cap` at every rate computation
     /// (`Transport.py:1284`, `:2893`), so an operator's per-interface value is what shapes the
-    /// window. Passing it in rather than reading a static is the seam — the static stays only
-    /// as the class default the interface itself is initialised from.
+    /// window. Passing it in rather than reading a static is the seam—the static stays only
+    /// as the class default the interface itself is initialized from.
     func shouldTransmit(
         packet: Packet,
         now: TimeInterval,
@@ -75,7 +75,7 @@ final class AnnounceQueue {
 
         let hasQueued = !entries.isEmpty
         if !hasQueued && now >= allowedAt {
-            // Fast path: no backlog, and we've passed the rate-limit window.
+            // Fast path: no backlog, and the rate-limit window has passed.
             let txTime = Double(packet.rawByteCount) * 8.0 / Double(bitrate)
             let capWindow = txTime / announceCap
             // Random jitter (0 to capWindow) to prevent synchronized rebroadcast.
@@ -85,7 +85,7 @@ final class AnnounceQueue {
             return true
         }
 
-        // Rate-limited — queue if room.
+        // Rate-limited—queue if room.
         enqueue(Entry(
             destinationHash: packet.destinationHash,
             raw: packet,
@@ -100,9 +100,9 @@ final class AnnounceQueue {
     /// Caller must hold `lock` (called only from `shouldTransmit`).
     private func enqueue(_ entry: Entry) {
         if queuedDests.contains(entry.destinationHash) {
-            // Duplicate destination already queued — keep the fresher announce.
+            // Duplicate destination already queued—keep the fresher announce.
             // Rare path (only when the same destination re-queues), so the linear
-            // scan to find it is acceptable.
+            // scan to find it's acceptable.
             if let idx = entries.firstIndex(where: { $0.destinationHash == entry.destinationHash }),
                entry.emitted > entries[idx].emitted {
                 entries[idx] = entry

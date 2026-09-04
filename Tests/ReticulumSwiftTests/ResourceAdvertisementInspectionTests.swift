@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for Resource advertisement static inspection helpers.
 ///
-/// Python reference (Resource.py — ResourceAdvertisement):
+/// Python reference (Resource.py—ResourceAdvertisement):
 ///   Resource.is_request(advertisement_packet)   → bool
 ///   Resource.is_response(advertisement_packet)  → bool
 ///   Resource.read_request_id(advertisement_packet) → bytes (10 bytes) | None
@@ -92,7 +92,7 @@ final class ResourceAdvertisementInspectionTests: XCTestCase {
     func testReadRequestIDNilForPlainAd() {
         let packet = makeAdPacket()
         let result = Resource.readRequestID(advertisementPacket: packet)
-        // Plain ad has no requestID — must be nil or empty
+        // Plain ad has no requestID—must be nil or empty
         if let r = result { XCTAssertTrue(r.isEmpty, "plain ad must not have a non-empty request ID") }
     }
 

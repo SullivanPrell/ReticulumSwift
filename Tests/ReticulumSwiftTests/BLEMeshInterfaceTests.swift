@@ -5,7 +5,7 @@ import XCTest
 
 /// In-memory stand-in for a CoreBluetooth-backed `BLEMeshTransport`.
 /// Lets tests simulate peer connect/disconnect and byte arrival without
-/// any live radio hardware — exactly the role `MockRNodeTransport` plays
+/// any live radio hardware—exactly the role `MockRNodeTransport` plays
 /// for `RNodeInterfaceTests`.
 private final class MockBLEMeshTransport: BLEMeshTransport {
     var peerConnected: ((BLEMeshPeerID) -> Void)?
@@ -84,9 +84,9 @@ final class BLEMeshInterfaceTests: XCTestCase {
     func testDisplayNameMatchesTypeQualifiedConvention() {
         let iface = BLEMeshInterface(name: "phone-mesh", transport: MockBLEMeshTransport())
         XCTAssertEqual(iface.displayName, "BLEMeshInterface[phone-mesh]")
-        // hash / getHash() must agree, be a well-formed SHA-256 digest, and —
-        // mirroring Python's `get_hash()` = `full_hash(str(self).encode())` —
-        // be derived from the type-qualified `displayName`, not the bare `name`.
+        // hash / getHash() must agree, be a well-formed SHA-256 digest, and—mirroring
+        // Python's `get_hash()` = `full_hash(str(self).encode())`—be
+        // derived from the type-qualified `displayName`, not the bare `name`.
         XCTAssertEqual(iface.hash, iface.getHash())
         XCTAssertEqual(iface.hash.count, 32)
         XCTAssertEqual(iface.hash, Hashes.fullHash(Data(iface.displayName.utf8)))
@@ -141,7 +141,7 @@ final class BLEMeshInterfaceTests: XCTestCase {
     func testSendIsNoOpWhileOffline() throws {
         let transport = MockBLEMeshTransport()
         let iface = BLEMeshInterface(name: "ble0", transport: transport)
-        // Never started — interface is offline.
+        // Never started—interface is offline.
         try iface.send(makePacket())
         XCTAssertEqual(transport.sent.count, 0)
         XCTAssertEqual(iface.txBytes, 0)
@@ -196,7 +196,7 @@ final class BLEMeshInterfaceTests: XCTestCase {
 
     func testSendToZeroPeersStillCountsAsTransmitted() throws {
         // Mirrors AutoInterface: an interface with no peers yet still
-        // "sends" (and counts) — it just has nobody to broadcast to.
+        // "sends" (and counts)—it just has nobody to broadcast to.
         let transport = MockBLEMeshTransport()
         let iface = BLEMeshInterface(name: "ble0", transport: transport)
         try iface.start()
@@ -216,9 +216,9 @@ final class BLEMeshInterfaceTests: XCTestCase {
         try iface.start()
         transport.simulateConnect("peer-a")
 
-        // Must not throw — a single peer's radio failure shouldn't abort
+        // Must not throw—a single peer's radio failure shouldn't abort
         // the whole broadcast or crash the caller (mirrors `try?` patterns
-        // used for per-recipient sends elsewhere, e.g. AutoInterface).
+        // used for per-recipient sends elsewhere, for example, AutoInterface).
         XCTAssertNoThrow(try iface.send(makePacket()))
     }
 
@@ -246,7 +246,7 @@ final class BLEMeshInterfaceTests: XCTestCase {
     }
 
     func testReceiveReassemblesFragmentedFrame() throws {
-        // BLE GATT payloads are MTU-bound — a Reticulum packet routinely
+        // BLE GATT payloads are MTU-bound—a Reticulum packet routinely
         // arrives split across many notifications. The interface must
         // reassemble before attempting to unpack.
         let transport = MockBLEMeshTransport()
@@ -277,7 +277,7 @@ final class BLEMeshInterfaceTests: XCTestCase {
 
     func testReceiveKeepsPerPeerDecodersIndependent() throws {
         // A partial frame from one peer must never be mixed with another
-        // peer's bytes — each link gets its own reassembly state.
+        // peer's bytes—each link gets its own reassembly state.
         let transport = MockBLEMeshTransport()
         let iface = BLEMeshInterface(name: "ble0", transport: transport)
         try iface.start()
@@ -307,12 +307,12 @@ final class BLEMeshInterfaceTests: XCTestCase {
     }
 
     func testReceiveTracksUnknownPeerWithoutDroppingData() throws {
-        // Bytes can race the connect callback in a real radio stack — the
+        // Bytes can race the connect callback in a real radio stack—the
         // interface must not silently drop them.
         let transport = MockBLEMeshTransport()
         let iface = BLEMeshInterface(name: "ble0", transport: transport)
         try iface.start()
-        // Note: no simulateConnect("peer-a") — data arrives "out of band".
+        // Note: no simulateConnect("peer-a")—data arrives "out of band".
 
         let packet = makePacket()
         let framed = HDLC.frame(iface.wrapIfac(try packet.pack()))
@@ -364,7 +364,7 @@ final class BLEMeshInterfaceTests: XCTestCase {
         transport.simulateDisconnect("peer-a")
         XCTAssertEqual(iface.peerCount, 0)
 
-        // Reconnect and send a fresh, complete frame — it must decode
+        // Reconnect and send a fresh, complete frame—it must decode
         // cleanly, proving the old partial buffer didn't leak forward.
         transport.simulateConnect("peer-a")
         var received: [Packet] = []

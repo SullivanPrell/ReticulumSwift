@@ -31,7 +31,7 @@ final class DestinationRetentionTests: XCTestCase {
     func testRetainedDestinationSurvivesClean() throws {
         let (transport, destHash, _) = try makeTransportWithDestination()
         transport.retainDestinationData(destHash)
-        // Run clean with a far-future "now" — retained destination must survive
+        // Run clean with a far-future "now"—retained destination must survive
         let farFuture = Date().addingTimeInterval(Transport.unusedDestinationLinger * 10)
         transport.cleanKnownDestinations(now: farFuture)
         XCTAssertNotNil(transport.recall(identity: destHash),
@@ -40,7 +40,7 @@ final class DestinationRetentionTests: XCTestCase {
 
     func testUnretainedDestinationRemovedByClean() throws {
         let (transport, destHash, _) = try makeTransportWithDestination()
-        // Do NOT retain — should be removed when far-future clean runs (no path, never used)
+        // Don't retain—should be removed when far-future clean runs (no path, never used)
         let farFuture = Date().addingTimeInterval(Transport.unusedDestinationLinger * 10)
         transport.cleanKnownDestinations(now: farFuture)
         XCTAssertNil(transport.recall(identity: destHash),

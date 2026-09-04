@@ -5,21 +5,21 @@ import Network
 /// `TCPClientInterface` must redial after the peer goes away.
 ///
 /// Python has done this since forever: `RECONNECT_WAIT = 5`,
-/// `RECONNECT_MAX_TRIES = None`, and a `reconnect()` thread that retries until it is back
+/// `RECONNECT_MAX_TRIES = None`, and a `reconnect()` thread that retries until it's back
 /// (`TCPInterface.py:80-81`, `:270-293`). ReticulumSwift dialed once from `start()` and,
-/// on peer FIN, `beginReceiveLoop` merely set `isOnline = false` and returned — no log, no
+/// on peer FIN, `beginReceiveLoop` merely set `isOnline = false` and returned—no log, no
 /// `cancel()`, no redial.
 ///
 /// Found via bug 013. A public transit node that accepts and immediately hangs up (normal
 /// churn on the community backbones) took a Swift node permanently offline with nothing in
 /// the log, while the dead connection sat in `CLOSE_WAIT` for the life of the process. The
 /// same condition is a five-second blip for a Python node. Every other reconnecting
-/// interface in the port — `LocalInterface`, `BackboneInterface`, `I2PInterfacePeer`, both
-/// RNode interfaces — already had this; the TCP client was the only one that did not.
+/// interface in the port—`LocalInterface`, `BackboneInterface`, `I2PInterfacePeer`, both
+/// RNode interfaces—already had this; the TCP client was the only one that didn't.
 final class TCPClientInterfaceReconnectTests: XCTestCase {
 
     /// A listener that counts accepted connections, and can be told to hang up on each one
-    /// the moment it arrives — the behaviour that exposed the bug.
+    /// the moment it arrives—the behaviour that exposed the bug.
     private final class CountingListener {
         let port: UInt16
         private let listener: NWListener
@@ -54,7 +54,7 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
             listener.start(queue: .global())
         }
 
-        /// Drop every connection currently held open.
+        /// Drop every connection held open.
         func dropAll() {
             lock.lock(); let all = live; live = []; lock.unlock()
             for c in all { c.cancel() }
@@ -93,12 +93,12 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     /// Spin until `predicate` holds, or fail after `timeout` of *scheduled* time.
     ///
     /// The budget is spent by polling, not by the wall clock. Under enough system load
-    /// this process gets descheduled for minutes at a stretch — a run of these tests whose
-    /// body is a bare `Thread.sleep(1.5)` has been observed taking 954 seconds — during
+    /// this process gets descheduled for minutes at a stretch—a run of these tests whose
+    /// body is a bare `Thread.sleep(1.5)` has been observed taking 954 seconds—during
     /// which the network callbacks being waited on are frozen too. A wall-clock deadline
     /// turns that into a spurious failure; charging only the time a poll interval was
     /// meant to take keeps the timeout tight when the machine is healthy and rides out a
-    /// stall when it is not.
+    /// stall when it isn't.
     private func waitUntil(_ description: String,
                            timeout: TimeInterval = 10,
                            file: StaticString = #filePath, line: UInt = #line,
@@ -109,7 +109,7 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
             if predicate() { return }
             let before = Date()
             Thread.sleep(forTimeInterval: interval)
-            // Charge the interval we asked for, not the (possibly enormous) one we got.
+            // Charge the requested interval, not the (possibly enormous) one returned.
             spent += min(Date().timeIntervalSince(before), interval * 4)
         }
         XCTFail("timed out waiting for \(description)", file: file, line: line)
@@ -150,7 +150,7 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     }
 
     /// The dead connection has to be cancelled, or it sits in CLOSE_WAIT for the life of
-    /// the process — one leaked socket per drop.
+    /// the process—one leaked socket per drop.
     func testTheSupersededConnectionIsCancelled() throws {
         let listener = try makeListener(hangUp: false)
         let iface = makeClient(port: listener.port)
@@ -199,7 +199,7 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     /// The cap counts *consecutive* failures: `attempts` is local to one `reconnect()`
     /// call and the loop exits as soon as `self.online`, so a peer that keeps accepting
     /// and hanging up is retried forever in Python too. Only a peer that never completes
-    /// a connection exhausts the budget — which is what this uses.
+    /// a connection exhausts the budget—which is what this uses.
     func testMaxReconnectTriesIsHonoured() throws {
         let port = try deadPort()
         let iface = makeClient(port: port)

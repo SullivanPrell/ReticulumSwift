@@ -486,7 +486,7 @@ final class WeaveInterfaceTests: XCTestCase {
         XCTAssertEqual(dev.memFree, 0)   // untouched
     }
 
-    // MARK: - WeaveDevice incomingFrame — LOG dispatch
+    // MARK: - WeaveDevice incomingFrame—LOG dispatch
 
     func testIncomingFrameLogDispatch() throws {
         let mock = MockWeaveTransport()
@@ -500,7 +500,7 @@ final class WeaveInterfaceTests: XCTestCase {
 
         // Build a raw WDCL frame: switch_id + WDCL_T_LOG + payload
         // Payload layout: type(1) + ts(4) + level(1) + evt_hi(1) + evt_lo(1) = 8 bytes min
-        // We'll use event = etProtocolWdclConnection (0x3002)
+        // Use event = etProtocolWdclConnection (0x3002)
         let logPayload = Data([
             0x00,                    // [0] type byte
             0x00, 0x00, 0x00, 0x00, // [1..4] timestamp (4 bytes)
@@ -516,7 +516,7 @@ final class WeaveInterfaceTests: XCTestCase {
         XCTAssertTrue(dev.wdclConnected)
     }
 
-    // MARK: - WeaveDevice incomingFrame — ENDPOINT_PKT dispatch
+    // MARK: - WeaveDevice incomingFrame—ENDPOINT_PKT dispatch
 
     func testIncomingFrameEndpointPkt() throws {
         let mock = MockWeaveTransport()
@@ -525,7 +525,7 @@ final class WeaveInterfaceTests: XCTestCase {
 
         let dev        = WeaveDevice()
         dev.connection = t
-        dev.switchID   = t.switchID   // device's switchID = our host's switchID
+        dev.switchID   = t.switchID   // device's switchID = the host's switchID
 
         var receivedData: Data?
         var receivedSrc:  Data?
@@ -546,7 +546,7 @@ final class WeaveInterfaceTests: XCTestCase {
         let srcEpID  = Data(repeating: 0xAB, count: 8)
         var payload  = rnsData; payload.append(srcEpID)
 
-        var wdclFrame = t.switchID   // dst = our switch_id (from transport)
+        var wdclFrame = t.switchID   // dst = this switch_id (from transport)
         wdclFrame.append(WDCL.tEndpointPkt)
         wdclFrame.append(payload)
 
@@ -556,16 +556,16 @@ final class WeaveInterfaceTests: XCTestCase {
         XCTAssertEqual(receivedSrc,  srcEpID)
     }
 
-    // MARK: - WeaveDevice incomingFrame — short frame ignored
+    // MARK: - WeaveDevice incomingFrame—short frame ignored
 
     func testIncomingFrameTooShort() {
         let dev    = WeaveDevice()
         let mock   = MockWeaveTransport()
         let t      = WDCLTransport(transport: mock)
         dev.connection = t
-        // Only 4 bytes — not enough (need > switchIDLen + 1 = 5)
+        // Only 4 bytes—not enough (need > switchIDLen + 1 = 5)
         dev.incomingFrame(Data([0x01, 0x02, 0x03, 0x04]))
-        // Should not crash or change state
+        // Shouldn't crash or change state
         XCTAssertNil(dev.switchID)
     }
 
@@ -648,7 +648,7 @@ final class WeaveInterfaceTests: XCTestCase {
 
         let epID = Data(repeating: 0x03, count: 8)
         iface.addPeer(endpointAddr: epID)
-        iface.addPeer(endpointAddr: epID)  // second call — should not add again
+        iface.addPeer(endpointAddr: epID)  // second call—shouldn't add again
 
         XCTAssertEqual(iface.peerCount, 1)
         XCTAssertEqual(callCount, 1)
@@ -717,7 +717,7 @@ final class WeaveInterfaceTests: XCTestCase {
         let epID = Data(repeating: 0x07, count: 8)
         iface.addPeer(endpointAddr: epID)
 
-        iface.peerJobs()  // peer is fresh — should NOT be removed
+        iface.peerJobs()  // peer is fresh—shouldn't be removed
 
         XCTAssertEqual(iface.peerCount, 1)
         XCTAssertFalse(removed)
@@ -748,7 +748,7 @@ final class WeaveInterfaceTests: XCTestCase {
         try iface.start()
 
         let unknown = Data(repeating: 0xFF, count: 8)
-        // Should not crash
+        // Shouldn't crash
         iface.processIncoming(data: Data([0x01]), endpointAddr: unknown)
     }
 
@@ -808,9 +808,9 @@ final class WeaveInterfaceTests: XCTestCase {
         peer.rawInboundHandler = { _, _ in deliveries += 1 }
 
         let pkt = Data([0x01, 0x02, 0x03])
-        peer.processIncoming(data: pkt, endpointAddr: epID)  // first — delivered
-        peer.processIncoming(data: pkt, endpointAddr: epID)  // duplicate — dropped
-        peer.processIncoming(data: pkt, endpointAddr: epID)  // duplicate — dropped
+        peer.processIncoming(data: pkt, endpointAddr: epID)  // first—delivered
+        peer.processIncoming(data: pkt, endpointAddr: epID)  // duplicate—dropped
+        peer.processIncoming(data: pkt, endpointAddr: epID)  // duplicate—dropped
 
         XCTAssertEqual(deliveries, 1)
     }
@@ -915,7 +915,7 @@ final class WeaveInterfaceTests: XCTestCase {
         iface.addPeer(endpointAddr: epID)
         let peer = iface.spawnedInterfaces[epID]!
 
-        // send() should not throw and should result in a write.
+        // send() shouldn't throw and should result in a write.
         // Pre-set device.switchID so sendCommand doesn't bail out early.
         iface.device.switchID = Data([0xA0, 0xB0, 0xC0, 0xD0])
         mock.written.removeAll()

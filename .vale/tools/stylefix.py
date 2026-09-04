@@ -64,6 +64,8 @@ MASK_PATTERNS = [
     r'\bhttps?:\S*',
     r'\b[\w./-]+\.(?:py|swift|md|c|h|go|json|ini|txt|yml):\d+',   # bare file:line
     r'\b0x[0-9A-Fa-f]+\b',              # hex constants
+    r'"[^"\n]*"',                       # quoted literals: exact output/wire values
+    r'\\u\{[0-9A-Fa-f]+\}',              # Unicode escapes
 ]
 MASK_RE = re.compile('|'.join(MASK_PATTERNS))
 
@@ -84,7 +86,7 @@ CONTRACTIONS = {
     'did not': "didn't", 'do not': "don't", 'does not': "doesn't",
     'has not': "hasn't", 'have not': "haven't", 'how is': "how's",
     'is not': "isn't", 'it is': "it's", 'should not': "shouldn't",
-    'that is': "that's", 'they are': "they're", 'was not': "wasn't",
+    'they are': "they're", 'was not': "wasn't",
     'we are': "we're", 'we have': "we've", 'were not': "weren't",
     'what is': "what's", 'when is': "when's", 'where is': "where's",
     'will not': "won't",
@@ -108,19 +110,84 @@ def apply_transforms(t, rules):
             def sub(m, b=b):
                 w = m.group(0)
                 return b[0].upper() + b[1:] if w[0].isupper() else b
-            t = re.sub(r'\b' + a.replace(' ', r'\s+') + r'\b', sub, t, flags=re.I)
+            # A contraction is only legal when a complement follows: 'it is fine'
+            # -> "it's fine", but 'how load-bearing it is.' must stay expanded.
+            t = re.sub(r'\b' + a.replace(' ', r'\s+') + r'\b(?=\s+[\w`*"\'(\[])', sub, t, flags=re.I)
     if 'units' in rules:
-        t = re.sub(r'\b(\d+)(ns|ms|min|kB|MB|GB|TB)\b', r'\1 \2', t)
+        # Google.Units wants a space between number and unit. Time units read
+        # better spelled out in prose; SI symbols stay abbreviated.
+        WORDS = {'s': 'second', 'h': 'hour', 'min': 'minute', 'd': 'day'}
+        def spell(m):
+            n, u = m.group(1), m.group(2)
+            w = WORDS[u]
+            return f"{n} {w}" if n == '1' else f"{n} {w}s"
+        t = re.sub(r'\b(\d+)(min|[shd])\b(?<!\b(?:19|20)\d\ds\b)', spell, t)
+        t = re.sub(r'\b(\d+)(ns|ms|kB|MB|GB|TB)\b', r'\1 \2', t)
+    if 'spelling' in rules:
+        # Google.Spelling: American spelling.
+        for a, b in {'unrecognised': 'unrecognized', 'recognised': 'recognized',
+                     'recognise': 'recognize', 'resynchronise': 'resynchronize',
+                     'harmonised': 'harmonized', 'colour': 'color',
+                     'labour': 'labor', 'centre': 'center'}.items():
+            def sub(m, b=b):
+                w = m.group(0)
+                return b[0].upper() + b[1:] if w[0].isupper() else b
+            t = re.sub(r'\b' + a + r'\b', sub, t, flags=re.I)
+    if 'wordlist' in rules:
+        # Google.WordListCase / WordList: only the entries whose replacement is
+        # unambiguous here. 'application', 'disable', 'abort', 'terminate' and
+        # 'touch' name protocol fields or real API calls in this port and stay.
+        for a, b in {r'\baka\b': 'also known as',
+                     r'\bfunctionality\b': 'capability',
+                     r'\bin order to\b': 'to',
+                     r'\bregex\b': 'regular expression',
+                     r'\bfile name\b': 'filename',
+                     r'\bFile name\b': 'Filename',
+                     r'\bfile path\b': 'filepath',
+                     r'\bFile path\b': 'Filepath',
+                     r'\bblock\(s\)': 'blocks',
+                     r'\burl-safe\b': 'URL-safe'}.items():
+            t = re.sub(a, b, t)
     if 'ordinal' in rules:
         for a, b in {'1st': 'first', '2nd': 'second', '3rd': 'third',
                      '4th': 'fourth', '5th': 'fifth'}.items():
             t = re.sub(r'\b' + a + r'\b', b, t)
     return t
 
+SWIFT_CONT = r'(?://+[!<]?|\*)'
+
+def fix_wrapped_dash(text, is_md, spans):
+    """Google.EmDash also fires on ` —\n`: the newline counts as trailing space.
+
+    A dash cannot close its right-hand gap across a line break, so pull the next
+    line's first word up to meet it. The rendered comment then reads `word—word`.
+    """
+    def inside(p):
+        return any(s <= p < e for s, e in spans)
+    pat = (r'[ \t]*([—–])[ \t]*\n([ \t]*)(?![-*+>#]|\d+\.)(\S+)[ \t]*' if is_md
+           else r'[ \t]*([—–])[ \t]*\n([ \t]*' + SWIFT_CONT + r'[ \t]*)(\S+)[ \t]*')
+    def repl(m):
+        word = m.group(3)
+        if word.startswith('*/') or re.fullmatch(SWIFT_CONT, word):
+            return m.group(0)
+        if not (inside(m.start(1)) and inside(m.end(2))):
+            return m.group(0)
+        return m.group(1) + word + '\n' + m.group(2)
+    out = pat and re.sub(pat, repl, text)
+    if not is_md:   # a line left holding only its marker keeps no trailing space
+        out = re.sub(r'^([ \t]*' + SWIFT_CONT + r')[ \t]+$', r'\1', out, flags=re.M)
+    return out
+
 def process(path, rules, check=False):
-    text = open(path, encoding='utf-8').read()
-    spans = markdown_spans(text) if path.endswith('.md') else swift_comment_spans(text)
-    out, last, changed = [], 0, 0
+    text = original = open(path, encoding='utf-8').read()
+    is_md = path.endswith('.md')
+    spans = markdown_spans(text) if is_md else swift_comment_spans(text)
+    if 'emdash' in rules:
+        wrapped = fix_wrapped_dash(text, is_md, spans)
+        if wrapped != text:
+            text = wrapped
+            spans = markdown_spans(text) if is_md else swift_comment_spans(text)
+    out, last, changed = [], 0, (text != original)
     for s, e in spans:
         out.append(text[last:s])
         frag = text[s:e]
@@ -130,9 +197,9 @@ def process(path, rules, check=False):
         last = e
     out.append(text[last:])
     result = ''.join(out)
-    if result != text and not check:
+    if result != original and not check:
         open(path, 'w', encoding='utf-8').write(result)
-    return changed if result != text else 0
+    return changed if result != original else 0
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()

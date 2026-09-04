@@ -68,7 +68,7 @@ public final class RNIDFileReader: RNIDByteReader {
 
     public func read(upTo count: Int) throws -> Data {
         // `FileHandle.read(upToCount:)` may legitimately return a short read; loop so the
-        // caller always sees a full chunk until EOF.
+        // caller always receives a full chunk until EOF.
         var buffer = Data()
         while buffer.count < count {
             guard let piece = try handle.read(upToCount: count - buffer.count), !piece.isEmpty else { break }
@@ -110,7 +110,7 @@ public final class RNIDFileWriter: RNIDByteWriter {
 /// Everything `rnid` does to the file system, behind one protocol.
 public protocol RNIDFileSystem: AnyObject {
     /// Python: `os.path.expanduser(path)`. Applied at ten call sites and deliberately
-    /// skipped at two — see ``RNIDOperations`` for the full matrix.
+    /// skipped at two—see ``RNIDOperations`` for the full matrix.
     func expandTilde(_ path: String) -> String
     /// Python: `os.path.isfile(path)`.
     func fileExists(atPath path: String) -> Bool
@@ -243,11 +243,11 @@ public enum RNIDFileSystemError: Error, CustomStringConvertible, Equatable {
 
 // MARK: - Terminal output
 
-/// Everything `rnid` prints. Python: bare `print()` calls — no colour, no ANSI, no stderr.
+/// Everything `rnid` prints. Python: bare `print()` calls—no color, no ANSI, no stderr.
 public protocol RNIDOutput: AnyObject {
     /// Python: `print(text)`.
     func line(_ text: String)
-    /// Python: `print(text, end="")` — the `\r`-prefixed progress line.
+    /// Python: `print(text, end="")`—the `\r`-prefixed progress line.
     func partial(_ text: String)
 }
 
@@ -270,7 +270,7 @@ public final class RNIDCapturingOutput: RNIDOutput {
 // MARK: - Injected side effects
 
 /// Composes a message in `$EDITOR`. Python: `get_editor_content()` (rnid.py:1034-1059),
-/// which needs `subprocess` and therefore cannot live in the library target.
+/// which needs `subprocess` and therefore can't live in the library target.
 public protocol RNIDEditor: AnyObject {
     func composeMessage() throws -> Data
 }

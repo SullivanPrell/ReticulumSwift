@@ -54,7 +54,7 @@ final class PathRequestTests: XCTestCase {
         relay.register(interface: relayFromRequester)
         relay.register(interface: relayFromDest)
 
-        // 1) Dest announces — relay caches.
+        // 1) Dest announces—relay caches.
         let destIdentity = Identity()
         let destination = try Destination(
             identity: destIdentity, direction: .in, kind: .single,
@@ -66,7 +66,7 @@ final class PathRequestTests: XCTestCase {
         XCTAssertNotNil(relay.cachedAnnounces[destination.hash])
 
         // 2) Requester sends a path request for dest.
-        // We construct the request body manually so we don't need a full
+        // The request body is built by hand to avoid needing a full
         // Transport on the requester side.
         var tag = Data(count: Constants.truncatedHashLength)
         _ = tag.withUnsafeMutableBytes {
@@ -105,7 +105,7 @@ final class PathRequestTests: XCTestCase {
         relay.register(interface: inIface)
         relay.register(interface: outIface)
 
-        // Cache an announce so we'd otherwise reply twice.
+        // Cache an announce that would otherwise draw two replies.
         let identity = Identity()
         let destination = try Destination(
             identity: identity, direction: .in, kind: .single, appName: "x"
@@ -129,7 +129,7 @@ final class PathRequestTests: XCTestCase {
     }
 
     func testUnknownDestinationNotForwardedOnFullModeInterface() throws {
-        // Python parity: full-mode interfaces are NOT in DISCOVER_PATHS_FOR.
+        // Python parity: full-mode interfaces aren't in DISCOVER_PATHS_FOR.
         // Unknown path requests received on a full-mode interface are silently ignored.
         let relay = Transport()
         let inIface = RecordingInterface(name: "in")
@@ -140,7 +140,7 @@ final class PathRequestTests: XCTestCase {
         outIface.paired = outPair; outPair.paired = outIface
         relay.register(interface: inIface)
         relay.register(interface: outIface)
-        // inIface.mode defaults to .full — not in DISCOVER_PATHS_FOR
+        // inIface.mode defaults to .full—not in DISCOVER_PATHS_FOR
 
         let unknownDest = Hashes.truncatedHash(Data("unknown".utf8))
         let tag = Data(repeating: 0xCD, count: Constants.truncatedHashLength)

@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for `Link.trackPhyStats(_:Bool)` — the explicit method form that
+/// Tests for `Link.trackPhyStats(_:Bool)`—the explicit method form that
 /// mirrors Python's `Link.track_phy_stats(track: bool)`.
 final class LinkPhyStatsMethodTests: XCTestCase {
 

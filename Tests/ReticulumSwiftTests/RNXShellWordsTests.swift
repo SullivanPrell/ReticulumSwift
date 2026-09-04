@@ -3,10 +3,10 @@ import XCTest
 
 /// Parity table for ``RNXShellWords/split(_:)`` against CPython's `shlex.split`.
 ///
-/// Python reference: RNS/Utilities/rnx.py:36, 179 — `subprocess.Popen(shlex.split(command))`.
+/// Python reference: RNS/Utilities/rnx.py:36, 179—`subprocess.Popen(shlex.split(command))`.
 ///
-/// Every expectation below was produced by running the real `shlex.split` on this machine
-/// (Python 3.12), not derived from the docs — several of these cases are surprising.
+/// Running the real `shlex.split` on this machine produced every expectation below
+/// (Python 3.12), not derived from the docs—several of these cases are surprising.
 final class RNXShellWordsTests: XCTestCase {
 
     private func assertSplit(_ input: String, _ expected: [String],
@@ -59,7 +59,7 @@ final class RNXShellWordsTests: XCTestCase {
 
     func testPipeIsAnOrdinaryToken() {
         // Python: shlex.split("ls | grep x") == ['ls', '|', 'grep', 'x'].
-        // Proves there is no shell: rnx cannot pipe, in Python or here.
+        // Proves there is no shell: rnx can't pipe, in Python or here.
         assertSplit("ls | grep x", ["ls", "|", "grep", "x"])
     }
 
@@ -84,14 +84,14 @@ final class RNXShellWordsTests: XCTestCase {
 
     func testBackslashIsLiteralBeforeOtherCharactersInsideDoubleQuotes() {
         // Python: escapedquotes is '"' and only \" and \\ are escapes there, so
-        // shlex.split('echo "a\\nb"') == ['echo', 'a\\nb'] — the backslash survives.
+        // shlex.split('echo "a\\nb"') == ['echo', 'a\\nb']—the backslash survives.
         assertSplit("echo \"a\\nb\"", ["echo", "a\\nb"])
     }
 
     func testBackslashBeforeSingleQuoteInsideDoubleQuotesKeepsBackslash() {
         // Python: shlex.split('echo "a\\\'b"') == ['echo', "a\\'b"].
         // NOTE the porting spec claimed ['echo', "a'b"] here; the real shlex disagrees,
-        // because ' is not the enclosing quote and not the escape character.
+        // because ' isn't the enclosing quote and not the escape character.
         assertSplit("echo \"a\\'b\"", ["echo", "a\\'b"])
     }
 
@@ -110,7 +110,7 @@ final class RNXShellWordsTests: XCTestCase {
     }
 
     func testVerticalTabAndFormFeedAreNotWhitespace() {
-        // Python: shlex.whitespace is ' \t\r\n' — 0x0B and 0x0C are ordinary characters.
+        // Python: shlex.whitespace is ' \t\r\n'—0x0B and 0x0C are ordinary characters.
         assertSplit("a\u{0B}b", ["a\u{0B}b"])
         assertSplit("a\u{0C}b", ["a\u{0C}b"])
     }
@@ -153,7 +153,7 @@ final class RNXShellWordsTests: XCTestCase {
 
     func testBackslashIsFullyLiteralInsideSingleQuotes() throws {
         // Python: shlex.split("echo 'it\\'s'") raises "No closing quotation", because the
-        // backslash does not escape the closing quote inside single quotes.
+        // backslash doesn't escape the closing quote inside single quotes.
         XCTAssertThrowsError(try RNXShellWords.split("echo 'it\\'s'")) { error in
             XCTAssertEqual(error as? RNXShellWords.ShellWordsError, .noClosingQuotation("'"))
         }

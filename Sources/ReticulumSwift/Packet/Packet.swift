@@ -86,7 +86,7 @@ public struct Packet: Equatable {
     /// Mirrors Python's `Packet.receiving_interface`.
     public var receivingInterface: (any Interface)?
 
-    /// Marks this packet as an *outbound* path request — used by Transport's
+    /// Marks this packet as an *outbound* path request—used by Transport's
     /// egress-control logic to throttle recursive PR rebroadcasts. Set when
     /// Transport relays a PR onto an interface, cleared on receive.
     /// Mirrors Python's `Packet.is_outbound_pr` slot (RNS commit 60c440a3).
@@ -150,7 +150,7 @@ public struct Packet: Equatable {
     /// and `pack()` raises on `len(self.raw) > self.MTU` (`:235`).
     ///
     /// A single global cap is only correct while every link sits at the base MTU. Once MTU
-    /// discovery raises a link, its packets are legitimately larger than 500 bytes — and
+    /// discovery raises a link, its packets are legitimately larger than 500 bytes—and
     /// `bugs/016` made resource parts derive from that negotiated MTU, so on an upgraded link
     /// *every* part exceeded the global cap and `pack()` refused it. Since every interface
     /// transmits through `pack()`, the packets were dropped before reaching any medium: the
@@ -159,7 +159,7 @@ public struct Packet: Equatable {
     /// giving hashing and accounting the unguarded `packedBytes()`.
     ///
     /// Set by `Transport.send(_:generateReceipt:)` for packets on a link this node owns, and by
-    /// `unpack(_:)` for packets that arrived — a packet that was received is by definition
+    /// `unpack(_:)` for packets that arrived—a packet that was received is by definition
     /// transmissible at its own size, which is how a relay forwards one without re-capping it.
     /// Python gets that for free by forwarding `packet.raw` rather than re-packing.
     public var mtu: Int = Constants.mtu
@@ -168,7 +168,7 @@ public struct Packet: Equatable {
     /// transmit MTU cap.
     ///
     /// A packet's identity (its hash) and byte size must be computable
-    /// regardless of whether it fits the base `Constants.mtu` — a link packet
+    /// regardless of whether it fits the base `Constants.mtu`—a link packet
     /// can legitimately exceed 500 bytes once a larger link MTU has been
     /// negotiated via MTU discovery. Hashing, deduplication and traffic
     /// accounting therefore use this method, never the MTU-guarded `pack()`.
@@ -216,7 +216,7 @@ public struct Packet: Equatable {
         let hops = raw[raw.startIndex + 1]
 
         // Reject packets whose hop count has reached or exceeded the maximum
-        // propagation distance — a valid packet can never legitimately carry
+        // propagation distance—a valid packet can never legitimately carry
         // hops >= PATHFINDER_M, so such a value indicates a corrupt/malformed
         // header. Python (RNS 1.3.8): raise ValueError(f"Invalid hop count {hops}").
         guard Int(hops) < Transport.pathfinderM else { throw UnpackError.malformed }
@@ -238,10 +238,10 @@ public struct Packet: Equatable {
             transportID = raw.subdata(in: cursor..<(cursor + dstLen))
             cursor += dstLen
             // `if len(self.transport_id) != DST_LEN: raise ValueError("Malformed Transport ID
-            // field")` (`Packet.py:266`). The length guard above already makes a short slice
-            // impossible, so this is a structural assertion rather than a reachable branch —
-            // stated explicitly so the two implementations read the same and so a future change
-            // to the guard above cannot silently drop the invariant.
+            // field")` (`Packet.py:266`). The preceding length guard already makes a short slice
+            // impossible, so this is a structural assertion rather than a reachable branch—stated
+            // explicitly so the two implementations read the same and so a future change
+            // to the preceding guard can't silently drop the invariant.
             guard transportID?.count == dstLen else { throw UnpackError.malformed }
         }
 
@@ -259,7 +259,7 @@ public struct Packet: Equatable {
         // `if len(self.data) == 0: raise ValueError("Zero-length data field")` (`Packet.py:274`),
         // one of RNS 1.5.0's early protocol-violation checks. A structurally complete frame can
         // still carry no payload, and every 1.5.x peer now drops it. Accepting it here would
-        // admit a packet the rest of the network has already discarded — and on a transport-mode
+        // admit a packet the rest of the network has already discarded—and on a transport-mode
         // node, forward it onward. HDLC-framed interfaces separately drop empty *frames*; this
         // covers every interface, including those that deliver a payload without HDLC framing.
         guard !data.isEmpty else { throw UnpackError.malformed }
@@ -286,14 +286,14 @@ public struct Packet: Equatable {
 
     // MARK: - Hashing
 
-    /// "Hashable part" of the packet — used to derive a stable packet hash
+    /// "Hashable part" of the packet—used to derive a stable packet hash
     /// regardless of header type 1 vs 2 (transport ID is excluded).
     /// Mirrors `Packet.get_hashable_part` in Python.
     public func hashablePart() throws -> Data {
         // Use packedBytes(), NOT pack(): a packet's hash is independent of the
         // transmit MTU. Routing a link packet that legitimately exceeds the base
         // MTU (larger negotiated link MTU) must still hash/dedup correctly on
-        // receive — pack()'s MTU guard here would throw and cause Transport's
+        // receive—pack()'s MTU guard here would throw and cause Transport's
         // dedup (filterAndRecord) to silently drop every oversize inbound packet.
         let raw = try packedBytes()
         var part = Data()

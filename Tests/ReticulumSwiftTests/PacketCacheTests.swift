@@ -96,7 +96,7 @@ final class PacketCacheTests: XCTestCase {
         let t = Transport()
         t.cacheDirectory = tmpDir
 
-        // Cache two announces — one will be referenced by a path, one will not.
+        // Cache two announces—a path references one, but not the other.
         let id1 = Identity(); let id2 = Identity()
         let dest1 = try Destination(identity: id1, direction: .in, kind: .single,
                                     appName: "cache", aspects: ["keep"])
@@ -121,7 +121,7 @@ final class PacketCacheTests: XCTestCase {
         )
         t.restore(path: path, forDestination: dest1.hash)
 
-        // ann2 has no path → should be removed by clean.
+        // ann2 has no path → clean should remove it.
         try t.cleanAnnounceCache()
 
         XCTAssertNotNil(try t.getCachedAnnounce(hash: hash1),

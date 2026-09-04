@@ -59,8 +59,8 @@ final class LinkAdaptiveKeepaliveTests: XCTestCase {
         let (aLink, _, aT, bT) = try establishLink()
         defer { _ = (aT, bT) }
 
-        // In-process loopback has extremely low RTT (< 1ms)
-        // keepalive = rtt * (360/1.75) → very small → clamped to KEEPALIVE_MIN = 5s
+        // In-process loopback has extremely low RTT (< 1 ms)
+        // keepalive = rtt * (360/1.75) → very small → clamped to KEEPALIVE_MIN = 5 seconds
         guard let rtt = aLink.rtt else { return XCTFail("rtt not set") }
         XCTAssertGreaterThan(rtt, 0)
         let expectedKeepalive = max(Link.keepaliveMin, min(rtt * (Link.keepaliveMax / Link.keepaliveMaxRTT), Link.keepaliveMax))
@@ -73,7 +73,7 @@ final class LinkAdaptiveKeepaliveTests: XCTestCase {
         let (aLink, _, aT, bT) = try establishLink()
         defer { _ = (aT, bT) }
 
-        // Simulate high RTT (> 1.75s would give keepalive > 360, clamps to 360)
+        // Simulate high RTT (> 1.75 seconds would give keepalive > 360, clamps to 360)
         let highRTT = 2.0  // seconds
         let expectedKeepalive = max(Link.keepaliveMin, min(highRTT * (Link.keepaliveMax / Link.keepaliveMaxRTT), Link.keepaliveMax))
         XCTAssertEqual(expectedKeepalive, Link.keepaliveMax, accuracy: 0.01)

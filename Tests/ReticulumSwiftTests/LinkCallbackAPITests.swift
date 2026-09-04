@@ -97,7 +97,7 @@ final class LinkCallbackAPITests: XCTestCase {
     }
 
     /// The started callback must hand the observer a transfer whose
-    /// `resourceHash` is already populated — Python calls
+    /// `resourceHash` is already populated—Python calls
     /// `link.callbacks.resource_started` from inside `Resource.accept`, after
     /// `resource.hash = adv.h` (Resource.py:178, 224-230).
     ///
@@ -105,7 +105,7 @@ final class LinkCallbackAPITests: XCTestCase {
     /// registry on the hash it reads in this callback
     /// (`incoming_delivery_resources[resource.hash] = resource`). Firing the
     /// callback before the advertisement was parsed meant every concurrent
-    /// transfer was filed under the same empty `Data()` key — later transfers
+    /// transfer was filed under the same empty `Data()` key—later transfers
     /// silently evicted earlier ones, and `cancelInbound(resourceHash:)` could
     /// never match the 32-byte hash a caller had read back off the transfer.
     func testResourceStartedCallbackSeesPopulatedHash() throws {
@@ -137,7 +137,7 @@ final class LinkCallbackAPITests: XCTestCase {
     func testSetResourceConcludedCallback() throws {
         let (aLink, bLink) = try establishLink()
         let concluded = expectation(description: "resource-concluded")
-        // Use acceptAll strategy — bLink will auto-receive and fire onResourceConcluded
+        // Use acceptAll strategy—bLink auto-receives and fires onResourceConcluded
         bLink.setResourceStrategy(.acceptAll)
         bLink.setResourceConcludedCallback { _, _, _ in concluded.fulfill() }
 

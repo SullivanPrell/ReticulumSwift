@@ -5,13 +5,13 @@ import XCTest
 ///
 /// The 1.4.2 shape had one timer per burst: `ic_burst_activated`. A flood that ran for
 /// minutes therefore cleared its own burst flag fifteen seconds after it *started*, while it
-/// was still running — the hold window measured the wrong end of the event. 1.5.1 adds a
+/// was still running—the hold window measured the wrong end of the event. 1.5.1 adds a
 /// second timestamp, `ic_burst_sustained`, refreshed on every above-threshold evaluation, and
 /// requires *both* windows to have elapsed. The burst now expires fifteen seconds after the
 /// flood stops.
 ///
 /// Path-request bursts get the same treatment plus a cooldown counter, and egress limiting
-/// changed its sample floor from six to two — the constant was renamed in the process
+/// changed its sample floor from six to two—the constant was renamed in the process
 /// (`IC_BURST_MIN_SAMPLES` → `EC_BURST_MIN_SAMPLES`), which is upstream conceding that it was
 /// only ever an egress knob.
 final class SustainedBurstControlTests: XCTestCase {
@@ -21,12 +21,12 @@ final class SustainedBurstControlTests: XCTestCase {
     /// Interface age is `now - createdAt`, and `createdAt` is a real epoch date, so the `now`
     /// these tests hand the limiter has to be a real epoch value too. A synthetic base like
     /// `1000` makes the age hugely negative, which reads as *new* and quietly swaps in the
-    /// lower `IC_BURST_FREQ_NEW`/`IC_PR_BURST_FREQ_NEW` thresholds — the opposite of what a
+    /// lower `IC_BURST_FREQ_NEW`/`IC_PR_BURST_FREQ_NEW` thresholds—the opposite of what a
     /// test naming a mature interface means to exercise.
     private static func base() -> TimeInterval { Date().timeIntervalSince1970 }
 
     /// A deque holds at most `InterfaceFreqTracker.maxSamples` timestamps, so appending a full
-    /// deque's worth evicts every older one. That is the only way to move `oldest` forward in
+    /// deque's worth evicts every older one. That's the only way to move `oldest` forward in
     /// one step, and these tests need it: frequency is `n / (now - oldest)`, so without a full
     /// roll a stale first sample pins the span open and no later burst can be expressed.
     private func rollDeque(_ record: (TimeInterval) -> Void, from start: TimeInterval) {
@@ -42,7 +42,7 @@ final class SustainedBurstControlTests: XCTestCase {
                                   createdAt: Date(timeIntervalSince1970: t0 - Self.mature))
         t.register(interface: iface)
 
-        // 48 announces in half a second — 96 Hz against a 10 Hz threshold.
+        // 48 announces in half a second—96 Hz against a 10 Hz threshold.
         rollDeque({ t.notifyIncomingAnnounce(on: iface, at: $0) }, from: t0)
         XCTAssertTrue(t.shouldIngressLimit(on: iface, now: t0 + 0.5), "the flood must activate a burst")
 
@@ -53,7 +53,7 @@ final class SustainedBurstControlTests: XCTestCase {
 
         // t0+25 is past `activated + IC_BURST_HOLD` (t0+15.5) but not past
         // `sustained + IC_BURST_HOLD` (t0+29.5), and the frequency has fallen to ~4 Hz. Before
-        // 1.5.1 this is exactly where the flag cleared — mid-flood, on the strength of a timer
+        // 1.5.1 this is exactly where the flag cleared—mid-flood, on the strength of a timer
         // started before the flood had gotten going.
         XCTAssertTrue(t.shouldIngressLimit(on: iface, now: t0 + 25))
         XCTAssertTrue(t.ingressState(for: iface)?.burstActive ?? false,
@@ -101,7 +101,7 @@ final class SustainedBurstControlTests: XCTestCase {
         rollDeque({ t.notifyIncomingPathRequest(on: iface, at: $0) }, from: t0)
         XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: t0 + 0.5), "the flood must activate a PR burst")
 
-        // Every probe below is fully quiet — frequency ~1 Hz against an 8 Hz threshold, and
+        // Every probe below is fully quiet—frequency ~1 Hz against an 8 Hz threshold, and
         // both hold windows long since elapsed. Each merely decrements the cooldown.
         for (probe, remaining) in [(t0 + 40, 2), (t0 + 41, 1), (t0 + 42, 0)] {
             XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: probe))
@@ -134,7 +134,7 @@ final class SustainedBurstControlTests: XCTestCase {
         _ = t.shouldIngressLimitPR(on: iface, now: t0 + 41)   // cooldown 2 -> 1
 
         // The flood resumes. `self.ic_pr_burst_cooldown = 3` (Interface.py:223) is in the
-        // `else` branch, so it refills unconditionally — the counter measures *consecutive*
+        // `else` branch, so it refills unconditionally—the counter measures *consecutive*
         // quiet evaluations, and one busy one resets the run.
         rollDeque({ t.notifyIncomingPathRequest(on: iface, at: $0) }, from: t0 + 50)
         XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: t0 + 50.5))
@@ -202,8 +202,8 @@ final class SustainedBurstControlTests: XCTestCase {
 
     func testThePreemptiveSampleDoesNotSatisfyTheMinimumCountItself() {
         // `if not len(self.op_freq_deque) > 1: return 0` (Interface.py:381) reads the real
-        // length, not the incremented one. A single recorded request must still report zero —
-        // otherwise the very first path request on an interface would limit itself.
+        // length, not the incremented one. A single recorded request must still report zero—otherwise
+        // the very first path request on an interface would limit itself.
         let t = Transport()
         let t0 = Self.base()
         let iface = TestInterface(name: "single",

@@ -8,7 +8,7 @@ import XCTest
 ///
 /// Key requirements:
 ///   - attachedInterface routes the announce to a single interface
-///   - isPathResponse tags the announce so it is not re-forwarded
+///   - isPathResponse tags the announce so it isn't re-forwarded
 ///   - Returns nil when attached_interface is given (no receipt)
 ///   - Returns a receipt (or nil) when broadcasting on all interfaces
 final class DestinationAnnounceAPITests: XCTestCase {

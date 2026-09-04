@@ -6,34 +6,34 @@ import Foundation
 ///
 /// Python reference: `RNS/Reticulum.py:1470-1488`. The entry dict is
 /// `{"hash", "timestamp", "via", "hops", "expires", "interface"}` and that **insertion
-/// order is observable** — `rnpath -t -j` emits `json.dumps` of these dicts directly.
+/// order is observable**—`rnpath -t -j` emits `json.dumps` of these dicts directly.
 ///
 /// This is a separate type from ``Transport/PathTableEntry`` for four reasons:
 ///
 /// 1. `Transport.PathTableEntry.lastHeard` / `.expires` are `Date`, while Python's
-///    `timestamp` / `expires` are float seconds — and the JSON output prints the float.
+///    `timestamp` / `expires` are float seconds—and the JSON output prints the float.
 /// 2. A remote `/path` response arrives as MsgPack and must decode into the same type the
 ///    local path produces, so both feed one renderer.
 /// 3. Python's `via` is **never** `None`: `Transport.py:1796` stores
 ///    `received_from = packet.destination_hash` for a direct peer, where Swift stores `nil`.
 ///    ``resolvedVia`` applies that substitution in exactly one place.
 /// 4. `Transport.PathTableEntry.interfaceName` carries `Interface.name` (the short config
-///    section name) where Python carries `str(receiving_interface)` — Swift's
+///    section name) where Python carries `str(receiving_interface)`—Swift's
 ///    ``Interface/displayName``. Because the interface string is the *primary sort key*,
-///    resolving it late would order the table correctly-looking but wrong.
+///    resolving it late would order the table correctly looking but wrong.
 public struct RNPathTableEntry: Equatable {
 
     /// Python key `"hash"`.
     public var destinationHash: Data
-    /// Python key `"timestamp"` — last-heard, seconds since the epoch.
+    /// Python key `"timestamp"`—last-heard, seconds since the epoch.
     public var timestamp: TimeInterval
     /// Python key `"via"`. Nil only before ``resolvedVia`` is consulted; Python never emits null.
     public var via: Data?
     /// Python key `"hops"`.
     public var hops: UInt8
-    /// Python key `"expires"` — seconds since the epoch.
+    /// Python key `"expires"`—seconds since the epoch.
     public var expires: TimeInterval
-    /// Python key `"interface"` — `str(receiving_interface)`, i.e. `Interface.displayName`.
+    /// Python key `"interface"`—`str(receiving_interface)`, that is, `Interface.displayName`.
     public var interfaceName: String
 
     public init(destinationHash: Data,
@@ -69,7 +69,7 @@ public struct RNPathTableEntry: Equatable {
     /// destination hash itself when an announce carries no transport id).
     public var resolvedVia: Data { via ?? destinationHash }
 
-    /// MsgPack shape in Python's key order — what a Python `/path` handler sends back.
+    /// MsgPack shape in Python's key order—what a Python `/path` handler sends back.
     public func msgpackValue() -> MsgPack.Value {
         .map([
             (.string("hash"),      .bytes(destinationHash)),
@@ -108,11 +108,11 @@ public struct RNPathTableEntry: Equatable {
 
     /// Python: `sorted(table, key=lambda e: (e["interface"], e["hops"]))` (rnpath.py:254).
     ///
-    /// Applied to the **local** table only — the remote branch prints the server's order
+    /// Applied to the **local** table only—the remote branch prints the server's order
     /// unchanged.
     ///
     /// Python's `sorted` is stable, so rows sharing an interface *and* a hop count keep the
-    /// order `get_path_table()` produced. Swift's `sort` is not stable, so the input index
+    /// order `get_path_table()` produced. Swift's `sort` isn't stable, so the input index
     /// is used as the final tie-break to reproduce that. This matters in practice: over RPC
     /// the daemon sends an ordered array, and a hash-based tie-break would reorder every
     /// multi-row group relative to Python.
@@ -131,8 +131,8 @@ public struct RNPathTableEntry: Equatable {
 
 /// One row of `rnpath -r`, in the shape Python's `Reticulum.get_rate_table()` produces.
 ///
-/// Python reference: `RNS/Reticulum.py:1490-1509` —
-/// `{"hash", "last", "rate_violations", "blocked_until", "timestamps"}`, again in an
+/// Python reference: `RNS/Reticulum.py:1490-1509`—`{"hash",
+/// "last", "rate_violations", "blocked_until", "timestamps"}`, again in an
 /// observable insertion order because `-r -j` dumps it directly.
 public struct RNPathRateEntry: Equatable {
 
@@ -192,7 +192,7 @@ public struct RNPathRateEntry: Equatable {
         return elements.compactMap { decode($0) }
     }
 
-    /// Python: `sorted(table, key=lambda e: e["last"])` (rnpath.py:326) — applied in **both**
+    /// Python: `sorted(table, key=lambda e: e["last"])` (rnpath.py:326)—applied in **both**
     /// the local and the remote case, unlike the path table's sort. Stable, for the same
     /// reason as ``RNPathTableEntry/sortedForDisplay(_:)``.
     public static func sortedByLast(_ entries: [RNPathRateEntry]) -> [RNPathRateEntry] {
@@ -207,7 +207,7 @@ public struct RNPathRateEntry: Equatable {
 
 /// One row of `rnpath -b` / `rnpath -p`.
 ///
-/// Python reference: `Transport.blackholed_identities` — a dict keyed by 16-byte identity
+/// Python reference: `Transport.blackholed_identities`—a dict keyed by 16-byte identity
 /// hash whose values are `{"source": bytes|None, "until": float|None, "reason": str|None}`
 /// (Transport.py:3578-3584, and `Reticulum.get_blackholed_identities()`).
 public struct RNPathBlackholeEntry: Equatable {
@@ -234,7 +234,7 @@ public struct RNPathBlackholeEntry: Equatable {
                   reason: entry.reason)
     }
 
-    /// Decode the whole `blackholed_identities` map — the RPC reply and the `/list`
+    /// Decode the whole `blackholed_identities` map—the RPC reply and the `/list`
     /// response body share this shape.
     ///
     /// A legacy `{bin16 → true}` peer (which Swift's ``RPCServer`` no longer produces) is
@@ -263,13 +263,13 @@ public struct RNPathBlackholeEntry: Equatable {
     ///
     /// Python iterates a dict in insertion order, so its `-b` line order is stable across
     /// runs of the same daemon. Swift's `Dictionary` is unordered, so a deterministic order
-    /// is imposed here — a documented divergence, chosen over letting scripted consumers
+    /// is imposed here—a documented divergence, chosen over letting scripted consumers
     /// see the lines churn between invocations.
     public static func list(from table: [Data: Transport.BlackholeEntry]) -> [RNPathBlackholeEntry] {
         sorted(table.map { RNPathBlackholeEntry(identityHash: $0.key, entry: $0.value) })
     }
 
-    /// Deterministic ordering by identity hash — see ``list(from:)``.
+    /// Deterministic ordering by identity hash—see ``list(from:)``.
     public static func sorted(_ entries: [RNPathBlackholeEntry]) -> [RNPathBlackholeEntry] {
         entries.sorted { $0.identityHash.lexicographicallyPrecedes($1.identityHash) }
     }

@@ -68,13 +68,13 @@ public enum RNIDCommandLine {
         parser.option(["-r", "--read"], metavar: "path",
                       help: "input file path for operations with optional file input")
         parser.flag(["-f", "--force"], help: "write output even if it overwrites existing files")
-        // Python: help=argparse.SUPPRESS. `-I` is DEAD — never read anywhere in rnid.py.
+        // Python: help=argparse.SUPPRESS. `-I` is DEAD—never read anywhere in rnid.py.
         parser.flag(["-I", "--stdin"], help: "read input from STDIN instead of file", hidden: true)
         parser.flag(["-O", "--stdout"], help: "write output to STDOUT instead of file", hidden: true)
 
         // Information Flow
         parser.flag(["-R", "--request"], help: "request unknown Identities from the network")
-        // "never used cached" (sic) — Python's grammar, preserved verbatim.
+        // "never used cached" (sic)—Python's grammar, preserved verbatim.
         parser.flag(["-N", "--no-cache"], help: "never used cached or network-sourced information")
         parser.option(["-t"], metavar: "seconds", help: "identity request timeout before giving up",
                       default: String(Transport.pathRequestTimeout))
@@ -99,7 +99,7 @@ public enum RNIDCommandLine {
     }
 
     /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
-    /// error. Derived from ``helpText`` so the two cannot drift.
+    /// error. Derived from ``helpText`` so the two can't drift.
     public static var usageText: String {
         helpText.components(separatedBy: "\n\n")[0]
     }
@@ -169,7 +169,7 @@ public enum RNIDCommandLine {
 
         /// Python: `op_requires_identity = (args.sign or args.sign_message or args.encrypt or
         /// args.decrypt or args.announce or args.write or args.print_identity or
-        /// args.print_identity or args.export_pub or args.export_prv)` — note
+        /// args.print_identity or args.export_pub or args.export_prv)`—note
         /// `print_identity` appears twice, a harmless typo.
         ///
         /// `args.hash` and `args.validate` are deliberately absent, which is exactly why they

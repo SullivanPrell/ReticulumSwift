@@ -2,9 +2,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// RNS 1.3.6 added two interface features:
-///   • `MODE_INTERNAL` (0x07) — added to DISCOVER_PATHS_FOR, with announce
+///   • `MODE_INTERNAL` (0x07)—added to DISCOVER_PATHS_FOR, with announce
 ///     suppression when the next-hop interface is roaming/boundary.
-///   • `recursive_prs` — forces path discovery on path requests regardless of
+///   • `recursive_prs`—forces path discovery on path requests regardless of
 ///     the interface's mode.
 final class RNS136InterfaceFeatureTests: XCTestCase {
 
@@ -32,7 +32,7 @@ final class RNS136InterfaceFeatureTests: XCTestCase {
 
     func testInternalModeSuppressesAnnounceToBoundaryNextHop() {
         // RNS 1.3.7: internal outbound now blocks ONLY a boundary next hop
-        // (roaming is no longer blocked — see RNS137AnnouncePropagationTests).
+        // (roaming is no longer blocked—see RNS137AnnouncePropagationTests).
         XCTAssertTrue(Transport.shouldForwardAnnounce(outboundMode: .internal, nextHopMode: .roaming))
         XCTAssertFalse(Transport.shouldForwardAnnounce(outboundMode: .internal, nextHopMode: .boundary))
     }
@@ -50,7 +50,7 @@ final class RNS136InterfaceFeatureTests: XCTestCase {
     }
 
     /// A `recursive_prs` interface must trigger discovery of unknown paths even
-    /// when its mode (`.full`) is NOT in DISCOVER_PATHS_FOR.
+    /// when its mode (`.full`) isn't in DISCOVER_PATHS_FOR.
     func testRecursivePrsForcesDiscoveryOnFullModeInterface() throws {
         let t = Transport()
         t.transportEnabled = true

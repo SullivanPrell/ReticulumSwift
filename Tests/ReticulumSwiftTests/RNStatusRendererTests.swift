@@ -5,10 +5,10 @@ import XCTest
 ///
 /// Python reference: `RNS/Utilities/rnstatus.py:361-675`.
 ///
-/// Every expected string in this file was produced by running the **real** Python
+/// Running the **real** Python produced every expected string in this file:
 /// `rnstatus.program_setup()` against the same synthetic stats dict, with `sys.stdout`
 /// redirected and `time.time` pinned to `Self.now`. Trailing whitespace is significant and
-/// intentional — Python pads the frequency/traffic columns and then appends possibly-empty
+/// intentional—Python pads the frequency/traffic columns and then appends possibly empty
 /// suffixes.
 final class RNStatusRendererTests: XCTestCase {
 
@@ -135,7 +135,7 @@ final class RNStatusRendererTests: XCTestCase {
     }
 
     /// `-P` without `-A`: iaf/oaf are empty strings that still receive a trailing arrow, so
-    /// they are one character long and cannot raise mlen above the floor of 10.
+    /// they're one character long and can't raise mlen above the floor of 10.
     func testPathRequestsOnlyStillArrowsTheEmptyAnnounceStrings() {
         let stats = Self.top([Self.baseInterface([
             ("incoming_pr_frequency", .double(0.4)),
@@ -195,7 +195,7 @@ final class RNStatusRendererTests: XCTestCase {
             ])])
             return Self.renderer().render(stats: stats, linkCount: nil)
         }
-        // Python: cnum = max(clients-1, 0) — rnstatus subtracts its own attachment.
+        // Python: cnum = max(clients-1, 0)—rnstatus subtracts its own attachment.
         XCTAssertTrue(serving(4).contains("    Serving   : 3 programs\n"))
         XCTAssertTrue(serving(2).contains("    Serving   : 1 program\n"))
         XCTAssertTrue(serving(0).contains("    Serving   : 0 programs\n"))
@@ -344,7 +344,7 @@ final class RNStatusRendererTests: XCTestCase {
           + "    Network   : testnet\n"
           + "    Status    : Up\n"
           + "    Mode      : Roaming\n"
-          + "    Rate      : 9.60 kbps\n"          // lowercase k — speed_str, not prettyspeed
+          + "    Rate      : 9.60 kbps\n"          // lowercase k—speed_str, not prettyspeed
           + "    Battery   : 87% (Discharging)\n"
           + "    Airtime   : 0.35% (15s), 0.12% (1h)\n"
           + "    Ch. Load  : 1.2% (15s), 0.8% (1h)\n"
@@ -375,7 +375,7 @@ final class RNStatusRendererTests: XCTestCase {
           + "    Switch ID : aa:bb:cc\n"
           + "    Endpoint  : Unknown\n"          // present-but-nil → "Unknown"
           + "    Via       : dd:ee\n"
-          + "    Peers     : 3 reachable\n"      // yes, a second "Peers" line — Python too
+          + "    Peers     : 3 reachable\n"      // yes, a second "Peers" line—Python too
           + "    I2P       : Tunnel Active\n"
           + "    I2P B32   : abcdef.b32.i2p\n"
           + "    Traffic   : ↑1.20 MB    0 bps\n"
@@ -417,7 +417,7 @@ final class RNStatusRendererTests: XCTestCase {
         // target 0 / nil → no suffix at all
         XCTAssertFalse(render(.int(0), .int(30), .int(5)).contains("(t:"))
         XCTAssertFalse(render(.nil, .int(30), .int(5)).contains("(t:"))
-        // and the keys are not even read without -A
+        // and the keys aren't even read without -A
         XCTAssertFalse(render(.int(60), .int(30), .int(5), announceStats: false).contains("(t:"))
     }
 
@@ -457,7 +457,7 @@ final class RNStatusRendererTests: XCTestCase {
             ("outgoing_pr_frequency", .double(1.0)),
         ])])
         // `time.time() - burst_activated` is a float in Python, so the seconds render as
-        // "8.0s" rather than "8s". burst_str has a LEADING space; pburst_str does not.
+        // "8.0s" rather than "8s". burst_str has a LEADING space; pburst_str doesn't.
         XCTAssertEqual(Self.renderer { $0.announceStats = true; $0.prStats = true }
                         .render(stats: stats, linkCount: nil),
             "\n TCPInterface[Server on 0.0.0.0:4242]\n"
@@ -743,7 +743,7 @@ final class RNStatusRendererTests: XCTestCase {
     }
 
     func testPythonRoundMatchesPythonsRound() {
-        // Python: round(3.07455, 4) == 3.0745 — rounds the exact decimal, half to even.
+        // Python: round(3.07455, 4) == 3.0745—rounds the exact decimal, half to even.
         XCTAssertEqual(RNStatusRenderer.pythonRound(3.07455, 4), "3.0745")
         XCTAssertEqual(RNStatusRenderer.pythonRound(138.55425, 4), "138.5542")
         XCTAssertEqual(RNStatusRenderer.pythonRound(55.0, 4), "55.0")
@@ -752,7 +752,7 @@ final class RNStatusRendererTests: XCTestCase {
     }
 
     func testThousandsSeparators() {
-        // Python f"{867200000:,}" — and the integral form must not leak a ".0".
+        // Python f"{867200000:,}"—and the integral form must not leak a ".0".
         XCTAssertEqual(RNStatusRenderer.thousands(867_200_000), "867,200,000")
         XCTAssertEqual(RNStatusRenderer.thousands(125_000), "125,000")
         XCTAssertEqual(RNStatusRenderer.thousands(999), "999")

@@ -4,7 +4,7 @@ import Foundation
 /// Python reference: RNS/Utilities/rnx.py
 ///
 /// rnx uses RNS Link.request / Link.respond to run shell commands on a
-/// remote host.  The request is a 5-element msgpack array; the response
+/// remote host. The request is a 5-element msgpack array; the response
 /// is an 8-element msgpack array.
 
 // MARK: - RNXRequest
@@ -30,9 +30,9 @@ public struct RNXRequest {
 
     /// Encode element `[1]` as a msgpack integer rather than float64.
     ///
-    /// Python emits positive fixint 15 whenever `-w` is defaulted — `Transport.
-    /// PATH_REQUEST_TIMEOUT` is an `int` and argparse does not coerce non-string defaults
-    /// through `type=float` — and float64 only when `-w` is passed explicitly. Both are
+    /// Python emits positive fixint 15 whenever `-w` is defaulted—`Transport.
+    /// PATH_REQUEST_TIMEOUT` is an `int` and argparse doesn't coerce non-string defaults
+    /// through `type=float`—and float64 only when `-w` is passed explicitly. Both are
     /// accepted by every listener; the flag exists so the client can be byte-exact.
     public var timeoutPacksAsInteger: Bool = false
 
@@ -41,7 +41,7 @@ public struct RNXRequest {
     }
 
     /// Pack to msgpack for transmission via `link.request(data:)`.
-    /// Python: request_data[0] = command.encode("utf-8") — bytes, not a string.
+    /// Python: request_data[0] = command.encode("utf-8")—bytes, not a string.
     public func pack() throws -> Data {
         let arr: [MsgPack.Value] = [
             .bytes(Data(command.utf8)),                         // [0] command as bytes
@@ -74,10 +74,10 @@ public struct RNXResult {
     /// Process exit code (nil if not executed or not yet available).
     public var returnCode: Int?
 
-    /// Captured stdout bytes (may be truncated by stdoutLimit).
+    /// Captured stdout bytes (stdoutLimit may truncate them).
     public var stdout: Data?
 
-    /// Captured stderr bytes (may be truncated by stderrLimit).
+    /// Captured stderr bytes (stderrLimit may truncate them).
     public var stderr: Data?
 
     /// Total length of stdout produced (before any truncation).

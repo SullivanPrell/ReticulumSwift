@@ -32,7 +32,7 @@ public struct RNCopyProgress: Equatable {
     public let phySpeed: Double
     /// True on the terminal sample, which renders "Transfer complete".
     public let done: Bool
-    /// Wall-clock transfer duration, set only on the terminal fetch-mode sample — that is
+    /// Wall-clock transfer duration, set only on the terminal fetch-mode sample—that's
     /// the one line that inserts " in <prettytime>" (rncp.py:590).
     public let elapsed: TimeInterval?
 
@@ -65,7 +65,7 @@ enum RNCopyResourceStatus {
         }
     }
 
-    /// `status > RNS.Resource.COMPLETE` — FAILED or CORRUPT.
+    /// `status > RNS.Resource.COMPLETE`—FAILED or CORRUPT.
     static func isAboveComplete(_ status: ResourceTransfer.Status) -> Bool {
         switch status {
         case .failed, .rejected: return true
@@ -89,14 +89,14 @@ enum RNCopyResourceStatus {
 /// waits (rncp.py:404 / 659).
 ///
 /// Python's silent mode gates the `time.sleep(0.1)` behind `if not silent`, producing a hot
-/// CPU spin. This implementation always sleeps and only suppresses output — a deliberate,
+/// CPU spin. This implementation always sleeps and only suppresses output—a deliberate,
 /// documented divergence that changes nothing observable.
 final class RNCopyLinkOpener {
 
     enum Outcome {
         /// No path before the deadline. Python: "Path not found", exit 1.
         case pathNotFound
-        /// A path exists but no identity was recalled, so an OUT destination cannot be
+        /// A path exists but no identity was recalled, so an OUT destination can't be
         /// built. Python raises an unhandled exception inside `Destination.__init__` here.
         case identityUnknown
         /// `Link.initiate` threw.
@@ -162,7 +162,7 @@ final class RNCopyLinkOpener {
 
 // MARK: - Sender
 
-/// The sending half of `rncp` — Python's `send()` (rncp.py:617-792).
+/// The sending half of `rncp`—Python's `send()` (rncp.py:617-792).
 ///
 /// `run()` blocks until the transfer concludes and returns a typed outcome; all terminal
 /// rendering happens in `Sources/rncp/main.swift` off the ``onStage``/``onProgress``
@@ -198,7 +198,7 @@ public final class RNCopySender {
 
     public enum Outcome: Equatable {
         case completed(bytes: Int, duration: TimeInterval)
-        /// "File not found", exit 1. Python: rncp.py:636-638 — checked before Reticulum starts.
+        /// "File not found", exit 1. Python: rncp.py:636-638—checked before Reticulum starts.
         case fileNotFound
         /// "Path not found", exit 1. Python: rncp.py:667-672.
         case pathNotFound
@@ -208,7 +208,7 @@ public final class RNCopySender {
         case noPathFound
         /// A path exists but no identity is known for it; Python would raise here.
         case identityUnknown
-        /// "File was not accepted by <hash>", exit 1 — the receiver replied RESOURCE_RCL.
+        /// "File was not accepted by <hash>", exit 1—the receiver replied RESOURCE_RCL.
         case notAccepted
         /// "The transfer failed", exit 1. Python: rncp.py:779-784.
         case transferFailed
@@ -222,8 +222,8 @@ public final class RNCopySender {
     /// advance the Braille spinner (`print("\b\b"+syms[i]+" ")`, rncp.py:663,692,727).
     public var onTick: (() -> Void)?
 
-    /// The expanded local path, available after `run()` starts. Python prints this — not the
-    /// raw argument — in the success line (rncp.py:787,789).
+    /// The expanded local path, available after `run()` starts. Python prints this—not the
+    /// raw argument—in the success line (rncp.py:787,789).
     public private(set) var expandedFilePath: String = ""
 
     private let transport: Transport
@@ -264,7 +264,7 @@ public final class RNCopySender {
     }
 
     public func run() -> Outcome {
-        // Python: file_path = os.path.expanduser(file) — no abspath.
+        // Python: file_path = os.path.expanduser(file)—no abspath.
         let filePath = RNCopyApp.expandUser(configuration.filePath, home: fileSystem.homeDirectoryPath)
         expandedFilePath = filePath
         guard fileSystem.fileExists(atPath: filePath) else { return .fileNotFound }
@@ -287,7 +287,7 @@ public final class RNCopySender {
         case .failed(let message):     return .startFailed(message)
         case .opened(let opened, let deadlineExpired, let hasPath):
             stateLock.lock(); self.link = opened; stateLock.unlock()
-            // Python checks the clock FIRST, then the path — the two produce different
+            // Python checks the clock FIRST, then the path—the two produce different
             // messages and both exit 1 (rncp.py:696-707).
             if deadlineExpired { return .linkTimedOut }
             if !hasPath        { return .noPathFound }
@@ -324,8 +324,8 @@ public final class RNCopySender {
         onStage?(.transferring)
 
         // Python: `while not resource_done: i = progress_update(i)`. The loop body ALWAYS
-        // renders the "Transferring file" form — `resource_done` is only consulted by the
-        // loop condition — and the single "Transfer complete" render is the separate
+        // renders the "Transferring file" form—`resource_done` is only consulted by the
+        // loop condition—and the single "Transfer complete" render is the separate
         // `progress_update(i, done=True)` after the loop (rncp.py:767-777).
         var meter = RNCopyProgressMeter()
         var done = RNCopyResourceStatus.isAtLeastComplete(transfer.status)
@@ -367,7 +367,7 @@ public final class RNCopySender {
 
 // MARK: - Fetcher
 
-/// The fetching half of `rncp` — Python's `fetch()` (rncp.py:359-614).
+/// The fetching half of `rncp`—Python's `fetch()` (rncp.py:359-614).
 public final class RNCopyFetcher {
 
     public typealias Stage = RNCopyStage
@@ -376,7 +376,7 @@ public final class RNCopyFetcher {
     public struct Configuration {
         public var identity: Identity
         public var destinationHash: Data
-        /// The path to ask the listener for. Travels as a msgpack **str** — Python's
+        /// The path to ask the listener for. Travels as a msgpack **str**—Python's
         /// handler calls `str.startswith` on it, so a msgpack bin would raise remotely.
         public var remotePath: String
         public var timeout: TimeInterval
@@ -405,7 +405,7 @@ public final class RNCopyFetcher {
         /// "Path not found", exit 1.
         case pathNotFound
         /// "Could not establish link with <hash>", exit 1. Python tests `has_path` rather
-        /// than the link status here (rncp.py:441) — an upstream quirk, mirrored.
+        /// than the link status here (rncp.py:441)—an upstream quirk, mirrored.
         case linkFailed
         /// A path exists but no identity is known for it.
         case identityUnknown
@@ -414,7 +414,7 @@ public final class RNCopyFetcher {
         case requestFailed(RNCopyFetchStatus)
         /// "The transfer failed", exit 1.
         case transferFailed
-        /// The resource arrived but could not be written.
+        /// The resource arrived but couldn't be written.
         case saveFailed(RNCopyError)
     }
 
@@ -534,7 +534,7 @@ public final class RNCopyFetcher {
         onStage?(.waitingForTransfer)
 
         // Python: `while not resource_resolved:` renders inside the loop and branches on
-        // `prg != 1.0` — so the "Transfer complete" form (with the elapsed time and the
+        // `prg != 1.0`—so the "Transfer complete" form (with the elapsed time and the
         // average rate) is emitted from within the loop, and there is no post-loop render
         // (rncp.py:569-595).
         var meter = RNCopyProgressMeter()
@@ -564,7 +564,7 @@ public final class RNCopyFetcher {
     ///
     /// Upstream assigns `current_resource` without a `nonlocal`/`global` declaration, so the
     /// module global is only populated as a side effect of the progress callback. The
-    /// transfer is tracked directly here — observably identical.
+    /// transfer is tracked directly here—observably identical.
     private func handleResourceStarted(_ transfer: ResourceTransfer) {
         stateLock.lock()
         self.transfer = transfer
@@ -582,7 +582,7 @@ public final class RNCopyFetcher {
     ///
     /// Upstream's early `return`s on invalid metadata / bad save path / write exception skip
     /// `resource_resolved = True`, hanging the client in its progress loop. This always
-    /// resolves — a deliberate, documented divergence.
+    /// resolves—a deliberate, documented divergence.
     private func handleResourceConcluded(payload: Data, advertisement: ResourceAdvertisement) {
         stateLock.lock()
         let transfer = self.transfer
@@ -649,7 +649,7 @@ public final class RNCopyFetcher {
         stateLock.unlock()
 
         guard let transfer else {
-            // Python: "Waiting for transfer to start <sym>" — no Progress sample yet.
+            // Python: "Waiting for transfer to start <sym>"—no Progress sample yet.
             onWaiting?()
             return
         }

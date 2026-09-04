@@ -6,8 +6,8 @@ import Foundation
 /// Wire-compatible with Python `RNS.Resource`:
 /// - 4-byte random hash prefix prepended to encrypted data stream
 /// - map_hash = sha256(encryptedSegment + randomHash)[:4]
-/// - resource_hash = sha256(plaintext + randomHash) — full 32 bytes
-/// - Resource handles its own encryption (link layer does NOT re-encrypt parts)
+/// - resource_hash = sha256(plaintext + randomHash)—full 32 bytes
+/// - Resource handles its own encryption (link layer doesn't re-encrypt parts)
 public enum ResourceError: Error {
     case metadataTooLarge
 }
@@ -51,10 +51,10 @@ public final class Resource {
     public private(set) var status: Status = .queued
 
     /// - Parameters:
-    ///   - metadata: Pre-packed (e.g. msgpack) metadata bytes to prepend. The receiver will
-    ///               receive both the metadata and the payload via ``ResourceTransfer``.
+    ///   - metadata: Pre-packed (for example, msgpack) metadata bytes to prepend. The receiver
+    ///               receives both the metadata and the payload via ``ResourceTransfer``.
     ///               Mirrors Python `Resource(data, link, metadata=...)`.
-    /// The part size for a resource travelling over `link` — the one place it is decided.
+    /// The part size for a resource travelling over `link`—the one place it's decided.
     ///
     /// `bugs/016`. Python computes this on **both** sides from the per-link MTU
     /// (`Resource.py:335`):
@@ -67,7 +67,7 @@ public final class Resource {
     /// This port used a fixed `Constants.mdu` (464), which is the reference's answer only at the
     /// base MTU of 500. Above that the two sides derive different part counts, the receiver's
     /// hashmap update walks off the end of its map, the error is swallowed at debug level
-    /// (`Resource.py:240`), and the transfer times out with the link still ACTIVE — silently, in
+    /// (`Resource.py:240`), and the transfer times out with the link still ACTIVE—silently, in
     /// both directions.
     ///
     /// A function rather than a default argument at each call site, because "fixed at the call
@@ -78,7 +78,7 @@ public final class Resource {
     }
 
     /// - Parameter segmentSize: part size in bytes. `nil` derives it from the link, which is what
-    ///   every caller should want — see ``segmentSize(for:)``.
+    ///   every caller should want—see ``segmentSize(for:)``.
     public init(link: Link, payload: Data, metadata: Data? = nil,
                 segmentSize: Int? = nil, autoCompress: Bool = true) throws {
         let segmentSize = segmentSize ?? Resource.segmentSize(for: link)
@@ -268,7 +268,7 @@ public struct ResourceAdvertisement: Equatable {
 
     /// Maximum number of part-hashes carried in a single advertisement or
     /// hashmap-update (HMU) segment. Mirrors Python
-    /// `HASHMAP_MAX_LEN = floor((Link.MDU - OVERHEAD) / MAPHASH_LEN)` — which is 74 at
+    /// `HASHMAP_MAX_LEN = floor((Link.MDU - OVERHEAD) / MAPHASH_LEN)`—which is 74 at
     /// the default MTU (Link.MDU = 431). Resources with more parts than this are
     /// advertised one segment at a time; the receiver pulls later segments via HMU
     /// packets indexed by `partIndex / HASHMAP_MAX_LEN`.
@@ -284,21 +284,21 @@ public struct ResourceAdvertisement: Equatable {
     public var transferSize: UInt64        // t
     public var dataSize: UInt64            // d
     public var partCount: UInt64           // n
-    public var resourceHash: Data          // h — full 32-byte SHA256
-    public var randomHash: Data            // r — 4 bytes
+    public var resourceHash: Data          // h—full 32-byte SHA256
+    public var randomHash: Data            // r—4 bytes
     public var originalHash: Data          // o
     public var segmentIndex: UInt64        // i
     public var totalSegments: UInt64       // l
     public var requestID: Data?            // q (nil when not a request/response)
-    public var hashmap: Data               // m — MAPHASH_LEN bytes per part
+    public var hashmap: Data               // m—MAPHASH_LEN bytes per part
 
     // Flag bits packed into `f`:
-    //   bit 0 (0x01) e – encrypted
-    //   bit 1 (0x02) c – compressed
-    //   bit 2 (0x04) s – split
-    //   bit 3 (0x08) u – is request
-    //   bit 4 (0x10) p – is response
-    //   bit 5 (0x20) x – has metadata
+    //   bit 0 (0x01) e–encrypted
+    //   bit 1 (0x02) c–compressed
+    //   bit 2 (0x04) s–split
+    //   bit 3 (0x08) u–is request
+    //   bit 4 (0x10) p–is response
+    //   bit 5 (0x20) x–has metadata
     public var encrypted: Bool
     public var compressed: Bool
     public var split: Bool
@@ -347,7 +347,7 @@ public struct ResourceAdvertisement: Equatable {
     /// the `m` field. Later segments are delivered to the receiver via HMU packets.
     /// Mirrors Python `ResourceAdvertisement.pack(segment=0)`: a full hashmap may be
     /// held in `self.hashmap`, but the wire form never carries more than
-    /// `HASHMAP_MAX_LEN` (74) hashes — otherwise large resources would produce an
+    /// `HASHMAP_MAX_LEN` (74) hashes—otherwise large resources would produce an
     /// advertisement exceeding the link MDU and the segment offsets would not line up
     /// with the receiver's HMU indexing.
     public func pack(segment: Int = 0) -> Data {
@@ -425,7 +425,7 @@ public struct ResourceAdvertisement: Equatable {
             hasMetadata: (f & 0x20) != 0
         )
         // Sanity cap against corrupt/hostile advertisements: a single transfer's
-        // declared size cannot legitimately exceed 3× the max efficient (segment)
+        // declared size can't legitimately exceed 3× the max efficient (segment)
         // size. Mirrors Python ResourceAdvertisement.unpack (commit 3a36c367):
         // `if adv.t > Resource.MAX_EFFICIENT_SIZE*3: raise ValueError("Invalid transfer size")`.
         guard adv.transferSize <= UInt64(ResourceTransfer.maxEfficientSize * 3) else {

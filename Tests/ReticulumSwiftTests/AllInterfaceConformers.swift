@@ -4,19 +4,19 @@ import XCTest
 /// One construction site for **every** concrete `Interface` the library ships.
 ///
 /// This exists because `bugs/022` and `bugs/025` both got in through the same hole: a test that
-/// declared it covered "every concrete interface" and in fact covered a hand-picked three — the
-/// three that were already correct (`InterfaceGetterTests.swift:46-60`). Any requirement that is
+/// declared it covered "every concrete interface" and in fact covered a hand-picked three—the
+/// three that were already correct (`InterfaceGetterTests.swift:46-60`). Any requirement that's
 /// supposed to hold for all interfaces asserts it over `everyConcreteInterface()`, and
 /// `InterfaceConformerCoverageTests` fails if a conformer exists in `Sources/` that this file does
-/// not construct. Adding an interface type therefore cannot silently escape the protocol-wide
+/// not construct. Adding an interface type therefore can't silently escape the protocol-wide
 /// requirements.
 ///
 /// Test doubles are deliberately **not** included: a double that can do something the real type
-/// cannot is not a test of the real type (`bugs/025`, "Why the tests do not catch any of it").
+/// can't isn't a test of the real type (`bugs/025`, "Why the tests do not catch any of it").
 enum InterfaceConformers {
 
     /// The Swift type names of every conformer. Note these are *not* always the same as the
-    /// published `statsTypeName` — a spawned TCP-server client is a `TCPServerClientInterface`
+    /// published `statsTypeName`—a spawned TCP-server client is a `TCPServerClientInterface`
     /// in Swift and publishes `TCPClientInterface`, which is correct per Python and is exactly
     /// what `bugs/022` is about. `InterfaceConformerCoverageTests` cross-checks this list against
     /// the `Sources/` tree.
@@ -55,7 +55,7 @@ enum InterfaceConformers {
         all.append(TCPClientInterface(name: "tcp0", host: "127.0.0.1", port: 4242))
         all.append(UDPInterface(name: "udp0", listenPort: 4244))
 
-        // Serial family — these need a transport; the mocks live alongside their own suites.
+        // Serial family—these need a transport; the mocks live alongside their own suites.
         all.append(SerialInterface(name: "serial0", port: "/dev/null",
                                    transport: MockSerialPort()))
         all.append(KISSInterface(name: "kiss0", port: "/dev/null",
@@ -132,7 +132,7 @@ final class InterfaceConformerCoverageTests: XCTestCase {
                                                                 includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "swift" }
 
-        // Matches `final class Foo: Interface`, `class Foo: SomeProtocol, Interface`, etc.
+        // Matches `final class Foo: Interface`, `class Foo: SomeProtocol, Interface`, and so on
         let pattern = try NSRegularExpression(
             pattern: #"class\s+(\w+)\s*:\s*([^\{]*\b(?:Interface|LocalClientServingInterface)\b[^\{]*)\{"#
         )
@@ -145,7 +145,7 @@ final class InterfaceConformerCoverageTests: XCTestCase {
                 let typeName = ns.substring(with: m.range(at: 1))
                 let inheritance = ns.substring(with: m.range(at: 2))
                 // Skip conformances to unrelated protocols that merely contain "Interface"
-                // in a longer name (e.g. `: RNodeTransportInterfaceDelegate`).
+                // in a longer name (for example, `: RNodeTransportInterfaceDelegate`).
                 let conforms = inheritance
                     .split(whereSeparator: { ",: \t\n".contains($0) })
                     .contains { $0 == "Interface" || $0 == "LocalClientServingInterface" }

@@ -109,11 +109,11 @@ final class LinkPhyStatsTests: XCTestCase {
         wait(for: [received], timeout: 1.0)
 
         // A's link should reflect B's interface stats (since that's where the packet originated).
-        // In our model the receiving interface (aIface) propagates stats.
-        // For this test aIface has nil stats — check that tracking is enabled and no crash.
+        // In this model the receiving interface (aIface) propagates stats.
+        // For this test aIface has nil stats—check that tracking is enabled and no crash.
         XCTAssertTrue(aLink.trackPhyStats)
-        // rssi/snr may still be nil if aIface hasn't been updated; that's fine —
-        // the important thing is no crash and the flag is set.
+        // rssi/snr may still be nil if aIface hasn't been updated; that's fine—the
+        // important thing is no crash and the flag is set.
 
         _ = (aTransport, bTransport, aLink, bLink)
     }

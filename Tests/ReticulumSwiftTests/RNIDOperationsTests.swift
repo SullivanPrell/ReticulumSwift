@@ -40,7 +40,7 @@ final class RNIDOperationsTests: XCTestCase {
         XCTAssertEqual(RNIDApp.Result.allCases.count, 19)
         let expected: [UInt8] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 250, 251, 252, 253, 254, 255]
         XCTAssertEqual(RNIDApp.Result.allCases.map { $0.rawValue }, expected)
-        // R_NO_SIG_FILE (1) is defined at rnid.py:65 but NEVER returned — kept for parity.
+        // R_NO_SIG_FILE (1) is defined at rnid.py:65 but NEVER returned—kept for parity.
         XCTAssertEqual(RNIDApp.Result.noSigFile.rawValue, 1)
     }
 
@@ -77,7 +77,7 @@ final class RNIDOperationsTests: XCTestCase {
         XCTAssertFalse(output.text.contains("Private Key"))
     }
 
-    /// `-U`/`--base256` is NOT honoured by `-p`, `-x` or `-X`; those fall through to hex.
+    /// `-U`/`--base256` isn't honoured by `-p`, `-x` or `-X`; those fall through to hex.
     func testBase256IsNotHonouredByTheKeyPrinters() {
         let identity = Identity()
         var options = RNIDApp.Options()
@@ -125,7 +125,7 @@ final class RNIDOperationsTests: XCTestCase {
             "The rns.id destination for this Identity is " + RNSUtilities.prettyhexrep(expectedHash),
             "The full destination specifier is <\(destination.fullName):\(destination.hexHash)>"
         ])
-        // Python's Destination.__init__ registers with Transport; Swift's does not, so the
+        // Python's Destination.__init__ registers with Transport; Swift's doesn't, so the
         // port registers explicitly.
         XCTAssertNotNil(transport.registeredDestinations[destination.hash])
     }
@@ -219,7 +219,7 @@ final class RNIDOperationsTests: XCTestCase {
         XCTAssertEqual(rsg.count, 64)
         XCTAssertTrue(RSG.isLegacyFormat(rsg))
 
-        // Legacy validation needs an explicit Identity — a bare hash is not enough.
+        // Legacy validation needs an explicit Identity—a bare hash isn't enough.
         let (validator, validatorOutput, _) = makeOperations(identity: identity, files: fileSystem.files)
         XCTAssertEqual(validator.validate(paths: ["doc.txt"]), .ok)
         XCTAssertEqual(validatorOutput.lines,
@@ -278,7 +278,7 @@ final class RNIDOperationsTests: XCTestCase {
     }
 
     /// QUIRK: the overwrite guard is gated on `output == "bin"`, so `-s file --raw -b` still
-    /// overwrites the .rsg without asking — `--raw` always writes binary regardless.
+    /// overwrites the .rsg without asking—`--raw` always writes binary regardless.
     func testRawWithATextFormatSkipsTheOverwriteGuard() {
         let identity = Identity()
         var options = RNIDApp.Options()
@@ -296,7 +296,7 @@ final class RNIDOperationsTests: XCTestCase {
         let identity = Identity()
         let (operations, output, _) = makeOperations(identity: identity,
                                                      files: ["a.txt": Data("a".utf8)])
-        // The second path does not exist, so the recursion aborts.
+        // The second path doesn't exist, so the recursion aborts.
         XCTAssertEqual(operations.sign(paths: ["a.txt", "missing.txt"]), .noFile)
         XCTAssertEqual(output.lines.last, "The file \"missing.txt\" does not exist")
     }
@@ -341,7 +341,7 @@ final class RNIDOperationsTests: XCTestCase {
         var files = fileSystem.files
         files["FILE.RSG"] = files.removeValue(forKey: "FILE.rsg")
         let (validator, output, _) = makeOperations(identity: identity, files: files)
-        // "FILE.RSG" is recognised as a signature file, so the target becomes "FILE".
+        // "FILE.RSG" is recognized as a signature file, so the target becomes "FILE".
         XCTAssertEqual(validator.validate(paths: ["FILE.RSG"]), .ok)
         XCTAssertEqual(output.lines.first,
                        "Signature is valid, the file FILE was signed by "
@@ -385,8 +385,8 @@ final class RNIDOperationsTests: XCTestCase {
         ])
     }
 
-    /// Without `--meta`: a blank line, the "following message" line, a blank line, the body —
-    /// with no "RSM Metadata", "Validation" or "Message" headers.
+    /// Without `--meta`: a blank line, the "following message" line, a blank line, the body—with
+    /// no "RSM Metadata", "Validation" or "Message" headers.
     func testRSMDisplayWithoutMeta() throws {
         let identity = Identity()
         let rsm = try makeRSM(signer: identity, message: Data("body text".utf8), extraMeta: [])
@@ -622,7 +622,7 @@ final class RNIDOperationsTests: XCTestCase {
                        "The encryption output file \"doc.txt.rfe\" already exists, not overwriting")
     }
 
-    /// Encrypt's progress print fires even on the terminating iteration; decrypt's does not.
+    /// Encrypt's progress print fires even on the terminating iteration; decrypt's doesn't.
     func testEmptyInputProgressAsymmetry() throws {
         let identity = Identity()
         let (encryptor, encryptOutput, encryptFS) = makeOperations(identity: identity,
@@ -734,8 +734,8 @@ final class RNIDOperationsTests: XCTestCase {
     }
 
     /// Python's `R_NO_PUBKEY` (3) and `R_NO_KEYS` (5) branches are structurally unreachable in
-    /// Swift, because `Identity.publicKeyBytes` is non-optional — every Identity holds a
-    /// public key. They are kept for source parity and deliberately have no test.
+    /// Swift, because `Identity.publicKeyBytes` is non-optional—every Identity holds a
+    /// public key. They're kept for source parity and deliberately have no test.
     func testEveryIdentityHoldsAPublicKey() throws {
         let publicOnly = try Identity(publicKeyBytes: Identity().getPublicKey())
         XCTAssertEqual(publicOnly.getPublicKey().count, 64)

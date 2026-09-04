@@ -1,9 +1,9 @@
 import Foundation
 
-/// The four text encodings `rnid` accepts and emits: hex, base32, url-safe base64 and
+/// The four text encodings `rnid` accepts and emits: hex, base32, URL-safe base64 and
 /// Reticulum's own base256 alphabet.
 ///
-/// Python reference: `RNS/Utilities/rnid.py` — `create_rsg` (:508-514), `get_rsg_data`
+/// Python reference: `RNS/Utilities/rnid.py`—`create_rsg` (:508-514), `get_rsg_data`
 /// (:397-411), the `-m`/`-M` import ladder (:282-358) and the `-p`/`-x`/`-X` printers
 /// (:971-1027).
 public enum RNIDEncoding {
@@ -50,7 +50,7 @@ public enum RNIDEncoding {
 
     // MARK: - Base64 (URL-safe)
 
-    /// Python: `base64.urlsafe_b64encode(data).decode("utf-8")` — the `-`/`_` alphabet,
+    /// Python: `base64.urlsafe_b64encode(data).decode("utf-8")`—the `-`/`_` alphabet,
     /// `=` padding retained.
     public static func base64URLEncode(_ data: Data) -> String {
         var encoded = data.base64EncodedString()
@@ -75,7 +75,7 @@ public enum RNIDEncoding {
         if remainder == 1 { return nil }
         if remainder != 0 { normalised += String(repeating: "=", count: 4 - remainder) }
         // Foundation's decoder ignores unknown characters only when told to; the default
-        // options reject them, which is exactly the strictness we want.
+        // options reject them, which is exactly the intended strictness.
         return Data(base64Encoded: normalised)
     }
 
@@ -96,17 +96,17 @@ public enum RNIDEncoding {
     ///
     /// - `RSG_PADDING` is the *bytes* literal `b"="`, and `str.strip(bytes)` raises
     ///   `TypeError`, so the base32 and hex attempts can never succeed for `str` input.
-    /// - The four attempts are `try: rsg_data = X except: pass`, i.e. **last success wins**,
+    /// - The four attempts are `try: rsg_data = X except: pass`, that is, **last success wins**,
     ///   while `base64.urlsafe_b64decode("!!!!")` returns `b""` without raising and the
     ///   base256 alphabet contains every hex character. Under those rules base256 would win
     ///   for any hex input and decode it to garbage.
     ///
     /// The port therefore uses **first-plausible-success-wins**. The probe order is
-    /// hex → base32 → base64url → base256, i.e. strictest alphabet first: every hex string
+    /// hex → base32 → base64url → base256, that is, strictest alphabet first: every hex string
     /// is also a valid base64 string, so probing base64 first (as the audit spec proposed)
     /// would swallow hex-armoured RSGs. A candidate is accepted only when its length is
-    /// `64` (a legacy RSG, see ``RSG/isLegacyFormat(_:)``) or `>= 65` (a modern RSG) —
-    /// the two shapes `validate_rsg` can consume.
+    /// `64` (a legacy RSG, see ``RSG/isLegacyFormat(_:)``) or `>= 65` (a modern RSG)—the
+    /// two shapes `validate_rsg` can consume.
     ///
     /// No `rnid` CLI path reaches this function: the CLI always reads RSGs from files as
     /// bytes. It exists because `get_rsg_data` is part of the API `rngit` consumes.

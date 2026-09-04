@@ -3,16 +3,16 @@ import Foundation
 /// Protocol for objects that want to be notified of incoming announces.
 ///
 /// Mirrors Python's announce handler contract: the handler exposes an
-/// optional `aspectFilter` string (e.g. `"lxmf.delivery"`) and a
+/// optional `aspectFilter` string (for example, `"lxmf.delivery"`) and a
 /// `receivedAnnounce` callback. When `aspectFilter` is non-nil, Transport
 /// computes the expected destination hash for that app/aspect combination
 /// paired with the announcing identity and only calls the handler when
-/// the hashes match — matching Python's `Transport._announce_handlers`
+/// the hashes match—matching Python's `Transport._announce_handlers`
 /// dispatch logic exactly.
 public protocol AnnounceHandler: AnyObject {
     /// If non-nil, only announces whose destination hash matches
     /// `Destination.computeHash` for this filter + the announcing identity
-    /// will be dispatched. A nil filter receives every announce.
+    /// is dispatched. A nil filter receives every announce.
     var aspectFilter: String? { get }
 
     /// Set to `true` to also receive announces that are path responses.
@@ -34,10 +34,10 @@ public protocol AnnounceHandler: AnyObject {
 }
 
 public extension AnnounceHandler {
-    // Default: do not filter path-response announces (handlers opt in by overriding to true).
+    // Default: don't filter path-response announces (handlers opt in by overriding to true).
     var receivePathResponses: Bool { false }
 
-    // Backwards-compatible shim: if the full signature is not overridden,
+    // Backwards-compatible shim: if the full signature isn't overridden,
     // fall back through the chain to the no-arg baseline.
     func receivedAnnounce(destinationHash: Data, identity: Identity, appData: Data?,
                           announcePacketHash: Data, isPathResponse: Bool) {

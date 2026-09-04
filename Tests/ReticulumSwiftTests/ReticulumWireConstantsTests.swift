@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying that Reticulum exposes the wire-format constants Python consumers
-/// access as class attributes (e.g. `RNS.Reticulum.MTU`, `RNS.Reticulum.MDU`, …).
+/// access as class attributes (for example, `RNS.Reticulum.MTU`, `RNS.Reticulum.MDU`, …).
 ///
 /// Python reference (Reticulum.py):
 ///   Reticulum.MTU            = 500
@@ -55,8 +55,8 @@ final class ReticulumWireConstantsTests: XCTestCase {
 
     /// `getInstance()` returns nil before start(), matching Python's get_instance() convention.
     func testGetInstanceNilBeforeStart() {
-        // This test must NOT call Reticulum.start() — we just verify the accessor works.
-        // (A live test would need tearDown to stop it; here we just check the API shape.)
+        // This test must NOT call Reticulum.start()—this only verifies the accessor works.
+        // (A live test would need tearDown to stop it; here the check is only the API shape.)
         let _ = Reticulum.getInstance() // must not crash; may be nil or a previous instance
     }
 }

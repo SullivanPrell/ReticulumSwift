@@ -16,3 +16,7 @@ Resources/*.xcframework/
 Resources/*.xcframework.zip
 
 .build-linux/
+
+# Python bytecode from .vale/tools helpers.
+__pycache__/
+*.pyc

@@ -1,9 +1,9 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for the RSG container — the byte format `rnid -s` / `-S` produce and `-V` consumes.
+/// Tests for the RSG container—the byte format `rnid -s` / `-S` produce and `-V` consumes.
 ///
-/// Python reference: RNS/Utilities/rnid.py — `create_rsg` (:488-516), `validate_rsg`
+/// Python reference: RNS/Utilities/rnid.py—`create_rsg` (:488-516), `validate_rsg`
 /// (:436-486), `rsg_is_legacy_format` (:431-434), `extract_signed_rsg_data` (:413-419),
 /// `get_rsg_hash` (:421-429), `wrap_rsg`/`unwrap_rsg` (:518-564).
 final class RSGTests: XCTestCase {
@@ -65,7 +65,7 @@ final class RSGTests: XCTestCase {
 
     // MARK: - MsgPack boundary parity
 
-    /// Guards the golden-byte tests: they are only meaningful while ReticulumSwift's encoder
+    /// Guards the golden-byte tests: they're only meaningful while ReticulumSwift's encoder
     /// stays byte-identical to RNS's vendored umsgpack at every boundary an envelope can hit.
     func testMsgPackMatchesUmsgpackAtEveryEnvelopeBoundary() {
         func hex(_ value: MsgPack.Value) -> String { RNIDEncoding.hexEncode(MsgPack.encode(value)) }
@@ -130,7 +130,7 @@ final class RSGTests: XCTestCase {
 
     func testCreateSilentlyIgnoresEmptyMeta() throws {
         let identity = Identity()
-        // Python: `if meta and type(meta) == dict:` — an empty mapping never merges.
+        // Python: `if meta and type(meta) == dict:`—an empty mapping never merges.
         guard case .binary(let rsg) = try RSG.create(signer: identity, message: .bytes(Data("x".utf8)),
                                                      embed: false, meta: [], output: .bin)
         else { return XCTFail("expected binary output") }

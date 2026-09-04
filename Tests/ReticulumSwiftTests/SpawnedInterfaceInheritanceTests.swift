@@ -1,17 +1,17 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `bugs/025` — spawned-interface attribute inheritance.
+/// `bugs/025`—spawned-interface attribute inheritance.
 ///
 /// Python copies nineteen attributes onto each accepted client
 /// (`RNS/Interfaces/TCPInterface.py:594-641`), and the same block appears in
 /// `BackboneInterface.py:467-485`, `AutoInterface.py:559` and `I2PInterface.py:846`.
-/// This port propagated four — `ifacIdentity`, `ifacKey`, `ifacSize`, `gravity` — with `bitrate`
+/// This port propagated four—`ifacIdentity`, `ifacKey`, `ifacSize`, `gravity`—with `bitrate`
 /// a fresh hardcoded `10_000_000` at `TCPServerInterface.swift:244` and the rest unpropagatable
 /// because they were get-only.
 ///
 /// A spawned client is the real routing endpoint on a server-side interface, so an attribute that
-/// does not reach it is inert for every peer that dials in — which is the deployment a Swift hub or
+/// doesn't reach it's inert for every peer that dials in—which is the deployment a Swift hub or
 /// RetiOS-on-macOS actually runs.
 final class SpawnedInterfaceInheritanceTests: XCTestCase {
 
@@ -73,7 +73,7 @@ final class SpawnedInterfaceInheritanceTests: XCTestCase {
         XCTAssertEqual(client.ifacKey, Data(repeating: 0xAB, count: 64), "ifacKey")
     }
 
-    /// A tunnel belongs to the connection that established it. Python does not copy these, and
+    /// A tunnel belongs to the connection that established it. Python doesn't copy these, and
     /// inheriting them would attach the parent's tunnel identity to every client.
     func testSpawnedClientDoesNotInheritTunnelState() {
         let server = TCPServerInterface(name: "hub2", port: 4251)

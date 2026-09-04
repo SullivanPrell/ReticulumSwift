@@ -1,7 +1,7 @@
 # Contributing to ReticulumSwift
 
-Thanks for your interest in improving ReticulumSwift! This project values
-**wire compatibility with Python Reticulum** above all else — a change that
+Thanks for your interest in improving ReticulumSwift. This project values
+**wire compatibility with Python Reticulum** before all else—a change that
 breaks interop with the reference implementation is a regression, even if the
 Swift tests pass.
 
@@ -9,8 +9,8 @@ Swift tests pass.
 
 - **Test-driven.** Write a failing test first, implement until green, then commit.
   The reference implementation (<https://github.com/markqvist/Reticulum>) is the
-  source of truth; new wire-level behavior should be checked against captured
-  Python bytes where possible.
+  source of truth. Check new wire-level behavior against captured Python bytes
+  where possible.
 - **No regressions.** The full `swift test` suite must pass before any commit.
 - **No new crypto dependencies.** All cryptography goes through Apple CryptoKit
   (Curve25519, HMAC-SHA256, HKDF, SHA-256/512) and CommonCrypto (AES-CBC).
@@ -45,14 +45,14 @@ swift test --filter WireGoldenBytesTests
 ## Verifying interoperability
 
 Unit tests assert against captured Python wire bytes. For end-to-end interop, run
-a Python `rnsd` and a Swift `rnsd` on the same network — see
+a Python `rnsd` and a Swift `rnsd` on the same network—see
 [docs/INTEROP.md](docs/INTEROP.md).
 
 ## The CI2PD (i2pd) binary
 
 The I2P interface uses a prebuilt static library of the i2pd daemon
-(`CI2PD.xcframework`: macOS-arm64, iOS-arm64, iOS-simulator-arm64). It is **not
-committed to git** — it is built from **pinned source** and published as a
+(`CI2PD.xcframework`: macOS-arm64, iOS-arm64, iOS-simulator-arm64). It's **not
+committed to git**—it's built from **pinned source** and published as a
 GitHub **Release** asset, then consumed via `binaryTarget(url:checksum:)` in
 `Package.swift`. Pinned versions: **i2pd 2.60.0**, Boost 1.90.0, OpenSSL 3.3.2.
 
@@ -61,7 +61,7 @@ GitHub **Release** asset, then consumed via `binaryTarget(url:checksum:)` in
 Run the **Build binaries** workflow (Actions ▸ *Build binaries* ▸ *Run workflow*,
 or `gh workflow run build-binaries.yml -f i2pd_version=<tag>`). It builds all
 three slices from source, publishes a `ci2pd-<version>` release, and opens a PR
-that updates the `binaryTarget` url + checksum. Review and merge it.
+that updates the `binaryTarget` URL and checksum. Review and merge it.
 
 ### Building locally
 
@@ -87,5 +87,5 @@ the binary embeds.
 
 ## License of contributions
 
-By contributing, you agree your contributions are licensed under the
+By contributing, you agree to license your contributions under the
 [Reticulum License](LICENSE), the same license as the project.
