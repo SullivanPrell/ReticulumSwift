@@ -8,7 +8,7 @@ import Foundation
 /// This is a class (not a struct) so it can conform to `Interface` (which requires `AnyObject`)
 /// and be passed directly as `any Interface` to inbound handlers, enabling callers to downcast
 /// back to `RNodeSubInterface` for channel identification.
-public final class RNodeSubInterface: Interface {
+public final class RNodeSubInterface: Interface, SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -31,6 +31,7 @@ public final class RNodeSubInterface: Interface {
     /// parent exists, so `RNodeMultiInterface.init` assigns this after adopting them. Weak: the
     /// parent owns the subs.
     public weak var parentInterface: RNodeMultiInterface?
+    public var spawningInterface: (any Interface)? { parentInterface }
 
     /// Python `RNodeSubInterface.__str__` (`RNodeMultiInterface.py:1152-1153`):
     /// `self.parent_interface.name+"["+self.name+"]"`—the **parent's** name, not this class's.

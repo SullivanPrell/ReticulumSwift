@@ -71,9 +71,15 @@ public enum InterfaceStatsPayload {
                 kv("clients", .nil)
             }
 
-            // RNodeSubInterface: parent_interface_name/hash (not yet wired—RNodeSubInterface
-            // has no back-reference to the parent RNodeMultiInterface). Python emits them here,
-            // between `clients` and the I2P block; rnstatus handles their absence.
+            // Spawned interfaces: parent_interface_name/hash, emitted between `clients` and the
+            // I2P block. Upstream reaches the parent through `hasattr(interface,
+            // "parent_interface") and interface.parent_interface != None`
+            // (`Reticulum.py:1412-1414`); here the same reach is a protocol so the set of types
+            // that publish a parent is the set that declares one, not a list maintained here.
+            if let spawned = iface as? any SpawnedInterface, let parent = spawned.spawningInterface {
+                kv("parent_interface_name", .string(parent.displayName))
+                kv("parent_interface_hash", .bytes(Hashes.fullHash(Data(parent.displayName.utf8))))
+            }
 
             if let i2p = iface as? I2PInterface {
                 kv("i2p_connectable", .bool(i2p.connectable))
@@ -91,11 +97,30 @@ public enum InterfaceStatsPayload {
                 kv("interference",       rnode.rInterference.map { .int(Int64($0)) } ?? .nil)
             }
 
-            // WeaveInterfacePeer: switch_id, via_switch_id, endpoint_id.
-            if let weave = iface as? WeaveInterfacePeer {
-                kv("switch_id",     weave.switchID.map    { .string($0.hexString) } ?? .nil)
-                kv("via_switch_id", weave.viaSwitchID.map { .string($0.hexString) } ?? .nil)
-                kv("endpoint_id",   weave.endpointID.map  { .string($0.hexString) } ?? .nil)
+            // Processor temperature and switch load. Upstream guards each with a bare `hasattr`
+            // (`Reticulum.py:1443-1445`), so `cpu_temp` rides on RNode interfaces and the two
+            // load figures on Weave ones. `cpu_temp` is null until the radio first reports;
+            // the loads read 0 until the switch does, matching the attributes upstream
+            // initialises to 0.
+            if let rnode = iface as? RNodeInterface {
+                kv("cpu_temp", rnode.cpuTemp.map { .int(Int64($0)) } ?? .nil)
+            }
+            //
+            // The three Weave identifiers follow, each on the type that declares it upstream:
+            // `switch_id` and `endpoint_id` are properties of `WeaveInterface`
+            // (`WeaveInterface.py:838-845`), while `via_switch_id` is an attribute of
+            // `WeaveInterfacePeer` alone (`:1014`). A peer therefore publishes only the switch
+            // it arrived through, and the interface publishes the switch behind it. Every one
+            // is colon-delimited hex, because upstream passes them through `RNS.hexrep`, whose
+            // `delimit` defaults to true (`Reticulum.py:1451-1461`).
+            if let weave = iface as? WeaveInterface {
+                kv("cpu_load",    .double(weave.cpuLoad))
+                kv("mem_load",    .double(weave.memLoad))
+                kv("switch_id",   weave.switchID.map   { .string(RNSUtilities.hexrep($0)) } ?? .nil)
+                kv("endpoint_id", weave.endpointID.map { .string(RNSUtilities.hexrep($0)) } ?? .nil)
+            }
+            if let peer = iface as? WeaveInterfacePeer {
+                kv("via_switch_id", peer.viaSwitchID.map { .string(RNSUtilities.hexrep($0)) } ?? .nil)
             }
 
             if let rnode = iface as? RNodeInterface,
@@ -119,6 +144,17 @@ public enum InterfaceStatsPayload {
             kv("atxs", .double(speeds.announceTx))
             kv("prxs", .double(speeds.pathRequestRx))
             kv("ptxs", .double(speeds.pathRequestTx))
+
+            // Peer count, published for every interface that keeps a peer table
+            // (`Reticulum.py:1501-1503`). `rnstatus` prints it as "N reachable" and also falls
+            // back to it for the client column when an interface reports no `clients`
+            // (`rnstatus.py:555, 617, 642`), so an interface that keeps peers and stays silent
+            // here reads as having none.
+            if let auto = iface as? AutoInterface {
+                kv("peers", .int(Int64(auto.peerCount)))
+            } else if let weave = iface as? WeaveInterface {
+                kv("peers", .int(Int64(weave.peers.count)))
+            }
 
             // IFAC fields. Python's order is signature, size, netname.
             if let ifacIdentity = iface.ifacIdentity {

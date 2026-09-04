@@ -352,6 +352,13 @@ public final class RNodeInterface: Interface {
     public var rBatteryPercent: UInt8 = 0
     public var rTemperature:    Int?  = nil
 
+    /// The radio's reported temperature, under the name the stats payload publishes.
+    ///
+    /// Upstream keeps a second stored attribute and assigns it alongside every write to
+    /// `r_temperature` (`RNodeInterface.py:1067`). Aliasing instead of storing removes the only
+    /// way the two can disagree, and `cpu_temp` has no other writer upstream.
+    public var cpuTemp: Int? { rTemperature }
+
     // MARK:–Flow control / TX queue
 
     /// Python starts this `False` (`RNodeInterface.py:297`) and raises it only after a

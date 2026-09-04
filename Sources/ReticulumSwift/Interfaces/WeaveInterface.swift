@@ -333,6 +333,19 @@ public final class WeaveDevice {
     public private(set) var memFree:  Int    = 0
     public var memUsed: Int { max(0, memTotal - memFree) }
 
+    /// Used memory as a percentage of total, rounded to two decimals.
+    ///
+    /// Mirrors `round((self.memory_used/self.memory_total)*100, 2)`
+    /// (`WeaveInterface.py:763`). Upstream stores the result and only recomputes it when a
+    /// memory frame arrives, so it reads 0 until the switch first reports; computing it on
+    /// demand from `memTotal == 0` gives the same 0 without duplicating state. The guard also
+    /// keeps a switch that reports a zero total from yielding a NaN—upstream raises
+    /// `ZeroDivisionError` on that frame instead.
+    public var memUsedPct: Double {
+        guard memTotal > 0 else { return 0 }
+        return ((Double(memUsed) / Double(memTotal)) * 100 * 100).rounded() / 100
+    }
+
     // MARK: - Back-references (weak to break cycles)
 
     public weak var connection:    WDCLTransport?
@@ -626,6 +639,29 @@ public final class WeaveInterface: Interface {
     /// Lock protecting outgoing writes from concurrent `WeaveInterfacePeer` calls.
     internal let writeLock = NSLock()
 
+    // MARK: - Switch state
+
+    /// Processor load last reported by the attached switch, as a percentage.
+    ///
+    /// Upstream's property returns `None` when `self.device` is unset and `device.cpu_load`
+    /// otherwise (`WeaveInterface.py:828-830`). `final_init` assigns the device unconditionally
+    /// (`:883`), so by the time an interface appears in the stats payload the value is always
+    /// the device's, which reads 0 until the switch first reports. This port builds its device
+    /// in `init`, so the same reading is always available and the optional never arises.
+    public var cpuLoad: Double { device.cpuLoad }
+
+    /// Memory in use on the attached switch, as a percentage. Mirrors `mem_load`
+    /// (`WeaveInterface.py:833-835`).
+    public var memLoad: Double { device.memUsedPct }
+
+    /// Identifier of the switch behind this interface, learned during the WDCL handshake.
+    /// Mirrors `switch_id` (`WeaveInterface.py:838-840`).
+    public var switchID: Data? { device.switchID }
+
+    /// This host's endpoint address on the Weave fabric, as the switch assigned it. Mirrors
+    /// `endpoint_id` (`WeaveInterface.py:843-845`).
+    public var endpointID: Data? { device.endpointID }
+
     // MARK: - Peer management
 
     /// Live endpoint → last-seen record.
@@ -785,7 +821,7 @@ public final class WeaveInterface: Interface {
 /// forwarded to `rawInboundHandler`.
 ///
 /// Python: `WeaveInterfacePeer`
-public final class WeaveInterfacePeer: Interface {
+public final class WeaveInterfacePeer: Interface, SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
@@ -855,6 +891,7 @@ public final class WeaveInterfacePeer: Interface {
     // MARK: - Back-reference
 
     public weak var owner: WeaveInterface?
+    public var spawningInterface: (any Interface)? { owner }
 
     private let lock = NSLock()
 
