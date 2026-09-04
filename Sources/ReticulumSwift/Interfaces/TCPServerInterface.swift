@@ -18,6 +18,9 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// Python marks this type discoverable (`TCPInterface.py:528`). The announcer
     /// still needs `discoverable` set from config before it announces anything.
     public let supportsDiscovery = true
+
+    /// Python: `interface.bind_port`, published as `PORT` (`Discovery.py:183`).
+    public var discoveryListenPort: Int? { Int(port) }
     public let name: String
     public let port: UInt16
     /// The address reported as the listener's bind address. Python resolves `listen_ip`

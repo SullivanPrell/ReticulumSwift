@@ -57,6 +57,23 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
 /// Reticulum Interfaces speak in *whole packets*: the underlying medium
 /// (TCP, UDP, BLE serial, RNode KISS) handles framing; the Interface
 /// reports clean packet bytes upward via `inboundHandler`.
+/// A radio's live operating parameters, as published in a discovery announce.
+///
+/// Mirrors the four values Python reads off an `RNodeInterface` at `Discovery.py:188-192`.
+public struct DiscoveryRadioParameters: Equatable, Sendable {
+    public let frequency: Int
+    public let bandwidth: Int
+    public let spreadingFactor: Int
+    public let codingRate: Int
+
+    public init(frequency: Int, bandwidth: Int, spreadingFactor: Int, codingRate: Int) {
+        self.frequency = frequency
+        self.bandwidth = bandwidth
+        self.spreadingFactor = spreadingFactor
+        self.codingRate = codingRate
+    }
+}
+
 public protocol Interface: AnyObject {
     var name: String { get }
 
@@ -186,6 +203,22 @@ public protocol Interface: AnyObject {
     /// Mirrors Python's `Interface.ifac_netname` (`Reticulum.py:955`); `rnstatus` reports it.
     var ifacNetname: String? { get set }
 
+    /// The IFAC segment's passphrase, as configured. Mirrors Python's
+    /// `interface.ifac_netkey`, published only when `discoveryPublishIfac` is set.
+    var ifacNetkey: String? { get set }
+
+    /// The endpoint hash this interface was auto-connected for, or nil when it was configured
+    /// by hand. Python: `interface.autoconnect_hash` (`Discovery.py:765`).
+    var autoconnectHash: Data? { get set }
+
+    /// The network identity whose announce this endpoint was discovered from.
+    /// Python: `interface.autoconnect_source` (`Discovery.py:766`).
+    var autoconnectSource: String? { get set }
+
+    /// When this auto-connected interface was first seen offline, or nil while it is up.
+    /// Python: `interface.autoconnect_down` (`Discovery.py:628`).
+    var autoconnectDown: TimeInterval? { get set }
+
     /// When true, a transport node searches for unknown paths on path requests
     /// received here regardless of this interface's `mode` (that is, even when the
     /// mode isn't in `discoverPathsFor`). Mirrors Python's RNS 1.3.6
@@ -276,6 +309,23 @@ public protocol Interface: AnyObject {
     var discoveryModulation: Int? { get set }
     /// Published channel. Mirrors Python's `interface.discovery_channel`.
     var discoveryChannel: Int? { get set }
+
+    /// The port peers dial to reach this interface, published as `PORT`.
+    ///
+    /// Python reads `interface.bind_port` inside the listener branch of its announce builder
+    /// (`Discovery.py:182`). Declared here with a nil default rather than reached through a
+    /// cast, so a type that starts presenting a listener's published name carries its own port
+    /// instead of silently announcing without one.
+    var discoveryListenPort: Int? { get }
+
+    /// An address peers dial that isn't a hostname or IP—today only I2P's `b32`, published as
+    /// `REACHABLE_ON` and gated on the tunnel being connectable (`Discovery.py:185-186`).
+    var discoveryEndpointAddress: String? { get }
+
+    /// The radio's live operating parameters, published by the RNode branch
+    /// (`Discovery.py:188-192`). Distinct from the `discovery_*` config values, which describe
+    /// a radio this node doesn't drive itself.
+    var discoveryRadioParameters: DiscoveryRadioParameters? { get }
 
     /// Called by Transport when an outbound packet is ready for the wire.
     func send(_ packet: Packet) throws
@@ -521,6 +571,25 @@ public extension Interface {
         get { interfaceState.ifacNetname }
         set { interfaceState.ifacNetname = newValue }
     }
+    var ifacNetkey: String? {
+        get { interfaceState.ifacNetkey }
+        set { interfaceState.ifacNetkey = newValue }
+    }
+
+    var autoconnectHash: Data? {
+        get { interfaceState.autoconnectHash }
+        set { interfaceState.autoconnectHash = newValue }
+    }
+
+    var autoconnectSource: String? {
+        get { interfaceState.autoconnectSource }
+        set { interfaceState.autoconnectSource = newValue }
+    }
+
+    var autoconnectDown: TimeInterval? {
+        get { interfaceState.autoconnectDown }
+        set { interfaceState.autoconnectDown = newValue }
+    }
     var recursivePrs: Bool {
         get { interfaceState.recursivePrs }
         set { interfaceState.recursivePrs = newValue }
@@ -614,6 +683,10 @@ public extension Interface {
         get { interfaceState.discoveryChannel }
         set { interfaceState.discoveryChannel = newValue }
     }
+
+    var discoveryListenPort: Int? { nil }
+    var discoveryEndpointAddress: String? { nil }
+    var discoveryRadioParameters: DiscoveryRadioParameters? { nil }
 
     var isRoutingEndpoint: Bool { true }
 

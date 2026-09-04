@@ -158,6 +158,37 @@ public enum InterfaceDiscoveryHelpers {
         }
     }
 
+    /// Return true if `address` falls in `200::/7`, the Yggdrasil address range.
+    /// Mirrors Python `is_ygg_ipv6(address_string)` (`Discovery.py:877-879`).
+    ///
+    /// An address in this range is only reachable through a running Yggdrasil node, and nothing
+    /// here can tell whether one is running—which is why autoconnect skips these rather than
+    /// dialling and failing.
+    public static func isYggIPv6(_ address: String) -> Bool {
+        var buf6 = in6_addr()
+        guard address.withCString({ inet_pton(AF_INET6, $0, &buf6) == 1 }) else { return false }
+        // `200::/7` fixes the top seven bits, so the first byte is 0x02 or 0x03.
+        let firstByte = withUnsafeBytes(of: &buf6) { $0[0] }
+        return firstByte & 0xFE == 0x02
+    }
+
+    /// Return true if `address` is a Tor onion address.
+    /// Mirrors Python `is_onion_address(address_string)` (`Discovery.py:881-883`)—a
+    /// case-insensitive suffix match, not a validity check.
+    public static func isOnionAddress(_ address: String) -> Bool {
+        address.lowercased().hasSuffix(".onion")
+    }
+
+    /// Addresses that never name a reachable peer, because they name this node.
+    /// Mirrors Python `INVALID_IP_ADDRESSES` (`Discovery.py:885`)—an exact two-entry deny
+    /// list, so `127.0.0.2` is not on it.
+    public static let invalidIPAddresses: Set<String> = ["127.0.0.1", "0.0.0.0"]
+
+    /// Mirrors Python `is_invalid_ip_address(address_string)` (`Discovery.py:886-888`).
+    public static func isInvalidIPAddress(_ address: String) -> Bool {
+        invalidIPAddresses.contains(address)
+    }
+
     /// Return true if `hostname` is a syntactically valid DNS hostname.
     /// Mirrors Python `is_hostname(hostname)`.
     public static func isHostname(_ hostname: String) -> Bool {
@@ -499,8 +530,12 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
         for count in [5, 3, 2] {
             s = s.replacingOccurrences(of: String(repeating: " ", count: count), with: " ")
         }
-        // san_map = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        let sanSet = CharacterSet(charactersIn: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        // Python builds san_map from three ASCII ranges: 48-57, 65-90 and 97-122
+        // (`Discovery.py:898-901`), so digits, uppercase *and* lowercase all survive. Omitting
+        // the lowercase range truncated every ordinary name to its first character:
+        // "Example hub" arrived as "E".
+        let sanSet = CharacterSet(charactersIn:
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
         // Strip leading chars not in san_map
         while !s.isEmpty, let first = s.unicodeScalars.first, !sanSet.contains(first) {
             s.removeFirst()
@@ -556,6 +591,26 @@ public final class InterfaceDiscovery {
     public static let thresholdStale:   TimeInterval = 3 * 24 * 60 * 60   // 3 days
     public static let thresholdRemove:  TimeInterval = 7 * 24 * 60 * 60   // 7 days
 
+    /// Python: `InterfaceDiscovery.MONITOR_INTERVAL`—how often the autoconnect monitor wakes.
+    public static let monitorInterval: TimeInterval = 5
+
+    /// Python: `InterfaceDiscovery.DETACH_THRESHOLD`—seconds an auto-connected interface may
+    /// stay down before it's torn down and its slot freed.
+    public static let detachThreshold: TimeInterval = 12
+
+    /// The two types autoconnect will dial, matched against the announced type.
+    /// Python: `InterfaceDiscovery.AUTOCONNECT_TYPES` (`Discovery.py:449`). Both are dialled as
+    /// a Backbone client, because both describe a listening TCP endpoint.
+    public static let autoconnectTypes: Set<String> = ["BackboneInterface", "TCPServerInterface"]
+
+    /// The mode a transport node adopts a discovered peer under.
+    /// Python: `InterfaceDiscovery.AC_TRANSPORT_MODE` (`Discovery.py:452`).
+    public static let acTransportMode: InterfaceMode = .gateway
+
+    /// Python: `InterfaceDiscovery.AC_GRAVITY` (`Discovery.py:453`)—zero, so an auto-connected
+    /// peer never outranks a configured one in path selection.
+    public static let acGravity = 0
+
     public static let statusAvailable = "available"
     public static let statusUnknown   = "unknown"
     public static let statusStale     = "stale"
@@ -583,6 +638,33 @@ public final class InterfaceDiscovery {
     /// Hold this weakly at the call site—`Transport.isBlackholed` is the
     /// intended implementation and `Transport` may outlive nothing here.
     public var isBlackholed: ((Data) -> Bool)?
+
+    // MARK: - Autoconnect collaborators
+
+    /// The transport autoconnect attaches to and reads the interface list from. Python reaches
+    /// the `RNS.Transport` global; here the owner sets it, so a test can drive autoconnect
+    /// against a bare transport.
+    ///
+    /// Weak: `Transport` owns this object through `discoveryHandler`.
+    public weak var transport: Transport?
+
+    /// Re-create the interfaces marked `bootstrap_only`, called when every auto-connected peer
+    /// has gone and none is left to find new ones (`Discovery.py:650-654`).
+    ///
+    /// Injected because it needs the parsed config, which lives on `Reticulum` rather than on
+    /// `Transport`. Left nil the re-enable clause is skipped—a node that never configured a
+    /// bootstrap interface has nothing to bring back.
+    public var reenableBootstrapInterfaces: (() -> Void)?
+
+    /// Interfaces this object dialled and is watching. Python: `monitored_interfaces`.
+    private var monitoredInterfaces: [any Interface] = []
+    private var monitoringAutoconnects = false
+    private var monitorGeneration = 0
+
+    /// Whether the startup reconnect pass has run. The opportunistic top-up in the monitor job
+    /// waits for it, so a node doesn't dial a random discovered peer before it has tried the
+    /// ones it already knew about (`Discovery.py:655`).
+    public private(set) var initialAutoconnectRan = false
 
     // MARK: - Init
 
@@ -690,6 +772,254 @@ public final class InterfaceDiscovery {
             return $0.lastHeard > $1.lastHeard
         }
         return result
+    }
+
+    // MARK: - Autoconnect
+
+    /// Dial a discovered endpoint and attach it to the stack.
+    ///
+    /// Mirrors Python's `InterfaceDiscovery.autoconnect(info)` (`Discovery.py:714-781`). Silent
+    /// on every declined path, because most arriving announces describe endpoints this node
+    /// either already has, can't reach, or has no slot for—and the job runs on every announce.
+    public func autoconnect(_ info: DiscoveredInterfaceInfo) {
+        guard Reticulum.shouldAutoconnectDiscoveredInterfaces() else { return }
+        guard autoconnectCount() < Reticulum.maxAutoconnectedInterfaces() else { return }
+        guard Self.autoconnectTypes.contains(info.type) else { return }
+        guard let transport else { return }
+        guard !interfaceExists(info) else {
+            Reticulum.log("Discovered \(info.type) already exists, not auto-connecting",
+                          level: .debug)
+            return
+        }
+
+        // Each of these needs a daemon or a route this node can't confirm from here, so Python
+        // declines rather than dialling into a failure (`Discovery.py:738-747`).
+        guard let reachableOn = info.reachableOn else { return }
+        if InterfaceDiscoveryHelpers.isYggIPv6(reachableOn) { return }
+        if InterfaceDiscoveryHelpers.isOnionAddress(reachableOn) { return }
+        if InterfaceDiscoveryHelpers.isIPAddress(reachableOn),
+           InterfaceDiscoveryHelpers.isInvalidIPAddress(reachableOn) {
+            Reticulum.log("Not auto-connecting discovered interface with invalid IP address: "
+                          + reachableOn, level: .debug)
+            return
+        }
+        guard let port = info.port else { return }
+
+        // Both announced types describe a listening TCP endpoint, and the client for one is a
+        // Backbone client (`Discovery.py:730-758`). This port's `BackboneInterface` *is* that
+        // client—it has no server side—so the same construction serves both.
+        let interface = BackboneInterface(name: info.name, host: reachableOn,
+                                          port: UInt16(truncatingIfNeeded: port))
+
+        Reticulum.log("Auto-connecting discovered \(info.type) \(info.name)", level: .notice)
+        interface.autoconnectHash = endpointHash(info)
+        interface.autoconnectSource = info.networkID
+
+        // Python's `_add_interface` keyword arguments, applied here directly
+        // (`Discovery.py:767-776`). A non-transport node leaves the mode at its default rather
+        // than adopting the peer as a gateway.
+        // The transport this object is attached to, rather than `Reticulum.transportEnabled()`:
+        // the global reads through `Reticulum.shared`, and autoconnect answers to the stack that
+        // owns it.
+        let transportEnabled = transport.transportEnabled
+        if let configured = Reticulum.autoconnectInterfaceMode() {
+            interface.mode = configured
+        } else if transportEnabled {
+            interface.mode = Self.acTransportMode
+        }
+        interface.gravity = Reticulum.autoconnectInterfaceGravity() ?? Self.acGravity
+        if Reticulum.autoconnectAnnouncesToInternal() == true {
+            interface.announcesToInternal = true
+        }
+        interface.bitrate = 5_000_000
+        if transportEnabled {
+            if let target = Reticulum.defaultArTarget() {
+                interface.announceRateTarget = TimeInterval(target)
+            }
+            interface.announceRatePenalty = TimeInterval(Reticulum.defaultArPenalty())
+            interface.announceRateGrace = Reticulum.defaultArGrace()
+        }
+
+        // A discovered endpoint that published its segment credentials is joined on that
+        // segment, which is the whole point of `publish_ifac` (`Discovery.py:753-754`). The same
+        // derivation the config path uses, so a discovered peer and a configured one land on
+        // identical keys.
+        if info.ifacNetname != nil || info.ifacNetkey != nil {
+            interface.ifacNetname = info.ifacNetname
+            interface.ifacNetkey = info.ifacNetkey
+            Transport.configureIfac(on: interface, netname: info.ifacNetname,
+                                    netkey: info.ifacNetkey, size: interface.ifacSize)
+        }
+
+        transport.register(interface: interface)
+        try? interface.start()
+        monitorInterface(interface)
+    }
+
+    /// Dial everything already persisted, so a restart doesn't have to re-hear every peer.
+    /// Mirrors Python's `connect_discovered` (`Discovery.py:678-689`).
+    public func connectDiscovered() {
+        guard Reticulum.shouldAutoconnectDiscoveredInterfaces() else { return }
+        for info in listDiscoveredInterfaces(onlyTransport: true) {
+            if autoconnectCount() >= Reticulum.maxAutoconnectedInterfaces() { break }
+            autoconnect(info)
+        }
+        initialAutoconnectRan = true
+    }
+
+    /// Whether any attached interface already reaches this endpoint.
+    ///
+    /// Mirrors `interface_exists` (`Discovery.py:700-712`): the autoconnect hash catches one this
+    /// object dialled, and the host/port comparison catches one the operator configured by
+    /// hand—which carries no hash.
+    public func interfaceExists(_ info: DiscoveredInterfaceInfo) -> Bool {
+        guard let transport else { return false }
+        let hash = endpointHash(info)
+        for interface in transport.interfaces {
+            if let existing = interface.autoconnectHash, existing == hash { return true }
+
+            guard let reachableOn = info.reachableOn else { continue }
+            if let backbone = interface as? BackboneInterface {
+                let hostMatch = backbone.host == reachableOn
+                let portMatch = info.port == nil || Int(backbone.port) == info.port
+                if hostMatch && portMatch { return true }
+            }
+            if let tcp = interface as? TCPClientInterface {
+                let hostMatch = tcp.host == reachableOn
+                let portMatch = info.port == nil || Int(tcp.port) == info.port
+                if hostMatch && portMatch { return true }
+            }
+            if let i2p = interface as? I2PInterface, i2p.b32 == reachableOn { return true }
+        }
+        return false
+    }
+
+    /// How many attached interfaces this object dialled. Python: `autoconnect_count`.
+    public func autoconnectCount() -> Int {
+        transport?.interfaces.filter { $0.autoconnectHash != nil }.count ?? 0
+    }
+
+    /// How many attached interfaces exist only to bootstrap. Python: `bootstrap_interface_count`.
+    public func bootstrapInterfaceCount() -> Int {
+        transport?.interfaces.filter(\.bootstrapOnly).count ?? 0
+    }
+
+    // MARK: - Monitoring
+
+    /// Start watching an auto-connected interface, starting the monitor job on the first one.
+    /// Mirrors `monitor_interface` (`Discovery.py:602-609`).
+    public func monitorInterface(_ interface: any Interface) {
+        lock.lock()
+        if !monitoredInterfaces.contains(where: { $0 === interface }) {
+            monitoredInterfaces.append(interface)
+        }
+        let shouldStart = !monitoringAutoconnects
+        if shouldStart {
+            monitoringAutoconnects = true
+            monitorGeneration &+= 1
+        }
+        let generation = monitorGeneration
+        lock.unlock()
+
+        guard shouldStart else { return }
+        DispatchQueue.global(qos: .background).async { [weak self] in
+            while true {
+                Thread.sleep(forTimeInterval: Self.monitorInterval)
+                guard let self else { return }
+                self.lock.lock()
+                let keepRunning = self.monitoringAutoconnects && self.monitorGeneration == generation
+                self.lock.unlock()
+                guard keepRunning else { return }
+                self.monitorTick()
+            }
+        }
+    }
+
+    /// Stop the monitor job and forget every watched interface.
+    public func stopMonitoring() {
+        lock.lock()
+        monitoringAutoconnects = false
+        monitoredInterfaces.removeAll()
+        lock.unlock()
+    }
+
+    /// One pass of the monitor job: stamp what went down, clear what came back, tear down what
+    /// stayed down, and keep the slot count where the operator asked for it.
+    ///
+    /// Mirrors the body of `__monitor_job` (`Discovery.py:611-668`). Split out from the loop so
+    /// it can be driven directly—a job that only runs on a five-second timer is a job no test
+    /// observes.
+    public func monitorTick() {
+        guard let transport else { return }
+
+        lock.lock()
+        let watched = monitoredInterfaces
+        lock.unlock()
+
+        var detached: [any Interface] = []
+        var onlineInterfaces = 0
+        let now = Date().timeIntervalSince1970
+
+        for interface in watched {
+            if interface.isOnline {
+                onlineInterfaces += 1
+                if interface.autoconnectDown != nil {
+                    Reticulum.log("Auto-discovered interface \(interface.name) reconnected",
+                                  level: .notice)
+                    interface.autoconnectDown = nil
+                }
+            } else if let downSince = interface.autoconnectDown {
+                if now - downSince >= Self.detachThreshold { detached.append(interface) }
+            } else {
+                Reticulum.log("Auto-discovered interface \(interface.name) disconnected",
+                              level: .debug)
+                interface.autoconnectDown = now
+            }
+        }
+
+        let maxAutoconnected = Reticulum.maxAutoconnectedInterfaces()
+        let freeSlots = max(0, maxAutoconnected - autoconnectCount())
+        let reservedSlots = maxAutoconnected / 4
+
+        // A bootstrap interface exists to get a node its first peers. Once it has them, it is
+        // one more attached interface carrying the same traffic (`Discovery.py:643-648`).
+        if onlineInterfaces >= maxAutoconnected {
+            for interface in transport.interfaces where interface.bootstrapOnly {
+                Reticulum.log("Tearing down bootstrap-only \(interface.name) since target "
+                              + "connected auto-discovered interface count has been reached",
+                              level: .info)
+                if !detached.contains(where: { $0 === interface }) { detached.append(interface) }
+            }
+        }
+
+        // And back the other way: with no peers and no bootstrap interface, a node has no way
+        // to find any (`Discovery.py:650-654`).
+        if onlineInterfaces == 0, bootstrapInterfaceCount() == 0 {
+            Reticulum.log("No auto-discovered interfaces connected, re-enabling bootstrap "
+                          + "interfaces", level: .notice)
+            reenableBootstrapInterfaces?()
+        }
+
+        // Top up toward the target, but leave a quarter of the slots free so a peer heard for
+        // the first time still has somewhere to land (`Discovery.py:655-661`).
+        if initialAutoconnectRan, freeSlots > reservedSlots {
+            let candidates = listDiscoveredInterfaces(onlyAvailable: true, onlyTransport: true)
+            if let selected = candidates.randomElement(), !interfaceExists(selected) {
+                autoconnect(selected)
+            }
+        }
+
+        for interface in detached { teardownInterface(interface) }
+    }
+
+    /// Detach an interface and stop watching it. Mirrors `teardown_interface`
+    /// (`Discovery.py:670-673`).
+    public func teardownInterface(_ interface: any Interface) {
+        interface.stop()
+        transport?.deregister(interface: interface)
+        lock.lock()
+        monitoredInterfaces.removeAll { $0 === interface }
+        lock.unlock()
     }
 
     /// Compute a stable hash for the network endpoint described by `info`.

@@ -90,6 +90,10 @@ public final class I2PInterface: Interface {
     public var i2pTunneled:       Bool = true
     /// Python: `self.supports_discovery = True`
     public var supportsDiscovery: Bool = true
+
+    /// Python publishes the tunnel's `b32` as `REACHABLE_ON`, but only once the tunnel
+    /// accepts incoming connections (`Discovery.py:185-186`).
+    public var discoveryEndpointAddress: String? { connectable ? b32 : nil }
     /// Base-32 address for this I2P tunnel, if established. Python: `self.b32`
     public var b32:               String? = nil
     /// Human-readable tunnel state description. Python: `tunnelstate`

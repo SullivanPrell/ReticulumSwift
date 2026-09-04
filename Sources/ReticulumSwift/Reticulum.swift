@@ -147,12 +147,20 @@ public final class Reticulum {
         /// Mirrors the dynamic LXMF import in Python's `InterfaceAnnounceHandler`.
         public var discoveryStampValidator: (any DiscoveryStampValidator)?
 
+        /// Optional stamp generator for interface discovery.
+        ///
+        /// When any interface sets `discoverable = yes` and this property is non-nil, `start()`
+        /// calls `transport.enableDiscovery()` with it. The publish-side counterpart to
+        /// `discoveryStampValidator`, and typically backed by the same `LXStamper`.
+        public var discoveryStampGenerator: (any DiscoveryStampGenerator)?
+
         public init(storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true, logLevel: LogLevel = .notice) {
             self.storagePath = storagePath
             self.configPath = configPath
             self.shareInstance = shareInstance
             self.logLevel = logLevel
             self.discoveryStampValidator = nil
+            self.discoveryStampGenerator = nil
         }
     }
 
@@ -498,19 +506,22 @@ public final class Reticulum {
     /// value is readable and honest about being reportable-only.
     public static func forceSharedInstanceBitrate() -> Int? { forceSharedInstanceBitrate_ }
 
-    /// **Known gap** (`fix-013 §7.8`): whether this port announces its own interfaces as
-    /// discoverable endpoints—Python's `Discovery.InterfaceAnnouncer`. The *receive* side is
-    /// implemented (a Swift node discovers Python interfaces); the publish side isn't, so the
-    /// eleven `discovery_*`/`reachable_on`/`discoverable` interface attributes have no
-    /// counterpart here. `RuntimeAttributeParityTests` fails if this ever becomes true without
-    /// those attributes landing with it.
-    public static let publishesInterfaceDiscovery = false
+    /// Whether this port announces its own interfaces as discoverable endpoints—Python's
+    /// `Discovery.InterfaceAnnouncer`. True since 2026-09-04, when the publish side landed
+    /// alongside the seventeen `discovery_*`/`reachable_on`/`discoverable` interface
+    /// attributes it carries.
+    ///
+    /// Announcing also needs a `Configuration.discoveryStampGenerator`, for the same reason
+    /// discovering needs a validator: the proof-of-work lives in LXMF.
+    public static let publishesInterfaceDiscovery = true
 
-    /// **Known gap** (`fix-013 §7.8`): whether this port dials and monitors discovered
-    /// endpoints—Python's `Discovery.py:574-742`, which writes `autoconnect_hash`,
-    /// `autoconnect_source` and `autoconnect_down`. The `autoconnect_*` policy keys parse into
-    /// statics that nothing consumes, because the subsystem is absent.
-    public static let autoconnectsDiscoveredInterfaces = false
+    /// Whether this port dials and monitors discovered endpoints—Python's
+    /// `Discovery.InterfaceDiscovery` autoconnect half, which writes `autoconnect_hash`,
+    /// `autoconnect_source` and `autoconnect_down`. True since 2026-09-04.
+    ///
+    /// Still off unless the operator sets `autoconnect_discovered_interfaces` to a non-zero
+    /// limit: the subsystem exists, and dialling strangers is opt-in.
+    public static let autoconnectsDiscoveredInterfaces = true
 
     /// Announce-rate defaults for interfaces that don't configure their own.
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
@@ -790,6 +801,20 @@ public final class Reticulum {
 
         try transport.start()
 
+        // Start announcing our own discoverable interfaces when any of them asked to be.
+        // Mirrors Python: if Reticulum.__discovery_enabled: RNS.Transport.enable_discovery()
+        // (`Reticulum.py:370`). The latch is set while parsing interface blocks, because no
+        // interface exists yet when the reticulum block is read.
+        if Reticulum.discoveryEnabled() {
+            if let stampGenerator = configuration.discoveryStampGenerator {
+                transport.enableDiscovery(stampGenerator: stampGenerator)
+            } else {
+                Reticulum.log("An interface is configured as discoverable, but no discovery "
+                              + "stamp generator was supplied. Interfaces will not be announced.",
+                              level: .error)
+            }
+        }
+
         // Start interface discovery listener when configured.
         // Mirrors Python: if Reticulum.__discover_interfaces: RNS.Transport.discover_interfaces()
         // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
@@ -802,6 +827,23 @@ public final class Reticulum {
                 requiredValue: Reticulum.requiredDiscoveryValue(),
                 stampValidator: validator
             )
+
+            // Python re-runs `_synthesize_interface` over `bootstrap_configs` when every
+            // auto-connected peer has gone (`Discovery.py:652-654`). The parsed config lives
+            // here rather than on `Transport`, so the clause is injected.
+            //
+            // Unowned-safe capture: `Reticulum` owns `transport`, which owns the discovery
+            // handler holding this closure, so a strong capture would be a cycle.
+            transport.discoveryHandler?.reenableBootstrapInterfaces = { [weak self] in
+                guard let self, let cfg = self.config else { return }
+                let bootstrapOnly = cfg.interfaces.filter {
+                    $0.enabled && $0.bool("bootstrap_only") == true
+                }
+                guard !bootstrapOnly.isEmpty else { return }
+                var subset = cfg
+                subset.interfaces = bootstrapOnly
+                try? self.synthesizeInterfaces(from: subset)
+            }
         }
 
         // Start blackhole-list updater when sources are configured.
@@ -1200,6 +1242,7 @@ public final class Reticulum {
         // Python assigns both unconditionally, then derives only if either is present
         // (`Reticulum.py:955-958`).
         interface.ifacNetname = netname
+        interface.ifacNetkey = netkey
         guard netname != nil || netkey != nil else { return }
 
         Transport.configureIfac(on: interface, netname: netname, netkey: netkey, size: size)

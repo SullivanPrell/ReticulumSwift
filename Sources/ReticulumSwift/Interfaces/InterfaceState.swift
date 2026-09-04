@@ -92,6 +92,12 @@ public final class InterfaceState {
         /// it before, so `InterfaceStatsPayload` hardcoded `ifac_netname` to nil (`bugs/015`).
         var ifacNetname: String?
 
+        /// Python `interface.ifac_netkey` (`Reticulum.py:990`)—the segment's raw passphrase,
+        /// kept alongside the derived key because `publish_ifac` puts it in the discovery
+        /// announce (`Discovery.py:204`). This port derived the key and dropped the
+        /// passphrase, so there was nothing to publish.
+        var ifacNetkey: String?
+
         // MARK: Interface discovery, publish side
         //
         // Python declares `discoverable` and `last_discovery_announce` in
@@ -121,6 +127,13 @@ public final class InterfaceState {
         var discoveryBandwidth: Int?
         var discoveryModulation: Int?
         var discoveryChannel: Int?
+
+        // Autoconnect bookkeeping. Python creates these three attributes on the interface object
+        // at dial time (`Discovery.py:765-766`, `:628`) and tests for them with `hasattr`, so a
+        // nil `autoconnectHash` is what "not auto-connected" means here.
+        var autoconnectHash: Data?
+        var autoconnectSource: String?
+        var autoconnectDown: TimeInterval?
     }
 
     private let lock: UnsafeMutablePointer<os_unfair_lock>
@@ -289,6 +302,14 @@ public final class InterfaceState {
         set { write(\.ifacNetname, newValue) }
     }
 
+    /// Python: `interface.ifac_netkey` (`Reticulum.py:990`)—the segment's passphrase, as
+    /// configured. Held for `publish_ifac`, which puts it in the discovery announce so a peer
+    /// can generate a config entry that joins the segment. Never reported by `rnstatus`.
+    public var ifacNetkey: String? {
+        get { read(\.ifacNetkey) }
+        set { write(\.ifacNetkey, newValue) }
+    }
+
     /// Python: `interface.recursive_prs` (RNS 1.3.6).
     public var recursivePrs: Bool {
         get { read(\.recursivePrs) }
@@ -437,6 +458,27 @@ public final class InterfaceState {
         set { write(\.discoveryChannel, newValue) }
     }
 
+    /// The endpoint hash this interface was auto-connected for, or nil when it was configured
+    /// by hand. Python: `interface.autoconnect_hash` (`Discovery.py:765`).
+    public var autoconnectHash: Data? {
+        get { read(\.autoconnectHash) }
+        set { write(\.autoconnectHash, newValue) }
+    }
+
+    /// The network identity whose announce this endpoint was discovered from, as undelimited
+    /// hex. Python: `interface.autoconnect_source` (`Discovery.py:766`).
+    public var autoconnectSource: String? {
+        get { read(\.autoconnectSource) }
+        set { write(\.autoconnectSource, newValue) }
+    }
+
+    /// When this auto-connected interface was first seen offline, or nil while it is up.
+    /// Python: `interface.autoconnect_down` (`Discovery.py:628`).
+    public var autoconnectDown: TimeInterval? {
+        get { read(\.autoconnectDown) }
+        set { write(\.autoconnectDown, newValue) }
+    }
+
     // MARK: - Spawned-interface inheritance
 
     /// Copy every inheritable attribute from a parent interface's state onto this one.
@@ -505,6 +547,9 @@ public final class InterfaceState {
         incoming.discoveryBandwidth = nil
         incoming.discoveryModulation = nil
         incoming.discoveryChannel = nil
+        incoming.autoconnectHash = nil
+        incoming.autoconnectSource = nil
+        incoming.autoconnectDown = nil
 
         os_unfair_lock_lock(lock)
         storage = incoming

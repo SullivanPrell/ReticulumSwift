@@ -684,6 +684,10 @@ public final class Transport {
     /// Mirrors Python `Transport.discovery_handler`.
     public var discoveryHandler: InterfaceDiscovery?
 
+    /// Active interface-discovery announcer, the publish side. Created by
+    /// `enableDiscovery(stampGenerator:)`. Mirrors Python `Transport.interface_announcer`.
+    public var interfaceAnnouncer: InterfaceAnnouncer?
+
     /// The `AnnounceHandler` registered with this transport for interface discovery.
     /// Kept so `stopDiscoverInterfaces()` can deregister it.
     public var discoveryAnnounceHandler: InterfaceAnnounceHandler?

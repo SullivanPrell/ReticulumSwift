@@ -6,6 +6,39 @@ import Foundation
 /// and `Transport.enable_blackhole_updater()`—see `RNS/Transport.py` lines 449–463.
 extension Transport {
 
+    // MARK: - Interface discovery (publish side)
+
+    /// Start announcing this node's discoverable interfaces as reachable endpoints.
+    ///
+    /// Mirrors Python's `Transport.enable_discovery()` (`Transport.py:574-577`): build the
+    /// announcer once, start it, and leave a second call alone.
+    ///
+    /// A stamp generator has to be injected because the proof-of-work lives in LXMF, which
+    /// depends on this package rather than the other way round—the same inversion
+    /// `discoverInterfaces` uses for its validator.
+    ///
+    /// A no-op when the transport has no identity to announce from, which is the state before
+    /// `Reticulum.start()` loads one.
+    public func enableDiscovery(stampGenerator: any DiscoveryStampGenerator) {
+        guard interfaceAnnouncer == nil else { return }   // idempotent
+        guard let announcer = InterfaceAnnouncer(transport: self, stampGenerator: stampGenerator)
+        else {
+            Reticulum.log("Could not start interface discovery announces: the transport has no "
+                          + "identity to announce from", level: .error)
+            return
+        }
+        announcer.start()
+        interfaceAnnouncer = announcer
+    }
+
+    /// Stop announcing discoverable interfaces and release the announcer.
+    ///
+    /// Idempotent—safe to call when discovery announcing was never enabled.
+    public func disableDiscovery() {
+        interfaceAnnouncer?.stop()
+        interfaceAnnouncer = nil
+    }
+
     // MARK: - Interface discovery (receiver side)
 
     /// Start listening for on-network interface discovery announces.
@@ -41,11 +74,19 @@ extension Transport {
         // closure must not keep Transport alive.
         discovery.isBlackholed = { [weak self] hash in self?.isBlackholed(hash) ?? false }
 
+        // Autoconnect reads the interface list and attaches what it dials. Python reaches the
+        // `RNS.Transport` global for both (`Discovery.py:698`, `:777`).
+        discovery.transport = self
+
         let handler = InterfaceAnnounceHandler(
             requiredValue: requiredValue,
             stampValidator: stampValidator,
             callback: { [weak discovery] info in
                 discovery?.interfaceDiscovered(info)
+                // Python calls `autoconnect` on every discovery, right after persisting it
+                // (`Discovery.py:598`): an endpoint heard for the first time is dialled without
+                // waiting for a restart. Every gate is inside `autoconnect`.
+                discovery?.autoconnect(info)
                 callback?(info)
             }
         )
@@ -53,6 +94,10 @@ extension Transport {
         register(announceHandler: handler)
         discoveryHandler       = discovery
         discoveryAnnounceHandler = handler
+
+        // Dial what was already persisted, so a restart doesn't have to re-hear every peer
+        // (`Discovery.py:678-689`, called from `InterfaceDiscovery.__init__`).
+        discovery.connectDiscovered()
     }
 
     /// Stop listening for interface discovery announces and release all associated state.
@@ -63,6 +108,7 @@ extension Transport {
             deregister(announceHandler: h)
         }
         discoveryAnnounceHandler = nil
+        discoveryHandler?.stopMonitoring()
         discoveryHandler         = nil
     }
 
