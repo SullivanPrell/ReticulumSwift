@@ -119,14 +119,45 @@ public enum Announce {
         )
     }
 
-    /// Validate an announce packet, returning the announced identity and
-    /// associated metadata. Verifies the Ed25519 signature *and* that the
-    /// destination hash matches `truncated_hash(name_hash || identity_hash)`.
-    public static func validate(_ packet: Packet) throws -> Decoded {
-        // Only SINGLE destination announces are valid (Python drops PLAIN/GROUP announces).
-        guard packet.packetType == .announce, packet.destinationType == .single else {
-            throw AnnounceError.wrongPacketType
-        }
+    /// The fields of an announce body, read off the wire with no signature check.
+    ///
+    /// Python parses these inline at the top of `Identity.validate_announce`
+    /// (`Identity.py:510-548`) and reuses the result for both its signature-only
+    /// and its full-validation path. Splitting the parse out keeps the Swift port
+    /// to a single reader of the announce layout: `Announce.validate(_:)` and
+    /// `Identity.validateAnnounce(_:onlyValidateSignature:isBlackholed:)` both go
+    /// through here, so a change to the wire format can't reach one and miss the
+    /// other. They previously carried separate hand-rolled parsers that had
+    /// already drifted apart over the ratchet field.
+    public struct Parsed {
+        /// The announced identity, loaded from the announce's public key. Loading
+        /// it lets a caller test the blackhole list before spending a signature
+        /// verification, which is the order Python uses
+        /// (`Identity.py:551-556`).
+        public let identity: Identity
+        public let publicKey: Data
+        public let nameHash: Data
+        public let randomHash: Data
+        public let ratchet: Data?
+        public let signature: Data
+        public let appData: Data?
+        /// `destination_hash + public_key + name_hash + random_hash + ratchet + app_data`,
+        /// the buffer the announce signature covers (`Identity.py:539`).
+        public let signedData: Data
+    }
+
+    /// Read an announce body into its fields without verifying the signature.
+    ///
+    /// Mirrors the parse at the top of Python's `Identity.validate_announce`
+    /// (`Identity.py:510-548`), including its treatment of the optional fields:
+    /// the announce carries a ratchet exactly when it sets the packet's context
+    /// flag, and app data is whatever follows the signature.
+    ///
+    /// - Throws: ``AnnounceError/wrongPacketType`` if the packet isn't an
+    ///   announce, or ``AnnounceError/malformed`` if the body is too short to
+    ///   hold the fixed fields.
+    public static func parse(_ packet: Packet) throws -> Parsed {
+        guard packet.packetType == .announce else { throw AnnounceError.wrongPacketType }
 
         let keysize = Constants.keySize
         let nameHashLen = Constants.nameHashLength
@@ -164,9 +195,57 @@ public enum Announce {
         if let ratchet { signedData.append(ratchet) }
         if let appData { signedData.append(appData) }
 
-        let identity = try Identity(publicKeyBytes: publicKey)
-        guard identity.validate(signature: signature, for: signedData) else {
-            throw AnnounceError.signatureInvalid
+        return Parsed(
+            identity: try Identity(publicKeyBytes: publicKey),
+            publicKey: publicKey,
+            nameHash: nameHash,
+            randomHash: randomHash,
+            ratchet: ratchet,
+            signature: signature,
+            appData: appData,
+            signedData: signedData
+        )
+    }
+
+    /// Validate an announce packet, returning the announced identity and
+    /// associated metadata. Verifies the Ed25519 signature *and* that the
+    /// destination hash matches `truncated_hash(name_hash || identity_hash)`.
+    public static func validate(_ packet: Packet) throws -> Decoded {
+        try validate(packet, signatureVerified: false)
+    }
+
+    /// The same validation, with the option to skip the signature because the
+    /// caller has already verified it over the same bytes.
+    ///
+    /// This is Python's `packet.announce_signature_validated` short-circuit
+    /// (`Identity.py:559-560`): the transport verifies an announce signature at
+    /// its admission gate, marks the packet, and the full validation later in
+    /// the same pass reads the mark instead of paying for a second Ed25519
+    /// verification. This port carries the mark as an argument rather than a
+    /// field on `Packet`, and keeps it internal so no caller outside the module
+    /// can ask to skip a signature check.
+    ///
+    /// `signatureVerified` scopes to the signature alone. Everything else still
+    /// runs, the destination-hash check included: a signature is valid over
+    /// whatever destination hash the signer chose, so it says nothing about
+    /// whether that hash is the one this announce claims.
+    static func validate(_ packet: Packet, signatureVerified: Bool) throws -> Decoded {
+        // Only SINGLE destination announces are valid (Python drops PLAIN/GROUP announces).
+        guard packet.destinationType == .single else {
+            throw AnnounceError.wrongPacketType
+        }
+
+        let parsed = try parse(packet)
+        let identity = parsed.identity
+        let nameHash = parsed.nameHash
+        let randomHash = parsed.randomHash
+        let ratchet = parsed.ratchet
+        let appData = parsed.appData
+
+        if !signatureVerified {
+            guard identity.validate(signature: parsed.signature, for: parsed.signedData) else {
+                throw AnnounceError.signatureInvalid
+            }
         }
 
         var hashMaterial = Data()

@@ -3,6 +3,80 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.16.0]—Announce admission runs in upstream's order
+
+The announce counter, the blackhole list and the protocol-violation counter all hang off
+one gate in Python (`Transport.py:1806-1811`). This port ran the three checks in three
+different places, in a different order, and dropped one of them entirely.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2. Nothing here is a 1.5.x delta—these are
+pre-existing divergences that reading 1.5.2's transport surfaced.
+
+### An unverifiable announce is now a protocol violation
+
+Upstream answers a bad announce signature with
+`protocol_violation("Invalid announce signature for …")` (`Transport.py:1809`). This port
+caught the validation error and returned, so a peer putting forgeries on the wire looked
+exactly like a quiet peer. The operator's only signal was an absence of traffic.
+
+### The announce counter counts announces the node accepted
+
+`received_announce(size=…)` sits below the signature gate (`Transport.py:1811`). This port
+called it at the top of `handleAnnounce`, before any validation ran, so the announce
+columns described announce-shaped frames that arrived rather than announces the node took.
+A blackholed peer and a peer sending garbage both still moved the counter.
+
+### The blackhole test runs before the signature check
+
+Python tests the blackhole list inside `validate_announce`, after the public key loads and
+before it checks the signature (`Identity.py:551-556`). This port tested it much later,
+past the deduplication cache. Two consequences, both now gone:
+
+* A blackholed announce still cost a full signature verification.
+* A blackholed announce that also failed to verify would have cost that peer a protocol
+  violation once the counter landed. A blackholed peer isn't misbehaving on the wire, and
+  upstream charges it nothing.
+
+Moving the test ahead of the cache also narrows a divergence this port had documented and left
+alone: a blackholed announce no longer leaves a cache entry for a later copy to collide
+with. The ingress-burst and announce-rate filters still sit below the cache, so that note
+now covers those two only.
+
+### A single announce parser
+
+`Identity.validateAnnounce`'s signature-only path carried its own copy of the announce
+layout, separate from `Announce.validate`'s, and the two had drifted. The copy read a
+ratchet only when the body was long enough to hold one, and it never checked that the
+packet was an announce at all, so a DATA packet whose payload happened to be a well-formed
+announce body validated as an announce.
+
+Both now read the wire through `Announce.parse`, which mirrors the parse at the top of
+Python's `validate_announce` (`Identity.py:510-548`). That function was dead code until
+this release—the transport had never called it—which is how the drift went unnoticed.
+
+### A single signature verification per announce
+
+Splitting the admission gate off from the full validation puts two Ed25519
+verifications on the path an announce takes. Upstream avoids the second with the
+`packet.announce_signature_validated` flag (`Identity.py:559-560`), which the full
+validation reads instead of re-verifying. This port carries the mark as an argument
+on an internal overload of `Announce.validate` rather than a field on `Packet`, so
+no caller outside the module can ask to skip a signature check.
+
+The skip scopes to the signature alone. The destination hash still has to match
+`truncated_hash(name_hash || identity_hash)`, because a signature is valid over
+whatever destination hash the signer chose and says nothing about which hash the
+announce should carry.
+
+### Blackhole reporting reaches the API
+
+`Identity.validateAnnounce(_:onlyValidateSignature:isBlackholed:)` returns
+`AnnounceAdmission`—`.valid`, `.invalid` or `.blackholed`—mirroring the `"blackholed"`
+string upstream returns under `signal_blackholed=True` (`Identity.py:555`). Python reads a
+global blackhole list at that point. This port has a per-instance transport, so the caller
+passes the test in. The existing `Bool`-returning overload keeps its behaviour and reports
+a blackholed announcer as a plain failure, matching upstream without the flag.
+
 ## [1.15.0]—`packet_filter` matches upstream again
 
 Found while reading `Transport.py` for the protocol-violation counters: the packet filter
