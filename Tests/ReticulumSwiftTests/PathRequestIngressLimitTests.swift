@@ -134,34 +134,54 @@ final class PathRequestIngressLimitTests: XCTestCase {
 
     // MARK: - Tag truncation (`Transport.py:1843`)
 
-    func testTagsDifferingOnlyPastTheSixteenthByteAreOneRequest() {
+    /// Both truncation tests answer from a destination local to this node, and count the
+    /// answers rather than the recursive fan-out.
+    ///
+    /// The fan-out is no longer a clean read on tag identity: `inflight_path_requests`
+    /// (`Transport.py:1862-1886`) collapses a second request for a destination already being
+    /// searched for, whatever its tag. Counting fan-outs would therefore let the duplicate case
+    /// pass with the tag dedup deleted outright, and would fail the distinct case for a reason
+    /// that has nothing to do with tags. An answered request releases the in-flight marker on
+    /// the way out (`:3595-3599`), so this observable isolates the tag.
+    private func answerableRequest(on t: Transport) throws -> Destination {
+        let local = try Destination(identity: Identity(), direction: .in, kind: .single,
+                                    appName: "test", aspects: ["truncation"])
+        t.register(destination: local)
+        return local
+    }
+
+    private func pathResponses(_ iface: PRInterface) -> [Packet] {
+        iface.sent.filter { $0.packetType == .announce && $0.context == .pathResponse }
+    }
+
+    func testTagsDifferingOnlyPastTheSixteenthByteAreOneRequest() throws {
         // `if len(tag_bytes) > TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`—the
         // dedup key is built from the truncated tag. Keying on the untruncated bytes lets a
         // sender defeat deduplication for free by varying a tail Python never reads, turning
-        // one path request into as many fan-outs as it cares to send.
-        let (t, ingress, egress) = makePair()
-        let target = Data(repeating: 0x77, count: 16)
+        // one path request into as many answers as it cares to ask for.
+        let (t, ingress, _) = makePair()
+        let local = try answerableRequest(on: t)
         let head = Data(repeating: 0x01, count: 16)
 
-        ingress.inboundHandler?(request(for: target, on: t, tag: head + Data([0xAA, 0xBB, 0xCC, 0xDD])), ingress)
-        XCTAssertEqual(forwardedRequests(egress).count, 1, "the first request is forwarded")
+        ingress.inboundHandler?(request(for: local.hash, on: t, tag: head + Data([0xAA, 0xBB, 0xCC, 0xDD])), ingress)
+        XCTAssertEqual(pathResponses(ingress).count, 1, "the first request is answered")
 
-        ingress.inboundHandler?(request(for: target, on: t, tag: head + Data([0x11, 0x22, 0x33, 0x44])), ingress)
-        XCTAssertEqual(forwardedRequests(egress).count, 1,
+        ingress.inboundHandler?(request(for: local.hash, on: t, tag: head + Data([0x11, 0x22, 0x33, 0x44])), ingress)
+        XCTAssertEqual(pathResponses(ingress).count, 1,
                        "the second request carries the same 16-byte tag and must be a duplicate")
     }
 
-    func testTagsDifferingWithinTheSixteenthByteRemainDistinct() {
-        let (t, ingress, egress) = makePair()
-        let target = Data(repeating: 0x77, count: 16)
+    func testTagsDifferingWithinTheSixteenthByteRemainDistinct() throws {
+        let (t, ingress, _) = makePair()
+        let local = try answerableRequest(on: t)
 
         var second = Data(repeating: 0x01, count: 16)
         second[15] = 0x02
 
-        ingress.inboundHandler?(request(for: target, on: t, tag: Data(repeating: 0x01, count: 16)), ingress)
-        ingress.inboundHandler?(request(for: target, on: t, tag: second), ingress)
+        ingress.inboundHandler?(request(for: local.hash, on: t, tag: Data(repeating: 0x01, count: 16)), ingress)
+        ingress.inboundHandler?(request(for: local.hash, on: t, tag: second), ingress)
 
-        XCTAssertEqual(forwardedRequests(egress).count, 2,
+        XCTAssertEqual(pathResponses(ingress).count, 2,
                        "truncation must not collapse tags that genuinely differ inside the "
                        + "16 bytes the protocol reads")
     }

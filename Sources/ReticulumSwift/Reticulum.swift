@@ -56,10 +56,12 @@ public final class Reticulum {
     /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
     /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
     ///
-    /// Also outstanding: interface-discovery *publishing*
-    /// (`publishesInterfaceDiscovery == false`, a pre-existing gap—the receive side is
-    /// complete), and the `discovery_path_requests` batching, which needs the announce
-    /// handler that replays to `requesting_interfaces` to be worth anything.
+    /// The two areas that were outstanding when the parity claim moved to 1.5.2 have since
+    /// landed: interface-discovery *publishing*, which now announces this node's own
+    /// discoverable interfaces and dials the ones it hears about
+    /// (``publishesInterfaceDiscovery``, ``autoconnectsDiscoveredInterfaces``); and the
+    /// `discovery_path_requests` batching, together with the announce replay that answers
+    /// the requestors it batches.
     public static let rnsProtocolVersion = "1.5.2"
 
     public enum LogLevel: Int, Comparable, Sendable {

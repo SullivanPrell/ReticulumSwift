@@ -511,6 +511,33 @@ public final class Transport {
     private var pathRequestTagSet: Set<Data> = []
     public var pathRequestCacheCap: Int = 4096
 
+    /// A destination this node searches for on a peer's behalf, and the peers waiting on that
+    /// search.
+    ///
+    /// Python's `discovery_path_requests` entry (`Transport.py:1879-1881`). `engaged` separates
+    /// the two ways an entry comes into being: `true` means this node fanned a request out and
+    /// is waiting for an answer, `false` means the entry only records requestors that arrived
+    /// while some earlier search was already in flight.
+    struct DiscoveryPathRequest {
+        let destinationHash: Data
+        var timeout: TimeInterval
+        var requestingInterfaces: [any Interface]
+        var engaged: Bool
+    }
+
+    /// Destinations with a search in progress, keyed to when the search started.
+    ///
+    /// `Transport.inflight_path_requests` (`Transport.py:188`). Registered before the search
+    /// starts and cleared the moment this node answers the request, so its only job is to
+    /// collapse requests that arrive *during* a search into that one search.
+    private var inflightPathRequests: [Data: TimeInterval] = [:]
+
+    /// The peers waiting on each in-progress search.
+    ///
+    /// `Transport.discovery_path_requests` (`Transport.py:192`). Read by the announce handler,
+    /// which replays a matching announce to every recorded interface as a path response.
+    private var discoveryPathRequests: [Data: DiscoveryPathRequest] = [:]
+
     /// Dedup keys for announces already seen—`destinationHash + randomHash`.
     /// Bounded to `announceCacheCap` entries (FIFO).
     private var announceCache: [Data] = []
@@ -921,6 +948,124 @@ public final class Transport {
         guard let lowest = lowestInterfaceBitrate else { return 0 }
         let bitrate = Double(max(lowest, Transport.minimumBitrate))
         return 2 * (Double(Constants.mtu) * 8 / bitrate) + Constants.defaultPerHopTimeout
+    }
+
+    // MARK: - Path request batching (`inflight_path_requests` / `discovery_path_requests`)
+
+    /// How long this node waits for an answer to a search it started on a peer's behalf.
+    ///
+    /// `discovery_timeout = max(PATH_REQUEST_TIMEOUT, medium_path_timeout())`
+    /// (`Transport.py:3556`). The fixed floor covers an ordinary network; the medium term
+    /// stretches the wait to a real round trip when the slowest link is slow enough that 15
+    /// seconds would expire before the answer could physically arrive.
+    func discoveryPathRequestTimeout() -> TimeInterval {
+        max(Transport.pathRequestTimeout, mediumPathTimeout())
+    }
+
+    /// Claim `destinationHash` as under search, and report whether the claim is new.
+    ///
+    /// `if not path_request_inflight: Transport.inflight_path_requests[destination_hash] =
+    /// time.time()` (`Transport.py:1867-1868`). Registered eagerly—Python's own comment calls
+    /// it "early registration to immediately batch duplicates"—so that a duplicate arriving
+    /// while the search runs finds the marker rather than starting a second identical fan-out.
+    @discardableResult
+    func registerInflightPathRequest(_ destinationHash: Data,
+                                     at now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if inflightPathRequests[destinationHash] != nil { return false }
+        inflightPathRequests[destinationHash] = now
+        return true
+    }
+
+    /// Release the search claim on `destinationHash`.
+    ///
+    /// Called from both places Python clears the table: `if answered:` at the tail of
+    /// `path_request_handler` (`Transport.py:3595-3599`), and the arrival of a matching announce
+    /// (`Transport.py:2478-2481`). Either way the search is over, so the next request for this
+    /// destination must be free to start its own.
+    func resolveInflightPathRequest(_ destinationHash: Data) {
+        lock.lock(); defer { lock.unlock() }
+        inflightPathRequests.removeValue(forKey: destinationHash)
+    }
+
+    func inflightPathRequestTimestamp(for destinationHash: Data) -> TimeInterval? {
+        lock.lock(); defer { lock.unlock() }
+        return inflightPathRequests[destinationHash]
+    }
+
+    func discoveryPathRequest(for destinationHash: Data) -> DiscoveryPathRequest? {
+        lock.lock(); defer { lock.unlock() }
+        return discoveryPathRequests[destinationHash]
+    }
+
+    /// Record `interface` as waiting on the search already running for `destinationHash`.
+    ///
+    /// `Transport.py:1872-1882`. This creates the entry when none exists yet, because an
+    /// earlier request may have started the search that set the in-flight marker, and that
+    /// request's own entry has since timed out—the two tables have different lifetimes.
+    func batchDiscoveryPathRequest(_ destinationHash: Data, on interface: any Interface) {
+        lock.lock(); defer { lock.unlock() }
+        if var entry = discoveryPathRequests[destinationHash] {
+            // `if not packet.receiving_interface in ...["requesting_interfaces"]`
+            // (`Transport.py:1874`). A peer that keeps asking must not multiply the replay it
+            // eventually gets.
+            guard !entry.requestingInterfaces.contains(where: { $0 === interface }) else { return }
+            entry.requestingInterfaces.append(interface)
+            discoveryPathRequests[destinationHash] = entry
+        } else {
+            discoveryPathRequests[destinationHash] = DiscoveryPathRequest(
+                destinationHash: destinationHash,
+                timeout: Date().timeIntervalSince1970 + discoveryPathRequestTimeout(),
+                requestingInterfaces: [interface],
+                engaged: false
+            )
+        }
+    }
+
+    /// Mark `destinationHash` as under active search on `interface`'s behalf, and report whether
+    /// some earlier search already holds that claim.
+    ///
+    /// `Transport.py:3533-3572`. Returning `true` is Python's "There is already a waiting path
+    /// request … on behalf of path request" branch: the caller logs and returns rather than
+    /// fanning out a second time. Peers batched onto the entry before it became engaged keep
+    /// their claim on the answer (`existing_requesting_interfaces`, `:3565-3571`).
+    func engageDiscoveryPathRequest(_ destinationHash: Data, on interface: any Interface) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if discoveryPathRequests[destinationHash]?.engaged == true { return true }
+        var requestors = discoveryPathRequests[destinationHash]?.requestingInterfaces ?? []
+        if !requestors.contains(where: { $0 === interface }) { requestors.append(interface) }
+        discoveryPathRequests[destinationHash] = DiscoveryPathRequest(
+            destinationHash: destinationHash,
+            timeout: Date().timeIntervalSince1970 + discoveryPathRequestTimeout(),
+            requestingInterfaces: requestors,
+            engaged: true
+        )
+        return false
+    }
+
+    /// Remove and return the waiting entry for `destinationHash`.
+    ///
+    /// `discovery_path_requests.pop(packet.destination_hash)` (`Transport.py:2436`)—pop, not
+    /// read: the replay answers the entry, so a later announce for the same destination must
+    /// not produce a second one.
+    func takeDiscoveryPathRequest(_ destinationHash: Data) -> DiscoveryPathRequest? {
+        lock.lock(); defer { lock.unlock() }
+        return discoveryPathRequests.removeValue(forKey: destinationHash)
+    }
+
+    /// Expire both path request tables.
+    ///
+    /// `Transport.py:993-1011` collects the stale keys and `:1107-1120` removes them. The two
+    /// tables age on different clocks—the in-flight marker on the fixed
+    /// ``pathRequestGateTimeout``, each waiting entry on its own deadline—so on a slow network
+    /// an entry outlives the marker that created it. A search that nothing ever answers would
+    /// otherwise block every later request for that destination for as long as the process runs.
+    func sweepPathRequestTables(now: TimeInterval = Date().timeIntervalSince1970) {
+        lock.lock(); defer { lock.unlock() }
+        inflightPathRequests = inflightPathRequests.filter {
+            now <= $0.value + Transport.pathRequestGateTimeout
+        }
+        discoveryPathRequests = discoveryPathRequests.filter { now <= $0.value.timeout }
     }
 
     public func dropAnnounceQueues() {
@@ -2887,6 +3032,7 @@ public final class Transport {
         prioritizeInterfaces()
         sweepPendingRestores()
         sweepExpiredPaths()
+        sweepPathRequestTables()
         sweepExpiredReceipts()
         sweepKnownRatchets()
         sweepReverseTable()
@@ -4052,8 +4198,17 @@ public final class Transport {
             lock.lock()
             let isKnownDest = registeredDestinations[decoded.destinationHash] != nil
                            || paths[decoded.destinationHash] != nil
+            // `if packet.destination_hash in Transport.path_requests or … in
+            // Transport.discovery_path_requests: pass` (`Transport.py:1819-1821`). This node
+            // asked the network for exactly this destination on a peer's behalf, so holding the
+            // answer behind the burst limiter would strand the very requestors the waiting entry
+            // holds open for—and the entry would then time out having achieved nothing.
+            //
+            // Upstream exempts its client-side `path_requests` table here too; this port has no
+            // such table, so this checks only the half that exists.
+            let awaitedByDiscovery = discoveryPathRequests[decoded.destinationHash] != nil
             lock.unlock()
-            if !isKnownDest && shouldIngressLimit(on: interface) {
+            if !isKnownDest && !awaitedByDiscovery && shouldIngressLimit(on: interface) {
                 holdAnnounce(packet, destinationHash: decoded.destinationHash, on: interface)
                 return
             }
@@ -4352,6 +4507,36 @@ public final class Transport {
                     try? transmit(localForward, on: iface)
                 }
             }
+
+            // Answer the peers waiting on a search for this destination
+            // (`Transport.py:2433-2455`). This replay is what pays for the batching in
+            // `handlePathRequest`: the gate there drops those duplicate requests without an
+            // answer of their own, so the announce that resolves the search has to reach every
+            // one of them. It goes out as a path response addressed from this instance, because
+            // this is the node that now knows the route.
+            //
+            // Gated on `shouldUpdate` the way upstream nests it inside `if should_add:`—an
+            // announce this node declined to learn from isn't an answer it can stand behind.
+            // This deliberately keeps path responses, unlike the mesh relay preceding it: the
+            // answer to a recursive request usually arrives as one.
+            if shouldUpdate, let waiting = takeDiscoveryPathRequest(decoded.destinationHash) {
+                var replay = packet
+                replay.context = .pathResponse
+                replay.headerType = .type2
+                replay.transportType = .transport
+                replay.transportID = transportInstanceID
+                // `new_announce.hops = packet.hops` (`:2454`), where upstream's `packet.hops`
+                // already counts this arrival (`:1800`). This port does no inbound increment,
+                // so the same wire value is one more than the hop count it stored—the
+                // adjustment the known-path answer makes as `entry.hops &+ 1`.
+                replay.hops = packet.hops &+ 1
+                for target in waiting.requestingInterfaces where target !== interface {
+                    try? transmit(replay, on: target)
+                }
+            }
+            // `# Resolve potential in-flight path requests` (`Transport.py:2478-2481`). The
+            // search is over whether or not anyone was waiting on it.
+            resolveInflightPathRequest(decoded.destinationHash)
         } catch {
             // Malformed or unsigned announce—drop silently as RNS does.
         }
@@ -4562,7 +4747,34 @@ public final class Transport {
         // evaluation here reaches the same decision.
         let ingressLimited = shouldIngressLimitPR(on: interface)
 
+        // Batch onto a search already running for this destination
+        // (`Transport.py:1862-1886`). One inbound request becomes one outbound request per
+        // other interface, so a destination that several peers ask for at once would otherwise
+        // draw several identical searches. The claim lands before any branch runs, and
+        // `answered` releases it again further down—so it only ever collapses requests that
+        // arrive while a search is genuinely outstanding.
+        //
+        // Upstream places this in `inbound()`, ahead of the queue that carries the request to
+        // `path_request_handler`; this port has no such queue, so the equivalent position is
+        // here: past the tag dedup and the arrival counter, ahead of every answering branch.
+        if !registerInflightPathRequest(target) {
+            // `if not traffic_class == Transport.TC_INGRESS_LIMITED` (`Transport.py:1870`). A
+            // flooding peer's duplicates drop outright rather than enrolling for a replay
+            // each—enrolling them would turn the flood into an amplifier again, one announce
+            // copy per duplicate, which is the shape the batching exists to prevent.
+            if !ingressLimited { batchDiscoveryPathRequest(target, on: interface) }
+            return
+        }
+        // `if answered: ... inflight_path_requests.pop(destination_hash)`
+        // (`Transport.py:3595-3599`). Upstream reaches its tail with a flag because its branches
+        // fall through; these return, so the release rides on the return itself. Both answering
+        // branches set it before they can bail on a cache miss, matching `answered = True` at
+        // `:3455` and `:3463`.
+        var answered = false
+        defer { if answered { resolveInflightPathRequest(target) } }
+
         if isLocal {
+            answered = true
             lock.lock()
             let localDest = registeredDestinations[target]
             lock.unlock()
@@ -4583,6 +4795,7 @@ public final class Transport {
         // Key off the path table (a real known route), mirroring Python's
         // `destination_hash in path_table`, not merely an overheard cached announce.
         if (transportEnabled || fromLocal), let entry = pathEntry {
+            answered = true
             // A known path to the destination exists—this is the branch Python
             // selects on `destination_hash in path_table` (Transport.py:2969). If
             // the cached announce packet has since been evicted, Python logs and
@@ -4666,6 +4879,16 @@ public final class Transport {
             // inbound request becoming one outbound request per interface—that a flooding
             // peer must not get.
             if ingressLimited { return }
+
+            // "There is already a waiting path request … on behalf of path request"
+            // (`Transport.py:3541-3542`). The preceding in-flight marker collapses requests
+            // that arrive *during* a search; this collapses the case it can't see. The two tables
+            // age on different clocks, so on a slow network—where the waiting entry's timeout
+            // is a round trip on the slowest link and the marker's is a flat 45 seconds—the
+            // marker expires first and a fresh request reaches this branch while the original
+            // search is still outstanding. Engaging the entry claims the search; finding it
+            // already engaged means someone else is running it.
+            if engageDiscoveryPathRequest(target, on: interface) { return }
 
             let now = Date().timeIntervalSince1970
             for iface in interfaces where iface !== interface && iface.isOnline && iface.isRoutingEndpoint {
