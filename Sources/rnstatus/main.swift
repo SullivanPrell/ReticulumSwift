@@ -171,6 +171,9 @@ if discoveredMode {
 struct Snapshot {
     let stats: MsgPack.Value
     let linkCount: Int?
+    /// Nil over the remote `/status` path, which returns only two slots and carries no
+    /// active count—matching Python, where the remote branch never assigns it.
+    var activeLinkCount: Int? = nil
 }
 
 var remoteQuery: RemoteStatusQuery?
@@ -236,16 +239,26 @@ func snapshot() -> Snapshot? {
         }
     }
 
-    // Python: `reticulum.get_link_count()` / `get_interface_stats()`, both wrapped in a
-    // bare `except: pass` that leaves the value at None.
+    // Python: `reticulum.get_link_count()` / `get_active_link_count()` /
+    // `get_interface_stats()`, each wrapped in a bare `except: pass` that leaves the value at
+    // None (rnstatus.py:346-348).
     var linkCount: Int? = nil
+    var activeLinkCount: Int? = nil
     if let rpc = connection.rpc {
-        if linkStats { linkCount = try? rpc.linkCount() }
+        if linkStats {
+            linkCount = try? rpc.linkCount()
+            // A daemon predating the verb answers nil, and the suffix simply doesn't render.
+            activeLinkCount = try? rpc.activeLinkCount()
+        }
         guard let stats = try? rpc.interfaceStats() else { return nil }
-        return Snapshot(stats: stats, linkCount: linkCount)
+        return Snapshot(stats: stats, linkCount: linkCount, activeLinkCount: activeLinkCount)
     }
-    if linkStats { linkCount = connection.reticulum.transport.getLinkCount() }
-    return Snapshot(stats: InterfaceStatsPayload.build(connection.reticulum.transport), linkCount: linkCount)
+    if linkStats {
+        linkCount = connection.reticulum.transport.getLinkCount()
+        activeLinkCount = connection.reticulum.transport.getActiveLinkCount()
+    }
+    return Snapshot(stats: InterfaceStatsPayload.build(connection.reticulum.transport),
+                    linkCount: linkCount, activeLinkCount: activeLinkCount)
 }
 
 // MARK: - Render
@@ -266,7 +279,9 @@ func renderOnce() -> (text: String, code: RNStatusApp.Result) {
     }
 
     let renderer = RNStatusRenderer(options: options)
-    return (renderer.render(stats: decoded, linkCount: snapshot.linkCount), .ok)
+    return (renderer.render(stats: decoded,
+                            linkCount: snapshot.linkCount,
+                            activeLinkCount: snapshot.activeLinkCount), .ok)
 }
 
 if monitor {

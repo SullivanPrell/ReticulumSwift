@@ -90,6 +90,10 @@ final class LinkRequestRelayTests: XCTestCase {
             ),
             forDestination: aDest.hash
         )
+        // A relay validates the signature on every link-request proof it forwards, so it
+        // needs the responder's identity. A real relay always has it: the announce that
+        // taught it the path is the packet that carried the keys.
+        rT.restore(identity: aIdentity, forDestination: aDest.hash)
 
         // B knows A is reachable via R as relay (hops = 1, nextHopTransportID = R's ID).
         // In real operation, B learns this by receiving a HEADER_2 announce from R.

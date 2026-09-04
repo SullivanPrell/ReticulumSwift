@@ -13,7 +13,7 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently—a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.11.1"
+    public static let version = "1.12.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
@@ -858,6 +858,9 @@ public final class Reticulum {
     /// Returns the current number of active links.
     /// Mirrors Python's `Reticulum.get_link_count()`.
     public func getLinkCount() -> Int { transport.getLinkCount() }
+
+    /// Mirrors Python's `Reticulum.get_active_link_count()`.
+    public func getActiveLinkCount() -> Int { transport.getActiveLinkCount() }
 
     /// Returns statistics for all registered interfaces.
     /// Mirrors Python's `Reticulum.get_interface_stats()`.

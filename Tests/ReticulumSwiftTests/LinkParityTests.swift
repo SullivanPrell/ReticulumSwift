@@ -119,6 +119,10 @@ final class LinkParityTests: XCTestCase {
         rT.restore(path: Transport.PathEntry(
             destinationHash: aDest.hash, nextHopInterface: rToA,
             hops: 0, lastHeard: Date(), identityHash: aIdentity.hash), forDestination: aDest.hash)
+        // A relay validates the signature on every link-request proof it forwards, so it
+        // needs the responder's identity. A real relay always has it: the announce that
+        // taught it the path is the packet that carried the keys.
+        rT.restore(identity: aIdentity, forDestination: aDest.hash)
         bT.restore(path: Transport.PathEntry(
             destinationHash: aDest.hash, nextHopInterface: bIface,
             hops: 1, lastHeard: Date(), identityHash: aIdentity.hash,
