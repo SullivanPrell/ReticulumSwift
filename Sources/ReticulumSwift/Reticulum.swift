@@ -20,7 +20,15 @@ public final class Reticulum {
     /// a single version string for both its library and its protocol). Bump only
     /// when parity is verified against a new RNS release. Informational only.
     ///
-    /// Moved 1.4.2 → 1.5.2 across three upstream releases. What landed:
+    /// **Stays at 1.4.2.** Work against 1.5.0–1.5.2 has landed, listed below, but this
+    /// constant is a parity claim and 1.5.2 parity is not verified: Python 1.5.2's
+    /// `rnstatus` reads `ifstat["txdrp"]` with an unguarded subscript
+    /// (`rnstatus.py:495`) and this port's `interface_stats` emits no such key, so the
+    /// reference utility raises `KeyError` against a Swift daemon rather than printing.
+    /// Twenty-two of Python's mandatory `ifstats` keys are still missing. The constant
+    /// moves once they are emitted and the interop suite agrees.
+    ///
+    /// What has landed so far:
     ///
     ///  - **1.5.0**, transport core. `Packet.unpack` now rejects a zero-length data
     ///    field and validates transport-ID and destination-hash lengths; `Packet.send`
@@ -43,11 +51,11 @@ public final class Reticulum {
     /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
     /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
     ///
-    /// Still outstanding at this version: interface-discovery *publishing*
+    /// Also outstanding: interface-discovery *publishing*
     /// (`publishesInterfaceDiscovery == false`, a pre-existing gap—the receive side is
     /// complete), and the `discovery_path_requests` batching, which needs the announce
     /// handler that replays to `requesting_interfaces` to be worth anything.
-    public static let rnsProtocolVersion = "1.5.2"
+    public static let rnsProtocolVersion = "1.4.2"
 
     public enum LogLevel: Int, Comparable, Sendable {
         case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme

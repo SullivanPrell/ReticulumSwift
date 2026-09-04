@@ -24,7 +24,7 @@ identifies every destination, and every packet carries end-to-end encryption by
 default.
 
 **ReticulumSwift** ports that stack to idiomatic Swift. It's byte-for-byte
-wire-compatible with Python Reticulum (RNS 1.4.1): a Swift node and a Python node
+wire-compatible with Python Reticulum (RNS 1.4.2): a Swift node and a Python node
 interoperate on the same network, exchange announces, establish links, and transfer
 resources transparently.
 
@@ -50,7 +50,7 @@ The goal of the stack is a complete iOS/macOS Reticulum experience—think
 
 ## Status
 
-ReticulumSwift implements the full Reticulum 1.4.1 protocol—all core layers and
+ReticulumSwift implements the full Reticulum 1.4.2 protocol—all core layers and
 every standard interface—and is wire-compatible with the Python reference
 implementation.
 

@@ -1,6 +1,6 @@
 # ReticulumSwift
 
-Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.5.2).
+Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.4.2).
 Target: wire + API compatibility so a Swift node interoperates with Python nodes.
 
 Ships the library plus the nine `rn*` command-line utilities as executable products
@@ -112,11 +112,13 @@ Sources/ReticulumSwift/
 
 ## Parity status
 
-Implements the full Reticulum 1.5.2 protocol—all core layers and every standard
+Implements the full Reticulum 1.4.2 protocol—all core layers and every standard
 interface—wire-compatible with the Python reference. ~78% line coverage across
-3,580 tests. `Reticulum.rnsProtocolVersion` records the upstream release this port
-matches, and moves only after a parity audit confirms the match. See
-[CHANGELOG.md](CHANGELOG.md).
+3,580 tests.
+
+`Reticulum.rnsProtocolVersion` records the upstream release this port matches. It moves
+only after a parity audit confirms the match, so it stays at 1.4.2 while work against
+1.5.x is in progress. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Conventions
 
