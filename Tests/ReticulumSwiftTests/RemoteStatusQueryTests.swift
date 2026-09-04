@@ -199,7 +199,12 @@ final class RemoteStatusQueryTests: XCTestCase {
         guard case .success(let (_, linkCount)) = RemoteStatusQuery.decode(try XCTUnwrap(payload)) else {
             return XCTFail("expected success")
         }
-        XCTAssertEqual(linkCount, 1)   // the management link itself
+        // Zero, not one: the responder *terminates* the management link, and Python's
+        // `link_count()` is `len(link_table)`, which counts only relayed links. The slot is
+        // still populated—the preceding `parts[1].asInt` is non-nil—so this distinguishes "the second
+        // slot decoded as 0" from "there was no second slot", which is what the next test
+        // covers.
+        XCTAssertEqual(linkCount, 0)
     }
 
     func testStatusRequestWithoutLinkStatsOmitsTheSecondSlot() throws {

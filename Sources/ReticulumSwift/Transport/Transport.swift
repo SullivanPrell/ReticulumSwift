@@ -1692,11 +1692,20 @@ public final class Transport {
             )}
     }
 
-    /// Returns the number of active links.
-    /// Mirrors Python's `Reticulum.get_link_count()`.
+    /// Returns the number of entries in the link table.
+    ///
+    /// Mirrors Python's `Transport.link_count()`, which is `len(Transport.link_table)`
+    /// (`Transport.py:3211`). The link table holds one entry per link this node *relays*, so
+    /// the count measures transit load. A link this node terminates never enters it—those live
+    /// in `links`, and `activeLinks` reports them.
+    ///
+    /// This used to return `links.values.filter { $0.status == .active }.count`, which is a
+    /// different quantity and, on a transport node carrying traffic for others, an unrelated
+    /// one. `rnstatus` prints the value as "N entries in link table"
+    /// (`rnstatus.py:711`), so a two-node setup that relayed nothing still claimed one entry.
     public func getLinkCount() -> Int {
         lock.lock(); defer { lock.unlock() }
-        return links.values.filter { $0.status == .active }.count
+        return linkRoutes.count
     }
 
     /// Returns all active links as an array.
