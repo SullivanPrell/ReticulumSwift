@@ -3869,8 +3869,34 @@ public final class Transport {
     }
 
     private func handleAnnounce(_ packet: Packet, from interface: Interface) {
-        // Mirrors Python: `interface.received_announce(size=len(packet.raw))` on valid
-        // announce receipt (`Transport.py:1811`).
+        // Python's announce admission gate (`Transport.py:1806-1811`). Three
+        // decisions, in this order, before anything else looks at the announce:
+        //
+        //  1. A blackholed announcer drops without a sound. The blackhole test
+        //     sits inside `validate_announce`, after the public key loads and
+        //     before it verifies the signature (`Identity.py:551-556`), so a
+        //     blackholed peer never costs a verification.
+        //  2. An announce whose signature doesn't verify is a protocol
+        //     violation, not a silent drop. Without this the operator has no
+        //     signal that a peer is putting forgeries on the wire.
+        //  3. Only an announce that survives both reaches `received_announce`,
+        //     so the interface's announce counter describes announces this node
+        //     accepted rather than every announce-shaped frame that arrived.
+        //
+        // Order 1-before-2 is observable: it decides whether a blackholed peer
+        // sending a bad signature shows up in the protocol-violation counter.
+        switch Identity.validateAnnounce(
+            packet, onlyValidateSignature: true, isBlackholed: { self.isBlackholed($0) }
+        ) {
+        case .blackholed:
+            return
+        case .invalid:
+            notifyProtocolViolation(on: interface)
+            return
+        case .valid:
+            break
+        }
+
         notifyIncomingAnnounce(on: interface, size: packet.rawByteCount)
 
         // An announce for a destination this node owns is dropped here and goes no further.
@@ -3905,7 +3931,10 @@ public final class Transport {
         // Mirrors Python: `if interface.should_ingress_limit(): interface.hold_announce(packet); return`
         // Only applies to unknown destinations (known paths exempt—Python checks path_requests too).
         do {
-            let decoded = try Announce.validate(packet)
+            // The admission gate at the top of this function already verified this
+            // signature over these same bytes, so skip the second verification the
+            // way Python's `announce_signature_validated` does (`Identity.py:559`).
+            let decoded = try Announce.validate(packet, signatureVerified: true)
 
             // Announce-retry cancel (mirrors Python `Transport.inbound()`'s
             // announce_table handling): if a retransmission is pending for
@@ -3971,8 +4000,8 @@ public final class Transport {
                 // emission rather than an unheard blob) can fire.
                 //
                 // Known residual divergence: the dedup cache is populated earlier,
-                // *before* the blackhole / ingress-burst / announce-rate filters
-                // run. An announce dropped by one of those never reaches the
+                // *before* the ingress-burst and announce-rate filters run. An
+                // announce dropped by one of those never reaches the
                 // ladder and so never records its blob, yet its cache entry
                 // survives—a later copy at equal-or-greater hops is then
                 // swallowed here where Python would still evaluate it. Narrow
@@ -3989,10 +4018,6 @@ public final class Transport {
                 // takeover—fall through.
             }
             lock.unlock()
-
-            // Blackhole filter: drop announces from blackholed identities.
-            // Mirrors Python's blackholed_identities check in announce handler.
-            if isBlackholed(decoded.identity.hash) { return }
 
             // Ingress burst limiting for unknown destinations (mirrors Python).
             // Known destinations are exempt (path requests for them may be pending).

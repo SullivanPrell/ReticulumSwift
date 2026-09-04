@@ -282,46 +282,73 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     // MARK: - Announce validation (mirrors Python Identity.validate_announce)
 
+    /// The outcome of Python's `Identity.validate_announce(packet, signal_blackholed=True)`.
+    ///
+    /// Python returns the string `"blackholed"` where a bool would otherwise go
+    /// (`Identity.py:555`) so its caller can tell "this peer is on the blackhole
+    /// list" apart from "this announce doesn't verify". The distinction matters:
+    /// the transport drops the first silently and charges the second a protocol
+    /// violation (`Transport.py:1807-1810`).
+    public enum AnnounceAdmission: Equatable {
+        /// The signature verifies, and the announcer isn't blackholed.
+        case valid
+        /// The announce arrived malformed, or its signature doesn't verify.
+        case invalid
+        /// The announcing identity is on the blackhole list. Tested *before* the
+        /// signature, so a blackholed peer costs no verification.
+        case blackholed
+    }
+
+    /// Validate an announce packet, reporting blackholed announcers separately.
+    ///
+    /// Mirrors Python's `RNS.Identity.validate_announce(packet,
+    /// only_validate_signature, signal_blackholed=True)`, including its order of
+    /// operations: parse the body, load the announced public key, test the
+    /// blackhole list, and only then verify the signature (`Identity.py:510-561`).
+    ///
+    /// - Parameters:
+    ///   - packet: The announce to check.
+    ///   - onlyValidateSignature: When true, stop after the signature and skip the
+    ///     `truncated_hash(name_hash || identity_hash)` check on the destination
+    ///     hash. This is what the transport's admission gate uses.
+    ///   - isBlackholed: Tests an announced identity hash against the blackhole
+    ///     list. Python reads the global `RNS.Transport.blackholed_identities`
+    ///     here; this port has a per-instance transport, so the caller supplies
+    ///     the test.
+    public static func validateAnnounce(
+        _ packet: Packet,
+        onlyValidateSignature: Bool = false,
+        isBlackholed: (Data) -> Bool
+    ) -> AnnounceAdmission {
+        do {
+            let parsed = try Announce.parse(packet)
+
+            if isBlackholed(parsed.identity.hash) { return .blackholed }
+
+            if onlyValidateSignature {
+                let verified = parsed.identity.validate(
+                    signature: parsed.signature, for: parsed.signedData
+                )
+                return verified ? .valid : .invalid
+            }
+
+            _ = try Announce.validate(packet)
+            return .valid
+        } catch {
+            return .invalid
+        }
+    }
+
     /// Validate an announce packet.
     /// Returns true if the announce's signature is valid (and optionally the destination hash matches).
-    /// Mirrors Python's `RNS.Identity.validate_announce(packet, only_validate_signature=False)`.
+    /// Mirrors Python's `RNS.Identity.validate_announce(packet, only_validate_signature=False)`,
+    /// which reports a blackholed announcer as a plain failure unless asked to
+    /// signal it (`Identity.py:556`). Callers that need to tell the two apart
+    /// want ``validateAnnounce(_:onlyValidateSignature:isBlackholed:)`` instead.
     public static func validateAnnounce(_ packet: Packet, onlyValidateSignature: Bool = false) -> Bool {
-        do {
-            if onlyValidateSignature {
-                // Only check signature, skip destination hash verification
-                let keysize = Constants.keySize
-                let nameHashLen = Constants.nameHashLength
-                let randLen = Constants.randomHashLength
-                let sigLen = Constants.signatureLength
-                let body = packet.data
-                guard body.count >= keysize + nameHashLen + randLen + sigLen else { return false }
-                let publicKey = body.prefix(keysize)
-                let nameHash = body[keysize..<(keysize + nameHashLen)]
-                let randomHash = body[(keysize + nameHashLen)..<(keysize + nameHashLen + randLen)]
-                var cursor = keysize + nameHashLen + randLen
-                var ratchet: Data? = nil
-                if packet.contextFlag == .set && body.count >= cursor + Constants.ratchetSize + sigLen {
-                    ratchet = Data(body[cursor..<(cursor + Constants.ratchetSize)])
-                    cursor += Constants.ratchetSize
-                }
-                let signature = Data(body[cursor..<(cursor + sigLen)])
-                let appData: Data? = cursor + sigLen < body.count ? Data(body[(cursor + sigLen)...]) : nil
-                let identity = try Identity(publicKeyBytes: Data(publicKey))
-                var signedData = Data(packet.destinationHash)
-                signedData.append(publicKey)
-                signedData.append(nameHash)
-                signedData.append(randomHash)
-                if let r = ratchet { signedData.append(r) }
-                if let a = appData { signedData.append(a) }
-                return identity.validate(signature: signature, for: signedData)
-            } else {
-                // Full validation (signature + destination hash)
-                _ = try Announce.validate(packet)
-                return true
-            }
-        } catch {
-            return false
-        }
+        validateAnnounce(
+            packet, onlyValidateSignature: onlyValidateSignature, isBlackholed: { _ in false }
+        ) == .valid
     }
 
     // MARK: - Static ratchet ID utilities
