@@ -125,7 +125,10 @@ final class TransportManagementTests: XCTestCase {
 
     // MARK: - getLinkCount
 
-    func testGetLinkCountReflectsActiveLinks() throws {
+    /// A link this node terminates is held in `links`, not the link table, so it moves
+    /// `activeLinks` and leaves `getLinkCount()` at zero. `LinkTableCountTests` covers the
+    /// relayed case and the distinction between the two counts.
+    func testAnEstablishedLinkIsRegisteredButAddsNoLinkTableEntry() throws {
         let aT = Transport(); let bT = Transport()
         let bId = Identity()
         let bDest = try Destination(identity: bId, direction: .in, kind: .single, appName: "lc")
@@ -141,8 +144,11 @@ final class TransportManagementTests: XCTestCase {
         _ = try Link.initiate(destination: bDest, transport: aT)
         wait(for: [aE, bE], timeout: 1.0)
 
-        XCTAssertEqual(aT.getLinkCount(), 1)
-        XCTAssertEqual(bT.getLinkCount(), 1)
+        XCTAssertEqual(aT.activeLinks.count, 1, "the initiator holds the link")
+        XCTAssertEqual(bT.activeLinks.count, 1, "so does the responder")
+        XCTAssertEqual(aT.getLinkCount(), 0,
+                       "neither end relays it, so Python's link_table stays empty on both")
+        XCTAssertEqual(bT.getLinkCount(), 0)
     }
 }
 

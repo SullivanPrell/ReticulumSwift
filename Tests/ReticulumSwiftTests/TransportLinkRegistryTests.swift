@@ -33,8 +33,10 @@ final class TransportLinkRegistryTests: XCTestCase {
         let aLink = try Link.initiate(destination: bDest, transport: aT)
         wait(for: [aE, bE], timeout: 1.0)
 
-        XCTAssertEqual(aT.getLinkCount(), 1)
-        XCTAssertEqual(bT.getLinkCount(), 1)
+        // `activeLinks`, not `getLinkCount()`: this is about the link registry, and the
+        // link table counts relayed links, which a two-node loopback has none of.
+        XCTAssertEqual(aT.activeLinks.count, 1)
+        XCTAssertEqual(bT.activeLinks.count, 1)
         XCTAssertNotNil(aLink.linkID)
         XCTAssertNotNil(aT.links[aLink.linkID!])
     }
@@ -56,7 +58,7 @@ final class TransportLinkRegistryTests: XCTestCase {
         wait(for: [aE, bE], timeout: 1.0)
 
         let linkID = try XCTUnwrap(aLink.linkID)
-        XCTAssertEqual(aT.getLinkCount(), 1)
+        XCTAssertEqual(aT.activeLinks.count, 1)
 
         // Teardown the link
         let closed = expectation(description: "closed")
@@ -65,6 +67,6 @@ final class TransportLinkRegistryTests: XCTestCase {
         wait(for: [closed], timeout: 1.0)
 
         XCTAssertNil(aT.links[linkID], "link should be removed from registry after teardown")
-        XCTAssertEqual(aT.getLinkCount(), 0)
+        XCTAssertEqual(aT.activeLinks.count, 0)
     }
 }

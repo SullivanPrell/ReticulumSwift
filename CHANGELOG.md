@@ -3,6 +3,53 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.11.1]—`link_count` reported the wrong links
+
+Python's `Transport.link_count()` is `len(Transport.link_table)` (`Transport.py:3211`). The
+link table holds one entry per link a node *relays*, so the count measures transit load. A
+link the node terminates never enters it. This port returned the number of active links it
+held an endpoint of, which is a different quantity and, on a transport node carrying traffic
+for others, an unrelated one.
+
+`rnstatus` prints the value as "N entries in link table" (`rnstatus.py:711`), so two nodes
+with a direct link between them each claimed one entry while relaying nothing, and a busy
+transport node reported its own handful of links instead of the hundreds it was carrying.
+
+`getLinkCount()` now returns `linkRoutes.count`. The links a node terminates are still
+reachable through `activeLinks`, and the tests that used `getLinkCount()` as a stand-in for
+the link registry now assert against `activeLinks` directly.
+
+### Not ported: `active_link_count`
+
+RNS 1.5.0 added `Transport.active_link_count()` and an `rnstatus` suffix that renders it as
+`(N active)`. Two things block a faithful port:
+
+Upstream counts the wrong thing. `sum(1 for e in (True for entry in Transport.link_table if
+entry[IDX_LT_VALIDATED]))` (`Transport.py:3215`) iterates a dict, so `entry` is a link ID and
+`entry[7]` is that ID's eighth byte rather than the validated flag. The expression reports
+roughly 255 of every 256 table entries as active however many the relay actually validated.
+
+Counting the entries upstream *meant* to count needs a `validated` flag, and that flag is only
+honest where the proof signature is actually checked. This port forwards a relayed
+link-request proof without validating it, so it has nowhere truthful to set the flag. Adding
+the validation is a change to what a relay forwards, and it belongs in its own change with its
+own interop run—see the note below.
+
+Python's `rnstatus` wraps the query in `try/except` and the unknown-verb path already answers
+`nil`, so a Python peer querying a Swift daemon omits the "(N active)" suffix rather than
+failing.
+
+### Known gap: relayed link-request proofs aren't validated
+
+Python validates the signature on every link-request proof it relays and, on failure, drops
+the proof and raises a protocol violation (`Transport.py:2666-2669`). It also requires the
+proof to arrive on the link's next-hop interface specifically. This port forwards any
+well-formed proof whose link ID is in the table, from either side. Link endpoints do validate,
+so a forged proof can't establish a link—the gap is that a Swift transport node relays it
+instead of dropping and counting it. Present since 1.4.2, and unchanged here.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2.
+
 ## [1.11.0]—Python's `rnstatus` couldn't display a Swift daemon at all
 
 `rnstatus` reads most of the interface-stats dictionary defensively, guarding each lookup
