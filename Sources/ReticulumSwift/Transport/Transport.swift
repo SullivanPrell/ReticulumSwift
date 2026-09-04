@@ -4609,58 +4609,144 @@ public final class Transport {
 
     // MARK: - Packet hashlist (replay/loop prevention)
 
-    /// Returns `true` if this packet hash hasn't been seen before and
-    /// adds it to the current hashlist. Returns `false` for duplicates.
-    /// Mirrors Python's `Transport.packet_filter` + `add_packet_hash`.
+    /// The six contexts Python answers `True` for before it ever reads the hashlist
+    /// (`Transport.py:1635-1640`).
+    ///
+    /// Every one of them repeats legitimately on the wire—a keepalive repeats until the peer
+    /// answers, a resource part repeats when its window times out, a channel message repeats
+    /// until the far side acknowledges it. The hashable part of a packet excludes the hop
+    /// count, so a retransmission hashes identically to the frame it retransmits; without
+    /// this exemption the first copy would filter every copy after it.
+    private static let filterExemptContexts: Set<Packet.Context> = [
+        .keepalive, .resourceRequest, .resourceProof, .resource, .cacheRequest, .channel,
+    ]
+
+    /// The stack's live filter: Python's `Transport.packet_filter` and the
+    /// `add_packet_hash` its caller reaches afterwards, merged into one call.
+    ///
+    /// Returns `false` for a packet the stack should drop—a duplicate, or one of the shapes
+    /// `applyFilter` rejects outright. `handleIncoming` counts every `false` as a packet
+    /// filter hit, which is what `interface.packet_filter_hit()` does upstream
+    /// (`Transport.py:1795`).
     func filterAndRecord(packet: Packet) -> Bool {
+        applyFilter(to: packet, recording: true)
+    }
+
+    /// Python's `Transport.packet_filter(packet)` verbatim: the same verdict `filterAndRecord`
+    /// reaches, without recording the packet.
+    ///
+    /// Both spellings run this one implementation, so the public filter can't answer
+    /// differently from the filter the stack actually applies.
+    public func packetFilter(_ packet: Packet) -> Bool {
+        applyFilter(to: packet, recording: false)
+    }
+
+    /// `Transport.packet_filter` (`Transport.py:1623-1680`), in Python's order.
+    ///
+    /// The order carries meaning: the context exemptions precede the PLAIN and GROUP
+    /// ceilings, and both of those return before the duplicate check, so the filter never
+    /// deduplicates a PLAIN or a GROUP packet.
+    ///
+    /// Python counts a protocol violation at five points in this function, and all five are
+    /// unreachable: an `if packet.receiving_interface` guards each one, `Packet.__init__`
+    /// leaves that `None` (`Packet.py:166`), `unpack()` never sets it, and the single caller
+    /// assigns it only after the filter returns (`Transport.py:1795-1799`). Counting them
+    /// here would make this port's `Violatns.` column disagree with the daemon it mirrors,
+    /// so it deliberately doesn't—see `RNStatusRenderer`.
+    private func applyFilter(to packet: Packet, recording: Bool) -> Bool {
+        // A shared instance filters on behalf of the clients attached to it, so a client
+        // repeating that work only drops packets the instance already vetted. Python's
+        // `add_packet_hash` is likewise a no-op on a client (`Transport.py:1619-1621`),
+        // which is why this path records nothing either.
+        if isConnectedToSharedInstance { return true }
+
         // Filter packets explicitly addressed to a *different* transport instance.
-        // Mirrors Python `Transport.packet_filter`:
-        //   if packet.transport_id != None and packet.packet_type != ANNOUNCE:
-        //       if packet.transport_id != Transport.identity.hash: return False
-        // A HEADER_2 packet carries the next-hop transport_id; if that names
-        // another node (and it isn't a flooded announce), the packet is meant
-        // for that node—dropping it here prevents duplicate forwarding and
-        // routing loops on shared media with ≥2 transport nodes. A shared-
-        // instance client skips this (the shared instance already filtered).
-        if !isConnectedToSharedInstance,
-           packet.packetType != .announce,
+        // A HEADER_2 packet carries the next-hop transport_id; if that names another node
+        // (and it isn't a flooded announce), that node owns the packet—dropping it
+        // here prevents duplicate forwarding and routing loops on shared media with ≥2
+        // transport nodes.
+        if packet.packetType != .announce,
            let tid = packet.transportID,
            tid != transportInstanceID {
             return false
         }
 
-        // PLAIN destination packets with hops > 1 are dropped.
-        // Python: "if destination_type == PLAIN and hops > 1: drop"
-        // Allows hops=0 (direct) and hops=1 (one relay hop, for example, path requests).
-        if packet.destinationType == .plain && packet.hops > 1 { return false }
+        if Self.filterExemptContexts.contains(packet.context) {
+            if recording { rememberPacketHash(packet) }
+            return true
+        }
 
-        // GROUP destination packets with hops > 1 are dropped (local broadcast only).
-        // Mirrors Python: "if destination_type == GROUP and hops > 1: drop"
-        if packet.destinationType == .group && packet.hops > 1 { return false }
+        // An announce only means anything for a SINGLE destination, so a PLAIN or GROUP one
+        // is a malformed frame at any hop count and the following ceiling never applies.
+        if packet.destinationType == .plain || packet.destinationType == .group {
+            if packet.packetType == .announce { return false }
+            // Allows hops=0 (direct) and hops=1 (one relay hop, for example, path requests).
+            if packet.hops > 1 { return false }
+            if recording { rememberPacketHash(packet) }
+            return true
+        }
 
         guard let hash = Self.packetHashlistKey(packet) else { return false }
+        // Resolved before this path takes `hashlistLock`, because it reads `linkRoutes`
+        // under `lock`; the two are only ever acquired in that order.
+        let remembers = recording && shouldRememberHash(of: packet)
         hashlistLock.lock()
         defer { hashlistLock.unlock() }
         // Two-generation dedup: drop if seen in current or previous window.
         if packetHashlist.contains(hash) || packetHashlistPrev.contains(hash) {
-            // Mirrors Python: SINGLE announces are allowed through the packet filter
-            // multiple times (to allow path table updates via multiple paths).
+            // The filter passes SINGLE announces more than once, so that path tables can
+            // update via multiple paths. Anything else reaching here with a seen hash is an
+            // announce for a LINK destination, which is a malformed frame.
             if packet.packetType == .announce && packet.destinationType == .single {
                 return true
             }
             return false
         }
-        // LRR and LRPROOF are excluded from the hashlist (link handshake
-        // packets need to be able to pass through multiple times).
-        if packet.packetType != .linkRequest && packet.context != .lrproof {
-            packetHashlist.insert(hash)
-            // Rotate when current generation reaches the size limit.
-            if packetHashlist.count >= hashlistMaxSize {
-                packetHashlistPrev = packetHashlist
-                packetHashlist = []
-            }
-        }
+        if remembers { insertPacketHashLocked(hash) }
         return true
+    }
+
+    /// Whether this packet is one the hashlist keeps.
+    ///
+    /// Python's `preprocess_inbound` clears `remember_packet_hash` in two cases
+    /// (`Transport.py:1942-1957`), and both are here:
+    ///
+    /// - The destination is a link this node carries for someone else. On shared media such
+    ///   a packet can arrive before this node's turn to route it comes around; storing the
+    ///   hash then would filter the copy it must forward, and link transport through this
+    ///   node would stall.
+    /// - The packet is a link-request proof, which stays out of the list until this node is
+    ///   sure the proof isn't destined for somewhere else in the routing chain.
+    ///
+    /// This port also excludes the link *request*, which Python doesn't; an LRR carries an
+    /// ephemeral public key per attempt, so no repeat ever reaches upstream's filter.
+    ///
+    /// Takes `lock` to read `linkRoutes`, so callers must not already hold `hashlistLock`.
+    private func shouldRememberHash(of packet: Packet) -> Bool {
+        guard packet.packetType != .linkRequest, packet.context != .lrproof else { return false }
+        lock.lock(); defer { lock.unlock() }
+        return linkRoutes[packet.destinationHash] == nil
+    }
+
+    /// Records a packet that returned early, before the duplicate check.
+    ///
+    /// Python reaches its `add_packet_hash` for these too—the call sits in `preprocess_inbound`,
+    /// past the filter (`Transport.py:1959-1961`), so the list holds an exempt or PLAIN packet
+    /// even though the filter never consults the entry. Callers must not hold `hashlistLock`.
+    private func rememberPacketHash(_ packet: Packet) {
+        guard shouldRememberHash(of: packet), let hash = Self.packetHashlistKey(packet) else { return }
+        hashlistLock.lock()
+        defer { hashlistLock.unlock() }
+        insertPacketHashLocked(hash)
+    }
+
+    /// Adds `hash` to the current generation, rotating when it fills. Caller holds the lock.
+    private func insertPacketHashLocked(_ hash: Data) {
+        packetHashlist.insert(hash)
+        if packetHashlist.count >= hashlistMaxSize {
+            packetHashlistPrev = packetHashlist
+            packetHashlist = []
+        }
     }
 
     // MARK: - Packet hashlist persistence
@@ -4722,22 +4808,6 @@ public final class Transport {
     private static func packetHashlistKey(_ packet: Packet) -> Data? {
         guard let hashable = try? packet.hashablePart() else { return nil }
         return Hashes.fullHash(hashable)
-    }
-
-    /// Returns true if the packet should be processed (not a duplicate, passes type/hop rules).
-    /// Mirrors Python `Transport.packet_filter(packet)`—simplified to dedup check only;
-    /// full filtering is done inside `handleIncoming`.
-    public func packetFilter(_ packet: Packet) -> Bool {
-        guard let hash = Self.packetHashlistKey(packet) else { return true }
-        hashlistLock.lock()
-        let seen = packetHashlist.contains(hash) || packetHashlistPrev.contains(hash)
-        hashlistLock.unlock()
-        if seen {
-            // Announces for SINGLE destinations pass even if seen (Python parity)
-            if packet.packetType == .announce && packet.destinationType == .single { return true }
-            return false
-        }
-        return true
     }
 
     /// Test helper: directly insert a hash into the packet hashlist.

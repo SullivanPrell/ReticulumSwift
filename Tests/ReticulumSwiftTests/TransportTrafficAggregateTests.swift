@@ -188,8 +188,12 @@ final class TransportTrafficAggregateTests: XCTestCase {
         t.register(interface: iface)
         defer { t.deregister(interface: iface) }
 
-        t.handleIncoming(packet: Self.plainPacket(), from: iface)
-        t.handleIncoming(packet: Self.plainPacket(), from: iface)
+        // A SINGLE destination, because that's what reaches the duplicate check. Python
+        // answers `True` for a PLAIN packet below the hop ceiling without ever consulting
+        // the hashlist (`Transport.py:1654-1655`), so a replayed PLAIN frame *is* received
+        // traffic and this test would be asserting the opposite of upstream.
+        t.handleIncoming(packet: Self.singlePacket(), from: iface)
+        t.handleIncoming(packet: Self.singlePacket(), from: iface)
 
         XCTAssertEqual(t.rxPackets, 1,
                        """
@@ -277,6 +281,13 @@ final class TransportTrafficAggregateTests: XCTestCase {
     }
 
     // MARK: - Fixtures
+
+    private static func singlePacket(byte: UInt8 = 0x01) -> Packet {
+        Packet(destinationType: .single,
+               packetType: .data,
+               destinationHash: Data(repeating: 0x34, count: Constants.truncatedHashLength),
+               data: Data([byte]))
+    }
 
     private static func plainPacket(byte: UInt8 = 0x01) -> Packet {
         Packet(destinationType: .plain,
