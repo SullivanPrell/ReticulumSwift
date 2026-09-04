@@ -14,6 +14,10 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
+    /// Python marks this type discoverable (`BackboneInterface.py:154`). The announcer
+    /// still needs `discoverable` set from config before it announces anything.
+    public let supportsDiscovery = true
+
     // MARK: - Constants (mirrors Python BackboneClientInterface)
 
     /// Maximum hardware MTU in bytes.

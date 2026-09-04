@@ -91,6 +91,36 @@ public final class InterfaceState {
         /// key and size (`TCPInterface.py:594-641`), and `rnstatus` reports it. Nothing stored
         /// it before, so `InterfaceStatsPayload` hardcoded `ifac_netname` to nil (`bugs/015`).
         var ifacNetname: String?
+
+        // MARK: Interface discovery, publish side
+        //
+        // Python declares `discoverable` and `last_discovery_announce` in
+        // `Interface.__init__` (`Interface.py:118-119`) and assigns the other fifteen per
+        // interface in `Reticulum.interface_post_init` (`Reticulum.py:953-967`). They're
+        // runtime-mutated—`Discovery.py:86` writes `last_discovery_announce` on every
+        // announce, and `:127-129` overwrites the three location values from the
+        // `location_cmd` script's output—so they belong on the box rather than being
+        // `{ get }`-only, which is the `bugs/025` shape.
+        //
+        // None of them is inherited by a spawned client; see `inherit(from:)`.
+
+        var discoverable: Bool = false
+        var lastDiscoveryAnnounce: TimeInterval = 0
+        var discoveryAnnounceInterval: TimeInterval?
+        var discoveryPublishIfac: Bool = false
+        var reachableOn: String?
+        var discoveryName: String?
+        var discoveryLxmfAddress: Data?
+        var discoveryEncrypt: Bool = false
+        var discoveryStampValue: Int?
+        var discoveryLocation: String?
+        var discoveryLatitude: Double?
+        var discoveryLongitude: Double?
+        var discoveryHeight: Double?
+        var discoveryFrequency: Int?
+        var discoveryBandwidth: Int?
+        var discoveryModulation: Int?
+        var discoveryChannel: Int?
     }
 
     private let lock: UnsafeMutablePointer<os_unfair_lock>
@@ -289,6 +319,124 @@ public final class InterfaceState {
         set { write(\.tunnelID, newValue) }
     }
 
+    // MARK: - Interface discovery, publish side
+
+    /// Python: `interface.discoverable` (`Interface.py:118`, config key at `Reticulum.py:901`).
+    /// Announcing an interface as a discoverable endpoint needs both this and
+    /// `supportsDiscovery`, which is a per-type capability rather than a config choice.
+    public var discoverable: Bool {
+        get { read(\.discoverable) }
+        set { write(\.discoverable, newValue) }
+    }
+
+    /// Python: `interface.last_discovery_announce` (`Interface.py:119`), stamped by the
+    /// announcer before it builds the payload (`Discovery.py:86`).
+    public var lastDiscoveryAnnounce: TimeInterval {
+        get { read(\.lastDiscoveryAnnounce) }
+        set { write(\.lastDiscoveryAnnounce, newValue) }
+    }
+
+    /// Python: `interface.discovery_announce_interval`, seconds between announces. The config
+    /// key is `announce_interval` in *minutes* with a five-minute floor, defaulting to six
+    /// hours (`Reticulum.py:905-909`).
+    public var discoveryAnnounceInterval: TimeInterval? {
+        get { read(\.discoveryAnnounceInterval) }
+        set { write(\.discoveryAnnounceInterval, newValue) }
+    }
+
+    /// Python: `interface.discovery_publish_ifac`—publish this interface's IFAC network name
+    /// and key in the announce, so a peer can generate a working config entry
+    /// (`Discovery.py:203-205`).
+    public var discoveryPublishIfac: Bool {
+        get { read(\.discoveryPublishIfac) }
+        set { write(\.discoveryPublishIfac, newValue) }
+    }
+
+    /// Python: `interface.reachable_on`—the hostname or address peers should dial. Either a
+    /// literal, or a path to an executable printing one (`Discovery.py:159-176`).
+    public var reachableOn: String? {
+        get { read(\.reachableOn) }
+        set { write(\.reachableOn, newValue) }
+    }
+
+    /// Python: `interface.discovery_name`, the operator-facing name in the announce.
+    public var discoveryName: String? {
+        get { read(\.discoveryName) }
+        set { write(\.discoveryName, newValue) }
+    }
+
+    /// Python: `interface.discovery_lxmf_address`—the operator's LXMF address, published as
+    /// `OP_ADDR` (`Discovery.py:147`). A truncated destination hash, so 16 bytes here.
+    public var discoveryLxmfAddress: Data? {
+        get { read(\.discoveryLxmfAddress) }
+        set { write(\.discoveryLxmfAddress, newValue) }
+    }
+
+    /// Python: `interface.discovery_encrypt`—encrypt the announce payload to the network
+    /// identity, so only nodes holding it can read the endpoint (`Discovery.py:217-224`).
+    public var discoveryEncrypt: Bool {
+        get { read(\.discoveryEncrypt) }
+        set { write(\.discoveryEncrypt, newValue) }
+    }
+
+    /// Python: `interface.discovery_stamp_value`—proof-of-work cost for this interface's
+    /// announces, falling back to `InterfaceAnnouncer.DEFAULT_STAMP_VALUE` of 16.
+    public var discoveryStampValue: Int? {
+        get { read(\.discoveryStampValue) }
+        set { write(\.discoveryStampValue, newValue) }
+    }
+
+    /// Python: `interface.discovery_location`—path to an executable printing
+    /// `latitude,longitude,height`, evaluated per announce (`Discovery.py:110-134`).
+    public var discoveryLocation: String? {
+        get { read(\.discoveryLocation) }
+        set { write(\.discoveryLocation, newValue) }
+    }
+
+    /// Python: `interface.discovery_latitude`, degrees in `[-90, 90]`.
+    public var discoveryLatitude: Double? {
+        get { read(\.discoveryLatitude) }
+        set { write(\.discoveryLatitude, newValue) }
+    }
+
+    /// Python: `interface.discovery_longitude`, degrees in `[-180, 180]`.
+    public var discoveryLongitude: Double? {
+        get { read(\.discoveryLongitude) }
+        set { write(\.discoveryLongitude, newValue) }
+    }
+
+    /// Python: `interface.discovery_height`, metres in `[-4000, 1e6]`.
+    public var discoveryHeight: Double? {
+        get { read(\.discoveryHeight) }
+        set { write(\.discoveryHeight, newValue) }
+    }
+
+    /// Python: `interface.discovery_frequency`, Hz. Published for the radio interface types.
+    public var discoveryFrequency: Int? {
+        get { read(\.discoveryFrequency) }
+        set { write(\.discoveryFrequency, newValue) }
+    }
+
+    /// Python: `interface.discovery_bandwidth`, Hz.
+    public var discoveryBandwidth: Int? {
+        get { read(\.discoveryBandwidth) }
+        set { write(\.discoveryBandwidth, newValue) }
+    }
+
+    /// Python: `interface.discovery_modulation`, read with `as_int` (`Reticulum.py:921`).
+    public var discoveryModulation: Int? {
+        get { read(\.discoveryModulation) }
+        set { write(\.discoveryModulation, newValue) }
+    }
+
+    /// Python: `interface.discovery_channel`. Weave's announce branch reads it
+    /// (`Discovery.py:194`) and no config key writes it, so it stays whatever the interface
+    /// itself sets.
+    public var discoveryChannel: Int? {
+        get { read(\.discoveryChannel) }
+        set { write(\.discoveryChannel, newValue) }
+    }
+
     // MARK: - Spawned-interface inheritance
 
     /// Copy every inheritable attribute from a parent interface's state onto this one.
@@ -334,6 +482,29 @@ public final class InterfaceState {
         // Per-connection, not inherited.
         incoming.wantsTunnel = false
         incoming.tunnelID = nil
+
+        // Per-endpoint, not inherited. Python's spawn block copies nineteen attributes
+        // (`TCPInterface.py:594-641`) and no discovery attribute is among them: a spawned
+        // client is one accepted connection on the parent's listener, not a separately
+        // reachable endpoint. Inheriting `discoverable` would announce the parent's
+        // `reachable_on` once per connected peer.
+        incoming.discoverable = false
+        incoming.lastDiscoveryAnnounce = 0
+        incoming.discoveryAnnounceInterval = nil
+        incoming.discoveryPublishIfac = false
+        incoming.reachableOn = nil
+        incoming.discoveryName = nil
+        incoming.discoveryLxmfAddress = nil
+        incoming.discoveryEncrypt = false
+        incoming.discoveryStampValue = nil
+        incoming.discoveryLocation = nil
+        incoming.discoveryLatitude = nil
+        incoming.discoveryLongitude = nil
+        incoming.discoveryHeight = nil
+        incoming.discoveryFrequency = nil
+        incoming.discoveryBandwidth = nil
+        incoming.discoveryModulation = nil
+        incoming.discoveryChannel = nil
 
         os_unfair_lock_lock(lock)
         storage = incoming
