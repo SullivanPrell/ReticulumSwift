@@ -3,6 +3,40 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.13.0]—Traffic aggregates a Python `rnstatus` reads without asking
+
+`Reticulum.get_interface_stats()` publishes thirty-one top-level fields this port never
+emitted: the announce and path-request byte, speed and frequency totals, packets per second,
+and the inbound queue depths and pressures.
+
+Presence isn't optional for most of them. `rnstatus` guards the per-interface fields with
+`if "key" in ifstat`, but subscripts the top-level ones bare—`stats['rxpps']` under `-p`,
+`stats['rxqt']` under `-q` (`rnstatus.py:740`, `:785`). An operator running their own Python
+`rnstatus` against a Swift daemon got a `KeyError` traceback and no output at all, which is
+the failure a missing `txdrp` produced in 1.11.0.
+
+`sampleInterfaceSpeeds` derives the announce and path-request aggregates in the pass that
+already computes `rxs`/`txs` from the same per-interface counters, so `arxb` and `arxs` can
+never describe different traffic. Byte totals accumulate, and each pass reassigns the
+speeds and frequencies, matching `Transport.py:645-671`—an accumulating speed would keep
+climbing after the traffic stopped.
+
+`rxpps` and `txpps` needed transport-level packet counters. The inbound one increments after
+the duplicate filter, where Python has it, so a replayed frame counts as a filter hit rather
+than as received traffic. The outbound one needed a seam: Python funnels every send through
+`Transport.transmit`, while this port called `interface.send` from eighteen places. All
+eighteen now route through `Transport.transmit(_:on:)`, and a structural test fails if a
+nineteenth ever calls an interface directly. Rates round half-to-even, the way Python's
+`int(round())` does.
+
+The queue depths and pressures report zero. This port has no traffic-class worker queues:
+`handleIncoming` runs each frame to completion on the receiving interface's thread, so the
+momentary depth really is zero and nothing is ever dropped for want of queue space. Zero is
+the accurate reading rather than a placeholder, and porting the queues turns these into reads
+of the snapshot.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2.
+
 ## [1.12.0]—Relays now check the proofs they forward
 
 A transport node relaying a link-request proof forwarded it without looking at the signature.

@@ -33,10 +33,10 @@ final class RNStatusInProcessTests: XCTestCase {
         transport.transportEnabled = false
         transport.register(interface: StubInterface(name: "stub"))
 
-        // Python: interfaces, rxb, txb, rxs, txs, then rss LAST. The transport block only
-        // appears when Reticulum.transport_enabled().
+        // Python emits the aggregate block unconditionally and appends rss LAST. The
+        // transport block in between only appears when Reticulum.transport_enabled().
         XCTAssertEqual(keys(InterfaceStatsPayload.build(transport)),
-                       ["interfaces", "rxb", "txb", "rxs", "txs", "rss"])
+                       InterfaceStatsTopLevelKeysTests.expectedOrder + ["rss"])
     }
 
     func testTopLevelKeyOrderWithTransportEnabled() {
@@ -49,8 +49,8 @@ final class RNStatusInProcessTests: XCTestCase {
         // `rnstatus -j` preserves insertion order, so the position is contractual.
         let ordered = keys(InterfaceStatsPayload.build(transport))
         XCTAssertEqual(ordered,
-                       ["interfaces", "rxb", "txb", "rxs", "txs",
-                        "transport_id", "network_id", "transport_uptime", "probe_responder", "rss"])
+                       InterfaceStatsTopLevelKeysTests.expectedOrder
+                       + ["transport_id", "network_id", "transport_uptime", "probe_responder", "rss"])
         XCTAssertEqual(ordered.last, "rss")
     }
 
@@ -65,7 +65,7 @@ final class RNStatusInProcessTests: XCTestCase {
 
     func testEmptyPayloadShape() {
         XCTAssertEqual(keys(InterfaceStatsPayload.empty),
-                       ["interfaces", "rxb", "txb", "rxs", "txs", "rss"])
+                       InterfaceStatsTopLevelKeysTests.expectedOrder + ["rss"])
         XCTAssertNotNil(RNStatusStats(InterfaceStatsPayload.empty))
     }
 
