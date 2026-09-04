@@ -87,6 +87,10 @@ final class LinkTableCountTests: XCTestCase {
                                              lastHeard: Date(),
                                              identityHash: bId.hash),
                    forDestination: bDest.hash)
+        // A relay validates the signature on every link-request proof it forwards, so it
+        // needs the responder's identity. A real relay always has it: the announce that
+        // taught it the path is the packet that carried the keys.
+        rT.restore(identity: bId, forDestination: bDest.hash)
 
         let aE = expectation(description: "initiator"), bE = expectation(description: "responder")
         aT.onLinkEstablished = { _ in aE.fulfill() }

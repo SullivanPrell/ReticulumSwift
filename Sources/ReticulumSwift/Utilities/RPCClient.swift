@@ -144,6 +144,10 @@ public final class RPCClient {
     /// Python: `get_link_count()`.
     public func linkCount() throws -> Int? { try get("link_count").asInt }
 
+    /// Python: `get_active_link_count()`. A daemon predating the verb answers nil, and every
+    /// caller treats that the same as "no suffix to render".
+    public func activeLinkCount() throws -> Int? { try get("active_link_count").asInt }
+
     /// Python: `get_next_hop(destination_hash)`.
     public func nextHop(destinationHash: Data) throws -> Data? {
         if case .bytes(let hop) = try get("next_hop", extra: [("destination_hash", .bytes(destinationHash))]) {

@@ -291,6 +291,15 @@ public final class Transport {
         public let destinationHash: Data
         public var lastHeard: Date
 
+        /// Whether a link-request proof for this route has passed signature validation.
+        ///
+        /// Mirrors Python's `link_table[link_id][IDX_LT_VALIDATED]`, which starts false and is
+        /// set at the single point where the relay verifies a proof against the responder's
+        /// recalled identity (`Transport.py:2661`). Nothing else may set it: the flag has to
+        /// mean "a proof verified", not "a proof arrived", or anything counting validated
+        /// routes ends up counting forgeries.
+        public var validated: Bool = false
+
         /// Hand-written because the interface fields are existentials. They compare by
         /// **identity**—two clients of one server are equal by name and aren't the same
         /// route, which is the whole point.
@@ -302,6 +311,7 @@ public final class Transport {
                 && lhs.responderSideInterfaceName == rhs.responderSideInterfaceName
                 && lhs.destinationHash == rhs.destinationHash
                 && lhs.lastHeard == rhs.lastHeard
+                && lhs.validated == rhs.validated
         }
     }
 
@@ -1706,6 +1716,23 @@ public final class Transport {
     public func getLinkCount() -> Int {
         lock.lock(); defer { lock.unlock() }
         return linkRoutes.count
+    }
+
+    /// Returns the number of link-table entries whose link-request proof this node validated.
+    ///
+    /// The quantity Python's `Transport.active_link_count()` (`Transport.py:3215`) means to
+    /// report. Its own expression doesn't:
+    /// `sum(1 for e in (True for entry in Transport.link_table if entry[IDX_LT_VALIDATED]))`
+    /// iterates a dict, so `entry` is a link ID and `entry[7]` is that ID's eighth byte rather
+    /// than the validated flag. It reports roughly 255 of every 256 entries as active however
+    /// many the relay verified, which makes reproducing it worse than useless—`rnstatus` shows
+    /// the number to an operator, and a number that tracks nothing is worse than no number.
+    ///
+    /// `validated` is set at exactly one place, where `handleLinkRequestProof` checks the
+    /// signature, so this counts verified proofs rather than arrived ones.
+    public func getActiveLinkCount() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return linkRoutes.values.filter { $0.validated }.count
     }
 
     /// Returns all active links as an array.
@@ -3470,17 +3497,49 @@ public final class Transport {
             }
             return
         }
-        // Relay path: forward LRPROOF toward the initiator.
+        // Relay path: a proof only gets forwarded once its signature checks out.
+        //
+        // Python guards the transmit with three conditions (`Transport.py:2641-2669`), and
+        // this is the one place a relayed proof can be examined, so all three live here rather
+        // than inside `forwardLinkTraffic`, which carries ordinary link traffic that has no
+        // signature to check.
+        lock.lock()
+        let route = linkRoutes[packet.destinationHash]
+        lock.unlock()
+        guard let route else { return }
+
+        // 1. Direction. A proof travels responder→initiator, so it must arrive on the side
+        //    facing the responder: `packet.receiving_interface == link_entry[IDX_LT_NH_IF]`.
+        //    Without this, anyone on the initiator side can replay a genuine proof back at the
+        //    responder, and `forwardLinkTraffic`'s "steer to the other side" would send it.
+        guard interface === route.responderSideInterface else { return }
+
+        // 2. Recall. Python calls `RNS.Identity.recall(link_entry[IDX_LT_DSTHASH])` and, when
+        //    that returns None, dies on `.get_public_key()` inside the enclosing
+        //    `except Exception` (`Transport.py:2671`)—logged, not transmitted, and no protocol
+        //    violation, because the proof may be genuine and this node simply can't tell.
+        guard let responderIdentity = recall(identity: route.destinationHash) else { return }
+
+        // 3. Signature.
+        guard Link.proofSignatureIsValid(packet, responderIdentity: responderIdentity) else {
+            notifyProtocolViolation(on: interface)
+            return
+        }
+
         forwardLinkTraffic(packet, from: interface)
+
+        // `link_table[…][IDX_LT_VALIDATED] = True` (Transport.py:2661). Set only here, after
+        // the signature verified, so the flag records verification rather than arrival.
+        lock.lock()
+        linkRoutes[packet.destinationHash]?.validated = true
+        lock.unlock()
+
         // Mirrors Python Transport.py line 2199:
         //   RNS.Identity._used_destination_data(link_entry[IDX_LT_DSTHASH])
         // Mark the destination as recently used so cleanKnownDestinations doesn't
         // evict it while the link is active. Only fires when the destination hash
         // is already known (markDestinationUsed returns false otherwise).
-        lock.lock()
-        let destHash = linkRoutes[packet.destinationHash]?.destinationHash
-        lock.unlock()
-        if let destHash { markDestinationUsed(destHash) }
+        markDestinationUsed(route.destinationHash)
     }
 
     /// Correct this link's hop expectation, and the path table entry behind it,

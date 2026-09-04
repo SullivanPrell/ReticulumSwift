@@ -502,6 +502,41 @@ final class RNStatusRendererTests: XCTestCase {
           + " Uptime is 2d, 3h, 4m and 12.0s, 12 entries in link table\n\n"))
     }
 
+    // MARK: - The active-link suffix
+
+    /// `if active_link_count: lstr = f"{lstr} ({active_link_count} active)"` (rnstatus.py:715).
+    func testTheActiveSuffixFollowsTheTableSize() {
+        let stats = Self.top([Self.baseInterface()], [
+            ("transport_id", .bytes(Data(repeating: 0xDE, count: 16))),
+            ("transport_uptime", .double(90.0)),
+        ])
+        let rendered = Self.renderer { $0.linkStats = true }
+            .render(stats: stats, linkCount: 12, activeLinkCount: 5)
+        XCTAssertTrue(rendered.hasSuffix(
+            " Uptime is 1m and 30.0s, 12 entries in link table (5 active)\n\n"),
+            "the suffix rides the same line as the table size, after the comma a transport ID "
+            + "introduces")
+    }
+
+    func testZeroActiveLinksRenderNoSuffix() {
+        let stats = Self.top([Self.baseInterface()], [("transport_uptime", .double(90.0))])
+        let rendered = Self.renderer { $0.linkStats = true }
+            .render(stats: stats, linkCount: 12, activeLinkCount: 0)
+        XCTAssertTrue(rendered.contains("12 entries in link table"))
+        XCTAssertFalse(rendered.contains("active)"),
+                       "Python's guard is truthiness, so 0 prints nothing rather than "
+                       + "\"(0 active)\"")
+    }
+
+    func testAnAbsentActiveCountRendersNoSuffix() {
+        // A peer that doesn't answer the verb leaves this nil, and the line still has to render.
+        let stats = Self.top([Self.baseInterface()], [("transport_uptime", .double(90.0))])
+        let rendered = Self.renderer { $0.linkStats = true }
+            .render(stats: stats, linkCount: 12, activeLinkCount: nil)
+        XCTAssertTrue(rendered.contains("12 entries in link table"))
+        XCTAssertFalse(rendered.contains("active)"))
+    }
+
     func testTransportWithoutUptimeNeverShowsTheLinkTable() {
         // Python only ever attaches lstr to the "Uptime is …" line.
         let stats = Self.top([Self.baseInterface()], [

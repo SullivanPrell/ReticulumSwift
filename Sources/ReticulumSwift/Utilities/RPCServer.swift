@@ -344,6 +344,10 @@ public final class RPCServer {
             guard let t = transport else { return msgpack(.int(0)) }
             return msgpack(.int(Int64(t.getLinkCount())))
 
+        case "active_link_count":
+            guard let t = transport else { return msgpack(.int(0)) }
+            return msgpack(.int(Int64(t.getActiveLinkCount())))
+
         case "next_hop":
             if let t = transport, let hash = binValue(kv["destination_hash"]),
                let hop = t.nextHop(to: hash) {

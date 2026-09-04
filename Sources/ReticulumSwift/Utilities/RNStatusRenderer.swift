@@ -53,7 +53,10 @@ public struct RNStatusRenderer {
     /// bare link-table line) and the unconditional trailing blank line.
     ///
     /// Python: rnstatus.py:361-675.
-    public func render(stats: RNStatusStats, linkCount: Int?) -> String {
+    /// `activeLinkCount` defaults to nil so a caller that has no such number—a peer predating
+    /// the RPC verb, or the remote `/status` path, which returns only two slots—renders exactly
+    /// what it rendered before.
+    public func render(stats: RNStatusStats, linkCount: Int?, activeLinkCount: Int? = nil) -> String {
         var out = ""
 
         let ordered = stats.sortedInterfaces(by: options.sort, reverse: options.sortReverse)
@@ -73,6 +76,11 @@ public struct RNStatusRenderer {
             lstr = stats.hasTransportID
                 ? ", \(linkCount) entr\(plural) in link table"
                 : " \(linkCount) entr\(plural) in link table"
+            // Python: `if active_link_count: lstr = f"{lstr} ({active_link_count} active)"`
+            // (rnstatus.py:715). The guard is truthiness, so nil and 0 both render nothing.
+            if let activeLinkCount, activeLinkCount != 0 {
+                lstr += " (\(activeLinkCount) active)"
+            }
         }
 
         // Python: rnstatus.py:650-661.

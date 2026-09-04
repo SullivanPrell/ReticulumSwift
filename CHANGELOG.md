@@ -3,6 +3,52 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.12.0]—Relays now check the proofs they forward
+
+A transport node relaying a link-request proof forwarded it without looking at the signature.
+Python validates every one against the responder's recalled identity and branches hard on the
+result (`Transport.py:2641-2669`): a valid proof goes on and marks the link-table entry
+validated, and the receiving interface drops an invalid one and raises a protocol violation.
+It also requires the proof to arrive on the link's next-hop interface, the side facing the
+responder, since that's the only direction a proof can legitimately travel.
+
+This port applied none of the three checks. A link endpoint still validates, so a forged proof
+could never establish a link. What the gap bought an attacker was a Swift transport node that
+would carry the forgery to the initiator for them, from either direction, and never count it.
+The gap dated back to 1.4.2.
+
+All three checks now sit together in `handleLinkRequestProof`, the only place this port can
+examine a relayed proof. `Link.proofSignatureIsValid(_:responderIdentity:)` is the relay
+form of the terminus check. A transport node holds a routing entry and an identity from an
+earlier announce rather than a `Link`, and an LRPROOF's destination hash is the link ID, which
+makes the packet self-describing enough to verify without any link state. Python has the same
+split—`Link.validate_proof` at the terminus, an open-coded copy in `Transport.inbound`.
+
+A relay that can't recall the responder's identity drops the proof without raising a violation,
+matching the Python path where `recall` returns `None` and the enclosing `except Exception`
+swallows the failure. Five existing tests seeded a relay's path table but no identity and so
+went quiet under the new gate. A real relay always has the identity, because the announce that
+taught it the path is the packet that carried the keys. Confirmed against live Python peers: a
+20 KB file still crosses two Python daemons through a Swift hub.
+
+### `active_link_count`
+
+With `LinkRoute.validated` set at the one place this port checks a signature, RNS 1.5.0's
+`active_link_count` becomes portable. `getActiveLinkCount()`, the `active_link_count` RPC verb
+and the `(N active)` suffix `rnstatus` renders beside the table size are all present.
+
+The count deliberately differs from upstream's. `sum(1 for e in (True for entry in
+Transport.link_table if entry[IDX_LT_VALIDATED]))` (`Transport.py:3215`) iterates a dict, so
+`entry` is a link ID and `entry[7]` is that ID's eighth byte rather than the validated flag. It
+reports roughly 255 of every 256 entries as active however many the relay verified. This port
+counts the entries that expression aimed at. Reproducing the bug would put a number
+in front of an operator that tracks nothing at all.
+
+Nil and 0 both render no suffix, matching Python's truthiness guard, so a daemon predating the
+verb prints exactly what it printed before.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2.
+
 ## [1.11.1]—`link_count` reported the wrong links
 
 Python's `Transport.link_count()` is `len(Transport.link_table)` (`Transport.py:3211`). The

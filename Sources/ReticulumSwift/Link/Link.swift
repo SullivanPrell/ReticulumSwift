@@ -1005,6 +1005,33 @@ public final class Link {
     /// activated, so an `onEstablished` observer receives the corrected hop count.
     /// Mirrors the inline signature check Python performs for exactly this
     /// purpose in `Transport.inbound` (Transport.py:2279-2296).
+    /// Validate a link-request proof against a responder identity supplied by the caller.
+    ///
+    /// The relay form of the check below. A transport node has no `Link` object—it holds a
+    /// routing entry and the responder's identity from an earlier announce—so it can't reach
+    /// the instance version, which reads `destination.identity` and `linkID` off `self`.
+    /// Python has the same split: `Link.validate_proof` at the terminus, and an open-coded
+    /// copy in `Transport.inbound` for the relay (`Transport.py:2646-2657`).
+    ///
+    /// An LRPROOF's destination hash *is* the link ID, which is what makes the packet
+    /// self-describing enough to check without any link state.
+    static func proofSignatureIsValid(_ packet: Packet, responderIdentity: Identity) -> Bool {
+        let baseLen = Constants.signatureLength + Constants.halfKeySize
+        guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }
+        let signature = packet.data.prefix(Constants.signatureLength)
+        let responderPubBytes = packet.data[Constants.signatureLength ..< baseLen]
+        // Python recomputes these from `mtu_from_lp_packet`/`mode_from_lp_packet` rather than
+        // slicing. The round-trip is exact—the mask and shift partition the same 24 bits—so
+        // slicing gives identical bytes, and matches how the instance check below reads them.
+        let signallingBytes: Data = packet.data.count == baseLen + 3
+            ? Data(packet.data[baseLen...])
+            : Data()
+        let responderSigPub = responderIdentity.signingPublicKey
+        let signedData = packet.destinationHash + responderPubBytes
+            + responderSigPub.rawRepresentation + signallingBytes
+        return responderSigPub.isValidSignature(signature, for: signedData)
+    }
+
     func proofSignatureIsValid(_ packet: Packet) -> Bool {
         let baseLen = Constants.signatureLength + Constants.halfKeySize
         guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }

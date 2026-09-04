@@ -69,6 +69,10 @@ final class MultiHopLinkTests: XCTestCase {
             ),
             forDestination: bDestination.hash
         )
+        // A relay validates the signature on every link-request proof it forwards, so it
+        // needs the responder's identity. A real relay always has it: the announce that
+        // taught it the path is the packet that carried the keys.
+        rTransport.restore(identity: bIdentity, forDestination: bDestination.hash)
 
         // Watch for both sides reaching ACTIVE.
         let initiatorEstablished = expectation(description: "initiator established")
