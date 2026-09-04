@@ -42,7 +42,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     /// `RECONNECT_MAX_TRIES = None`. Config key: `max_reconnect_tries`.
     public var maxReconnectTries: Int?
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -68,14 +68,14 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
 
     /// Python `TCPClientInterface.__str__` (`TCPInterface.py:456-462`):
     /// `"TCPInterface["+str(self.name)+"/"+ip_str+":"+str(self.target_port)+"]"`, where
-    /// `target_ip` is the configured `target_host` verbatim — Python never resolves it for
-    /// display — and an IPv6 literal is bracketed.
+    /// `target_ip` is the configured `target_host` verbatim—Python never resolves it for
+    /// display—and an IPv6 literal is bracketed.
     ///
     /// The `"Client on …"` form this used to emit belongs to a *server-spawned* client,
     /// whose `name` Python sets to `"Client on "+servername` (`TCPInterface.py:590`).
     /// `rnstatus` hides every interface whose name starts with `TCPInterface[Client`
     /// (`rnstatus.py:397`), so emitting the spawned form here made every interface an
-    /// operator configured invisible in `rnstatus` — see `bugs/013`.
+    /// operator configured invisible in `rnstatus`—see `bugs/013`.
     public var displayName: String {
         let ipString = host.contains(":") ? "[\(host)]" : host
         return "TCPInterface[\(name)/\(ipString):\(port)]"
@@ -98,7 +98,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     }
 
     /// Python's `__init__` runs `initial_connect()` inline (`SYNCHRONOUS_START = True`) and,
-    /// if that fails, starts the `reconnect()` thread rather than raising — a configured
+    /// if that fails, starts the `reconnect()` thread rather than raising—a configured
     /// interface whose peer is down comes up unconnected and keeps trying. This returns as
     /// soon as the dial is in flight, which reaches the same state without stalling
     /// interface synthesis for `INITIAL_CONNECT_TIMEOUT` per unreachable peer.
@@ -134,7 +134,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
 
     // MARK: - Socket options
 
-    /// The option set every dial carries lives in ``RNSSocketOptions`` — the single construction
+    /// The option set every dial carries lives in ``RNSSocketOptions``—the single construction
     /// site for every socket this package opens. It was declared *here* through 1.7.0 and wired
     /// into the two dial paths only, so `TCPServerInterface`'s listener, `LocalInterface`'s dial,
     /// the RPC listener and the SAM socket all kept taking Network.framework's defaults, which
@@ -143,7 +143,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     /// them.
 
     /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
-    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
     private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
     // MARK: - Connect / reconnect
@@ -154,15 +154,15 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
             port: NWEndpoint.Port(rawValue: port)!
         )
         // Re-check `stopped` and publish the new connection atomically, so a concurrent
-        // stop() either wins (we bail) or cancels the connection we just assigned.
+        // stop() either wins (this path bails) or cancels the connection just assigned.
         stateLock.lock()
         guard !stopped else { stateLock.unlock(); return }
         let socketOptions = RNSSocketOptions.tcpParameters()
         handedOverTCPOptionsForTesting = socketOptions.options
         let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
-        // Cancel whatever we are replacing. A reconnect fires from a timer, not from
-        // stop(), so the predecessor is still live here — and a peer that sent FIN leaves
-        // it in CLOSE_WAIT until something closes our half.
+        // Cancel whatever is being replaced. A reconnect fires from a timer, not from
+        // stop(), so the predecessor is still live here—and a peer that sent FIN leaves
+        // it in CLOSE_WAIT until something closes this half.
         let superseded = connection
         connection = conn
         dials += 1
@@ -174,8 +174,8 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
 
         conn.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
-            // After a redial this handler still fires for the superseded connection —
-            // its `.cancelled` arrives once the replacement is already live. Acting on it
+            // After a redial this handler still fires for the superseded connection—its
+            // `.cancelled` arrives once the replacement is already live. Acting on it
             // would take the healthy connection offline and schedule a redial that
             // abandons it uncancelled. Python guards the same window with
             // `if not self.reconnecting`.
@@ -255,9 +255,9 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
         }
         // Publish before resuming, and under the same lock that `stop()` takes. Resuming
         // first leaves a window in which a concurrent `stop()` cancels the *previous*
-        // timer and never sees this one — an interface that keeps dialing after teardown.
+        // timer and never observes this one—an interface that keeps dialing after teardown.
         stateLock.lock()
-        // `cancelUnstarted()`, not `cancel()`: this timer has not been resumed, and releasing a
+        // `cancelUnstarted()`, not `cancel()`: this timer hasn't been resumed, and releasing a
         // suspended dispatch source traps in libdispatch (`bugs/032`).
         guard !stopped else { stateLock.unlock(); timer.cancelUnstarted(); return }
         reconnectCount += 1

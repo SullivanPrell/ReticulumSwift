@@ -31,7 +31,7 @@ final class PacketSendConvenienceTests: XCTestCase {
     }
 
     func testPacketSendViaTransport() throws {
-        // Test Transport.send(packet) — the primary Swift API
+        // Test Transport.send(packet)—the primary Swift API
         let t = Transport()
         let id = Identity()
         let dest = try Destination(identity: id, direction: .in, kind: .single,

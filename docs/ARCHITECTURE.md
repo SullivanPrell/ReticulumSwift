@@ -91,16 +91,15 @@ Sources/CI2PDCShims/          Clang module wrapping the i2pd C API (see Package.
   the `Reticulum` / `Transport` API directly. (`rnsd` still exposes the Python
   RPC port `37429` for compatibility with Python client tools.)
 - **Persistence lives on `Transport`.** Known destinations, path table, ratchets,
-  and packet hashlists are snapshotted to `storagePath` on `stop()` /
-  `checkpoint()` and rehydrated on `start()`. Identities and ratchet privates are
-  persisted alongside.
-- **IFAC uses deterministic Ed25519** (RFC 8032, pure Swift) so it is
+  and packet hashlists snapshot to `storagePath` on `stop()` / `checkpoint()` and
+  rehydrate on `start()`. Identities and ratchet privates persist alongside them.
+- **IFAC uses deterministic Ed25519** (RFC 8032, pure Swift) so it's
   bit-for-bit compatible with Python's pure25519 signing. `ifac_size` in the
   config is in **bits** (so `ifac_size = 64` means an 8-byte field).
 - **Crypto is CryptoKit-only.** Curve25519, HMAC-SHA256, HKDF, SHA-256/512 come
   from CryptoKit; AES-CBC from CommonCrypto. No third-party crypto libraries.
-- **Thread safety.** `Transport` is not actor-isolated; callers must serialize
-  access (e.g. drive it from a single queue). The test suite is single-threaded.
+- **Thread safety.** `Transport` isn't actor-isolated; callers must serialize
+  access (for example, drive it from a single queue). The test suite is single-threaded.
 
 ## How it maps to Python
 
@@ -117,4 +116,4 @@ Sources/CI2PDCShims/          Clang module wrapping the i2pd C API (see Package.
 | `Interfaces.*` | `RNS.Interfaces.*` |
 
 To trace a behavior against the reference, the corresponding Python file is the
-authoritative source — see <https://github.com/markqvist/Reticulum>.
+authoritative source—see <https://github.com/markqvist/Reticulum>.

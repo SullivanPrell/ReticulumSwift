@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for Transport.awaitPath() — blocking path resolution.
+/// Tests for Transport.awaitPath()—blocking path resolution.
 final class AwaitPathTests: XCTestCase {
 
     final class LoopbackInterface: Interface {

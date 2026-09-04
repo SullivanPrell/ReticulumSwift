@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for RNS formatting utilities:
-///   - RNS.prettysize() — SI prefix (1000-based, matching Python)
+///   - RNS.prettysize()—SI prefix (1000-based, matching Python)
 ///   - RNS.prettyspeed()
 ///   - RNS.prettyb256rep() / RNS.b256rep()
 ///   - RNS.prettyfrequency()

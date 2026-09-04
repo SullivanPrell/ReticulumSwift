@@ -59,7 +59,7 @@ public extension RNIDApp {
 
 public extension RNIDApp {
 
-    /// Split a dotted destination name the way Python's `str.split(".")` does — **preserving
+    /// Split a dotted destination name the way Python's `str.split(".")` does—**preserving
     /// empty components**.
     ///
     /// This is deliberately *not* ``Destination/appAndAspects(fromFullName:)``, which uses
@@ -86,7 +86,7 @@ public enum RNIDDestinationHash {
 
     /// Python: `Destination.hash(identity_bytes, app_name, *aspects)`.
     /// Returns `nil` where Python raises `TypeError("Invalid material supplied for
-    /// destination hash calculation")`, i.e. when the hash is not exactly 16 bytes.
+    /// destination hash calculation")`, that is, when the hash isn't exactly 16 bytes.
     public static func hash(identityHash: Data, appName: String, aspects: [String]) -> Data? {
         guard identityHash.count == Constants.truncatedHashLength else { return nil }
         let nameHash = Destination.computeNameHash(appName: appName, aspects: aspects)
@@ -95,7 +95,7 @@ public enum RNIDDestinationHash {
 
     /// Python: `Destination.hash_from_name_and_identity(full_name, identity_bytes)`.
     ///
-    /// The split uses Python semantics (empty components preserved) — see
+    /// The split uses Python semantics (empty components preserved)—see
     /// ``RNIDApp/splitAspects(_:)``.
     public static func hash(fromFullName fullName: String, identityHash: Data) -> Data? {
         let components = RNIDApp.splitAspects(fullName)
@@ -132,7 +132,7 @@ public extension RNIDApp {
         /// Python: a bare `-E` (const `NO_META`, the int 2). `os.path.expanduser(2)` raises
         /// an *uncaught* `TypeError` in Python; this port reports ``Result/invalidArgs``.
         public var embedMetaWithoutPath: Bool = false
-        /// Python: `--meta-spec <path>`. Used raw — Python never expands it (rnid.py:813).
+        /// Python: `--meta-spec <path>`. Used raw—Python never expands it (rnid.py:813).
         public var metaSpec: String? = nil
         /// Python: `-t <seconds>`, defaulting to `RNS.Transport.PATH_REQUEST_TIMEOUT`.
         public var timeout: TimeInterval = Transport.pathRequestTimeout
@@ -148,7 +148,7 @@ public extension RNIDApp {
     /// The three mutual-exclusion checks `validate_args` performs before any work.
     ///
     /// Python: rnid.py:86-102. All three use a **raw `exit(1)`**, not ``Result/invalidArgs``
-    /// (250) — reproduce that in the executable.
+    /// (250)—reproduce that in the executable.
     ///
     /// Note the empty-list subtlety: `-e`/`-d`/`-V`/`-s` are `nargs="*"`, so a bare `-e`
     /// yields `[]`, which is falsy in Python and therefore contributes **zero** to the

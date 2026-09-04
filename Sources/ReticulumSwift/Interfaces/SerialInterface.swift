@@ -49,7 +49,7 @@ public final class SerialInterface: Interface {
         set { onlineFlag.value = newValue }
     }
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
@@ -71,7 +71,7 @@ public final class SerialInterface: Interface {
 
     // MARK: - Serial configuration
 
-    /// Device path (e.g. `/dev/cu.usbserial-0001`).
+    /// Device path (for example, `/dev/cu.usbserial-0001`).
     public let port: String
 
     /// Baud rate. Python default: `9600`.
@@ -96,7 +96,7 @@ public final class SerialInterface: Interface {
     /// Create a SerialInterface.
     ///
     /// - Parameters:
-    ///   - name:      Interface name (e.g. `"Serial0"`).
+    ///   - name:      Interface name (for example, `"Serial0"`).
     ///   - port:      Device path.
     ///   - speed:     Baud rate (default `9600`). `bitrate` is set equal to this.
     ///   - dataBits:  Data bits (default `8`).
@@ -177,7 +177,7 @@ public final class SerialInterface: Interface {
 
     // MARK: - Outgoing
 
-    /// Send a Reticulum packet.  Called by Transport.
+    /// Send a Reticulum packet. Called by Transport.
     ///
     /// Applies the IFAC mask (when an IFAC key is configured) before framing,
     /// mirroring the central IFAC application in Python `Transport.transmit`.
@@ -190,7 +190,7 @@ public final class SerialInterface: Interface {
 
     /// HDLC-frame `data` and write to the serial port.
     ///
-    /// Python: `process_outgoing(data)` — wraps in FLAG delimiters, writes to serial.
+    /// Python: `process_outgoing(data)`—wraps in FLAG delimiters, writes to serial.
     public func processOutgoing(_ data: Data) {
         guard isOnline else { return }
         let framed = HDLC.frame(data)

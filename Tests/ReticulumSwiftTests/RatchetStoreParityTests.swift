@@ -5,13 +5,13 @@ import XCTest
 ///
 /// The fifth `bugs/029` divergence, and the one the design warned about by name: ratchets carry a
 /// matching *directory* and matching *filenames* on both sides, which is exactly the "looks right
-/// in a directory listing" condition that hid the other four. The contents do not match. The
+/// in a directory listing" condition that hid the other four. The contents don't match. The
 /// reference writes `umsgpack.packb({"ratchet": <32 raw bytes>, "received": <float>})`
 /// (`Identity.py:426-436`, read at `:487-497`); the port wrote JSON with a hex-encoded key and an
 /// ISO-8601 date.
 ///
-/// It is worse than an unreadable file, because both implementations *delete* what they cannot
-/// parse at this path — the reference in `_clean_ratchets` ("Corrupted ratchet data … removing
+/// It's worse than an unreadable file, because both implementations *delete* what they can't
+/// parse at this path—the reference in `_clean_ratchets` ("Corrupted ratchet data … removing
 /// file", `:452-482`), the port in its own loader. So each side silently destroys the other's
 /// forward-secrecy state on the first start after a switch.
 final class RatchetStoreParityTests: XCTestCase {
@@ -30,7 +30,7 @@ final class RatchetStoreParityTests: XCTestCase {
         super.tearDown()
     }
 
-    /// Drive the live learning path — an inbound announce carrying a ratchet — because that is
+    /// Drive the live learning path—an inbound announce carrying a ratchet—because that's
     /// the only thing that writes this file.
     private func learnRatchet(on transport: Transport, aspect: String) throws -> (Data, Data) {
         let iface = LoopbackInterface(name: "ratchet-\(aspect)")
@@ -85,8 +85,8 @@ final class RatchetStoreParityTests: XCTestCase {
 
     /// And it round-trips: a fresh transport pointed at the directory rehydrates.
     ///
-    /// On its own this proves nothing about parity — the port round-tripped its own JSON just as
-    /// happily, and this assertion passed before the fix. It is the regression half of a pair
+    /// On its own this proves nothing about parity—the port round-tripped its own JSON just as
+    /// happily, and this assertion passed before the fix. It's the regression half of a pair
     /// whose parity half is `testReferenceWrittenFileIsRead`, and is meaningless without it.
     func testRoundTrip() throws {
         let transport = Transport()
@@ -101,7 +101,7 @@ final class RatchetStoreParityTests: XCTestCase {
         XCTAssertNotNil(revived.knownRatchetTimes[destHash])
     }
 
-    /// A file the reference wrote is read by this implementation — the direction the port could
+    /// This implementation reads a file the reference wrote—the direction the port could
     /// never do, since it decoded this path as JSON.
     func testReferenceWrittenFileIsRead() throws {
         let destHash = Hashes.truncatedHash(Data("py-written".utf8))
@@ -120,12 +120,12 @@ final class RatchetStoreParityTests: XCTestCase {
                        "a ratchet written by a Python daemon must load here")
     }
 
-    /// `if time.time() < ratchet_data["received"]+Identity.RATCHET_EXPIRY` (`Identity.py:494`) —
-    /// an expired ratchet is not loaded, and `_clean_ratchets` removes the file (`:463,476`).
+    /// `if time.time() < ratchet_data["received"]+Identity.RATCHET_EXPIRY` (`Identity.py:494`)—an
+    /// expired ratchet isn't loaded, and `_clean_ratchets` removes the file (`:463,476`).
     ///
     /// A fresh reference-written ratchet is planted alongside and asserted present. Without that
     /// control the test passes against the *unfixed* build, where nothing loads at all: "the
-    /// expired one is absent" is satisfied by "everything is absent". Verified — it did.
+    /// expired one is absent" is satisfied by "everything is absent". Verified—it did.
     func testExpiredRatchetIsNotLoaded() throws {
         func plant(_ label: String, receivedAgo: TimeInterval) throws -> Data {
             let destHash = Hashes.truncatedHash(Data(label.utf8))
@@ -149,11 +149,11 @@ final class RatchetStoreParityTests: XCTestCase {
                         + "only that nothing was loaded at all")
     }
 
-    /// A file this implementation cannot parse is removed, which is what the reference does with
-    /// one it cannot parse at this path (`Identity.py:459-462,476`). That is also what retires
+    /// A file this implementation can't parse is removed, which is what the reference does with
+    /// one it can't parse at this path (`Identity.py:459-462,476`). That's also what retires
     /// the port's own JSON ratchets on the first start after this change: unlike
     /// `known_destinations.json` and its siblings, these sit at a name the reference *does* use,
-    /// so leaving them would mean leaving a file a Python daemon will delete anyway.
+    /// so leaving them would mean leaving a file a Python daemon deletes anyway.
     func testUnparseableFileIsRemoved() throws {
         let file = dir.appendingPathComponent(Hashes.truncatedHash(Data("junk".utf8)).hexString)
         try Data(#"{"ratchet":"aabb","received":"2026-07-01T00:00:00Z"}"#.utf8).write(to: file)

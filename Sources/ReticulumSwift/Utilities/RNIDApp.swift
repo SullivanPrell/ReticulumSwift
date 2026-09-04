@@ -74,43 +74,43 @@ public enum RNIDApp {
     /// Exit codes returned by the `rnid` command-line tool.
     /// Mirrors the `R_*` module-level constants in `rnid.py`.
     public enum Result: UInt8, Equatable, CaseIterable {
-        /// Success.   Python: `R_OK = 0`.
+        /// Success. Python: `R_OK = 0`.
         case ok                = 0
-        /// No signature file found.   Python: `R_NO_SIG_FILE = 1`.
+        /// No signature file found. Python: `R_NO_SIG_FILE = 1`.
         case noSigFile         = 1
-        /// No identity available.     Python: `R_NO_IDENTITY = 2`.
+        /// No identity available. Python: `R_NO_IDENTITY = 2`.
         case noIdentity        = 2
-        /// No public key.             Python: `R_NO_PUBKEY = 3`.
+        /// No public key. Python: `R_NO_PUBKEY = 3`.
         case noPubKey          = 3
-        /// No private key.            Python: `R_NO_PRVKEY = 4`.
+        /// No private key. Python: `R_NO_PRVKEY = 4`.
         case noPrvKey          = 4
-        /// No key material at all.    Python: `R_NO_KEYS = 5`.
+        /// No key material at all. Python: `R_NO_KEYS = 5`.
         case noKeys            = 5
-        /// Target file not found.     Python: `R_NO_FILE = 6`.
+        /// Target file not found. Python: `R_NO_FILE = 6`.
         case noFile            = 6
-        /// File format invalid.       Python: `R_INVALID_FILE = 7`.
+        /// File format invalid. Python: `R_INVALID_FILE = 7`.
         case invalidFile       = 7
-        /// Identity data invalid.     Python: `R_INVALID_IDENTITY = 8`.
+        /// Identity data invalid. Python: `R_INVALID_IDENTITY = 8`.
         case invalidIdentity   = 8
         /// Destination aspects invalid. Python: `R_INVALID_ASPECTS = 9`.
         case invalidAspects    = 9
         /// Signature verification failed. Python: `R_INVALID_SIGNATURE = 10`.
         case invalidSignature  = 10
-        /// Output file already exists.  Python: `R_FILE_EXISTS = 11`.
+        /// Output file already exists. Python: `R_FILE_EXISTS = 11`.
         case fileExists        = 11
-        /// Decryption failed.          Python: `R_DECRYPT_FAILED = 12`.
+        /// Decryption failed. Python: `R_DECRYPT_FAILED = 12`.
         case decryptFailed     = 12
         /// Invalid argument combination. Python: `R_INVALID_ARGS = 250`.
         case invalidArgs       = 250
         /// Unexpected operation sequence. Python: `R_SEQUENCE_ERROR = 251`.
         case sequenceError     = 251
-        /// Failed to read input.       Python: `R_READ_ERROR = 252`.
+        /// Failed to read input. Python: `R_READ_ERROR = 252`.
         case readError         = 252
-        /// Failed to write output.     Python: `R_WRITE_ERROR = 253`.
+        /// Failed to write output. Python: `R_WRITE_ERROR = 253`.
         case writeError        = 253
-        /// Unknown error.              Python: `R_UNKNOWN_ERROR = 254`.
+        /// Unknown error. Python: `R_UNKNOWN_ERROR = 254`.
         case unknownError      = 254
-        /// Operation was interrupted.  Python: `R_INTERRUPTED = 255`.
+        /// Operation was interrupted. Python: `R_INTERRUPTED = 255`.
         case interrupted       = 255
     }
 }

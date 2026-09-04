@@ -6,7 +6,7 @@ import XCTest
 /// Python reference: `RNS/Utilities/rnsd.py:90-583` (`__example_rns_config__`, printed by
 /// `rnsd --exampleconfig`) and `RNS/Reticulum.py:1818+` (`__default_rns_config__`, written on
 /// a first run). Both are ~15 KB and ~4 KB of prose that no reviewer can diff by eye, so the
-/// SHA-256 assertions are the real guard — they were computed from the Python source with:
+/// SHA-256 assertions are the real guard—they were computed from the Python source with:
 ///
 ///     python3 -c "import re,hashlib; s=re.search(r\"__example_rns_config__ = '''(.*?)'''\",
 ///                 open('RNS/Utilities/rnsd.py').read(), re.S).group(1);
@@ -41,8 +41,8 @@ final class RNSConfigTemplatesTests: XCTestCase {
     }
 
     func testExampleConfigDocumentsTheRNS141GravityKeys() {
-        // RNS 1.4.1 added four directives to `__example_rns_config__`. They are commented
-        // out, so nothing parses them — the point is that a user copying this file as a
+        // RNS 1.4.1 added four directives to `__example_rns_config__`. They're commented
+        // out, so nothing parses them—the point is that a user copying this file as a
         // starting template sees the same options Python's users see.
         for key in ["default_gravity", "autoconnect_interface_mode",
                     "autoconnect_announces_to_internal", "autoconnect_interface_gravity"] {

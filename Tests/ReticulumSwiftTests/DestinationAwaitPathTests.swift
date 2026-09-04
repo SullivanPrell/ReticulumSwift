@@ -51,7 +51,7 @@ final class DestinationAwaitPathTests: XCTestCase {
         let dest = try Destination(identity: identity, direction: .in, kind: .single,
                                    appName: "await", aspects: ["hash"])
 
-        // Seed a path for a different destination — awaitPath must use dest.hash specifically.
+        // Seed a path for a different destination—awaitPath must use dest.hash specifically.
         let other = Hashes.truncatedHash(Data("other".utf8))
         let path = Transport.PathEntry(
             destinationHash: other,

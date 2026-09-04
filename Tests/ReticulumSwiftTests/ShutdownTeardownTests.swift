@@ -1,17 +1,17 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Shutdown tears links down before exiting — `bugs/028`.
+/// Shutdown tears links down before exiting—`bugs/028`.
 ///
 /// The reference tears interfaces down first in both signal handlers (`Reticulum.py:196-205`
 /// calling `Transport.py:3171-3183`): each established link is closed, the queue is allowed to
 /// drain, then each interface is stopped. This port had that function, written correctly, with
-/// **zero callers** — so a Swift node exiting cleanly emitted no `LINK_CLOSE` and every peer held
+/// **zero callers**—so a Swift node exiting cleanly emitted no `LINK_CLOSE` and every peer held
 /// the link ACTIVE until its own keepalive watchdog expired, up to 360 s, with the LXMF, NomadNet
 /// and LXST sessions riding those links hanging rather than failing.
 ///
-/// **Why the obvious test does not help.** A test that calls `detachInterfaces()` directly and
-/// asserts it works already passes — the function was never broken. The missing assertion is that
+/// **Why the obvious test doesn't help.** A test that calls `detachInterfaces()` directly and
+/// asserts it works already passes—the function was never broken. The missing assertion is that
 /// *stopping the stack reaches it*, which is what both tests here are about.
 final class ShutdownTeardownTests: XCTestCase {
 
@@ -30,9 +30,9 @@ final class ShutdownTeardownTests: XCTestCase {
     /// Delivers to its pair, and logs the order of what happened to it.
     ///
     /// The log, rather than a "was anything sent after stop?" flag, because Transport filters its
-    /// broadcast on `isOnline` — a close emitted after the interface was stopped never reaches
+    /// broadcast on `isOnline`—a close emitted after the interface was stopped never reaches
     /// `send(_:)` at all, so its absence there is indistinguishable from a close that was never
-    /// emitted. The sequence is the only thing that tells those apart.
+    /// emitted. The sequence is the only thing that distinguishes those.
     private final class PairedInterface: Interface {
         enum Event: Equatable { case sent(Packet.Context), stopped }
 
@@ -57,7 +57,7 @@ final class ShutdownTeardownTests: XCTestCase {
 
     // MARK: - A peer observes the close promptly
 
-    /// Spec: "A peer observes a link closing promptly" — and not after a keepalive watchdog
+    /// Spec: "A peer observes a link closing promptly"—and not after a keepalive watchdog
     /// timeout.
     func testStoppingAStackClosesItsLinksOnThePeer() throws {
         let aDir = tmpDir.appendingPathComponent("a")
@@ -100,7 +100,7 @@ final class ShutdownTeardownTests: XCTestCase {
 
         // Promptly: the reference's keepalive watchdog would take up to KEEPALIVE_MAX = 360 s to
         // notice. Anything in that range is the defect, so the timeout here is deliberately far
-        // below it — if this needs seconds, nothing was torn down and the peer is merely timing
+        // below it—if this needs seconds, nothing was torn down and the peer is merely timing
         // out on its own.
         wait(for: [closed], timeout: 2.0)
         XCTAssertNotEqual(peerLink.status, .active,
@@ -161,8 +161,8 @@ final class ShutdownTeardownTests: XCTestCase {
     /// interface teardown directly and asserts it works already passes. The missing assertion is
     /// that stopping the stack reaches it."
     ///
-    /// Structural, and deliberately so (D9). There are at least three exit paths — `rnsd`'s signal
-    /// handlers, the shared-instance stop, and an application's own teardown — and this subsystem
+    /// Structural, and deliberately so (D9). There are at least three exit paths—`rnsd`'s signal
+    /// handlers, the shared-instance stop, and an application's own teardown—and this subsystem
     /// has form: RetiOS shipped `StackController.tearDown()` with no callers until v0.3.9, and
     /// `detachInterfaces()` itself sat here with none. What must hold is that they all funnel
     /// through one place and that place tears down *before* it stops the transport, so the
@@ -175,9 +175,9 @@ final class ShutdownTeardownTests: XCTestCase {
                                     in: sources.appendingPathComponent("ReticulumSwift/Reticulum.swift"))
 
         // Comments stripped first. The first draft of this guard searched the raw body and was
-        // satisfied by the comment above the call that *mentions* `detachInterfaces()` — so it
+        // satisfied by the comment above the call that *mentions* `detachInterfaces()`—so it
         // passed with the two calls in the wrong order. Caught by swapping them deliberately;
-        // a guard that cannot fail is worse than no guard, and its own documentation is the
+        // a guard that can't fail is worse than no guard, and its own documentation is the
         // likeliest thing to fool it.
         let code = body.components(separatedBy: .newlines)
             .map { line -> String in
@@ -208,7 +208,7 @@ final class ShutdownTeardownTests: XCTestCase {
     }
 
     /// The shared-instance exit path funnels into `Reticulum.stop()` rather than tearing down its
-    /// own way, so the guard above covers it too.
+    /// own way, so the preceding guard covers it too.
     func testTheSharedInstanceStopPathFunnelsThroughReticulumStop() throws {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()

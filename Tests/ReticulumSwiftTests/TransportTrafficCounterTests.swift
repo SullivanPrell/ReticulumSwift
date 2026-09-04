@@ -32,7 +32,7 @@ final class TransportTrafficCounterTests: XCTestCase {
         let iface = TestInterface()
         t.register(interface: iface)
 
-        // Build a minimal DATA packet via the low-level initialiser used in other tests.
+        // Build a minimal DATA packet via the low-level initializer used in other tests.
         let packet = Packet(
             destinationType: .single,
             packetType: .data,

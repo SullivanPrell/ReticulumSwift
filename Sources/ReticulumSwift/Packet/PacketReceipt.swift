@@ -38,8 +38,8 @@ public final class PacketReceipt {
     /// Mirrors Python's `PacketReceipt.proof_packet` (Packet.py:411), which is likewise
     /// only populated by `validate_proof_packet` → `validate_proof(proof, proof_packet)`
     /// (Packet.py:427-431) and legitimately stays `None` otherwise. Its value to callers
-    /// is the physical-layer metadata the receiving interface stamped on it — `rssi`,
-    /// `snr`, `quality` — which `rnprobe` reports for a delivered probe.
+    /// is the physical-layer metadata the receiving interface stamped on it—`rssi`,
+    /// `snr`, `quality`—which `rnprobe` reports for a delivered probe.
     public private(set) var proofPacket: Packet?
 
     /// Timeout interval in seconds. When `sentAt + timeout < now` the
@@ -151,7 +151,7 @@ public final class PacketReceipt {
     /// Validate an implicit proof: just a 64-byte Ed25519 signature over the
     /// packet hash. Mirrors Python's `PacketReceipt.validate_proof` (IMPL_LENGTH branch).
     ///
-    /// Unlike explicit proofs, implicit proofs cannot be pre-filtered by hash,
+    /// Unlike explicit proofs, implicit proofs can't be pre-filtered by hash,
     /// so the caller must try this against every outstanding receipt.
     @discardableResult
     func validateImplicitProof(_ proof: Data, packet: Packet? = nil) -> Bool {
@@ -162,11 +162,11 @@ public final class PacketReceipt {
         return markDelivered(packet)
     }
 
-    /// Conclude a receipt whose proof has already been validated by the `Link` that owns it.
+    /// Conclude a receipt whose proof the owning `Link` has already validated.
     ///
     /// A link data packet's proof is signed with the link's ephemeral signing key, not with the
-    /// destination identity, so `peerIdentity` cannot verify it and only the `Link` holds
-    /// `peerSigPub`. `Link.receive` checks the signature and calls this; the check is not
+    /// destination identity, so `peerIdentity` can't verify it and only the `Link` holds
+    /// `peerSigPub`. `Link.receive` checks the signature and calls this; the check isn't
     /// skipped, it happens one layer up (`bugs/014`).
     @discardableResult
     func markDeliveredByLinkProof(_ packet: Packet? = nil) -> Bool {
@@ -183,7 +183,7 @@ public final class PacketReceipt {
         status = .delivered
         proved = true
         // Assigned under the same lock as the terminal transition, so a reader that has
-        // seen `.delivered` always sees the matching proof packet.
+        // seen `.delivered` always receives the matching proof packet.
         proofPacket = packet
         concludedAt = Date()
         let cb = _onDelivery
@@ -225,7 +225,7 @@ public final class PacketReceipt {
     /// Mirrors Python `PacketReceipt.get_hash()`.
     public func getHash() -> Data { packetHash }
 
-    /// Returns whether the receipt was proved by the remote destination.
+    /// Returns whether the remote destination proved the receipt.
     /// Mirrors Python `PacketReceipt.get_proved()`.
     public func getProved() -> Bool { proved }
 

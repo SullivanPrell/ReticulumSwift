@@ -1,18 +1,18 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// The last three implemented interface types a config file could not build — the remainder of
+/// The last three implemented interface types a config file couldn't build—the remainder of
 /// `bugs/031` after the first four cases landed. Python constructs `SerialInterface`
 /// (`Reticulum.py:1024-1026`), `RNodeMultiInterface` (`:1044-1047`, plus `start()`) and
 /// `WeaveInterface` (`:1049-1051`) from their blocks; this port had real, tested classes for all
 /// three and dropped their config entries through the default case with an ERROR log calling
-/// them "Unsupported" — a daemon configured with any of them started healthy and had no presence
+/// them "Unsupported"—a daemon configured with any of them started healthy and had no presence
 /// on that medium. Weave is the aggravated case: this port's own discovery emits
 /// `type = WeaveInterface` config entries (`InterfaceDiscovery.swift`, mirroring
 /// `Discovery.py:380-392`) that its own config path then rejected.
 ///
 /// `PipeInterface` is the one documented divergence: not implemented by design (macOS/Linux
-/// subprocess pipes, no mobile use case — CLAUDE.md "Deferred Indefinitely"), so its block takes
+/// subprocess pipes, no mobile use case—CLAUDE.md "Deferred Indefinitely"), so its block takes
 /// the loud unknown-type path, pinned here so the divergence stays recorded.
 final class RemainingConstructionTests: XCTestCase {
 
@@ -75,7 +75,7 @@ final class RemainingConstructionTests: XCTestCase {
 
     /// A `[[[sub]]]` line begins with `[[` and ends with `]]`, so the parser's subsection check
     /// matched it first and every RNodeMulti sub-interface became a *top-level* interface named
-    /// `[High Datarate]` with type Unknown — the multi block itself lost its radio rows.
+    /// `[High Datarate]` with type Unknown—the multi block itself lost its radio rows.
     func testTripleBracketBlocksParseAsSubInterfacesNotInterfaces() {
         let cfg = parse("""
           [[Dual Radio]]
@@ -202,8 +202,8 @@ final class RemainingConstructionTests: XCTestCase {
     }
 
     /// A sub-block is enabled when its own `interface_enabled` is true **or the parent used the
-    /// literal `enabled` spelling** (`RNodeMultiInterface.py:178`,`:188`) — a parent enabled via
-    /// `interface_enabled` does not blanket-enable its subs. Faithfully quirky.
+    /// literal `enabled` spelling** (`RNodeMultiInterface.py:178`,`:188`)—a parent enabled via
+    /// `interface_enabled` doesn't blanket-enable its subs. Faithfully quirky.
     func testSubInterfaceEnablementFollowsThePythonQuirk() {
         let stack = makeStack()
         XCTAssertThrowsError(try stack.synthesizeInterfaces(from: parse("""

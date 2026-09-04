@@ -1,6 +1,6 @@
 import Foundation
 
-/// A port of CPython's `shlex.split(s)` — the exact call `rnx` uses to turn a command
+/// A port of CPython's `shlex.split(s)`—the exact call `rnx` uses to turn a command
 /// string into an argv before handing it to `subprocess.Popen`.
 ///
 /// Python reference: `RNS/Utilities/rnx.py:36, 179`, backed by CPython's
@@ -17,13 +17,13 @@ import Foundation
 ///   `'it\'s'` raises ``ShellWordsError/noClosingQuotation(_:)``.
 /// - Inside double quotes a backslash escapes only `"` and `\`; before anything else the
 ///   backslash survives, so `"a\nb"` is the four characters `a \ n b`.
-/// - Outside quotes a backslash escapes the next character verbatim — including a
+/// - Outside quotes a backslash escapes the next character verbatim—including a
 ///   newline, which yields a **literal newline** rather than a line continuation.
-/// - `#` is not a comment introducer (`commenters` is cleared), so
+/// - `#` isn't a comment introducer (`commenters` is cleared), so
 ///   `echo # comment` → `["echo", "#", "comment"]`.
 ///
 /// There is no shell involved: pipes, redirects, globs and `&&` all come out as plain
-/// argv elements, exactly as in Python. Do not "fix" this — it is wire-visible behaviour.
+/// argv elements, exactly as in Python. Don't "fix" this—it's wire-visible behaviour.
 public enum RNXShellWords {
 
     /// Python: `shlex.shlex.whitespace = ' \t\r\n'`. Deliberately excludes `\u{0B}`/`\u{0C}`.
@@ -32,7 +32,7 @@ public enum RNXShellWords {
     /// Python: `shlex.shlex.quotes = '\'"'`.
     private static let quotes: Set<Character> = ["'", "\""]
 
-    /// Python: `shlex.shlex.escapedquotes = '"'` — backslash escaping only happens
+    /// Python: `shlex.shlex.escapedquotes = '"'`—backslash escaping only happens
     /// inside double quotes, never inside single quotes.
     private static let escapedQuotes: Set<Character> = ["\""]
 
@@ -40,13 +40,13 @@ public enum RNXShellWords {
 
     public enum ShellWordsError: Error, Equatable {
         /// Python: `ValueError("No closing quotation")`. Carries the quote character that
-        /// was left open, which CPython's message does not.
+        /// was left open, which CPython's message doesn't.
         case noClosingQuotation(Character)
-        /// Python: `ValueError("No escaped character")` — a trailing lone backslash.
+        /// Python: `ValueError("No escaped character")`—a trailing lone backslash.
         case noEscapedCharacter
     }
 
-    /// Which branch of `read_token`'s state machine we are in.
+    /// Which branch of `read_token`'s state machine is active.
     /// Mirrors CPython's `self.state`, where the state is literally a character.
     private enum State: Equatable {
         case whitespace     // Python state ' '
@@ -55,7 +55,7 @@ public enum RNXShellWords {
         case escaped(returningTo: EscapedState)
     }
 
-    /// Python's `escapedstate`: either `'a'` (plain word) or the quote we were inside.
+    /// Python's `escapedstate`: either `'a'` (plain word) or the enclosing quote character.
     private enum EscapedState: Equatable {
         case word
         case quote(Character)
@@ -91,7 +91,7 @@ public enum RNXShellWords {
                     } else if c == escape {
                         state = .escaped(returningTo: .word)
                     } else if quotes.contains(c) {
-                        // POSIX mode does not keep the quote character itself.
+                        // POSIX mode doesn't keep the quote character itself.
                         state = .quoted(c)
                     } else {
                         // whitespace_split = True: any other character starts a word.
@@ -141,7 +141,7 @@ public enum RNXShellWords {
 
             // Python: `if self.posix and not quoted and result == '': result = None`,
             // and a None result ends `list(lex)`. Inspecting read_token's break points
-            // shows this can only happen at end of input, so it is the loop's exit.
+            // shows this can only happen at end of input, so it's the loop's exit.
             if token.isEmpty && !quoted { break }
             tokens.append(token)
             if reachedEOF { break }

@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying Link cipher mode constants match Python reference.
-/// Python: Link.MODE_AES128_CBC = 0x00, MODE_AES256_CBC = 0x01, etc.
+/// Python: Link.MODE_AES128_CBC = 0x00, MODE_AES256_CBC = 0x01, and so on
 final class LinkModeConstantsTests: XCTestCase {
 
     func testModeAes128Cbc() {

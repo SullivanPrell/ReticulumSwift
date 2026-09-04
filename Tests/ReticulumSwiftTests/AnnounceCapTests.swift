@@ -81,7 +81,7 @@ final class AnnounceCapTests: XCTestCase {
     // MARK: - Random jitter (Python parity)
 
     /// Python's `Transport.outbound` adds `random() * tx_time/cap` jitter so that
-    /// simultaneously-hearing nodes don't all rebroadcast at exactly the same moment.
+    /// simultaneously hearing nodes don't all rebroadcast at exactly the same moment.
     /// With jitterMultiplierOverride = 0 the window equals exactly txTime/cap.
     func testAllowedAtAdvancedByCapWindowNoJitter() {
         let queue = AnnounceQueue()
@@ -131,7 +131,7 @@ final class AnnounceCapTests: XCTestCase {
     }
 
     /// Jitter override nil → production path uses real random; just verify no crash
-    /// and that allowedAt > now + capWindow (i.e., jitter >= 0).
+    /// and that allowedAt > now + capWindow (that is, jitter >= 0).
     func testProductionJitterIsNonNegative() {
         AnnounceQueue.jitterMultiplierOverride = nil
         let queue = AnnounceQueue()

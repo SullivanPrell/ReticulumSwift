@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// A request response larger than the link MDU must arrive — `bugs/033`.
+/// A request response larger than the link MDU must arrive—`bugs/033`.
 ///
 /// Found by the rebuilt `tri-test` large-page cell: a Swift NomadNet host accepts the link,
 /// logs the request, and sends nothing for any page needing more than one resource part. The
@@ -16,7 +16,7 @@ import XCTest
 /// **Why nothing caught it.** Every existing request/response test fits its response in one
 /// packet, and the resource tests drive `ResourceTransfer` directly rather than through
 /// `handleRequest`'s over-MDU branch. That branch calls `try? rt.send(...)`, so anything it
-/// throws is discarded silently — which is exactly what "logs the request and sends nothing"
+/// throws is discarded silently—which is exactly what "logs the request and sends nothing"
 /// looks like from outside.
 final class LargeRequestResponseTests: XCTestCase {
 
@@ -30,7 +30,7 @@ final class LargeRequestResponseTests: XCTestCase {
         func start() throws { isOnline = true }
         func stop() { isOnline = false }
         func send(_ packet: Packet) throws {
-            // `pack()`, deliberately — because that is what every real interface does
+            // `pack()`, deliberately—because that's what every real interface does
             // (`TCPClientInterface.swift:129`, `TCPServerInterface.swift:163`, and eleven
             // others). Using `packedBytes()` here would make the stub more permissive than any
             // medium the port actually ships, and would hide `bugs/033` exactly the way the
@@ -41,8 +41,8 @@ final class LargeRequestResponseTests: XCTestCase {
         }
     }
 
-    /// Deterministic incompressible bytes, so a size assertion cannot be defeated by the
-    /// compressor — the mechanism that made `tri-test`'s large-page cell unfalsifiable for the
+    /// Deterministic incompressible bytes, so the compressor can't defeat a size assertion through
+    /// compressor—the mechanism that made `tri-test`'s large-page cell unfalsifiable for the
     /// whole life of `bugs/016`.
     private func incompressible(_ count: Int) -> Data {
         var out = Data()
@@ -88,7 +88,7 @@ final class LargeRequestResponseTests: XCTestCase {
         // Comfortably over the base MDU, and over one resource part, so the response has to
         // travel as a multi-part resource.
         let page = incompressible(64 * 1024)
-        // `allow: .all` — the default is `.none`, which refuses every request.
+        // `allow: .all`—the default is `.none`, which refuses every request.
         bDest.registerRequestHandler(path: "/page/large.mu", allow: .all) { _, _, _, _, _ in page }
 
         let got = expectation(description: "response received")
@@ -113,7 +113,7 @@ final class LargeRequestResponseTests: XCTestCase {
     /// `bugs/016` sized resource parts from the negotiated per-link MTU on both sides, so a
     /// response over an upgraded link is segmented completely differently from one over a base
     /// link: 5 parts at an 8120-byte sdu rather than ~142 at 464. The test above exercises only
-    /// the base-MTU path — which passes — so it cannot see a defect that needs the upgraded one.
+    /// the base-MTU path—which passes—so it can't see a defect that needs the upgraded one.
     func testAResponseLargerThanTheMDUIsDeliveredOverAnUpgradedLink() throws {
         let (link, bDest, aT, bT) = try establishedPair(aspect: "large-response-high-mtu")
         defer { withExtendedLifetime((aT, bT)) {} }
@@ -143,7 +143,7 @@ final class LargeRequestResponseTests: XCTestCase {
     }
 
     /// The control: the same path, a response that fits in one packet. If this fails too, the
-    /// defect is not size-dependent and the test above is measuring something else.
+    /// defect isn't size-dependent and the preceding test is measuring something else.
     func testASmallResponseIsDelivered() throws {
         let (link, bDest, aT, bT) = try establishedPair(aspect: "small-response")
         defer { withExtendedLifetime((aT, bT)) {} }

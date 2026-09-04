@@ -134,7 +134,7 @@ final class LinkTimingTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.05)
         let ndBefore = aLink.noDataFor()
 
-        // Send a keepalive from the initiator; this should NOT update lastData.
+        // Send a keepalive from the initiator; this shouldn't update lastData.
         try? aLink.sendKeepalive()
         _ = bLink
 

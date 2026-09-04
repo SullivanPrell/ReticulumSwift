@@ -48,7 +48,7 @@ final class LinkParityTests: XCTestCase {
         }
     }
 
-    /// Spy interface — delivers AND records sent packets.
+    /// Spy interface—delivers AND records sent packets.
     final class SpyInterface: Interface {
         var name: String; var bitrate = 0; var isOnline = true
         weak var paired: SpyInterface?
@@ -191,7 +191,7 @@ final class LinkParityTests: XCTestCase {
     // MARK: - 4. receiveRTT uses max(measured_rtt, reported_rtt)
 
     /// After the fix, the responder's rtt = max(measured, reported).
-    /// Since measured ≈ reported in a synchronous loopback, we just verify rtt is set and positive.
+    /// Since measured ≈ reported in a synchronous loopback, this test only checks that rtt is set and positive.
     func testReceiveRTTSetsRTTOnResponder() throws {
         let (_, bLink, aT, bT) = try establishLink()
         _ = (aT, bT)
@@ -220,7 +220,7 @@ final class LinkParityTests: XCTestCase {
         // After the fix: rtt ≥ max(measured, reported) ≥ measured.
         // The measured_rtt is Date()-requestTime at the time receiveRTT was called.
         // The link is active now, so measured was approximately Date()-rt before.
-        // Due to timing, we just assert the rtt >= 0 and the requestTime was set before activation.
+        // Due to timing, this only asserts rtt >= 0 and the requestTime was set before activation.
         let measured = bLink.establishedAt.map { $0.timeIntervalSince(rt) } ?? 0
         XCTAssertGreaterThanOrEqual(rtt, measured - 0.01,
             "rtt must be at least the measured round-trip time (with small tolerance)")
@@ -228,7 +228,7 @@ final class LinkParityTests: XCTestCase {
 
     // MARK: - 5. LinkRoute stores destinationHash
 
-    /// Python: `link_entry[IDX_LT_DSTHASH]` — the relay stores the destination hash
+    /// Python: `link_entry[IDX_LT_DSTHASH]`—the relay stores the destination hash
     /// so it can call `_used_destination_data` after forwarding LRPROOF.
     func testLinkRouteStoresDestinationHash() throws {
         let (bT, rT, aT, aDest, _) = try makeRelayTopology()

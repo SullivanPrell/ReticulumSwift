@@ -7,9 +7,9 @@ import XCTest
 /// `:2893`).
 ///
 /// The port parsed it, validated it, wrote it onto the interface and let spawned clients
-/// inherit it — and then every rate computation read the hardcoded static
-/// `AnnounceQueue.announceCap` (2%). `bugs/025` with the roles swapped: a value that is never
-/// read fails exactly as one that is never written. An operator raising the cap on a fast
+/// inherit it—and then every rate computation read the hardcoded static
+/// `AnnounceQueue.announceCap` (2%). `bugs/025` with the roles swapped: a value that's never
+/// read fails exactly as one that's never written. An operator raising the cap on a fast
 /// backbone, or lowering it on a slow LoRa link, changed nothing.
 final class AnnounceCapConsumerTests: XCTestCase {
 
@@ -59,7 +59,7 @@ final class AnnounceCapConsumerTests: XCTestCase {
                           """)
         }
 
-        // And the caps are genuinely distinguishable: what a 50% cap admits, 2% does not.
+        // And the caps are genuinely distinguishable: what a 50% cap admits, 2% doesn't.
         let fastWindow = txTime / 0.5 * 1.1
         XCTAssertTrue(admits(at: fastWindow, cap: 0.5))
         XCTAssertFalse(admits(at: fastWindow, cap: 0.02),

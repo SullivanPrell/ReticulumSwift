@@ -57,7 +57,7 @@ public enum InterfaceStatsPayload {
                 kv("clients", .nil)
             }
 
-            // RNodeSubInterface: parent_interface_name/hash (not yet wired — RNodeSubInterface
+            // RNodeSubInterface: parent_interface_name/hash (not yet wired—RNodeSubInterface
             // has no back-reference to the parent RNodeMultiInterface). Python emits them here,
             // between `clients` and the I2P block; rnstatus handles their absence.
 
@@ -97,8 +97,8 @@ public enum InterfaceStatsPayload {
             // IFAC fields. Python's order is signature, size, netname.
             if let ifacIdentity = iface.ifacIdentity {
                 // Python: interface.ifac_signature = ifac_identity.sign(full_hash(ifac_key))
-                // (Reticulum.py:933). This is a signature over the key, not the key itself —
-                // rnstatus prints its last 5 bytes as the network's "Access" fingerprint, so
+                // (Reticulum.py:933). This is a signature over the key, not the key itself—rnstatus
+                // prints its last 5 bytes as the network's "Access" fingerprint, so
                 // reporting the raw key here makes a Swift node's access code differ from a
                 // Python node's on the very same IFAC network.
                 let signature: MsgPack.Value = iface.ifacKey
@@ -112,7 +112,7 @@ public enum InterfaceStatsPayload {
                 kv("ifac_size",      .nil)
             }
             // Python: `interface.ifac_netname` (`Reticulum.py:955`). Hardcoded nil until
-            // `bugs/015`, because nothing stored it — so an operator could not see which IFAC
+            // `bugs/015`, because nothing stored it—so an operator couldn't see which IFAC
             // segment an interface was on, where a Python daemon reports it.
             kv("ifac_netname", iface.ifacNetname.map { .string($0) } ?? .nil)
             kv("autoconnect_source", .nil)
@@ -156,7 +156,7 @@ public enum InterfaceStatsPayload {
             kv("mode",   .int(Int64(iface.mode.rawValue)))
 
             // RNS 1.4.1 added both keys to `get_interface_stats()`; Python's rnstatus
-            // reads them and sorts interfaces by gravity when they are present.
+            // reads them and sorts interfaces by gravity when they're present.
             kv("gravity", .int(Int64(iface.gravity)))
             kv("announces_to_internal",
                iface.announcesToInternal.map { MsgPack.Value.bool($0) } ?? .nil)
@@ -192,7 +192,7 @@ public enum InterfaceStatsPayload {
         // Python emits `rss` LAST, after the optional transport block
         // (Reticulum.py:1459-1467). `rnstatus -j` preserves dict insertion order, so the
         // position is part of the output contract. Swift has no psutil equivalent, so the
-        // value is always nil — matching Python's `find_spec('psutil') == None` branch.
+        // value is always nil—matching Python's `find_spec('psutil') == None` branch.
         topPairs.append((.string("rss"), .nil))
 
         return .map(topPairs)

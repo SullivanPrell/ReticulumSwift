@@ -15,11 +15,19 @@ final class DestinationRatchetConstantsTests: XCTestCase {
         XCTAssertEqual(Destination.ratchetInterval, 1800)
     }
 
-    func testDefaultRetainedRatchetsConstantValue() throws {
-        // Python: Destination.RATCHET_COUNT = 512
-        // Swift: Identity.ratchetHistoryDepth defaults to 8 (practical limit for mobile)
-        // But the class constant must be 512 for API parity
-        XCTAssertEqual(Destination.ratchetCount, 512)
+    /// The constant is only worth anything if a destination actually retains that many.
+    /// This assertion used to re-check `Destination.ratchetCount == 512`—the same check
+    /// as the preceding `testRatchetCountConstant`—under a name that implied it covered the
+    /// runtime default, while the default was 8 and nothing tested it.
+    func testDefaultRetainedRatchetsIsTheConstantAndNotJustDeclaredAsIt() throws {
+        let identity = Identity()
+        let destination = try Destination(
+            identity: identity, direction: .in, kind: .single, appName: "test", aspects: ["ratchets"]
+        )
+        XCTAssertNotNil(destination.identity)
+        for _ in 0..<(Destination.ratchetCount + 10) { identity.rotateRatchet() }
+        // Python: `self.ratchets[:512]`, active ratchet included at index 0.
+        XCTAssertEqual(identity.ratchetPrivateKeyPool.count, Destination.ratchetCount)
     }
 
     func testDefaultRatchetIntervalConstantValue() throws {

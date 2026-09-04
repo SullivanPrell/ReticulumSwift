@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for path table update logic matching Python's behavior:
 /// - New announce with fewer hops should update the path
-/// - New announce with more hops should NOT update the path
+/// - New announce with more hops shouldn't update the path
 /// - New announce with same hops should update (newer info)
 final class PathUpdateLogicTests: XCTestCase {
 
@@ -48,9 +48,9 @@ final class PathUpdateLogicTests: XCTestCase {
         deliverAnnounce(packet: packet, hops: 3, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 3, "initial path should be 3 hops")
 
-        // Second: 1-hop announce (better path) — must be a different, later announce
+        // Second: 1-hop announce (better path)—must be a different, later announce
         // (different random hash + strictly newer emission second; a same-second
-        // fewer-hop announce ties under the freshness gate and does not replace).
+        // fewer-hop announce ties under the freshness gate and doesn't replace).
         let packet2 = try Announce.make(for: dest, timestamp: t0 + 2)
         deliverAnnounce(packet: packet2, hops: 1, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 1, "1-hop path should replace 3-hop path")
@@ -67,7 +67,7 @@ final class PathUpdateLogicTests: XCTestCase {
         deliverAnnounce(packet: packet1, hops: 1, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 1)
 
-        // Second: 5-hop announce (worse path) — should NOT update
+        // Second: 5-hop announce (worse path)—shouldn't update
         let packet2 = try Announce.make(for: dest)
         deliverAnnounce(packet: packet2, hops: 5, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 1, "better path should NOT be replaced by worse one")
@@ -83,7 +83,7 @@ final class PathUpdateLogicTests: XCTestCase {
         deliverAnnounce(packet: packet1, hops: 2, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 2)
 
-        // Same hop count — should update (newer announce has fresh timestamp)
+        // Same hop count—should update (newer announce has fresh timestamp)
         let packet2 = try Announce.make(for: dest)
         deliverAnnounce(packet: packet2, hops: 2, to: t, on: iface)
         XCTAssertEqual(t.hopsTo(dest.hash), 2, "same-hop path should still be stored")

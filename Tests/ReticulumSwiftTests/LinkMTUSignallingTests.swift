@@ -159,7 +159,7 @@ final class LinkMTUSignallingTests: XCTestCase {
         XCTAssertEqual(lrr.packetType, .linkRequest)
         XCTAssertEqual(lrr.data.count, 67, "LRR must include 3 signalling bytes")
 
-        // Simulate Python's prove() — build a 99-byte proof.
+        // Simulate Python's prove()—build a 99-byte proof.
         let linkID = aLink.linkID!
         let sig = LinkMTUSignallingTests.signallingBytes()
         let responderEph = Curve25519.KeyAgreement.PrivateKey()

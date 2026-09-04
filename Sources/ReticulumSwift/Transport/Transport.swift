@@ -49,13 +49,13 @@ public final class Transport {
     public static let apPathExpiry: TimeInterval = 60 * 60 * 24
     /// How often the jobs loop runs (seconds).
     public static let jobInterval: TimeInterval = 5
-    /// How often `cleanKnownDestinations` is invoked from the jobs loop.
+    /// How often the jobs loop invokes `cleanKnownDestinations`.
     /// Mirrors Python's periodic clean-jobs scheduler in `Reticulum.__clean_caches`
     /// (RNS commit b408699e). Defaults to 1 hour to amortise the table walk.
     public static let knownDestinationsCleanInterval: TimeInterval = 60 * 60
     /// Maximum receipts tracked simultaneously.
     public static let maxReceipts: Int = 1024
-    /// Maximum number of hops Reticulum will transport a packet.
+    /// Maximum number of hops Reticulum transports a packet.
     /// Python: `Transport.PATHFINDER_M = 128`.
     public static let pathfinderM: Int = 128
     /// Announce retransmit retries. Python: `Transport.PATHFINDER_R = 1`.
@@ -71,14 +71,15 @@ public final class Transport {
     public static let pathRequestGrace: TimeInterval = 0.4
     /// Extra grace time for roaming-mode interfaces. Python: `Transport.PATH_REQUEST_RG = 1.5`.
     public static let pathRequestRG: TimeInterval = 1.5
-    /// Gate control timeout for path requests. Python: `Transport.PATH_REQUEST_GATE_TIMEOUT = 120`.
-    public static let pathRequestGateTimeout: TimeInterval = 120
+    /// Gate control timeout for path requests. Python: `Transport.PATH_REQUEST_GATE_TIMEOUT = 45`
+    ///—RNS 1.5.0 cut it from 120, so a gated client clears in well under half the time.
+    public static let pathRequestGateTimeout: TimeInterval = 45
     /// Minimum interval between automated path requests. Python: `Transport.PATH_REQUEST_MI = 20`.
     public static let pathRequestMinInterval: TimeInterval = 20
     /// Maximum local rebroadcasts of an announce. Python: `Transport.LOCAL_REBROADCASTS_MAX = 2`.
     public static let localRebroadcastsMax: Int = 2
 
-    /// Stale threshold for known destinations that have been used (7 days).
+    /// Stale threshold for known destinations already in use (7 days).
     /// Mirrors Python's `Transport.DESTINATION_TIMEOUT`.
     public static let destinationTimeout: TimeInterval = 60 * 60 * 24 * 7
     /// Linger time for never-used, pathless known destinations (6 minutes).
@@ -93,7 +94,7 @@ public final class Transport {
     public struct PathEntry: Equatable {
         public let destinationHash: Data
 
-        /// The interface this route leads through — the value routing resolves.
+        /// The interface this route leads through—the value routing resolves.
         ///
         /// The reference stores the interface **object** here (`Transport.py:1639`) and
         /// transmits through it (`:1693`). Names are deliberately not unique: every connection
@@ -101,18 +102,18 @@ public final class Transport {
         /// (`TCPInterface.py:590`), so resolving a route by name sends traffic to whichever
         /// peer registered first, whatever the announce said (`bugs/027`).
         ///
-        /// **Weak**, so a path cannot keep a deregistered interface alive and a route through a
+        /// **Weak**, so a path can't keep a deregistered interface alive and a route through a
         /// vanished peer stops resolving rather than falling back to a same-named sibling.
-        /// Persistence therefore cannot store this; it stores `Interface.hash` and resolves it
+        /// Persistence therefore can't store this; it stores `Interface.hash` and resolves it
         /// back through ``Transport/findInterface(fromHash:)`` on load, which is what the
         /// reference does (`:3387-3395`, `:326`).
         public weak var nextHopInterface: (any Interface)?
 
-        /// The interface name captured when the path was learned, for display only.
+        /// The interface name captured when this node learned the path, for display only.
         ///
-        /// Mirrors the reference's use of the stored object: it is stringified for the path
+        /// Mirrors the reference's use of the stored object: it's stringified for the path
         /// listing (`Reticulum.py:1532`) and for nothing else. Never resolve a route from this
-        /// — that is the defect above.
+        ///—that's the preceding defect.
         public let nextHopInterfaceName: String
         public var hops: UInt8
         public var lastHeard: Date
@@ -123,7 +124,7 @@ public final class Transport {
         public var expires: Date
         /// Transport ID of the next hop along this path. Learned from
         /// HEADER_2 announces; used to address forwarded outbound
-        /// traffic. `nil` means "we'll use our own transport ID".
+        /// traffic. `nil` means "use this node's own transport ID".
         public var nextHopTransportID: Data?
         /// Unix timestamp (seconds) extracted from the announce's random hash.
         /// Used to determine if a newer announce should override a worse-hop path.
@@ -133,17 +134,17 @@ public final class Transport {
         /// Used to retrieve the cached announce from disk when restoring the path table.
         /// Mirrors Python's `path_table[dst][IDX_PT_PACKET]` = packet_hash field.
         public var cachedAnnounceHash: Data?
-        /// Recently-heard 10-byte announce random blobs for this destination,
+        /// Recently heard 10-byte announce random blobs for this destination,
         /// newest last and capped at `Transport.maxRandomBlobs`. Mirrors Python's
         /// `path_table[dst][IDX_PT_RANDBLOBS]`. An announce whose random blob is
         /// already present is a replay and is rejected (prevents path forging /
         /// network loops via captured announces).
         public var randomBlobs: [Data] = []
 
-        /// A routable path through `nextHopInterface`. The display name is derived from it, so
+        /// A routable path through `nextHopInterface`. The display name derives from it, so
         /// the two can never disagree.
         ///
-        /// This is the initialiser production code uses. There is no name-only production path:
+        /// This is the initializer production code uses. There is no name-only production path:
         /// see the guard in `PathTableInterfaceIdentityTests`.
         public init(
             destinationHash: Data,
@@ -166,13 +167,13 @@ public final class Transport {
             self.nextHopInterface = nextHopInterface
         }
 
-        /// A path with a recorded interface *name* and no live interface — **deliberately not
+        /// A path with a recorded interface *name* and no live interface—**deliberately not
         /// routable**, because routing resolves `nextHopInterface` and there is no name fallback
         /// (`bugs/027`).
         ///
         /// Two legitimate uses: a test that only exercises table bookkeeping (hops, expiry,
         /// responsiveness), and the moment before persistence resolves a stored interface hash
-        /// back to an object. Production routing code must use the initialiser above.
+        /// back to an object. Production routing code must use the preceding initializer.
         public init(
             destinationHash: Data,
             nextHopInterfaceName: String,
@@ -197,17 +198,17 @@ public final class Transport {
             self.randomBlobs = randomBlobs
         }
 
-        /// A path with **no** interface and no name — the state a restored tunnel path is in
+        /// A path with **no** interface and no name—the state a restored tunnel path is in
         /// until its endpoint reappears.
         ///
-        /// Deliberately distinct from the name-only initialiser above, which records a name that
-        /// could not be resolved. This one records that there is nothing to resolve *yet*: the
+        /// Deliberately distinct from the preceding name-only initializer, which records a name that
+        /// couldn't be resolved. This one records that there is nothing to resolve *yet*: the
         /// reference restores a tunnel path with `receiving_interface = None`
         /// (`Transport.py:396-400`) and `handle_tunnel` writes the live interface into every one
         /// of the tunnel's paths when the endpoint comes back (`:2440-2447`). Dropping such paths
         /// instead would make the tunnel table useless in exactly the case it exists for.
         ///
-        /// Not routable until attached — same as there, and the same reason
+        /// Not routable until attached—same as there, and the same reason
         /// `PathTableInterfaceIdentityTests` forbids production code building a path from a name:
         /// an unroutable path must be visibly unroutable, not one wearing a name that resolves to
         /// somebody else's interface.
@@ -236,9 +237,9 @@ public final class Transport {
 
         public var isExpired: Bool { Date() >= expires }
 
-        /// Hand-written because `nextHopInterface` is an existential and cannot be synthesised.
+        /// Hand-written because `nextHopInterface` is an existential, which the compiler can't synthesise.
         /// Interfaces compare by **identity**, which is the whole point of `bugs/027`: two
-        /// clients of one server are equal by name and are not the same route.
+        /// clients of one server are equal by name and aren't the same route.
         public static func == (lhs: PathEntry, rhs: PathEntry) -> Bool {
             lhs.destinationHash == rhs.destinationHash
                 && lhs.nextHopInterface === rhs.nextHopInterface
@@ -261,12 +262,12 @@ public final class Transport {
     public struct LinkRoute: Equatable {
         public let linkID: Data
 
-        /// The two interfaces this relayed link runs between — the values routing resolves.
+        /// The two interfaces this relayed link runs between—the values routing resolves.
         ///
         /// The same requirement as `PathEntry.nextHopInterface`, in the link table
         /// (`bugs/027`). Storing names here is the identical defect: two clients accepted by
         /// one `TCPServerInterface` share the name `"Client on <server>"`, so a hairpin relay
-        /// between them resolved both sides to whichever registered first — the source — and
+        /// between them resolved both sides to whichever registered first—the source—and
         /// `forwardLinkTraffic`'s "which side didn't deliver it" test compared two equal
         /// strings and steered every packet back where it came from.
         ///
@@ -274,7 +275,7 @@ public final class Transport {
         /// path table; only the traffic afterwards was misrouted. That split is why the
         /// failure looked like a resource bug: the link came up, then the transfer stalled.
         ///
-        /// Weak, for the same reason as the path table — a route must not keep a
+        /// Weak, for the same reason as the path table—a route must not keep a
         /// deregistered interface alive, and a vanished peer must stop resolving rather than
         /// falling back to a same-named sibling.
         public weak var initiatorSideInterface: (any Interface)?
@@ -291,7 +292,7 @@ public final class Transport {
         public var lastHeard: Date
 
         /// Hand-written because the interface fields are existentials. They compare by
-        /// **identity** — two clients of one server are equal by name and are not the same
+        /// **identity**—two clients of one server are equal by name and aren't the same
         /// route, which is the whole point.
         public static func == (lhs: LinkRoute, rhs: LinkRoute) -> Bool {
             lhs.linkID == rhs.linkID
@@ -304,8 +305,8 @@ public final class Transport {
         }
     }
 
-    /// A tunnel entry: tracks an interface that was synthesized as a tunnel endpoint
-    /// and the paths that have been learned through it.
+    /// A tunnel entry: tracks an interface synthesized as a tunnel endpoint
+    /// and the paths learned through it.
     /// Mirrors Python's `Transport.tunnels` table entries.
     public struct TunnelEntry {
         public let tunnelID: Data
@@ -322,7 +323,7 @@ public final class Transport {
     struct AnnounceRateEntry {
         var last: TimeInterval       // timestamp of last accepted announce
         var violations: Int          // cumulative violation count
-        var blockedUntil: TimeInterval  // if > now, announces are blocked
+        var blockedUntil: TimeInterval  // if > now, this entry blocks announces
         var timestamps: [TimeInterval]  // recent announce timestamps (capped at MAX_RATE_TIMESTAMPS)
     }
 
@@ -335,6 +336,14 @@ public final class Transport {
     }
 
     public private(set) var interfaces: [Interface] = []
+
+    /// Lowest bitrate (bits/s) among online interfaces, or `nil` before the first successful
+    /// computation. `Transport.lowest_interface_bitrate` (`Transport.py:294`), refreshed by
+    /// ``prioritizeInterfaces()``.
+    ///
+    /// Recorded unclamped; ``mediumPathTimeout()`` applies ``minimumBitrate`` at the point of
+    /// use, as Python does.
+    public private(set) var lowestInterfaceBitrate: Int?
     public private(set) var registeredDestinations: [Data: Destination] = [:]
     public internal(set) var paths: [Data: PathEntry] = [:]
     public private(set) var knownIdentities: [Data: Identity] = [:] // by destination hash
@@ -344,16 +353,16 @@ public final class Transport {
     /// When each known identity was last used (recalled for outbound). nil = never used.
     /// Mirrors Python's `Identity.known_destinations[hash][4]` (last_use field, 0 = never).
     var knownDestinationLastUsed: [Data: Date] = [:]
-    /// Full hash of the announce packet each identity was learned from —
-    /// `Identity.remember(packet.get_hash(), …)` (`Identity.py:577`), field 1 of the entry
+    /// Full hash of the announce packet that taught each identity—`Identity.remember(packet.get_hash(),
+    /// …)` (`Identity.py:577`), field 1 of the entry
     /// (`:107`).
     ///
     /// The reference writes this field and never reads it back: every access to a
-    /// `known_destinations` entry indexes 0, 2, 3 or 4. It is carried anyway because the entry is
-    /// a positional list — a missing field 1 shifts the public key into the slot the reader takes
+    /// `known_destinations` entry indexes 0, 2, 3 or 4. It's carried anyway because the entry is
+    /// a positional list—a missing field 1 shifts the public key into the slot the reader takes
     /// as app data.
     var knownDestinationPacketHash: [Data: Data] = [:]
-    /// Destinations explicitly marked as retained — never swept by `cleanKnownDestinations`.
+    /// Destinations explicitly marked as retained—never swept by `cleanKnownDestinations`.
     /// Mirrors Python's last_use == -1 sentinel.
     var retainedDestinations: Set<Data> = []
 
@@ -363,7 +372,7 @@ public final class Transport {
     public private(set) var knownRatchets: [Data: Data] = [:]
 
     /// Wall-clock receive time per learned ratchet. Aged out per
-    /// `ratchetExpiry` — matches Python's `Identity._remember_ratchet`
+    /// `ratchetExpiry`—matches Python's `Identity._remember_ratchet`
     /// / `Identity.get_ratchet` (which discard entries older than
     /// `RATCHET_EXPIRY`).
     public private(set) var knownRatchetTimes: [Data: Date] = [:]
@@ -383,7 +392,7 @@ public final class Transport {
     public var tunnels: [Data: TunnelEntry] = [:]
     public private(set) var isRunning: Bool = false
 
-    /// Unix timestamp when `start()` was called. Used to compute transport uptime.
+    /// Unix timestamp of the `start()` call. Used to compute transport uptime.
     /// Mirrors Python's `Transport.start_time`.
     public private(set) var startTime: TimeInterval = 0
 
@@ -392,11 +401,11 @@ public final class Transport {
     public var ownerIdentity: Identity?
 
     /// Optional network identity, used for remote management and interface discovery.
-    /// Once set, it cannot be changed (mirrors Python's Transport.network_identity
-    /// which can only be set if not already set).
+    /// Once set, nothing can change it (mirrors Python's Transport.network_identity,
+    /// which accepts a value only while still unset).
     public private(set) var networkIdentity: Identity?
 
-    /// Returns whether a network identity has been set.
+    /// Returns whether this node holds a network identity.
     /// Mirrors Python's `Transport.has_network_identity()`.
     public var hasNetworkIdentity: Bool { networkIdentity != nil }
 
@@ -407,14 +416,14 @@ public final class Transport {
         networkIdentity = identity
     }
 
-    /// When `true`, this node relays announces it sees to its other
+    /// When `true`, this node relays announces it receives to its other
     /// interfaces (a transport-enabled mesh node). When `false`, the node
     /// only originates and consumes announces (an edge node).
     public var transportEnabled: Bool = true
 
-    /// When `true`, this node is attached as a *client* to an external shared
-    /// instance (e.g. an `rnsd` daemon over a `LocalInterface`), and that
-    /// instance performs all packet filtering/routing on our behalf. In that
+    /// When `true`, this node attaches as a *client* to an external shared
+    /// instance (for example, an `rnsd` daemon over a `LocalInterface`), and that
+    /// instance performs all packet filtering/routing on this node's behalf. In that
     /// case `filterAndRecord` must not re-filter (mirrors Python's
     /// `if Transport.owner.is_connected_to_shared_instance: return True`).
     /// Defaults to `false` for standalone / embedded transport nodes.
@@ -430,8 +439,8 @@ public final class Transport {
     public static var allowLinkPathRebalance = true
 
     /// Per-session hop-count obfuscation delta. When non-zero, packets that
-    /// originate locally (`hops == 0`) — our own traffic and traffic relayed for
-    /// directly-connected local clients — have their hop count rewritten to this
+    /// originate locally (`hops == 0`)—this node's own traffic and traffic relayed for
+    /// directly connected local clients—have their hop count rewritten to this
     /// value when injected into the wider network, hiding that they came from
     /// here. `0` disables the feature (the default). Set to a random value in
     /// 2...7 at startup when the `local_hops_delta` config option is enabled.
@@ -450,8 +459,8 @@ public final class Transport {
     }()
 
     /// Most-recent validated announce packet keyed by destination hash.
-    /// Used to answer path requests on behalf of remote destinations we
-    /// have a path to.
+    /// Used to answer path requests on behalf of remote destinations this
+    /// node has a path to.
     public private(set) var cachedAnnounces: [Data: Packet] = [:]
 
     /// Path responsiveness state per destination hash.
@@ -461,19 +470,19 @@ public final class Transport {
 
     /// Reverse lookup table for multi-hop proof forwarding.
     /// Maps truncated packet hash (16 bytes) → (receiveInterface, outboundInterface).
-    /// When a DATA packet is forwarded, the entry is stored so that the resulting
-    /// proof can be forwarded back to the originating interface.
+    /// When Transport forwards a DATA packet, it stores the entry so the resulting
+    /// proof can travel back to the originating interface.
     /// Mirrors Python's `Transport.reverse_table`.
     private var reverseTable: [Data: (receiveIface: any Interface, outboundIface: any Interface)] = [:]
     private let reverseTableLock = NSLock()
 
-    /// Dedup keys for path requests we've already processed —
-    /// `destinationHash + tag`. FIFO bounded.
+    /// Dedup keys for path requests already processed—`destinationHash
+    /// + tag`. FIFO bounded.
     private var pathRequestTags: [Data] = []
     private var pathRequestTagSet: Set<Data> = []
     public var pathRequestCacheCap: Int = 4096
 
-    /// Dedup keys for announces already seen — `destinationHash + randomHash`.
+    /// Dedup keys for announces already seen—`destinationHash + randomHash`.
     /// Bounded to `announceCacheCap` entries (FIFO).
     private var announceCache: [Data] = []
     private var announceCacheSet: Set<Data> = []
@@ -482,16 +491,16 @@ public final class Transport {
     /// A forwarded announce pending a single retransmission. Mirrors Python's
     /// `Transport.announce_table` 9-tuple (`IDX_AT_*`). Swift forwards the first
     /// copy immediately, then retransmits once more (`PATHFINDER_R`) after the
-    /// grace window unless the announce is heard carried on by neighbours.
+    /// grace window unless neighbours carry the announce on.
     struct AnnounceTableEntry {
-        var timestamp: TimeInterval           // IDX_AT_TIMESTAMP — when forwarded
-        var retransmitTimeout: TimeInterval   // IDX_AT_RTRNS_TMO — next retry time
-        var retries: Int                      // IDX_AT_RETRIES   — transmissions so far
-        var hops: Int                         // IDX_AT_HOPS      — raw wire hops at receipt
-        var packet: Packet                    // IDX_AT_PACKET    — the received announce
-        var localRebroadcasts: Int            // IDX_AT_LCL_RBRD  — sibling rebroadcasts heard
-        var blockRebroadcasts: Bool           // IDX_AT_BLCK_RBRD — emit as PATH_RESPONSE
-        var attachedInterfaceName: String?    // IDX_AT_ATTCHD_IF — restrict retransmit to one iface
+        var timestamp: TimeInterval           // IDX_AT_TIMESTAMP—when forwarded
+        var retransmitTimeout: TimeInterval   // IDX_AT_RTRNS_TMO—next retry time
+        var retries: Int                      // IDX_AT_RETRIES—transmissions so far
+        var hops: Int                         // IDX_AT_HOPS—raw wire hops at receipt
+        var packet: Packet                    // IDX_AT_PACKET—the received announce
+        var localRebroadcasts: Int            // IDX_AT_LCL_RBRD—sibling rebroadcasts heard
+        var blockRebroadcasts: Bool           // IDX_AT_BLCK_RBRD—emit as PATH_RESPONSE
+        var attachedInterfaceName: String?    // IDX_AT_ATTCHD_IF—restrict retransmit to one iface
         var receivingInterfaceName: String    // iface the announce arrived on (never echoed back)
         var receivingInterfaceMode: InterfaceMode  // for the announce-propagation filter on retry
         // `announces_to_internal` of the receiving interface, captured alongside
@@ -502,19 +511,19 @@ public final class Transport {
     private var announceTable: [Data: AnnounceTableEntry] = [:]
 
     /// Per-interface announce and path-request frequency tracker.
-    /// Mirrors Python's Interface.ia_freq_deque etc.
+    /// Mirrors Python's Interface.ia_freq_deque and so on
     private var ifaceFreqTrackers: [ObjectIdentifier: InterfaceFreqTracker] = [:]
-    /// Guards the `ifaceFreqTrackers` dictionary (not the trackers themselves —
-    /// each `InterfaceFreqTracker` is internally synchronized). Held alone; a
+    /// Guards the `ifaceFreqTrackers` dictionary (not the trackers themselves—each
+    /// `InterfaceFreqTracker` is internally synchronized). Held alone; a
     /// holder snapshots the tracker reference and releases before calling into it.
     private let trackersLock = NSLock()
 
     /// Per-interface ingress burst control state.
-    /// Mirrors Python's per-interface ic_burst_active, held_announces, etc.
+    /// Mirrors Python's per-interface ic_burst_active, held_announces, and so on
     private var ingressStates: [ObjectIdentifier: IngressControlState] = [:]
     /// Guards `ingressStates`. A leaf lock: `processHeldAnnounces` re-enters
     /// `handleIncoming` (which takes `lock`), so a holder MUST snapshot/select
-    /// under this lock, release it, then make the reentrant call — never held
+    /// under this lock, release it, then make the reentrant call—never held
     /// across a callout, and never acquires `lock` while held.
     private let ingressLock = NSLock()
 
@@ -526,12 +535,12 @@ public final class Transport {
     /// Blackholed identities: identity hash → BlackholeEntry.
     /// Mirrors Python's `Transport.blackholed_identities` dict.
     public var blackholedIdentities: [Data: BlackholeEntry] = [:]
-    /// Guards `blackholedIdentities`. Leaf lock — held alone, never across a
+    /// Guards `blackholedIdentities`. Leaf lock—held alone, never across a
     /// callout, never acquires `lock` while held (when both a paths read and a
     /// blackhole read are needed, `lock` is taken and released first).
     let blackholeLock = NSLock()
 
-    /// Guards the pure-metrics bookkeeping that is touched from inbound/outbound
+    /// Guards the pure-metrics bookkeeping that's touched from inbound/outbound
     /// threads and the jobs timer with no relation to routing decisions:
     /// `trafficRxBytes`, `trafficTxBytes`, the packet PHY caches, the per-interface
     /// speed sample/current maps, the aggregate `speedRx`/`speedTx`, and the
@@ -591,7 +600,7 @@ public final class Transport {
     public var discoveryHandler: InterfaceDiscovery?
 
     /// The `AnnounceHandler` registered with this transport for interface discovery.
-    /// Kept so it can be deregistered by `stopDiscoverInterfaces()`.
+    /// Kept so `stopDiscoverInterfaces()` can deregister it.
     public var discoveryAnnounceHandler: InterfaceAnnounceHandler?
 
     /// Active blackhole-list updater. Created by `enableBlackholeUpdater()`.
@@ -603,12 +612,12 @@ public final class Transport {
     // and as the transport instance ID on the wire. Mirrors Python's
     // `Transport.identity`. For a non-transport node (unless
     // `static_transport_identity` is set) this is a fresh ephemeral identity
-    // generated at startup — see `internalIdentity` for the persistent one.
+    // generated at startup—see `internalIdentity` for the persistent one.
     public var transportIdentity: Identity?
 
     // The persistent on-disk transport identity. Equals `transportIdentity`
     // except when an ephemeral transport identity is in use, in which case this
-    // retains the stable identity (used e.g. to derive the RPC auth key so it
+    // retains the stable identity (used for example, to derive the RPC auth key so it
     // stays constant across runs). Mirrors Python's `Transport._identity` /
     // `Transport.internal_identity()`.
     public var internalIdentity: Identity?
@@ -622,8 +631,8 @@ public final class Transport {
     public var onPacketDelivered: ((Packet, Destination, any Interface) -> Void)?
     public var onLinkEstablished: ((Link) -> Void)?
 
-    /// Fires when a path request lands on a destination we have registered
-    /// locally. The host should respond by emitting a fresh signed
+    /// Fires when a path request lands on a locally registered
+    /// destination. The host should respond by emitting a fresh signed
     /// announce for that destination on the supplied interface (Transport
     /// doesn't own destination identities, so it can't sign on its own).
     public var onPathRequested: ((Data, any Interface) -> Void)?
@@ -643,7 +652,7 @@ public final class Transport {
     private let queueLock = NSLock()
 
     /// Packet hashlist for replay/loop prevention. Two-generation rolling
-    /// set — mirrors Python's `packet_hashlist` / `packet_hashlist_prev`.
+    /// set—mirrors Python's `packet_hashlist` / `packet_hashlist_prev`.
     private var packetHashlist: Set<Data> = []
     private var packetHashlistPrev: Set<Data> = []
     private let hashlistLock = NSLock()
@@ -653,9 +662,9 @@ public final class Transport {
 
     let lock = NSLock()
 
-    // Background jobs timer — nil until `start()`.
+    // Background jobs timer—nil until `start()`.
     private var jobsTimer: DispatchSourceTimer?
-    /// Last time `cleanKnownDestinations` was invoked by the jobs loop.
+    /// Last time the jobs loop invoked `cleanKnownDestinations`.
     /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
     private var lastKnownDestinationsClean: Date = .distantPast
 
@@ -663,7 +672,7 @@ public final class Transport {
 
     // MARK: - Announce handlers
 
-    /// Register a handler that is called whenever a matching announce arrives.
+    /// Register a handler that's called whenever a matching announce arrives.
     /// Matches Python's `Transport.register_announce_handler`.
     public func register(announceHandler: any AnnounceHandler) {
         announceHandlerLock.lock(); defer { announceHandlerLock.unlock() }
@@ -685,7 +694,7 @@ public final class Transport {
         return paths[destinationHash] != nil
     }
 
-    /// Hop count to `destinationHash`, or nil if no path is known.
+    /// Hop count to `destinationHash`, or nil when no path exists.
     /// Mirrors Python's `Transport.hops_to(destination_hash)`.
     public func hopsTo(_ destinationHash: Data) -> UInt8? {
         lock.lock(); defer { lock.unlock() }
@@ -709,7 +718,7 @@ public final class Transport {
     /// The live `Interface` object for the next hop, or nil.
     ///
     /// Reads the stored object rather than re-resolving a name, matching the reference
-    /// (`Transport.py:1639`). Nil once that interface is gone — a route through a vanished peer
+    /// (`Transport.py:1639`). Nil once that interface is gone—a route through a vanished peer
     /// must stop resolving, not fall back to a same-named sibling (`bugs/027`).
     public func nextHopInterface(for destinationHash: Data) -> (any Interface)? {
         lock.lock(); defer { lock.unlock() }
@@ -741,7 +750,7 @@ public final class Transport {
     /// re-resolves it here, which matches Python for every registered interface
     /// and diverges once the interface is gone: Python compares against the dead
     /// interface's gravity, Swift returns `nil` and the caller declines the
-    /// takeover. That is the fail-closed direction (a path is never pulled onto
+    /// takeover. That's the fail-closed direction (a path is never pulled onto
     /// another interface on the strength of a stale gravity reading), and it
     /// follows the same resolve-by-name convention as `nextHopInterface(for:)`.
     ///
@@ -791,8 +800,38 @@ public final class Transport {
     /// Mirrors Python's `Transport.prioritize_interfaces()`.
     public func prioritizeInterfaces() {
         lock.lock()
-        interfaces.sort { $0.bitrate > $1.bitrate }
+        // Python sorts with `list.sort`, which is stable, so interfaces sharing a bitrate keep
+        // registration order. Swift's `sort(by:)` isn't stable and this now runs on every jobs
+        // pass, so the index is folded into the comparator: without it, same-bitrate interfaces
+        // would be reshuffled every five seconds and announce emission order with them.
+        interfaces = interfaces.enumerated()
+            .sorted { l, r in
+                l.element.bitrate == r.element.bitrate
+                    ? l.offset < r.offset
+                    : l.element.bitrate > r.element.bitrate
+            }
+            .map(\.element)
+        // `if interface.online and interface.bitrate` (`Transport.py:568`)—Python's `bitrate`
+        // is falsy for both `None` and `0`, so an interface that hasn't reported one isn't a
+        // candidate for "slowest".
+        let candidates = interfaces.filter { $0.isOnline && $0.bitrate > 0 }.map(\.bitrate)
+        // Python's `min()` over an empty generator raises and the `except` leaves the previous
+        // value standing (`:569`). Mirrored: a node with nothing online has no paths to resolve
+        // either, so clearing it would only make the utilities give up sooner on a dead network.
+        if let lowest = candidates.min() { lowestInterfaceBitrate = lowest }
         lock.unlock()
+    }
+
+    /// A full round trip for one MTU on the slowest online interface, plus one hop's grace.
+    /// `Transport.medium_path_timeout()` (`Transport.py:3205`), new in RNS 1.5.x.
+    ///
+    /// Returns `0`—not ``Constants/defaultPerHopTimeout``—while no bitrate is known. Every
+    /// caller wraps this in `max(timeout, …)`, so zero contributes nothing rather than timing
+    /// out immediately.
+    public func mediumPathTimeout() -> TimeInterval {
+        guard let lowest = lowestInterfaceBitrate else { return 0 }
+        let bitrate = Double(max(lowest, Transport.minimumBitrate))
+        return 2 * (Double(Constants.mtu) * 8 / bitrate) + Constants.defaultPerHopTimeout
     }
 
     public func dropAnnounceQueues() {
@@ -817,22 +856,22 @@ public final class Transport {
     }
 
     /// Returns true if the interface is a local-client interface.
-    /// Mirrors Python `Transport.from_local_client(packet)` — in Swift, callers supply the interface directly.
+    /// Mirrors Python `Transport.from_local_client(packet)`—in Swift, callers supply the interface directly.
     public func fromLocalClient(interface iface: any Interface) -> Bool {
         isLocalClientInterface(iface)
     }
 
-    /// Returns true if the interface is one that serves a locally-connected
-    /// shared-instance client — the SERVER side. Mirrors Python
+    /// Returns true if the interface is one that serves a locally connected
+    /// shared-instance client—the SERVER side. Mirrors Python
     /// `Transport.is_local_client_interface(interface)`, which is true only for a
     /// per-client connection whose `parent_interface.is_local_shared_instance`.
     /// In Swift the per-client sockets are collapsed into a single
-    /// `LocalClientServingInterface` (e.g. `PosixTCPServer` on the shared-instance
+    /// `LocalClientServingInterface` (for example, `PosixTCPServer` on the shared-instance
     /// port), so that protocol conformance is exactly the "local client" marker.
     ///
     /// NOTE: this is the opposite end from `LocalInterface`. A `LocalInterface` is
     /// *this* node's connection *to* a shared instance (the client side) and is
-    /// therefore NOT a local-client interface — see `interfaceToSharedInstance`.
+    /// therefore NOT a local-client interface—see `interfaceToSharedInstance`.
     public func isLocalClientInterface(_ interface: any Interface) -> Bool {
         `interface` is any LocalClientServingInterface
     }
@@ -840,12 +879,12 @@ public final class Transport {
     /// Returns true if the interface is this node's own connection *to* a shared
     /// instance (the client side). Mirrors Python
     /// `Transport.interface_to_shared_instance(interface)` (true when the interface
-    /// has `is_connected_to_shared_instance`). In Swift that is `LocalInterface`.
+    /// has `is_connected_to_shared_instance`). In Swift that's `LocalInterface`.
     public func interfaceToSharedInstance(_ interface: any Interface) -> Bool {
         `interface` is LocalInterface
     }
 
-    /// Interfaces currently serving one or more locally-connected shared-instance
+    /// Interfaces serving one or more locally connected shared-instance
     /// clients, excluding `excluded` (typically the interface the triggering
     /// packet arrived on). Mirrors a non-empty Python `Transport.local_client_interfaces`.
     private func localClientServingInterfaces(excluding excluded: (any Interface)?) -> [any Interface] {
@@ -856,10 +895,10 @@ public final class Transport {
     }
 
     /// Whether the local hop-count obfuscation delta should be applied when
-    /// transmitting `packet` out over `interface`. True only for our own freshly
+    /// transmitting `packet` out over `interface`. True only for this node's own freshly
     /// originated packets (`hops == 0`) that are addressed to real (single/link)
     /// destinations and leave over a non-local, non-shared-instance interface,
-    /// while the feature is enabled and we're not behind a shared instance.
+    /// while the feature is enabled and this node isn't behind a shared instance.
     /// Mirrors Python `Transport.should_apply_delta(packet, interface)`.
     func shouldApplyDelta(_ packet: Packet, interface: any Interface) -> Bool {
         return !isConnectedToSharedInstance
@@ -874,7 +913,7 @@ public final class Transport {
     /// Return a copy of `packet` with its hop count rewritten to `hops`. When
     /// `transportInsert` is true, also promote it to a HEADER_2 transport packet
     /// carrying this instance's transport id (used when obfuscating a locally
-    /// originated HEADER_1 announce as it is injected into transport).
+    /// originated HEADER_1 announce as it's injected into transport).
     /// Mirrors Python `Transport.mangle_hops(raw, hops, transport_insert)`.
     func mangleHops(_ packet: Packet, hops: UInt8, transportInsert: Bool = false) -> Packet {
         var p = packet
@@ -889,8 +928,8 @@ public final class Transport {
 
     /// Hop count to stamp when relaying `packet` (received on `sourceInterface`)
     /// onward. Normally the received hop count + 1, but obfuscated to
-    /// `localHopsDelta` when the packet came from a directly-connected local
-    /// client and is NOT staying within the local-client domain (and the feature
+    /// `localHopsDelta` when the packet came from a directly connected local
+    /// client and isn't staying within the local-client domain (and the feature
     /// is enabled). `staysLocal` is the site-specific "don't obfuscate" condition
     /// (`instance_local_link` for link traffic, `proof_for_local_client` for
     /// proofs, `to_local_client` for data). Mirrors the
@@ -1012,7 +1051,7 @@ public final class Transport {
 
     // MARK: - Announce rate table (mirrors Python Transport.announce_rate_table)
 
-    /// Check whether an announce from `destinationHash` on `interface` should be blocked
+    /// Check whether an announce from `destinationHash` on `interface` warrants blocking
     /// by the per-destination rate limiter. Updates the rate table as a side effect.
     /// Returns `false` (not blocked) when `interface.announceRateTarget == nil`.
     /// Mirrors Python's rate_blocked logic in `Transport.inbound` announce handling.
@@ -1023,7 +1062,7 @@ public final class Transport {
         metricsLock.lock(); defer { metricsLock.unlock() }
 
         if announceRateTable[destinationHash] == nil {
-            // First announce — seed the entry, never blocked.
+            // First announce—seed the entry, never blocked.
             announceRateTable[destinationHash] = AnnounceRateEntry(
                 last: now, violations: 0, blockedUntil: 0, timestamps: [now]
             )
@@ -1126,7 +1165,7 @@ public final class Transport {
 
     // MARK: - Ingress burst control (mirrors Python Interface.should_ingress_limit / hold_announce / process_held_announces)
 
-    /// Checks whether inbound announces on `interface` should be held due to burst flooding.
+    /// Checks whether inbound announces on `interface` warrant holding for burst flooding.
     /// Updates internal burst-active state as a side effect.
     /// Returns `false` when `interface.ingressControl == false`.
     ///
@@ -1136,7 +1175,7 @@ public final class Transport {
         guard interface.ingressControl else { return false }
         let key = ObjectIdentifier(interface)
         // Lock order: ingressLock > trackersLock > tracker's own lock. The
-        // read-modify-write on `state` is held under ingressLock throughout.
+        // ingressLock covers the read-modify-write on `state` throughout.
         ingressLock.lock(); defer { ingressLock.unlock() }
         guard var state = ingressStates[key],
               let tracker = tracker(for: interface) else { return false }
@@ -1154,25 +1193,41 @@ public final class Transport {
             // `return True` sits *outside* the deactivation branch, so the call
             // that clears the flag is itself still limited and only the next one
             // passes. Returning false here would let one extra announce through
-            // a burst that is only just subsiding.
+            // a burst that's only just subsiding.
             //
             // The sample-count gate is `IC_DEQUE_MIN_SAMPLE` (2), not
-            // `IC_BURST_MIN_SAMPLES` (6) — that is RNS 1.4.1 commit 48388756,
+            // `IC_BURST_MIN_SAMPLES` (6)—that's RNS 1.4.1 commit 48388756,
             // which fixed the burst flag deadlocking on indefinitely: with a 6
             // sample requirement against a deque that a subsiding burst never
             // refills, the flag could only ever clear if *new* announces arrived,
             // which is precisely what it was suppressing.
-            if freq < threshold && now > state.burstActivated + interface.interfaceState.icBurstHold {
+            //
+            // RNS 1.5.1 added the second window, `ic_burst_sustained` (`Interface.py:194`).
+            // With only `burstActivated`, a flood that ran for minutes cleared its own flag
+            // fifteen seconds after it *started*—the timer measured the leading edge of the
+            // event, so the longer the flood, the less of it was actually suppressed.
+            // Refreshing `burstSustained` on every above-threshold look moves the window onto
+            // the trailing edge: the burst now expires fifteen seconds after the flood stops.
+            if freq < threshold
+                && now > state.burstActivated + interface.interfaceState.icBurstHold
+                && now > state.burstSustained + interface.interfaceState.icBurstHold {
                 if tracker.incomingAnnounceSampleCount >= InterfaceFreqTracker.minSamples {
                     state.burstActive = false
                     ingressStates[key] = state
                 }
+            } else if freq >= threshold {
+                // `>=`, where activation below uses `>`. The asymmetry is deliberate upstream:
+                // a stream sitting exactly on the threshold isn't enough to *start* a burst
+                // but is enough to keep one alive.
+                state.burstSustained = now
+                ingressStates[key] = state
             }
             return true
         } else {
             if freq > threshold {
                 state.burstActive = true
                 state.burstActivated = now
+                state.burstSustained = now
                 state.heldRelease = now + interface.interfaceState.icBurstPenalty
                 ingressStates[key] = state
                 return true
@@ -1181,7 +1236,7 @@ public final class Transport {
         }
     }
 
-    /// Checks whether inbound path requests on `interface` should be suppressed
+    /// Checks whether inbound path requests on `interface` warrant suppression
     /// due to a path-request burst. Mirrors Python's `Interface.should_ingress_limit_pr()`.
     public func shouldIngressLimitPR(on interface: any Interface,
                                      now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
@@ -1199,9 +1254,30 @@ public final class Transport {
 
         if state.prBurstActive {
             // As in `shouldIngressLimit`, the deactivating call itself still
-            // returns `true` — Python's `return True` is outside this branch.
-            if freq < threshold && now > state.prBurstActivated + interface.interfaceState.icBurstHold {
-                state.prBurstActive = false
+            // returns `true`—Python's `return True` is outside this branch.
+            //
+            // RNS 1.5.1 gave path-request bursts the same trailing-edge hold window as
+            // announce bursts (`ic_pr_burst_sustained`) and, on top of it, a cooldown counter
+            // (`Interface.py:216-224`). Even once both windows have elapsed and the frequency
+            // has fallen, three further quiet evaluations must follow. Unlike the windows the
+            // cooldown counts *looks*, not seconds, and any single busy evaluation refills it,
+            // so it demands an unbroken run of quiet rather than merely a quiet instant.
+            //
+            // Note there is no sample-count gate on this side; the announce branch above has
+            // one and this never has.
+            if freq < threshold
+                && now > state.prBurstActivated + interface.interfaceState.icBurstHold
+                && now > state.prBurstSustained + interface.interfaceState.icBurstHold {
+                if state.prBurstCooldown <= 0 {
+                    state.prBurstActive = false
+                } else {
+                    state.prBurstCooldown -= 1
+                }
+                ingressStates[key] = state
+            } else {
+                // The refill is unconditional; only the sustained stamp checks the threshold.
+                state.prBurstCooldown = IngressControlState.icPrBurstCooldown
+                if freq >= threshold { state.prBurstSustained = now }
                 ingressStates[key] = state
             }
             return true
@@ -1209,6 +1285,8 @@ public final class Transport {
             if freq > threshold {
                 state.prBurstActive = true
                 state.prBurstActivated = now
+                state.prBurstSustained = now
+                state.prBurstCooldown = IngressControlState.icPrBurstCooldown
                 ingressStates[key] = state
                 return true
             }
@@ -1216,20 +1294,23 @@ public final class Transport {
         }
     }
 
-    /// Checks whether outbound path requests on `interface` should be suppressed
+    /// Checks whether outbound path requests on `interface` warrant suppression
     /// due to outgoing frequency exceeding `ecPrFreq`. Mirrors Python's
     /// `Interface.should_egress_limit_pr()`.
     public func shouldEgressLimitPR(on interface: any Interface,
                                     now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard interface.egressControl else { return false }
         guard let tracker = tracker(for: interface) else { return false }
-        let freq = tracker.outgoingPathRequestFrequency(now: now)
+        // `preemptive: true` (`Interface.py:243`) counts the request this call is about to
+        // authorise, so a stream sitting exactly on the threshold is stopped rather than
+        // allowed to cross it.
+        let freq = tracker.outgoingPathRequestFrequency(preemptive: true, now: now)
         if freq > interface.ecPrFreq {
-            // Python gates egress limiting on `IC_BURST_MIN_SAMPLES` (6), not on
-            // the 2-sample minimum that merely makes a frequency computable —
-            // suppressing our own outbound path requests off two samples would
-            // throttle normal discovery bursts.
-            return tracker.outgoingPathRequestSampleCount >= IngressControlState.icBurstMinSamples
+            // The floor is `EC_BURST_MIN_SAMPLES` (`Interface.py:246`), which RNS 1.5.1 renamed
+            // from `IC_BURST_MIN_SAMPLES` and dropped from 6 to 2. It happens to equal the
+            // 2-sample minimum that makes a frequency computable at all, but remains a separate
+            // knob—see `IngressControlState.ecBurstMinSamples`.
+            return tracker.outgoingPathRequestSampleCount >= IngressControlState.ecBurstMinSamples
         }
         return false
     }
@@ -1241,8 +1322,8 @@ public final class Transport {
     /// Mirrors Python's `Interface.hold_announce(packet)`.
     public func holdAnnounce(_ packet: Packet, destinationHash: Data, on interface: any Interface) {
         // Don't hold announces that are already at (or one below) the maximum
-        // propagation distance — replaying them later would push them past the
-        // hop limit, so they'd be dropped anyway. Python (RNS 1.3.8):
+        // propagation distance—replaying them later would push them past the
+        // hop limit, so they'd drop anyway. Python (RNS 1.3.8):
         //   if announce_packet.hops >= RNS.Transport.PATHFINDER_M-1: return
         guard Int(packet.hops) < Transport.pathfinderM - 1 else { return }
         let key = ObjectIdentifier(interface)
@@ -1304,7 +1385,7 @@ public final class Transport {
     }
 
     /// Returns the ingress control state for `interface`, or nil if not yet created.
-    /// Mirrors Python's per-interface `ic_burst_active` etc. fields.
+    /// Mirrors Python's per-interface `ic_burst_active` and so on fields.
     public func ingressState(for interface: any Interface) -> IngressControlState? {
         ingressLock.lock(); defer { ingressLock.unlock() }
         return ingressStates[ObjectIdentifier(interface)]
@@ -1359,7 +1440,7 @@ public final class Transport {
                 totalTxSpeed += txSpeed
                 // Accumulate transport-level TX total from interface diffs.
                 // Mirrors Python: Transport.traffic_txb += txDiff (count_traffic_loop).
-                // RX is already counted per-packet in handleIncoming, so only TX is added here.
+                // handleIncoming already counts RX per packet, so this adds only TX.
                 if txDiff > 0 { trafficTxBytes += txDiff }
             }
             ifaceSpeedSamples[key] = SpeedSample(rxBytes: currentRx, txBytes: currentTx, timestamp: now)
@@ -1382,20 +1463,20 @@ public final class Transport {
         return ifaceCurrentTxSpeed[ObjectIdentifier(interface)] ?? 0
     }
 
-    // MARK: - Interface frequency notifications (mirrors Python Interface.received_announce / sent_announce etc.)
+    // MARK: - Interface frequency notifications (mirrors Python Interface.received_announce / sent_announce and so on)
 
-    /// Notify that an announce was received on `interface`.
+    /// Notify that `interface` received an announce.
     /// Mirrors Python's `interface.received_announce()` call in `Transport.inbound`.
     public func notifyIncomingAnnounce(on interface: any Interface) {
         tracker(for: interface)?.recordIncomingAnnounce()
     }
 
-    /// Overload accepting an explicit timestamp — used by tests and internally.
+    /// Overload accepting an explicit timestamp—used by tests and internally.
     public func notifyIncomingAnnounce(on interface: any Interface, at t: TimeInterval) {
         tracker(for: interface)?.recordIncomingAnnounce(at: t)
     }
 
-    /// Notify that an announce was sent out on `interface`.
+    /// Notify that `interface` sent an announce.
     /// Mirrors Python's `interface.sent_announce()` call in `Transport.outbound`.
     public func notifyOutgoingAnnounce(on interface: any Interface) {
         tracker(for: interface)?.recordOutgoingAnnounce()
@@ -1405,7 +1486,7 @@ public final class Transport {
         tracker(for: interface)?.recordOutgoingAnnounce(at: t)
     }
 
-    /// Notify that a path request was received on `interface`.
+    /// Notify that `interface` received a path request.
     /// Mirrors Python's `interface.received_path_request()` call.
     public func notifyIncomingPathRequest(on interface: any Interface) {
         tracker(for: interface)?.recordIncomingPathRequest()
@@ -1415,7 +1496,7 @@ public final class Transport {
         tracker(for: interface)?.recordIncomingPathRequest(at: t)
     }
 
-    /// Notify that a path request was sent out on `interface`.
+    /// Notify that `interface` sent a path request.
     /// Mirrors Python's `interface.sent_path_request()` call.
     public func notifyOutgoingPathRequest(on interface: any Interface) {
         tracker(for: interface)?.recordOutgoingPathRequest()
@@ -1441,13 +1522,20 @@ public final class Transport {
     }
 
     /// Outgoing path-request frequency (Hz) for the given interface.
-    public func outgoingPathRequestFrequency(for interface: any Interface) -> Double {
-        tracker(for: interface)?.outgoingPathRequestFrequency() ?? 0
+    ///
+    /// `preemptive` counts the request the caller is about to send; see
+    /// ``InterfaceFreqTracker/outgoingPathRequestFrequency(preemptive:now:)``. It defaults to
+    /// `false` so reporting paths (ifstats) keep quoting the frequency actually observed—only
+    /// the egress limiter asks the forward-looking question.
+    public func outgoingPathRequestFrequency(for interface: any Interface,
+                                             preemptive: Bool = false,
+                                             now: TimeInterval = Date().timeIntervalSince1970) -> Double {
+        tracker(for: interface)?.outgoingPathRequestFrequency(preemptive: preemptive, now: now) ?? 0
     }
 
     /// Look up the frequency tracker for `interface` under `trackersLock`, then
-    /// release the lock before the caller touches the (internally-synchronized)
-    /// tracker — so `trackersLock` is never held across a callout.
+    /// release the lock before the caller touches the (internally synchronized)
+    /// tracker—so `trackersLock` is never held across a callout.
     private func tracker(for interface: any Interface) -> InterfaceFreqTracker? {
         trackersLock.lock(); defer { trackersLock.unlock() }
         return ifaceFreqTrackers[ObjectIdentifier(interface)]
@@ -1461,9 +1549,9 @@ public final class Transport {
         public let destinationHash: Data
         /// Python's `path_table[dst][1]` (`received_from`), which is **never None**:
         /// Transport.py:1772-1796 stores `packet.transport_id` when the announce carried
-        /// one and `packet.destination_hash` when it did not. `rnpath -t` calls
+        /// one and `packet.destination_hash` when it didn't. `rnpath -t` calls
         /// `prettyhexrep(path["via"])` unguarded, so a null here is a TypeError in the
-        /// Python client, not an empty column — hence non-optional.
+        /// Python client, not an empty column—hence non-optional.
         public let via: Data
         public let hops: UInt8
         public let interfaceName: String
@@ -1473,8 +1561,8 @@ public final class Transport {
 
     public func getPathTable(maxHops: UInt8? = nil) -> [PathTableEntry] {
         lock.lock(); defer { lock.unlock() }
-        // Python publishes `str(receiving_interface)` — the display name, "LocalInterface
-        // [56156]" — where a path entry stores only the interface's short config name here.
+        // Python publishes `str(receiving_interface)`—the display name, "LocalInterface
+        // [56156]"—where a path entry stores only the interface's short config name here.
         // Resolving at the producer means every consumer of the table (the RPC path_table,
         // the /path request handler, and rnpath running in-process) reports the same string
         // Python would.
@@ -1489,22 +1577,22 @@ public final class Transport {
                 // destination's own hash.
                 via: $0.nextHopTransportID ?? $0.destinationHash,
                 hops: $0.hops,
-                // Fall back to the stored short name when nothing is registered under it —
-                // a path restored from disk can outlive the interface that heard it.
+                // Fall back to the stored short name when nothing holds that name—a
+                // path restored from disk can outlive the interface that heard it.
                 interfaceName: displayNames[$0.nextHopInterfaceName] ?? $0.nextHopInterfaceName,
                 lastHeard: $0.lastHeard,
                 expires: $0.expires
             )}
     }
 
-    /// Returns the number of currently active links.
+    /// Returns the number of active links.
     /// Mirrors Python's `Reticulum.get_link_count()`.
     public func getLinkCount() -> Int {
         lock.lock(); defer { lock.unlock() }
         return links.values.filter { $0.status == .active }.count
     }
 
-    /// Returns all currently active links as an array.
+    /// Returns all active links as an array.
     /// Mirrors Python's `Transport.active_links` list.
     public var activeLinks: [Link] {
         lock.lock(); defer { lock.unlock() }
@@ -1519,7 +1607,7 @@ public final class Transport {
     /// equivalents by the full 32-byte `packet.packet_hash` (Transport.py:1500/1507/1514)
     /// and a Python `rnprobe` therefore asks a Swift daemon over RPC with 32 bytes. Since
     /// the truncated hash is by definition the first 16 bytes of the full one, narrowing
-    /// the key here makes both spellings resolve without changing what is stored.
+    /// the key here makes both spellings resolve without changing what's stored.
     private static func phyCacheKey(_ packetHash: Data) -> Data {
         packetHash.count > Constants.truncatedHashLength
             ? packetHash.prefix(Constants.truncatedHashLength)
@@ -1601,15 +1689,15 @@ public final class Transport {
         return pathStates[destinationHash] == Transport.stateUnresponsive
     }
 
-    /// Block until a path to `destinationHash` is known, or the timeout
-    /// expires. Sends a path request if no path is currently known.
+    /// Block until a path to `destinationHash` exists, or the timeout
+    /// expires. Sends a path request when no path exists.
     /// Mirrors Python's `Transport.await_path`.
     ///
     /// - Parameters:
     ///   - destinationHash: 16-byte destination hash to resolve.
     ///   - timeout: Seconds to wait before giving up. Defaults to `pathRequestTimeout`.
     ///   - onInterface: Optional interface to send the path request on.
-    /// - Returns: `true` if a path was found, `false` if the timeout expired.
+    /// - Returns: `true` when a path turns up, `false` when the timeout expires.
     public func awaitPath(
         to destinationHash: Data,
         timeout: TimeInterval = Transport.pathRequestTimeout,
@@ -1627,7 +1715,7 @@ public final class Transport {
     // MARK: - Path / latency utilities
 
     /// Returns the bitrate of the outgoing interface for the next hop to
-    /// `destinationHash`, or nil if no path is known.
+    /// `destinationHash`, or nil when no path exists.
     /// Mirrors Python's `Transport.next_hop_interface_bitrate`.
     public func nextHopInterfaceBitrate(for destinationHash: Data) -> Int? {
         guard let iface = nextHopInterface(for: destinationHash) else { return nil }
@@ -1678,8 +1766,8 @@ public final class Transport {
 
     // MARK: - Identity recall
 
-    /// Return the Identity associated with `destinationHash`, if we have
-    /// learned it from an announce. Mirrors Python's `Identity.recall`.
+    /// Return the Identity associated with `destinationHash`, if a previous
+    /// announce carried it. Mirrors Python's `Identity.recall`.
     public func recall(identity destinationHash: Data) -> Identity? {
         lock.lock(); defer { lock.unlock() }
         return knownIdentities[destinationHash]
@@ -1692,20 +1780,20 @@ public final class Transport {
         return knownIdentities[destinationHash]?.appData
     }
 
-    /// Get the 10-byte ratchet ID of the currently known ratchet for a destination.
-    /// Returns nil if no ratchet is known. Mirrors Python's `Identity.current_ratchet_id()`.
+    /// Get the 10-byte ratchet ID of the known ratchet for a destination.
+    /// Returns nil when no ratchet exists. Mirrors Python's `Identity.current_ratchet_id()`.
     public func currentRatchetID(forDestination destinationHash: Data) -> Data? {
         lock.lock(); defer { lock.unlock() }
         guard let ratchetPub = knownRatchets[destinationHash] else { return nil }
         return Identity.ratchetID(forPublicKey: ratchetPub)
     }
 
-    /// The 32-byte ratchet PUBLIC key currently known for a destination, or nil.
+    /// The 32-byte ratchet PUBLIC key known for a destination, or nil.
     ///
     /// Mirrors Python's `Identity.get_ratchet(destination_hash)`, which is what
     /// `Destination.encrypt` feeds to `identity.encrypt(plaintext, ratchet=…)`
     /// (Destination.py:594-600). Distinct from ``currentRatchetID(forDestination:)``,
-    /// which returns the 10-byte *identifier* derived from this key and cannot be used
+    /// which returns the 10-byte *identifier* derived from this key and can't be used
     /// as an encryption target.
     public func currentRatchetKey(forDestination destinationHash: Data) -> Data? {
         lock.lock(); defer { lock.unlock() }
@@ -1716,27 +1804,59 @@ public final class Transport {
 
     public func register(interface: Interface) {
         // register()/deregister() run on network-callback threads (TCP-server
-        // accept, I2P peer up/down) and — under stress — can target the SAME
+        // accept, I2P peer up/down) and—under stress—can target the SAME
         // interface concurrently. Everything that mutates Transport-owned state
-        // OR the interface's Transport-owned callbacks is done under `lock` so
-        // two register()s (or a register racing a deregister) cannot interleave.
+        // OR the interface's Transport-owned callbacks happens under `lock` so
+        // two register()s (or a register racing a deregister) can't interleave.
         // Without this, the `inboundHandler`/`rawInboundHandler` closure pointers
         // are torn by concurrent writes (an ARC refcount race that corrupts the
         // heap and surfaces as unrelated "Duplicate keys" dictionary traps), and
-        // the per-interface bookkeeping dicts can be left with orphaned entries.
+        // the per-interface bookkeeping dicts can end up with orphaned entries.
         //
         // `lock` is the outer lock; the per-interface leaf locks are acquired
         // nested inside it (global order: lock > ingressLock > trackersLock,
         // lock > metricsLock). No leaf-lock holder ever acquires `lock`, so this
-        // introduces no cycle. `synthesizeTunnel` is the one callout — snapshot
+        // introduces no cycle. `synthesizeTunnel` is the one callout—snapshot
         // its trigger under `lock`, then run it after releasing (act-outside).
         let key = ObjectIdentifier(interface)
         lock.lock()
-        // Raw-bytes handler used by real interfaces — verifies IFAC, parses packet.
+        // Raw-bytes handler used by real interfaces—verifies IFAC, parses packet.
         interface.rawInboundHandler = { [weak self] rawBytes, sourceInterface in
             guard let self else { return }
             guard let verified = sourceInterface.unwrapIfac(rawBytes) else { return }
+            // `if interface and len(raw) > interface.HW_MTU + (interface.ifac_size or 0):
+            //      return interface.protocol_violation(...)` (`Transport.py:1789`, RNS 1.5.0).
+            //
+            // A frame past the medium's own hardware MTU can't have a legitimate origin
+            // by a peer on that medium. This port bounded frame size only inside the HDLC
+            // deframer, which leaves UDP, RNode/KISS, AutoInterface, Weave and the KISS-framed
+            // I2P path with no inbound bound at all. Here—the one funnel every interface's
+            // raw bytes pass through—covers all of them, which is the same reason Python
+            // moved the check to `preprocess_inbound` rather than into each interface.
+            //
+            // Python compares against `HW_MTU`, which its base class leaves as `None`; the
+            // resulting `None + int` would raise, and `inbound`'s blanket `except`
+            // (`Transport.py:1683`) would turn that into a logged drop of every packet on such
+            // an interface. Every shipped interface sets one, so that branch is unreachable
+            // upstream—skipping the check when `hwMtu` is nil keeps the reachable behaviour
+            // and declines to reproduce the unreachable bug.
+            //
+            // The comparison is against the *post-IFAC* bytes on both sides: Python runs
+            // `handle_ifac` first (`:1766`) and still adds `ifac_size` back into the
+            // allowance, so a frame that filled the medium before the tag was stripped is
+            // still accepted.
+            if let hwMtu = sourceInterface.hwMtu,
+               verified.count > hwMtu + sourceInterface.ifacSize { return }
             guard let packet = try? Packet.unpack(verified) else { return }
+            // `if len(raw) > RNS.Reticulum.MTU: return ... protocol_violation("Excessive
+            // announce packet frame size ...")` (`Transport.py:1804`).
+            //
+            // Announces are the one packet type every transport node floods onward, so an
+            // unbounded one is an amplification path rather than merely a large frame. The
+            // ceiling is the protocol MTU, not the interface's—a legitimate announce fits in
+            // 500 bytes on every medium, so a larger one is malformed no matter how wide the
+            // link that carried it.
+            if packet.packetType == .announce, verified.count > Constants.mtu { return }
             self.handleIncoming(packet: packet, from: sourceInterface)
         }
         // Packet handler kept for test-stub loopback interfaces that deliver
@@ -1779,7 +1899,7 @@ public final class Transport {
         ingressLock.unlock()
         let wantsTunnel = interface.wantsTunnel
         lock.unlock()
-        // A restored path or tunnel waiting for this interface can now be installed.
+        // A restored path or tunnel waiting for this interface can go in now.
         // Outside the lock: the installers take it themselves.
         drainPendingRestores()
         // Synthesize a tunnel for interfaces that request it (outside all locks).
@@ -1790,33 +1910,33 @@ public final class Transport {
 
     // MARK: - Deferred restore
 
-    /// Entries read from `destination_table` that could not be installed yet because the
-    /// interface they name was not registered at the time.
+    /// Entries read from `destination_table` that couldn't be installed yet because the
+    /// interface they name wasn't registered at the time.
     ///
-    /// Only the path table needs this. A tunnel path does not depend on an interface being
-    /// present — the reference restores it with `receiving_interface = None`
-    /// (`Transport.py:398-400`) — so `TunnelStore` resolves every entry on the spot.
+    /// Only the path table needs this. A tunnel path doesn't depend on an interface being
+    /// present—the reference restores it with `receiving_interface = None`
+    /// (`Transport.py:398-400`)—so `TunnelStore` resolves every entry on the spot.
     ///
     /// **This exists because of an ordering difference from the reference, not as an
     /// optimisation.** Python builds every configured interface in `__apply_config()` and only
-    /// then calls `Transport.start()`, which restores the tables (`Reticulum.py:340,346`) — so
+    /// then calls `Transport.start()`, which restores the tables (`Reticulum.py:340,346`)—so
     /// by the time it resolves `find_interface_from_hash`, every interface exists. In this port
-    /// the daemon's interfaces are synthesised *after* `Reticulum.start()`, by `rnsd` itself,
-    /// so the restore ran against an empty interface set and **every entry was dropped, always**.
+    /// `rnsd` itself synthesises the daemon's interfaces *after* `Reticulum.start()`,
+    /// so the restore ran against an empty interface set and **dropped every entry, always**.
     /// The path table has never survived a restart in a real daemon, whatever its on-disk format
     /// (`bugs/041`).
     ///
     /// Holding the entries and installing them as their interfaces appear fixes that without
-    /// making any caller responsible for an ordering. The alternative — moving the restore to
-    /// after interface synthesis — would be a correction at whichever call site happened to be
+    /// making any caller responsible for an ordering. The alternative—moving the restore to
+    /// after interface synthesis—would be a correction at whichever call site happened to be
     /// looked at, and there are three that register interfaces.
     ///
     /// Bounded: `sweepPendingRestores()` discards whatever is still pending after
-    /// ``pendingRestoreWindow``, so this cannot install a path minutes later when a discovered
-    /// interface appears — which would be a real divergence, since the reference drops such an
+    /// ``pendingRestoreWindow``, so this can't install a path minutes later when a discovered
+    /// interface appears—which would be a real divergence, since the reference drops such an
     /// entry permanently.
     var pendingPathRestores: [PathStore.Entry] = []
-    /// When the pending entries were read, so they can be given up on.
+    /// When the pending entries were read, so they can expire.
     var pendingRestoresReadAt: Date?
 
     /// How long a restored entry waits for its interface. Startup, plus slack for an interface
@@ -1839,7 +1959,7 @@ public final class Transport {
     }
 
     /// Give up on entries whose interface never arrived, matching the reference's outcome for
-    /// an interface that is not there when the tables are read (`Transport.py:334,348`).
+    /// an interface that isn't there when the tables load (`Transport.py:334,348`).
     func sweepPendingRestores(now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
         guard let readAt = pendingRestoresReadAt,
@@ -1855,7 +1975,7 @@ public final class Transport {
     /// Remove an interface from the transport. Cleans up all per-interface state.
     /// Mirrors Python `Transport.remove_interface()` added in e7a317f0.
     public func deregister(interface iface: any Interface) {
-        // Held under `lock` for the whole body so it is atomic with respect to a
+        // Held under `lock` for the whole body so it's atomic with respect to a
         // concurrent register() of the same interface (see register() for the
         // lock-hierarchy rationale). The per-interface leaf locks are acquired
         // nested inside `lock`.
@@ -1881,8 +2001,8 @@ public final class Transport {
     ///
     /// - Parameters:
     ///   - interface: The interface to configure.
-    ///   - netname: Human-readable network name (e.g. `"mynet"`).
-    ///   - netkey:  Pre-shared access key string (e.g. `"s3cr3t"`).
+    ///   - netname: Human-readable network name (for example, `"mynet"`).
+    ///   - netkey:  Pre-shared access key string (for example, `"s3cr3t"`).
     ///   - size:    IFAC signature-tail bytes (1–32, default 16).
     public static func configureIfac(
         on interface: any Interface,
@@ -1901,7 +2021,7 @@ public final class Transport {
         // Python derives the IFAC identity from the key and signs `full_hash(key)` with it
         // (`Reticulum.py:972-973`). `rnstatus` prints the last bytes of that signature as the
         // segment's "Access" fingerprint, so an interface holding a key but no identity reports
-        // no access code where a Python node on the same segment reports one — the stats payload
+        // no access code where a Python node on the same segment reports one—the stats payload
         // emits `ifac_signature` nil (`InterfaceStatsPayload.swift:98-107`). Derived, never
         // random: two nodes on one segment must produce the same signature.
         interface.ifacIdentity = try? Identity(privateKeyBytes: key)
@@ -1925,7 +2045,7 @@ public final class Transport {
         links[id] = link
     }
 
-    /// Bulk-load a path entry — used by `PathStore.apply` to rehydrate
+    /// Bulk-load a path entry—used by `PathStore.apply` to rehydrate
     /// state from disk on stack startup. No validation here: the caller is
     /// expected to have produced these entries from a previous live state.
     public func restore(path: PathEntry, forDestination destinationHash: Data) {
@@ -1933,14 +2053,14 @@ public final class Transport {
         paths[destinationHash] = path
     }
 
-    /// Bulk-load a tunnel entry — used by `TunnelStore.apply` to rehydrate `storage/tunnels` at
+    /// Bulk-load a tunnel entry—used by `TunnelStore.apply` to rehydrate `storage/tunnels` at
     /// start (`Transport.py:403`).
     public func restore(tunnel: TunnelEntry) {
         lock.lock(); defer { lock.unlock() }
         tunnels[tunnel.tunnelID] = tunnel
     }
 
-    /// Directly insert a relayed-link route, so a hairpin relay can be exercised without
+    /// Directly insert a relayed-link route, so a test can drive a hairpin relay without
     /// standing up two peers and driving a full link handshake through them.
     public func restore(linkRoute: LinkRoute) {
         lock.lock(); defer { lock.unlock() }
@@ -1955,7 +2075,7 @@ public final class Transport {
     }
 
     /// Inject a synthetic path table entry for testing.
-    /// Sets `nextHopTransportID` to `nextHop` so requestor-ID suppression can be tested.
+    /// Sets `nextHopTransportID` to `nextHop` so a test can drive requestor-ID suppression.
     public func injectPath(_ destinationHash: Data,
                            nextHop: Data,
                            receivedOn interface: any Interface,
@@ -2010,15 +2130,15 @@ public final class Transport {
 
     /// Persist a learned ratchet to `<ratchetsDirectory>/<desthex>`.
     ///
-    /// `umsgpack.packb({"ratchet": ratchet, "received": time.time()})` — `Identity.py:424,434`,
+    /// `umsgpack.packb({"ratchet": ratchet, "received": time.time()})`—`Identity.py:424,434`,
     /// read straight back with `umsgpack.unpackb` at `:493`. The raw key and a float timestamp:
     /// the reference gates on `len(ratchet_data["ratchet"]) == RATCHETSIZE//8` and does
-    /// arithmetic on `received` (`:494`), so a hex string and an ISO-8601 date — which is what
-    /// the port wrote — fail both.
+    /// arithmetic on `received` (`:494`), so a hex string and an ISO-8601 date—which is what
+    /// the port wrote—fail both.
     ///
     /// `bugs/029`'s fifth divergence, and the one that cost the most: this path carries matching
     /// directory *and* filenames on both sides, so it read as correct in a listing, and both
-    /// implementations *delete* what they cannot parse here (`Identity._clean_ratchets`,
+    /// implementations *delete* what they can't parse here (`Identity._clean_ratchets`,
     /// `:459-462,476`, and `loadKnownRatchets` below). Each side silently destroyed the other's
     /// forward-secrecy state on the first start after a switch.
     private func persistKnownRatchet(_ ratchet: Data, forDestination hash: Data, receivedAt: Date) {
@@ -2081,7 +2201,7 @@ public final class Transport {
     }
 
     /// Encrypt `plaintext` for `destinationHash` using the freshest
-    /// ratchet we know for that destination, falling back to the
+    /// ratchet known for that destination, falling back to the
     /// destination identity's static X25519 key when no ratchet has
     /// been seen.
     public func encrypt(_ plaintext: Data, forDestination destinationHash: Data) throws -> Data {
@@ -2102,7 +2222,7 @@ public final class Transport {
     ///
     /// Not one type: `remember` seeds it with the integer `0` (`Identity.py:107`), retention
     /// writes the integer `-1` (`:255`), and use writes `time.time()`, a float (`:246`). msgpack
-    /// preserves that distinction — a fixint versus a float64 — so writing everything as a double
+    /// preserves that distinction—a fixint versus a float64—so writing everything as a double
     /// would produce a file the reference never would, even though its own reader is arithmetic
     /// and would not notice.
     private static func lastUseValue(retained: Bool, lastUsed: Date?) -> MsgPack.Value {
@@ -2115,12 +2235,12 @@ public final class Transport {
     ///
     /// `umsgpack.dump(Identity.known_destinations)` (`Identity.py:198`): a map keyed by the raw
     /// destination hash whose values are `[last_announce, packet_hash, public_key, app_data,
-    /// last_use]` (`:107`). Positional — the reader indexes 0, 2, 3 and 4 directly (`:146-149`,
-    /// `:314-324`) — so field 1 is carried even though nothing reads it.
+    /// last_use]` (`:107`). Positional—the reader indexes 0, 2, 3 and 4 directly (`:146-149`,
+    /// `:314-324`)—so field 1 stays on the wire even though nothing reads it.
     ///
     /// Written atomically, as `Identity.py:196-200` does with an explicit temp file and
     /// `os.replace`. `Data.write(options: .atomic)` is that same write-then-rename, so a torn
-    /// file is not observable on either side.
+    /// file isn't observable on either side.
     public func saveKnownDestinations(to url: URL) throws {
         lock.lock()
         let snapshot = knownIdentities
@@ -2154,12 +2274,12 @@ public final class Transport {
         lock.lock()
         defer { lock.unlock() }
         for (key, value) in pairs {
-            // `if len(known_destination) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8` (:225) — a key
-            // that is not a destination hash is skipped, and does not abort the load.
+            // `if len(known_destination) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8` (:225)—a key
+            // that isn't a destination hash is skipped, and doesn't abort the load.
             guard case .bytes(let destHash) = key,
                   destHash.count == Constants.truncatedHashLength,
                   case .array(var fields) = value else { continue }
-            // `[e[0], e[1], e[2], e[3], 0]` (:226-229) — an entry written by an older reference
+            // `[e[0], e[1], e[2], e[3], 0]` (:226-229)—an entry written by an older reference
             // has four fields and is backfilled with a zero `last_use`, not discarded.
             if fields.count == 4 { fields.append(.double(0)) }
             guard fields.count == 5,
@@ -2189,9 +2309,9 @@ public final class Transport {
 
     // MARK: - Known destination lifecycle
 
-    /// Mark that a destination was used (e.g., recalled for outbound encryption).
+    /// Mark that a destination was used (for example, recalled for outbound encryption).
     /// Mirrors Python's `Identity._used_destination_data()` which:
-    ///   - returns False if the destination is not in known_destinations
+    ///   - returns False if the destination isn't in known_destinations
     ///   - returns False (and skips update) if the destination is retained (slot[4] < 0)
     ///   - otherwise sets the last-used timestamp and returns True
     @discardableResult
@@ -2258,7 +2378,7 @@ public final class Transport {
         }
     }
 
-    /// Pin a destination so it is never removed by `cleanKnownDestinations`.
+    /// Pin a destination so it's never removed by `cleanKnownDestinations`.
     /// Mirrors Python `Identity._retain_destination_data(destination_hash)`.
     @discardableResult
     public func retainDestinationData(_ destinationHash: Data) -> Bool {
@@ -2301,6 +2421,9 @@ public final class Transport {
     public func start() throws {
         startTime = Date().timeIntervalSince1970
         for interface in interfaces { try interface.start() }
+        // `Transport.prioritize_interfaces()` (`Transport.py:524`)—after the interfaces are
+        // up, so `isOnline` is meaningful when the lowest bitrate is taken.
+        prioritizeInterfaces()
         setupManagementDestinations()
         isRunning = true
         startJobsLoop()
@@ -2330,10 +2453,10 @@ public final class Transport {
                 // Registered as a NATIVE handler, not a bytes one: Python's rnstatus does
                 // `isinstance(request_receipt.response, list)` on the decoded value
                 // (rnstatus.py:112). A bytes handler makes `dispatchRequest` wrap the
-                // reply as `[request_id, BIN(<msgpack>)]`, Python sees `bytes`, the
-                // isinstance test fails and rnstatus reports "Could not get RNS status
-                // from remote transport instance". A Swift client would NOT catch this —
-                // `handleIncomingResponse` unwraps a .bytes payload transparently.
+                // reply as `[request_id, BIN(<msgpack>)]`, Python receives `bytes`, the
+                // isinstance test fails and rnstatus reports "Couldn't get RNS status
+                // from remote transport instance". A Swift client would NOT catch this—`handleIncomingResponse`
+                // unwraps a .bytes payload transparently.
                 mgmt.registerNativeRequestHandler(path: "/status", allow: .list, allowedList: allowed) {
                     [weak self] _, data, _, _, _ -> MsgPack.Value? in
                     guard let self else { return nil }
@@ -2368,8 +2491,8 @@ public final class Transport {
                     }()
                     switch command {
                     case "table":
-                        // The entries must carry every key `get_path_table()` produces —
-                        // rnpath renders `path["interface"]` and `path["expires"]` directly,
+                        // The entries must carry every key `get_path_table()` produces—rnpath
+                        // renders `path["interface"]` and `path["expires"]` directly,
                         // so an abridged entry raises a KeyError on the Python side.
                         let table = self.getPathTable(maxHops: maxHops)
                         let filtered = filterHash == nil ? table : table.filter { $0.destinationHash == filterHash }
@@ -2441,7 +2564,13 @@ public final class Transport {
         jobsTimer = timer
     }
 
-    private func runJobs() {
+    /// Internal rather than private so a test can drive one pass directly: the defect this
+    /// visibility exists for is a job that stops being *called*, which no test of the job
+    /// itself can see.
+    func runJobs() {
+        // `Transport.prioritize_interfaces()` in the interface-jobs block (`Transport.py:1151`).
+        // Refreshes both the bitrate ordering and `lowestInterfaceBitrate`.
+        prioritizeInterfaces()
         sweepPendingRestores()
         sweepExpiredPaths()
         sweepExpiredReceipts()
@@ -2454,7 +2583,7 @@ public final class Transport {
         sweepExpiredBlackholes()
         synthesizePendingTunnels()
         // Process held announces for each interface (mirrors Python's per-interface job loop).
-        // Snapshot under `lock` — register/deregister mutate `interfaces` on
+        // Snapshot under `lock`—register/deregister mutate `interfaces` on
         // network-callback threads while this jobs loop runs.
         lock.lock()
         let heldSnapshot = interfaces
@@ -2487,9 +2616,9 @@ public final class Transport {
             // These two completion guards are a faithful mirror of Python's
             // `if/elif` pair (Transport.jobs); at the default constants
             // (localRebroadcastsMax=2, pathRequestRetries=1) they both trip at
-            // retries==2, i.e. after exactly one retransmission.
+            // retries==2, that is, after exactly one retransmission.
             if entry.retries > 0 && entry.retries >= Transport.localRebroadcastsMax {
-                // Enough local rebroadcasts / retries — done.
+                // Enough local rebroadcasts / retries—done.
                 completed.append(destinationHash)
             } else if entry.retries > Transport.pathRequestRetries {
                 // Retry limit (PATHFINDER_R) reached.
@@ -2546,12 +2675,12 @@ public final class Transport {
     }
 
     /// Receive-side cancel for a pending announce retransmission. Called when a
-    /// forwarded (HEADER_2) announce arrives for a destination we are about to
+    /// forwarded (HEADER_2) announce arrives for a destination this node is about to
     /// retransmit. Mirrors Python's `Transport.inbound()` announce_table block:
-    ///   - hops == stored + 1 → a sibling at our own distance rebroadcast it;
+    ///   - hops == stored + 1 → a sibling at this node's distance rebroadcast it;
     ///     once `LOCAL_REBROADCASTS_MAX` are heard the retry is dropped.
-    ///   - hops == stored + 2 → a downstream node passed our rebroadcast on;
-    ///     if it happened before our retry timer, no further tries are needed.
+    ///   - hops == stored + 2 → a downstream node passed this rebroadcast on;
+    ///     if it happened before the retry timer, no further tries are needed.
     private func noteAnnounceRebroadcastHeard(destinationHash: Data, incomingHops: Int) {
         lock.lock(); defer { lock.unlock() }
         guard var entry = announceTable[destinationHash] else { return }
@@ -2575,7 +2704,7 @@ public final class Transport {
         // The reverse table stores entries for proof forwarding. If a proof
         // hasn't arrived within maxAge seconds, the entry is stale.
         // In Python, the reverse table entries are removed when proofs arrive;
-        // we add a sweep to handle the case where proofs never arrive.
+        // a sweep handles the case where proofs never arrive.
         // Simple approach: limit size (entries are at most a few hundred bytes each)
         reverseTableLock.lock()
         if reverseTable.count > 4096 {
@@ -2589,7 +2718,7 @@ public final class Transport {
     /// Drop link-relay routes whose last activity is older than the link timeout.
     /// Mirrors Python's `link_table` cull in `Transport.jobs()` (LINK_TIMEOUT =
     /// STALE_TIME * 1.25). Without this a transport relay accumulates one permanent
-    /// `linkRoutes` entry per link it ever forwarded — an unbounded memory leak over
+    /// `linkRoutes` entry per link it ever forwarded—an unbounded memory leak over
     /// days/weeks. `lastHeard` is refreshed on every forwarded link packet
     /// (including keepalives), so a live relayed link is never swept. Wire-neutral.
     private func sweepLinkRoutes(now: Date = Date()) {
@@ -2608,8 +2737,8 @@ public final class Transport {
         for dh in expired {
             paths.removeValue(forKey: dh)
             // Drop the parallel cached announce so it can't outlive its path.
-            // (An orphaned cachedAnnounce is never served — handlePathRequest
-            // requires a live path entry — so dropping it is wire-neutral, and it
+            // (An orphaned cachedAnnounce is never served—handlePathRequest
+            // requires a live path entry—so dropping it's wire-neutral, and it
             // stops cachedAnnounces from growing unbounded alongside path expiry.)
             cachedAnnounces.removeValue(forKey: dh)
         }
@@ -2665,7 +2794,7 @@ public final class Transport {
     /// Conclude the receipt for a link data packet whose proof a `Link` has already validated.
     ///
     /// Separate from ``deliverProof(packetHash:proof:)`` because the signature over a link data
-    /// packet is made with the link's own signing key, which no receipt can verify — see
+    /// packet is made with the link's own signing key, which no receipt can verify—see
     /// `Link.handleDataProof` (`bugs/014`).
     func concludeLinkReceipt(packetHash: Data, proofPacket: Packet?) {
         receiptsLock.lock()
@@ -2693,7 +2822,7 @@ public final class Transport {
     /// outside the resource range (`RESOURCE`…`RESOURCE_RCL`).
     ///
     /// This port gated on `destinationType == .single` instead, which excluded **every link
-    /// packet** — so a message sent over a link got no receipt, nothing could ever prove it, and
+    /// packet**—so a message sent over a link got no receipt, nothing could ever prove it, and
     /// LXMF had no choice but to call `send()` returning "delivered" (`bugs/014`). The reference
     /// has no such restriction; a LINK destination is simply not PLAIN.
     static func shouldGenerateReceipt(for packet: Packet) -> Bool {
@@ -2716,15 +2845,26 @@ public final class Transport {
     /// callbacks.
     @discardableResult
     public func send(_ packet: Packet, generateReceipt: Bool = true) throws -> PacketReceipt? {
+        // `if self.hops >= RNS.Transport.PATHFINDER_M: return False` (`Packet.py:292`, added in
+        // RNS 1.5.0), which `Transport._outbound` restates as `hops > PATHFINDER_M-1`. This is
+        // the single funnel every outbound packet passes through, so the gate lives here rather
+        // than at each construction site.
+        //
+        // `Packet.unpack` already refuses to *parse* a packet at or past the limit, so a peer
+        // discards this frame the moment it arrives. Emitting it's pure waste, and on a
+        // transport-mode node it's an amplification path. Returning nil rather than throwing
+        // mirrors Python's `return False`: a refused send isn't an error condition.
+        guard Int(packet.hops) < Transport.pathfinderM else { return nil }
+
         var packet = packet
         // Give the packet the transmit cap of the link it belongs to, mirroring Python's
         // `self.MTU = destination.mtu` for LINK-typed packets (`Packet.py:153-154`). Done here
-        // because this is the single funnel every link packet passes through — the alternative
+        // because this is the single funnel every link packet passes through—the alternative
         // is stamping it at the ten `destinationType: .link` construction sites in `Link`, which
         // is the shape that let `bugs/013` come back three times.
         //
         // Without it, `pack()` caps every packet at the base 500 bytes, so once MTU discovery
-        // raises a link the resource parts `bugs/016` sizes from that MTU are refused by every
+        // raises a link the resource parts `bugs/016` sizes from that MTU, and every
         // interface and the transfer dies silently (`bugs/033`).
         if packet.destinationType == .link {
             lock.lock(); let link = links[packet.destinationHash]; lock.unlock()
@@ -2742,8 +2882,8 @@ public final class Transport {
                 //
                 // A LINK packet has neither: its destination hash is a link ID, and its proof is
                 // signed with the link's own signing key, which only the `Link` holds. Those
-                // receipts are concluded by `Link.receive` after it validates the signature
-                // against `peerSigPub` — see `PacketReceipt.markDeliveredByLinkProof`.
+                // `Link.receive` concludes receipts after validating the signature
+                // against `peerSigPub`—see `PacketReceipt.markDeliveredByLinkProof`.
                 lock.lock()
                 let peerIdentity = knownIdentities[packet.destinationHash]
                     ?? registeredDestinations[packet.destinationHash]?.identity
@@ -2797,7 +2937,7 @@ public final class Transport {
         if let path, packet.packetType != .announce,
            packet.destinationType == .single {
             guard let outbound = path.nextHopInterface, outbound.isOnline else {
-                // Path exists but interface is offline — broadcast as fallback.
+                // Path exists but interface is offline—broadcast as fallback.
                 for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
                     try? iface.send(deltaMangled(packet, for: iface))
                 }
@@ -2805,17 +2945,17 @@ public final class Transport {
             }
             var routed = packet
             // A transport header is inserted only when the packet must be handed onward
-            // through another node — i.e. the destination is at least one hop away and the
+            // through another node—that is, the destination is at least one hop away and the
             // path carries the next hop's transport ID (learned from a HEADER_2 announce).
             // The `hops >= 1` guard is the fix: a destination *zero* hops away is directly
             // reachable and must go out as-is (HEADER_1), even when a next-hop transport ID
             // is on file. That 0-hop-with-transport-ID combination arises for exactly one
-            // topology — a shared instance's own local clients as seen from a sibling client,
+            // topology—a shared instance's own local clients as seen from a sibling client,
             // whose path is learned via the instance's HEADER_2 announce yet is delivered
             // locally. Stamping HEADER_2 there published a stray transport header addressed to
-            // the shared instance; a Python peer drops such a packet (a local client is not the
+            // the shared instance; a Python peer drops such a packet (a local client isn't the
             // addressed transport), so a Swift `rncp`/LXMF/NomadNet client's link request never
-            // reached a Python peer across a shared instance. A directly-connected 1-hop peer
+            // reached a Python peer across a shared instance. A directly connected 1-hop peer
             // learns its path from a HEADER_1 announce, leaving `nextHopTransportID` nil, so it
             // still goes out HEADER_1; a 1-hop backbone-relayed path keeps its HEADER_2. Mirrors
             // Python Transport.outbound()'s hop-count branches (Transport.py:1150-1188).
@@ -2853,7 +2993,7 @@ public final class Transport {
     }
 
     /// Broadcast on every online routing-endpoint interface *except* the one specified.
-    /// Used when relaying an announce so we don't send it back where it
+    /// Used when relaying an announce so it doesn't go back where it
     /// came from.
     public func send(_ packet: Packet, exceptInterface excluded: Interface) {
         for interface in interfaces where interface.isOnline && interface.isRoutingEndpoint && interface !== excluded {
@@ -2863,7 +3003,7 @@ public final class Transport {
         }
     }
 
-    /// Convenience — announce an inbound destination on all interfaces.
+    /// Convenience—announce an inbound destination on all interfaces.
     @discardableResult
     /// Announce a destination on all interfaces, or a specific interface.
     /// - Parameter onInterface: If specified, the announce is only sent on this interface.
@@ -2897,7 +3037,7 @@ public final class Transport {
     // MARK: - Inbound
 
     /// Wire-format hash of the well-known path-request destination, plain
-    /// kind, name "rnstransport.path.request" — matches the Python
+    /// kind, name "rnstransport.path.request"—matches the Python
     /// reference `Transport.path_request_destination`.
     public static let pathRequestDestinationHash: Data = {
         let nameHash = Destination.computeNameHash(
@@ -2908,7 +3048,7 @@ public final class Transport {
     }()
 
     /// Wire-format hash of the well-known tunnel synthesize destination, plain
-    /// kind, name "rnstransport.tunnel.synthesize" — matches Python
+    /// kind, name "rnstransport.tunnel.synthesize"—matches Python
     /// `Transport.tunnel_synthesize_destination`.
     public static let tunnelSynthesizeHash: Data = {
         let nameHash = Destination.computeNameHash(
@@ -2923,12 +3063,12 @@ public final class Transport {
         // handleIncoming runs concurrently for every inbound frame across
         // interfaces, so these counter/array mutations must be serialized. The
         // packet pack/hash work is done first (outside the lock) so the lock is
-        // held only for the mutations. `lock` is NOT held here.
+        // held only for the mutations. `lock` isn't held here.
         // Mirrors Python `Transport.traffic_rxb` accumulation and the
         // local_client_rssi/snr/q caches (LOCAL_CLIENT_CACHE_MAXSIZE = 512).
         // Use packedBytes()/hashablePart-based hashing (NOT pack()): an inbound
         // link packet may legitimately exceed the base MTU once a larger link
-        // MTU is negotiated, and pack()'s MTU guard would throw — undercounting
+        // MTU is negotiated, and pack()'s MTU guard would throw—undercounting
         // traffic and (via filterAndRecord) dropping the packet entirely.
         let rawByteCount = (try? packet.packedBytes())?.count
         let pktHash = try? packet.truncatedPacketHash()
@@ -2988,8 +3128,8 @@ public final class Transport {
         case .data where packet.destinationType == .link:
             handleLinkData(packet, from: interface)
         case .proof where packet.destinationType == .link:
-            // Non-LRPROOF proofs over a link (e.g. RESOURCE_PRF) are
-            // encrypted with the link key — let Link.receive decrypt them.
+            // Non-LRPROOF proofs over a link (for example, RESOURCE_PRF) are
+            // encrypted with the link key—let Link.receive decrypt them.
             handleLinkData(packet, from: interface)
         case .proof where packet.destinationType != .link:
             // Explicit proof for a sent DATA packet. Try to match it to an
@@ -3008,8 +3148,8 @@ public final class Transport {
 
         // Use the destination's own identity to answer the link request.
         // This is correct: each registered destination carries its private
-        // identity, so we do not need the transport-wide ownerIdentity here.
-        // (ownerIdentity is still needed for tunnel synthesis — synthesizeTunnel.)
+        // identity, so the transport-wide ownerIdentity isn't needed here.
+        // (ownerIdentity is still needed for tunnel synthesis—synthesizeTunnel.)
         if let destination, let owner = destination.identity, destination.acceptsLinks {
             do {
                 let link = try Link.answer(
@@ -3025,16 +3165,16 @@ public final class Transport {
                 link.startWatchdog()
                 try link.sendProof()
             } catch {
-                // Malformed request — drop silently.
+                // Malformed request—drop silently.
             }
             return
         }
 
-        // Not for us — forward toward the responder if we know a path, and
+        // Not for this node—forward toward the responder if a path is known, and
         // remember the link's two-sided routing so the proof/RTT/close
         // packets that come back addressed to link_id can be steered. As with
         // DATA relay, a non-transport shared instance still relays link requests
-        // to/from a directly-connected local client (Python `transport_enabled or
+        // to/from a directly connected local client (Python `transport_enabled or
         // from_local_client or for_local_client_link`, Transport.py:1573).
         let fromLocalLR = fromLocalClient(interface: interface)
         let forLocalLR: Bool = {
@@ -3047,7 +3187,7 @@ public final class Transport {
         guard outbound !== interface else { return }
 
         // link_id derives from the LRR packet's hashable part with signalling bytes
-        // stripped — mirrors Python's Link.link_id_from_lr_packet so all nodes
+        // stripped—mirrors Python's Link.link_id_from_lr_packet so all nodes
         // (initiator, relay, responder) agree on the same link_id value.
         guard let linkIDHashable = try? Link.linkIDHashable(for: packet, dataLength: packet.data.count) else {
             return
@@ -3071,8 +3211,8 @@ public final class Transport {
         let instanceLocalLink = isLocalClientInterface(interface) && isLocalClientInterface(outbound)
         forwarded.hops = relayHops(packet, from: interface, staysLocal: instanceLocalLink)
 
-        // If the incoming LINKREQUEST is HEADER_2 addressed to us as relay, we
-        // must convert it before forwarding. Mirrors Python Transport lines 1565–1576:
+        // If the incoming LINKREQUEST is HEADER_2 addressed to this node as relay,
+        // Transport must convert it before forwarding. Mirrors Python Transport lines 1565–1576:
         //
         //   remaining_hops > 1 → update transport_id to next hop, keep HEADER_2
         //   remaining_hops == 1 → strip transport header, forward as HEADER_1
@@ -3082,18 +3222,18 @@ public final class Transport {
         //   path.hops == 0  ↔  Python remaining_hops == 1  → strip headers
         //   path.hops  > 0  ↔  Python remaining_hops  > 1  → update transport_id
         //
-        // Without this conversion, the responder receives HEADER_2 with our
+        // Without this conversion, the responder receives HEADER_2 with this node's
         // transport_id, fails the identity check (transport_id ≠ responder's ID),
         // and silently drops the link request.
         if forwarded.headerType == .type2, forwarded.transportID == transportInstanceID {
             if path.hops == 0 {
                 // Destination is directly reachable on outbound interface.
-                // Strip the transport header so the responder sees a plain HEADER_1.
+                // Strip the transport header so the responder receives a plain HEADER_1.
                 forwarded.headerType = .type1
                 forwarded.transportType = .broadcast
                 forwarded.transportID = nil
             } else {
-                // More relay hops needed — replace our transport_id with the
+                // More relay hops needed—replace this transport_id with the
                 // next relay's transport_id so that node forwards it onward.
                 forwarded.transportID = path.nextHopTransportID ?? transportInstanceID
             }
@@ -3108,14 +3248,14 @@ public final class Transport {
     }
 
     /// Clamp or strip the 3-byte MTU signalling tail of a relayed LINKREQUEST so
-    /// the link is not negotiated above what a relay hop can carry. Mirrors
+    /// the link isn't negotiated above what a relay hop can carry. Mirrors
     /// Python `Transport.inbound()` (lines ~1604-1626):
-    ///   - next hop declares no HW MTU, or cannot autoconfigure/fixed MTU →
+    ///   - next hop declares no HW MTU, or can't autoconfigure/fixed MTU →
     ///     disable the upgrade and drop the signalling bytes;
     ///   - otherwise, if the next- or prev-hop HW MTU is below the requested
     ///     path MTU, clamp the signalling to the smallest HW MTU on the path.
     /// With Swift's production interfaces (all `hwMtu == nil`) only the strip
-    /// branch fires today; the clamp branch is exercised by tests with an
+    /// branch fires today; tests with an
     /// interface that declares HW MTU, ready for when real interfaces do.
     private func clampRelayedLinkRequestMtu(_ packet: inout Packet,
                                             prevHop: any Interface, nextHop: any Interface) {
@@ -3126,16 +3266,16 @@ public final class Transport {
         let nhMtu = nextHop.hwMtu
         let phMtu = prevHop.hwMtu
         if nhMtu == nil || (!nextHop.autoconfigureMtu && !nextHop.fixedMtu) {
-            // Next hop cannot carry an upgraded MTU — disable the upgrade.
+            // Next hop can't carry an upgraded MTU—disable the upgrade.
             packet.data = Data(packet.data.prefix(base))
         } else if let nh = nhMtu, nh < pathMtu || (phMtu.map { $0 < pathMtu } ?? false) {
             // Clamp to the smallest HW MTU on the path. INTENTIONAL DIVERGENCE
             // from Python: when the next hop reports an MTU below the path MTU
             // but the prev hop reports no HW MTU, Python computes `min(nh, None)`,
-            // raises TypeError, and *drops* the link request. We instead clamp to
+            // raises TypeError, and *drops* the link request. This port instead clamps to
             // the next-hop MTU (the binding constraint when the prev hop is
-            // unknown) and forward, so a recoverable link still establishes —
-            // strictly better than dropping it on a Python `min(None)` crash.
+            // unknown) and forward, so a recoverable link still establishes—strictly
+            // better than dropping it on a Python `min(None)` crash.
             let clamped = min(nh, phMtu ?? nh)
             packet.data = Data(packet.data.prefix(base)) + Link.mtuSignallingBytes(mtu: clamped)
         }
@@ -3146,8 +3286,8 @@ public final class Transport {
             let proofHops = Int(packet.hops)
             // Python's `hops_to` returns PATHFINDER_M for an unknown path, never
             // None, so `link.expected_hops` is always an int and a pathless link
-            // compares against a sentinel that can never equal a real hop count —
-            // i.e. it ALWAYS disagrees and always re-balances. Swift models the
+            // compares against a sentinel that can never equal a real hop count—that is,
+            // it ALWAYS disagrees and always re-balances. Swift models the
             // unknown case as nil, so map it onto the same sentinel; treating nil
             // as "agrees" would skip re-balancing for exactly the pathless links
             // that most need it.
@@ -3157,19 +3297,19 @@ public final class Transport {
                 // proof only if the hop counts agree (Transport.py:2276-2317):
                 // re-balancing sets `expected_hops = packet.hops`, so a successful
                 // re-balance is what makes them agree. Ordering matters twice
-                // over — the path table and `expectedHops` must be corrected
+                // over—the path table and `expectedHops` must be corrected
                 // before the link goes active, or every `onEstablished` observer
                 // reads the stale hop count.
                 //
                 // Re-balancing verifies the signature itself rather than relying
-                // on `validateProof`, which has not run yet; a forged proof
-                // therefore still cannot move a path.
+                // on `validateProof`, which hasn't run yet; a forged proof
+                // therefore still can't move a path.
                 if Transport.allowLinkPathRebalance, link.status == .pending,
                    link.proofSignatureIsValid(packet) {
                     rebalancePath(for: link, toHops: proofHops)
                 }
-                // Still disagreeing means the re-balance did not happen —
-                // disabled, already latched for this link, or a bad signature. In
+                // Still disagreeing means the re-balance didn't happen—disabled,
+                // already latched for this link, or a bad signature. In
                 // every one of those cases Python never reaches `validate_proof`
                 // and the link simply stays pending until it times out.
                 guard (link.expectedHops ?? Transport.pathfinderM) == proofHops else { return }
@@ -3178,11 +3318,11 @@ public final class Transport {
                 try link.validateProof(packet)
                 // Fire the transport-level callback for the initiator side.
                 // The destination's onLinkEstablished is intentionally NOT
-                // fired here — it belongs to the responder side and is wired
+                // fired here—it belongs to the responder side and is wired
                 // in handleLinkRequest.
                 onLinkEstablished?(link)
             } catch {
-                // Bad proof — drop.
+                // Bad proof—drop.
             }
             return
         }
@@ -3207,7 +3347,7 @@ public final class Transport {
     /// (Python `Transport.inbound`, the `for link in Transport.pending_links`
     /// block). A link request is the first real round-trip to a destination, so
     /// its proof is the earliest trustworthy measurement of the true hop count
-    /// — announces may have arrived over a longer route, or the topology may
+    ///—announces may have arrived over a longer route, or the topology may
     /// have shortened since. Correcting the path table here makes every
     /// subsequent packet to that destination use the right hop expectation
     /// instead of waiting for the next announce.
@@ -3267,12 +3407,12 @@ public final class Transport {
         let initIface = route!.initiatorSideInterface
         let respIface = route!.responderSideInterface
         // A non-transport shared instance still relays link traffic when either
-        // side of the link is a directly-connected local client (Python's
+        // side of the link is a directly connected local client (Python's
         // for_local_client_link, Transport.py:1573).
         let touchesLocalClient = (initIface.map(isLocalClientInterface) ?? false)
                               || (respIface.map(isLocalClientInterface) ?? false)
         guard transportEnabled || touchesLocalClient else { return }
-        // Steer to the side that didn't deliver the packet — compared by identity, not by
+        // Steer to the side that didn't deliver the packet—compared by identity, not by
         // name. With names, a hairpin between two clients of one listening interface compares
         // two equal strings, matches the first branch, and sends the packet back out the
         // interface it arrived on (`bugs/027`).
@@ -3313,12 +3453,12 @@ public final class Transport {
             if (interface as AnyObject) === (outboundIface as AnyObject) {
                 var forwarded = packet
                 // proof_for_local_client: the proof is headed back to a local
-                // client, so it stays in the local domain — keep its real hops.
+                // client, so it stays in the local domain—keep its real hops.
                 let proofForLocalClient = isLocalClientInterface(receiveIface)
                 forwarded.hops = relayHops(packet, from: interface, staysLocal: proofForLocalClient)
                 try? receiveIface.send(forwarded)
             }
-            // Don't stop here — also try to match against local receipts below
+            // Don't stop here—also try to match against local receipts below
             // in case this relay is also the originator (uncommon but valid).
         }
 
@@ -3362,12 +3502,12 @@ public final class Transport {
         // An announce for a destination this node owns is dropped here and goes no further.
         //
         // Python computes `local_destination` from `destinations_map` and hangs the ENTIRE
-        // announce block off it being nil (`Transport.py:1767-1772`) — path table, identity
+        // announce block off it being nil (`Transport.py:1767-1772`)—path table, identity
         // caching, announce handlers and relay are all inside that one `if`. It then repeats the
         // ownership test at the path-table admission check (`:1806-1807`), which is a fair signal
         // of how load-bearing it is.
         //
-        // This is not a rare case. A transport-enabled neighbour reflects announces back to their
+        // This isn't a rare case. A transport-enabled neighbour reflects announces back to their
         // originator by design: `Transport.outbound`'s broadcast loop (`:1197`) has no
         // receiving-interface exclusion, and the PATHFINDER_R retransmission re-sends with
         // `attached_interface = None` (`:604-637`). Every node hears its own announces come back,
@@ -3389,14 +3529,14 @@ public final class Transport {
 
         // Ingress burst limiting: hold announces during flooding bursts.
         // Mirrors Python: `if interface.should_ingress_limit(): interface.hold_announce(packet); return`
-        // Only applies to unknown destinations (known paths exempt — Python checks path_requests too).
+        // Only applies to unknown destinations (known paths exempt—Python checks path_requests too).
         do {
             let decoded = try Announce.validate(packet)
 
             // Announce-retry cancel (mirrors Python `Transport.inbound()`'s
-            // announce_table handling): if we have a pending retransmission for
-            // this destination and we hear it carried on by another transport
-            // node (a forwarded HEADER_2 announce), cancel or de-prioritise our
+            // announce_table handling): if a retransmission is pending for
+            // this destination and another transport node carries it on
+            // (a forwarded HEADER_2 announce), cancel or de-prioritise the
             // retry. Runs before the duplicate filter, since a neighbour's
             // rebroadcast is itself a duplicate that would otherwise be dropped.
             if transportEnabled, packet.headerType == .type2, packet.transportID != nil {
@@ -3422,16 +3562,16 @@ public final class Transport {
             // can update the path table with the better (fewer hops) path.
             if alreadySeen {
                 // Only re-process if the incoming path is strictly better (fewer
-                // hops) than what we have — OR the current path has been marked
+                // hops) than the stored one—OR the current path has been marked
                 // unresponsive, in which case Python allows the SAME announce
                 // (same random blob) arriving via an alternate, longer route to
                 // revive the path (D2; handled by the more-hops/equal-emission
                 // branch in the freshness ladder below, which intentionally skips
                 // the blob check). Without this unresponsive exception the
-                // early-return would swallow the reviving announce before the
+                // early return would swallow the reviving announce before the
                 // ladder ever runs.
                 let existingHops = paths[decoded.destinationHash]?.hops ?? UInt8.max
-                // pathStates is guarded by pathStatesLock everywhere (mark*/
+                // pathStatesLock guards pathStates everywhere (mark*/
                 // pathIsUnresponsive); read it under that lock even while holding
                 // `lock` (order: lock > pathStatesLock, a pure leaf).
                 pathStatesLock.lock()
@@ -3440,7 +3580,7 @@ public final class Transport {
                 // RNS 1.4.1 gravity: the *same* announce re-arriving on a
                 // strictly higher-gravity interface is exactly how a path is
                 // pulled onto a preferred interface, and it arrives with equal
-                // hops — so it must not be swallowed here either.
+                // hops—so it must not be swallowed here either.
                 //
                 // Python has no hop-based early return at all: `packet_filter`
                 // returns True unconditionally for a duplicate SINGLE announce
@@ -3451,19 +3591,19 @@ public final class Transport {
                 //
                 // Which branches those are: the ladder's remaining accept
                 // branches all require `!blobSeen`, and a duplicate that already
-                // updated the path recorded its blob on the first pass — so for a
+                // updated the path recorded its blob on the first pass—so for a
                 // duplicate only the two exempted below (gravity takeover, and
                 // reviving an unresponsive path, both of which turn on equal
                 // emission rather than an unheard blob) can fire.
                 //
-                // Known residual divergence: the dedup cache is populated above,
+                // Known residual divergence: the dedup cache is populated earlier,
                 // *before* the blackhole / ingress-burst / announce-rate filters
                 // run. An announce dropped by one of those never reaches the
                 // ladder and so never records its blob, yet its cache entry
-                // survives — a later copy at equal-or-greater hops is then
+                // survives—a later copy at equal-or-greater hops is then
                 // swallowed here where Python would still evaluate it. Narrow
                 // (it needs a first copy dropped by a rate limiter and a second
-                // copy on a non-shorter route) and fail-closed, so it is left
+                // copy on a non-shorter route) and fail-closed, so it's left
                 // as-is rather than reordering the filters around the cache.
                 let higherGravity = currentPathGravityLocked(decoded.destinationHash)
                     .map { interface.gravity > $0 } ?? false
@@ -3472,7 +3612,7 @@ public final class Transport {
                     return  // Already seen, not a better path, and path is responsive
                 }
                 // Better path, reviving an unresponsive one, or a gravity
-                // takeover — fall through.
+                // takeover—fall through.
             }
             lock.unlock()
 
@@ -3493,7 +3633,7 @@ public final class Transport {
 
             // Per-destination rate limiting (mirrors Python's announce_rate_table check).
             // Only active when interface.announceRateTarget != nil.
-            // A rate-blocked announce is still validated but the path table is not updated.
+            // A rate-blocked announce is still validated but the path table isn't updated.
             let rateBlocked = isAnnounceRateBlocked(destinationHash: decoded.destinationHash,
                                                      interface: interface)
             if rateBlocked { return }
@@ -3527,7 +3667,7 @@ public final class Transport {
             )
             lock.lock()
             // Path update logic (mirrors Python's Transport.announce_handler):
-            // 1. Always update if we have no path yet.
+            // 1. Always update if no path is known yet.
             // 2. Update if new path has fewer hops.
             // 3. Update if same hops (newer announce).
             // 4. Update if more hops but the announce was emitted MORE RECENTLY
@@ -3539,22 +3679,22 @@ public final class Transport {
             pathStatesLock.unlock()
             let existingBlobs = paths[decoded.destinationHash]?.randomBlobs ?? []
             if let existing = paths[decoded.destinationHash] {
-                // Path-table freshness gate — a faithful port of Python's
+                // Path-table freshness gate—a faithful port of Python's
                 // `should_add` ladder (Transport.inbound, Transport.py:1801-1875).
                 //
                 // The critical invariant the previous "fewer hops always wins"
                 // logic violated: an announce may only replace an existing path
-                // when it is genuinely NEWER — its emission timestamp must exceed
-                // `path_timebase`, the MAX emission across every random blob we've
-                // recorded for that path — or it is the same announce arriving to
-                // revive a path we previously marked unresponsive. Emission
+                // when it's genuinely NEWER—its emission timestamp must exceed
+                // `path_timebase`, the MAX emission across every random blob
+                // recorded for that path—or it's the same announce arriving to
+                // revive a path previously marked unresponsive. Emission
                 // timestamps are second-resolution (5-byte unix seconds in the
                 // announce's random hash), so two announces made in the same second
                 // tie and neither displaces the other; path convergence to a
                 // shorter route therefore happens across successive (later)
                 // announces, not within a single announce flood. Accepting a
-                // stale/replayed/reordered announce here — which the old ladder did
-                // — degrades paths network-wide and enables path forgery once the
+                // stale/replayed/reordered announce here—which the old ladder did
+                //—degrades paths network-wide and enables path forgery once the
                 // 64-blob replay window rolls over.
                 //
                 // Python's `path_announce_emitted` loop (1834-1838) takes the max
@@ -3565,13 +3705,13 @@ public final class Transport {
                 let blobSeen = randomBlob.map { existing.randomBlobs.contains($0) } ?? false
                 if packet.hops <= existing.hops {
                     // Fewer-or-equal hops (Python 1820-1844): accept a fresh,
-                    // previously-unheard announce that is more recently emitted…
+                    // previously unheard announce that's more recently emitted…
                     if !blobSeen && emittedAt > pathTimebase {
                         shouldUpdate = true
                     } else if emittedAt != pathTimebase {
-                        // …otherwise it is only a gravity takeover candidate when
-                        // the emission timebase matches exactly, i.e. it is
-                        // literally the same announce reaching us again by
+                        // …otherwise it's only a gravity takeover candidate when
+                        // the emission timebase matches exactly, that is, it's
+                        // literally the same announce reaching this node again by
                         // another route (Python: `if announce_emitted !=
                         // path_timebase: should_add = False`).
                         shouldUpdate = false
@@ -3587,7 +3727,7 @@ public final class Transport {
                     }
                 } else if existing.isExpired {
                     // More hops, but the path has expired (Python 1842-1853):
-                    // accept any announce we haven't already heard.
+                    // accept any announce not already heard.
                     shouldUpdate = !blobSeen
                 } else if emittedAt > pathTimebase {
                     // More hops, not expired, but more recently emitted
@@ -3595,15 +3735,15 @@ public final class Transport {
                     shouldUpdate = !blobSeen
                 } else if emittedAt == pathTimebase {
                     // More hops, same emission (Python 1870-1875): only replace to
-                    // revive an unresponsive path. No blob check here — Python
+                    // revive an unresponsive path. No blob check here—Python
                     // deliberately allows the SAME announce (same blob, arriving via
                     // an alternate longer route) to take over when the shorter path
                     // has gone dead. Pairs with the unresponsive exception in the
-                    // duplicate early-return above (D2).
+                    // duplicate early return above (D2).
                     shouldUpdate = isUnresponsive
                 } else {
                     // More hops and strictly older emission: ignore (Python's
-                    // implicit else — should_add stays False).
+                    // implicit else—should_add stays False).
                     shouldUpdate = false
                 }
             } else {
@@ -3634,14 +3774,14 @@ public final class Transport {
                 //
                 // Python calls `mark_path_unknown_state` UNCONDITIONALLY inside
                 // `if should_add:` (Transport.py:2053), immediately after the
-                // path_table assignment — so every accepted announce resets the
+                // path_table assignment—so every accepted announce resets the
                 // state, gravity takeover included. The per-branch inline
                 // `mark_path_unknown_state` calls higher up the ladder are
                 // redundant with it, and three branches omit them (the
                 // unknown-destination, gravity and unresponsive-revive
                 // branches); none of those escapes this tail call.
                 //
-                // Do not be tempted to preserve the old state on a gravity
+                // Don't be tempted to preserve the old state on a gravity
                 // takeover: a latched `stateUnresponsive` would immediately let
                 // the `emittedAt == pathTimebase → shouldUpdate = isUnresponsive`
                 // branch below hand the path to any longer, lower-gravity route
@@ -3651,12 +3791,12 @@ public final class Transport {
                 pathStatesLock.unlock()
             }
             // Attach app_data to the identity so callers can retrieve it via
-            // Identity.recallAppData / Transport.recallAppData.  Python stores this in
+            // Identity.recallAppData / Transport.recallAppData. Python stores this in
             // Identity.known_destination_hashes[hash]["app_data"].
             if let ad = decoded.appData { decoded.identity.appData = ad }
             knownIdentities[decoded.destinationHash] = decoded.identity
             knownDestinationAnnouncedAt[decoded.destinationHash] = Date()
-            // `Identity.remember(packet.get_hash(), …)` — Identity.py:577, stored at field 1 of
+            // `Identity.remember(packet.get_hash(), …)`—Identity.py:577, stored at field 1 of
             // the known-destinations entry (`:107`).
             knownDestinationPacketHash[decoded.destinationHash] =
                 (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
@@ -3679,8 +3819,8 @@ public final class Transport {
             onAnnounceReceived?(decoded, interface)
             dispatchAnnounceHandlers(decoded)
 
-            // Relay onto other interfaces if we're a transport-enabled node OR
-            // the announce was originated by a directly-connected local client.
+            // Relay onto other interfaces if this node is transport-enabled OR
+            // a directly connected local client originated the announce.
             // The local-client alternative mirrors Python's
             // `if (transport_enabled or is_from_local_client) and context !=
             // PATH_RESPONSE:` (Transport.py:1935): a shared instance running with
@@ -3688,14 +3828,14 @@ public final class Transport {
             // announces to the mesh, otherwise no peer ever learns the client's
             // destination.
             //
-            // Forward ONLY when the announce also updated the path table — this
+            // Forward ONLY when the announce also updated the path table—this
             // mirrors Python, where the announce-table insert (and thus the
             // rebroadcast) lives inside `if should_add:`. Because SINGLE
             // announces bypass the packet-hash dedup filter, forwarding every
             // arrival would re-broadcast duplicates/replays endlessly (an
             // announce storm); gating on `shouldUpdate` (which includes the
             // random-blob replay guard) forwards each distinct announce once.
-            // Path-response announces are NOT forwarded (mirrors Python:
+            // Path-response announces aren't forwarded (mirrors Python:
             // "if context != PATH_RESPONSE: forward to other interfaces").
             // Each outbound interface is rate-limited; announces that exceed
             // the cap are queued for deferred transmission.
@@ -3714,8 +3854,8 @@ public final class Transport {
                 for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint && iface !== interface {
                     // Interface-mode-based forwarding filter (mirrors Python Transport.outbound):
                     // - Announces received from ACCESS_POINT interfaces (clients talking "up")
-                    //   must not be re-broadcast to other AP or BOUNDARY interfaces —
-                    //   AP clients must not be able to reach each other via the AP.
+                    //   must not be re-broadcast to other AP or BOUNDARY interfaces—AP
+                    //   clients must not be able to reach each other via the AP.
                     // - Announces received from BOUNDARY interfaces must not be re-broadcast
                     //   to other BOUNDARY or ACCESS_POINT interfaces.
                     // - Announces received on FULL/GATEWAY/ROAMING/POINT_TO_POINT interfaces
@@ -3745,9 +3885,9 @@ public final class Transport {
 
                 // Record this forwarded announce for a single retransmission
                 // (Python `PATHFINDER_R = 1`). The first forward just went out
-                // above, so the entry starts at `retries = 1`; the jobs loop
-                // will retransmit once more after the grace window unless we
-                // hear neighbours carry it on. Mirrors the announce_table insert
+                // earlier, so the entry starts at `retries = 1`; the jobs loop
+                // retransmits once more after the grace window unless
+                // neighbours carry it on. Mirrors the announce_table insert
                 // inside Python's `if should_add:` block.
                 lock.lock()
                 announceTable[decoded.destinationHash] = AnnounceTableEntry(
@@ -3767,14 +3907,14 @@ public final class Transport {
                 lock.unlock()
             }
 
-            // If we have any local shared-instance clients connected, retransmit
-            // the announce to them immediately — independent of `transportEnabled`
+            // If any local shared-instance clients are connected, retransmit
+            // the announce to them immediately—independent of `transportEnabled`
             // and regardless of path-response context. Mirrors Python's
             // "if (len(Transport.local_client_interfaces)): ... new_announce.send()"
             // block: apps sharing this daemon's connection (nomadnet, rnstatus,
             // MeshChatX, …) must see every announce the daemon overhears, even
-            // when this instance is not itself acting as a mesh transport/relay
-            // node. Unlike the mesh-relay forward above, hops is passed through
+            // when this instance isn't itself acting as a mesh transport/relay
+            // node. Unlike the preceding mesh-relay forward, hops is passed through
             // unchanged (Python: `new_announce.hops = packet.hops`).
             let localTargets = localClientServingInterfaces(excluding: interface)
             if shouldUpdate, !localTargets.isEmpty {
@@ -3786,7 +3926,7 @@ public final class Transport {
                 }
             }
         } catch {
-            // Malformed or unsigned announce — drop silently as RNS does.
+            // Malformed or unsigned announce—drop silently as RNS does.
         }
     }
 
@@ -3827,16 +3967,16 @@ public final class Transport {
             return
         }
 
-        // No local destination — relay if we're transport-enabled, OR the packet
-        // is to/from a directly-connected local (shared-instance) client. The
+        // No local destination—relay if this node is transport-enabled, OR the packet
+        // is to/from a directly connected local (shared-instance) client. The
         // local-client clauses mirror Python's inbound gate
         // `transport_enabled or from_local_client or for_local_client`
         // (Transport.py:1573): a non-transport shared instance must still carry
-        // its clients' traffic — outbound from a client to the mesh
+        // its clients' traffic—outbound from a client to the mesh
         // (from_local_client) and inbound from the mesh to a client whose
         // destination is one hop away over the serving interface (for_local_client).
         // Only SINGLE packets are transported; PLAIN/GROUP are local-only and
-        // LINK-typed packets are routed by their own dispatchers.
+        // Their own dispatchers route LINK-typed packets.
         let fromLocal = fromLocalClient(interface: interface)
         let forLocal: Bool = {
             guard let p = path, p.hops == 0, let nextHop = p.nextHopInterface else { return false }
@@ -3851,7 +3991,7 @@ public final class Transport {
     // MARK: - Path requests
 
     /// Broadcast a path request for `destinationHash`. Any node within
-    /// reach that already knows a path will reply by re-broadcasting the
+    /// reach that already knows a path replies by re-broadcasting the
     /// cached announce.
     ///
     /// - Parameters:
@@ -3861,7 +4001,7 @@ public final class Transport {
     ///     Mirrors Python's `Transport.request_path(tag=None)`.
     ///   - recursive: When true the request is also forwarded by transport nodes.
     ///     Mirrors Python's `Transport.request_path(recursive=False)`.
-    ///     Currently reserved for future use (Python's recursive handling is
+    ///     Reserved for future use (Python's recursive handling is
     ///     performed by the receiving transport, not the sender).
     public func requestPath(
         for destinationHash: Data,
@@ -3877,15 +4017,15 @@ public final class Transport {
             }
             return t
         }()
-        _ = recursive // forwarded-recursion is handled by the receiving transport node
+        _ = recursive // the receiving transport node handles forwarded recursion
         // Mirrors Python: if transport_enabled: body = destHash + transport_id + tag
         //                 else:                  body = destHash + tag
         let body = transportEnabled
             ? destinationHash + transportInstanceID + tag
             : destinationHash + tag
 
-        // Pre-seed our own dedup so we don't re-process our own request
-        // when it bounces back from an interface's local echo.
+        // Pre-seed the local dedup entry so this node never re-processes its own
+        // request when it bounces back from an interface's local echo.
         let dedupKey = destinationHash + tag
         lock.lock()
         if !pathRequestTagSet.contains(dedupKey) {
@@ -3923,14 +4063,21 @@ public final class Transport {
         // Extract the optional requesting transport instance ID and tag.
         // Python body shapes: [target||tag] or [target||tx_id||tag]
         let requestorTransportID: Data?
-        let tag: Data
+        let rawTag: Data
         if body.count > hashLen * 2 {
             requestorTransportID = Data(body[body.startIndex + hashLen ..< body.startIndex + hashLen * 2])
-            tag = Data(body.suffix(from: body.startIndex + hashLen * 2))
+            rawTag = Data(body.suffix(from: body.startIndex + hashLen * 2))
         } else {
             requestorTransportID = nil
-            tag = Data(body.suffix(from: body.startIndex + hashLen))
+            rawTag = Data(body.suffix(from: body.startIndex + hashLen))
         }
+        // `if len(tag_bytes) > RNS.Identity.TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`
+        // (`Transport.py:1842-1843`). The excess isn't merely ignored—it must not reach the
+        // dedup key. Keyed on the untruncated bytes, a sender defeats deduplication for free by
+        // varying a tail nothing reads, turning one path request into as many recursive
+        // fan-outs as it cares to send. The truncated tag is also what gets forwarded, so every
+        // hop agrees on the identity of the request.
+        let tag = rawTag.count > hashLen ? Data(rawTag.prefix(hashLen)) : rawTag
         let dedupKey = target + tag
 
         lock.lock()
@@ -3949,6 +4096,19 @@ public final class Transport {
         lock.unlock()
         if alreadySeen { return }
 
+        // `should_ingress_limit = ingress_limited or attached_interface.should_ingress_limit_pr()`
+        // (`Transport.py:3427`). Evaluated here, unconditionally, rather than at its single use
+        // below: the call advances the burst state machine (it refreshes the sustained stamp
+        // and spends cooldown), so gating the call itself on the branch would make the limiter
+        // observe only the traffic it's already suppressing.
+        //
+        // Python's other half—`preprocess_inbound` setting `TC_INGRESS_LIMITED`
+        // (`Transport.py:1859`), which `path_request_handler` then passes back in as
+        // `ingress_limited`—exists to carry the decision across an inbound queue this port
+        // doesn't have. Both paths OR into one flag consumed at one place, so a single
+        // evaluation here reaches the same decision.
+        let ingressLimited = shouldIngressLimitPR(on: interface)
+
         if isLocal {
             lock.lock()
             let localDest = registeredDestinations[target]
@@ -3963,18 +4123,18 @@ public final class Transport {
 
         let fromLocal = fromLocalClient(interface: interface)
 
-        // Branch 2 (Python Transport.py:2969): answer from a KNOWN PATH — but only
-        // if we are a transport node OR the request came from a local client. A
+        // Branch 2 (Python Transport.py:2969): answer from a KNOWN PATH—but only
+        // if this node is a transport node OR the request came from a local client. A
         // plain non-transport endpoint must NOT answer path requests naming itself
-        // as the relay, or peers will route traffic to a node that just drops it.
+        // as the relay, or peers route traffic to a node that just drops it.
         // Key off the path table (a real known route), mirroring Python's
         // `destination_hash in path_table`, not merely an overheard cached announce.
         if (transportEnabled || fromLocal), let entry = pathEntry {
-            // We have a known path to the destination — this is the branch Python
+            // A known path to the destination exists—this is the branch Python
             // selects on `destination_hash in path_table` (Transport.py:2969). If
             // the cached announce packet has since been evicted, Python logs and
-            // simply does NOT answer (get_cached_packet == None, 2974-2975); it
-            // does not fall through to the forward branches. Mirror that: return
+            // simply doesn't answer (get_cached_packet == None, 2974-2975); it
+            // doesn't fall through to the forward branches. Mirror that: return
             // without answering rather than dropping into recursive discovery.
             guard let cached = cachedAnnounce else { return }
             // Suppress answer when the next hop along the path IS the requestor
@@ -3991,7 +4151,7 @@ public final class Transport {
             // the requester computes the correct hops_to / expected_proof_hops.
             response.hops = entry.hops &+ 1
             // Path responses are always HEADER_2 carrying this instance's transport_id
-            // so the requester stores received_from = us and addresses traffic here.
+            // so the requester stores received_from = this node and addresses traffic here.
             response.headerType = .type2
             response.transportType = .transport
             response.transportID = transportInstanceID
@@ -4000,7 +4160,7 @@ public final class Transport {
         }
 
         // Branch 3 (Python Transport.py:3032): the request is from a local client
-        // and we could not answer it ourselves — forward it to the mesh on every
+        // and this node couldn't answer it—forward it to the mesh on every
         // other interface (one shared random tag) so an upstream transport can
         // resolve it. Runs regardless of transportEnabled: carrying its clients'
         // path requests onto the network is the whole point of a shared instance.
@@ -4045,6 +4205,15 @@ public final class Transport {
             }
         }
         if shouldDiscover {
+            // "Abort recursive path request if receiving interface has PR burst active, or
+            // should otherwise ingress limit path requests" (`Transport.py:3543-3550`).
+            //
+            // The gate is on amplification, not on usefulness: the preceding branches still answer
+            // from a local destination or a known path while limited. It's only the fan-out—one
+            // inbound request becoming one outbound request per interface—that a flooding
+            // peer must not get.
+            if ingressLimited { return }
+
             let now = Date().timeIntervalSince1970
             for iface in interfaces where iface !== interface && iface.isOnline && iface.isRoutingEndpoint {
                 if let filter = searchModeFilter, !filter.contains(iface.mode) { continue }
@@ -4054,8 +4223,8 @@ public final class Transport {
             return
         }
 
-        // Branch 5 (Python Transport.py:3069): we are not the client's origin, but
-        // we serve local clients — forward the request down to them so a connected
+        // Branch 5 (Python Transport.py:3069): this node isn't the client's origin, but
+        // this node serves local clients—forward the request down to them so a connected
         // client that owns the destination can answer.
         for iface in localClientServingInterfaces(excluding: interface) {
             try? requestPath(for: target, onInterface: iface)
@@ -4064,7 +4233,7 @@ public final class Transport {
 
     // MARK: - Packet hashlist (replay/loop prevention)
 
-    /// Returns `true` if this packet hash has not been seen before and
+    /// Returns `true` if this packet hash hasn't been seen before and
     /// adds it to the current hashlist. Returns `false` for duplicates.
     /// Mirrors Python's `Transport.packet_filter` + `add_packet_hash`.
     func filterAndRecord(packet: Packet) -> Bool {
@@ -4074,7 +4243,7 @@ public final class Transport {
         //       if packet.transport_id != Transport.identity.hash: return False
         // A HEADER_2 packet carries the next-hop transport_id; if that names
         // another node (and it isn't a flooded announce), the packet is meant
-        // for that node — dropping it here prevents duplicate forwarding and
+        // for that node—dropping it here prevents duplicate forwarding and
         // routing loops on shared media with ≥2 transport nodes. A shared-
         // instance client skips this (the shared instance already filtered).
         if !isConnectedToSharedInstance,
@@ -4086,7 +4255,7 @@ public final class Transport {
 
         // PLAIN destination packets with hops > 1 are dropped.
         // Python: "if destination_type == PLAIN and hops > 1: drop"
-        // Allows hops=0 (direct) and hops=1 (one relay hop, e.g. path requests).
+        // Allows hops=0 (direct) and hops=1 (one relay hop, for example, path requests).
         if packet.destinationType == .plain && packet.hops > 1 { return false }
 
         // GROUP destination packets with hops > 1 are dropped (local broadcast only).
@@ -4122,8 +4291,8 @@ public final class Transport {
 
     /// Persist the current packet hashlist to `storage/packet_hashlist.raw`.
     ///
-    /// `for packet_hash in Transport.packet_hashlist.copy(): file.write(packet_hash)` —
-    /// `Transport.py:3315-3323`. The hashes themselves, concatenated: no delimiters, no length
+    /// `for packet_hash in Transport.packet_hashlist.copy(): file.write(packet_hash)`—`Transport.py:3315-3323`.
+    /// The hashes themselves, concatenated: no delimiters, no length
     /// prefix, no encoding. The reader recovers records by fixed width, so the framing *is* the
     /// hash length.
     public func savePacketHashlist(to url: URL) throws {
@@ -4134,9 +4303,9 @@ public final class Transport {
         raw.reserveCapacity(snapshot.count * Constants.fullHashLength)
         var skipped = 0
         for hash in snapshot {
-            // A record of the wrong width is not a short record, it is a shifted file: every
+            // A record of the wrong width isn't a short record, it's a shifted file: every
             // hash after it decodes as two halves of its neighbours. The live filter only ever
-            // inserts `fullHash(hashablePart())`, so this cannot fire from the network — but it
+            // inserts `fullHash(hashablePart())`, so this can't fire from the network—but it
             // is reported rather than dropped in silence, since a silent drop here reads on disk
             // exactly like a hashlist that was simply smaller.
             guard hash.count == Constants.fullHashLength else { skipped += 1; continue }
@@ -4153,7 +4322,7 @@ public final class Transport {
     /// Load a previously persisted packet hashlist and merge into the current set.
     ///
     /// `packet_hash = file.read(hashlen); if len(packet_hash) == hashlen: add … else: done`
-    /// (`Transport.py:246-250`) — fixed-width records until a short read ends the file, so a
+    /// (`Transport.py:246-250`)—fixed-width records until a short read ends the file, so a
     /// torn write gives up its trailing partial record and keeps everything before it. A missing
     /// file is silently ignored, as `:244`'s `isfile` gate does.
     public func loadPacketHashlist(from url: URL) throws {
@@ -4172,7 +4341,7 @@ public final class Transport {
     /// The one key the hashlist is keyed on: the **full** 32-byte hash of the packet's hashable
     /// part, as Python stores `packet.packet_hash` (`Packet.py:342-344`) and `packet_filter`
     /// compares it (`Transport.py:1417`). Every reader and writer of the hashlist must go
-    /// through this — `bugs/038` was the public filter computing the 16-byte truncated hash
+    /// through this—`bugs/038` was the public filter computing the 16-byte truncated hash
     /// against a list of 32-byte entries, so "seen" was always false.
     private static func packetHashlistKey(_ packet: Packet) -> Data? {
         guard let hashable = try? packet.hashablePart() else { return nil }
@@ -4180,7 +4349,7 @@ public final class Transport {
     }
 
     /// Returns true if the packet should be processed (not a duplicate, passes type/hop rules).
-    /// Mirrors Python `Transport.packet_filter(packet)` — simplified to dedup check only;
+    /// Mirrors Python `Transport.packet_filter(packet)`—simplified to dedup check only;
     /// full filtering is done inside `handleIncoming`.
     public func packetFilter(_ packet: Packet) -> Bool {
         guard let hash = Self.packetHashlistKey(packet) else { return true }
@@ -4258,10 +4427,10 @@ public final class Transport {
     /// ANNOUNCE packets).
     ///
     /// Parameters:
-    /// - `outboundMode`: mode of the interface we're considering transmitting on.
+    /// - `outboundMode`: mode of the interface being considered for transmission.
     /// - `nextHopMode`: mode of the next-hop interface toward the announce's
     ///   source (the interface it arrived on). `nil` means Python's
-    ///   `from_interface == None` — no known next hop.
+    ///   `from_interface == None`—no known next hop.
     /// - `localDestination`: true when the announce's destination is registered
     ///   locally (Python's `destinations_map` lookup). Instance-local
     ///   destinations bypass the roaming/boundary/internal mode blocks.
@@ -4270,10 +4439,10 @@ public final class Transport {
     ///
     /// Rules (checked on the **outbound** interface, not the receiving interface):
     ///
-    /// - **No next hop** (and not local): block — nowhere to attribute the announce.
+    /// - **No next hop** (and not local): block—nowhere to attribute the announce.
     /// - **`announces_from_internal == false` + internal next hop** (and not
     ///   local): block relaying announces that came in from an internal interface.
-    /// - **AP outbound**: always block — AP-mode interfaces are "last-mile".
+    /// - **AP outbound**: always block—AP-mode interfaces are "last-mile".
     /// - **INTERNAL outbound** (not local): block when the next hop is BOUNDARY.
     ///   (RNS 1.3.7 no longer blocks a roaming next hop here.)
     /// - **ROAMING outbound**: allow if local; else block when the next hop is
@@ -4287,7 +4456,7 @@ public final class Transport {
         announcesFromInternal: Bool = true,
         nextHopAnnouncesToInternal: Bool? = nil
     ) -> Bool {
-        // Top-level guards — only apply when the destination is not instance-local.
+        // Top-level guards—only apply when the destination isn't instance-local.
         if !localDestination && nextHopMode == nil { return false }
         if !localDestination && !announcesFromInternal && nextHopMode == .internal { return false }
 
@@ -4305,7 +4474,7 @@ public final class Transport {
                 // into internal-mode interfaces and short-circuits the
                 // boundary block below. Python: `if
                 // from_interface.announces_to_internal == True: pass`, so only
-                // an explicit true counts — nil/false fall through.
+                // an explicit true counts—nil/false fall through.
                 if nextHopAnnouncesToInternal == true { return true }
                 if nhm == .boundary { return false }
             }
@@ -4322,7 +4491,7 @@ public final class Transport {
             // Block only if next-hop is roaming (boundary-to-boundary is fine).
             return nhm != .roaming
         default:
-            // FULL, GATEWAY, POINT_TO_POINT — forward freely.
+            // FULL, GATEWAY, POINT_TO_POINT—forward freely.
             return true
         }
     }
@@ -4430,7 +4599,7 @@ public final class Transport {
         //   • remaining_hops > 1  (Swift path.hops > 0): keep HEADER_2 and
         //     address the next-hop transport so that node forwards onward.
         //   • remaining_hops == 1 (Swift path.hops == 0): the destination is
-        //     directly reachable on the outbound interface — strip the
+        //     directly reachable on the outbound interface—strip the
         //     transport header and transmit HEADER_1. The endpoint filters on
         //     transport_id (see filterAndRecord), so a HEADER_2 packet bearing
         //     this relay's id would be dropped. Same logic as the LINKREQUEST
@@ -4445,7 +4614,7 @@ public final class Transport {
         }
 
         // Store the reverse table entry BEFORE sending, so synchronous loopback
-        // interfaces don't race: if the proof arrives in the same call stack (e.g.
+        // interfaces don't race: if the proof arrives in the same call stack (for example,
         // in-process loopback tests), the entry must already be present.
         // Mirrors Python: Transport.reverse_table[packet.getTruncatedHash()] = entry.
         if let key = try? Hashes.truncatedHash(packet.hashablePart()) {
@@ -4472,11 +4641,11 @@ public final class Transport {
     /// Python synthesizes at two moments: a startup pass over every interface wanting one
     /// (`Transport.py:428-433`) and a direct call after each successful redial
     /// (`TCPInterface.py:298`, `I2PInterface.py:533`). This port's interfaces hold no back-
-    /// reference to their transport and connect asynchronously *after* `register` — so the
+    /// reference to their transport and connect asynchronously *after* `register`—so the
     /// registration-time check saw nothing, and a per-connect direct call has nowhere to
     /// originate. The jobs loop sweeps instead, which covers startup, connect and reconnect
     /// with one trigger; `synthesizeTunnel` clears the flag (`Transport.py:2385`), so a served
-    /// request is not repeated and a fresh reconnect asks again.
+    /// request isn't repeated and a fresh reconnect asks again.
     public func synthesizePendingTunnels() {
         lock.lock()
         let snapshot = interfaces

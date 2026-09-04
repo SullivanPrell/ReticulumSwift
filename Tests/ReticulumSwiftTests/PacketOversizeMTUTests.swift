@@ -1,13 +1,13 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Regression tests for bug 010 — Swift Transport silently dropped every inbound
+/// Regression tests for bug 010—Swift Transport silently dropped every inbound
 /// link packet larger than the base MTU (500 B) because `Packet.hashablePart()`
 /// went through the MTU-guarded `pack()`, so the packet hash threw and
 /// `Transport.filterAndRecord()` treated the nil hash as a drop.
 ///
 /// Reticulum links negotiate their MTU upward (a TCP link commonly reaches 8192),
-/// so a peer legitimately sends single link packets far larger than 500 B — e.g.
+/// so a peer legitimately sends single link packets far larger than 500 B—for example,
 /// a Python NomadNet node serving any real page. Packet identity (hash / dedup)
 /// and byte accounting must be independent of the transmit MTU, matching Python
 /// where `get_hashable_part()` slices the already-packed bytes and only `pack()`

@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for destination_data / identity_data RPC handlers and the
-/// associated Transport methods — covering Phase 30 parity with RNS 1.3.4.
+/// associated Transport methods—covering Phase 30 parity with RNS 1.3.4.
 ///
 /// These mirror Python's:
 ///   • `Identity._used_destination_data(destination_hash)`
@@ -81,7 +81,7 @@ final class DestinationDataRPCTests: XCTestCase {
     func testRetainDestinationData_preventsCleanup() {
         let t = Transport()
         let hash = randomHash()
-        // Very old announcement — would normally be stale
+        // Very old announcement—would normally be stale
         t.restore(identity: Identity(), forDestination: hash,
                   announcedAt: Date().addingTimeInterval(-1_000_000))
         t.retainDestinationData(hash)
@@ -121,7 +121,7 @@ final class DestinationDataRPCTests: XCTestCase {
     func testRetainIdentity_noMatchingDestinations_returnsFalse() {
         let t = Transport()
         let targetId = Identity()
-        // Add a destination for a DIFFERENT identity — no match
+        // Add a destination for a DIFFERENT identity—no match
         t.restore(identity: Identity(), forDestination: randomHash())
         XCTAssertFalse(t.retainIdentity(targetId.hash))
     }
@@ -165,7 +165,7 @@ final class DestinationDataRPCTests: XCTestCase {
         XCTAssertFalse(retainedOther)
     }
 
-    // MARK: - cleanKnownDestinations — ratchet file cleanup (1.3.4)
+    // MARK: - cleanKnownDestinations—ratchet file cleanup (1.3.4)
 
     func testCleanKnownDestinations_deletesRatchetFileForStaleDest() throws {
         let t = Transport()
@@ -186,7 +186,7 @@ final class DestinationDataRPCTests: XCTestCase {
         try Data("fake ratchet".utf8).write(to: ratchetFile)
         XCTAssertTrue(FileManager.default.fileExists(atPath: ratchetFile.path))
 
-        // Clean with far-future time — destination becomes stale
+        // Clean with far-future time—destination becomes stale
         t.cleanKnownDestinations(now: Date().addingTimeInterval(1_000_000))
 
         // Ratchet file must be gone
@@ -220,7 +220,7 @@ final class DestinationDataRPCTests: XCTestCase {
 
         t.cleanKnownDestinations(now: now.addingTimeInterval(10))
 
-        // File should still be there — destination has active path
+        // File should still be there—destination has active path
         XCTAssertTrue(FileManager.default.fileExists(atPath: ratchetFile.path))
     }
 
@@ -313,7 +313,7 @@ final class DestinationDataRPCTests: XCTestCase {
     }
 
     func testRPCServer_destinationData_retainedDest_usedReturnsFalse() throws {
-        // A retained destination's timestamp should NOT be updated by "used"
+        // A retained destination's timestamp: "used" shouldn't touch it
         let (server, t) = makeServerWithTransport()
         let id = Identity()
         let hash = randomHash()

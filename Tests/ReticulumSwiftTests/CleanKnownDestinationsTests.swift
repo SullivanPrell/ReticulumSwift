@@ -43,7 +43,7 @@ final class CleanKnownDestinationsTests: XCTestCase {
 
     func testEntryWithPathIsRetained() {
         let t = makeTransport()
-        // Announce a very long time ago — but there IS a path.
+        // Announce a very long time ago—but there IS a path.
         let h = addIdentity(to: t, announcedSecondsAgo: Transport.destinationTimeout * 2, hasPath: true)
         t.cleanKnownDestinations()
         XCTAssertNotNil(t.recall(identity: h),

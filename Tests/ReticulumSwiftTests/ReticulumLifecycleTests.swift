@@ -23,8 +23,8 @@ final class ReticulumLifecycleTests: XCTestCase {
 
     func testSharedIsNilBeforeStart() {
         // Reticulum.shared is nil until start() is called
-        // (unless another test started it — just test it's accessible)
-        _ = Reticulum.shared  // should not crash
+        // (unless another test started it—just test it's accessible)
+        _ = Reticulum.shared  // shouldn't crash
     }
 
     func testGetInstanceAfterStart() throws {
@@ -50,7 +50,7 @@ final class ReticulumLifecycleTests: XCTestCase {
             // dropped on load if nothing matches (`bugs/027`, D6).
             let iface = LoopbackInterface(name: "test")
             rns.transport.register(interface: iface)
-            // A real destination with its announce cached — the reference's entry names an
+            // A real destination with its announce cached—the reference's entry names an
             // announce and an entry naming none restores nothing (`Transport.py:334-345`).
             destHash = try installPersistablePath(on: rns.transport, through: iface,
                                                   hops: 2, aspect: "lifecycle").destinationHash

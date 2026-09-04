@@ -1,7 +1,7 @@
 import Foundation
 import ReticulumSwift
 
-/// `rnpkg` — the Reticulum Meta Package Manager.
+/// `rnpkg`—the Reticulum Meta Package Manager.
 ///
 /// Python reference: `RNS/Utilities/rnpkg.py` (78 lines). Identical to `rnir` apart from its
 /// program name, its description and its `--exampleconfig`, which prints rnpkg's own one-line
@@ -35,7 +35,7 @@ if options.version {
 }
 
 if options.exampleConfig {
-    // Python: `print(__example_rnpkg_config__)` (`rnpkg.py:75-76`) — a single comment line,
+    // Python: `print(__example_rnpkg_config__)` (`rnpkg.py:75-76`)—a single comment line,
     // 57 bytes with its newline, 58 on stdout once print() adds another.
     print(RNSDApp.rnpkgExampleConfig)
     exit(RNSDApp.ExitCode.ok.rawValue)
@@ -44,7 +44,7 @@ if options.exampleConfig {
 let paths = DaemonBootstrap.Paths(
     configDir: DaemonBootstrap.resolveConfigDir(
         explicit: options.configDir,
-        // See the note in `rnir` — `homeDirectoryForCurrentUser` ignores `$HOME` (`bugs/024`).
+        // See the note in `rnir`—`homeDirectoryForCurrentUser` ignores `$HOME` (`bugs/024`).
         home: DaemonBootstrap.homeDirectory()))
 
 FileLogSink.installStdoutHandler()

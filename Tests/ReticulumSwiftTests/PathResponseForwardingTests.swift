@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests that path response announces are NOT forwarded to other interfaces.
+/// Tests that path response announces aren't forwarded to other interfaces.
 /// Python: "if context != PATH_RESPONSE: forward to other interfaces"
 final class PathResponseForwardingTests: XCTestCase {
 
@@ -76,7 +76,7 @@ final class PathResponseForwardingTests: XCTestCase {
         // Inject path response on in1
         in1.inboundHandler?(packet, in1)
 
-        // Should NOT be forwarded to in2 or out
+        // Shouldn't be forwarded to in2 or out
         let forwarded = (in2.sent + out.sent).filter { $0.packetType == .announce }
         XCTAssertEqual(forwarded.count, 0, "path response announce must NOT be forwarded")
     }

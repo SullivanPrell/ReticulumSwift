@@ -54,7 +54,7 @@ final class InterfaceSynthesisTests: XCTestCase {
             parameters: [:]
         )]
         let r = try makeRns(config: cfg)
-        // Should not throw — unknown types are silently ignored
+        // Shouldn't throw—unknown types are silently ignored
         XCTAssertNoThrow(try r.synthesizeInterfaces(from: cfg))
         // No interfaces registered for unknown types
         XCTAssertEqual(r.transport.interfaces.count, 0)

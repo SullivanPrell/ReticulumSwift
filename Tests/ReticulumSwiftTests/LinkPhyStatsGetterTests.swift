@@ -85,7 +85,7 @@ final class LinkPhyStatsGetterTests: XCTestCase {
         XCTAssertEqual(v, 90.0, accuracy: 0.001)
     }
 
-    // MARK: - Disabling tracking hides previously-recorded values
+    // MARK: - Disabling tracking hides previously recorded values
 
     func testDisablingTrackingHidesValues() throws {
         let link = try makeLink()

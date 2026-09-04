@@ -98,7 +98,7 @@ final class PathRequestTransportIDTests: XCTestCase {
         let countBefore = relayInIface.sent.count
         try requesterIface.send(pathReq)
 
-        // Relay should NOT send an announce back (suppress: next hop == requestor).
+        // Relay shouldn't send an announce back (suppress: next hop == requestor).
         let newAnnounces = relayInIface.sent.dropFirst(countBefore).filter { $0.packetType == .announce }
         XCTAssertEqual(newAnnounces.count, 0,
             "relay must suppress path response when next hop is the requesting transport")
@@ -280,10 +280,10 @@ final class PathRequestTransportIDTests: XCTestCase {
     // MARK: - No path entry: stay silent (Python: answer requires dest in path_table)
 
     func testNoAnswerWhenCachedAnnounceButNoPathEntry() throws {
-        // A cached announce alone is NOT a known path. Python answers a path
+        // A cached announce alone isn't a known path. Python answers a path
         // request only when `destination_hash in Transport.path_table`
         // (Transport.py:2969); answering from a stale cached announce with no
-        // live path would black-hole traffic to a route we cannot actually use.
+        // live path would black-hole traffic to an unusable route.
         let relay = Transport()
         relay.transportEnabled = true
 

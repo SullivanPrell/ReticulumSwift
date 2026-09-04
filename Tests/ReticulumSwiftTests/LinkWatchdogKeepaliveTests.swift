@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// bugs/034 — an idle but healthy link must keep itself alive.
+/// bugs/034—an idle but healthy link must keep itself alive.
 ///
 /// Python clamps EVERY watchdog sleep to WATCHDOG_MAX_SLEEP = 5 s
 /// (RNS/Link.py:776 `sleep_time = min(sleep_time, Link.WATCHDOG_MAX_SLEEP)`,
@@ -11,7 +11,7 @@ import XCTest
 /// (RNS/Link.py:749-751; 5 s floor on low-RTT links, RNS/Link.py:795-797).
 ///
 /// The Swift watchdog scheduled its next tick at requestTime +
-/// establishmentTimeout while the link was still `.pending` — uncapped — so a
+/// establishmentTimeout while the link was still `.pending`—uncapped—so a
 /// link that established AFTER the first 0.1 s tick got NO watchdog tick until
 /// the establishment deadline. No keepalive was ever sent, and the first
 /// `.active` tick could land past effectiveStaleTime (2 x 5 s on low-RTT

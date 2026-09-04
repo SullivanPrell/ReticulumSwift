@@ -4,25 +4,25 @@ import XCTest
 /// RNS 1.4.2 parity.
 ///
 /// The release is three core diffs against 1.4.1 plus changes to `rnsh`, which
-/// is not ported. Only one of the three is behavioural, and this port already
-/// had it — so rather than a port, 1.4.2 is an audit, and this file is what
+/// isn't ported. Only one of the three is behavioural, and this port already
+/// had it—so rather than a port, 1.4.2 is an audit, and this file is what
 /// keeps that audit from silently rotting:
 ///
 ///  - `Transport.py:3126` added `if not interface.online: continue` to the
 ///    recursive path-request fan-out. Covered below.
 ///  - `Transport.py:1841` moved a gravity-replacement log line from `LOG_DEBUG`
-///    to `LOG_PATHING`. This port does not emit that line, so there is nothing
+///    to `LOG_PATHING`. This port doesn't emit that line, so there is nothing
 ///    to assert.
-///  - `Discovery.py` began caching the blackholed identity set for 60s in
+///  - `Discovery.py` began caching the blackholed identity set for 60 seconds in
 ///    `list_discovered_interfaces`. Python pays an RPC round-trip to the shared
 ///    instance per `is_blackholed` call; `Transport.isBlackholed` is a
 ///    dictionary lookup under a lock, so caching would buy nothing and would
 ///    delay a fresh blackhole by up to a minute. Covered below by asserting the
-///    property the cache would have cost us.
+///    property the cache would have sacrificed.
 final class RNS142ParityTests: XCTestCase {
 
     /// Mock interface with a settable `isOnline`, so an interface can be taken
-    /// down without being deregistered — which is the state Python 1.4.2's new
+    /// down without being deregistered—which is the state Python 1.4.2's new
     /// guard exists for.
     final class ToggleableInterface: Interface {
         var name: String
@@ -74,7 +74,7 @@ final class RNS142ParityTests: XCTestCase {
 
     /// RNS 1.4.2: a registered but offline interface is skipped. Sending down a
     /// dead interface is a request that can never be answered, and on a
-    /// reconnecting transport it is also a write into a socket that is being
+    /// reconnecting transport it's also a write into a socket that's being
     /// torn down.
     func testRecursivePathRequestSkipsAnOfflineInterface() throws {
         let t = Transport()

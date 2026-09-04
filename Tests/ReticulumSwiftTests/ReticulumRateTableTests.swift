@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for Reticulum.getRateTable() — mirrors Python's Reticulum.get_rate_table().
+/// Tests for Reticulum.getRateTable()—mirrors Python's Reticulum.get_rate_table().
 final class ReticulumRateTableTests: XCTestCase {
 
     private var tmpDir: URL!

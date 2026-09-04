@@ -9,7 +9,7 @@ public enum RNPathFormatter {
 
     // MARK: - pretty_date
 
-    /// Python: `pretty_date(time)` (rnpath.py:528-547) — rnpath's own helper, **not**
+    /// Python: `pretty_date(time)` (rnpath.py:528-547)—rnpath's own helper, **not**
     /// `RNS.prettytime`.
     ///
     /// The thresholds are irregular on purpose (two identical `< 10` / `< 60` branches, a
@@ -44,7 +44,7 @@ public enum RNPathFormatter {
 
     // MARK: - reason truncation
 
-    /// Python: `trunc(input_str)` with `rmlen = 64` (rnpath.py:178-181) — returns the string
+    /// Python: `trunc(input_str)` with `rmlen = 64` (rnpath.py:178-181)—returns the string
     /// unchanged at 64 or fewer characters, otherwise `input_str[:63] + "…"` (U+2026).
     ///
     /// Python slices by **code point**; Swift's `prefix(_:)` slices by grapheme cluster, so
@@ -60,10 +60,10 @@ public enum RNPathFormatter {
 
     // MARK: - timestamps
 
-    /// `RNS.timestamp_str(t)` — local time, `"%Y-%m-%d %H:%M:%S"`.
+    /// `RNS.timestamp_str(t)`—local time, `"%Y-%m-%d %H:%M:%S"`.
     ///
     /// Locale and calendar are pinned to `en_US_POSIX` / Gregorian so a non-Gregorian system
-    /// calendar cannot shift the year field. ``RNSUtilities/timestampStr(_:)`` sets neither.
+    /// calendar can't shift the year field. ``RNSUtilities/timestampStr(_:)`` sets neither.
     public static func timestampString(_ timestamp: TimeInterval,
                                        timeZone: TimeZone? = nil) -> String {
         let formatter = DateFormatter()
@@ -84,7 +84,7 @@ public enum RNPathFormatter {
     /// ```
     ///
     /// `m_str` is a **space** for one hop and `"s"` otherwise (rnpath.py:287-288), so a
-    /// one-hop row reads `… is 1 hop  away via …` with two spaces. That is a quirk of the
+    /// one-hop row reads `… is 1 hop  away via …` with two spaces. That's a quirk of the
     /// original, not a typo here.
     public static func pathTableLine(_ entry: RNPathTableEntry, timeZone: TimeZone? = nil) -> String {
         let plural = entry.hops == 1 ? " " : "s"
@@ -98,18 +98,18 @@ public enum RNPathFormatter {
     // MARK: - Rate table (-r)
 
     /// Message Python's `except` branch prints for an entry whose `timestamps` list is
-    /// empty — `entry["timestamps"][0]` raises `IndexError` and `str(e)` is this text
+    /// empty—`entry["timestamps"][0]` raises `IndexError` and `str(e)` is this text
     /// (rnpath.py:371-373).
     public static let emptyTimestampsErrorMessage = "list index out of range"
 
-    /// Python: rnpath.py:369. Returns `nil` for the entries Python fails on, i.e. those with
-    /// an empty `timestamps` list — the caller then prints the two-line error and *continues*
+    /// Python: rnpath.py:369. Returns `nil` for the entries Python fails on, that is, those with
+    /// an empty `timestamps` list—the caller then prints the two-line error and *continues*
     /// with the remaining entries, exactly as the Python `except` does.
     public static func rateLine(_ entry: RNPathRateEntry, now: TimeInterval) -> String? {
         guard let startTimestamp = entry.timestamps.first else { return nil }
 
         let lastString = prettyDate(Int(entry.last), now: Date(timeIntervalSince1970: now))
-        // Python: span = max(time.time() - start_ts, 3600.0) — a one-hour floor, so a
+        // Python: span = max(time.time() - start_ts, 3600.0)—a one-hour floor, so a
         // destination first heard 5 minutes ago is still reported per *hour*.
         let span = max(now - startTimestamp, 3600.0)
         let spanString = prettyDate(Int(startTimestamp), now: Date(timeIntervalSince1970: now))
@@ -125,7 +125,7 @@ public enum RNPathFormatter {
 
         let blockedString: String
         if entry.blockedUntil > now {
-            // Python: bli = time.time()-(int(blocked_until)-time.time()) — the remaining time
+            // Python: bli = time.time()-(int(blocked_until)-time.time())—the remaining time
             // expressed as a *past* timestamp so pretty_date can phrase it.
             let reflected = now - (Double(Int(entry.blockedUntil)) - now)
             blockedString = ", new announces allowed in "
@@ -139,14 +139,14 @@ public enum RNPathFormatter {
             + violationString + blockedString
     }
 
-    /// Python: rnpath.py:372 — the first of the two lines printed for a failing entry.
+    /// Python: rnpath.py:372—the first of the two lines printed for a failing entry.
     public static func rateErrorLine(_ entry: RNPathRateEntry) -> String {
         "Error while processing entry for " + RNSUtilities.prettyhexrep(entry.destinationHash)
     }
 
     // MARK: - Blackhole list (-b / -p)
 
-    /// Python: rnpath.py:189 — `f"for {prettytime(max(0, until-now))}"` when `until` is
+    /// Python: rnpath.py:189—`f"for {prettytime(max(0, until-now))}"` when `until` is
     /// *truthy*, else `"indefinitely"`. An `until` of exactly 0 is falsy in Python and so
     /// renders "indefinitely", not "for 0s".
     private static func untilString(_ until: TimeInterval?, now: TimeInterval) -> String {
@@ -160,7 +160,7 @@ public enum RNPathFormatter {
         return " (\(truncateReason(reason)))"
     }
 
-    /// Python: rnpath.py:191 — `f" by {prettyhexrep(source)}" if source != Transport.identity.hash else ""`.
+    /// Python: rnpath.py:191—`f" by {prettyhexrep(source)}" if source != Transport.identity.hash else ""`.
     ///
     /// Two documented divergences: a `nil` source omits the fragment (Python would call
     /// `prettyhexrep(None)`, raise, and abort the whole listing with exit 20), and a `nil`
@@ -171,7 +171,7 @@ public enum RNPathFormatter {
         return " by " + RNSUtilities.prettyhexrep(source)
     }
 
-    /// Python: rnpath.py:199 — the line that is actually printed.
+    /// Python: rnpath.py:199—the line that's actually printed.
     public static func blackholeLine(_ entry: RNPathBlackholeEntry,
                                      now: TimeInterval,
                                      localTransportIdentityHash: Data?) -> String {
@@ -182,7 +182,7 @@ public enum RNPathFormatter {
             + byString(entry.source, localTransportIdentityHash: localTransportIdentityHash)
     }
 
-    /// Python: rnpath.py:192 — the string the substring filter is matched against, which is
+    /// Python: rnpath.py:192—the string the substring filter is matched against, which is
     /// **not** the printed line.
     ///
     /// ```
@@ -202,10 +202,10 @@ public enum RNPathFormatter {
             + " " + byString(entry.source, localTransportIdentityHash: localTransportIdentityHash)
     }
 
-    /// Python: `filter not in filter_str` — a plain, case-sensitive, code-point-literal
+    /// Python: `filter not in filter_str`—a plain, case-sensitive, code-point-literal
     /// substring test.
     ///
-    /// `String.contains(_:)` matches canonically-equivalent Unicode, so a precomposed needle
+    /// `String.contains(_:)` matches canonically equivalent Unicode, so a precomposed needle
     /// would match a decomposed haystack where Python's `in` returns False. `.literal`
     /// disables that normalisation.
     public static func filterMatches(_ needle: String, in haystack: String) -> Bool {
@@ -222,7 +222,7 @@ public enum RNPathFormatter {
     ///       +" away via "+next_hop+" on "+next_hop_interface)
     /// ```
     ///
-    /// `ms` is `""` for one hop here — unlike ``pathTableLine(_:timeZone:)``, which uses a
+    /// `ms` is `""` for one hop here—unlike ``pathTableLine(_:timeZone:)``, which uses a
     /// space. The two branches genuinely differ.
     ///
     /// `interfaceName` must be the literal string `"None"` when unknown, because Python's
@@ -243,8 +243,8 @@ public enum RNPathFormatter {
     /// `RNS.hexrep(v, delimit=False)` (rnpath.py:273-280).
     ///
     /// Hand-rolled because `JSONSerialization` preserves neither Python's key order nor its
-    /// float formatting. Key order is Python's dict-insertion order — hash, timestamp, via,
-    /// hops, expires, interface — which is deliberately *not* the order Swift's own
+    /// float formatting. Key order is Python's dict-insertion order—hash, timestamp, via,
+    /// hops, expires, interface—which is deliberately *not* the order Swift's own
     /// ``RPCServer`` happens to emit.
     ///
     /// A nil `via` is serialised as the destination hash, never `null`: Python's `via` is
@@ -278,11 +278,11 @@ public enum RNPathFormatter {
         return "[" + objects.map { "{\($0)}" }.joined(separator: ", ") + "]"
     }
 
-    /// Python's `repr(float)` — the shortest representation that round-trips.
+    /// Python's `repr(float)`—the shortest representation that round-trips.
     ///
     /// Swift's `Double.description` uses the same rule, so an integral value prints `9.0`
     /// rather than `9`, matching `json.dumps`. Non-finite values use Python's `json.dumps`
-    /// spelling (`Infinity` / `NaN`), which is not strict JSON but is what Python emits.
+    /// spelling (`Infinity` / `NaN`), which isn't strict JSON but is what Python emits.
     public static func jsonNumber(_ value: Double) -> String {
         if value.isNaN { return "NaN" }
         if value.isInfinite { return value < 0 ? "-Infinity" : "Infinity" }

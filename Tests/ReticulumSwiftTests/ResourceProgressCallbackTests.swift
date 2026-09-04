@@ -4,12 +4,12 @@ import XCTest
 /// `Resource.progress_callback` parity (Python `RNS/Resource.py`).
 ///
 /// Python fires the progress callback in two places: on the receiver for every
-/// newly-accepted part (Resource.py:889-893), and on the sender at the tail of
+/// newly accepted part (Resource.py:889-893), and on the sender at the tail of
 /// its part-send loop (Resource.py:1075-1081). Swift declared `onProgress` and
 /// wired it through `Link.request(progressCallback:)` and
-/// `RequestReceipt.updateProgress`, but nothing ever called it — so every
+/// `RequestReceipt.updateProgress`, but nothing ever called it—so every
 /// progress observer in the stack was silently inert, and a mid-transfer
-/// `responseSize` (the only time it is useful) was never readable.
+/// `responseSize` (the only time it's useful) was never readable.
 final class ResourceProgressCallbackTests: XCTestCase {
 
     final class LoopIface: Interface {
@@ -20,8 +20,8 @@ final class ResourceProgressCallbackTests: XCTestCase {
         /// Deliver on a serial queue instead of inside the caller's stack.
         ///
         /// Synchronous delivery makes a resource transfer run to completion inside
-        /// the first `send`, which hides every intermediate state from the sender —
-        /// its own progress emits all land after the last part has gone out. Real
+        /// the first `send`, which hides every intermediate state from the sender—its
+        /// own progress emits all land after the last part has gone out. Real
         /// interfaces never behave that way. Ordering is still FIFO.
         var asynchronous: Bool = false
         private let queue: DispatchQueue
@@ -141,7 +141,7 @@ final class ResourceProgressCallbackTests: XCTestCase {
 
     /// The whole reason the callback matters above the Resource layer: a request
     /// whose response arrives as a Resource must expose its size and progress
-    /// *while it is arriving*.
+    /// *while it's arriving*.
     func testRequestReceiptReportsResponseSizeMidTransfer() throws {
         let payload = incompressible(8192)
         let (aLink, _, _) = try establishLink(requestPayload: payload)

@@ -68,7 +68,7 @@ final class NetworkDestinationTests: XCTestCase {
         let countAfterFirst = transport.registeredDestinations.count
         transport.setupNetworkDestinations()
         // Calling again just re-registers same destinations (same hashes, same entries).
-        // The count should not grow (register(destination:) is idempotent for same hash).
+        // The count shouldn't grow (register(destination:) is idempotent for same hash).
         XCTAssertEqual(transport.registeredDestinations.count, countAfterFirst,
                        "Re-running setupNetworkDestinations should not add duplicate entries")
     }

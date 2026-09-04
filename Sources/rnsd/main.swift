@@ -1,7 +1,7 @@
 import Foundation
 import ReticulumSwift
 
-/// `rnsd` — the Reticulum Network Stack Daemon.
+/// `rnsd`—the Reticulum Network Stack Daemon.
 ///
 /// Python reference: `RNS/Utilities/rnsd.py`. This target does argument capture, printing,
 /// signal handling and exit codes only; every decision it makes lives in
@@ -99,11 +99,11 @@ Reticulum.log("Configuration loaded from \(paths.configFile.path)", level: .verb
 
 let connection: InstanceConnection
 do {
-    // Bind the shared-instance port FIRST so Python clients always see us as the server
+    // Bind the shared-instance port FIRST so Python clients always see this process as the server
     // before they get a chance to bind it themselves. Python's __start_local_interface()
     // first tries to *become* the server; if that fails it falls back to connecting as a
     // client. Binding 37428 before interface synthesis eliminates the race where Python
-    // grabs 37428 and then conflicts with our TCPServerInterface on 42422.
+    // grabs 37428 and then conflicts with the TCPServerInterface on 42422.
     //
     // Interface synthesis is deliberately deferred: Python gates it on
     // `is_shared_instance or is_standalone_instance` (Reticulum.py:936), so a process that
@@ -113,8 +113,8 @@ do {
                                                synthesizeInterfaces: false)
 } catch {
     // Python: `__start_local_interface` logs these two lines (Reticulum.py:436-437). It then
-    // degrades to a standalone instance; this port cannot re-drive the bring-up from here, so
-    // it panics instead — see the release notes.
+    // degrades to a standalone instance; this port can't re-drive the bring-up from here, so
+    // it panics instead—see the release notes.
     Reticulum.log("Local shared instance appears to be running, but it could not be connected",
                   level: .error)
     Reticulum.log("The contained exception was: \(error)", level: .error)
@@ -165,7 +165,7 @@ if options.interactive {
 
 // Python: `Reticulum.__jobs` checkpoints paths, known destinations and the hashlist on a
 // timer (`Reticulum.py:369-386`). ReticulumSwift otherwise persists only from `stop()`, so a
-// daemon that is killed loses everything learned since process start.
+// daemon that's killed loses everything learned since process start.
 let persistTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
 persistTimer.schedule(deadline: .now() + Reticulum.graciousPersistInterval,
                       repeating: Reticulum.graciousPersistInterval)
@@ -192,7 +192,7 @@ func performShutdown() {
     persistTimer.cancel()
     connection.stop()
     // Python: `exit_handler` sets `RNS.loglevel = LOG_NONE` last, so late daemon threads
-    // cannot print after teardown.
+    // can't print after teardown.
     Reticulum.globalLogLevel = .none
     exit(RNSDApp.ExitCode.ok.rawValue)
 }

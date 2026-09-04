@@ -44,7 +44,7 @@ final class RatchetTests: XCTestCase {
         let pubOnly = try Identity(publicKeyBytes: recipient.publicKeyBytes)
         let token = try pubOnly.encrypt(plaintext, ratchetPublicKey: oldPub)
 
-        // Recipient rotates *after* the message was sent — old priv now
+        // Recipient rotates *after* the message was sent—old priv now
         // sits in history. Decrypt should still succeed via history.
         recipient.rotateRatchet()
 
@@ -106,12 +106,12 @@ final class RatchetTests: XCTestCase {
         identity.rotateRatchet()
         let pub1 = identity.activeRatchetPublicKey
 
-        // Within the interval — must not rotate.
+        // Within the interval—must not rotate.
         let pub2 = identity.rotateRatchetIfNeeded()
         XCTAssertEqual(pub1, pub2)
         XCTAssertEqual(identity.previousRatchetPrivateKeys.count, 0)
 
-        // Past the interval — rotates.
+        // Past the interval—rotates.
         let pub3 = identity.rotateRatchetIfNeeded(
             now: Date().addingTimeInterval(120)
         )
@@ -157,12 +157,12 @@ final class RatchetTests: XCTestCase {
     /// table.
     ///
     /// This suite used to assert a `PathStore` round trip, because the port inlined the ratchet
-    /// into each path entry. The reference does not: its `destination_table` entry carries no
+    /// into each path entry. The reference doesn't: its `destination_table` entry carries no
     /// identity material at all, and ratchets live one file per destination under
     /// `storage/ratchets/` (`Identity.py:293,426,453,487`). Bringing the path table to the
     /// reference's shape (`bugs/029`) moved this property to the store that owns it, where
     /// `RatchetParityTests.testTransportPersistsLearnedRatchetToDirectory` already asserts it end
-    /// to end — through a real inbound announce, which is the only path that writes the file. So
+    /// to end—through a real inbound announce, which is the only path that writes the file. So
     /// what remains here is the other half: that the path table carries none of it.
     func testPathStoreCarriesNoRatchet() throws {
         let dir = FileManager.default.temporaryDirectory

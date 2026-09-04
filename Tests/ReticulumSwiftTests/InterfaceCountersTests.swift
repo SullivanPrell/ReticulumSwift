@@ -2,12 +2,12 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Traffic counters (`rxBytes`/`txBytes`/`rxPackets`/`txPackets`) are written
-/// from whichever queue an interface's I/O happens to run on — CoreBluetooth's
-/// dispatch queue, a `NWConnection` queue, a serial-port read thread — while
+/// from whichever queue an interface's I/O happens to run on—CoreBluetooth's
+/// dispatch queue, a `NWConnection` queue, a serial-port read thread—while
 /// being read from an entirely different one (the UI polls them for the
 /// interface list, `rnstatus`-style output reads them for reporting).
 ///
-/// `Int` is not atomic. `counter += 1` is a load-modify-store, so two queues
+/// `Int` isn't atomic. `counter += 1` is a load-modify-store, so two queues
 /// incrementing concurrently silently lose updates, and a concurrent reader can
 /// observe a torn value. Both are undefined behaviour under the Swift memory
 /// model, not merely inaccurate statistics.
@@ -17,14 +17,14 @@ import XCTest
 /// The *interface-level* test is different: its assertions passed even against
 /// the unguarded implementation, because a few thousand iterations with real
 /// work between increments rarely interleave at exactly the wrong instruction.
-/// Lost updates are probabilistic; the race is not.
+/// Lost updates are probabilistic; the race isn't.
 ///
 /// So the interface test earns its keep under the Thread Sanitizer, which flags
 /// the unsynchronized access whether or not an update was actually lost:
 ///
 ///     swift test --sanitize=thread --filter InterfaceCountersTests
 ///
-/// Run that way it reported the race before the fix and is silent after. Do not
+/// Run that way it reported the race before the fix and is silent after. Don't
 /// mistake a green plain `swift test` here for proof of thread safety.
 final class InterfaceCountersTests: XCTestCase {
 
@@ -49,7 +49,7 @@ final class InterfaceCountersTests: XCTestCase {
         XCTAssertEqual(counters.rxBytes, total * 3)
     }
 
-    /// A reader must never observe a half-applied update — `snapshot()` takes
+    /// A reader must never observe a half-applied update—`snapshot()` takes
     /// all four counters under one lock acquisition, so bytes and packets are
     /// always consistent with each other.
     func testSnapshotIsInternallyConsistent() {
@@ -135,7 +135,7 @@ final class InterfaceCountersTests: XCTestCase {
 // MARK: - Mock transport
 
 /// Minimal `BLEMeshTransport` whose `send` is safe to call from several queues
-/// at once — the interface, not the mock, is what is under test here.
+/// at once—the interface, not the mock, is what's under test here.
 private final class ThreadSafeMockBLETransport: BLEMeshTransport, @unchecked Sendable {
     var peerConnected: ((BLEMeshPeerID) -> Void)?
     var peerDisconnected: ((BLEMeshPeerID) -> Void)?

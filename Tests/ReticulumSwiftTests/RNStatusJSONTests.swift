@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `rnstatus -j` — order-preserving `json.dumps` output and the two bytes→hex passes.
+/// `rnstatus -j`—order-preserving `json.dumps` output and the two bytes→hex passes.
 ///
 /// Python reference: `RNS/Utilities/rnstatus.py:343-359` (stats) and `rnstatus.py:187-193`
 /// (discovered interfaces).
@@ -42,7 +42,7 @@ final class RNStatusJSONTests: XCTestCase {
 
     func testKeyOrderIsPreservedWithRssLast() {
         // Python emits `rss` LAST, after the optional transport block (Reticulum.py:1467),
-        // and json.dumps preserves dict insertion order — so the position is contractual.
+        // and json.dumps preserves dict insertion order—so the position is contractual.
         let value = MsgPack.Value.map([
             (.string("interfaces"), .array([])),
             (.string("rxb"), .int(1)),
@@ -88,7 +88,7 @@ final class RNStatusJSONTests: XCTestCase {
                 (.string("ifac_signature"), .bytes(Data([0x01, 0x02, 0x03]))),
                 (.string("parent_interface_hash"), .bytes(Data([0xFF]))),
                 (.string("name"), .string("x")),
-                // Nested two levels deep: Python's loop does NOT reach this, and
+                // Nested two levels deep: Python's loop doesn't reach this, and
                 // json.dumps would raise a TypeError on it.
                 (.string("blocked_ip_list"), .array([.bytes(Data([0x09]))])),
             ])])),
@@ -118,7 +118,7 @@ final class RNStatusJSONTests: XCTestCase {
         let value = MsgPack.Value.array([.map([
             (.string("stamp"), .bytes(Data(repeating: 0x11, count: 4))),
             (.string("discovery_hash"), .bytes(Data(repeating: 0x22, count: 4))),
-            // Already hex STRINGS on disk (Discovery.py:323-324) — must stay strings.
+            // Already hex STRINGS on disk (Discovery.py:323-324)—must stay strings.
             (.string("transport_id"), .string("aabb")),
             (.string("network_id"), .string("ccdd")),
         ])])

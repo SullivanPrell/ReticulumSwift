@@ -144,12 +144,12 @@ final class LargeResourceTests: XCTestCase {
     /// one advertisement (>2 hashmap segments). This forces the receiver to pull later
     /// hashmap segments via HMU packets and the sender to emit them indexed by
     /// `partIndex / HASHMAP_MAX_LEN`. It only completes when both sides agree on the
-    /// segment length (74) — the regression this guards against.
+    /// segment length (74)—the regression this guards against.
     func testLargeSingleSegmentResourceUsesHashmapUpdates() throws {
         let (aLink, bLink) = try establishLink()
 
         // ~13 KB of incompressible (SHA-chained) data so it stays a single segment but
-        // splits into >148 parts at an 80-byte part size — spanning 3 hashmap segments.
+        // splits into >148 parts at an 80-byte part size—spanning 3 hashmap segments.
         var payload = Data()
         var seed = Data(repeating: 0x5A, count: 32)
         while payload.count < 13_000 {

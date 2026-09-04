@@ -17,7 +17,7 @@ public final class RNXClient {
         case invalidDestinationLength(Int)
         /// Python: "Invalid destination entered. Check your input." → exit 241 (rnx.py:336).
         case invalidDestinationHex
-        /// `Identity.recall` returned nil. Python does not check, and silently builds a
+        /// `Identity.recall` returned nil. Python doesn't check, and silently builds a
         /// destination with the wrong hash; Swift's `Destination` init throws, which the
         /// executable maps onto the same exit as "Could not establish link" (243).
         case unknownListenerIdentity
@@ -28,14 +28,14 @@ public final class RNXClient {
     /// 16-byte listener destination hash.
     public let destinationHash: Data
 
-    /// Python: the `link` module global — reused across an interactive session.
+    /// Python: the `link` module global—reused across an interactive session.
     public private(set) var link: Link?
 
     /// Python: `link.did_identify`, an ad-hoc attribute stapled onto the Link object.
     public private(set) var didIdentify: Bool = false
 
     /// Python: the `listener_destination` module global. Never rebuilt once set, so a
-    /// failed first recall poisons the whole interactive session — reproduced.
+    /// failed first recall poisons the whole interactive session—reproduced.
     public private(set) var listenerDestination: Destination?
 
     private let transport: Transport
@@ -47,7 +47,7 @@ public final class RNXClient {
         self.destinationHash = destinationHash
     }
 
-    /// Python: rnx.py:329-339. The check is unconditional — it fires even under `-x`, and
+    /// Python: rnx.py:329-339. The check is unconditional—it fires even under `-x`, and
     /// it runs *before* Reticulum is constructed, so an invalid destination never brings
     /// up the stack.
     public static func parseDestination(_ hex: String) throws -> Data {
@@ -62,10 +62,10 @@ public final class RNXClient {
 
     // MARK: - Path
 
-    /// Python: `RNS.Transport.has_path(destination_hash)` — rnx.py:348.
+    /// Python: `RNS.Transport.has_path(destination_hash)`—rnx.py:348.
     public var hasPath: Bool { transport.hasPath(to: destinationHash) }
 
-    /// Python: `RNS.Transport.request_path(destination_hash)` — rnx.py:349. Fire and forget.
+    /// Python: `RNS.Transport.request_path(destination_hash)`—rnx.py:349. Fire and forget.
     public func requestPath() throws {
         try transport.requestPath(for: destinationHash)
     }
@@ -78,7 +78,7 @@ public final class RNXClient {
     /// injected transport, not `Identity.recall`, which routes via `Reticulum.shared` and
     /// silently returns nil when no stack was started), then creates a Link whenever the
     /// current one is nil, CLOSED or PENDING. ACTIVE / HANDSHAKE / STALE links are reused
-    /// — including a STALE one that may well fail on the next send. Reproduced verbatim.
+    ///—including a STALE one that may well fail on the next send. Reproduced verbatim.
     public func openLinkIfNeeded() throws {
         if listenerDestination == nil {
             guard let listenerIdentity = transport.recall(identity: destinationHash) else {
@@ -103,7 +103,7 @@ public final class RNXClient {
 
     public var linkStatus: Link.Status? { link?.status }
 
-    /// Python: rnx.py:372-374 — skipped entirely under `-N/--noid`. Without identifying,
+    /// Python: rnx.py:372-374—skipped entirely under `-N/--noid`. Without identifying,
     /// an ALLOW_LIST listener silently ignores the request and the client times out at 245.
     public func identifyIfNeeded(noID: Bool) throws {
         guard !noID, !didIdentify, let link else { return }
@@ -117,7 +117,7 @@ public final class RNXClient {
     ///
     /// Uses `link.request(path:nativeValue:)`. The `data:` overload wraps the payload as
     /// msgpack `.bytes`, so a Python listener would index a bytes object, get an `int`,
-    /// call `.decode` on it and raise inside its response generator — sending no response
+    /// call `.decode` on it and raise inside its response generator—sending no response
     /// at all, which looks exactly like a network timeout.
     @discardableResult
     public func sendCommand(_ request: RNXRequest,
@@ -132,12 +132,12 @@ public final class RNXClient {
                                 timeout: timeout)
     }
 
-    /// Python: rnx.py:532-537 — exceptions are swallowed, and it is skipped in interactive mode.
+    /// Python: rnx.py:532-537—exceptions are swallowed, and it's skipped in interactive mode.
     public func teardown() {
         try? link?.teardown()
     }
 
-    /// Python: `rexec_timeout = timeout + link.rtt*4 + remote_exec_grace` — rnx.py:388.
+    /// Python: `rexec_timeout = timeout + link.rtt*4 + remote_exec_grace`—rnx.py:388.
     ///
     /// Must always be passed explicitly to `Link.request(timeout:)`: Swift otherwise
     /// substitutes `rtt * Link.trafficTimeoutFactor (6) + Link.requestTimeoutGrace`, or

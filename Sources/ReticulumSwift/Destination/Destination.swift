@@ -75,12 +75,12 @@ public final class Destination {
     // `setRatchetInterval`, `setRetainedRatchets`, `latestRatchetID`.
 
     /// True after `enableRatchets(path:)`. While set, `Announce.make`
-    /// will lazily call `identity.rotateRatchetIfNeeded()` and embed
+    /// lazily calls `identity.rotateRatchetIfNeeded()` and embeds
     /// the active ratchet pub in outgoing announces.
     public private(set) var ratchetsEnabled: Bool = false
 
     /// Path to the destination-scoped ratchet sidecar file. The actual
-    /// file (`Identity` ratchet privates) is written by Identity; this
+    /// file (`Identity` ratchet privates); Identity writes that one, and this
     /// is just where it lives for *this* destination.
     public private(set) var ratchetsPath: URL?
 
@@ -91,7 +91,7 @@ public final class Destination {
 
     /// 10-byte ID (`SHA256(ratchet_pub)[:10]`) of the most recent
     /// ratchet that successfully decrypted an inbound packet on this
-    /// destination — or nil if the static identity key did. Mirrors
+    /// destination—or nil if the static identity key did. Mirrors
     /// Python's `Destination.latest_ratchet_id`.
     public private(set) var latestRatchetID: Data?
 
@@ -101,11 +101,16 @@ public final class Destination {
         identity?.ratchetInterval = interval
     }
 
-    /// Mirrors Python's `Destination.set_retained_ratchets`. Forwarded
-    /// to the underlying Identity's history depth.
+    /// Mirrors Python's `Destination.set_retained_ratchets`: `count` is the total number of
+    /// ratchets kept for decryption, the active one included—`self.ratchets[:n]`, where
+    /// `ratchets[0]` is the ratchet currently being announced (`Destination.py:209`, `:287`).
+    ///
+    /// This port stores the active ratchet outside the history, so the total sits one above
+    /// ``Identity/ratchetHistoryDepth``. The conversion belongs here, at the boundary with
+    /// Python's counting, rather than in each caller.
     public func setRetainedRatchets(_ count: Int) {
         guard count > 0 else { return }
-        identity?.ratchetHistoryDepth = count
+        identity?.ratchetHistoryDepth = count - 1
         identity?.sweepExpiredRatchets()
     }
 
@@ -144,7 +149,7 @@ public final class Destination {
     /// Force a ratchet rotation for this destination if the ratchet interval has elapsed.
     /// Mirrors Python's `Destination.rotate_ratchets()`.
     /// Returns `true` whether or not a rotation was needed (ratchets are healthy).
-    /// Throws `DestinationError.ratchetsNotEnabled` if ratchets have not been enabled.
+    /// Throws `DestinationError.ratchetsNotEnabled` if ratchets haven't been enabled.
     @discardableResult
     public func rotateRatchets() throws -> Bool {
         guard ratchetsEnabled, let identity else {
@@ -190,7 +195,7 @@ public final class Destination {
     /// Controls which remote peers are allowed to invoke a request handler.
     /// Mirrors Python's `Destination.ALLOW_NONE / ALLOW_ALL / ALLOW_LIST`.
     public enum AllowPolicy {
-        case none   // never answer (default — must opt in explicitly)
+        case none   // never answer (default—must opt in explicitly)
         case all    // answer requests from any peer
         case list   // answer only from identities in allowedList
     }
@@ -208,8 +213,8 @@ public final class Destination {
 
     /// Native-value request handler. Returns a MsgPack value embedded directly
     /// in the response array (Python-wire-compatible). Use for handlers that serve
-    /// Python clients (e.g., LXMF propagation node). `requestData` is the raw
-    /// MsgPack.Value from the incoming request — no double-encoding round-trip.
+    /// Python clients (for example, LXMF propagation node). `requestData` is the raw
+    /// MsgPack.Value from the incoming request—no double-encoding round-trip.
     public typealias NativeRequestHandler = (
         _ pathHash: Data,
         _ requestData: MsgPack.Value,
@@ -245,7 +250,7 @@ public final class Destination {
 
     /// Sets the maximum accepted request size for registered request handlers.
     ///
-    /// Oversized requests are dropped before the msgpack body is unpacked — for
+    /// Oversized requests are dropped before the msgpack body is unpacked—for
     /// single-packet requests silently, and for requests advertised as a
     /// Resource by rejecting the advertisement so the sender stops immediately
     /// rather than transferring the whole payload first.
@@ -263,7 +268,7 @@ public final class Destination {
     ///
     /// - Parameters:
     ///   - allow: Access policy. Defaults to `.none` (matches Python's
-    ///     `ALLOW_NONE` default — you must opt in to serving requests).
+    ///     `ALLOW_NONE` default—you must opt in to serving requests).
     ///   - allowedList: Identities permitted when `allow == .list`.
     ///   - autoCompress: Whether Resource responses should be auto-compressed (default `true`).
     public func registerRequestHandler(
@@ -286,10 +291,10 @@ public final class Destination {
     ///
     /// The handler receives the raw `MsgPack.Value` from the incoming request
     /// (not re-encoded bytes) and returns a `MsgPack.Value` embedded directly in
-    /// the response envelope — matching Python's `packb([request_id, response])`.
+    /// the response envelope—matching Python's `packb([request_id, response])`.
     ///
     /// Use this for handlers that must interoperate with Python RNS clients
-    /// (e.g., LXMF propagation node `message_get_request`).
+    /// (for example, LXMF propagation node `message_get_request`).
     public func registerNativeRequestHandler(
         path: String,
         allow: AllowPolicy = .none,
@@ -475,9 +480,9 @@ public final class Destination {
     /// Broadcast an announce for this destination using the shared Reticulum transport.
     ///
     /// This is a convenience wrapper around `transport.announce(destination:appData:ratchet:)`.
-    /// It requires `Reticulum.shared` to be set (i.e., `Reticulum.start()` must have been called).
+    /// It requires `Reticulum.shared` to be set (that is, `Reticulum.start()` must have been called).
     ///
-    /// For more control (e.g., specifying a specific transport), use `Transport.announce(destination:appData:)` directly.
+    /// For more control (for example, specifying a specific transport), use `Transport.announce(destination:appData:)` directly.
     ///
     /// Mirrors Python's `Destination.announce(app_data=None)`.
     @discardableResult
@@ -497,7 +502,7 @@ public final class Destination {
     ///   - attachedInterface: If specified, the announce is sent only on this
     ///     interface. Mirrors Python's `Destination.announce(attached_interface=...)`.
     ///   - isPathResponse: If `true`, the announce is tagged as a path response
-    ///     and will not be re-forwarded by other transport nodes.
+    ///     and won't be re-forwarded by other transport nodes.
     ///     Mirrors Python's `Destination.announce(path_response=True)`.
     /// - Returns: A `PacketReceipt` if the announce was sent via the full
     ///   transport broadcast, or `nil` when sent on a specific interface.
@@ -528,7 +533,7 @@ public final class Destination {
     /// Mirrors Python's `Destination.hash` (direct attribute access via `get_hash()`).
     public func getHash() -> Data { hash }
 
-    /// Returns the full expanded destination name (e.g. `"appName.aspect.identity_hexhash"`).
+    /// Returns the full expanded destination name (for example, `"appName.aspect.identity_hexhash"`).
     /// Mirrors Python's `Destination.name` direct attribute.
     public func getName() -> String { fullName }
 
@@ -555,7 +560,7 @@ public final class Destination {
     ///
     /// For GROUP destinations: the symmetric 32-byte AES key (same as `getGroupKey()`).
     /// For SINGLE destinations: the 64-byte Ed25519+X25519 private key bytes,
-    ///   or nil if the identity does not have a private key (outbound-only).
+    ///   or nil if the identity doesn't have a private key (outbound-only).
     /// For PLAIN/LINK: nil.
     ///
     /// Mirrors Python's `Destination.get_private_key()`.
@@ -630,7 +635,7 @@ public final class Destination {
 
     /// Sign a message using this destination's identity.
     /// Only works for `.single` destinations with a private key.
-    /// Returns nil if the destination cannot sign.
+    /// Returns nil if the destination can't sign.
     /// Mirrors Python's `Destination.sign(message)`.
     public func sign(_ message: Data) -> Data? {
         guard kind == .single, let identity, identity.hasPrivateKey else { return nil }

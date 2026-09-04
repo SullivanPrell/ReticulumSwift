@@ -63,7 +63,7 @@ final class PacketPhyStatsTests: XCTestCase {
         let bIface = RadioInterface(); bIface.name = "B"
         aIface.paired = bIface; bIface.paired = aIface
 
-        // Set PHY stats on A (the interface that will "transmit")
+        // Set PHY stats on A (the interface that "transmits")
         aIface.rssi = -85.0
         aIface.snr = 7.5
         aIface.quality = 80.0

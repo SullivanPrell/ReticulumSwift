@@ -5,11 +5,11 @@ import XCTest
 /// methods on `Reticulum`.
 ///
 /// Python reference (RNS/__init__.py):
-///   RNS.rand()               — secure random float in [0, 1)
-///   RNS.version()            — semantic version string
-///   RNS.sl(level)            — should-log predicate: loglevel >= level
-///   RNS.phyparams()          — print physical-layer parameters (no return value)
-///   RNS.loglevelname(level)  — human-readable level name
+///   RNS.rand()—secure random float in [0, 1)
+///   RNS.version()—semantic version string
+///   RNS.sl(level)—should-log predicate: loglevel >= level
+///   RNS.phyparams()—print physical-layer parameters (no return value)
+///   RNS.loglevelname(level)—human-readable level name
 final class ReticulumUtilityTests: XCTestCase {
 
     // MARK: - rand()
@@ -22,7 +22,7 @@ final class ReticulumUtilityTests: XCTestCase {
 
     func testRandProducesDifferentValues() {
         // With a cryptographically random source, two calls should almost never
-        // produce the same 64-bit double.  The probability is ~2^-52 per call pair.
+        // produce the same 64-bit double. The probability is ~2^-52 per call pair.
         let a = Reticulum.rand()
         let b = Reticulum.rand()
         XCTAssertNotEqual(a, b, "consecutive rand() calls must differ")
@@ -49,7 +49,7 @@ final class ReticulumUtilityTests: XCTestCase {
                                     "version should be semver (at least X.Y)")
     }
 
-    // MARK: - sl(level:) — should-log predicate
+    // MARK: - sl(level:)—should-log predicate
 
     func testSlReturnsTrueWhenLevelAtOrBelowGlobal() {
         let saved = Reticulum.globalLogLevel

@@ -5,10 +5,10 @@ import Foundation
 /// Python reference: `RNS/Utilities/rnstatus.py`, `program_setup` (rnstatus.py:155-685).
 /// Everything here returns a `String` instead of printing, so the golden output can be
 /// asserted from XCTest with no terminal, no socket and no live stack. `now` is injected
-/// for the same reason — several lines are age-dependent.
+/// for the same reason—several lines are age-dependent.
 ///
 /// Trailing whitespace on the frequency and traffic lines is **significant**: Python pads
-/// the columns to a common width and then appends possibly-empty suffixes, so those lines
+/// the columns to a common width and then appends possibly empty suffixes, so those lines
 /// routinely end in spaces. The renderer reproduces that byte for byte.
 public struct RNStatusRenderer {
 
@@ -66,7 +66,7 @@ public struct RNStatusRenderer {
         }
 
         // Python: lstr (rnstatus.py:642-648). Note the leading comma when a transport_id
-        // exists — the suffix is designed to ride on the end of the "Uptime is …" line.
+        // exists—the suffix is designed to ride on the end of the "Uptime is …" line.
         var lstr = ""
         if let linkCount, options.linkStats {
             let plural = linkCount == 1 ? "y" : "ies"
@@ -100,8 +100,8 @@ public struct RNStatusRenderer {
                 out += " Probe responder at " + RNSUtilities.prettyhexrep(probeResponder) + " active\n"
             }
             if stats.transportUptime != nil {
-                // NOTE: when transport_uptime is absent, lstr is never printed at all —
-                // the link-table suffix only ever rides on this line.
+                // NOTE: when transport_uptime is absent, lstr is never printed at all—the
+                // link-table suffix only ever rides on this line.
                 out += " Uptime is " + Self.prettytime(stats.raw("transport_uptime")) + lstr + "\n"
             }
         } else if !lstr.isEmpty {
@@ -139,7 +139,7 @@ public struct RNStatusRenderer {
             } else {
                 var text = "Clients   : \(count)"
                 if ifstat.has("blocked_ips"), let blocked = ifstat.int("blocked_ips"), blocked > 0 {
-                    // Python: `"…"+str(n)+" IP"+"s" if p else ""` — the conditional binds
+                    // Python: `"…"+str(n)+" IP"+"s" if p else ""`—the conditional binds
                     // around the whole right-hand side and sits inside `if p:`, so the
                     // count is always pluralised.
                     text += "\n    Blocked   : \(blocked) IPs"
@@ -184,7 +184,7 @@ public struct RNStatusRenderer {
                     let dbm = Self.pythonStr(ifstat.raw("interference_last_dbm") ?? .nil)
                     lstr = "\n    Intrfrnc. : \(dbm) dBm \(Self.prettytime(ago, isFloat: true, compact: true)) ago"
                 }
-                // Python: `f"…{nf} dBm" if nf else lstr` — nf == 0 is falsy too, so a
+                // Python: `f"…{nf} dBm" if nf else lstr`—nf == 0 is falsy too, so a
                 // zero reading takes the "last seen" branch rather than printing "0 dBm".
                 nstr = Self.isTruthy(interference) ? "\n    Intrfrnc. : \(Self.pythonStr(interference)) dBm" : lstr
             }
@@ -216,7 +216,7 @@ public struct RNStatusRenderer {
         if ifstat.has("mem_load") {
             // PYTHON BUG, mirrored: the line is gated on `ifstat["cpu_load"]`, not
             // `ifstat["mem_load"]` (rnstatus.py:504). DELIBERATE DIVERGENCE: Python raises
-            // an uncaught KeyError — aborting the whole run — when `mem_load` is present
+            // an uncaught KeyError—aborting the whole run—when `mem_load` is present
             // without `cpu_load`; Swift treats the absent key as nil and prints "Unknown".
             if let cpuLoad = ifstat.raw("cpu_load"), !cpuLoad.isNil {
                 out += "    Mem usage : \(Self.pythonStr(ifstat.raw("mem_load") ?? .nil)) %\n"
@@ -330,7 +330,7 @@ public struct RNStatusRenderer {
 
             var cspec = "c"
             // NOTE: this mutates `clients` and the mutation is visible to the
-            // path-request block below — Python does the same.
+            // path-request block below—Python does the same.
             if clients == nil, ifstat.has("peers"), let peers = ifstat.int("peers"), peers != 0 {
                 clients = peers
                 cspec = "p"
@@ -367,7 +367,7 @@ public struct RNStatusRenderer {
             psr = true
         }
 
-        // Padding, in CHARACTERS — "↑"/"↓" are one character but three UTF-8 bytes.
+        // Padding, in CHARACTERS—"↑"/"↓" are one character but three UTF-8 bytes.
         if !asr { iaf = ""; oaf = "" }
         if !psr { ipf = ""; opf = "" }
         let amlen = max(iaf.count, oaf.count)
@@ -382,7 +382,7 @@ public struct RNStatusRenderer {
         rxbStr += String(repeating: " ", count: mlen - rxbStr.count)
         txbStr += String(repeating: " ", count: mlen - txbStr.count)
 
-        // Path Rqs. is printed BEFORE Announces even though the announce block above
+        // Path Rqs. is printed BEFORE Announces even though the preceding announce block
         // computed first (rnstatus.py:626-632).
         if psr {
             out += "    Path Rqs. : \(opf)  \(rpcStr)\n"
@@ -409,13 +409,13 @@ public struct RNStatusRenderer {
     /// The `-d` table. Python: rnstatus.py:264-306.
     ///
     /// Column widths are Python `str.format` `<N` specifiers, which pad but **never
-    /// truncate** — an over-long Type pushes the rest of the row right. Only Name is
+    /// truncate**—an over-long Type pushes the rest of the row right. Only Name is
     /// explicitly clipped. All widths count characters, so the ✓/×/… markers are 1 wide.
     ///
     /// The caller-supplied order is preserved; `listDiscoveredInterfaces()` has already
     /// sorted descending on `(statusCode, value, lastHeard)`.
     public func renderDiscoveredTable(_ interfaces: [DiscoveredInterfaceInfo]) -> String {
-        var out = "\n"     // rnstatus.py:185 — unconditional, before any mode branch
+        var out = "\n"     // rnstatus.py:185—unconditional, before any mode branch
         out += Self.pad("Name", 25) + " " + Self.pad("Type", 12) + " " + Self.pad("Status", 12)
              + " " + Self.pad("Last Heard", 12) + " " + Self.pad("Value", 8) + " "
              + Self.pad("Location", 15) + "\n"
@@ -458,13 +458,13 @@ public struct RNStatusRenderer {
     ///
     /// Python wraps each entry in a bare `try/except: pass` spanning the *whole* render,
     /// so an entry missing `config_entry` prints its full header block and then simply
-    /// stops — no separator, no diagnostic. That behaviour is reproduced here.
+    /// stops—no separator, no diagnostic. That behaviour is reproduced here.
     ///
     /// DELIBERATE DIVERGENCE, one case: a `KISSInterface` discovery record always carries a
     /// `frequency` key, sometimes with a null value. Python's `f"{None:,}"` then raises and
     /// the entry is abandoned just after `Location`, dropping its Stamp Value and
     /// Configuration Entry. `DiscoveredInterfaceInfo.frequency` is a `Double?`, which
-    /// cannot tell present-and-null from absent, so Swift skips the Frequency line and
+    /// can't tell present-and-null from absent, so Swift skips the Frequency line and
     /// renders the rest of the entry. Verified against the live store: this is the only
     /// difference in a 9,700-line `-D` dump.
     public func renderDiscoveredDetails(_ interfaces: [DiscoveredInterfaceInfo]) -> String {
@@ -528,7 +528,7 @@ public struct RNStatusRenderer {
         return out
     }
 
-    /// Python: rnstatus.py:196-199 — case-insensitive substring on the discovered name.
+    /// Python: rnstatus.py:196-199—case-insensitive substring on the discovered name.
     /// Neither the burst filter nor the interface hide list applies in discovered mode.
     private func filtered(_ interfaces: [DiscoveredInterfaceInfo]) -> [DiscoveredInterfaceInfo] {
         guard let filter = options.nameFilter, !filter.isEmpty else { return interfaces }
@@ -537,7 +537,7 @@ public struct RNStatusRenderer {
 
     // MARK: - Formatting helpers
 
-    /// Python `f"{value:<width}"` — pads with spaces, never truncates, counts characters.
+    /// Python `f"{value:<width}"`—pads with spaces, never truncates, counts characters.
     static func pad(_ value: String, _ width: Int) -> String {
         value.count >= width ? value : value + String(repeating: " ", count: width - value.count)
     }
@@ -546,7 +546,7 @@ public struct RNStatusRenderer {
     ///
     /// The stats dict carries ints, floats, strings, bools and None interchangeably in the
     /// same field depending on which node produced it, and rnstatus interpolates them with
-    /// `str(...)`. Reproducing `str` — rather than a Swift `\(...)` of a coerced type — is
+    /// `str(...)`. Reproducing `str`—rather than a Swift `\(...)` of a coerced type—is
     /// what keeps `41` from becoming `41.0`.
     static func pythonStr(_ value: MsgPack.Value) -> String {
         switch value {
@@ -583,7 +583,7 @@ public struct RNStatusRenderer {
     /// Verified live: `RNS.prettytime(90.0) == "1m and 30.0s"`.
     ///
     /// ``RNSUtilities/prettytime(_:verbose:compact:)`` takes a `TimeInterval` and always
-    /// collapses whole values to `Int`, so it cannot express the float form — and its
+    /// collapses whole values to `Int`, so it can't express the float form—and its
     /// int-input behaviour is locked in by `PrettyTimeTests`. rnstatus needs both: the
     /// transport uptime and burst durations arrive as floats, while `announce_rate_target`
     /// is an int from the config file. So `isFloat` carries the wire type through.
@@ -594,7 +594,7 @@ public struct RNStatusRenderer {
         let days    = Int(remaining / 86400); remaining = remaining.truncatingRemainder(dividingBy: 86400)
         let hours   = Int(remaining / 3600);  remaining = remaining.truncatingRemainder(dividingBy: 3600)
         let minutes = Int(remaining / 60);    remaining = remaining.truncatingRemainder(dividingBy: 60)
-        // Python: int(time) when compact, else round(time, 2) — banker's on the exact value.
+        // Python: int(time) when compact, else round(time, 2)—banker's on the exact value.
         let seconds: Double = compact ? Double(Int(remaining))
                                       : (Double(String(format: "%.2f", remaining)) ?? remaining)
 
@@ -631,7 +631,7 @@ public struct RNStatusRenderer {
         return prettytime(number, isFloat: false, compact: compact)
     }
 
-    /// Python `repr(float)` / `str(float)` — shortest representation that round-trips.
+    /// Python `repr(float)` / `str(float)`—shortest representation that round-trips.
     /// Swift's default `Double` description has the same shortest-round-trip contract, so
     /// `55.0` renders as `"55.0"` and `55.6761` as `"55.6761"`, matching Python.
     static func pythonFloat(_ value: Double) -> String {
@@ -643,7 +643,7 @@ public struct RNStatusRenderer {
     /// Python `str(round(value, digits))`.
     ///
     /// `round(x, n)` rounds the *exact decimal expansion* of the binary double, half to
-    /// even — not the scaled value. `(x * 1e4).rounded() / 1e4` gets a different answer
+    /// even—not the scaled value. `(x * 1e4).rounded() / 1e4` gets a different answer
     /// for coordinates whose fifth decimal is a 5 (verified live: `round(3.07455, 4)` is
     /// `3.0745`, while the scale-and-round approach yields `3.0746`). Formatting with
     /// `%.*f` delegates to the C library, which rounds correctly and half-to-even, and
@@ -653,7 +653,7 @@ public struct RNStatusRenderer {
         return pythonFloat(Double(text) ?? value)
     }
 
-    /// Python `f"{value:,}"` — comma thousands separators.
+    /// Python `f"{value:,}"`—comma thousands separators.
     ///
     /// `DiscoveredInterfaceInfo.frequency`/`.bandwidth` are `Double?` in Swift where the
     /// wire carries an int, so an integral value is emitted as `867,200,000` rather than

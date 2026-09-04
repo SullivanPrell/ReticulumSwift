@@ -45,7 +45,7 @@ final class PlainPacketHopTests: XCTestCase {
             destinationHash: Transport.pathRequestDestinationHash,
             data: Data(repeating: 0x02, count: 48)
         )
-        p.hops = 1  // 1 hop — should be accepted and forwarded
+        p.hops = 1  // 1 hop—should be accepted and forwarded
 
         in1.inboundHandler?(p, in1)
         // A path request with 1 hop should be forwarded (propagated by relay nodes)
@@ -72,7 +72,7 @@ final class PlainPacketHopTests: XCTestCase {
             destinationHash: plainDest.hash,
             data: Data("hello".utf8)
         )
-        p.hops = 2  // 2 hops — Python drops at hops > 1
+        p.hops = 2  // 2 hops—Python drops at hops > 1
 
         in1.inboundHandler?(p, in1)
         XCTAssertEqual(deliveredCount, 0, "PLAIN packet with hops > 1 should be dropped")
@@ -95,7 +95,7 @@ final class PlainPacketHopTests: XCTestCase {
             destinationHash: plainDest.hash,
             data: Data("hello".utf8)
         )
-        p.hops = 1  // 1 hop — should be accepted (Python: hops > 1 drops, hops <= 1 accepted)
+        p.hops = 1  // 1 hop—should be accepted (Python: hops > 1 drops, hops <= 1 accepted)
 
         in1.inboundHandler?(p, in1)
         XCTAssertEqual(deliveredCount, 1, "PLAIN packet with hops=1 should be delivered")

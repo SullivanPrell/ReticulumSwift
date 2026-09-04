@@ -52,7 +52,7 @@ final class LinkConstantsParityTests: XCTestCase {
     // Python: MODE_AES256_CBC = 0x01 (default mode)
     func testDefaultMode() {
         // Link.mode is always AES256_CBC = 0x01
-        // We can verify via a newly initiated link or via the static constant
+        // Verification runs via a newly initiated link or via the static constant
         XCTAssertEqual(Link.defaultMode, 0x01)
     }
 
@@ -126,7 +126,7 @@ final class LinkConstantsParityTests: XCTestCase {
         let decrypted  = try responder.decrypt(ciphertext)
         XCTAssertEqual(decrypted, plaintext)
 
-        // Ciphertext = IV(16) + PKCS7-padded block(s) + HMAC-SHA256(32).
+        // Ciphertext = IV(16) + PKCS7-padded blocks + HMAC-SHA256(32).
         // For a 27-byte input: PKCS7 pads to 32 bytes → total 16+32+32=80 bytes.
         XCTAssertGreaterThanOrEqual(ciphertext.count, plaintext.count + 48,
             "AES-256 token overhead = IV(16) + padded ciphertext + HMAC(32)")

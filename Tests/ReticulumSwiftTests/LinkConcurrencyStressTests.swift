@@ -3,7 +3,7 @@ import XCTest
 
 /// Concurrency stress tests for the `Link.stateLock` introduced in the 2026-07-19
 /// deferred data-race hardening pass (L1 + L2). The rest of the Link suite is
-/// single-threaded and cannot exercise the watchdog / receive-thread / app-thread
+/// single-threaded and can't exercise the watchdog / receive-thread / app-thread
 /// races on the session state machine, the traffic counters/timestamps, the
 /// `token`/`derivedKey`, `pendingRequests`, or the resource queues.
 ///

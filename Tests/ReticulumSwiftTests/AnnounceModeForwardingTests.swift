@@ -8,7 +8,7 @@ import XCTest
 ///
 ///   ACCESS_POINT outbound → always block
 ///     AP-mode interfaces are last-mile for clients; backbone announces
-///     are not pushed to clients via the AP outbound.
+///     aren't pushed to clients via the AP outbound.
 ///
 ///   ROAMING outbound → block if next-hop mode is ROAMING or BOUNDARY
 ///     Prevents roaming-segment announces from ping-ponging.

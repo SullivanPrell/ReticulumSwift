@@ -3,8 +3,8 @@ import XCTest
 
 /// The `argparse` error page every utility prints when parsing fails.
 ///
-/// Python's `ArgumentParser.error()` writes the **usage block** — never the full options
-/// table — followed by `prog: error: <detail>`, to stderr, and exits 2. Each assertion here
+/// Python's `ArgumentParser.error()` writes the **usage block**—never the full options
+/// table—followed by `prog: error: <detail>`, to stderr, and exits 2. Each assertion here
 /// was checked against the installed Python tool before it was written; the reference
 /// wording appears in the comments.
 final class UtilityErrorPageTests: XCTestCase {
@@ -12,7 +12,7 @@ final class UtilityErrorPageTests: XCTestCase {
     // MARK: - The usage block is the first paragraph of the help text
 
     /// A utility's error page must reuse its help text's usage block verbatim. Deriving it
-    /// rather than restating it is what stops the two drifting apart when a flag is added.
+    /// rather than restating it's what stops the two drifting apart when a flag is added.
     private func assertUsageIsHelpsFirstParagraph(_ usage: String, _ help: String,
                                                   file: StaticString = #filePath,
                                                   line: UInt = #line) {
@@ -56,8 +56,8 @@ final class UtilityErrorPageTests: XCTestCase {
     }
 
     func testRNIDErrorPageShape() {
-        // Regression: this used to print the entire help text — options table and all —
-        // where Python prints four lines of usage and one line of error.
+        // Regression: this used to print the entire help text—options table and all—where
+        // Python prints four lines of usage and one line of error.
         let page = RNIDCommandLine.errorText("unrecognized arguments: --bogus")
         XCTAssertTrue(page.hasPrefix(RNIDCommandLine.usageText))
         XCTAssertTrue(page.hasSuffix("\nrnid: error: unrecognized arguments: --bogus"), page)
@@ -87,9 +87,9 @@ final class UtilityErrorPageTests: XCTestCase {
 
     // MARK: - Abbreviation reaches every utility
 
-    /// `allow_abbrev` is an `argparse` default that none of the RNS tools disable, so it is
+    /// `allow_abbrev` is an `argparse` default that none of the RNS tools disable, so it's
     /// the shared parser's job, not any one utility's. Before this was hoisted, only `rnsd`
-    /// accepted `--conf`, and the other eight rejected it as unrecognised.
+    /// accepted `--conf`, and the other eight rejected it as unrecognized.
     func testEveryUtilityParserAbbreviatesConfig() throws {
         let parsers: [(String, ArgumentParser)] = [
             ("rnstatus", RNStatusApp.makeParser()),
@@ -103,7 +103,7 @@ final class UtilityErrorPageTests: XCTestCase {
     }
 
     func testAmbiguousAbbreviationIsRejectedEverywhere() {
-        // Python: "ambiguous option: --ver could match --version, --verbose" — candidates
+        // Python: "ambiguous option: --ver could match --version, --verbose"—candidates
         // in declaration order.
         for (name, parser) in [("rnstatus", RNStatusApp.makeParser()),
                                ("rnprobe", NetworkProbe.Arguments.makeParser())] {

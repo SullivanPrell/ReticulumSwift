@@ -70,7 +70,7 @@ final class IdentityRatchetIDTests: XCTestCase {
         XCTAssertNotNil(ratchetID, "should have ratchet ID after receiving announce with ratchet")
         XCTAssertEqual(ratchetID?.count, Constants.nameHashLength)
 
-        // Identity.currentRatchetID requires Reticulum.shared — test Transport directly
+        // Identity.currentRatchetID requires Reticulum.shared—test Transport directly
         _ = (aT, bT)
     }
 

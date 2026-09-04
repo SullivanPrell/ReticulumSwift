@@ -49,7 +49,7 @@ public final class KISSInterface: Interface {
         set { onlineFlag.value = newValue }
     }
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
@@ -79,13 +79,13 @@ public final class KISSInterface: Interface {
 
     // MARK: - KISS configuration (Python defaults)
 
-    /// Preamble in milliseconds.  Python default: `350`.
+    /// Preamble in milliseconds. Python default: `350`.
     public var preamble:     Int = 350
-    /// TX tail in milliseconds.  Python default: `20`.
+    /// TX tail in milliseconds. Python default: `20`.
     public var txtail:       Int = 20
     /// Persistence (0–255).  Python default: `64`.
     public var persistence:  Int = 64
-    /// Slot time in milliseconds.  Python default: `20`.
+    /// Slot time in milliseconds. Python default: `20`.
     public var slottime:     Int = 20
     /// Whether to use hardware flow control (CMD_READY handshake).
     public var flowControl:  Bool = false
@@ -227,7 +227,7 @@ public final class KISSInterface: Interface {
         setFlowControl(flowControl)
     }
 
-    /// Python: `setPreamble(preamble)` — `FEND CMD_TXDELAY value FEND`
+    /// Python: `setPreamble(preamble)`—`FEND CMD_TXDELAY value FEND`
     public func setPreamble(_ preamble: Int) {
         var value = preamble / 10
         value = max(0, min(255, value))
@@ -235,7 +235,7 @@ public final class KISSInterface: Interface {
         try? transport.write(cmd)
     }
 
-    /// Python: `setTxTail(txtail)` — `FEND CMD_TXTAIL value FEND`
+    /// Python: `setTxTail(txtail)`—`FEND CMD_TXTAIL value FEND`
     public func setTxTail(_ txtail: Int) {
         var value = txtail / 10
         value = max(0, min(255, value))
@@ -243,14 +243,14 @@ public final class KISSInterface: Interface {
         try? transport.write(cmd)
     }
 
-    /// Python: `setPersistence(persistence)` — `FEND CMD_P value FEND`
+    /// Python: `setPersistence(persistence)`—`FEND CMD_P value FEND`
     public func setPersistence(_ persistence: Int) {
         let value = UInt8(max(0, min(255, persistence)))
         let cmd = Data([KISS.fend, KISS.cmdP, value, KISS.fend])
         try? transport.write(cmd)
     }
 
-    /// Python: `setSlotTime(slottime)` — `FEND CMD_SLOTTIME value FEND`
+    /// Python: `setSlotTime(slottime)`—`FEND CMD_SLOTTIME value FEND`
     public func setSlotTime(_ slottime: Int) {
         var value = slottime / 10
         value = max(0, min(255, value))
@@ -258,7 +258,7 @@ public final class KISSInterface: Interface {
         try? transport.write(cmd)
     }
 
-    /// Python: `setFlowControl(_)` — `FEND CMD_READY 0x01 FEND`
+    /// Python: `setFlowControl(_)`—`FEND CMD_READY 0x01 FEND`
     public func setFlowControl(_ enabled: Bool) {
         let cmd = Data([KISS.fend, KISS.cmdReady, 0x01, KISS.fend])
         try? transport.write(cmd)
@@ -266,7 +266,7 @@ public final class KISSInterface: Interface {
 
     // MARK: - Outgoing
 
-    /// Send a Reticulum packet.  Called by Transport.
+    /// Send a Reticulum packet. Called by Transport.
     ///
     /// Applies the IFAC mask (when an IFAC key is configured) before KISS
     /// framing, mirroring the central IFAC application in Python
@@ -293,7 +293,7 @@ public final class KISSInterface: Interface {
             }
             lock.unlock()
             let framed = KISS.frame(data)
-            // Counted only on success — a failed write is not traffic (the failure reaches
+            // Counted only on success—a failed write isn't traffic (the failure reaches
             // `handleTransportLoss` through the transport's error callback).
             guard (try? transport.write(framed)) != nil else { return }
             counters.addTx(bytes: data.count)   // Python counts original (unframed) bytes
@@ -339,7 +339,7 @@ public final class KISSInterface: Interface {
 
     // MARK: - Queue inspection (for tests)
 
-    /// Number of packets currently queued (waiting for CMD_READY).
+    /// Number of packets queued (waiting for CMD_READY).
     public var queuedPacketCount: Int {
         lock.lock(); defer { lock.unlock() }
         return packetQueue.count

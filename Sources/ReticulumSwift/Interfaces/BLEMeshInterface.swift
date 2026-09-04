@@ -1,13 +1,13 @@
 import Foundation
 
-/// BLE-radio mesh interface — lets the device's own Bluetooth Low Energy
+/// BLE-radio mesh interface—lets the device's own Bluetooth Low Energy
 /// radio mesh directly with nearby Reticulum nodes running this interface,
 /// with no intermediate hardware (no RNode, no router, no access point).
 ///
 /// ## Why this design
 ///
 /// Neither the Python reference implementation nor ReticulumSwift has a
-/// "phone meshes with phone over BLE" interface to mirror — Python RNS only
+/// "phone meshes with phone over BLE" interface to mirror—Python RNS only
 /// ever uses BLE as a *transport* to RNode LoRa hardware
 /// (`RNS.Interfaces.RNodeInterface.BLEConnection`, built on the `bleak`
 /// module), and ReticulumSwift already mirrors exactly that with
@@ -19,35 +19,35 @@ import Foundation
 ///
 /// 1. **Radio-I/O decoupling**, exactly like `RNodeInterface`/
 ///    `RNodeTransport`: every CoreBluetooth specific lives behind the
-///    `BLEMeshTransport` protocol and is supplied by the host application
-///    (see `BLEMeshTransport.swift` for the full rationale — in short,
+///    `BLEMeshTransport` protocol, which the host application supplies
+///    (see `BLEMeshTransport.swift` for the full rationale—in short,
 ///    `CBCentralManager`/`CBPeripheralManager` need live radio hardware and
-///    runtime entitlements that `swift test` cannot provide). This keeps
+///    runtime entitlements that `swift test` can't provide). This keeps
 ///    `BLEMeshInterface` pure Swift, deterministic, and unit-testable
 ///    against a mock transport.
-/// 2. **Peer-table fan-out**, exactly like `AutoInterface` — the closest
+/// 2. **Peer-table fan-out**, exactly like `AutoInterface`—the closest
 ///    functional analog to a BLE mesh: a set of nearby devices that
 ///    discover each other and exchange raw packet bytes over a
 ///    broadcast-ish shared medium. This interface tracks connected peers
 ///    and fans every outbound packet out to all of them; Reticulum's own
 ///    duplicate suppression and routing logic (in `Transport`) handles the
 ///    resulting mesh-flood semantics, so the interface itself stays a dumb
-///    shared medium — conceptually no different from a LAN segment or a
+///    shared medium—conceptually no different from a LAN segment or a
 ///    LoRa channel.
 ///
 /// ## Framing
 ///
 /// BLE GATT payloads are bound by the negotiated link MTU (commonly in the
-/// 20–512 byte range) — far smaller than a Reticulum packet can be. So,
+/// 20–512 byte range)—far smaller than a Reticulum packet can be. So,
 /// exactly like `TCPClientInterface` / `BackboneInterface` / `RNodeInterface`,
 /// outbound packets are delimited with `HDLC` framing before transmission,
 /// and every peer gets its own `HDLC.FrameDecoder` to reassemble fragments
 /// back into complete frames as bytes trickle in over its link. Per-peer
-/// decoders are essential — bytes from different peers must never be mixed,
+/// decoders are essential—bytes from different peers must never be mixed,
 /// or a partial frame from one peer would corrupt another's stream.
 ///
 /// Because this is a wholly new interface type with no Python counterpart,
-/// there is no cross-implementation wire format to match here — only Swift
+/// there is no cross-implementation wire format to match here—only Swift
 /// nodes (iOS/macOS) can use it, and any two such nodes already agree, since
 /// they share the same `HDLC` + `Packet` wire format.
 public final class BLEMeshInterface: Interface {
@@ -65,7 +65,7 @@ public final class BLEMeshInterface: Interface {
 
     /// Conservative throughput estimate for a BLE 5 GATT link carrying
     /// HDLC-framed Reticulum packets. Mirrors the `bitrateGuess` convention
-    /// used by `I2PInterface`/`AX25KISSInterface` — a configurable estimate
+    /// used by `I2PInterface`/`AX25KISSInterface`—a configurable estimate
     /// for link-quality heuristics, not a measured value.
     public static let bitrateGuess: Int = 1_000_000
 
@@ -85,7 +85,7 @@ public final class BLEMeshInterface: Interface {
     }
 
     /// A Reticulum packet must fit inside one reassembled HDLC frame, and
-    /// BLE links cannot negotiate arbitrarily large MTUs — so, like
+    /// BLE links can't negotiate arbitrarily large MTUs—so, like
     /// `AutoInterface`, this interface declares a fixed hardware MTU at the
     /// standard Reticulum packet ceiling rather than auto-negotiating.
     public let hwMtu: Int? = Constants.mtu
@@ -107,8 +107,8 @@ public final class BLEMeshInterface: Interface {
     public var ifacKey: Data?
     public var ifacSize: Int = BLEMeshInterface.defaultIfacSize
 
-    // `displayName` is not declared here: BLEMesh has no Python counterpart, and the
-    // protocol's class-qualified default already yields `BLEMeshInterface[<name>]` — the
+    // `displayName` isn't declared here: BLEMesh has no Python counterpart, and the
+    // protocol's class-qualified default already yields `BLEMeshInterface[<name>]`—the
     // `"<Type>[<name>]"` shape every RNS interface publishes. See `Interface.displayName`.
 
     // MARK: - State
@@ -123,14 +123,14 @@ public final class BLEMeshInterface: Interface {
     private var peers: [BLEMeshPeerID: PeerState] = [:]
     private let peersLock = NSLock()
 
-    /// Snapshot of currently-meshed peer IDs. Safe to read from any thread —
-    /// intended for UI display (peer list, mesh size indicator, etc.).
+    /// Snapshot of meshed peer IDs. Safe to read from any thread—intended
+    /// for UI display (peer list, mesh size indicator, and so on).
     public var connectedPeerIDs: [BLEMeshPeerID] {
         peersLock.lock(); defer { peersLock.unlock() }
         return Array(peers.keys)
     }
 
-    /// Number of peers currently meshed with us.
+    /// Number of peers meshed with this node.
     public var peerCount: Int {
         peersLock.lock(); defer { peersLock.unlock() }
         return peers.count
@@ -140,8 +140,8 @@ public final class BLEMeshInterface: Interface {
 
     /// - Parameters:
     ///   - name: Interface name, as configured by the user.
-    ///   - transport: Platform-concrete BLE radio adapter (e.g. a
-    ///     CoreBluetooth implementation supplied by the host app — see
+    ///   - transport: Platform-concrete BLE radio adapter (for example, a
+    ///     CoreBluetooth implementation supplied by the host app—see
     ///     `BLEMeshTransport` for why this is injected rather than owned).
     ///   - bitrate: Optional override of `bitrateGuess`.
     public init(name: String, transport: BLEMeshTransport, bitrate: Int = BLEMeshInterface.bitrateGuess) {
@@ -172,13 +172,13 @@ public final class BLEMeshInterface: Interface {
 
     /// IFAC-wraps and HDLC-frames the packet (mirrors
     /// `TCPClientInterface.send`'s `HDLC.frame(wrapIfac(raw))`), then
-    /// broadcasts the framed bytes to every currently-meshed peer.
+    /// broadcasts the framed bytes to every meshed peer.
     ///
-    /// The interface does not attempt to be "smart" about routing — like
+    /// The interface doesn't attempt to be "smart" about routing—like
     /// `AutoInterface` fanning out to every known peer on the LAN, this
     /// floods the frame to the whole local mesh neighbourhood and lets
     /// `Transport`'s duplicate-suppression and path logic sort out the
-    /// rest. That is the same flood-and-suppress model the wider Reticulum
+    /// rest. That's the same flood-and-suppress model the wider Reticulum
     /// network already relies on for shared-medium interfaces.
     public func send(_ packet: Packet) throws {
         guard isOnline else { return }
@@ -212,12 +212,12 @@ public final class BLEMeshInterface: Interface {
     // MARK: - Inbound
 
     /// Feeds raw bytes from one peer's link into that peer's frame decoder
-    /// and delivers every completed frame upward — mirrors
+    /// and delivers every completed frame upward—mirrors
     /// `TCPClientInterface.beginReceiveLoop`'s `decoder.feed` → dispatch.
     private func handlePeerData(_ peer: BLEMeshPeerID, _ data: Data) {
         peersLock.lock()
-        // Tolerate bytes arriving before/racing the connection callback —
-        // create peer state on first sight rather than dropping data.
+        // Tolerate bytes arriving before/racing the connection callback—create
+        // peer state on first sight rather than dropping data.
         if peers[peer] == nil { peers[peer] = PeerState() }
         peers[peer]?.lastHeard = Date()
         let frames = peers[peer]?.decoder.feed(data) ?? []

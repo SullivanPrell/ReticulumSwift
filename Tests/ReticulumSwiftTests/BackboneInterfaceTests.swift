@@ -1,9 +1,9 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for BackboneInterface — the high-bandwidth TCP backbone interface.
+/// Tests for BackboneInterface—the high-bandwidth TCP backbone interface.
 ///
-/// Python reference (BackboneInterface.py — BackboneClientInterface):
+/// Python reference (BackboneInterface.py—BackboneClientInterface):
 ///   HW_MTU             = 1_048_576   (1 MB, vs 262144 for TCPClientInterface)
 ///   BITRATE_GUESS      = 100_000_000 (100 Mbps)
 ///   AUTOCONFIGURE_MTU  = True
@@ -93,7 +93,7 @@ final class BackboneInterfaceTests: XCTestCase {
         let payload = Data([0x7D, 0xAA])
         let framed = HDLC.frame(payload)
         let inner = Data(framed.dropFirst().dropLast()) // remove FLAG delimiters
-        // Inner should NOT contain 0x7D followed by 0xAA directly
+        // Inner shouldn't contain 0x7D followed by 0xAA directly
         var found = false
         for i in 0..<(inner.count - 1) {
             if inner[i] == 0x7D && inner[i+1] == 0xAA { found = true }

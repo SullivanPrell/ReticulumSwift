@@ -1,14 +1,14 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Python recomputes `HW_MTU` from the bitrate on every autoconfiguring interface —
-/// `optimise_mtu()` (`Interface.py:205-217`), called unconditionally after the configured
+/// Python recomputes `HW_MTU` from the bitrate on every autoconfiguring interface—`optimise_mtu()`
+/// (`Interface.py:205-217`), called unconditionally after the configured
 /// bitrate lands (`Reticulum.py:914-915`) and on each spawned server-side client
 /// (`TCPInterface.py:612-613`). The class attributes (262144 for TCP, 1048576 for Backbone)
 /// never survive Python startup: a TCP interface runs at 8192 (bitrate guess 10e6) and a
-/// dialing backbone at 16384 (guess 100e6). The port kept the class constants as `let`s —
-/// the audit's structural class of a runtime-mutated Python attribute frozen at `{ get }` —
-/// so Swift's LINKREQUEST MTU signalling advertised 262144/1048576 where Python advertises
+/// dialing backbone at 16384 (guess 100e6). The port kept the class constants as `let`s—the
+/// audit's structural class of a runtime-mutated Python attribute frozen at `{ get }`—so
+/// Swift's LINKREQUEST MTU signalling advertised 262144/1048576 where Python advertises
 /// 8192/16384 in the identical topology.
 final class OptimiseMtuTests: XCTestCase {
 
@@ -55,24 +55,26 @@ final class OptimiseMtuTests: XCTestCase {
 
     // MARK: - The ladder itself
 
-    /// Every rung, both boundary sides, exactly `Interface.py:207-217`. Note the top rung is
-    /// `>=` where all others are `>`, and everything at or below 62 500 bit/s has no
-    /// hardware MTU at all.
+    /// Every rung, both boundary sides, exactly `Interface.py:207-217`. RNS 1.5.1 made every
+    /// rung inclusive—through 1.4.2 only the top one was `>=` and the other nine were `>`,
+    /// so each boundary bitrate fell one rung lower than it does now. Everything strictly
+    /// below 62 500 bit/s still has no hardware MTU at all.
     func testTheLadderMatchesThePythonRungs() {
         let expectations: [(bitrate: Int, mtu: Int?)] = [
-            (1_000_000_000, 524_288),   // >= 1e9 — the one inclusive rung
-            (999_999_999, 262_144),     // > 750e6
+            (1_000_000_000, 524_288),   // >= 1e9
+            (999_999_999, 262_144),     // >= 750e6
             (750_000_001, 262_144),
-            (750_000_000, 131_072),     // > 400e6
-            (400_000_000, 65_536),      // > 200e6
-            (200_000_000, 32_768),      // > 100e6
-            (100_000_000, 16_384),      // > 10e6 — the dialing-backbone guess lands here
-            (10_000_000, 8_192),        // > 5e6 — the TCP guess lands here
-            (5_000_000, 4_096),         // > 2e6
-            (2_000_000, 2_048),         // > 1e6
-            (1_000_000, 1_024),         // > 62_500
+            (750_000_000, 262_144),     // boundary: was 131_072 under 1.4.2's `>`
+            (400_000_000, 131_072),     // boundary: was 65_536
+            (200_000_000, 65_536),      // boundary: was 32_768
+            (100_000_000, 32_768),      // boundary: was 16_384—the dialing-backbone guess
+            (10_000_000, 16_384),       // boundary: was 8_192—the TCP guess
+            (5_000_000, 8_192),         // boundary: was 4_096
+            (2_000_000, 4_096),         // boundary: was 2_048
+            (1_000_000, 2_048),         // boundary: was 1_024
             (62_501, 1_024),
-            (62_500, nil),              // else: None
+            (62_500, 1_024),            // boundary: was nil
+            (62_499, nil),              // else: None
             (300, nil),
         ]
         for (bitrate, mtu) in expectations {
@@ -92,11 +94,11 @@ final class OptimiseMtuTests: XCTestCase {
             target_host = 127.0.0.1
             target_port = 4965
         """, name: "Uplink")
-        XCTAssertEqual(iface.hwMtu, 8_192,
+        XCTAssertEqual(iface.hwMtu, 16_384,
                        """
                        a TCP client's class constant (262144) must not survive startup: Python \
                        runs optimise_mtu() after post-init (Reticulum.py:915) and the bitrate \
-                       guess of 10e6 lands on the 8192 rung — the 3-byte LINKREQUEST MTU \
+                       guess of 10e6 lands on the 16384 rung — the 3-byte LINKREQUEST MTU \
                        signalling advertises this value to every directly connected peer
                        """)
     }
@@ -109,8 +111,8 @@ final class OptimiseMtuTests: XCTestCase {
             target_host = 127.0.0.1
             target_port = 4966
         """, name: "Fat Pipe")
-        XCTAssertEqual(iface.hwMtu, 16_384,
-                       "a dialing backbone's guess of 100e6 lands on the 16384 rung "
+        XCTAssertEqual(iface.hwMtu, 32_768,
+                       "a dialing backbone's guess of 100e6 lands on the 32768 rung "
                        + "(BackboneInterface.py:568, Interface.py:212); the 1MB class constant "
                        + "is a listener-side value Python never keeps on a client either")
     }
@@ -137,9 +139,9 @@ final class OptimiseMtuTests: XCTestCase {
         let spawned = TCPServerClientInterface(name: "Client on Listener",
                                                parentServer: server,
                                                peerHost: "10.0.0.9", peerPort: 51000)
-        XCTAssertEqual(spawned.hwMtu, 8_192,
+        XCTAssertEqual(spawned.hwMtu, 16_384,
                        "Python optimises each spawned client after copying the parent bitrate "
-                       + "(TCPInterface.py:611-613); the inherited 10e6 guess lands on 8192")
+                       + "(TCPInterface.py:611-613); the inherited 10e6 guess lands on 16384")
     }
 
     // MARK: - The Local sibling gap
@@ -157,7 +159,7 @@ final class OptimiseMtuTests: XCTestCase {
     // MARK: - Structural guard
 
     /// `autoconfigureMtu == true` promises the MTU follows the bitrate; a type that says so
-    /// without a settable `hwMtu` makes `optimiseMtu()` a silent no-op — the exact `{ get }`-only
+    /// without a settable `hwMtu` makes `optimiseMtu()` a silent no-op—the exact `{ get }`-only
     /// freeze this fix removes. Constructed through the same config machinery the daemon uses,
     /// so a new interface type joins this list by being constructible, not by being remembered.
     func testEveryAutoconfiguringTypeHasASettableMtu() throws {
@@ -194,7 +196,7 @@ final class OptimiseMtuTests: XCTestCase {
                           "\(iface.displayName) claims autoconfigureMtu but its hwMtu is not "
                           + "settable — optimiseMtu() cannot write it and the claim is inert")
         }
-        // And the local pair, which the config path does not build.
+        // And the local pair, which the config path doesn't build.
         XCTAssertTrue(LocalInterface(name: "l", port: 0) is MtuAutoconfiguringInterface)
         XCTAssertTrue(PosixTCPServer(name: "ls", port: 0) is MtuAutoconfiguringInterface)
     }

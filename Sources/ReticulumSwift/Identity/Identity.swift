@@ -20,34 +20,45 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     /// Guards the mutable ratchet state (`_activeRatchetPrivateKey`,
     /// `_previousRatchets`, `_activeRatchetTime`). `Identity` is `@unchecked
-    /// Sendable`, and the same identity is used by the send path (which rotates
+    /// Sendable`, and the send path uses the same identity (and rotates
     /// the ratchet) and the receive path (which reads the key pool to decrypt)
-    /// concurrently — an unsynchronized read of the `Data?`/array while rotation
+    /// concurrently—an unsynchronized read of the `Data?`/array while rotation
     /// writes it can tear. Self-contained leaf lock: the guarded regions make no
     /// callouts, so it never nests with any other lock. Internal helpers suffixed
     /// `Locked` assume the caller already holds it (the lock is non-recursive).
     private let ratchetLock = NSLock()
 
-    /// Currently-active ratchet private key (32 bytes). Set by
-    /// `rotateRatchet()`; the public part is what we publish in our
-    /// next announce so peers will encrypt to it (forward secrecy).
+    /// Active ratchet private key (32 bytes). Set by
+    /// `rotateRatchet()`; the public part is what the
+    /// next announce carries so peers encrypt to it (forward secrecy).
     private var _activeRatchetPrivateKey: Data?
     public private(set) var activeRatchetPrivateKey: Data? {
         get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return _activeRatchetPrivateKey }
         set { ratchetLock.lock(); _activeRatchetPrivateKey = newValue; ratchetLock.unlock() }
     }
 
-    /// Recently-rotated ratchet privates. Inbound encrypted messages
-    /// may still be addressed to a previous ratchet for a short window
-    /// after rotation, so we keep a few around for decrypt fallback.
-    /// Bounded by `ratchetHistoryDepth` and aged out per
-    /// `ratchetExpiry`.
+    /// Retired ratchet privates, newest first. A sender keeps using the ratchet it last
+    /// heard announced until that ratchet expires or a newer announce arrives, so inbound
+    /// packets stay addressed to a retired ratchet for as long as the peer stays quiet—days,
+    /// not seconds. Bounded by `ratchetHistoryDepth` and aged out per `ratchetExpiry`.
     private var _previousRatchets: [HistoricalRatchet] = []
     public private(set) var previousRatchets: [HistoricalRatchet] {
         get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return _previousRatchets }
         set { ratchetLock.lock(); _previousRatchets = newValue; ratchetLock.unlock() }
     }
-    public var ratchetHistoryDepth: Int = 8
+    /// How many *previous* ratchets to keep, on top of the active one.
+    ///
+    /// Python keeps a single list with the active ratchet at index 0 and caps the whole
+    /// thing at `Destination.RATCHET_COUNT` (`Destination.py:209`, `:234`, `:287`), so the
+    /// figure that has to agree across implementations is the pool *total*—hence the
+    /// `- 1`. Sized this way, ``ratchetPrivateKeyPool`` holds exactly what Python's
+    /// `self.ratchets` holds.
+    ///
+    /// This was 8, about four hours of rotation at the 30-minute `RATCHET_INTERVAL`. Any
+    /// peer quiet for longer came back encrypting to a ratchet this node had already
+    /// discarded, and the packet failed to decrypt with nothing on the wire to say why—while
+    /// the same peer talking to a Python node was fine for thirty days.
+    public var ratchetHistoryDepth: Int = Destination.ratchetCount - 1
 
     /// Mirrors Python's `RNS.Identity.RATCHET_EXPIRY` (30 days). Historical
     /// ratchet privates older than this are dropped on rotation/sweep.
@@ -315,7 +326,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     // MARK: - Static ratchet ID utilities
 
-    /// Get the 10-byte ID of the currently known ratchet key for a destination.
+    /// Get the 10-byte ID of the known ratchet key for a destination.
     /// Delegates to `Reticulum.shared?.transport.currentRatchetID(forDestination:)`.
     /// Mirrors Python's `RNS.Identity.current_ratchet_id(destination_hash)`.
     public static func currentRatchetID(for destinationHash: Data) -> Data? {
@@ -327,7 +338,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// Store a remote identity in the shared transport's known-identities cache.
     ///
     /// Mirrors Python's `RNS.Identity.remember(packet_hash, destination_hash, public_key, app_data)`.
-    /// The `packetHash` argument is accepted for API parity but is not stored (Swift's transport
+    /// The `packetHash` argument is accepted for API parity but isn't stored (Swift's transport
     /// tracks known identities by destination hash only).
     ///
     /// - Returns: The newly created `Identity` on success, or `nil` if `publicKeyBytes` is invalid.

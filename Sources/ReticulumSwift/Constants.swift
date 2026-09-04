@@ -14,7 +14,7 @@ public enum Constants {
     public static let ifacMinSize: Int = 1
     public static let mdu: Int = mtu - headerMaxSize - ifacMinSize           // 464
 
-    public static let keySizeBits: Int = 256 * 2                              // 512 — concat X25519 + Ed25519 pub
+    public static let keySizeBits: Int = 256 * 2                              // 512—concat X25519 + Ed25519 pub
     public static let keySize: Int = keySizeBits / 8                          // 64
     public static let halfKeySize: Int = keySize / 2                          // 32
     public static let signatureLength: Int = keySize                          // 64
@@ -28,7 +28,7 @@ public enum Constants {
 
     public static let aes128BlockSize: Int = 16
     public static let tokenOverhead: Int = 48                                 // IV(16) + HMAC(32)
-    public static let derivedKeyLength: Int = 64                              // 512 bits — split for Token
+    public static let derivedKeyLength: Int = 64                              // 512 bits—split for Token
 
     /// Maximum data unit for an encrypted (SINGLE) packet payload.
     /// Mirrors Python `Packet.ENCRYPTED_MDU = 383`.
@@ -50,7 +50,7 @@ public enum Constants {
     /// Default per-hop timeout in seconds. Mirrors Python `Reticulum.DEFAULT_PER_HOP_TIMEOUT`.
     public static let defaultPerHopTimeout: TimeInterval = 6.0
 
-    // IFAC — Interface Access Codes
+    // IFAC—Interface Access Codes
     /// Default IFAC signature-tail size used when not overridden per-interface.
     public static let defaultIfacSize: Int = 16
     /// HKDF salt for deriving the IFAC key from networkname / networkkey.

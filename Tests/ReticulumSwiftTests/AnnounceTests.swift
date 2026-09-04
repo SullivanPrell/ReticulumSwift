@@ -93,7 +93,7 @@ final class AnnounceTests: XCTestCase {
         )
         let packet = try Announce.make(for: destination)
         let decoded = try Announce.validate(packet)
-        // packetHash = truncatedHash(hashable_part) — must be 16 bytes
+        // packetHash = truncatedHash(hashable_part)—must be 16 bytes
         XCTAssertEqual(decoded.packetHash.count, Constants.truncatedHashLength)
     }
 
@@ -149,8 +149,8 @@ final class AnnounceTests: XCTestCase {
         let transport = Transport()
         let bId = Identity()
         let bDest = try Destination(identity: bId, direction: .in, kind: .single, appName: "pr")
-        // Not registered on this transport. This test asserts the handler is NOT called, and a
-        // node ignores announces for destinations it owns (`swift_devel/bugs/047`) — so with the
+        // Not registered on this transport. This test asserts the handler isn't called, and a
+        // node ignores announces for destinations it owns (`swift_devel/bugs/047`)—so with the
         // destination registered it would pass whatever the path-response filter did, which is
         // the one thing it exists to check.
 

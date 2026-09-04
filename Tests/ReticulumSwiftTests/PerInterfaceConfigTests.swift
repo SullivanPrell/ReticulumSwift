@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// The other half of `bugs/025` — a configured per-interface attribute must take effect.
+/// The other half of `bugs/025`—a configured per-interface attribute must take effect.
 ///
 /// §1 of this change made `mode`, the three `announce_rate_*` values, `announce_cap`, `bitrate`,
 /// `ingress_control` and the `ic_*` family settable, because Python mutates all of them at runtime
@@ -11,11 +11,11 @@ import XCTest
 /// `Sources/`.
 ///
 /// Which is the same defect one step earlier, and the spec says so: "a configuration value with
-/// nowhere to be written is indistinguishable from a configuration value that is never read, and
+/// nowhere to be written is indistinguishable from a configuration value that's never read, and
 /// both are failures of this requirement."
 ///
 /// Every assertion starts from a config **string** and ends at the interface the config path
-/// produced. Nothing sets an attribute directly — that would prove the setters §1 added, which is
+/// produced. Nothing sets an attribute directly—that would prove the setters §1 added, which is
 /// not what was missing.
 final class PerInterfaceConfigTests: XCTestCase {
 
@@ -48,7 +48,7 @@ final class PerInterfaceConfigTests: XCTestCase {
     // MARK: - Mode
 
     /// The spec's first scenario. `Reticulum.py:737-769` accepts every alias, and
-    /// `InterfaceMode(configName:)` already parses them — nothing read the key.
+    /// `InterfaceMode(configName:)` already parses them—nothing read the key.
     func testInterfaceModeIsHonoured() throws {
         for (configured, expected): (String, InterfaceMode) in [
             ("full", .full),
@@ -79,7 +79,7 @@ final class PerInterfaceConfigTests: XCTestCase {
         XCTAssertEqual(try synthesise("    interface_mode = Access_Point").mode, .accessPoint)
     }
 
-    /// An unrecognised value leaves the default in place rather than throwing — Python's
+    /// An unrecognized value leaves the default in place rather than throwing—Python's
     /// if/elif chain simply falls through with `interface_mode` still `MODE_FULL`.
     func testUnrecognisedModeLeavesTheDefault() throws {
         XCTAssertEqual(try synthesise("    interface_mode = nonsense").mode, .full)
@@ -136,7 +136,7 @@ final class PerInterfaceConfigTests: XCTestCase {
 
     // MARK: - Bitrate
 
-    /// A configured bitrate replaces the class guess, if it is at least `MINIMUM_BITRATE`
+    /// A configured bitrate replaces the class guess, if it's at least `MINIMUM_BITRATE`
     /// (`Reticulum.py:815-816`). It matters beyond reporting: announce capacity and resource
     /// timings are derived from it.
     func testConfiguredBitrateIsHonoured() throws {
@@ -240,12 +240,12 @@ final class PerInterfaceConfigTests: XCTestCase {
     /// asserted the values by **reading the box back**. Transport's decision path went on reading
     /// `IngressControlState`'s statics, so the per-interface values were written and never
     /// consulted: inert, in precisely the way `bugs/025` describes. Found while writing the parser
-    /// — and the parser would have been pointless without this, since it would have filled a box
+    ///—and the parser would have been pointless without this, since it would have filled a box
     /// nothing reads.
     ///
     /// So this asserts through **behaviour**: two interfaces configured with different
     /// `ic_burst_freq`, fed the identical announce stream, must reach different ingress-limiting
-    /// decisions. Reading the box back cannot distinguish that.
+    /// decisions. Reading the box back can't distinguish that.
     func testConfiguredIngressThresholdChangesTheLimitingDecision() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("per-iface-ic-\(UUID().uuidString)")
@@ -253,9 +253,9 @@ final class PerInterfaceConfigTests: XCTestCase {
         let reticulum = Reticulum(configuration: .init(storagePath: tmp.appendingPathComponent("storage"),
                                                       shareInstance: false))
         // Both the new-interface and mature thresholds are set to the same value on each
-        // interface, so the age branch cannot decide the outcome. The synthesised interfaces'
+        // interface, so the age branch can't decide the outcome. The synthesised interfaces'
         // `createdAt` is real wall-clock time while the announce timeline below is a synthetic
-        // 1000, which makes `age` negative and selects the *new* threshold — a detail worth
+        // 1000, which makes `age` negative and selects the *new* threshold—a detail worth
         // pinning down rather than working around with a fabricated `ic_new_time`.
         try reticulum.synthesizeInterfaces(from: ReticulumConfig.parse("""
         [interfaces]
@@ -278,7 +278,7 @@ final class PerInterfaceConfigTests: XCTestCase {
         let tolerant = try XCTUnwrap(byName["Tolerant"])
         let twitchy = try XCTUnwrap(byName["Twitchy"])
 
-        // The identical stream: 60 announces across one second — 60 Hz.
+        // The identical stream: 60 announces across one second—60 Hz.
         let base: TimeInterval = 1000
         for iface in [tolerant, twitchy] {
             for i in 0..<60 {

@@ -1,18 +1,18 @@
 import Foundation
 import ReticulumSwift
 
-// rnid — Reticulum Identity & Encryption Utility.
+// rnid—Reticulum Identity & Encryption Utility.
 //
 // Python reference: RNS/Utilities/rnid.py.
 //
 // This target does argument parsing, printing, terminal effects and exit codes only.
 // Every behaviour lives in ReticulumSwift's RNID* types so it stays testable, and so the
-// library keeps building for tvOS and watchOS — `Foundation.Process` (the editor) and
-// POSIX signals (SIGINT) are the two things that cannot cross that line.
+// library keeps building for tvOS and watchOS—`Foundation.Process` (the editor) and
+// POSIX signals (SIGINT) are the two things that can't cross that line.
 
 // MARK: - Terminal output
 
-/// Python: bare `print()` / `print(..., end="")`. No colour, no ANSI, nothing on stderr.
+/// Python: bare `print()` / `print(..., end="")`. No color, no ANSI, nothing on stderr.
 final class TerminalOutput: RNIDOutput {
     func line(_ text: String) {
         print(text)
@@ -89,7 +89,7 @@ final class ProcessEditor: RNIDEditor {
 
 /// Python: `spin(until, msg, timeout)` (rnid.py:1061-1076).
 ///
-/// Prints `msg + "  "` with `end=" "` — three trailing spaces in total — then animates the
+/// Prints `msg + "  "` with `end=" "`—three trailing spaces in total—then animates the
 /// seven braille glyphs every 100 ms, and finally erases the line.
 final class BrailleSpinner: RNIDPathWaiter {
     private static let symbols = Array("⢄⢂⢁⡁⡈⡐⡠")
@@ -238,7 +238,7 @@ func runRNID() -> Int32 {
                                     editor: ProcessEditor())
 
     // Python's fixed dispatch order (rnid.py:164-175). print_identity / export_pub /
-    // export_prv / hash / announce do NOT exit and therefore compose; the rest terminate.
+    // export_prv / hash / announce don't exit and therefore compose; the rest terminate.
     var didOperation = false
 
     if invocation.printIdentity {
@@ -262,7 +262,7 @@ func runRNID() -> Int32 {
         if code != .ok { return Int32(code.rawValue) }
     }
     if invocation.truthy(invocation.announce) {
-        // Python calls ensure_reticulum() inside announce(); `needsStack` above already
+        // Python calls ensure_reticulum() inside announce(); `needsStack` earlier already
         // brought it up, and ensure() is idempotent.
         bringUp.ensure()
         let code = operations.announce(aspects: invocation.announce!)

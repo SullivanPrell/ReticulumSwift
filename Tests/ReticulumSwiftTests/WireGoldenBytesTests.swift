@@ -3,8 +3,8 @@ import XCTest
 
 /// Golden-byte wire-compatibility tests.
 ///
-/// Every expected value here was produced by running the canonical Python
-/// Reticulum 1.3.0 implementation with identical inputs.  These tests
+/// Running the canonical Python produced every expected value here
+/// Reticulum 1.3.0 implementation with identical inputs. These tests
 /// catch any encoding change that would break interoperability with Python
 /// nodes at the byte level.
 ///

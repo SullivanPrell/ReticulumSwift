@@ -25,7 +25,7 @@ extension Transport {
                                   until: TimeInterval? = nil,
                                   reason: String? = nil) -> Bool? {
         // Insert under blackholeLock, RELEASE it, then removeBlackholedPaths()
-        // (which re-acquires blackholeLock via its own check) — the leaf lock is
+        // (which re-acquires blackholeLock via its own check)—the leaf lock is
         // non-recursive, so it must not be held across that call.
         blackholeLock.lock()
         guard !blackholedIdentities.keys.contains(identityHash) else {
@@ -52,7 +52,7 @@ extension Transport {
         return true
     }
 
-    /// Returns true if `identityHash` is currently blackholed.
+    /// Returns true if `identityHash` is blackholed.
     public func isBlackholed(_ identityHash: Data) -> Bool {
         blackholeLock.lock(); defer { blackholeLock.unlock() }
         return blackholedIdentities[identityHash] != nil
@@ -62,7 +62,7 @@ extension Transport {
     /// Mirrors Python's `Transport.remove_blackholed_paths()`.
     public func removeBlackholedPaths() {
         // Snapshot (destHash → identityHash) under `lock`, decide which are
-        // blackholed under blackholeLock, then remove under `lock` — the two
+        // blackholed under blackholeLock, then remove under `lock`—the two
         // locks are never held simultaneously.
         lock.lock()
         let candidates: [(dest: Data, identity: Data)] = paths.keys.compactMap { destHash in
@@ -126,7 +126,7 @@ extension Transport {
     /// writes `umsgpack.packb({identity_hash: entry})` for entries whose source is the
     /// local transport identity.
     ///
-    /// The encoding is **msgpack, keyed by the raw 16-byte identity hash** — not JSON and
+    /// The encoding is **msgpack, keyed by the raw 16-byte identity hash**—not JSON and
     /// not hex strings. These files are a shared, cross-implementation format: an instance
     /// publishes its `local` list for others to consume as a blackhole source, and
     /// `reload_blackhole` on the other side feeds whatever it finds straight into
@@ -155,7 +155,7 @@ extension Transport {
             StorageInventory.Entry.blackholeLocalTemp.components.last!)
         try data.write(to: tmpFile, options: .atomic)
         _ = try? FileManager.default.replaceItemAt(localFile, withItemAt: tmpFile)
-        // Fallback: rename if replaceItemAt fails (e.g. localFile didn't exist).
+        // Fallback: rename if replaceItemAt fails (for example, localFile didn't exist).
         if FileManager.default.fileExists(atPath: tmpFile.path) {
             try? FileManager.default.moveItem(at: tmpFile, to: localFile)
         }
@@ -163,12 +163,12 @@ extension Transport {
 
     /// Load blackhole entries from a directory, matching Python's multi-source logic.
     ///
-    /// - `<directory>/local` — own entries (source = ownerIdentity.hash)
-    /// - `<directory>/<identity-hash-hex>` — external source files;
+    /// - `<directory>/local`—own entries (source = ownerIdentity.hash)
+    /// - `<directory>/<identity-hash-hex>`—external source files;
     ///   only loaded when the source identity hash is in `allowedSources`.
     ///
     /// Entries whose `until` timestamp is in the past are skipped.
-    /// Existing own-sourced entries are not overwritten by external sources.
+    /// Existing own-sourced entries aren't overwritten by external sources.
     ///
     /// Mirrors Python's `Transport.reload_blackhole()`.
     public func reloadBlacklist(fromDirectory directory: URL, allowedSources: [Data]) throws {
@@ -208,7 +208,7 @@ extension Transport {
                 if let existing = blackholedIdentities[hash],
                    existing.source == ownHash, src != ownHash { continue }
                 // Python overrides the file's own "source" with the identity the file
-                // came from, so a source cannot attribute a blackhole to somebody else.
+                // came from, so a source can't attribute a blackhole to somebody else.
                 blackholedIdentities[hash] = BlackholeEntry(source: src, until: until, reason: reason)
             }
             blackholeLock.unlock()

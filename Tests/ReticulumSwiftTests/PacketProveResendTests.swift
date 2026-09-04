@@ -167,7 +167,7 @@ final class PacketProveResendTests: XCTestCase {
         let id = Identity()
         let dest = try Destination(identity: id, direction: .in, kind: .single,
                                    appName: "test", aspects: ["noop"])
-        // Packet has no receivingInterface — prove() must not crash
+        // Packet has no receivingInterface—prove() must not crash
         let pkt = Packet(
             destinationType: .single, packetType: .data,
             destinationHash: dest.hash,

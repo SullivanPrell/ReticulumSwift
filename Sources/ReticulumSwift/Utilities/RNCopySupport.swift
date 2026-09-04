@@ -25,7 +25,7 @@ public extension RNCopyApp {
     /// Equals `4ce505754cbdc8c2c8775a3006a712f0`.
     static var fetchRequestPathHash: Data { Hashes.truncatedHash(Data(fetchRequestPath.utf8)) }
 
-    /// Single aspect of the rncp destination — full name `rncp.receive.<identity hash>`.
+    /// Single aspect of the rncp destination—full name `rncp.receive.<identity hash>`.
     /// Python: `RNS.Destination(identity, IN, SINGLE, APP_NAME, "receive")` (rncp.py:112).
     static let receiveAspect: String = "receive"
 
@@ -93,7 +93,7 @@ public extension RNCopyApp {
     /// rncp's own `size_str`. Python: rncp.py:887-904.
     ///
     /// Identical to the `size_str` in rnstatus.py and rnx.py, and therefore already
-    /// implemented byte-for-byte by ``UtilityFormatting/sizeStr(_:suffix:)`` — including
+    /// implemented byte-for-byte by ``UtilityFormatting/sizeStr(_:suffix:)``—including
     /// the quirk that the terminal yotta branch omits the space (`"1.00YB"`) while every
     /// other branch keeps it. Deliberately *not* `RNSUtilities.prettysize`.
     static func sizeStr(_ num: Double, suffix: String = "B") -> String {
@@ -118,7 +118,7 @@ public extension RNCopyApp {
     /// Python: rncp.py:583 / 590 (fetch) and rncp.py:758 (send). `elapsed` is non-nil
     /// only for the fetch-mode "Transfer complete" line, which inserts the elapsed time
     /// and shows the *average* rate. `phySpeed` is non-nil only under `-P/--phy-rates`
-    /// (send additionally suppresses it once the transfer is done — that gate belongs to
+    /// (send additionally suppresses it once the transfer is done—that gate belongs to
     /// the caller, which simply passes `nil`).
     static func transferStat(progress: Double,
                              totalSize: Int,
@@ -126,7 +126,7 @@ public extension RNCopyApp {
                              phySpeed: Double? = nil,
                              elapsed: TimeInterval? = nil) -> String {
         // Python: percent = round(prg * 100.0, 1), then f-string interpolation of the
-        // float — "0.0" / "33.3" / "100.0". %.1f matches for every practical value.
+        // float—"0.0" / "33.3" / "100.0". %.1f matches for every practical value.
         let percent = String(format: "%.1f", progress * 100.0)
         let current = sizeStr(Double(Int(progress * Double(totalSize))))
         let total = sizeStr(Double(totalSize))
@@ -146,7 +146,7 @@ public extension RNCopyApp {
 
     /// `os.path.basename` for POSIX: `p[p.rfind('/')+1:]`.
     ///
-    /// Splits on `/` only — a backslash is an ordinary character — and yields `""` for
+    /// Splits on `/` only—a backslash is an ordinary character—and yields `""` for
     /// both `"a/b/"` and `""`. Reproducing the exact rule is what collapses a hostile
     /// `"../../etc/passwd"` to `"passwd"`. Python: rncp.py:287,496,640,200.
     static func basename(_ path: String) -> String {
@@ -157,17 +157,17 @@ public extension RNCopyApp {
     /// `os.path.expanduser` against `rncp`'s injected home.
     ///
     /// Delegates to the one implementation every utility uses, rather than keeping a second copy
-    /// of the same rules — `bugs/024` is what happens when path resolution exists in more than
+    /// of the same rules—`bugs/024` is what happens when path resolution exists in more than
     /// one place. See ``InstanceConnection/expandTilde(_:home:)``.
     static func expandUser(_ path: String, home: String) -> String {
         InstanceConnection.expandTilde(path, home: home)
     }
 
-    /// `os.path.abspath` — join against `cwd` when relative, then `normpath`.
+    /// `os.path.abspath`—join against `cwd` when relative, then `normpath`.
     ///
-    /// This is **lexical**: it does not resolve symlinks, exactly like Python. Both the
+    /// This is **lexical**: it doesn't resolve symlinks, exactly like Python. Both the
     /// fetch jail and the save-path containment check rely on that, so a symlink inside
-    /// a jail that points outside it defeats the jail — in Python and here alike. Do not
+    /// a jail that points outside it defeats the jail—in Python and here alike. Don't
     /// "harden" this with `resolvingSymlinksInPath`; it would diverge from the Python
     /// listener. Python: rncp.py:93,97,180,185,290,499.
     static func absolutePath(_ path: String, cwd: String) -> String {
@@ -235,7 +235,7 @@ public extension RNCopyApp {
     /// Parse an `allowed_identities` file body.
     ///
     /// Python: strip every `\r`, split on `\n`, and keep ONLY lines whose length is
-    /// exactly `dest_len` (32). Lines are not hex-validated here; comments and blank
+    /// exactly `dest_len` (32). Lines aren't hex-validated here; comments and blank
     /// lines are silently dropped by the length filter. Python: rncp.py:133-139.
     static func parseAllowedIdentitiesFile(_ contents: String) -> [String] {
         contents
@@ -281,7 +281,7 @@ public extension RNCopyApp {
     struct AllowedIdentitiesLoad: Equatable {
         /// The `-a` entries merged with the file entries, in Python's order.
         public let merged: [String]
-        /// How many entries the FILE contributed — this, not the merged count, is what the
+        /// How many entries the FILE contributed—this, not the merged count, is what the
         /// log line reports.
         public let fileEntryCount: Int
         /// The file that was read, or nil when none of the three candidates existed.
@@ -302,7 +302,7 @@ public extension RNCopyApp {
 
     /// Locate, parse and merge the allow-list. Python: rncp.py:122-153.
     ///
-    /// The file entries REPLACE the `-a` list when it is empty, and are appended otherwise
+    /// The file entries REPLACE the `-a` list when it's empty, and are appended otherwise
     /// (`allowed.extend(ali)`). Only the first existing candidate is read.
     ///
     /// This is skipped entirely by `-n/--no-auth`, which is why no file is read in that mode.
@@ -335,8 +335,8 @@ public extension RNCopyApp {
 
     /// Validate the `destination` positional shared by fetch and send.
     ///
-    /// Identical rules to ``decodeAllowedIdentity(_:)`` — Python literally repeats the
-    /// block (rncp.py:377-387, 622-632) — and the raised message is printed with a plain
+    /// Identical rules to ``decodeAllowedIdentity(_:)``—Python literally repeats the
+    /// block (rncp.py:377-387, 622-632)—and the raised message is printed with a plain
     /// `print()` before `exit(1)`.
     static func decodeDestinationArgument(_ hex: String) throws -> Data {
         try decodeAllowedIdentity(hex)
@@ -388,9 +388,9 @@ public extension RNCopyApp {
 public protocol RNCopyFileSystem: AnyObject {
     /// `os.path.expanduser("~")`.
     var homeDirectoryPath: String { get }
-    /// `os.getcwd()` — the base for `os.path.abspath` on a relative path.
+    /// `os.getcwd()`—the base for `os.path.abspath` on a relative path.
     var currentDirectoryPath: String { get }
-    /// `os.path.isfile` — true only for an existing *regular* file.
+    /// `os.path.isfile`—true only for an existing *regular* file.
     func fileExists(atPath path: String) -> Bool
     /// `os.path.isdir`.
     func isDirectory(atPath path: String) -> Bool
@@ -415,8 +415,8 @@ public final class RNCopyDiskFileSystem: RNCopyFileSystem {
     ///
     /// Resolved through the shared `$HOME`-aware resolver, not `NSHomeDirectory()`, which reports
     /// the account's real home regardless of `$HOME`. Applying the wrong allow-list silently
-    /// accepts identities the operator never authorised for that environment — or refuses the
-    /// ones they did — behind a normal-looking banner (`bugs/024`).
+    /// accepts identities the operator never authorised for that environment—or refuses the
+    /// ones they did—behind a normal-looking banner (`bugs/024`).
     public var homeDirectoryPath: String {
         InstanceConnection.homeDirectory(environment: environment).path
     }
@@ -477,9 +477,9 @@ public extension RNCopyApp {
     /// Resolve a `fetch_file` request path. Python: `fetch_request` (rncp.py:172-209).
     ///
     /// With a jail: if the request already starts with `<jail>/`, Python strips it with
-    /// `data.replace(fetch_jail+"/", "")` — a replace-**ALL**, not a prefix drop, so every
+    /// `data.replace(fetch_jail+"/", "")`—a replace-**ALL**, not a prefix drop, so every
     /// occurrence anywhere in the string disappears. The remainder is re-joined under the
-    /// jail and lexically absolutised; a result that does not start with `<jail>/` is
+    /// jail and lexically absolutised; a result that doesn't start with `<jail>/` is
     /// rejected. Without a jail the client may request any absolute path the listener
     /// process can read.
     static func resolveFetchPath(requested: String,
@@ -519,11 +519,11 @@ public enum RNCopySaveResolution: Equatable {
 public extension RNCopyApp {
 
     /// Resolve the on-disk target for a received file. Python: rncp.py:287-306 (listen)
-    /// and rncp.py:496-515 (fetch) — the two blocks are identical apart from log vs print.
+    /// and rncp.py:496-515 (fetch)—the two blocks are identical apart from log vs print.
     ///
     /// - With `--save`, the target is `abspath(expanduser(save + "/" + filename))` and must
-    ///   start with `save + "/"`. Without it the target is the bare filename, i.e. a
-    ///   **relative** path — the file lands in the process working directory.
+    ///   start with `save + "/"`. Without it the target is the bare filename, that is, a
+    ///   **relative** path—the file lands in the process working directory.
     /// - With `-O` the existing file is unlinked first; if the unlink throws, Python logs
     ///   "…renaming instead" and falls through.
     /// - Unconditionally afterwards, collisions become `name.1`, `name.2`, …
@@ -615,7 +615,7 @@ public struct RNCopyProgressMeter {
     /// - `phyGot` is `get_segment_progress() * get_transfer_size()`.
     ///
     /// A zero span zeroes BOTH rates. Otherwise `speed` is the window delta, while
-    /// `phySpeed` is only updated when the physical delta is strictly positive — Python's
+    /// `phySpeed` is only updated when the physical delta is strictly positive—Python's
     /// `if phy_diff > 0:` leaves the previous value in place rather than zeroing it.
     public mutating func update(now: TimeInterval, got: Double, phyGot: Double) {
         samples.append((now, got, phyGot))
@@ -632,7 +632,7 @@ public struct RNCopyProgressMeter {
         if phyDiff > 0 { phySpeed = phyDiff / span }
     }
 
-    /// Number of retained samples — exposed for tests asserting the 32-entry cap.
+    /// Number of retained samples—exposed for tests asserting the 32-entry cap.
     public var sampleCount: Int { samples.count }
 }
 
@@ -655,7 +655,7 @@ public extension RNCopyApp {
         public var description: String { message }
     }
 
-    /// `<storagePath>/identities/rncp` — Python's `RNS.Reticulum.identitypath + "/" + APP_NAME`.
+    /// `<storagePath>/identities/rncp`—Python's `RNS.Reticulum.identitypath + "/" + APP_NAME`.
     ///
     /// `Reticulum.start()` creates `storage/` but NOT the `identities/` subdirectory, so
     /// ``prepareIdentity(at:)`` creates it with intermediates before writing.
@@ -667,7 +667,7 @@ public extension RNCopyApp {
     /// Load, or create and persist, the rncp identity. Python: `prepare_identity` (rncp.py:54-68).
     ///
     /// - Throws: ``IdentityError/corruptIdentityFile(_:)`` when the file is present but
-    ///   unreadable — the CLI maps that to exit code 2.
+    ///   unreadable—the CLI maps that to exit code 2.
     static func prepareIdentity(at url: URL) throws -> Identity {
         if FileManager.default.fileExists(atPath: url.path) {
             guard let loaded = Identity.fromFile(url) else {
@@ -680,7 +680,7 @@ public extension RNCopyApp {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         let identity = Identity()
-        // Python does not check the to_file result either.
+        // Python doesn't check the to_file result either.
         _ = try? identity.toFile(url)
         return identity
     }
@@ -701,7 +701,7 @@ public extension RNCopyApp {
     /// The `--help` output, byte-identical to Python argparse's.
     ///
     /// ``ArgumentParser/usage`` produces a single-line `usage:` header and a fixed 24-column
-    /// help gutter, which does not reproduce argparse's wrapped usage block, its
+    /// help gutter, which doesn't reproduce argparse's wrapped usage block, its
     /// `-j path, --jail path` metavar repetition, or its 79-column help-text wrapping. The
     /// text is therefore held literally here and asserted against captured Python output in
     /// `RNCopyHelpTextTests`, rather than being generated and drifting.
@@ -744,9 +744,9 @@ public extension RNCopyApp {
 
     /// The declared argument surface, mirroring `main()`'s parser (rncp.py:796-818).
     ///
-    /// `--limit` is deliberately absent: it is commented out upstream in both the parser and
+    /// `--limit` is deliberately absent: it's commented out upstream in both the parser and
     /// the `listen()` call (rncp.py:817). `-a` is `action="append"` in argparse; the shared
-    /// ``ArgumentParser`` has no append action, so it is declared here as an ordinary option
+    /// ``ArgumentParser`` has no append action, so it's declared here as an ordinary option
     /// (which makes it consume its value correctly and keeps the positionals right) and the
     /// executable collects every occurrence itself.
     static func makeArgumentParser() -> ArgumentParser {

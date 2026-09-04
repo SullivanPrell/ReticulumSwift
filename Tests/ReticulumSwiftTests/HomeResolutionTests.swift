@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `bugs/024` — `$HOME` must determine every home-relative path, as `os.path.expanduser("~")`
+/// `bugs/024`—`$HOME` must determine every home-relative path, as `os.path.expanduser("~")`
 /// does for the reference (`Reticulum.py:165`, `:234`, `:236`).
 ///
 /// The 1.7.0 release fixed this and announced "all resolution". It fixed *one* resolver. Two
@@ -10,11 +10,11 @@ import XCTest
 /// resolved every user-supplied `~` against the account's real home. All of them are macOS APIs
 /// that ignore `$HOME` by design.
 ///
-/// The consequence was not theoretical: a Swift utility launched with `HOME` pointing at a
+/// The consequence wasn't theoretical: a Swift utility launched with `HOME` pointing at a
 /// scratch directory read the developer's real `~/.reticulum`, found the live daemon's identity,
-/// and authenticated to the live daemon on 37428 — while the harness believed it was sandboxed.
+/// and authenticated to the live daemon on 37428—while the harness believed it was sandboxed.
 ///
-/// The structural test below is the one that would have caught it, and it is a coverage admission
+/// The structural test below is the one that would have caught it, and it's a coverage admission
 /// rather than a behavioural check (design D7). Every behavioural home test in this package
 /// injects the home it wants, so none can observe what a real invocation resolves.
 final class HomeResolutionTests: XCTestCase {
@@ -30,7 +30,7 @@ final class HomeResolutionTests: XCTestCase {
     /// The one sanctioned exception, which must keep working (`InstanceConnection.swift:116`).
     func testUnsetHOMEFallsBackToThePlatformHome() {
         XCTAssertEqual(InstanceConnection.homeDirectory(environment: [:]).path, NSHomeDirectory())
-        // An empty HOME is falsy in Python too — `os.path.expanduser` ignores it.
+        // An empty HOME is falsy in Python too—`os.path.expanduser` ignores it.
         XCTAssertEqual(InstanceConnection.homeDirectory(environment: ["HOME": ""]).path,
                        NSHomeDirectory())
     }
@@ -53,7 +53,7 @@ final class HomeResolutionTests: XCTestCase {
         XCTAssertEqual(InstanceConnection.expandTilde("~/x", environment: env), "/tmp/slash/x")
         // Repeated trailing slashes are all stripped, not just one.
         XCTAssertEqual(InstanceConnection.expandTilde("~/x", home: "/tmp/slash//"), "/tmp/slash/x")
-        // A root home does not produce a doubled leading slash.
+        // A root home doesn't produce a doubled leading slash.
         XCTAssertEqual(InstanceConnection.expandTilde("~/x", home: "/"), "/x")
         XCTAssertEqual(InstanceConnection.expandTilde("~", home: "/tmp/keep/"), "/tmp/keep/")
         // Not a tilde path: unchanged.
@@ -61,10 +61,10 @@ final class HomeResolutionTests: XCTestCase {
         XCTAssertEqual(InstanceConnection.expandTilde("relative/path", environment: env),
                        "relative/path")
         XCTAssertEqual(InstanceConnection.expandTilde("", environment: env), "")
-        // `~user` is CPython's pwd-database lookup, which RNS never uses — left alone rather
+        // `~user` is CPython's pwd-database lookup, which RNS never uses—left alone rather
         // than silently resolved to $HOME.
         XCTAssertEqual(InstanceConnection.expandTilde("~root/x", environment: env), "~root/x")
-        // A tilde that is not leading is not special.
+        // A tilde that isn't leading isn't special.
         XCTAssertEqual(InstanceConnection.expandTilde("/a/~/b", environment: env), "/a/~/b")
     }
 
@@ -109,7 +109,7 @@ final class HomeResolutionTests: XCTestCase {
     ///
     /// Unusual, and deliberately so (D7). This is the only form of check that would have caught
     /// this defect: every behavioural home test injects the home it wants, so none can observe
-    /// what a real invocation resolves — which is exactly how a release claiming to have fixed
+    /// what a real invocation resolves—which is exactly how a release claiming to have fixed
     /// "all resolution" shipped with fourteen sites still wrong.
     func testNoSourceFileReachesAPlatformHomeAPI() throws {
         let sourcesDir = URL(fileURLWithPath: #filePath)
@@ -131,7 +131,7 @@ final class HomeResolutionTests: XCTestCase {
         ]
 
         /// The documented fallback for `HOME` unset, and the only exception. It must keep
-        /// working: `homeDirectoryForCurrentUser` was deliberately *not* used there because it is
+        /// working: `homeDirectoryForCurrentUser` was deliberately *not* used there because it's
         /// macOS-only and this type ships in the library for iOS, tvOS and watchOS too.
         let sanctionedFile = "InstanceConnection.swift"
 
@@ -142,7 +142,7 @@ final class HomeResolutionTests: XCTestCase {
             let src = try String(contentsOf: url, encoding: .utf8)
             for (index, line) in src.components(separatedBy: .newlines).enumerated() {
                 let code = line.trimmingCharacters(in: .whitespaces)
-                // These names are cited constantly in comments explaining why they are banned.
+                // These names are cited constantly in comments explaining why they're banned.
                 guard !code.hasPrefix("//"), !code.hasPrefix("///"), !code.hasPrefix("*") else {
                     continue
                 }
@@ -169,7 +169,7 @@ final class HomeResolutionTests: XCTestCase {
                       """)
     }
 
-    /// The sanctioned exception is sanctioned *once*. If a second one appears the guard above
+    /// The sanctioned exception is sanctioned *once*. If a second one appears the preceding guard
     /// keeps passing while the invariant erodes, so the count is pinned.
     func testTheSanctionedFallbackIsASingleSite() throws {
         let file = URL(fileURLWithPath: #filePath)

@@ -2,7 +2,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for RNS utility functions mirroring Python's `RNS.prettyhexrep()`,
-/// `RNS.hexrep()`, `RNS.prettysize()` etc.
+/// `RNS.hexrep()`, `RNS.prettysize()` and so on
 final class UtilitiesTests: XCTestCase {
 
     // MARK: - prettyhexrep

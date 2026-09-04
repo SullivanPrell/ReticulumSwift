@@ -88,7 +88,7 @@ public struct BZip2Compressor: DataCompressor {
                     destLen = min(destLen * 2, maxLen + 1)
                     continue
                 }
-                return nil  // real error (bad data, etc.)
+                return nil  // real error (bad data, and so on)
             }
             return nil  // exceeded max output size
         }
@@ -106,7 +106,7 @@ public struct BZip2Compressor: DataCompressor {
         // Allocate a single buffer at exactly maxLength + 1. If the bz2
         // stream decodes to <= maxLength bytes, BZ_OK; if it would exceed,
         // BZ_OUTBUFF_FULL → reject as bomb. This avoids the geometric retry
-        // loop bringing us above the cap.
+        // loop bringing the total above the cap.
         let bufCap = UInt32(maxLength) &+ 1
         var destLen = bufCap
 

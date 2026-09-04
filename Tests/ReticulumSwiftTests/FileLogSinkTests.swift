@@ -3,7 +3,7 @@ import XCTest
 
 /// The `RNS.log()` line format and the `LOG_FILE` destination.
 ///
-/// Python reference: `RNS/__init__.py` — `loglevelname` (98-109), `log` (126-161) including
+/// Python reference: `RNS/__init__.py`—`loglevelname` (98-109), `log` (126-161) including
 /// the append, the 5 MiB single-generation rotation, the `logging_lock` serialisation and the
 /// permanent fall-back-to-console latch.
 final class FileLogSinkTests: XCTestCase {
@@ -37,7 +37,7 @@ final class FileLogSinkTests: XCTestCase {
 
     func testFormatLogLineMatchesPython() {
         // Python: logstring = "[<ts>] " + loglevelname(level) + " " + msg, and
-        // loglevelname(LOG_NOTICE) is the 10-char padded "[Notice]  " — so THREE spaces.
+        // loglevelname(LOG_NOTICE) is the 10-char padded "[Notice]  "—so THREE spaces.
         let line = FileLogSink.formatLogLine("hello", level: .notice, timestamps: true, at: fixedDate)
         XCTAssertEqual(line, "[\(fixedStamp)] [Notice]   hello")
         XCTAssertTrue(line.contains("[Notice]   hello"))
@@ -94,10 +94,10 @@ final class FileLogSinkTests: XCTestCase {
     }
 
     func testLoglevelnameForNoneDivergence() {
-        // DIVERGENCE, pinned so it cannot regress silently: Python's loglevelname falls
+        // DIVERGENCE, pinned so it can't regress silently: Python's loglevelname falls
         // through to the unpadded 7-char "Unknown" for anything unmatched, including
         // LOG_NONE (-1). This port returns a padded "[None]    " instead, which keeps
-        // column alignment for a level that is never actually emitted.
+        // column alignment for a level that's never actually emitted.
         XCTAssertEqual(Reticulum.loglevelname(Reticulum.LogLevel.none), "[None]    ")
     }
 
@@ -114,7 +114,7 @@ final class FileLogSinkTests: XCTestCase {
 
     func testEmitFormatsThroughTheSink() {
         // Reticulum.logHandler receives the RAW message, unlike Python's LOG_CALLBACK which
-        // gets the finished logstring — so the sink has to format.
+        // gets the finished logstring—so the sink has to format.
         let sink = FileLogSink(fileURL: logFile)
         sink.emit("hello", level: .notice)
         XCTAssertTrue(contents(of: logFile).hasSuffix("[Notice]   hello\n"), contents(of: logFile))
@@ -133,7 +133,7 @@ final class FileLogSinkTests: XCTestCase {
 
     func testSizeCheckIsAfterWrite() {
         // Python calls os.path.getsize AFTER writing, so an oversized line lands in full and
-        // only then rotates — the rotated file holds the whole line.
+        // only then rotates—the rotated file holds the whole line.
         let sink = FileLogSink(fileURL: logFile, maxSize: 10)
         let long = String(repeating: "x", count: 50)
         sink.write(long)
@@ -147,7 +147,7 @@ final class FileLogSinkTests: XCTestCase {
         sink.write("generation-one")
         sink.write("generation-two")
 
-        // Python: `if os.path.isfile(prevfile): os.unlink(prevfile)` — no .2 ever appears.
+        // Python: `if os.path.isfile(prevfile): os.unlink(prevfile)`—no .2 ever appears.
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: temporaryDirectory.appendingPathComponent("logfile.1.1").path))
         XCTAssertFalse(FileManager.default.fileExists(
@@ -194,7 +194,7 @@ final class FileLogSinkTests: XCTestCase {
     }
 
     func testFallbackIsPermanent() throws {
-        // Python's `_always_override_destination` is a process-global latch that is never
+        // Python's `_always_override_destination` is a process-global latch that's never
         // cleared, so later messages go to the console even if the file becomes writable.
         var captured: [String] = []
         let sink = FileLogSink(fileURL: try unwritableLogFile(),

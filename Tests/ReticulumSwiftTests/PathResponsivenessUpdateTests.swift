@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests that unresponsive paths can be updated by new announces.
+/// Tests that new announces can update unresponsive paths.
 /// Python: "if path_is_unresponsive: allow_update = True"
 final class PathResponsivenessUpdateTests: XCTestCase {
 
@@ -42,7 +42,7 @@ final class PathResponsivenessUpdateTests: XCTestCase {
 
         iface.inboundHandler?(p, iface)
 
-        // Unresponsive path should be updated by new announce
+        // A new announce should update the unresponsive path
         let path = t.paths[dest.hash]
         XCTAssertNotNil(path)
         // Path should be updated since it was unresponsive

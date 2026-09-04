@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for the four text encodings `rnid` accepts and emits.
 ///
-/// Python reference: RNS/Utilities/rnid.py — `create_rsg` (:508-514), `get_rsg_data`
+/// Python reference: RNS/Utilities/rnid.py—`create_rsg` (:508-514), `get_rsg_data`
 /// (:397-411), the `-m`/`-M` import ladder (:282-358).
 final class RNIDEncodingTests: XCTestCase {
 
@@ -33,7 +33,7 @@ final class RNIDEncodingTests: XCTestCase {
     }
 
     func testBase32RejectsCharactersOutsideTheAlphabet() {
-        XCTAssertNil(Base32.decode("MZXW6YT1"))   // '1' is not in A-Z2-7
+        XCTAssertNil(Base32.decode("MZXW6YT1"))   // '1' isn't in A-Z2-7
         XCTAssertNil(Base32.decode("MZ=XW6YT"))   // padding in the middle
     }
 
@@ -111,7 +111,7 @@ final class RNIDEncodingTests: XCTestCase {
     ///
     /// Python's `get_rsg_data` is broken twice over: `str.strip(b"=")` raises `TypeError`
     /// (so base32 and hex can never succeed for str input), and the four attempts are
-    /// last-success-wins with `urlsafe_b64decode` never raising — so base256, whose alphabet
+    /// last-success-wins with `urlsafe_b64decode` never raising—so base256, whose alphabet
     /// contains every hex character, would win for hex input and decode it to garbage.
     func testDecodeLadderPrefersHexOverBase256ForAHexArmouredRSG() throws {
         let identity = Identity()
@@ -141,7 +141,7 @@ final class RNIDEncodingTests: XCTestCase {
     }
 
     func testDecodeLadderRejectsGarbage() {
-        // Python would hand back the empty bytes urlsafe_b64decode produces; we return nil.
+        // Python would hand back the empty bytes urlsafe_b64decode produces; this port returns nil.
         XCTAssertNil(RSG.data(fromText: "!!!!"))
         XCTAssertNil(RSG.data(fromText: ""))
     }
@@ -157,7 +157,7 @@ final class RNIDEncodingTests: XCTestCase {
         XCTAssertNil(RSG.data(fromText: RNIDEncoding.hexEncode(Data(count: 63))))
     }
 
-    /// Length alone is not a strong enough gate: a hex string is also a valid base64 string,
+    /// Length alone isn't a strong enough gate: a hex string is also a valid base64 string,
     /// so an earlier codec in the ladder can otherwise claim a blob belonging to a later one.
     func testDecodeLadderRequiresADecodableEnvelope() {
         let notAnRSG = Data(repeating: 0x7B, count: 200)

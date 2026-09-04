@@ -3,7 +3,7 @@ import XCTest
 
 /// RNS 1.3.7: a non-transport node runs behind a fresh ephemeral transport
 /// identity for privacy, while keeping its persistent identity as
-/// `internal_identity()` (used e.g. for the RPC auth key). The
+/// `internal_identity()` (used for example, for the RPC auth key). The
 /// `static_transport_identity` option restores the old stable-identity behavior.
 final class RNS137EphemeralTransportIdentityTests: XCTestCase {
     var tmp: URL!

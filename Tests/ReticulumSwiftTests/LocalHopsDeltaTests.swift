@@ -1,16 +1,16 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for the `local_hops_delta` privacy feature — per-session hop-count
-/// obfuscation for packets that originate locally (our own traffic and traffic
-/// relayed for directly-connected local clients).
+/// Tests for the `local_hops_delta` privacy feature—per-session hop-count
+/// obfuscation for packets that originate locally (this node's own traffic and traffic
+/// relayed for directly connected local clients).
 ///
 /// Mirrors Python `Transport.local_hops_delta` / `should_apply_delta` /
 /// `mangle_hops` and the `instance_local_link` / `proof_for_local_client` /
 /// `to_local_client` relay distinctions.
 final class LocalHopsDeltaTests: XCTestCase {
 
-    // Records the last packet handed to it, so we can inspect the mangled hops.
+    // Records the last packet handed to it, so the test can inspect the mangled hops.
     final class CapturingInterface: Interface {
         var name: String; var bitrate: Int = 0; var isOnline: Bool = true
         var inboundHandler: ((Packet, any Interface) -> Void)?
@@ -20,9 +20,9 @@ final class LocalHopsDeltaTests: XCTestCase {
         func send(_ packet: Packet) throws { sent.append(packet) }
     }
 
-    // Stands in for the shared-instance SERVER side (e.g. PosixTCPServer): the
-    // interface a directly-connected local client's traffic arrives on. This —
-    // not LocalInterface (the client side) — is what Python treats as a
+    // Stands in for the shared-instance SERVER side (for example, PosixTCPServer): the
+    // interface a directly connected local client's traffic arrives on. This—not
+    // LocalInterface (the client side)—is what Python treats as a
     // local-client interface (see TransportUtilityTests).
     final class ServingInterface: Interface, LocalClientServingInterface {
         var name: String; var bitrate: Int = 0; var isOnline: Bool = true

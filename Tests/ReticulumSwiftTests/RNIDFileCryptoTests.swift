@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for the `.rfe` chunked file format.
 ///
-/// Python reference: RNS/Utilities/rnid.py — `encrypt` (:847-888), `decrypt` (:890-939),
+/// Python reference: RNS/Utilities/rnid.py—`encrypt` (:847-888), `decrypt` (:890-939),
 /// and the `ENC_CHUNK`/`DEC_CHUNK` constants (:60-61).
 final class RNIDFileCryptoTests: XCTestCase {
 
@@ -108,7 +108,7 @@ final class RNIDFileCryptoTests: XCTestCase {
             identity: bob,
             reader: RNIDDataReader(cipherWriter.data),
             writer: RNIDDataWriter())) { error in
-            // Python's `if not decrypted:` cannot distinguish causes → exit 12.
+            // Python's `if not decrypted:` can't distinguish causes → exit 12.
             XCTAssertEqual(error as? RNIDFileCrypto.CryptoError, .decryptFailed)
         }
     }

@@ -4,21 +4,21 @@ import XCTest
 /// Tests for the `multiprocessing.connection` authentication handshake used by the
 /// RNS instance-control RPC channel (port 37429).
 ///
-/// Python reference: CPython `Lib/multiprocessing/connection.py` —
-///   • `_get_digest_name_and_payload(message)`
+/// Python reference: CPython `Lib/multiprocessing/connection.py`—•
+///   `_get_digest_name_and_payload(message)`
 ///   • `_create_response(authkey, message)`
 ///   • `_verify_challenge(authkey, message, response)`
 ///   • `deliver_challenge` / `answer_challenge`
 ///
 /// Two protocol generations exist and both must be supported, because a Swift
-/// `rnsd` may be driven by a Python ≤3.11 client and a Swift `rnstatus` may be
+/// a Python ≤3.11 client may drive `rnsd` and a Swift `rnstatus` may be
 /// driven against a Python ≥3.12 daemon:
 ///   • **legacy** (≤3.11): challenge payload is 16 or 20 raw bytes, response is a
 ///     bare HMAC-MD5 digest with no prefix.
 ///   • **modern** (≥3.12): challenge payload is `{digest}` + 40 random bytes, and
 ///     the response is `{digest}` + HMAC over the *entire* prefixed message.
 ///
-/// The golden vectors below were produced by CPython 3.14.5.
+/// CPython 3.14.5 produced the golden vectors below.
 final class MultiprocessingAuthTests: XCTestCase {
 
     /// authkey = bytes(range(32))
@@ -101,7 +101,7 @@ final class MultiprocessingAuthTests: XCTestCase {
 
     func testDigestNameAndPayload_sha3_isAllowedButUnsupported() {
         // Python allows sha3_256 / sha3_384, but CryptoKit has no SHA-3.
-        // We must reject rather than silently mis-compute.
+        // Rejecting beats silently mis-computing.
         let msg = Data("{sha3_256}".utf8) + Data((0..<40).map { UInt8($0) })
         XCTAssertThrowsError(try MultiprocessingAuth.digestNameAndPayload(msg)) { error in
             XCTAssertEqual(error as? MultiprocessingAuth.AuthError, .unsupportedDigest("sha3_256"))
@@ -194,7 +194,7 @@ final class MultiprocessingAuthTests: XCTestCase {
     }
 
     func testVerifyChallenge_clientMayUpgradeDigestOnLegacyChallenge() throws {
-        // Python: "If our message did not include a digest_name prefix, the client
+        // Python: "If our message didn't include a digest_name prefix, the client
         // is allowed to select a stronger digest_name from _ALLOWED_DIGESTS."
         // The MAC is still taken over the (unprefixed) challenge message.
         let msg = Data((0..<20).map { UInt8($0) })

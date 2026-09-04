@@ -3,15 +3,15 @@ import XCTest
 
 /// `storage/known_destinations` must be the file the reference writes.
 ///
-/// `bugs/029` — the port writes `storage/known_destinations.json`, a JSON object of hex strings.
+/// `bugs/029`—the port writes `storage/known_destinations.json`, a JSON object of hex strings.
 /// The reference writes `umsgpack.dump(Identity.known_destinations)` (`Identity.py:198`): a map
 /// keyed by the raw 16-byte destination hash, whose values are the 5-element list
 /// `[last_announce, packet_hash, public_key, app_data, last_use]` read back positionally at
 /// `:220-231`.
 ///
-/// This is the store the path table resolves identities through — the reference's
-/// `destination_table` entry carries no public key of its own — so a Python daemon that cannot
-/// read this file cannot name the identity behind any path it restores.
+/// This is the store the path table resolves identities through—the reference's
+/// `destination_table` entry carries no public key of its own—so a Python daemon that can't
+/// read this file can't name the identity behind any path it restores.
 final class KnownDestinationsParityTests: XCTestCase {
 
     private var tmpDir: URL!
@@ -163,7 +163,7 @@ final class KnownDestinationsParityTests: XCTestCase {
     // MARK: - Reading
 
     /// `if len(loaded_known_destinations[known_destination]) < 5: … [e[0], e[1], e[2], e[3], 0]`
-    /// (`Identity.py:226-229`) — a file written by an older reference has 4-element entries and
+    /// (`Identity.py:226-229`)—a file written by an older reference has 4-element entries and
     /// is backfilled with a zero `last_use`, not discarded.
     func testFourElementEntryIsBackfilled() throws {
         let identity = Identity()
@@ -183,8 +183,8 @@ final class KnownDestinationsParityTests: XCTestCase {
                        "a 4-element entry is backfilled, not dropped (Identity.py:226-229)")
     }
 
-    /// `if len(known_destination) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8` (`Identity.py:225`) —
-    /// an entry whose key is not a destination hash is skipped, and does not abort the load.
+    /// `if len(known_destination) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8` (`Identity.py:225`)—an
+    /// entry whose key isn't a destination hash is skipped, and doesn't abort the load.
     func testEntryWithWrongKeyLengthIsSkipped() throws {
         let identity = Identity()
         let goodHash = Hashes.truncatedHash(Data("good".utf8))
@@ -204,8 +204,8 @@ final class KnownDestinationsParityTests: XCTestCase {
                         "a bad key must not stop the rest of the file loading")
     }
 
-    /// Everything the reference reads back — key, app data and both `last_use` sentinels —
-    /// survives a write/read cycle through the port.
+    /// Everything the reference reads back—key, app data and both `last_use` sentinels—survives
+    /// a write/read cycle through the port.
     func testRoundTrip() throws {
         let transport = Transport()
         let (used, usedHash) = makeIdentity(appData: Data("hello".utf8))

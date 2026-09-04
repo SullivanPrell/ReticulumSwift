@@ -67,7 +67,7 @@ public final class RequestReceipt {
     /// Bytes actually moved on the wire to deliver the response (post-compression,
     /// including Resource framing). Mirrors Python's
     /// `RequestReceipt.response_transfer_size` (Link.py:1314), which `rnx` renders in its
-    /// "Receiving result — N of M" spinner.
+    /// The "Receiving result" spinner (N of M).
     public var responseTransferSize: Int? {
         stateLock.lock(); defer { stateLock.unlock() }; return _responseTransferSize
     }
@@ -175,13 +175,13 @@ public final class RequestReceipt {
     /// (possibly long) transfer, exactly as Python hands lifetime control to the
     /// Resource watchdog once the RequestReceipt enters RECEIVING (Link.py
     /// `RequestReceipt.response_resource_progress`). Without this, a response
-    /// whose Resource takes longer than the request timeout to transfer — any
-    /// real, multi-KB page over a slower/multi-hop mesh — is aborted mid-download
-    /// by `timeoutFired()` even though it is progressing normally.
+    /// whose Resource takes longer than the request timeout to transfer—any
+    /// real, multi-KB page over a slower/multi-hop mesh—is aborted mid-download
+    /// by `timeoutFired()` even though it's progressing normally.
     ///
     /// Idempotent and safe to call repeatedly; a no-op once the receipt has
     /// concluded (ready/failed). Distinct from `updateProgress` so the request
-    /// *send* path (a large outbound request resource) is unaffected — only an
+    /// *send* path (a large outbound request resource) is unaffected—only an
     /// incoming response resource disarms the timeout.
     /// - Parameter advertisedSize: the response's advertised size in bytes, if
     ///   known. Python assigns `pending_request.response_size` from
@@ -229,7 +229,7 @@ public final class RequestReceipt {
     func fail(_ reason: String) {
         stateLock.lock()
         // Only conclude once, from a non-terminal state (matches Python's guard;
-        // do not overwrite a delivered .ready result with a late timeout).
+        // don't overwrite a delivered .ready result with a late timeout).
         switch _status {
         case .ready, .failed: stateLock.unlock(); return
         default: break
@@ -247,11 +247,11 @@ public final class RequestReceipt {
 
     /// Conclude this receipt because the response exceeded `maxResponseSize`.
     /// Mirrors Python's RNS 1.4.1 `RequestReceipt.response_rejected()`, which
-    /// runs the *failed* callback path — a caller that set a size cap wants a
+    /// runs the *failed* callback path—a caller that set a size cap wants a
     /// failure, not a truncated success.
     ///
     /// Python guards on `self.status == RequestReceipt.DELIVERED`, so a rejection
-    /// arriving for a receipt that is merely `SENT`, already `RECEIVING`, or
+    /// arriving for a receipt that's merely `SENT`, already `RECEIVING`, or
     /// already concluded fires nothing at all. `fail()` alone is more permissive
     /// than that (it accepts any non-terminal state), so the state check is made
     /// explicit here.
@@ -304,10 +304,10 @@ extension Link {
     /// Link.request behavior).
     ///
     /// **request_id derivation:**
-    /// - Small packets: `truncated_hash(hashable_part_of_wire_packet)` —
-    ///   mirrors Python's `request_id = packet.getTruncatedHash()`.
-    /// - Large (Resource): `truncated_hash(packed_request)` —
-    ///   mirrors Python's Resource path.
+    /// - Small packets: `truncated_hash(hashable_part_of_wire_packet)`—mirrors
+    ///   Python's `request_id = packet.getTruncatedHash()`.
+    /// - Large (Resource): `truncated_hash(packed_request)`—mirrors
+    ///   Python's Resource path.
     ///
     /// - Parameter timeout: Optional timeout in seconds. When the deadline
     ///   elapses without a response the receipt transitions to `.failed`
@@ -332,7 +332,7 @@ extension Link {
 
     /// Python-wire-compatible request: embeds `nativeValue` directly in the outer
     /// msgpack array, matching Python's `msgpack.packb([ts, pathHash, data])` format.
-    /// Use this when talking to Python nodes (e.g., LXMF propagation).
+    /// Use this when talking to Python nodes (for example, LXMF propagation).
     @discardableResult
     public func request(
         path: String,
@@ -380,7 +380,7 @@ extension Link {
 
         // The link's negotiated MDU, not the base constant: Python decides packet-vs-Resource
         // on `self.mdu` (`Link.py:493`), which tracks the negotiated MTU. Same seam as
-        // `bugs/016` — see `Resource.segmentSize(for:)`.
+        // `bugs/016`—see `Resource.segmentSize(for:)`.
         if body.count <= mdu {
             // ---------------------------------------------------------------
             // Small-packet path
@@ -402,7 +402,7 @@ extension Link {
             if let cb = failedCallback    { receipt.onFailed = cb }
             if let cb = progressCallback  { receipt.onProgress = cb }
 
-            // Store before sending — response may arrive synchronously. Evict on
+            // Store before sending—response may arrive synchronously. Evict on
             // conclusion (success OR timeout/failure) so the dictionary stays bounded.
             receipt.onConclude = { [weak self] in self?.evictPendingRequest(requestID) }
             stateLock.lock(); pendingRequests[requestID] = receipt; stateLock.unlock()
@@ -413,7 +413,7 @@ extension Link {
         } else {
             // ---------------------------------------------------------------
             // Large-payload (Resource) path
-            // Python uses truncated_hash(packed_request) here, so we match.
+            // Python uses truncated_hash(packed_request) here, so this port matches.
             // ---------------------------------------------------------------
             let requestID = Hashes.truncatedHash(body)
 
@@ -448,7 +448,7 @@ extension Link {
     /// `requestID` must be the **wire-format** packet hash
     /// (`packet.truncatedPacketHash()`), which is what Link.receive()
     /// passes after extracting it from the raw Packet. This matches Python's
-    /// `request_id = packet.getTruncatedHash()` so the response body we send
+    /// `request_id = packet.getTruncatedHash()` so the response body sent
     /// back carries the id the initiator expects.
     func handleIncomingRequest(_ data: Data, requestID: Data) {
         guard case .array(let parts) = (try? MsgPack.decode(data)) ?? .nil,
@@ -506,7 +506,7 @@ extension Link {
         // umsgpack.packb([request_id, response])`, and its initiator-side
         // response_resource_concluded (Link.py:890-904) which unpacks exactly that.
         // (An earlier version resourced the bare response value here, so the receiver
-        // got a msgpack-wrapped / un-enveloped payload — Swift↔Swift delivered the
+        // got a msgpack-wrapped / un-enveloped payload—Swift↔Swift delivered the
         // wrong bytes and a Python fetcher's unpackb([id, resp]) threw → timeout.)
         if let native = entry.nativeHandler {
             // Native (Python-compatible) handler: response embedded directly in envelope.
@@ -549,8 +549,8 @@ extension Link {
         default:            responseData = MsgPack.encode(parts[1])  // native value (Python encoding)
         }
         // RNS 1.4.1 `max_response_size`. Python measures
-        // `len(umsgpack.packb(response_data)) - 2` — the response value re-encoded
-        // as msgpack, less 2 — and caps THAT, not the delivered payload. The two
+        // `len(umsgpack.packb(response_data)) - 2`—the response value re-encoded
+        // as msgpack, less 2—and caps THAT, not the delivered payload. The two
         // differ: for a native value the delivered bytes are the encoding without
         // the -2, and for a `.bytes` response the delivered bytes omit the msgpack
         // bin header entirely. Measure Python's quantity explicitly rather than
@@ -558,7 +558,7 @@ extension Link {
         //
         // The same quantity is what Python passes as both `response_size` and
         // `response_transfer_size` with `update_sizes=True` (Link.py:998-999), so
-        // record it on the receipt too — rnx's `-d` "Transferred N bytes …
+        // record it on the receipt too—rnx's `-d` "Transferred N bytes …
         // effective rate" line has nothing to report otherwise.
         let measuredSize = MsgPack.encode(parts[1]).count - 2
         if let cap = receipt.maxResponseSize, measuredSize > cap {

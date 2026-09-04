@@ -10,6 +10,6 @@ compatibility with Python Reticulum verified?
 ## Checklist
 
 - [ ] `swift test` passes (no regressions)
-- [ ] New behavior is covered by tests (failing-test-first where practical)
+- [ ] Tests cover the new behavior (failing-test-first where practical)
 - [ ] Wire-level changes checked against the Python reference
 - [ ] Docs updated if public API or config changed

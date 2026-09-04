@@ -1,10 +1,10 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for ``InstanceConnection`` — the shared-instance attach logic every `rn*`
+/// Tests for ``InstanceConnection``—the shared-instance attach logic every `rn*`
 /// utility starts with.
 ///
-/// Python reference: `RNS/Reticulum.py` — config-directory resolution in `__init__`
+/// Python reference: `RNS/Reticulum.py`—config-directory resolution in `__init__`
 /// and the become-shared-instance / connect-as-client branch in `__start_local_interface`.
 final class InstanceConnectionTests: XCTestCase {
 
@@ -67,7 +67,7 @@ final class InstanceConnectionTests: XCTestCase {
     func testResolveConfigDirectory_fallsBackToDotReticulum() {
         // Python's final fallback is ~/.reticulum. The two earlier branches
         // (/etc/reticulum, ~/.config/reticulum) only apply when a *config file*
-        // exists there, so on a machine without them this is what we get.
+        // exists there, so on a machine without them this is the result.
         let resolved = InstanceConnection.resolveConfigDirectory(nil)
         let candidates = [
             URL(fileURLWithPath: "/etc/reticulum"),
@@ -167,9 +167,9 @@ final class InstanceConnectionTests: XCTestCase {
         // Python: `Reticulum.is_connected_to_shared_instance = True`, which Transport reads
         // back through `Transport.owner.is_connected_to_shared_instance`.
         //
-        // Three behaviours hang off this flag and all of them are wrong while it is false:
+        // Three behaviours hang off this flag and all of them are wrong while it's false:
         //   - filterAndRecord re-runs the HEADER_2 transport_id filter that the shared
-        //     instance has already applied, dropping packets that were forwarded *to us*;
+        //     instance has already applied, dropping packets that were forwarded *to this node*;
         //   - shouldApplyDelta applies the local hops delta a second time;
         //   - rnprobe takes the standalone branch and never reports RSSI/SNR/Link Quality.
         let (shared, control) = freePortPair()
@@ -218,7 +218,7 @@ final class InstanceConnectionTests: XCTestCase {
     // MARK: - Config keys
 
     func testConfigParsesInstancePorts() throws {
-        // These two keys were previously ignored, so a utility could not find an
+        // These two keys were previously ignored, so a utility couldn't find an
         // instance running on non-default ports.
         let config = ReticulumConfig.parse("""
         [reticulum]

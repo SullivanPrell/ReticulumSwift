@@ -52,7 +52,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
         XCTAssertTrue(t2.isBlackholed(id2.hash), "id2 must be present after reload")
     }
 
-    // MARK: - persistBlacklist: does NOT save external entries
+    // MARK: - persistBlacklist: doesn't save external entries
 
     func testPersistBlacklistSkipsExternalSourceEntries() throws {
         let ownIdentity = Identity()
@@ -72,7 +72,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
 
         try t.persistBlacklist(toDirectory: tmpDir)
 
-        // Reload — only own entries should come back from "local".
+        // Reload—only own entries should come back from "local".
         let t2 = Transport()
         t2.ownerIdentity = ownIdentity
         try t2.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [])
@@ -126,7 +126,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
 
         let t = Transport()
         t.ownerIdentity = ownIdentity
-        // allowedSources is empty — external source is not allowed.
+        // allowedSources is empty—external source isn't allowed.
         try t.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [])
 
         XCTAssertFalse(t.isBlackholed(extId.hash),

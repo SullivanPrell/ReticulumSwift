@@ -2,24 +2,24 @@ import XCTest
 @testable import ReticulumSwift
 
 /// The bring-up gate (`bugs/057`) must not require its caller to be on a *different* thread from
-/// the one the transport delivers bytes on — because for the port's only real BLE transport, they
+/// the one the transport delivers bytes on—because for the port's only real BLE transport, they
 /// are the same thread.
 ///
 /// `RetiOS`'s `RNodeScannerController` creates its `CBCentralManager` with one serial queue and
 /// calls `RNodeInterface.start()` from `onGATTReady`, which CoreBluetooth invokes on that same
-/// queue. Every subsequent delegate callback — including `didUpdateValueFor`, the only thing that
-/// can set `detected` — is queued behind whatever is running there. A `start()` that blocks that
-/// thread waiting for the detect response is waiting for work it is itself preventing: the wait
+/// queue. Every subsequent delegate callback—including `didUpdateValueFor`, the only thing that
+/// can set `detected`—is queued behind whatever is running there. A `start()` that blocks that
+/// thread waiting for the detect response is waiting for work it's itself preventing: the wait
 /// can only ever time out, the transport then closes, and the interface stays offline forever.
 ///
 /// This is `bugs/058`'s own lesson turned on the fix for `bugs/057`: a component must not depend
-/// on a scheduling property its callers cannot be relied on to have. So `start()` never blocks the
+/// on a scheduling property its callers can't be relied on to have. So `start()` never blocks the
 /// caller; the bring-up runs on a queue the interface owns, and callers that want the old
 /// synchronous behaviour ask for it explicitly.
 final class RNodeBringUpThreadingTests: XCTestCase {
 
-    /// A transport whose byte delivery is serialized on the **same** queue its caller uses —
-    /// the CoreBluetooth shape. `write` hands the response to `deliveryQueue` rather than
+    /// A transport whose byte delivery is serialized on the **same** queue its caller uses—the
+    /// CoreBluetooth shape. `write` hands the response to `deliveryQueue` rather than
     /// calling `byteHandler` inline, so a blocked delivery queue really does starve it.
     private final class QueueDeliveredTransport: RNodeTransport {
         var byteHandler: ((Data) -> Void)?
@@ -80,8 +80,8 @@ final class RNodeBringUpThreadingTests: XCTestCase {
         }
         wait(for: [returned], timeout: 2.0)
 
-        // If start() blocked here, the detect response — which can only be delivered on this same
-        // queue — could not arrive until after the wait had already given up.
+        // If start() blocked here, the detect response—which can only be delivered on this same
+        // queue—couldn't arrive until after the wait had already given up.
         let deadline = Date().addingTimeInterval(3.0)
         while !iface.isOnline && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
         XCTAssertTrue(iface.isOnline,
@@ -94,8 +94,8 @@ final class RNodeBringUpThreadingTests: XCTestCase {
         iface.stop()
     }
 
-    /// The caller must be able to ask for the old synchronous behaviour where it is safe —
-    /// `rnsd` bringing up a config-file interface, where nothing else owns the thread.
+    /// The caller must be able to ask for the old synchronous behaviour where it's safe—`rnsd`
+    /// bringing up a config-file interface, where nothing else owns the thread.
     func testACallerCanWaitForTheBringUpExplicitly() throws {
         let transport = QueueDeliveredTransport(
             deliveryQueue: DispatchQueue(label: "test.transport.delivery"))

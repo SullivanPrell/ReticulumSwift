@@ -1,13 +1,13 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Guards the claim that there is exactly one place naming the files we persist.
+/// Guards the claim that there is exactly one place naming the files this stack persists.
 ///
-/// `bugs/029` — four persisted files diverged from the reference in name *and* encoding for the
+/// `bugs/029`—four persisted files diverged from the reference in name *and* encoding for the
 /// whole life of the port, under 3400 passing tests and a green interop suite. Nothing found them
 /// because nothing could: each name was a string literal at its own call site, and no place in the
-/// code held the claim "this is the set of files we persist." A test can compare an inventory
-/// against the reference's; it cannot compare scattered literals.
+/// code held the claim "this is the set of files this stack persists." A test can compare an inventory
+/// against the reference's; it can't compare scattered literals.
 final class StorageInventoryTests: XCTestCase {
 
     /// Components that name *where the config directory is*, not a file inside it. Resolving the
@@ -41,26 +41,26 @@ final class StorageInventoryTests: XCTestCase {
                       """)
     }
 
-    /// Nothing on disk bears a name the reference does not use.
+    /// Nothing on disk bears a name the reference doesn't use.
     ///
-    /// The guard above compares the *sources* against the inventory. This one compares the
+    /// The preceding guard compares the *sources* against the inventory. This one compares the
     /// **filesystem** against it: a daemon runs against an empty directory, is exercised and
-    /// stopped, and every path it left behind must be a declared entry — with a Python
-    /// `file:line` behind it unless it is a declared divergence. A path composed somewhere the
-    /// source scan cannot see (a computed name, a dependency, a future writer) shows up here and
+    /// stopped, and every path it left behind must be a declared entry—with a Python
+    /// `file:line` behind it unless it's a declared divergence. A path composed somewhere the
+    /// source scan can't see (a computed name, a dependency, a future writer) shows up here and
     /// nowhere else.
     ///
     /// The live comparison against what a *Python* daemon writes from the same exercise is
     /// `tri-test/tests/test_state_roundtrip.py` (§4); this is its unit-level counterpart, and the
-    /// two answer different questions — this one is about names we invent, that one about names
-    /// the reference has that we do not.
+    /// two answer different questions—this one is about names this port invents, that one about names
+    /// the reference has and this port lacks.
     func testNoFileBearsANameTheReferenceDoesNotUse() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("rns-created-set-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        // A daemon that learns a path, an identity, a ratchet and a replay entry — so every
+        // A daemon that learns a path, an identity, a ratchet and a replay entry—so every
         // table has something to write, not just the directories.
         let rns = Reticulum(configuration: .init(storagePath: dir))
         try rns.start()
@@ -115,7 +115,7 @@ final class StorageInventoryTests: XCTestCase {
                       a divergence with its reason.
                       """)
 
-        // And specifically none of the names this change retired. They are orphans by decision:
+        // And specifically none of the names this change retired. They're orphans by decision:
         // left alone if already present, never created again.
         for orphan in StorageInventory.preParityOrphans {
             XCTAssertFalse(FileManager.default.fileExists(
@@ -125,7 +125,7 @@ final class StorageInventoryTests: XCTestCase {
     }
 
     /// A declared divergence has to *be* declared as one. A port-only path recorded as if the
-    /// reference backed it is the same undocumented divergence in a costume.
+    /// reference backed it's the same undocumented divergence in a costume.
     func testPortOnlyEntriesAreMarkedRatherThanCitedAsReference() {
         let suspicious = StorageInventory.Entry.all.filter {
             guard case .reference(let cite) = $0.authority else { return false }
@@ -137,7 +137,7 @@ final class StorageInventoryTests: XCTestCase {
                       + "parity is worse than one recorded as nothing.")
     }
 
-    /// The inventory is only worth having if it is complete, so a declaration with no citation is
+    /// The inventory is only worth having if it's complete, so a declaration with no citation is
     /// as bad as an undeclared literal: it records a name without recording what makes it correct.
     func testEveryDeclarationCitesItsAuthority() {
         let uncited = StorageInventory.Entry.all.filter {

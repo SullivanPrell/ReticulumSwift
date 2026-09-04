@@ -1,17 +1,17 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// The path table routes by interface identity, not by interface name — `bugs/027`.
+/// The path table routes by interface identity, not by interface name—`bugs/027`.
 ///
 /// The reference stores the interface **object** in the path table and transmits through it
 /// (`Transport.py:1639`, `:1693`), stringifying it only for display (`Reticulum.py:1532`).
-/// Interface names are not unique by design: every connection accepted by one listening
+/// Interface names aren't unique by design: every connection accepted by one listening
 /// interface is named `"Client on <server name>"` (`TCPInterface.py:590`), which this port
 /// mirrors deliberately. Python can afford that because it never looks an interface up by name.
 ///
 /// This port stored `nextHopInterfaceName` and resolved it with
 /// `interfaces.first(where: { $0.name == … })`, so with two clients on one listening interface
-/// every route resolved to whichever client was registered first — regardless of which one
+/// every route resolved to whichever client was registered first—regardless of which one
 /// actually heard the announce. Silent: the send succeeds and the packet goes to the wrong peer,
 /// while the path table insists it has a route.
 ///
@@ -79,7 +79,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
                        + "client registered first, not the one that heard the announce")
     }
 
-    /// The same defect from the other side: the *first*-registered client is not privileged, so
+    /// The same defect from the other side: the *first*-registered client isn't privileged, so
     /// learning via clientA must not start routing through clientB either.
     func testAPathLearnedViaTheFirstClientLeavesThroughTheFirstClient() throws {
         let transport = Transport()
@@ -152,7 +152,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
     /// A relayed link between two clients of one listening interface steers by identity.
     ///
     /// `LinkRoute` had exactly the defect `bugs/027` describes, in the link table rather than
-    /// the path table — and the first pass at §8 fixed only the path table, because that is
+    /// the path table—and the first pass at §8 fixed only the path table, because that's
     /// what the bug file enumerated. The interop suite caught the rest: a file transfer between
     /// two clients of one Swift hub failed while the same transfer through a *Python* hub
     /// succeeded.
@@ -184,7 +184,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
         ))
 
         // Traffic arriving from A must leave through B, and vice versa. By name both are
-        // "Client on hub", so a name-keyed steer cannot tell these two cases apart.
+        // "Client on hub", so a name-keyed steer can't tell these two cases apart.
         let fromA = Packet(destinationType: .link, packetType: .data,
                            destinationHash: linkID, data: Data("a->b".utf8))
         transport.handleIncoming(packet: fromA, from: clientA)
@@ -206,8 +206,8 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
 
     /// No production code builds a path from an interface *name*.
     ///
-    /// `PathEntry` keeps a name-only initialiser for table-bookkeeping tests and for the moment
-    /// before persistence resolves a stored interface hash — such a path is deliberately not
+    /// `PathEntry` keeps a name-only initializer for table-bookkeeping tests and for the moment
+    /// before persistence resolves a stored interface hash—such a path is deliberately not
     /// routable. But a production site reaching for it would silently create an unroutable
     /// route, and re-adding a name fallback to compensate is how `bugs/013` came back three
     /// times. So the assignment form is pinned, the way D7 pins `$HOME` resolution.
@@ -226,13 +226,13 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
                 guard !code.hasPrefix("//"), !code.hasPrefix("///"), !code.hasPrefix("*") else {
                     continue
                 }
-                // The declaration of the initialiser itself, and the display-name field, are not
+                // The declaration of the initializer itself, and the display-name field, aren't
                 // constructions. A construction passes a value.
                 guard code.contains("nextHopInterfaceName:"),
                       !code.contains("public var"), !code.contains("public let"),
                       !code.contains("self.nextHopInterfaceName"),
                       !code.hasSuffix("nextHopInterfaceName: String,"),
-                      // The routable initialiser derives the display name from the object it was
+                      // The routable initializer derives the display name from the object it was
                       // handed; that forwarding call is the correct form, not an offence.
                       !code.contains("nextHopInterfaceName: nextHopInterface" + ".name"),
                       !code.contains("path.nextHopInterfaceName,"),
@@ -259,7 +259,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
     /// reach for it.
     ///
     /// The reference has exactly one place that produces a path with `receiving_interface = None`
-    /// — the tunnel-table restore at `Transport.py:396-400` — so the port has exactly one too.
+    ///—the tunnel-table restore at `Transport.py:396-400`—so the port has exactly one too.
     /// Anywhere else, an unattached path is a route that silently goes nowhere.
     func testOnlyTheTunnelRestoreBuildsAnUnattachedPath() throws {
         let sourcesDir = URL(fileURLWithPath: #filePath)
@@ -276,7 +276,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
                 guard !code.hasPrefix("//"), !code.hasPrefix("///"), !code.hasPrefix("*") else {
                     continue
                 }
-                // The declaration itself is not a construction.
+                // The declaration itself isn't a construction.
                 guard code.contains("unattachedPathTo"),
                       !code.hasSuffix("unattachedPathTo destinationHash: Data,") else { continue }
                 sites.append("\(url.lastPathComponent):\(index + 1)")
@@ -284,7 +284,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
         }
 
         // The count as well as the file, so a *second* call site in `PathStore.swift` is caught
-        // too. Not the line number: pinning that makes the guard fail on any edit above it, which
+        // too. Not the line number: pinning that makes the guard fail on any preceding edit, which
         // trains the next person to update the expectation without reading it.
         XCTAssertEqual(sites.count, 1, "expected exactly one call site, found: \(sites)")
         XCTAssertEqual(sites.first?.hasPrefix("PathStore.swift:"), true,
@@ -298,10 +298,10 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
                        """)
     }
 
-    // MARK: - A vanished interface is not a routing target
+    // MARK: - A vanished interface isn't a routing target
 
-    /// Spec: "A vanished client does not remain a routing target" — the deregistration half.
-    /// A route through a client that is gone must stop resolving rather than silently falling
+    /// Spec: "A vanished client does not remain a routing target"—the deregistration half.
+    /// A route through a client that's gone must stop resolving rather than silently falling
     /// back to a sibling that shares its name.
     func testARouteThroughADeregisteredClientDoesNotFallBackToItsSibling() throws {
         let transport = Transport()

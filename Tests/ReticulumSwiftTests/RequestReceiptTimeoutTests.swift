@@ -29,8 +29,8 @@ final class RequestReceiptTimeoutTests: XCTestCase {
     }
 
     /// The fix: once the response begins arriving as a Resource, the request
-    /// timeout is disarmed and does NOT fire, even well past the original
-    /// deadline — the Resource watchdog governs the transfer from here.
+    /// timeout is disarmed and doesn't fire, even well past the original
+    /// deadline—the Resource watchdog governs the transfer from here.
     func testResponseResourceStartDisarmsRequestTimeout() {
         let receipt = makeReceipt(timeout: 0.2)
         var failReason: String?
@@ -62,7 +62,7 @@ final class RequestReceiptTimeoutTests: XCTestCase {
     /// conclude the receipt as failed (Link wires the resource's onFailed to
     /// `fail`), not hang forever now that the request timeout is disarmed.
     func testFailAfterReceivingStartConcludesReceipt() {
-        let receipt = makeReceipt(timeout: 30)  // long — not the trigger here
+        let receipt = makeReceipt(timeout: 30)  // long—not the trigger here
         receipt.beginReceivingResponse()
         let failed = expectation(description: "explicit fail concludes receipt")
         receipt.onFailed = { _, _ in failed.fulfill() }

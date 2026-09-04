@@ -6,8 +6,8 @@ import Foundation
 public enum RNIDIdentitySource: Equatable {
     /// Python: `-g`/`--generate <path>`. The path is deliberately **not** tilde-expanded.
     case generate(path: String, force: Bool)
-    /// Python: `-i`/`--identity <value>` — either a path to an Identity file or a 32-character
-    /// hex hash. Which one it is is decided at resolve time, exactly as Python decides it.
+    /// Python: `-i`/`--identity <value>`—either a path to an Identity file or a 32-character
+    /// hex hash. Which one it's is decided at resolve time, exactly as Python decides it.
     case identityArgument(String)
     /// Python: `-m`/`--import-pub <value>`.
     case importPublic(String)
@@ -52,7 +52,7 @@ public final class RNIDIdentityResolver {
 
     /// Python: `get_operating_identity(args, allow_none, no_cache)`.
     ///
-    /// A `.success(nil)` is Python's `return None` — legal only when `allowNone`, which
+    /// A `.success(nil)` is Python's `return None`—legal only when `allowNone`, which
     /// `main` derives from `op_requires_identity`.
     public func resolve(source: RNIDIdentitySource,
                         allowNone: Bool = false,
@@ -81,7 +81,7 @@ public final class RNIDIdentityResolver {
     /// Python: rnid.py:206-214.
     ///
     /// Note the identity is constructed **before** the file check, and note that `-g` is the
-    /// one input path Python never runs through `os.path.expanduser` — `rnid -g ~/x.rid`
+    /// one input path Python never runs through `os.path.expanduser`—`rnid -g ~/x.rid`
     /// creates a literal file named `~/x.rid` in the working directory. Reproduced.
     private func generate(path: String, force: Bool) -> Swift.Result<Identity?, RNIDApp.Result> {
         let identity = Identity()
@@ -99,7 +99,7 @@ public final class RNIDIdentityResolver {
         do {
             try fileSystem.writeData(privateKey, atPath: path)
         } catch {
-            // Python's misspelling "ocurred" is deliberate — three sites in rnid.py.
+            // Python's misspelling "ocurred" is deliberate—three sites in rnid.py.
             output.line("An error ocurred while saving the generated Identity: \(error)")
             return .failure(.writeError)
         }
@@ -126,7 +126,7 @@ public final class RNIDIdentityResolver {
                 // Python's from_file → load_private_key accepts ANY 64 bytes, so pointing -i
                 // at a 64-byte .pub file silently yields a WRONG identity rather than an
                 // error. Swift's Identity(privateKeyBytes:) only length-checks too, so the
-                // quirk ports for free — do not "fix" it or -i behaviour diverges.
+                // quirk ports for free—don't "fix" it or -i behaviour diverges.
                 let identity = try Identity(privateKeyBytes: blob)
                 output.line("Loaded Identity \(RNIDRender.identity(identity)) from \(loadPath)")
                 return .success(identity)
@@ -136,7 +136,7 @@ public final class RNIDIdentityResolver {
             }
         }
 
-        // 2. -N disables cache and network lookup entirely — checked BEFORE any recall.
+        // 2. -N disables cache and network lookup entirely—checked BEFORE any recall.
         if noCache {
             if allowNone { return .success(nil) }
             output.line("Could not resolve identity")
@@ -151,7 +151,7 @@ public final class RNIDIdentityResolver {
         return recall(hexHash: value, allowNone: allowNone, request: request, timeout: timeout)
     }
 
-    /// Python: rnid.py:235-276 — `RNS.Identity.recall(h) or RNS.Identity.recall(h, from_identity_hash=True)`.
+    /// Python: rnid.py:235-276—`RNS.Identity.recall(h) or RNS.Identity.recall(h, from_identity_hash=True)`.
     private func recall(hexHash: String,
                         allowNone: Bool,
                         request: Bool,
@@ -178,7 +178,7 @@ public final class RNIDIdentityResolver {
                 output.line("Invalid hexadecimal hash provided: no Reticulum instance available")
                 return .failure(.invalidIdentity)
             }
-            // Python's Transport.request_path does not raise; Swift's throws and silently
+            // Python's Transport.request_path doesn't raise; Swift's throws and silently
             // returns for a hash whose length != 16. Treat a throw as rnid.py:276's catch-all.
             do {
                 try transport.requestPath(for: requestedHash)
@@ -193,7 +193,7 @@ public final class RNIDIdentityResolver {
 
             let message = "Requesting unknown Identity for \(RNSUtilities.prettyhexrep(requestedHash))"
             // Python DISCARDS spin()'s return value and re-invokes the predicate itself
-            // (rnid.py:259) — so must we, or a waiter that returns true on a spurious wake
+            // (rnid.py:259)—so must this resolver, or a waiter that returns true on a spurious wake
             // would report a recall that never happened.
             _ = pathWaiter?.wait(until: { self.recallEitherWay(requestedHash) != nil },
                                  message: message,
@@ -232,7 +232,7 @@ public final class RNIDIdentityResolver {
     /// (RNS/Identity.py:115-158).
     ///
     /// The destination-hash form has two lookups, not one: `known_destinations`, then a scan
-    /// of `Transport.destinations` for a locally-registered destination whose hash matches.
+    /// of `Transport.destinations` for a locally registered destination whose hash matches.
     /// Both branches also call `_used_destination_data`, which is why
     /// `Transport.markDestinationUsed` is invoked here.
     private func recallEitherWay(_ hash: Data) -> Identity? {
@@ -243,12 +243,12 @@ public final class RNIDIdentityResolver {
             transport.markDestinationUsed(hash)
             return identity
         }
-        // (b) Locally-registered destination with that hash.
+        // (b) Locally registered destination with that hash.
         if let destination = transport.registeredDestinations[hash], let identity = destination.identity {
             transport.markDestinationUsed(hash)
             return identity
         }
-        // (c) from_identity_hash=True — scan for an identity whose own hash matches.
+        // (c) from_identity_hash=True—scan for an identity whose own hash matches.
         for (destinationHash, identity) in transport.knownIdentities where identity.hash == hash {
             transport.markDestinationUsed(destinationHash)
             return identity
@@ -264,7 +264,7 @@ public final class RNIDIdentityResolver {
     /// Python: rnid.py:282-368.
     ///
     /// The four-step decode ladder is identical for `-m` and `-M`: file → hex → base32 →
-    /// base64, each guarded so a failure falls through. Encoded lengths do not collide:
+    /// base64, each guarded so a failure falls through. Encoded lengths don't collide:
     /// hex(64) = 128, base32(64) = 104, base64(64) = 88.
     private func importIdentity(_ value: String, isPrivate: Bool) -> Swift.Result<Identity?, RNIDApp.Result> {
         let size = RNIDIdentityResolver.keyBlobSize
@@ -291,7 +291,7 @@ public final class RNIDIdentityResolver {
             output.line("Reticulum Identity imported from base32 input")
         }
 
-        // (4) Base64 (url-safe).
+        // (4) Base64 (URL-safe).
         if identityBytes == nil, let decoded = RNIDEncoding.base64URLDecode(value), decoded.count == size {
             identityBytes = decoded
             output.line("Reticulum Identity imported from base64 input")
@@ -307,7 +307,7 @@ public final class RNIDIdentityResolver {
         do {
             // Python: from_bytes for -M; Identity(create_keys=False) + load_public_key for -m.
             // Swift's INSTANCE methods loadPublicKey/loadPrivateKey return a NEW Identity and
-            // do not mutate self, so the inits are the only correct choice here.
+            // don't mutate self, so the inits are the only correct choice here.
             let identity = isPrivate
                 ? try Identity(privateKeyBytes: identityBytes)
                 : try Identity(publicKeyBytes: identityBytes)

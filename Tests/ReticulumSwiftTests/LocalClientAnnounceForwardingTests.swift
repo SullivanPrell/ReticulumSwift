@@ -8,7 +8,7 @@ import XCTest
 /// `transportEnabled` mesh-relay block. Most single-user rnsd instances run
 /// with `enable_transport = No` (client-only), so apps sharing the daemon's
 /// connection over the shared-instance socket (nomadnet, rnstatus, MeshChatX)
-/// never received any announces the daemon overheard — even though the
+/// never received any announces the daemon overheard—even though the
 /// daemon's own path table updated fine. Python avoids this because its
 /// "if (len(Transport.local_client_interfaces)): ... send()" block is
 /// unconditional, separate from the transport_enabled-gated retransmit block.
@@ -36,13 +36,13 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     }
 
     /// Stands in for `PosixTCPServer`: a server-side interface fronting one
-    /// or more locally-connected shared-instance clients.
+    /// or more locally connected shared-instance clients.
     final class RecordingLocalClientInterface: Interface, LocalClientServingInterface {
         var name: String
         var bitrate: Int = 0
         var isOnline: Bool = true
         var clientCount: Int = 1
-        // Mirrors PosixTCPServer: not a mesh routing endpoint — its own
+        // Mirrors PosixTCPServer: not a mesh routing endpoint—its own
         // send() fans out to attached clients directly.
         var isRoutingEndpoint: Bool { false }
         var inboundHandler: ((Packet, any Interface) -> Void)?
@@ -93,7 +93,7 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
         let announce = try Announce.make(for: destination)
 
         // Simulate the announce itself arriving FROM the local client
-        // (e.g. a local app originating it) — it must not be echoed back.
+        // (for example, a local app originating it)—it must not be echoed back.
         localClient.inboundHandler?(announce, localClient)
 
         XCTAssertEqual(localClient.sent.count, 0)
@@ -125,7 +125,7 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
 
     /// A non-transport shared instance (enable_transport = No) must still
     /// propagate an announce originated by one of its connected clients out to
-    /// the wider mesh — otherwise no peer ever learns the client's destination.
+    /// the wider mesh—otherwise no peer ever learns the client's destination.
     /// Mirrors Python `if (transport_enabled or is_from_local_client) and
     /// context != PATH_RESPONSE:` (Transport.py:1935) with immediate retransmit
     /// for local-client announces (retries = PATHFINDER_R).
@@ -156,7 +156,7 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     }
 
     /// Guard: a plain MESH announce (not from a local client) must NOT be
-    /// relayed by a non-transport node — only transport nodes relay mesh
+    /// relayed by a non-transport node—only transport nodes relay mesh
     /// announces. This is the boundary the local-client OR-clause must not cross.
     func testMeshAnnounceNotForwardedByNonTransportNode() throws {
         let transport = Transport()

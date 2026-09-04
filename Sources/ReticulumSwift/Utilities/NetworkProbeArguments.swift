@@ -14,18 +14,18 @@ public extension NetworkProbe {
         public enum Action: Equatable {
             /// Run a probe.
             case run(NetworkProbe.Options)
-            /// Python: argparse's `-h`/`--help` action — `print_help()`, exit 0.
+            /// Python: argparse's `-h`/`--help` action—`print_help()`, exit 0.
             case help
-            /// Python: rnprobe.py:231-234 — a blank line, `print_help()`, another blank
+            /// Python: rnprobe.py:231-234—a blank line, `print_help()`, another blank
             /// line, then main() falls off the end (exit 0). Reached when
             /// `destination_hash` is falsy, which includes "no arguments at all" and
             /// "one positional only", because both positionals are `nargs='?'`.
             ///
             /// Split out from ``help`` because the two print different bytes.
             case missingDestination
-            /// Python: `--version` — `"rnprobe <version>"` on stdout, exit 0.
+            /// Python: `--version`—`"rnprobe <version>"` on stdout, exit 0.
             case version
-            /// Python: `parser.error(msg)` — the usage block then
+            /// Python: `parser.error(msg)`—the usage block then
             /// `rnprobe: error: <detail>` on stderr, exit 2.
             case usageError(String)
         }
@@ -156,7 +156,7 @@ public extension NetworkProbe {
             options.fullName = parsed.positionals.count > 0 ? parsed.positionals[0] : nil
             options.destinationHexhash = parsed.positionals.count > 1 ? parsed.positionals[1] : nil
 
-            // Python: `configarg = args.config if args.config else None` — a truthiness
+            // Python: `configarg = args.config if args.config else None`—a truthiness
             // test, so `--config ""` collapses to the default config directory.
             if let config = parsed.value("--config"), !config.isEmpty {
                 options.configDir = URL(fileURLWithPath: config)
@@ -206,7 +206,7 @@ public extension NetworkProbe {
 
             options.verbosity = parsed.count("--verbose")
 
-            // Python: `if not args.destination_hash:` — a FALSINESS test, so an explicitly
+            // Python: `if not args.destination_hash:`—a FALSINESS test, so an explicitly
             // empty second positional takes the help path too.
             guard let hash = options.destinationHexhash, !hash.isEmpty else {
                 return .missingDestination

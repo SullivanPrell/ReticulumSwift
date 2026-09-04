@@ -115,20 +115,20 @@ public enum RNSUtilities {
     /// Human-readable sub-second duration, after Python `RNS.prettyshorttime(time, verbose, compact)`.
     ///
     /// **Deliberate divergence** in the microsecond component. Python keeps microseconds as a
-    /// float — `time*1e6` then `round(time, 2)` (`RNS/__init__.py:296`, `:305`) — so RNS 1.4.2
+    /// float—`time*1e6` then `round(time, 2)` (`RNS/__init__.py:296`, `:305`)—so RNS 1.4.2
     /// emits float artifacts: `1e-6` → `"1.0µs"`, `0.0015` → `"1ms and 500.0µs"`, and `1.001` →
     /// `"1s and 1000.0µs"` (1.001×1e6 = 1000999.9999…, so a 1000.0µs component beside the
     /// seconds). This port pre-rounds to integer microseconds instead, which both drops the
     /// `.0` suffixes and keeps components in range. The function has no production caller in
-    /// Swift, and Python prints it only in local log/profiler strings — nothing crosses the
-    /// wire — so bug-for-bug float artifacts are not worth porting. Pinned as a divergence by
+    /// Swift, and Python prints it only in local log/profiler strings—nothing crosses the
+    /// wire—so bug-for-bug float artifacts aren't worth porting. Pinned as a divergence by
     /// the annotated assertions in `PrettyTimeTests`.
     public static func prettyshorttime(_ time: TimeInterval, verbose: Bool = false, compact: Bool = false) -> String {
         var t = time
         let neg = t < 0
         if neg { t = -t }
 
-        // Integer microseconds — the divergence described above lives on this line.
+        // Integer microseconds—the divergence described earlier lives on this line.
         let totalMicros = Int((t * 1_000_000).rounded())
         let seconds = totalMicros / 1_000_000
         let milliseconds = (totalMicros % 1_000_000) / 1_000
@@ -250,7 +250,7 @@ public enum RNSUtilities {
     }
 
     /// Decode a single b256 character back to its byte value.
-    /// Returns `nil` if `ch` is not in the alphabet.
+    /// Returns `nil` if `ch` isn't in the alphabet.
     /// Mirrors Python `RNS.b256_to_byte(point)`.
     public static func b256ToByte(_ ch: Character) -> UInt8? {
         let s = String(ch)
@@ -259,7 +259,7 @@ public enum RNSUtilities {
     }
 
     /// Decode a b256-encoded string to `Data`.
-    /// Returns `nil` if any character is not in the alphabet.
+    /// Returns `nil` if any character isn't in the alphabet.
     /// Mirrors Python `RNS.b256_to_bytes(b256rep)`.
     public static func b256ToBytes(_ s: String) -> Data? {
         if s.isEmpty { return Data() }
@@ -282,7 +282,7 @@ public enum RNSUtilities {
     }
 
     /// Format *now* as `"HH:mm:ss.SSS"` (millisecond precision).
-    /// Mirrors Python `RNS.precise_timestamp_str()` using `logtimefmt_p = "%H:%M:%S.%f"` (trimmed to 3ms digits).
+    /// Mirrors Python `RNS.precise_timestamp_str()` using `logtimefmt_p = "%H:%M:%S.%f"` (trimmed to 3 ms digits).
     public static func preciseTimestampStr() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"

@@ -14,7 +14,7 @@ import Foundation
 
 public extension RNXRequest {
 
-    /// Full memberwise initialiser. The declared `init(command:)` suppressed the
+    /// Full memberwise initializer. The declared `init(command:)` suppressed the
     /// synthesised one, so every other field had to be assigned post-hoc.
     init(command: String,
          timeout: TimeInterval? = nil,
@@ -32,7 +32,7 @@ public extension RNXRequest {
 
     /// The 5-element msgpack array Python builds at rnx.py:379-385.
     ///
-    /// Pass this to `link.request(path:nativeValue:)` — **never** to
+    /// Pass this to `link.request(path:nativeValue:)`—**never** to
     /// `link.request(path:data:)`, which wraps the bytes as msgpack `.bytes` so a Python
     /// listener's `data[0]` becomes an `int`, `.decode("utf-8")` raises inside the
     /// response generator, and no response is ever sent.
@@ -62,7 +62,7 @@ public extension RNXRequest {
         guard case .array(let arr) = value, arr.count == 5 else {
             throw RNXError.malformedRequest
         }
-        // Python: `command = data[0].decode("utf-8")` — a non-bytes element raises.
+        // Python: `command = data[0].decode("utf-8")`—a non-bytes element raises.
         guard case .bytes(let commandBytes) = arr[0],
               let command = String(data: commandBytes, encoding: .utf8) else {
             throw RNXError.malformedRequest
@@ -94,7 +94,7 @@ public extension RNXResult {
          startedAt: TimeInterval? = nil,
          concludedAt: TimeInterval? = nil) {
         // Round-trip through the wire encoder: `init(unpackFrom:)` suppressed the
-        // synthesised memberwise init, and adding a second designated initialiser to the
+        // synthesised memberwise init, and adding a second designated initializer to the
         // struct itself would mean editing the shared declaration.
         let value = MsgPack.Value.array([
             .bool(executed),
@@ -106,7 +106,7 @@ public extension RNXResult {
             startedAt.map { .double($0) } ?? .nil,
             concludedAt.map { .double($0) } ?? .nil,
         ])
-        // Cannot fail: the array above is exactly the shape the decoder requires.
+        // Can't fail: the preceding array is exactly the shape the decoder requires.
         // swiftlint:disable:next force_try
         try! self.init(unpackFrom: MsgPack.encode(value))
     }
@@ -116,7 +116,7 @@ public extension RNXResult {
     /// `Link.dispatchRequest` wraps it as `msgpack([request_id, value])`, which is exactly
     /// Python's `umsgpack.packb([request_id, response])` (Link.py:848). Returning
     /// `.bytes(pack())` instead would give a Python client `response[0]` on a bytes object
-    /// — an `int`, truthy for any non-zero first byte, so `executed` would silently read True.
+    ///—an `int`, truthy for any non-zero first byte, so `executed` would silently read True.
     ///
     /// Index `[6]` always encodes as float64, matching RNS's vendored umsgpack, whose
     /// `_float_precision` auto-detects "double" on any 64-bit build.

@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for `get_operating_identity` — the `-g` / `-i` / `-m` / `-M` ladder.
+/// Tests for `get_operating_identity`—the `-g` / `-i` / `-m` / `-M` ladder.
 ///
 /// Python reference: RNS/Utilities/rnid.py:202-370.
 final class RNIDIdentityResolverTests: XCTestCase {
@@ -60,7 +60,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
         XCTAssertEqual(fileSystem.files["x.rid"], identity.privateKeyBytes)
     }
 
-    // MARK: - -i as a file path
+    // MARK: - -i as a filepath
 
     func testIdentityFileLoads() throws {
         let source = Identity()
@@ -85,7 +85,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
     }
 
     /// A shared Python/Swift quirk: `from_file` → `load_private_key` accepts ANY 64 bytes, so
-    /// pointing `-i` at a 64-byte `.pub` file silently yields a WRONG identity. Do not "fix"
+    /// pointing `-i` at a 64-byte `.pub` file silently yields a WRONG identity. Don't "fix"
     /// this, or `-i` behaviour diverges from Python.
     func testIdentityFilePointedAtAPublicBlobSilentlyLoadsAWrongIdentity() {
         let source = Identity()
@@ -131,7 +131,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
                                       + " for destination \(RNSUtilities.prettyhexrep(destinationHash))"])
     }
 
-    /// Python's `recall(h) or recall(h, from_identity_hash=True)` — the second form scans for
+    /// Python's `recall(h) or recall(h, from_identity_hash=True)`—the second form scans for
     /// an identity whose OWN hash matches, so a user can pass either kind of hash to `-i`.
     func testRecallByIdentityHash() throws {
         let transport = Transport()
@@ -147,8 +147,8 @@ final class RNIDIdentityResolverTests: XCTestCase {
         XCTAssertEqual(output.lines, ["Recalled Identity \(RNSUtilities.prettyhexrep(source.hash))"])
     }
 
-    /// Python's destination-hash branch also scans locally-registered destinations
-    /// (RNS/Identity.py:141-148), which Swift's plain dictionary lookup does not.
+    /// Python's destination-hash branch also scans locally registered destinations
+    /// (RNS/Identity.py:141-148), which Swift's plain dictionary lookup doesn't.
     func testRecallFallsBackToLocallyRegisteredDestinations() throws {
         let transport = Transport()
         let source = Identity()
@@ -227,7 +227,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
         ]
 
         for (storedPath, argument, blob, isPrivate) in cases {
-            // (1) File — the EXPANDED path is printed.
+            // (1) File—the EXPANDED path is printed.
             let (fileResolver, fileOutput, _) = makeResolver(files: [storedPath: blob])
             let fileResult = fileResolver.resolve(source: isPrivate ? .importPrivate(argument)
                                                                     : .importPublic(argument))
@@ -235,7 +235,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
             XCTAssertEqual(fromFile.hash, source.hash)
             XCTAssertEqual(fileOutput.lines, ["Reticulum Identity imported from \(storedPath)"])
 
-            // (2) Hex — 128 characters.
+            // (2) Hex—128 characters.
             let hex = RNIDEncoding.hexEncode(blob)
             XCTAssertEqual(hex.count, 128)
             let (hexResolver, hexOutput, _) = makeResolver()
@@ -244,7 +244,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
             XCTAssertEqual(fromHex.hash, source.hash)
             XCTAssertEqual(hexOutput.lines, ["Reticulum Identity imported from hex input"])
 
-            // (3) Base32 — 104 characters.
+            // (3) Base32—104 characters.
             let base32 = RNIDEncoding.base32Encode(blob)
             XCTAssertEqual(base32.count, 104)
             let (b32Resolver, b32Output, _) = makeResolver()
@@ -254,7 +254,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
             XCTAssertEqual(fromB32.hash, source.hash)
             XCTAssertEqual(b32Output.lines, ["Reticulum Identity imported from base32 input"])
 
-            // (4) Base64 (url-safe) — 88 characters.
+            // (4) Base64 (URL-safe)—88 characters.
             let base64 = RNIDEncoding.base64URLEncode(blob)
             XCTAssertEqual(base64.count, 88)
             let (b64Resolver, b64Output, _) = makeResolver()

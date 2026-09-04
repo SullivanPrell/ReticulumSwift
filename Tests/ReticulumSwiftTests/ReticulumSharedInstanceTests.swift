@@ -22,7 +22,7 @@ final class ReticulumSharedInstanceTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         let config = Reticulum.Configuration(storagePath: tmpDir)
         let instance = Reticulum(configuration: config)
-        // start() sets Reticulum.shared, which is required by getTransportInstance()
+        // start() sets Reticulum.shared, which getTransportInstance() requires
         // and isConnectedToSharedInstance().
         try? instance.start()
         rns = instance
@@ -33,7 +33,7 @@ final class ReticulumSharedInstanceTests: XCTestCase {
 
     func testIsConnectedToSharedInstanceReturnsBool() {
         // The value depends on whether a shared instance has been created
-        // by another test. We only verify the return type compiles and runs.
+        // by another test. The only check is that the return type compiles and runs.
         let result = Reticulum.isConnectedToSharedInstance()
         XCTAssertTrue(result == true || result == false)
     }

@@ -6,7 +6,7 @@ import Darwin
 import Glibc
 #endif
 
-// `rnpath` — the Reticulum Path Management Utility.
+// `rnpath`—the Reticulum Path Management Utility.
 //
 // Python reference: RNS/Utilities/rnpath.py (RNS 1.4.0). This file is argument parsing,
 // printing and exit codes only; every decision, string and exit code lives in
@@ -14,12 +14,12 @@ import Glibc
 
 // MARK: - Output sinks
 
-/// Python's `print(x)` — one terminated line on stdout.
+/// Python's `print(x)`—one terminated line on stdout.
 func emit(_ line: String) {
     FileHandle.standardOutput.write(Data((line + "\n").utf8))
 }
 
-/// Python's `print(x, end="")` / `end=" "` — raw, unterminated, flushed immediately.
+/// Python's `print(x, end="")` / `end=" "`—raw, unterminated, flushed immediately.
 func emitProgress(_ text: String) {
     FileHandle.standardOutput.write(Data(text.utf8))
 }
@@ -37,12 +37,12 @@ let stdoutIsTTY = isatty(FileHandle.standardOutput.fileDescriptor) != 0
 // MARK: - Ctrl-C
 
 // Python wraps main() in `except KeyboardInterrupt:` → print("") then a bare exit() (code 0).
-// A DispatchSource handler is used rather than signal(2) because print()/exit() are not
+// A DispatchSource handler is used rather than signal(2) because print()/exit() aren't
 // async-signal-safe.
 //
 // The source must run on a *global* queue, not the main one. rnpath does its waiting by
 // blocking the main thread (see waitForPath below), so the main queue is never serviced and
-// a handler scheduled there would never run — while `SIG_IGN` had already disabled the
+// a handler scheduled there would never run—while `SIG_IGN` had already disabled the
 // default terminate action, leaving the process unkillable by Ctrl-C. Verified against the
 // real tool: SIGINT to a `rnpath -w 60 <hash>` must exit 0, as Python's does.
 signal(SIGINT, SIG_IGN)
@@ -80,7 +80,7 @@ parser.counted(["-v", "--verbose"], help: "")
 parser.positional("destination", help: "hexadecimal hash of the destination", required: false)
 parser.positional("list_filter", help: "filter for remote blackhole list view", required: false)
 
-/// Python: `parser.error(msg)` — usage block plus `rnpath: error: …` on stderr, exit 2.
+/// Python: `parser.error(msg)`—usage block plus `rnpath: error: …` on stderr, exit 2.
 func usageError(_ detail: String) -> Never {
     emitError(RNPathApp.errorText(detail))
     exit(RNPathApp.Result.usageError.rawValue)
@@ -96,7 +96,7 @@ do {
 }
 
 // `-h`/`--help` is argparse's own action: the block with NO surrounding blank lines,
-// exit 0, before any Reticulum initialisation.
+// exit 0, before any Reticulum initialization.
 if parsed.wantsHelp {
     emit(RNPathApp.helpText)
     exit(RNPathApp.Result.ok.rawValue)
@@ -143,7 +143,7 @@ options.listFilter = parsed.positionals.count > 1 ? parsed.positionals[1] : nil
 if let hops: Int = requireNumber(parsed.value("--max"), flag: "-m/--max", typeName: "int",
                                  convert: { Int($0) }) {
     // argparse accepts any int; Transport filters on a UInt8. Clamping keeps a nonsensical
-    // value from wrapping — Python has no analogue because it never narrows.
+    // value from wrapping—Python has no analogue because it never narrows.
     options.maxHops = UInt8(clamping: hops)
 }
 if let seconds: Double = requireNumber(parsed.value("-w"), flag: "-w", typeName: "float",
@@ -167,7 +167,7 @@ if parsed.positionals.count > 2 {
 }
 
 // Python: the no-mode help gate wraps the same block in blank lines and falls out of main()
-// with an implicit exit 0 — program_setup is never called.
+// with an implicit exit 0—program_setup is never called.
 if options.shouldPrintHelp {
     emit("")
     emit(RNPathApp.helpText)
@@ -177,7 +177,7 @@ if options.shouldPrintHelp {
 
 // MARK: - Attach
 
-// Python: `RNS.Reticulum(configdir=configdir, loglevel=3+verbosity)`. rnpath does NOT pass
+// Python: `RNS.Reticulum(configdir=configdir, loglevel=3+verbosity)`. rnpath doesn't pass
 // require_shared_instance, so it must attach opportunistically and must not fail when no
 // daemon is running.
 let logLevel = Reticulum.LogLevel(rawValue: min(max(3 + options.verbosity, 0), 8)) ?? .notice
@@ -205,9 +205,9 @@ let resolver = TransportPathResolver(transport: transport)
 // Swift's LocalInterface connects asynchronously (an NWConnection reaching `.ready`),
 // whereas Python's LocalClientInterface performs a blocking socket connect inside
 // `Reticulum.__init__`. Without this settle the default mode's path request is emitted on
-// an interface that is not up yet, is silently dropped, and the spinner then runs out the
+// an interface that isn't up yet, is silently dropped, and the spinner then runs out the
 // full -w timeout even for a destination the daemon knows. Bounded so an interface that
-// never comes up cannot hang the CLI.
+// never comes up can't hang the CLI.
 let settleDeadline = Date().addingTimeInterval(2)
 while Date() < settleDeadline, transport.interfaces.contains(where: { !$0.isOnline }) {
     Thread.sleep(forTimeInterval: 0.05)
@@ -217,6 +217,12 @@ func finish(_ result: RNPathApp.Result) -> Never {
     connection.stop()
     exit(result.rawValue)
 }
+
+// `timeout = max(timeout, reticulum.get_medium_path_timeout())` at the top of
+// `connect_remote` (rnpath.py:45). Python re-derives it on each call; the value can't change
+// between them, so it's applied once here and every `-R` path below inherits it. The default
+// `-W` is PATH_REQUEST_TIMEOUT, which is shorter than a single round trip on a slow link.
+options.remoteTimeout = max(options.remoteTimeout, connection.mediumPathTimeout())
 
 // MARK: - Remote management link (-R)
 
@@ -228,7 +234,7 @@ if let remoteHex = options.remote {
     remoteClient = client
     do {
         // Python derives the destination hash from the RAW identity hash, not a recalled
-        // Identity object — and uses the "Destination …" wording for a bad argument.
+        // Identity object—and uses the "Destination …" wording for a bad argument.
         let identityHash = try RNPathApp.parseDestination(remoteHex)
         guard let identityPath = options.managementIdentityPath else {
             // Python: expanduser(None) → TypeError → exit 20 printing the TypeError text.
@@ -276,7 +282,7 @@ let runner = RNPathRunner(
     blackholeListFetch: {
         // Python reuses the already-established management link here when both -R and -p are
         // given, because `remote_link` is non-nil and its spin-wait returns instantly
-        // (rnpath.py:127 then 150-151). A fresh blackhole link is established instead — a
+        // (rnpath.py:127 then 150-151). A fresh blackhole link is established instead—a
         // deliberate divergence from that bug.
         guard let hex = options.destination else { return nil }
         let identityHash = try RNPathApp.parseHash(hex)

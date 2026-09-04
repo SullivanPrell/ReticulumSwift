@@ -26,7 +26,7 @@ final class PacketHashlistTests: XCTestCase {
     }
 
     func testLinkRequestPacketsAreNotDeduped() throws {
-        // LRR packets are exempt — they need to pass through on retransmit.
+        // LRR packets are exempt—they need to pass through on retransmit.
         let transport = Transport()
         let pkt = Packet(
             destinationType: .single,

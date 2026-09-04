@@ -25,7 +25,7 @@ public enum Announce {
         /// (Python: `packet.context == Packet.PATH_RESPONSE`).
         public let isPathResponse: Bool
         /// 16-byte (128-bit) truncated hash of the announce packet.
-        /// Mirrors Python's `packet.packet_hash` (aka `packet.getTruncatedHash()`).
+        /// Mirrors Python's `packet.packet_hash` (also known as `packet.getTruncatedHash()`).
         public let packetHash: Data
     }
 
@@ -39,7 +39,7 @@ public enum Announce {
     /// Build an announce packet for an inbound `single` destination.
     /// - Parameter isPathResponse: If true, the packet context is set to `.pathResponse`,
     ///   indicating this announce was emitted in response to a path request. Path response
-    ///   announces are not forwarded to other interfaces.
+    ///   announces aren't forwarded to other interfaces.
     ///   Mirrors Python's `Destination.announce(path_response=True)`.
     public static func make(
         for destination: Destination,

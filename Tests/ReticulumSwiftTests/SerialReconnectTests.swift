@@ -3,13 +3,13 @@ import XCTest
 
 /// Python detects device loss from its blocking read loop raising, then redials forever at 5 s:
 /// `SerialInterface.py:196-221`, `KISSInterface.py:365-380`, `AX25KISSInterface.py:378-393`,
-/// `RNodeInterface.py:1155-1187` — and an RNode even retries a failed *initial* open in a
+/// `RNodeInterface.py:1155-1187`—and an RNode even retries a failed *initial* open in a
 /// daemon thread (`:354-361`). The port had no equivalent at any layer: the transport seams had
 /// no error surface, `POSIXSerialPort` silently discarded device-gone reads and never checked
 /// `write()`'s -1, no serial-family interface ever went offline except explicit `stop()`, and
 /// the `reconnectWait` constants were dead code pinned by constant-value tests. After a USB
 /// flap the interface stayed Up with growing TX counters while every packet went into a dead
-/// fd — where a Python node resumes within ~5 s.
+/// fd—where a Python node resumes within ~5 s.
 final class SerialReconnectTests: XCTestCase {
 
     private struct DeviceGone: Error {}
@@ -138,7 +138,7 @@ final class SerialReconnectTests: XCTestCase {
         XCTAssertFalse(iface.isOnline)
     }
 
-    // MARK: - Failed writes are not traffic
+    // MARK: - Failed writes aren't traffic
 
     func testAFailedWriteIsNotCountedAsTransmittedBytes() throws {
         let port = FlappableSerialPort()

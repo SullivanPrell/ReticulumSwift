@@ -9,15 +9,15 @@ import XCTest
 /// (`endpointAlive` / `endpointVia`, reached via `incomingFrame`) and both read
 /// and pruned from the periodic jobs thread (`WeaveInterface.peerJobs` →
 /// `pruneEndpoints`). Those are *different* threads with no shared serial queue,
-/// so — the Python reference survives only under the GIL — Swift needs an
-/// explicit lock. Here we hammer all four operations (learn / route / prune /
+/// so—the Python reference survives only under the GIL—Swift needs an
+/// explicit lock. This suite hammers all four operations (learn / route / prune /
 /// snapshot-read) from many threads at once.
 ///
 /// Without `WeaveDevice.endpointsLock` this races the backing `Dictionary` and
 /// CRASHES ("Fatal error: Duplicate keys" / heap corruption); a lock-order
 /// inversion or reentrant self-deadlock would make it TIME OUT. Passing proves
 /// neither happens. Must also be clean under `swift test --sanitize=thread`
-/// (0 data races) — the reads deliberately touch `WeaveEndpoint` fields, which
+/// (0 data races)—the reads deliberately touch `WeaveEndpoint` fields, which
 /// is safe because a record is never mutated in place once inserted.
 final class WeaveConcurrencyStressTests: XCTestCase {
 

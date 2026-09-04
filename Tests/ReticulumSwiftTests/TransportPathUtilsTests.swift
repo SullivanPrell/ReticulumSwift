@@ -70,7 +70,7 @@ final class TransportPathUtilsTests: XCTestCase {
     func testNextHopInterfaceBitrateNilForOfflineInterface() {
         let (transport, destHash, iface) = makeTransportWithPath(bitrate: 1_200)
         iface.isOnline = false
-        // Interface exists but is offline — still returns bitrate (Python does not filter by online)
+        // Interface exists but is offline—still returns bitrate (Python doesn't filter by online)
         XCTAssertEqual(transport.nextHopInterfaceBitrate(for: destHash), 1_200)
     }
 

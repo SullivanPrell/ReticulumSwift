@@ -33,7 +33,7 @@ final class RNXProtocolCodingTests: XCTestCase {
 
     func testTimeoutPacksAsIntegerMatchesPythonDefaultedW() throws {
         // Python: `-w` defaults to Transport.PATH_REQUEST_TIMEOUT, which is the *int* 15,
-        // and argparse does not coerce non-string defaults through type=float. The wire
+        // and argparse doesn't coerce non-string defaults through type=float. The wire
         // byte is therefore positive fixint 0x0F, not float64.
         var request = RNXRequest(command: "ls", timeout: 15)
         request.timeoutPacksAsInteger = true
@@ -70,7 +70,7 @@ final class RNXProtocolCodingTests: XCTestCase {
     }
 
     func testRequestDecodeRejectsNonBytesCommand() {
-        // Python: data[0].decode("utf-8") — a str or int here raises AttributeError inside
+        // Python: data[0].decode("utf-8")—a str or int here raises AttributeError inside
         // the response generator, and no response is sent.
         let value = MsgPack.Value.array([.string("ls"), .nil, .nil, .nil, .nil])
         XCTAssertThrowsError(try RNXRequest(unpacking: value)) { error in

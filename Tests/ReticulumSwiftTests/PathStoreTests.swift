@@ -6,13 +6,13 @@ import XCTest
 /// A path entry is persisted as its interface's `Interface.hash` and resolved back through
 /// `Transport.findInterface(fromHash:)` on load (`bugs/027`, D6), mirroring the reference
 /// (`Transport.py:3388`, `:326`). So each round trip here registers the same interface on both
-/// transports — a store written by a node and read by one that no longer has that interface
+/// transports—a store written by a node and read by one that no longer has that interface
 /// legitimately drops the path, which `PathStoreInterfaceIdentityTests` covers.
 ///
 /// Each round trip also installs a *real* destination with its announce in the cache. The
-/// reference's entry references an announce and discards any entry whose announce cannot be
-/// loaded (`Transport.py:334-345`), so a synthetic destination hash is not a persistable path —
-/// see `PersistablePathFixture.swift` for why every test here used to use one.
+/// reference's entry references an announce and discards any entry whose announce can't be
+/// loaded (`Transport.py:334-345`), so a synthetic destination hash isn't a persistable path—see
+/// `PersistablePathFixture.swift` for why every test here used to use one.
 final class PathStoreTests: XCTestCase {
 
     private var tmpDir: URL!
@@ -29,8 +29,8 @@ final class PathStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    /// Same type and same name on both sides, so `Interface.hash` — `fullHash(displayName)` —
-    /// matches across the round trip, exactly as it does for a real interface rebuilt from the
+    /// Same type and same name on both sides, so `Interface.hash`—`fullHash(displayName)`—matches
+    /// across the round trip, exactly as it does for a real interface rebuilt from the
     /// same config. The cache directory is shared for the same reason: the announce cache is on
     /// disk and outlives the process.
     private func makeTransport() -> (Transport, LoopbackInterface) {
@@ -62,8 +62,8 @@ final class PathStoreTests: XCTestCase {
         XCTAssertEqual(entry.cachedAnnounceHash, installed.announceHash)
     }
 
-    /// The identity comes back through `known_destinations`, not through the path entry — so a
-    /// transport that has loaded it resolves the entry's identity hash, and one that has not
+    /// The identity comes back through `known_destinations`, not through the path entry—so a
+    /// transport that has loaded it resolves the entry's identity hash, and one that hasn't
     /// still routes. Mirrors `Identity.recall` at `Transport.py:331` and the load order at
     /// `Reticulum.py:344-346`.
     func testIdentityIsResolvedFromKnownDestinationsNotTheEntry() throws {
@@ -106,7 +106,7 @@ final class PathStoreTests: XCTestCase {
     /// Only the most recent `PERSIST_RANDOM_BLOBS` blobs are persisted, newest preserved.
     ///
     /// The reference truncates to this bound when persisting its tunnel paths
-    /// (`Transport.py:3468`) and — inconsistently — does not when persisting the destination
+    /// (`Transport.py:3468`) and—inconsistently—doesn't when persisting the destination
     /// table, where the in-memory `MAX_RANDOM_BLOBS` cap of 64 is what reaches disk. Either is
     /// readable by either implementation, since the reader takes the list as it finds it; the
     /// documented bound is kept.

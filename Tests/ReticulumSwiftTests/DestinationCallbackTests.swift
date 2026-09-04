@@ -34,7 +34,7 @@ final class DestinationCallbackTests: XCTestCase {
     }
 
     func testProofStrategyIsProveNoneByDefault() throws {
-        // Python default: Destination.PROVE_NONE — don't auto-prove DATA packets.
+        // Python default: Destination.PROVE_NONE—don't auto-prove DATA packets.
         let identity = Identity()
         let dst = try Destination(identity: identity, direction: .in, kind: .single, appName: "t", aspects: [])
         XCTAssertEqual(dst.proofStrategy, .proveNone)

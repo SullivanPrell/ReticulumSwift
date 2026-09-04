@@ -36,10 +36,10 @@ final class RNXArgumentParserAppendTests: XCTestCase {
         // Python leaves args.allowed as None when the option never appeared, and
         // `values(_:)` mirrors that with nil rather than [].
         //
-        // The distinction is not cosmetic: rnid's `nargs="*"` options rely on it, because
+        // The distinction isn't cosmetic: rnid's `nargs="*"` options rely on it, because
         // a bare `-e` yields a *falsy* empty list that skips the operation entirely and
-        // does not count toward rnid's mutual-exclusion tally. Collapsing nil into []
-        // would erase that. rnx does not care either way and coalesces at its call site.
+        // doesn't count toward rnid's mutual-exclusion tally. Collapsing nil into []
+        // would erase that. rnx doesn't care either way and coalesces at its call site.
         let parsed = try rnxParser().parse([])
         XCTAssertNil(parsed.values("-a"))
     }

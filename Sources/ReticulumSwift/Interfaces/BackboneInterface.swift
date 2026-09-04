@@ -45,7 +45,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// which this port has no separate object for.
     ///
     /// Overridden rather than left to the protocol's class-qualified default because the peer
-    /// address is part of the reference string — the default would publish
+    /// address is part of the reference string—the default would publish
     /// `BackboneInterface[<name>]` and so a different `Interface.hash` than the Python node
     /// beside it (`bugs/022`).
     public var displayName: String {
@@ -54,10 +54,10 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     }
 
     /// The stats `type` field is `type(interface).__name__` (`Reticulum.py:1472`), and a dialing
-    /// backbone config constructs `BackboneClientInterface` on Python (`Reticulum.py:994-1000`) —
-    /// the class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener. The Swift
+    /// backbone config constructs `BackboneClientInterface` on Python (`Reticulum.py:994-1000`)—the
+    /// class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener. The Swift
     /// class name would report the listener's name for a client, so consumers keying on
-    /// `ifstats["type"]` mis-classify it. `displayName` above stays on the client `__str__` form;
+    /// `ifstats["type"]` mis-classify it. the preceding `displayName` stays on the client `__str__` form;
     /// the two are different contracts.
     public var statsTypeName: String { "BackboneClientInterface" }
 
@@ -85,7 +85,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     // MARK: - IFAC (Interface Access Code)
     //
-    // Real stored properties — the `Interface` protocol's default
+    // Real stored properties—the `Interface` protocol's default
     // implementations are no-op storage, so without these `configureIfac`
     // would silently discard the key and every outbound frame would go out
     // un-masked (dropped by IFAC-protected Python peers).
@@ -93,7 +93,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -189,11 +189,11 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     // MARK: - Connection management
 
-    /// The same socket options the TCP client dials with — Python configures both identically
+    /// The same socket options the TCP client dials with—Python configures both identically
     /// (`BackboneInterface.py:655-660`), and both take them from ``RNSSocketOptions``.
 
     /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
-    /// recorded because it is the only thing assertable — see ``RNSSocketOptions``.
+    /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
     private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
     private func openConnection() {
@@ -202,7 +202,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
             port: NWEndpoint.Port(rawValue: port)!
         )
         // Python: `set_timeouts_linux()` + `TCP_NODELAY` on every backbone socket
-        // (BackboneInterface.py:626-627, :655-660) — the same options the TCP client uses,
+        // (BackboneInterface.py:626-627, :655-660)—the same options the TCP client uses,
         // for the same reason: without keepalive a peer that vanished without sending FIN
         // leaves this connection `.ready` forever and the reconnect below never fires.
         let socketOptions = RNSSocketOptions.tcpParameters()

@@ -52,7 +52,7 @@ final class ReticulumConstantsTests: XCTestCase {
     }
 
     func testPersistIntervalRegressionGuard() {
-        // PERSIST_INTERVAL = 60*60*12 — already existed, must not regress
+        // PERSIST_INTERVAL = 60*60*12—already existed, must not regress
         XCTAssertEqual(Reticulum.persistInterval, 43200,
                        "PERSIST_INTERVAL must remain 43200 s (12 hours)")
     }

@@ -6,8 +6,8 @@ import Network
 /// Wire-compatible with `RNS.Interfaces.TCPServerInterface` (Python).
 ///
 /// Each accepted connection spawns a `TCPServerClientInterface` which is
-/// registered with Transport as a distinct routing endpoint — matching Python's
-/// per-connection `TCPServerInterfaceClient` model.  The server itself is NOT a
+/// registered with Transport as a distinct routing endpoint—matching Python's
+/// per-connection `TCPServerInterfaceClient` model. The server itself isn't a
 /// routing endpoint (`isRoutingEndpoint == false`); only the spawned clients are.
 public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
@@ -32,7 +32,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     public var hwMtu: Int? = 262_144
     public let autoconfigureMtu: Bool = true
 
-    // Not a routing endpoint — spawned clients are registered separately.
+    // Not a routing endpoint—spawned clients are registered separately.
     public var isRoutingEndpoint: Bool { false }
 
     // IFAC settings inherited by spawned clients.
@@ -55,7 +55,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// Called by Transport when a client disconnects. Transport deregisters the sub-interface.
     public var onClientDisconnected: ((any Interface) -> Void)?
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -64,14 +64,14 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// Python `TCPServerInterface.__str__` (`TCPInterface.py:680-686`):
     /// `"TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"`, with an
     /// IPv6 literal bracketed. The old `"TCPInterface[Server on …]"` form matched no
-    /// Python string at all, which put a different `Interface.hash` — it is
-    /// `fullHash(displayName)` — on the wire than the Python listener beside it.
+    /// Python string at all, which put a different `Interface.hash`—it's
+    /// `fullHash(displayName)`—on the wire than the Python listener beside it.
     public var displayName: String {
         let ipString = bindIP.contains(":") ? "[\(bindIP)]" : bindIP
         return "TCPServerInterface[\(name)/\(ipString):\(port)]"
     }
 
-    /// Number of currently-connected clients. Used by buildInterfaceStats for rnstatus.
+    /// Number of connected clients. Used by buildInterfaceStats for rnstatus.
     public var clientCount: Int {
         lock.lock(); defer { lock.unlock() }
         return spawned.count
@@ -81,7 +81,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 
     /// What `start()` handed to `NWListener`, and what the framework handed back on accept.
     ///
-    /// Recorded because there is no authoritative readback for TCP options — see
+    /// Recorded because there is no authoritative readback for TCP options—see
     /// ``RNSSocketOptions``. `SocketOptionsTests` asserts that the accepted connection's
     /// parameters *are* the listener's object, which is what makes configuring the listener
     /// sufficient to cover every accepted socket rather than merely assumed to be.
@@ -113,7 +113,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
         // (`TCPInterface.py:241`, `:259-261`, reached from `:591`), so direction must not decide
         // whether the options apply. Network.framework derives an accepted connection from the
         // listener's parameters, so taking them from the shared factory here is what carries them
-        // onto every client — this line passed `.tcp` through 1.7.0, meaning framework defaults
+        // onto every client—this line passed `.tcp` through 1.7.0, meaning framework defaults
         // with keepalive **off**, and an accepted connection whose peer vanished without sending
         // FIN stayed `.ready` forever while the interface reported Up (`bugs/023`).
         let socketOptions = RNSSocketOptions.tcpParameters()
@@ -156,8 +156,8 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
         isOnline = false
     }
 
-    /// Broadcast to ALL connected clients. Used only when we need to send to every peer
-    /// (e.g. the PosixTCPServer shared-instance model). Transport routing uses the
+    /// Broadcast to ALL connected clients. Used only when a send must reach every peer
+    /// (for example, the PosixTCPServer shared-instance model). Transport routing uses the
     /// per-client `TCPServerClientInterface.send()` instead.
     public func send(_ packet: Packet) throws {
         let raw = try packet.pack()
@@ -178,7 +178,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
         lock.unlock()
 
         // Python: `{"name": "Client on "+self.name, …}` (TCPInterface.py:590). Every
-        // spawned client on one server shares this name; they are told apart by the peer
+        // spawned client on one server shares this name; they're told apart by the peer
         // address in `displayName`, exactly as in Python.
         let clientName = "Client on \(name)"
         Reticulum.log("Accepted TCP connection \(clientIndex) on \(name)", level: .verbose)
@@ -245,7 +245,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
             // `debugDescription` on an IPv4Address is the dotted quad.
             return ("\(address)", port.rawValue)
         case .ipv6(let address):
-            // Strip the scope suffix ("fe80::1%en0") Python's client_address does not carry.
+            // Strip the scope suffix ("fe80::1%en0") Python's client_address doesn't carry.
             return ("\(address)".components(separatedBy: "%")[0], port.rawValue)
         case .name(let name, _):
             return (name, port.rawValue)
@@ -291,7 +291,7 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     public var ifacKey: Data?
     public var ifacSize: Int
 
-    /// Lock-guarded — inbound frames are counted from the parent server's
+    /// Lock-guarded—inbound frames are counted from the parent server's
     /// delivery queue while `send` runs on the caller's thread and the UI
     /// reads from a third. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
@@ -308,7 +308,7 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     public let peerPort: UInt16
 
     /// A spawned client shares the `TCPClientInterface.__str__` format, but its `name` is
-    /// `"Client on "+servername` (`TCPInterface.py:590`) — which is exactly the prefix
+    /// `"Client on "+servername` (`TCPInterface.py:590`)—which is exactly the prefix
     /// `rnstatus` hides (`rnstatus.py:397`), because these are per-connection
     /// sub-interfaces rather than anything an operator configured. Python distinguishes
     /// concurrent clients by the peer address in the tail, not by the name.
@@ -320,7 +320,7 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     /// Python has no separate class for a spawned client: `TCPServerInterface` constructs a
     /// plain `TCPClientInterface` from the accepted socket (`TCPInterface.py:591`), so that
     /// is the class name `rnstatus` expects to see in the `type` field. `TCPServerClientInterface`
-    /// is a Swift implementation detail and is not an RNS interface class.
+    /// is a Swift implementation detail and isn't an RNS interface class.
     public var statsTypeName: String { "TCPClientInterface" }
 
     // Back-reference to parent server (for IFAC inheritance).
@@ -336,17 +336,17 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
 
         // Inherit the parent's configuration. Python copies nineteen attributes onto each accepted
         // client (`TCPInterface.py:594-641`); a spawned client is the real routing endpoint on a
-        // server-side interface, so anything that does not reach it is inert for every peer that
+        // server-side interface, so anything that doesn't reach it's inert for every peer that
         // dials in. See `swift_devel/bugs/025-*.md`.
         //
-        // `inherit(from:)` covers everything held in `InterfaceState` — mode, announce cap and
-        // rate control, ingress/egress control and all nine `ic_*` tunables — and it is a copy, so
-        // reconfiguring the parent later does not retune already-connected clients.
+        // `inherit(from:)` covers everything held in `InterfaceState`—mode, announce cap and
+        // rate control, ingress/egress control and all nine `ic_*` tunables—and it's a copy, so
+        // reconfiguring the parent later doesn't retune already-connected clients.
         self.interfaceState.inherit(from: parentServer.interfaceState)
 
         // Attributes stored on the conformer rather than in the state box need their own copy.
         // `bitrate` because interfaces that derive one (RNode, from spreading factor/bandwidth/
-        // coding rate) must keep that derivation as their starting value — Python copies it
+        // coding rate) must keep that derivation as their starting value—Python copies it
         // explicitly too (`TCPInterface.py:611`). Previously this was a fresh hardcoded
         // 10_000_000, so a configured server bitrate never reached any client.
         self.bitrate = parentServer.bitrate

@@ -3,6 +3,14 @@ import XCTest
 
 final class ForwardingTests: XCTestCase {
 
+    /// Filler payload for the tests below, none of which care what the packet carries—they
+    /// assert on hop counts, drops and delivery. It has to be non-empty: RNS 1.5.0 made a
+    /// zero-length data field a protocol violation (`Packet.py:274`), so `Data()` no longer
+    /// describes a frame that can exist on the wire and `Packet.unpack` rejects it. The relay
+    /// double round-trips every packet through `pack()`/`unpack()`, so these fixtures must be
+    /// frames a real peer would accept.
+    private static let filler = Data("payload".utf8)
+
     final class RecordingInterface: Interface {
         var name: String
         var bitrate: Int = 0
@@ -86,7 +94,7 @@ final class ForwardingTests: XCTestCase {
             destinationType: .single,
             packetType: .data,
             destinationHash: destHash,
-            data: Data()
+            data: Self.filler
         )
         packet.hops = 3
         try r.upstream.send(packet)
@@ -101,7 +109,7 @@ final class ForwardingTests: XCTestCase {
 
         let packet = Packet(
             destinationType: .single, packetType: .data,
-            destinationHash: destHash, data: Data()
+            destinationHash: destHash, data: Self.filler
         )
         try r.upstream.send(packet)
         XCTAssertEqual(r.destSide.sent.count, 0)
@@ -123,7 +131,7 @@ final class ForwardingTests: XCTestCase {
 
         let packet = Packet(
             destinationType: .single, packetType: .data,
-            destinationHash: destination.hash, data: Data()
+            destinationHash: destination.hash, data: Self.filler
         )
         try r.upstream.send(packet)
         wait(for: [delivered], timeout: 1.0)
@@ -136,7 +144,7 @@ final class ForwardingTests: XCTestCase {
 
         let packet = Packet(
             destinationType: .single, packetType: .data,
-            destinationHash: unknownDest, data: Data()
+            destinationHash: unknownDest, data: Self.filler
         )
         try r.upstream.send(packet)
         XCTAssertEqual(r.destSide.sent.count, 0)

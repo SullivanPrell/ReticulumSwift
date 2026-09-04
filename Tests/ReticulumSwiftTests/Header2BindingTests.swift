@@ -50,7 +50,7 @@ final class Header2BindingTests: XCTestCase {
 
     func testReceivedHeader2AnnounceIsRecordedAsNextHopTransportID() throws {
         // Simulate: an upstream relay (with a known transportID) sends a
-        // HEADER_2 announce to us. We should learn its transport ID into
+        // HEADER_2 announce to this node, whose transport ID belongs in
         // the path entry.
         let receiver = Transport()
         let iface = RecordingInterface(name: "edge")

@@ -98,7 +98,7 @@ final class Header2AnnounceTests: XCTestCase {
     /// Regression test for single-hop paths via a backbone transport node.
     ///
     /// When the destination is 1 hop away but the announce arrived as HEADER_2
-    /// (i.e. the path goes through a backbone), `send()` must wrap the outbound
+    /// (that is, the path goes through a backbone), `send()` must wrap the outbound
     /// packet in HEADER_2 with the backbone's transport ID.  Without this the
     /// backbone drops the packet because it has no transport_id to route on.
     func testOutboundPacketUsesTransportIDForOneHopBackbonePath() throws {
@@ -141,9 +141,9 @@ final class Header2AnnounceTests: XCTestCase {
     /// A shared-instance client reaches the instance's OWN local clients at zero hops:
     /// the path is learned from the instance's HEADER_2 announce (so it carries a next-hop
     /// transport ID) yet the destination is delivered locally by the instance. Such a packet
-    /// must go out HEADER_1. Stamping HEADER_2 with the instance's transport ID — which the
-    /// old `nextHopTransportID != nil` gate did — produced a packet a Python peer drops (a
-    /// local client is not the addressed transport), silently breaking every link a Swift
+    /// must go out HEADER_1. Stamping HEADER_2 with the instance's transport ID—which the
+    /// old `nextHopTransportID != nil` gate did—produced a packet a Python peer drops (a
+    /// local client isn't the addressed transport), silently breaking every link a Swift
     /// shared-instance client tried to open to a Python peer (rncp, LXMF, NomadNet).
     func testOutboundZeroHopSharedInstanceClientUsesHeader1() throws {
         let t = Transport()

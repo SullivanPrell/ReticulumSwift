@@ -21,7 +21,7 @@ final class RNXTransferStatsTests: XCTestCase {
     }
 
     func testZeroSpanYieldsZeroSpeed() {
-        // Python: `if span == 0: speed = 0` — the first sample always hits this.
+        // Python: `if span == 0: speed = 0`—the first sample always hits this.
         var stats = RNXTransferStats()
         stats.record(progress: 0.5, transferSize: 1000, at: 100)
         XCTAssertEqual(stats.speed, 0)
@@ -52,7 +52,7 @@ final class RNXTransferStatsTests: XCTestCase {
         // Python's `stats`, `current_progress` and `speed` are module globals that are
         // NEVER cleared between interactive commands, so the first frame of command N
         // shows command N-1's numbers and a speed averaged across both transfers.
-        // Pinned here rather than "fixed", because it is visible behaviour.
+        // Pinned here rather than "fixed", because it's visible behaviour.
         var stats = RNXTransferStats()
         stats.record(progress: 1.0, transferSize: 1000, at: 0.0)
         let carriedOver = stats.sampleCount

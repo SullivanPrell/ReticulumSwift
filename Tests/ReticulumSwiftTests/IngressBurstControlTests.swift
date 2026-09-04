@@ -7,14 +7,14 @@ import XCTest
 /// and `Interface.process_held_announces()`.
 ///
 /// Python constants (Interface class):
-///   IC_NEW_TIME              = 2*60*60  (7200 s — interface is "new" for first 2 hours)
-///   IC_BURST_FREQ_NEW        = 3        Hz — burst threshold for new interfaces
-///   IC_BURST_FREQ            = 10       Hz — burst threshold for established interfaces
+///   IC_NEW_TIME              = 2*60*60  (7200 s—interface is "new" for first 2 hours)
+///   IC_BURST_FREQ_NEW        = 3        Hz—burst threshold for new interfaces
+///   IC_BURST_FREQ            = 10       Hz—burst threshold for established interfaces
 ///   IC_PR_BURST_FREQ_NEW     = 3        Hz
 ///   IC_PR_BURST_FREQ         = 8        Hz
-///   IC_BURST_HOLD            = 15       s — hold duration before deactivating burst
-///   IC_BURST_PENALTY         = 15       s — penalty delay before releasing held announces
-///   IC_HELD_RELEASE_INTERVAL = 5        s — interval between individual held releases
+///   IC_BURST_HOLD            = 15       s—hold duration before deactivating burst
+///   IC_BURST_PENALTY         = 15       s—penalty delay before releasing held announces
+///   IC_HELD_RELEASE_INTERVAL = 5        s—interval between individual held releases
 ///   MAX_HELD_ANNOUNCES       = 256
 final class IngressBurstControlTests: XCTestCase {
 
@@ -49,7 +49,7 @@ final class IngressBurstControlTests: XCTestCase {
         let iface = makeInterface(name: "quiet", createdAt: Date())
         t.register(interface: iface)
 
-        // No announces recorded → frequency = 0 < threshold → should NOT limit
+        // No announces recorded → frequency = 0 < threshold → shouldn't limit
         let limited = t.shouldIngressLimit(on: iface, now: Date().timeIntervalSince1970)
         XCTAssertFalse(limited, "quiet interface must not be ingress-limited")
     }
@@ -101,7 +101,7 @@ final class IngressBurstControlTests: XCTestCase {
         for i in 0..<60 { t.notifyIncomingAnnounce(on: iface, at: base + Double(i) * 0.016) }
         _ = t.shouldIngressLimit(on: iface, now: base + 1.0)  // activate burst
 
-        // Now frequency drops (no more announces). Check immediately — still in burst hold.
+        // Now frequency drops (no more announces). Check immediately—still in burst hold.
         let stillLimited = t.shouldIngressLimit(on: iface, now: base + 2.0)
         XCTAssertTrue(stillLimited, "burst must remain active during IC_BURST_HOLD window")
     }
@@ -159,9 +159,24 @@ final class IngressBurstControlTests: XCTestCase {
         t.notifyIncomingPathRequest(on: iface, at: nowAfterHold - 4)
         t.notifyIncomingPathRequest(on: iface, at: nowAfterHold - 3)
 
-        XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: nowAfterHold),
+        // RNS 1.5.1 put a cooldown in front of the flag (`Interface.py:220-221`): the first
+        // three qualifying calls spend it and only the fourth clears. This test predates that
+        // and asserted the clear on the call right after the first qualifying one, so the extra
+        // probes below are the behaviour change, not scaffolding. What it was written to pin—that
+        // every one of these calls, the clearing one included, still returns `true`—is
+        // unchanged and is asserted throughout.
+        for probe in 0..<IngressControlState.icPrBurstCooldown {
+            XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: nowAfterHold + Double(probe)),
+                "a cooldown call must still limit")
+            XCTAssertTrue(t.ingressState(for: iface)?.prBurstActive ?? false,
+                "the flag may not clear while cooldown remains")
+        }
+
+        XCTAssertTrue(t.shouldIngressLimitPR(on: iface,
+                                             now: nowAfterHold + Double(IngressControlState.icPrBurstCooldown)),
             "the clearing call must still return true, matching should_ingress_limit_pr")
-        XCTAssertFalse(t.shouldIngressLimitPR(on: iface, now: nowAfterHold + 0.001),
+        XCTAssertFalse(t.shouldIngressLimitPR(on: iface,
+                                              now: nowAfterHold + Double(IngressControlState.icPrBurstCooldown) + 0.001),
             "the following call must not limit")
     }
 
@@ -254,7 +269,7 @@ final class IngressBurstControlTests: XCTestCase {
                          destinationHash: fakeHash, data: Data(count: 4))
         t.holdAnnounce(pkt, destinationHash: fakeHash, on: iface)
 
-        // heldRelease is in the future — nothing should be released.
+        // heldRelease is in the future—nothing should be released.
         t.forceHeldRelease(for: iface, to: Date().timeIntervalSince1970 + 100)
         let released = t.processHeldAnnounces(for: iface, now: Date().timeIntervalSince1970)
         XCTAssertNil(released, "held announce must not be released before heldRelease timer")

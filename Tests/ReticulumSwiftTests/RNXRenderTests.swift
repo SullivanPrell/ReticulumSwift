@@ -46,7 +46,7 @@ final class RNXRenderTests: XCTestCase {
     }
 
     func testPlainTruncationNoticeSuppressedByZeroLimitArgument() {
-        // Python: `stdoutl != 0` — an explicit --stdout 0 disables the notice for stdout.
+        // Python: `stdoutl != 0`—an explicit --stdout 0 disables the notice for stdout.
         let result = RNXResult(executed: true, returnCode: 0,
                                stdout: Data(), stderr: Data(),
                                totalStdoutLength: 100, totalStderrLength: 0,
@@ -140,7 +140,7 @@ final class RNXRenderTests: XCTestCase {
         // Python: rnx.py:479-484
         XCTAssertEqual(RNXResultRenderer.transferDurationPhrase(1.0), " in 1 second")
         XCTAssertEqual(RNXResultRenderer.transferDurationPhrase(9.5), " in 9.5 seconds")
-        // pretty_time formats seconds as str(round(t,2)) — always a float repr, so "5.0s",
+        // pretty_time formats seconds as str(round(t,2))—always a float repr, so "5.0s",
         // NOT the "5s" RNSUtilities.prettytime would produce.
         XCTAssertEqual(RNXResultRenderer.transferDurationPhrase(65.0), " in 1m and 5.0s")
     }

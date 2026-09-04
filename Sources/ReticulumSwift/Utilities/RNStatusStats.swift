@@ -21,7 +21,7 @@ public struct RNStatusInterfaceStats {
     private let index: [String: MsgPack.Value]
 
     /// Decode one element of the top-level `interfaces` array.
-    /// Returns nil for anything that is not a msgpack map.
+    /// Returns nil for anything that isn't a msgpack map.
     public init?(_ value: MsgPack.Value) {
         guard case .map(let raw) = value else { return nil }
         var ordered: [(String, MsgPack.Value)] = []
@@ -62,8 +62,8 @@ public struct RNStatusInterfaceStats {
     /// Python: `ifstat["mode"]`, an `Interface.MODE_*` constant.
     public var mode: UInt8 { UInt8(clamping: int("mode") ?? 0) }
 
-    /// Python: the `modestr` chain at rnstatus.py:421-427. Every unrecognised value —
-    /// including `MODE_FULL` itself — falls through to `"Full"`.
+    /// Python: the `modestr` chain at rnstatus.py:421-427. Every unrecognized value—including
+    /// `MODE_FULL` itself—falls through to `"Full"`.
     public var modeDescription: String {
         switch mode {
         case InterfaceMode.accessPoint.rawValue:   return "Access Point"
@@ -82,7 +82,7 @@ public struct RNStatusInterfaceStats {
 /// The whole `interface_stats` dictionary.
 public struct RNStatusStats {
 
-    /// The top-level map in wire order — `interfaces`, `rxb`, `txb`, `rxs`, `txs`,
+    /// The top-level map in wire order—`interfaces`, `rxb`, `txb`, `rxs`, `txs`,
     /// optionally the transport block, then `rss` last.
     public let pairs: [(String, MsgPack.Value)]
 
@@ -98,7 +98,7 @@ public struct RNStatusStats {
     public var rss: Int?   { index["rss"]?.asInt }
 
     /// Python: `"transport_id" in stats and stats["transport_id"] != None` (rnstatus.py:663).
-    /// Note the *value* test as well as presence — Python emits `transport_id` only when
+    /// Note the *value* test as well as presence—Python emits `transport_id` only when
     /// transport is enabled, but a nil value must render identically to an absent key.
     public var hasTransportID: Bool { transportID != nil }
 
@@ -112,7 +112,7 @@ public struct RNStatusStats {
     public func raw(_ key: String) -> MsgPack.Value? { index[key] }
 
     /// Decode the map returned by `get_interface_stats()`.
-    /// Returns nil for anything without an `interfaces` array — which is also the guard
+    /// Returns nil for anything without an `interfaces` array—which is also the guard
     /// that catches a malformed `/status` response from a remote instance.
     public init?(_ value: MsgPack.Value) {
         guard case .map(let raw) = value else { return nil }
@@ -136,18 +136,18 @@ public struct RNStatusStats {
     /// Two properties matter and are easy to get wrong:
     /// - The **default direction is descending** (`reverse=not sort_reverse`); `-r` makes
     ///   it ascending.
-    /// - Python's sort is **stable in both directions** — `reverse=True` preserves the
+    /// - Python's sort is **stable in both directions**—`reverse=True` preserves the
     ///   original order of equal elements. Swift's `sort` gives no such guarantee, so this
     ///   decorates each element with its input index and breaks ties on that, ascending,
     ///   regardless of direction.
     ///
-    /// An unrecognised token leaves the order untouched, matching Python's silent no-op.
+    /// An unrecognized token leaves the order untouched, matching Python's silent no-op.
     public func sortedInterfaces(by sort: RNStatusApp.Sort?, reverse sortReverse: Bool) -> [RNStatusInterfaceStats] {
         guard let sort else { return interfaces }
 
         // Python would raise TypeError comparing None against int when any interface
         // reports `bitrate: None` and `-s rate` is given (rnstatus.py:365). Swift treats a
-        // missing/nil numeric as 0 instead of aborting — see the deviation note in the
+        // missing/nil numeric as 0 instead of aborting—see the deviation note in the
         // rnstatus port summary. Swift daemons never emit a nil bitrate.
         func key(_ i: RNStatusInterfaceStats) -> Double {
             switch sort {
@@ -191,8 +191,8 @@ public struct RNStatusStats {
 
     /// Whether an interface is excluded from the render.
     ///
-    /// Python nests two gates (rnstatus.py:393-403): the outer one is bypassed by `-a`,
-    /// the inner one — a non-connectable `I2PInterface[` — is applied unconditionally and
+    /// Python nests two gates (rnstatus.py:393-403): `-a` bypasses the outer one,
+    /// the inner one—a non-connectable `I2PInterface[`—is applied unconditionally and
     /// therefore hides the interface even under `-a`.
     public static func shouldHide(_ stats: RNStatusInterfaceStats, showAll: Bool) -> Bool {
         let name = stats.name
@@ -200,7 +200,7 @@ public struct RNStatusStats {
             && stats.has("i2p_connectable")
             && stats.bool("i2p_connectable") == false
 
-        // rnstatus.py:403 — re-applied outside the `dispall or …` guard.
+        // rnstatus.py:403—re-applied outside the `dispall or …` guard.
         if i2pNonConnectable { return true }
         if showAll { return false }
         return hiddenPrefixes.contains { name.hasPrefix($0) }
@@ -209,7 +209,7 @@ public struct RNStatusStats {
     /// The name / burst filter applied inside the visibility gate (rnstatus.py:404-413).
     ///
     /// Python's first branch (`name_filter == None and burst_filter == None`) is dead in
-    /// practice because `main()` always passes `burst_filter=args.burst`, a bool — which is
+    /// practice because `main()` always passes `burst_filter=args.burst`, a bool—which is
     /// why `burstFilter` is a plain `Bool` here rather than an Optional.
     ///
     /// Worth knowing: `-B` on its own renders no burst indicator at all, because

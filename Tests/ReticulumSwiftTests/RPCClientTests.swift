@@ -3,7 +3,7 @@ import XCTest
 
 /// Round-trip tests for ``RPCClient`` against the in-process ``RPCServer``.
 ///
-/// Python reference: `RNS/Reticulum.py` — `get_rpc_client()` plus every accessor
+/// Python reference: `RNS/Reticulum.py`—`get_rpc_client()` plus every accessor
 /// guarded by `if self.is_connected_to_shared_instance:`.
 ///
 /// These bind loopback sockets only, in the same way `LocalInterfaceTests` and
@@ -27,7 +27,7 @@ final class RPCClientTests: XCTestCase {
         let transport = Transport()
         self.transport = transport
 
-        // Retry a few ports — the suite runs in parallel with other socket tests.
+        // Retry a few ports—the suite runs in parallel with other socket tests.
         var lastError: Error?
         for _ in 0..<20 {
             let candidate = UInt16.random(in: 41_000...48_000)
@@ -52,6 +52,26 @@ final class RPCClientTests: XCTestCase {
     }
 
     // MARK: - Handshake + call round trip
+
+    /// `medium_path_timeout` and `lowest_interface_bitrate` (`Reticulum.py:1292-1293`), added
+    /// in RNS 1.5.x. These exist precisely so a local client doesn't answer from its own
+    /// loopback interface, so the round trip is the behaviour, not an implementation detail.
+    func testMediumPathTimeout_roundTrip() throws {
+        let client = try startServer()
+        // Nothing prioritised yet: Python's `lowest_interface_bitrate` is still None.
+        XCTAssertNil(try client.lowestInterfaceBitrate())
+        XCTAssertEqual(try XCTUnwrap(client.mediumPathTimeout()), 0)
+
+        let transport = try XCTUnwrap(self.transport)
+        transport.register(interface: SlowInterface())
+        transport.prioritizeInterfaces()
+
+        XCTAssertEqual(try client.lowestInterfaceBitrate(), 1200)
+        XCTAssertEqual(try XCTUnwrap(client.mediumPathTimeout()),
+                       transport.mediumPathTimeout(), accuracy: 1e-9)
+        XCTAssertGreaterThan(try XCTUnwrap(client.mediumPathTimeout()), Constants.defaultPerHopTimeout)
+    }
+
 
     func testInterfaceStats_roundTrip() throws {
         let client = try startServer()
@@ -150,7 +170,7 @@ final class RPCClientTests: XCTestCase {
         let entry = try XCTUnwrap(try client.blackholedIdentities()[identityHash])
         XCTAssertEqual(entry.reason, "spamming announces")
         XCTAssertEqual(try XCTUnwrap(entry.until), until, accuracy: 0.001)
-        // Python: entry["source"] = Transport.identity.hash — rnpath compares this against
+        // Python: entry["source"] = Transport.identity.hash—rnpath compares this against
         // its own identity to decide whether to print " by <hash>".
         XCTAssertEqual(entry.source, owner.hash)
     }
@@ -255,4 +275,14 @@ final class RPCClientTests: XCTestCase {
     private func randomHash() -> Data {
         Data((0..<16).map { _ in UInt8.random(in: 0...255) })
     }
+}
+
+private final class SlowInterface: Interface {
+    var name: String = "lora"
+    var bitrate: Int = 1200
+    var isOnline: Bool = true
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    func start() throws {}
+    func stop() {}
+    func send(_ packet: Packet) throws {}
 }

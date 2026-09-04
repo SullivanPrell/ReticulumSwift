@@ -9,7 +9,7 @@ import XCTest
 ///
 /// Without this, a HEADER_2 packet addressed (via transport_id) to one
 /// transport node is also forwarded by every *other* transport node that
-/// hears it on a shared medium — causing duplicate forwarding / loops.
+/// hears it on a shared medium—causing duplicate forwarding / loops.
 final class TransportIDFilterTests: XCTestCase {
 
     private func header2Packet(transportID: Data,
@@ -29,7 +29,7 @@ final class TransportIDFilterTests: XCTestCase {
 
     func testForeignTransportIDIsFiltered() throws {
         let transport = Transport()
-        // transport_id names a *different* instance than ours → drop.
+        // transport_id names a *different* instance than this one → drop.
         let foreign = Data(repeating: 0xAB, count: 16)
         XCTAssertNotEqual(foreign, transport.transportInstanceID)
         let pkt = header2Packet(transportID: foreign)
@@ -38,14 +38,14 @@ final class TransportIDFilterTests: XCTestCase {
 
     func testOwnTransportIDPasses() throws {
         let transport = Transport()
-        // Addressed to us as the next-hop relay → keep.
+        // Addressed to this node as the next-hop relay → keep.
         let pkt = header2Packet(transportID: transport.transportInstanceID)
         XCTAssertTrue(transport.filterAndRecord(packet: pkt))
     }
 
     func testForeignAnnounceIsExempt() throws {
         let transport = Transport()
-        // Announces are flooded — they carry the upstream transport_id but
+        // Announces are flooded—they carry the upstream transport_id but
         // must still propagate regardless of which node they name.
         let foreign = Data(repeating: 0xCD, count: 16)
         let pkt = header2Packet(transportID: foreign,

@@ -1,4 +1,4 @@
-// Legacy stub kept for source compatibility — superseded by
+// Legacy stub kept for source compatibility—superseded by
 // TCPClientInterface, which is wire-compatible with `RNS.Interfaces.TCPInterface`.
 import Foundation
 

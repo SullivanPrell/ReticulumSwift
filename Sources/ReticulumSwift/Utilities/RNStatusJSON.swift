@@ -5,8 +5,8 @@ import Foundation
 /// Python reference: `RNS/Utilities/rnstatus.py:343-359` (stats) and
 /// `rnstatus.py:187-193` (discovered interfaces).
 ///
-/// Foundation's `JSONSerialization` cannot preserve dictionary key order, and `-j` output
-/// *is* ordered — Python emits the stats dict in insertion order (`interfaces`, `rxb`,
+/// Foundation's `JSONSerialization` can't preserve dictionary key order, and `-j` output
+/// *is* ordered—Python emits the stats dict in insertion order (`interfaces`, `rxb`,
 /// `txb`, `rxs`, `txs`, the optional transport block, then `rss` last). So this is a small
 /// hand-rolled encoder over ``MsgPack/Value``, which already carries its map pairs in wire
 /// order.
@@ -23,7 +23,7 @@ public enum RNStatusJSON {
     /// Converts every top-level `bytes` value (`transport_id`, `network_id`,
     /// `probe_responder`) and every `bytes` value one level inside an array-valued key
     /// (`interfaces` → `hash`, `ifac_signature`, `parent_interface_hash`) to undelimited
-    /// lowercase hex. Values nested deeper are left alone — Python would raise a
+    /// lowercase hex. Values nested deeper are left alone—Python would raise a
     /// `TypeError` out of `json.dumps` for those.
     public static func normaliseStats(_ value: MsgPack.Value) -> MsgPack.Value {
         guard case .map(let pairs) = value else { return value }
@@ -39,7 +39,7 @@ public enum RNStatusJSON {
         return .map(converted)
     }
 
-    /// Python: rnstatus.py:189-191 — every `bytes` value in each discovery entry becomes
+    /// Python: rnstatus.py:189-191—every `bytes` value in each discovery entry becomes
     /// undelimited hex. In practice only `stamp` and `discovery_hash` are bytes;
     /// `transport_id` / `network_id` are already hex strings on disk.
     public static func normaliseDiscovered(_ value: MsgPack.Value) -> MsgPack.Value {
@@ -106,7 +106,7 @@ public enum RNStatusJSON {
         encode(normaliseDiscovered(.array(interfaces.map(msgpackValue(for:)))))
     }
 
-    /// The wire carries whatever msgpack decoded — in practice an integer for frequency
+    /// The wire carries whatever msgpack decoded—in practice an integer for frequency
     /// and bandwidth. Emit the integral form so `-j` shows `867200000`, not `867200000.0`.
     private static func numeric(_ value: Double) -> MsgPack.Value {
         (value == value.rounded() && abs(value) < 9.2e18) ? .int(Int64(value)) : .double(value)
@@ -156,7 +156,7 @@ public enum RNStatusJSON {
         }
     }
 
-    /// Python `json.encoder`: `Infinity` / `-Infinity` / `NaN` are emitted bare (they are
+    /// Python `json.encoder`: `Infinity` / `-Infinity` / `NaN` are emitted bare (they're
     /// not valid JSON, but `json.dumps` produces them unless `allow_nan=False`).
     private static func float(_ value: Double) -> String {
         if value.isNaN { return "NaN" }

@@ -96,8 +96,8 @@ final class PathRequestLocalClientTests: XCTestCase {
         XCTAssertNotNil(t.cachedAnnounces[dest.hash])
         mesh.sent.removeAll()
 
-        // A mesh peer now path-requests D. We know a path, but we are NOT a
-        // transport node → we must stay silent (Python falls through to `else`).
+        // A mesh peer now path-requests D. A path is known, but this node isn't a
+        // transport node → it must stay silent (Python falls through to `else`).
         let requestorTID = Data(repeating: 0x09, count: 16)
         let body = dest.hash + requestorTID + Data(repeating: 0x03, count: 16)
         let req = Packet(destinationType: .plain, packetType: .data,

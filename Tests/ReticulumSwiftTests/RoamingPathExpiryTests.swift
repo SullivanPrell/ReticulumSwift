@@ -122,7 +122,7 @@ final class RoamingPathExpiryTests: XCTestCase {
         let transport = Transport()
         let hash = Data(repeating: 0xCD, count: 16)
 
-        // 7-day path that is only 6 hours old — should not be swept.
+        // 7-day path that's only 6 hours old—shouldn't be swept.
         let entry = Transport.PathEntry(
             destinationHash: hash,
             nextHopInterfaceName: "full",
@@ -162,7 +162,7 @@ final class RoamingPathExpiryTests: XCTestCase {
         let transport = Transport()
         let hash = Data(repeating: 0x12, count: 16)
 
-        // 7-day path that is only 1 day old — must not be swept.
+        // 7-day path that's only 1 day old—must not be swept.
         let entry = Transport.PathEntry(
             destinationHash: hash,
             nextHopInterfaceName: "full2",

@@ -6,7 +6,7 @@ import XCTest
 /// float (`RNS/__init__.py:296`, `:305`) and emits `.0`-suffixed and artifact strings; this port
 /// pre-rounds to integer microseconds (see the doc comment on `prettyshorttime`). Each divergent
 /// pin records the string live Python 1.4.2 produces for the same input, so the next parity
-/// sweep does not re-derive the difference. This header previously claimed the whole file
+/// sweep doesn't re-derive the difference. This header previously claimed the whole file
 /// matched Python reference output, which five of these pins never did.
 final class PrettyTimeTests: XCTestCase {
 
@@ -118,7 +118,7 @@ final class PrettyTimeTests: XCTestCase {
 
     func testCompactOnlyTopTwo() {
         // compact=True limits to 2 components
-        // 1h 1m 1s → "1h and 1m" (top 2 only)
+        // 1 hour 1m 1 second → "1h and 1m" (top 2 only)
         XCTAssertEqual(RNSUtilities.prettytime(3661, compact: true), "1h and 1m")
     }
 
@@ -152,8 +152,8 @@ final class PrettyTimeTests: XCTestCase {
     }
 
     func testShortTimeOneSecondOneMs() {
-        // DIVERGES from Python 1.4.2, which emits "1s and 1000.0µs" — 1.001*1e6 is
-        // 1000999.9999999999, so its float math yields a 1000.0µs component instead of 1ms.
+        // DIVERGES from Python 1.4.2, which emits "1s and 1000.0µs"—1.001*1e6 is
+        // 1000999.9999999999, so its float math yields a 1000.0µs component instead of 1 ms.
         // The artifact string is exactly what this port declines to reproduce.
         XCTAssertEqual(RNSUtilities.prettyshorttime(1.001), "1s and 1ms")
     }
@@ -190,7 +190,7 @@ final class PrettyTimeTests: XCTestCase {
     // MARK: - prettyshorttime compact
 
     func testShortTimeCompactOnlyTopTwo() {
-        // 1s 1ms 500µs → compact → "1s and 1ms"
+        // 1 second 1 ms 500µs → compact → "1s and 1ms"
         XCTAssertEqual(RNSUtilities.prettyshorttime(1.0015, compact: true), "1s and 1ms")
     }
 }

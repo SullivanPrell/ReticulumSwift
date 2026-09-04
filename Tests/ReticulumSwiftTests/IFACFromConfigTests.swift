@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `bugs/015` — IFAC must be configurable from a config file.
+/// `bugs/015`—IFAC must be configurable from a config file.
 ///
 /// `Transport.configureIfac` is correct, and `IFACTests` / `IFACSendPathTests` prove it
 /// thoroughly. They prove it by calling it **by hand**. Nothing in the port ever called it from
@@ -61,7 +61,7 @@ final class IFACFromConfigTests: XCTestCase {
     /// Parse a config **string** and synthesise its interfaces, which is the path an operator's
     /// file actually takes: `ReticulumConfig.parse` → `synthesizeInterfaces`.
     ///
-    /// The stack is not started — `synthesizeInterfaces` needs only the transport, and starting it
+    /// The stack isn't started—`synthesizeInterfaces` needs only the transport, and starting it
     /// would bind the shared-instance port.
     private func synthesise(_ config: String) throws -> [any Interface] {
         let tmp = FileManager.default.temporaryDirectory
@@ -122,14 +122,14 @@ final class IFACFromConfigTests: XCTestCase {
                        "networkname/network_name and passphrase/pass_phrase are aliases")
     }
 
-    /// A network name on its own is enough — Python derives from whichever of the two is present
+    /// A network name on its own is enough—Python derives from whichever of the two is present
     /// (`Reticulum.py:960-966`).
     func testNetworkNameAloneInstallsAKey() throws {
         let interfaces = try synthesise(udpBlock("    network_name = seg"))
         XCTAssertNotNil(try XCTUnwrap(interfaces.first).ifacKey)
     }
 
-    /// An empty value is not a value — Python guards each with `!= ""` (`Reticulum.py:780`, `:784`).
+    /// An empty value isn't a value—Python guards each with `!= ""` (`Reticulum.py:780`, `:784`).
     func testEmptyNetworkNameAndPassphraseLeaveIFACOff() throws {
         let interfaces = try synthesise(udpBlock("""
             network_name =
@@ -155,7 +155,7 @@ final class IFACFromConfigTests: XCTestCase {
                        "config ifac_size is bits; 64 bits is 8 bytes")
     }
 
-    /// Python ignores a value below `IFAC_MIN_SIZE * 8`, leaving the class default in place — the
+    /// Python ignores a value below `IFAC_MIN_SIZE * 8`, leaving the class default in place—the
     /// assignment sits inside the `>=` guard (`Reticulum.py:776`).
     func testIFACSizeBelowTheMinimumIsIgnored() throws {
         let interfaces = try synthesise(udpBlock("""
@@ -184,7 +184,7 @@ final class IFACFromConfigTests: XCTestCase {
                                      rnstatus shows no Access fingerprint for an interface that is \
                                      on an IFAC segment.
                                      """)
-        // `Identity.from_bytes(interface.ifac_key)` — derived, not random, so two nodes on one
+        // `Identity.from_bytes(interface.ifac_key)`—derived, not random, so two nodes on one
         // segment produce the same signature.
         XCTAssertEqual(identity.privateKeyBytes, try XCTUnwrap(iface.ifacKey))
     }
@@ -203,7 +203,7 @@ final class IFACFromConfigTests: XCTestCase {
         XCTAssertEqual(b.rejectedFrames, 0)
     }
 
-    /// The other half — unflagged traffic from an unconfigured peer is dropped
+    /// The other half—unflagged traffic from an unconfigured peer is dropped
     /// (`Transport.py:1480-1482`).
     func testUnflaggedTrafficIsRejected() throws {
         let (_, b) = try pairOnSegments(nil, ("internal_1", "shared-secret"))
@@ -216,7 +216,7 @@ final class IFACFromConfigTests: XCTestCase {
         XCTAssertEqual(b.rejectedFrames, 1)
     }
 
-    /// Two different segments must not interoperate, or "traffic crosses" above would also pass
+    /// Two different segments must not interoperate, or the preceding "traffic crosses" would also pass
     /// for an implementation that installed no key at all.
     func testDifferentSegmentsDoNotInteroperate() throws {
         let (a, b) = try pairOnSegments(("internal_1", "one"), ("internal_2", "two"))
@@ -276,7 +276,7 @@ final class IFACFromConfigTests: XCTestCase {
                data: Data("hello segment".utf8))
     }
 
-    /// Two paired interfaces, each configured the way a config block would configure it — through
+    /// Two paired interfaces, each configured the way a config block would configure it—through
     /// the same entry point `synthesizeInterfaces` uses, never `Transport.configureIfac`. That
     /// distinction is what the suite exists to preserve.
     private func pairOnSegments(_ left: (String, String)?,

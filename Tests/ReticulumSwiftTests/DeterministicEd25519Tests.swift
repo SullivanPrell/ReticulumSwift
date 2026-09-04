@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// Tests for DeterministicEd25519 — RFC 8032 deterministic Ed25519 signing.
+/// Tests for DeterministicEd25519—RFC 8032 deterministic Ed25519 signing.
 ///
 /// Expected values are cross-validated against:
 ///   • Python `cryptography` library (RFC 8032 compliant)

@@ -9,8 +9,8 @@ import Network
 /// ReticulumSwift set none: `NWConnection(to:using: .tcp)` takes Network.framework's
 /// defaults, which have keepalive **off**.
 ///
-/// Without it a connection whose peer vanished without sending FIN — a laptop that slept,
-/// a NAT that dropped the mapping, a peer that was hard-killed — stays `.ready` forever.
+/// Without it a connection whose peer vanished without sending FIN—a laptop that slept,
+/// a NAT that dropped the mapping, a peer that was hard-killed—stays `.ready` forever.
 /// No event ever fires, so the interface reports "Up", silently discards everything sent
 /// through it, and the reconnect logic added for `bugs/013` never gets a chance to run:
 /// there is nothing to trigger it. Keepalive is what turns a half-open connection into a
@@ -20,9 +20,9 @@ import Network
 final class TCPKeepaliveTests: XCTestCase {
 
     /// Whether this OS reads back a TCP option that was set before the options object was
-    /// handed to `NWParameters`. It does not on macOS 14: `defaultProtocolStack`
+    /// handed to `NWParameters`. It doesn't on macOS 14: `defaultProtocolStack`
     /// `.transportProtocol` returns a *different* `NWProtocolTCP.Options` instance than the
-    /// one passed in — `===` is false on every OS tested — and on 14 that re-wrapped
+    /// one passed in—`===` is false on every OS tested—and on 14 that re-wrapped
     /// instance reports framework defaults instead of the configured values.
     ///
     /// Probed with a control value rather than gated on an OS version, because the thing
@@ -38,7 +38,7 @@ final class TCPKeepaliveTests: XCTestCase {
     /// `TCP_PROBES = 12`, `TCP_USER_TIMEOUT = 24` (`TCPInterface.py:83-86`).
     ///
     /// Asserted on the object the interface constructs and hands to Network.framework, which
-    /// is the only place these values can be read back reliably — see
+    /// is the only place these values can be read back reliably—see
     /// ``RNSSocketOptions``.
     func testClientOptionsCarryPythonsKeepaliveTimers() {
         let options = RNSSocketOptions.tcpOptions()
@@ -68,7 +68,7 @@ final class TCPKeepaliveTests: XCTestCase {
         XCTAssertTrue(options.noDelay)
     }
 
-    /// The parameters a dial is built from must carry a TCP stack at all — true on every OS,
+    /// The parameters a dial is built from must carry a TCP stack at all—true on every OS,
     /// and the part of ``RNSSocketOptions/tcpParameters()`` worth pinning: it would break if
     /// the initializer were ever changed to drop the options.
     func testParametersCarryATCPStack() throws {
@@ -79,8 +79,8 @@ final class TCPKeepaliveTests: XCTestCase {
     }
 
     /// Where the platform's readback can be trusted, verify the values actually survive the
-    /// trip through `NWParameters` rather than only asserting what we set. This is the leg
-    /// that cannot run on macOS 14 — and the reason it is probed rather than skipped by OS
+    /// trip through `NWParameters` rather than only asserting the value set. This is the leg
+    /// that can't run on macOS 14—and the reason it's probed rather than skipped by OS
     /// version is that a future OS regaining or losing the readback should change what runs
     /// here without anyone editing an availability check.
     func testValuesSurviveTheTripThroughParametersWhereReadableAtAll() throws {
@@ -100,7 +100,7 @@ final class TCPKeepaliveTests: XCTestCase {
 
     /// Every dial must get its own options object. `NWParameters` is a reference type, so
     /// handing the same instance to two connections lets Network.framework mutate shared
-    /// state — and a `NWParameters` already used by a live connection cannot be reused.
+    /// state—and a `NWParameters` already used by a live connection can't be reused.
     func testEachDialGetsFreshParameters() {
         XCTAssertFalse(RNSSocketOptions.tcpParameters().parameters
                        === RNSSocketOptions.tcpParameters().parameters)

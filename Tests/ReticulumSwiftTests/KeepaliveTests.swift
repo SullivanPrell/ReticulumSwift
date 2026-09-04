@@ -45,10 +45,10 @@ final class KeepaliveTests: XCTestCase {
         return (aLink, bLink)
     }
 
-    /// RNS 1.4.0 (commit e64d8150): the responder only echoes `0xFE` if it has NOT
+    /// RNS 1.4.0 (commit e64d8150): the responder only echoes `0xFE` if it hasn't
     /// sent anything within the last `keepalive` interval. Immediately after link
     /// establishment the responder has just sent its link proof, so it suppresses the
-    /// echo — the initiator's probe is received by the responder but not answered.
+    /// echo—the responder receives the initiator's probe but never answers it.
     func testKeepaliveProbeSuppressedWhenResponderRecentlyActive() throws {
         let (aLink, bLink) = try establishLink()
 
@@ -56,7 +56,7 @@ final class KeepaliveTests: XCTestCase {
         let beforeAIn = aLink.lastInbound
         let beforeBIn = bLink.lastInbound
 
-        // Sanity: the responder just sent its proof, so it is not idle.
+        // Sanity: the responder just sent its proof, so it isn't idle.
         XCTAssertLessThan(bLink.noOutboundFor(), bLink.effectiveKeepalive)
 
         try aLink.sendKeepalive()

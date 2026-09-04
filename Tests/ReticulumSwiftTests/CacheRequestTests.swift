@@ -134,9 +134,9 @@ final class CacheRequestTests: XCTestCase {
             data: announceHash
         )
 
-        // Should not throw, and should handle silently.
+        // Shouldn't throw, and should handle silently.
         iface.inboundHandler?(cacheReqPacket, iface)
-        // If we get here without crash, the inbound pipeline handled CACHE_REQUEST.
+        // Reaching this point without a crash means the inbound pipeline handled CACHE_REQUEST.
         XCTAssertTrue(true)
     }
 

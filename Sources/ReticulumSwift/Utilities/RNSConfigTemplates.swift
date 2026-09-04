@@ -3,13 +3,13 @@ import Foundation
 /// The two configuration-file templates that ship inside Python RNS, transcribed byte for byte.
 ///
 /// Python reference:
-/// - ``exampleConfig``: `RNS/Utilities/rnsd.py` lines 90-583, `__example_rns_config__` —
-///   what `rnsd --exampleconfig` prints.
-/// - ``defaultConfig``: `RNS/Reticulum.py` line 1818+, `__default_rns_config__` —
-///   what `Reticulum.__create_default_config()` writes on a first run.
+/// - ``exampleConfig``: `RNS/Utilities/rnsd.py` lines 90-583, `__example_rns_config__`—what
+///   `rnsd --exampleconfig` prints.
+/// - ``defaultConfig``: `RNS/Reticulum.py` line 1818+, `__default_rns_config__`—what
+///   `Reticulum.__create_default_config()` writes on a first run.
 ///
 /// These are two *different* blobs in Python and were previously conflated (and heavily
-/// abridged) in the Swift port. They are reproduced here exactly so that a config directory
+/// abridged) in the Swift port. They're reproduced here exactly so that a config directory
 /// created by ReticulumSwift is indistinguishable from one created by Python RNS, and so
 /// that `rnsd --exampleconfig` is byte-identical to Python's.
 ///

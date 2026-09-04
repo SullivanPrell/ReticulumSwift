@@ -3,11 +3,11 @@ import XCTest
 
 /// Concurrency stress tests for the `ResourceTransfer.stateLock` introduced in the
 /// 2026-07-19 deferred data-race hardening pass. The rest of the resource suite is
-/// single-threaded and cannot exercise the watchdog-vs-receive-thread races; here we
-/// hammer the transfer's public accessors and internal entry points from many threads
+/// single-threaded and can't exercise the watchdog-vs-receive-thread races; this suite
+/// hammers the transfer's public accessors and internal entry points from many threads
 /// at once, with a fast watchdog firing on its own queue and random cancellation.
 ///
-/// A lock-order inversion or reentrant self-deadlock (e.g. holding `stateLock` across
+/// A lock-order inversion or reentrant self-deadlock (for example, holding `stateLock` across
 /// a `link.*` callout) would make these tests TIME OUT; a torn read of `status` (an
 /// enum carrying a `String`) or of the `advertisement` class reference, or a
 /// mutation-during-iteration of the `parts`/`hashmap` arrays, would CRASH. Passing
@@ -62,7 +62,7 @@ final class ResourceTransferConcurrencyTests: XCTestCase {
         return adv.pack()
     }
 
-    /// A well-formed HMU (reaches the locked region rather than early-returning at parse).
+    /// A well-formed HMU (reaches the locked region rather than early returning at parse).
     private func makeHMUBytes() -> Data {
         let rhash = Data((0..<32).map { UInt8($0 &* 7 &+ 1) })
         let hashmap = Data((0..<16).map { UInt8($0 &+ 32) })
@@ -119,7 +119,7 @@ final class ResourceTransferConcurrencyTests: XCTestCase {
             done.fulfill()
         }
         wait(for: [done], timeout: 60)
-        // No assertion on final state — the point is "no crash, no TSan race, no deadlock".
+        // No assertion on final state—the point is "no crash, no TSan race, no deadlock".
         _ = rt.status
     }
 

@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for multi-segment resource transfer (data > MAX_EFFICIENT_SIZE ≈ 1 MB).
 /// Mirrors Python's `Resource` segmented protocol: when data exceeds
-/// MAX_EFFICIENT_SIZE, it is split into multiple segments each sent as a
+/// MAX_EFFICIENT_SIZE, it's split into multiple segments each sent as a
 /// separate advertisement round-trip.
 final class ResourceMultiSegmentTests: XCTestCase {
 
@@ -27,7 +27,7 @@ final class ResourceMultiSegmentTests: XCTestCase {
 
     /// Delivers on a serial queue instead of straight down the call stack, so a large
     /// transfer's request/part/HMU round-trips don't recurse into an ever-deeper synchronous
-    /// stack (which the plain `LoopbackInterface` above cannot survive past a few hundred
+    /// stack (which the preceding plain `LoopbackInterface` can't survive past a few hundred
     /// bytes). Ordered delivery on one queue still models a single link faithfully.
     final class AsyncLoopbackInterface: Interface {
         var name: String; var bitrate: Int = 0; var isOnline: Bool = true
@@ -112,7 +112,7 @@ final class ResourceMultiSegmentTests: XCTestCase {
     // MARK: - Small artificial segment size for fast multi-segment testing
 
     /// Tests multi-segment with a small test payload using overridden segment size.
-    /// Uses `testSegmentSizeOverride` to avoid 1MB+ payloads in unit tests.
+    /// Uses `testSegmentSizeOverride` to avoid 1 MB+ payloads in unit tests.
     func testTwoSegmentSmallPayload() throws {
         let (aLink, bLink) = try makeLinkedPair()
         let tx = ResourceTransfer(link: aLink)
@@ -171,7 +171,7 @@ final class ResourceMultiSegmentTests: XCTestCase {
         tx.testSegmentSizeOverride = 300
         let payload = Data(repeating: 0xBB, count: 400)  // 400 bytes > 300-byte limit → 2 segments
 
-        // We just want to verify the ADV flags, not do a full transfer.
+        // Only the ADV flags matter here, not a full transfer.
         // Register a fake receiver that captures the ADV but doesn't respond.
         let fakeRx = ResourceTransfer(link: bLink)
         fakeRx.bindAsReceiver()
@@ -187,7 +187,7 @@ final class ResourceMultiSegmentTests: XCTestCase {
 
         // After the entire transfer completes synchronously, `advertisement` reflects
         // the last segment sent. Verify total_segments and split flag are set correctly.
-        // (The entire transfer may have completed before we check, so segmentIndex may be 2.)
+        // (The entire transfer may have completed before this check runs, so segmentIndex may be 2.)
         let adv = tx.advertisement
         XCTAssertNotNil(adv)
         XCTAssertEqual(adv?.totalSegments, 2)
@@ -256,10 +256,10 @@ final class ResourceMultiSegmentTests: XCTestCase {
     /// not catch. It pins three fixes at once:
     ///   1. The sender resets its per-segment part-serving window when it advances a segment.
     ///      Segment 2 is shorter than segment 1, so a carried-over cursor pointed past its
-    ///      last part and the sender served nothing — the receiver stalled and failed.
+    ///      last part and the sender served nothing—the receiver stalled and failed.
     ///   2. The Link reports the CONCLUDING advertisement (the last segment), not the first
-    ///      one captured when the transfer began; a listener matches a finished transfer — and
-    ///      recovers its metadata — by that hash.
+    ///      one captured when the transfer began; a listener matches a finished transfer—and
+    ///      recovers its metadata—by that hash.
     ///   3. Metadata rides only in segment 1 yet survives, intact, to the final payload.
     func testLargeMultiSegmentRoundTripViaLinkAcceptPath() throws {
         let (aLink, bLink) = try makeAsyncLinkedPair()
@@ -268,9 +268,9 @@ final class ResourceMultiSegmentTests: XCTestCase {
         // be big enough to force SEVERAL hashmap-update rounds: each round rewinds the sender's
         // search cursor by WINDOW_MAX_FAST (75), so a segment needing only one round leaves the
         // cursor at 0 and the carried-over state is harmless. Only after multiple rounds does the
-        // cursor climb past the shorter second segment's part count — the exact state the
+        // cursor climb past the shorter second segment's part count—the exact state the
         // cursor-reset fix clears. (The interop failure was 2261- then 2051-part segments.)
-        // The payload is filled by a pseudo-random LCG so bzip2 cannot shrink it below the part
+        // A pseudo-random LCG fills the payload so bzip2 can't shrink it below the part
         // count that drives those rounds; `autoCompress: false` below makes that guarantee exact.
         // A deterministic LCG is used because the sandbox forbids `Math.random`.
         var lcg: UInt64 = 0x9E3779B97F4A7C15
@@ -317,14 +317,14 @@ final class ResourceMultiSegmentTests: XCTestCase {
     /// Sender progress must climb once across the whole split transfer, not once
     /// per segment. The per-segment counters (`sentMapHashes` / `mapHashes`) are
     /// both reset when a segment starts, so reading them alone reports 0→1 for
-    /// every segment — reaching 1.0 while the transfer is still running and then
+    /// every segment—reaching 1.0 while the transfer is still running and then
     /// going backwards. Python folds the segment position in
     /// (Resource.py:1151-1167) and keeps a separate `get_segment_progress` for the
     /// per-segment figure.
     func testSenderProgressIsMonotonicAcrossSegments() throws {
         // Async delivery: with a synchronous loopback the whole transfer runs
         // inside the first send and every progress emit unwinds afterwards, when
-        // the status is already .complete — so intermediate values are invisible.
+        // the status is already .complete—so intermediate values are invisible.
         let (aLink, bLink) = try makeAsyncLinkedPair()
         bLink.resourceStrategy = .acceptAll
 
@@ -352,10 +352,10 @@ final class ResourceMultiSegmentTests: XCTestCase {
     /// A response larger than one segment must arrive whole.
     ///
     /// Segments 2..N carry the same `isResponse` flag and request ID as segment 1
-    /// (Python's `__prepare_next_segment` forwards both, and so does ours), so the
+    /// (Python's `__prepare_next_segment` forwards both, and so does this port), so the
     /// RESOURCE_ADV dispatch used to take the `isResponse` branch again for every
     /// segment and build a fresh `ResourceTransfer` each time. Only the last
-    /// segment's bytes reached the caller — and as a *successful* response, since
+    /// segment's bytes reached the caller—and as a *successful* response, since
     /// a truncated payload merely fails to decode as the `[request_id, response]`
     /// envelope and falls back to raw bytes. Silent corruption, not an error.
     ///
@@ -367,7 +367,7 @@ final class ResourceMultiSegmentTests: XCTestCase {
         let (aLink, bLink) = try makeLinkedPair()
         _ = bLink
 
-        // Incompressible so it cannot shrink back under the segment threshold.
+        // Incompressible so it can't shrink back under the segment threshold.
         let responseBody = Data((0 ..< 9_000).map { _ in UInt8.random(in: 0 ... 255) })
         aLink.destination.registerRequestHandler(path: "/big", allow: .all) { _, _, _, _, _ in
             responseBody
@@ -393,8 +393,8 @@ final class ResourceMultiSegmentTests: XCTestCase {
 
     /// A receiver parked between segments stays registered on the link, and the
     /// link hands every subsequent advertisement to every registered receiver. An
-    /// unrelated resource advertised in that window used to be adopted by the
-    /// parked transfer — downloaded into its segment buffer and spliced into the
+    /// unrelated resource advertised in that window used to end up adopted by the
+    /// parked transfer—downloaded into its segment buffer and spliced into the
     /// middle of the delivered payload, while bypassing `resourceStrategy` and
     /// never firing `onResourceStarted`.
     ///
@@ -418,7 +418,7 @@ final class ResourceMultiSegmentTests: XCTestCase {
         XCTAssertEqual(parked.advertisement?.segmentIndex, 1)
         let parkedHash = parked.resourceHash
 
-        // A different resource is advertised on the same link while it is parked.
+        // A different resource is advertised on the same link while it's parked.
         let foreign = ResourceTransfer(link: aLink)
         gate.dropAll = true          // don't let the foreign transfer actually run
         try? foreign.send(payload: Data(repeating: 0x5E, count: 64), autoCompress: false)

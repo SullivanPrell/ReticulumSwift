@@ -1,14 +1,14 @@
 import Foundation
 import Darwin
 
-/// A TCP server bound with a raw POSIX socket — deliberately does NOT set SO_REUSEADDR.
+/// A TCP server bound with a raw POSIX socket—deliberately doesn't set SO_REUSEADDR.
 ///
 /// On macOS, NWListener sets SO_REUSEADDR internally. That allows Python's
 /// `LocalServerInterface` (which also uses SO_REUSEADDR) to rebind the same port,
 /// making Python become the shared-instance server instead of a client.
-/// By using a raw socket without SO_REUSEADDR, we hold the port exclusively:
-/// Python's `bind()` call will fail with EADDRINUSE → Python falls back to
-/// `LocalClientInterface` (client mode) and does NOT synthesize interfaces.
+/// By using a raw socket without SO_REUSEADDR, this holds the port exclusively:
+/// Python's `bind()` call fails with EADDRINUSE → Python falls back to
+/// `LocalClientInterface` (client mode) and doesn't synthesize interfaces.
 ///
 /// Used only for the shared-instance port (37428). All other server interfaces
 /// can continue to use `TCPServerInterface` + `NWListener`.
@@ -48,7 +48,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     public var ifacKey: Data?
     public var ifacSize: Int = Constants.defaultIfacSize
 
-    /// Lock-guarded — written from this interface's I/O queue while the UI
+    /// Lock-guarded—written from this interface's I/O queue while the UI
     /// and status reporting read from another thread. See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -66,7 +66,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
 
     /// Descriptors this server has accepted, for tests that assert the socket options actually
     /// landed. Unlike the Network.framework paths, a POSIX descriptor has an authoritative
-    /// readback — `getsockopt` — so `bugs/023` is verifiable here rather than only structural.
+    /// readback—`getsockopt`—so `bugs/023` is verifiable here rather than only structural.
     private var acceptedDescriptors: [Int32] = []
     var lastAcceptedDescriptorForTesting: Int32? {
         lock.lock(); defer { lock.unlock() }; return acceptedDescriptors.last
@@ -81,14 +81,14 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     /// `LocalServerInterface` sets `self.name = "Reticulum"` (`LocalInterface.py:391`) and its
     /// `__str__` ignores it entirely, so building the string from `name` made this correct only
     /// while the one caller happened to pass `name: "Shared Instance"`
-    /// (`InstanceConnection.swift:208`) — correct by coincidence at a single call site, which is
+    /// (`InstanceConnection.swift:208`)—correct by coincidence at a single call site, which is
     /// the `bugs/013` shape. Found by the enumerate-every-conformer test in `bugs/022`; not in
     /// the audit's list of nine.
     public var displayName: String { "Shared Instance[\(port)]" }
 
     /// This class is Python's `LocalServerInterface`; only the Swift name differs. Reported
     /// verbatim in the stats payload, where a Python `rnstatus -d` prints it and would
-    /// otherwise show "PosixTCPServer", an interface kind that does not exist in RNS.
+    /// otherwise show "PosixTCPServer", an interface kind that doesn't exist in RNS.
     public var statsTypeName: String { "LocalServerInterface" }
 
     /// Python hardcodes `self.name = "Reticulum"` on `LocalServerInterface`
@@ -97,7 +97,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     /// is set here rather than by renaming the interface.
     public var statsShortName: String { "Reticulum" }
 
-    /// Number of currently-connected clients. Used by buildInterfaceStats for rnstatus.
+    /// Number of connected clients. Used by buildInterfaceStats for rnstatus.
     public var clientCount: Int {
         lock.lock(); defer { lock.unlock() }
         return clients.count
@@ -119,16 +119,16 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
         var one: Int32 = 1
         Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
 
-        // Explicitly do NOT set SO_REUSEADDR — this is intentional.
+        // Explicitly don't set SO_REUSEADDR—this is intentional.
         // Without it, Python's SO_REUSEADDR bind attempt fails → client mode.
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = port.bigEndian
         // Bind to 127.0.0.1, not INADDR_ANY. This is intentional:
-        // on macOS, SO_REUSEADDR lets a new socket rebind 0.0.0.0:port while we hold it,
-        // but it cannot rebind 127.0.0.1:port when we already hold that exact address.
-        // Python's LocalServerInterface also binds to 127.0.0.1, so our binding blocks it.
+        // on macOS, SO_REUSEADDR lets a new socket rebind 0.0.0.0:port while this socket holds it,
+        // but it can't rebind 127.0.0.1:port when this socket already holds that exact address.
+        // Python's LocalServerInterface also binds to 127.0.0.1, so this binding blocks it.
         Darwin.inet_aton("127.0.0.1", &addr.sin_addr)
 
         let bindRC = withUnsafePointer(to: &addr) {
@@ -190,7 +190,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
         guard clientFD >= 0 else { return }
 
         // Python sets `TCP_NODELAY` on every socket its shared-instance server accepts
-        // (`LocalInterface.py:98-100`) — the accepted-socket half of `bugs/023`, in the POSIX
+        // (`LocalInterface.py:98-100`)—the accepted-socket half of `bugs/023`, in the POSIX
         // server rather than the Network.framework one. This port set only `SO_NOSIGPIPE`, so
         // small control frames sat behind Nagle's delayed-ACK timer on every shared-instance
         // client. Found while building `RNSSocketOptions`; not in `bugs/023` as filed.

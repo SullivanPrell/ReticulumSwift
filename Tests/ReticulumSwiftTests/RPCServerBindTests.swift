@@ -7,7 +7,7 @@ import Network
 /// Found by `tri-test`'s state round-trip cells (`bugs/040`): a Swift daemon restarted on a
 /// config directory whose control port had recently served clients logs "RPC server started on
 /// port N" and then has no socket there at all. `rnstatus`, `rnpath`, `rnprobe`, `rnid -r` and
-/// `rnx` all answer "Could not connect to instance control socket" against a daemon that is
+/// `rnx` all answer "Could not connect to instance control socket" against a daemon that's
 /// otherwise running and passing traffic.
 ///
 /// Two independent defects at one site, and the second is what made the first invisible:
@@ -16,7 +16,7 @@ import Network
 ///    a `TIME_WAIT` socket from the previous run. Python's listener is a
 ///    `multiprocessing.connection.Listener`, which sets `SO_REUSEADDR` (CPython
 ///    `connection.py`, `SocketListener.__init__`), so a Python daemon rebinds where this one
-///    cannot.
+///    can't.
 /// 2. `NWListener.start(queue:)` is asynchronous and reports failure through
 ///    `stateUpdateHandler`. None was set, so nothing observed the failure and the success line
 ///    was logged unconditionally. Python raises: `except OSError: self._socket.close(); raise`.
@@ -44,11 +44,11 @@ final class RPCServerBindTests: XCTestCase {
 
     /// The parameters handed to `NWListener` allow local endpoint reuse.
     ///
-    /// Asserted on the object the code constructs, not read back from the framework — the whole
+    /// Asserted on the object the code constructs, not read back from the framework—the whole
     /// point of `bugs/013`'s `NWParameters` lesson is that
     /// `defaultProtocolStack.transportProtocol` is a *different* instance that reports defaults.
     /// `allowLocalEndpointReuse` is a plain property of the parameters object itself, so this is
-    /// the value that is really passed.
+    /// the value that's really passed.
     func testLocalParametersAllowEndpointReuse() {
         XCTAssertTrue(RNSSocketOptions.localParameters().parameters.allowLocalEndpointReuse,
                       """
@@ -60,11 +60,11 @@ final class RPCServerBindTests: XCTestCase {
                       """)
     }
 
-    /// A listener that cannot bind is a failure, not a log line.
+    /// A listener that can't bind is a failure, not a log line.
     ///
     /// Holding the port with a POSIX socket that does *not* set `SO_REUSEADDR` makes the bind
     /// fail deterministically even with reuse enabled on the listener side, so this stays a real
-    /// assertion after the fix above rather than becoming unreachable.
+    /// assertion after the preceding fix rather than becoming unreachable.
     func testStartThrowsWhenThePortCannotBeBound() throws {
         let port = freePort()
         let blocker = socket(AF_INET, SOCK_STREAM, 0)
@@ -97,7 +97,7 @@ final class RPCServerBindTests: XCTestCase {
     }
 
     /// And the ordinary case still works: a free port binds, and the socket is reachable when
-    /// `start()` returns — so a caller may talk to it immediately rather than racing the bind.
+    /// `start()` returns—so a caller may talk to it immediately rather than racing the bind.
     func testStartBindsAndIsReachableOnReturn() throws {
         let port = freePort()
         let server = RPCServer(port: port, authkey: Data(repeating: 0x02, count: 32))
@@ -145,11 +145,11 @@ final class RPCServerBindTests: XCTestCase {
         return nil
     }
 
-    /// The bind must be loopback-**only**, which reachability alone cannot prove.
+    /// The bind must be loopback-**only**, which reachability alone can't prove.
     ///
     /// Python's control listener is constructed on `("127.0.0.1", port)` (`Reticulum.py:352` →
-    /// `:359`), so it is unreachable off-host by construction. This is the negative assertion
-    /// whose absence let a wildcard bind sit behind 3258 green tests: the test above proves
+    /// `:359`), so it's unreachable off-host by construction. This is the negative assertion
+    /// whose absence let a wildcard bind sit behind 3258 green tests: the preceding test proves
     /// 127.0.0.1 answers, and a listener on `*` passes that too. An authenticated management
     /// socket (path drops, blackholing) must not be reachable from every network the host is on.
     func testTheControlSocketIsNotReachableOnANonLoopbackAddress() throws {

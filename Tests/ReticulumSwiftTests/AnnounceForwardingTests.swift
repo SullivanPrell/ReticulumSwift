@@ -101,7 +101,7 @@ final class AnnounceForwardingTests: XCTestCase {
         try upstream.send(try Announce.make(for: destination))
 
         XCTAssertEqual(ifaceToC.sent.count, 0)
-        // Path is still recorded — the node consumed the announce locally.
+        // Path is still recorded—the node consumed the announce locally.
         XCTAssertNotNil(transport.paths[destination.hash])
     }
 

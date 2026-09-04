@@ -162,7 +162,7 @@ final class RNodeFrequencyPackingTests: XCTestCase {
 
     /// 915_000_000 Hz = 0x3689CAC0
     /// c1=0x36, c2=0x89, c3=0xCA, c4=0xC0
-    /// c4=0xC0 is FEND — must be escaped to FESC(0xDB) TFEND(0xDC)
+    /// c4=0xC0 is FEND—must be escaped to FESC(0xDB) TFEND(0xDC)
     /// Frame: [FEND, CMD_FREQUENCY, 0x36, 0x89, 0xCA, 0xDB, 0xDC, FEND]
     func testSetFrequency915MHz() throws {
         let mock = MockRNodeTransport()
@@ -483,21 +483,21 @@ final class RNodeProcessIncomingFwVersionTests: XCTestCase {
     func testFwVersionBelowRequiredSetsNotOk() {
         let mock = MockRNodeTransport()
         let iface = RNodeInterface(name: "test", transport: mock)
-        mock.inject([0xC0, 0x50, 0x01, 0x10, 0xC0])  // v1.16 — too old
+        mock.inject([0xC0, 0x50, 0x01, 0x10, 0xC0])  // v1.16—too old
         XCTAssertFalse(iface.firmwareOk)
     }
 
     func testFwVersionAtRequiredSetsOk() {
         let mock = MockRNodeTransport()
         let iface = RNodeInterface(name: "test", transport: mock)
-        mock.inject([0xC0, 0x50, 0x01, 0x34, 0xC0])  // v1.52 — exactly required
+        mock.inject([0xC0, 0x50, 0x01, 0x34, 0xC0])  // v1.52—exactly required
         XCTAssertTrue(iface.firmwareOk)
     }
 
     func testFwVersionAboveRequiredSetsOk() {
         let mock = MockRNodeTransport()
         let iface = RNodeInterface(name: "test", transport: mock)
-        mock.inject([0xC0, 0x50, 0x02, 0x00, 0xC0])  // v2.0 — above required
+        mock.inject([0xC0, 0x50, 0x02, 0x00, 0xC0])  // v2.0—above required
         XCTAssertTrue(iface.firmwareOk)
     }
 }
@@ -1006,7 +1006,7 @@ final class RNodeProcessIncomingPhyprmTests: XCTestCase {
     func testPhyprmDecoded() {
         let mock = MockRNodeTransport()
         let iface = RNodeInterface(name: "test", transport: mock)
-        // lst=1000 (1.0ms), lsr=1000, prs=8, prt=8, cst=5, dft=4
+        // lst=1000 (1.0 ms), lsr=1000, prs=8, prt=8, cst=5, dft=4
         let bytes: [UInt8] = [
             0xC0, 0x26,
             0x03, 0xE8,  // lst = 1000

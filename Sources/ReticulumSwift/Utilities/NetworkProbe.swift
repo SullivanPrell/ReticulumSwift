@@ -12,7 +12,7 @@ import Foundation
 
 /// A `PacketReceipt` as the probe observes it.
 ///
-/// Python: `RNS.PacketReceipt` — `status`, `get_rtt()` and `proof_packet` (rnprobe.py:136,
+/// Python: `RNS.PacketReceipt`—`status`, `get_rtt()` and `proof_packet` (rnprobe.py:136,
 /// 157, 167-186).
 public protocol ProbeReceipt: AnyObject {
     /// Python: `receipt.status` compared against `RNS.PacketReceipt.SENT` / `DELIVERED`.
@@ -29,10 +29,10 @@ public protocol ProbeReceipt: AnyObject {
     var proofRssi: Float? { get }
     /// Python: `receipt.proof_packet.snr` (rnprobe.py:185).
     var proofSnr: Float? { get }
-    /// Python: `receipt.proof_packet.packet_hash` — the FULL 32-byte hash (Packet.py:342).
+    /// Python: `receipt.proof_packet.packet_hash`—the FULL 32-byte hash (Packet.py:342).
     var proofPacketFullHash: Data? { get }
     /// The 16-byte form of the same hash. Needed because a Swift daemon caches its PHY
-    /// stats under the truncated hash while Python caches under the full one — see the
+    /// stats under the truncated hash while Python caches under the full one—see the
     /// fallback in ``TransportProbeNetwork``.
     var proofPacketTruncatedHash: Data? { get }
 }
@@ -68,7 +68,7 @@ public protocol ProbeNetwork: AnyObject {
     func hasPath(to destinationHash: Data) -> Bool
     /// Python: `RNS.Transport.request_path(destination_hash)` (rnprobe.py:80).
     /// Swallows the Swift `throws`; note `Transport.requestPath` silently no-ops for a
-    /// hash that is not 16 bytes.
+    /// hash that isn't 16 bytes.
     func requestPath(for destinationHash: Data)
     /// Python: `RNS.Identity.recall(destination_hash)` (rnprobe.py:97).
     func recallIdentity(for destinationHash: Data) -> Identity?
@@ -87,16 +87,20 @@ public protocol ProbeNetwork: AnyObject {
     func hops(to destinationHash: Data) -> Int
     /// Python: `reticulum.get_next_hop(destination_hash)` (rnprobe.py:125).
     func nextHop(to destinationHash: Data) -> Data?
-    /// Python: `reticulum.get_next_hop_if_name(destination_hash)` (rnprobe.py:127), i.e.
-    /// `str(Transport.next_hop_interface(dh))` — the interface's `__str__`, whose Swift
+    /// Python: `reticulum.get_next_hop_if_name(destination_hash)` (rnprobe.py:127), that is,
+    /// `str(Transport.next_hop_interface(dh))`—the interface's `__str__`, whose Swift
     /// analogue is ``Interface/displayName``, NOT `Interface.name`. Deliberately not
-    /// spelled `nextHopInterfaceName` so it cannot be confused with
+    /// spelled `nextHopInterfaceName` so it can't be confused with
     /// `Transport.nextHopInterfaceName(for:)`, which returns the wrong string.
     func nextHopInterfaceDisplayName(for destinationHash: Data) -> String?
     /// Python: `reticulum.get_first_hop_timeout(destination_hash)` (rnprobe.py:84, 134).
     /// Must return `DEFAULT_PER_HOP_TIMEOUT` (6.0) if the shared-instance RPC fails,
     /// matching Reticulum.py:1570-1572.
     func firstHopTimeout(for destinationHash: Data) -> TimeInterval
+    /// Python: `reticulum.get_medium_path_timeout()` (rnprobe.py:84, 134). Must return `0`
+    ///—the "unknown" answer, which contributes nothing to the `max`—if the
+    /// shared-instance RPC fails, matching Reticulum.py:1780-1781.
+    func mediumPathTimeout() -> TimeInterval
     /// Python: `reticulum.is_connected_to_shared_instance` (rnprobe.py:166).
     var isConnectedToSharedInstance: Bool { get }
     /// Python: `reticulum.get_packet_rssi(packet_hash)` (rnprobe.py:167). Raw MsgPack so
@@ -110,7 +114,7 @@ public protocol ProbeNetwork: AnyObject {
 
 // MARK: - NetworkProbe
 
-/// Network probe utility — sends encrypted random-payload packets to a single destination
+/// Network probe utility—sends encrypted random-payload packets to a single destination
 /// and reports per-probe RTT, hop count and physical-layer statistics.
 ///
 /// Python reference: `RNS/Utilities/rnprobe.py` (RNS 1.4.0). ``run(options:)`` is the whole
@@ -118,12 +122,12 @@ public protocol ProbeNetwork: AnyObject {
 ///
 /// ### Deliberate divergences from Python
 ///
-/// Each one is a case where Python crashes, hangs or leaks a traceback. They are listed
-/// here so a future parity audit does not "restore" the defect:
+/// Each one is a case where Python crashes, hangs or leaks a traceback. They're listed
+/// here so a future parity audit doesn't "restore" the defect:
 ///
 /// - `-n 0`, `-n <negative>`, `-s <negative>` and `-w <negative>` are usage errors (exit 2).
 ///   Python raises `ZeroDivisionError`, loops forever, or raises `ValueError` out of
-///   `os.urandom` / `time.sleep` — all uncaught tracebacks (rnprobe.py:109, 112, 115).
+///   `os.urandom` / `time.sleep`—all uncaught tracebacks (rnprobe.py:109, 112, 115).
 /// - `RNS.Identity.recall` returning `None` makes Python raise an uncaught `ValueError`
 ///   from `Destination.__init__` (Destination.py:179). The port prints one stderr line and
 ///   exits 1.
@@ -157,7 +161,7 @@ public final class NetworkProbe {
     /// Application name (the utility has no `APP_NAME`, but is identified as "rnprobe").
     public static let appName: String = "rnprobe"
 
-    /// Python: `syms = "⢄⢂⢁⡁⡈⡐⡠"` (rnprobe.py:86) — seven Braille code points,
+    /// Python: `syms = "⢄⢂⢁⡁⡈⡐⡠"` (rnprobe.py:86)—seven Braille code points,
     /// scalar values verified with `ord()`.
     public static let spinnerGlyphs: [String] = [
         "\u{2884}", "\u{2882}", "\u{2881}", "\u{2841}", "\u{2848}", "\u{2850}", "\u{2860}"
@@ -167,12 +171,12 @@ public final class NetworkProbe {
     public static let pollInterval: TimeInterval = 0.1
 
     /// Erase-line width before "Path request timed out" and before the receipt-failed
-    /// "Probe timed out". Python: rnprobe.py:94 and :197 — both literals measure 58 spaces.
+    /// "Probe timed out". Python: rnprobe.py:94 and :197—both literals measure 58 spaces.
     public static let shortEraseWidth: Int = 58
 
     /// Erase-line width used by the DEADLINE "Probe timed out".
-    /// Python: rnprobe.py:143 — that literal measures 64 spaces. The two widths differ in
-    /// the Python source; the discrepancy is reproduced rather than harmonised.
+    /// Python: rnprobe.py:143—that literal measures 64 spaces. The two widths differ in
+    /// the Python source; the discrepancy is reproduced rather than harmonized.
     public static let longEraseWidth: Int = 64
 
     /// Python: `dest_len = (RNS.Reticulum.TRUNCATED_HASHLENGTH//8)*2` = 32 (rnprobe.py:58).
@@ -181,8 +185,8 @@ public final class NetworkProbe {
     // MARK: - Exit codes
 
     /// Process exit statuses. Python uses a bare `exit()` (0), `exit(1)`, `exit(2)` and
-    /// `exit(3)`. Note that 2 is overloaded — argparse also exits 2 on a usage error, so a
-    /// script cannot tell packet loss from a bad command line. Inherited, not "fixed".
+    /// `exit(3)`. Note that 2 is overloaded—argparse also exits 2 on a usage error, so a
+    /// script can't tell packet loss from a bad command line. Inherited, not "fixed".
     public enum Result: Int32, Equatable, CaseIterable {
         /// Python: `exit(0)` (rnprobe.py:206) and every bare `exit()`.
         case ok = 0
@@ -239,7 +243,7 @@ public final class NetworkProbe {
 
         /// Python: `RNS.Reticulum(loglevel = 3 + verbosity)` where `verbosity` has already
         /// been decremented once in *both* branches (rnprobe.py:69-77). So no `-v` gives
-        /// LOG_WARNING (2) — quieter than the RNS default of 4 — and each extra `-v` adds
+        /// LOG_WARNING (2)—quieter than the RNS default of 4—and each extra `-v` adds
         /// one level.
         ///
         /// Clamped to `.extreme`: a bare `LogLevel(rawValue:) ?? .warning` would make
@@ -254,7 +258,7 @@ public final class NetworkProbe {
     // MARK: - Validation
 
     /// The three failures Python reports with a message on stdout and a bare `exit()`
-    /// — i.e. process status 0, not an error code.
+    ///—that is, process status 0, not an error code.
     public enum ValidationError: Error, Equatable {
         /// Python: rnprobe.py:46-48.
         case missingFullName
@@ -284,7 +288,7 @@ public final class NetworkProbe {
         case mtuExceeded(size: Int)
         /// Python: uncaught `ValueError` from `Destination.__init__` (Destination.py:179).
         case noIdentity
-        /// Swift-only: the payload could not be encrypted for the destination.
+        /// Swift-only: the payload couldn't be encrypted for the destination.
         case encryptionFailed
         /// Swift-only and near-unreachable: `Transport.send` produced no receipt.
         case notSent
@@ -297,9 +301,9 @@ public final class NetworkProbe {
         public enum Conclusion: Equatable {
             /// Python: `receipt.status == DELIVERED` (rnprobe.py:149).
             case delivered
-            /// Python: rnprobe's own deadline fired (rnprobe.py:142) — the 64-space branch.
+            /// Python: rnprobe's own deadline fired (rnprobe.py:142)—the 64-space branch.
             case deadlineExceeded
-            /// Python: the receipt's own timeout fired (rnprobe.py:196) — the 58-space branch.
+            /// Python: the receipt's own timeout fired (rnprobe.py:196)—the 58-space branch.
             case receiptFailed
         }
         public let index: Int
@@ -308,8 +312,8 @@ public final class NetworkProbe {
         public let hops: Int?
         public let receptionStats: String
         /// Swift-only diagnostic Python lacks: true when the destination built from
-        /// `full_name` + the recalled identity does not equal the typed
-        /// `destination_hash`. Never printed — Python is silent about this, and reproducing
+        /// `full_name` + the recalled identity doesn't equal the typed
+        /// `destination_hash`. Never printed—Python is silent about this, and reproducing
         /// the silence is what parity requires.
         public let destinationHashMismatch: Bool
 
@@ -348,12 +352,12 @@ public final class NetworkProbe {
     private let cancelLock = NSLock()
     private var cancelled = false
 
-    // MARK: - Initialisation
+    // MARK: - Initialization
 
     /// Create a probe helper attached to `transport`.
     ///
     /// Retained for the single-shot ``send(to:size:)`` convenience; ``run(options:)`` uses
-    /// the injectable initialiser below.
+    /// the injectable initializer below.
     ///
     /// - Parameters:
     ///   - transport: the `Transport` used to send packets.
@@ -373,7 +377,7 @@ public final class NetworkProbe {
         self.output = nil
     }
 
-    /// The initialiser ``run(options:)`` and every unit test use.
+    /// The initializer ``run(options:)`` and every unit test use.
     public init(network: any ProbeNetwork,
                 clock: any ProbeClock,
                 entropy: any ProbeEntropy,
@@ -392,7 +396,7 @@ public final class NetworkProbe {
     /// Cooperative cancellation for the executable's SIGINT handler.
     /// Python: `except KeyboardInterrupt: print(""); exit()` (rnprobe.py:247-249).
     ///
-    /// Signal handling itself must stay in the executable target — the library has no
+    /// Signal handling itself must stay in the executable target—the library has no
     /// signal machinery and must keep compiling for iOS, tvOS and watchOS.
     public func cancel() {
         cancelLock.lock(); cancelled = true; cancelLock.unlock()
@@ -422,7 +426,7 @@ public final class NetworkProbe {
     }
 
     /// Split a full dotted destination name the way Python's
-    /// `Destination.app_and_aspects_from_name` does — a plain `full_name.split(".")`,
+    /// `Destination.app_and_aspects_from_name` does—a plain `full_name.split(".")`,
     /// which **keeps empty components**.
     ///
     /// `Destination.appAndAspects(fromFullName:)` uses `split(separator:".")`, whose
@@ -435,7 +439,7 @@ public final class NetworkProbe {
         return (first, Array(components.dropFirst()))
     }
 
-    /// Python `str(float)` — shortest round-trip repr, always with at least one fractional
+    /// Python `str(float)`—shortest round-trip repr, always with at least one fractional
     /// digit (`0.5` → `"0.5"`, `1000.0` → `"1000.0"`). A `String(format: "%.3f")` would
     /// print `"0.500"` and diverge.
     public static func pythonFloatString(_ value: Double) -> String {
@@ -446,14 +450,14 @@ public final class NetworkProbe {
     ///
     /// Python rounds the exact decimal expansion of the double (half-to-even via
     /// `_Py_dg_dtoa`); this multiplies first. The two differ only on exact ties at the
-    /// rounding digit, which for an RTT is unobservable — but do not build a differential
+    /// rounding digit, which for an RTT is unobservable—but don't build a differential
     /// test on adversarial inputs.
     public static func pythonRound(_ value: Double, _ digits: Int) -> Double {
         let scale = pow(10.0, Double(digits))
         return (value * scale).rounded(.toNearestOrEven) / scale
     }
 
-    /// Python `str(int)` — no decimal point. Used for RSSI, which is an int in Python.
+    /// Python `str(int)`—no decimal point. Used for RSSI, which is an int in Python.
     public static func pythonIntString(_ value: Int) -> String { "\(value)" }
 
     /// Python: rnprobe.py:157-163. The boundary is `rtt >= 1`.
@@ -488,8 +492,8 @@ public final class NetworkProbe {
     ///
     /// - Returns: the failure Python would print before its bare `exit()`, or nil.
     public static func validate(options: Options) -> ValidationError? {
-        // Note: the size default at rnprobe.py:45 is applied before this, and is not a
-        // failure mode, so it is not represented here.
+        // Note: the size default at rnprobe.py:45 is applied before this, and isn't a
+        // failure mode, so it isn't represented here.
         guard options.fullName != nil else { return .missingFullName }
         do {
             _ = try parseDestinationHash(options.destinationHexhash ?? "")
@@ -501,12 +505,19 @@ public final class NetworkProbe {
         }
     }
 
-    /// Python: `timeout or DEFAULT_TIMEOUT + reticulum.get_first_hop_timeout(dh)`
-    /// (rnprobe.py:84, 134). `or` is falsy on `0` and `0.0`, so `-t 0` means "unset"; the
-    /// precedence is `timeout or (12 + fht)`, not `(timeout or 12) + fht`.
-    public static func effectiveTimeout(_ timeout: TimeInterval?, firstHopTimeout: TimeInterval) -> TimeInterval {
+    /// Python: `timeout or max(DEFAULT_TIMEOUT+reticulum.get_first_hop_timeout(dh),
+    /// reticulum.get_medium_path_timeout())` (rnprobe.py:84, 134). `or` is falsy on `0` and
+    /// `0.0`, so `-t 0` means "unset"; the precedence is `timeout or max(...)`, not
+    /// `(timeout or 12) + fht`.
+    ///
+    /// RNS 1.5.x added the `max`. The hop sum is derived from the *next hop's* measured
+    /// latency, so on a node whose only link is slow it can still be shorter than a single
+    /// round trip over that link; the medium timeout is the floor that fixes it.
+    public static func effectiveTimeout(_ timeout: TimeInterval?,
+                                        firstHopTimeout: TimeInterval,
+                                        mediumPathTimeout: TimeInterval) -> TimeInterval {
         if let timeout, timeout != 0 { return timeout }
-        return defaultTimeout + firstHopTimeout
+        return max(defaultTimeout + firstHopTimeout, mediumPathTimeout)
     }
 
     // MARK: - Run
@@ -518,13 +529,13 @@ public final class NetworkProbe {
         guard let network, let output else { return .ok }
         outcomes = []
 
-        // Python: `if size == None: size = DEFAULT_PROBE_SIZE` (rnprobe.py:45) — applied
+        // Python: `if size == None: size = DEFAULT_PROBE_SIZE` (rnprobe.py:45)—applied
         // BEFORE the full_name check and before hash validation. Order preserved.
         let size = options.size ?? NetworkProbe.defaultProbeSize
         self.size = size
 
-        // Python: rnprobe.py:46-48 and :57-67 — each failure prints one line on stdout and
-        // then bare-exits, i.e. process status 0, not an error code.
+        // Python: rnprobe.py:46-48 and :57-67—each failure prints one line on stdout and
+        // then bare-exits, that is, process status 0, not an error code.
         if let error = NetworkProbe.validate(options: options) {
             output.write(error.message + "\n")
             output.flush()
@@ -541,7 +552,7 @@ public final class NetworkProbe {
         // ── Path phase (rnprobe.py:79-95) ──────────────────────────────────────────
         if !network.hasPath(to: destinationHash) {
             network.requestPath(for: destinationHash)
-            // Python: print(… + " requested  ", end=" ") — two literal spaces plus
+            // Python: print(… + " requested  ", end=" ")—two literal spaces plus
             // print's end=" " makes THREE, and there is no newline.
             output.write("Path to " + RNSUtilities.prettyhexrep(destinationHash) + " requested   ")
             output.flush()
@@ -551,7 +562,8 @@ public final class NetworkProbe {
         // exists. With no path known, first_hop_timeout is DEFAULT_PER_HOP_TIMEOUT = 6,
         // making the usual deadline now + 18.
         var deadline = clock.now() + NetworkProbe.effectiveTimeout(
-            options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash))
+            options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash),
+            mediumPathTimeout: network.mediumPathTimeout())
 
         var glyph = 0
         while !network.hasPath(to: destinationHash) && !(clock.now() > deadline) {
@@ -563,7 +575,7 @@ public final class NetworkProbe {
         }
 
         if clock.now() > deadline {
-            // Python: rnprobe.py:94 — \r, 58 spaces, \r, then the message plus print's \n.
+            // Python: rnprobe.py:94—\r, 58 spaces, \r, then the message plus print's \n.
             output.write("\r" + String(repeating: " ", count: NetworkProbe.shortEraseWidth)
                          + "\rPath request timed out\n")
             output.flush()
@@ -593,7 +605,7 @@ public final class NetworkProbe {
         // Python never compares the constructed hash against the typed one; the probe is
         // encrypted for one and the path was requested for the other. Surfaced on
         // Outcome, never printed. Note that Destination.__init__ registers only IN
-        // destinations, so nothing is registered here either — registering would make
+        // destinations, so nothing is registered here either—registering would make
         // Transport.send take its local-delivery branch and self-prove every probe.
         let hashMismatch = requestDestination.hash != destinationHash
 
@@ -605,7 +617,7 @@ public final class NetworkProbe {
         while remaining > 0 {
             if isCancelled { return finishCancelled(output) }
 
-            // Python: `if sent > 0: time.sleep(wait)` — N probes incur (N-1) waits.
+            // Python: `if sent > 0: time.sleep(wait)`—N probes incur (N-1) waits.
             if sent > 0 { clock.sleep(options.wait) }
 
             // Python: `RNS.Packet(request_destination, os.urandom(size)); probe.pack()`.
@@ -628,7 +640,7 @@ public final class NetworkProbe {
             do {
                 receipt = try network.transmit(ciphertext: ciphertext, to: requestDestination.hash)
             } catch SendError.mtuExceeded(let packedSize) {
-                // Python: rnprobe.py:117-119. The message is rnprobe's own — note the
+                // Python: rnprobe.py:117-119. The message is rnprobe's own—note the
                 // grammar is "exceed", not "exceeds", unlike the one Packet.pack raises.
                 output.write("Error: Probe packet size of \(packedSize) bytes exceed MTU of \(Reticulum.mtu) bytes\n")
                 output.flush()
@@ -651,17 +663,18 @@ public final class NetworkProbe {
                 }
             }
 
-            // Python: rnprobe.py:132 — leading \r, then two literal spaces plus print's
+            // Python: rnprobe.py:132—leading \r, then two literal spaces plus print's
             // end=" " for THREE trailing, no newline. The hash shown is the TYPED one, and
             // `size` is the plaintext size, not the wire size.
             output.write("\rSent probe \(sent) (\(size) bytes) to "
                          + RNSUtilities.prettyhexrep(destinationHash) + more + "   ")
             output.flush()
 
-            // Python: rnprobe.py:134 — recomputed for every probe, after the send, and
+            // Python: rnprobe.py:134—recomputed for every probe, after the send, and
             // re-queried (never cached) so a now-known path changes the value.
             deadline = clock.now() + NetworkProbe.effectiveTimeout(
-                options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash))
+                options.timeout, firstHopTimeout: network.firstHopTimeout(for: destinationHash),
+                mediumPathTimeout: network.mediumPathTimeout())
 
             glyph = 0
             while receipt?.status == .sent && !(clock.now() > deadline) {
@@ -673,9 +686,9 @@ public final class NetworkProbe {
             }
 
             if clock.now() > deadline {
-                // Python: rnprobe.py:142-143. This branch never inspects receipt.status —
-                // a probe delivered exactly as the deadline passes still counts as lost —
-                // and it emits no \b\b spinner-clear. 64 spaces here, 58 below.
+                // Python: rnprobe.py:142-143. This branch never inspects receipt.status—a
+                // probe delivered exactly as the deadline passes still counts as lost—and
+                // it emits no \b\b spinner-clear. 64 spaces here, 58 below.
                 output.write("\r" + String(repeating: " ", count: NetworkProbe.longEraseWidth)
                              + "\rProbe timed out\n")
                 output.flush()
@@ -683,7 +696,7 @@ public final class NetworkProbe {
                                         hops: nil, receptionStats: "",
                                         destinationHashMismatch: hashMismatch))
             } else {
-                // Python: rnprobe.py:146 — print("\b\b ") overwrites the last glyph.
+                // Python: rnprobe.py:146—print("\b\b ") overwrites the last glyph.
                 output.write("\u{08}\u{08} \n")
                 output.flush()
 
@@ -706,7 +719,7 @@ public final class NetworkProbe {
                                             hops: hops, receptionStats: stats,
                                             destinationHashMismatch: hashMismatch))
                 } else {
-                    // Python: rnprobe.py:196-197 — the receipt's own timeout won. 58
+                    // Python: rnprobe.py:196-197—the receipt's own timeout won. 58
                     // spaces, and emitted AFTER the \b\b clear line.
                     output.write("\r" + String(repeating: " ", count: NetworkProbe.shortEraseWidth)
                                  + "\rProbe timed out\n")
@@ -731,7 +744,7 @@ public final class NetworkProbe {
         return loss > 0 ? .packetLoss : .ok
     }
 
-    /// Python: `except KeyboardInterrupt: print(""); exit()` — a blank line and status 0.
+    /// Python: `except KeyboardInterrupt: print(""); exit()`—a blank line and status 0.
     private func finishCancelled(_ output: any ProbeOutput) -> Result {
         output.write("\n")
         output.flush()
@@ -740,8 +753,8 @@ public final class NetworkProbe {
 
     /// Python: rnprobe.py:165-186.
     ///
-    /// The two branches are deliberately asymmetric in Python — the shared-instance branch
-    /// reports Link Quality, the local branch does not — and that asymmetry is reproduced.
+    /// The two branches are deliberately asymmetric in Python—the shared-instance branch
+    /// reports Link Quality, the local branch doesn't—and that asymmetry is reproduced.
     private func receptionStats(for receipt: any ProbeReceipt, network: any ProbeNetwork) -> String {
         var stats = ""
         if network.isConnectedToSharedInstance {
@@ -762,16 +775,16 @@ public final class NetworkProbe {
             }
         } else if receipt.hasProofPacket {
             // Python reads the plain `Packet.rssi` / `Packet.snr` attributes set by the
-            // receiving interface — never the RPC-backed get_rssi() methods. RSSI is an
+            // receiving interface—never the RPC-backed get_rssi() methods. RSSI is an
             // int on the Python side (RNodeInterface.py:878) even though Swift stores a
-            // Float, so it is rendered as one; SNR stays a float.
+            // Float, so it's rendered as one; SNR stays a float.
             if let rssi = receipt.proofRssi {
                 stats += " [RSSI \(NetworkProbe.pythonIntString(Int(rssi))) dBm]"
             }
             if let snr = receipt.proofSnr {
                 stats += " [SNR \(NetworkProbe.pythonFloatString(Double(snr))) dB]"
             }
-            // No Link Quality here — deliberate in Python (rnprobe.py:180-186).
+            // No Link Quality here—deliberate in Python (rnprobe.py:180-186).
         }
         return stats
     }
@@ -789,7 +802,7 @@ public final class NetworkProbe {
     /// - Parameters:
     ///   - destination: an outbound `.single` destination.
     ///   - size: payload size override; `nil` uses ``size``.
-    /// - Returns: the receipt, or `nil` if the packet exceeds the MTU or could not be
+    /// - Returns: the receipt, or `nil` if the packet exceeds the MTU or couldn't be
     ///   encrypted.
     @discardableResult
     public func send(to destination: Destination, size: Int? = nil) -> PacketReceipt? {

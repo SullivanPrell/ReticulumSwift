@@ -3,7 +3,7 @@ import Foundation
 /// Transport extension: interface-discovery + blackhole-updater lifecycle.
 ///
 /// Mirrors Python's `Transport.enable_discovery()`, `Transport.discover_interfaces()`,
-/// and `Transport.enable_blackhole_updater()` — see `RNS/Transport.py` lines 449–463.
+/// and `Transport.enable_blackhole_updater()`—see `RNS/Transport.py` lines 449–463.
 extension Transport {
 
     // MARK: - Interface discovery (receiver side)
@@ -14,7 +14,7 @@ extension Transport {
     /// `InterfaceDiscovery` persistent store. Discovered interfaces are persisted to
     /// `storagePath` and forwarded to `callback`.
     ///
-    /// Idempotent — a second call while already running is a no-op.
+    /// Idempotent—a second call while already running is a no-op.
     ///
     /// Mirrors Python's `Transport.discover_interfaces()` which creates an
     /// `InterfaceDiscovery(discover_interfaces=True)`.
@@ -36,8 +36,8 @@ extension Transport {
         // Python reaches its Reticulum singleton for this
         // (`self.rns_instance.is_blackholed(...)`); Swift has none, so the check
         // is injected. Without this the RNS 1.4.1 pruning of blackholed
-        // discoveries is dead code — the clauses are guarded on the closure
-        // being non-nil.  Weak self: the store outlives nothing here, but the
+        // discoveries is dead code—the clauses are guarded on the closure
+        // being non-nil. Weak self: the store outlives nothing here, but the
         // closure must not keep Transport alive.
         discovery.isBlackholed = { [weak self] hash in self?.isBlackholed(hash) ?? false }
 
@@ -57,7 +57,7 @@ extension Transport {
 
     /// Stop listening for interface discovery announces and release all associated state.
     ///
-    /// Idempotent — safe to call when discovery was never started.
+    /// Idempotent—safe to call when discovery was never started.
     public func stopDiscoverInterfaces() {
         if let h = discoveryAnnounceHandler {
             deregister(announceHandler: h)
@@ -68,7 +68,7 @@ extension Transport {
 
     /// List all persisted discovered interfaces, delegating to `discoveryHandler`.
     ///
-    /// Returns `[]` when `discoverInterfaces` has not been called.
+    /// Returns `[]` when `discoverInterfaces` hasn't been called.
     /// Mirrors `Reticulum.list_discovered_interfaces()` which creates a temporary
     /// `InterfaceDiscovery(discover_interfaces=False)` for a one-shot listing.
     ///
@@ -86,7 +86,7 @@ extension Transport {
     /// Create and start the background blackhole-list updater.
     ///
     /// Uses `Reticulum.blackholeSources()` as the list of trusted source identities.
-    /// Idempotent — a second call while already running is a no-op.
+    /// Idempotent—a second call while already running is a no-op.
     ///
     /// Mirrors Python's `Transport.enable_blackhole_updater()`.
     public func enableBlackholeUpdater() {
@@ -98,7 +98,7 @@ extension Transport {
 
     /// Stop the blackhole-list updater and release it.
     ///
-    /// Idempotent — safe to call when the updater was never started.
+    /// Idempotent—safe to call when the updater was never started.
     public func disableBlackholeUpdater() {
         blackholeUpdater?.stop()
         blackholeUpdater = nil

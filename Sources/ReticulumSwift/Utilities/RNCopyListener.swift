@@ -1,7 +1,7 @@
 import Foundation
 
 /// Errors surfaced while saving a received resource.
-/// Python has no error type — each failure is a log line or a `print` — so the cases here
+/// Python has no error type—each failure is a log line or a `print`—so the cases here
 /// map one-to-one onto the messages in rncp.py:281-313 / 490-521.
 public enum RNCopyError: Swift.Error, Equatable {
     /// `resource.metadata == None` → "Invalid data received, ignoring resource".
@@ -11,7 +11,7 @@ public enum RNCopyError: Swift.Error, Equatable {
     /// Any exception in the save block → "An error occurred while saving received resource: <e>".
     case writeFailed(String)
     /// `-O` was requested but the unlink threw → "Could not overwrite existing file <path>, renaming instead".
-    /// Informational: Python falls through to the rename counter, and so do we.
+    /// Informational: Python falls through to the rename counter, and so does this listener.
     case overwriteFailed(String)
 
     /// The trailing text Python interpolates into
@@ -36,8 +36,8 @@ public extension RNCopyApp {
     ///
     /// Python moves the RNS temp file with `shutil.move(resource.data.name, …)`; Swift
     /// receives the plaintext as in-memory `Data`, so this writes it instead. Everything else
-    /// — basename collapsing, `--save` containment, the `-O` unlink, the `.1`/`.2` rename
-    /// counter — matches exactly.
+    ///—basename collapsing, `--save` containment, the `-O` unlink, the `.1`/`.2` rename
+    /// counter—matches exactly.
     static func saveReceivedResource(payload: Data,
                                      metadata: Data?,
                                      savePath: String?,
@@ -52,7 +52,7 @@ public extension RNCopyApp {
             return .failure(.writeFailed("'name'"))
         }
 
-        // Python: os.path.basename(...) — collapses a hostile "../../etc/passwd" to "passwd".
+        // Python: os.path.basename(...)—collapses a hostile "../../etc/passwd" to "passwd".
         let filename = basename(name)
         let resolution = resolveSaveTarget(filename: filename,
                                            savePath: savePath,
@@ -74,7 +74,7 @@ public extension RNCopyApp {
     }
 }
 
-/// The receiving half of `rncp` — Python's `listen()` plus the module-level
+/// The receiving half of `rncp`—Python's `listen()` plus the module-level
 /// `client_link_established` / `receive_sender_identified` / `receive_resource_*`
 /// callbacks and the `fetch_request` handler (rncp.py:75-232, 234-316).
 ///
@@ -90,9 +90,9 @@ public extension RNCopyApp {
 ///   A client fetching from a listener without `-F` gets *no response at all* and times
 ///   out into `unknown`.
 /// * Path containment (both the fetch jail and `--save`) is lexical, never symlink
-///   resolving — see ``RNCopyApp/absolutePath(_:cwd:)``.
+///   resolving—see ``RNCopyApp/absolutePath(_:cwd:)``.
 /// * Python's allow-list gate uses `ALLOW_LIST`, which silently sends nothing when the
-///   caller is not on the list. Swift's `Destination.registerNativeRequestHandler` takes
+///   caller isn't on the list. Swift's `Destination.registerNativeRequestHandler` takes
 ///   `[Identity]` and rncp only ever has bare hashes, so the handler is registered with
 ///   `.all` and the identity gate runs inside ``serveFetchRequest(requested:link:)``,
 ///   returning `nil` (= no response) on denial. Behaviourally and on the wire this is
@@ -168,7 +168,7 @@ public final class RNCopyListener {
     public var onTransferStarted: ((Data, Identity?) -> Void)?
     /// `(completed, resourceHash, linkID)` when an inbound transfer ends.
     public var onTransferConcluded: ((Bool, Data, Data) -> Void)?
-    /// Fires when a sender that is not on the allow-list has its link torn down.
+    /// Fires when a sender that isn't on the allow-list has its link torn down.
     public var onSenderRejected: ((Identity) -> Void)?
 
     // MARK: - Init
@@ -207,7 +207,7 @@ public final class RNCopyListener {
             ) { [weak self] _, requestData, _, link, _ in
                 guard let self else { return nil }
                 // Python's request data is a str, and `fetch_request` calls
-                // `data.startswith(...)` on it — anything else is a remote-side error.
+                // `data.startswith(...)` on it—anything else is a remote-side error.
                 guard let requested = requestData.asString else { return nil }
                 return self.serveFetchRequest(requested: requested, link: link)
             }
@@ -242,7 +242,7 @@ public final class RNCopyListener {
         link.onRemoteIdentified = { [weak self] link, identity in
             self?.handleRemoteIdentified(link, identity: identity)
         }
-        // Swift's default is `.acceptNone`, which actively replies RESOURCE_RCL — this
+        // Swift's default is `.acceptNone`, which actively replies RESOURCE_RCL—this
         // assignment is mandatory, not cosmetic.
         link.resourceStrategy = .acceptApp
         link.onResourceAdvertised = { [weak self] advertisement, link in
@@ -359,8 +359,8 @@ public final class RNCopyListener {
     ///
     /// Python moves the RNS temp file with `shutil.move(resource.data.name, …)`; Swift
     /// receives the plaintext as in-memory `Data`, so this writes it instead. Everything
-    /// else — basename collapsing, `--save` containment, `-O` unlink, the `.1`/`.2` rename
-    /// counter — matches rncp.py:287-309 exactly.
+    /// else—basename collapsing, `--save` containment, `-O` unlink, the `.1`/`.2` rename
+    /// counter—matches rncp.py:287-309 exactly.
     public func saveReceivedResource(payload: Data, metadata: Data?) -> Swift.Result<String, RNCopyError> {
         RNCopyApp.saveReceivedResource(
             payload: payload,
@@ -381,12 +381,12 @@ public final class RNCopyListener {
     /// Serve a `fetch_file` request. Python: `fetch_request` (rncp.py:172-209).
     ///
     /// Returns the scalar that goes into the response envelope
-    /// `msgpack([request_id, <value>])`, or `nil` to send no response at all — which is
+    /// `msgpack([request_id, <value>])`, or `nil` to send no response at all—which is
     /// what Python's `ALLOW_LIST` denial and its `target_link == None` branch both do.
     ///
     /// The file itself is advertised as an **ordinary** resource on the link (not a
     /// response resource, no request id), so the RESOURCE_ADV goes out *before* the scalar
-    /// response packet — same ordering as Python.
+    /// response packet—same ordering as Python.
     public func serveFetchRequest(requested: String, link: Link) -> MsgPack.Value? {
         // Python's ALLOW_LIST gate, relocated into the handler (see the type doc).
         if !configuration.allowAll {

@@ -11,7 +11,7 @@ final class LinkWatchdogTests: XCTestCase {
         transport.restore(identity: dstIdentity, forDestination: dst.hash)
         let link = try Link.initiate(destination: dst, transport: transport)
 
-        // Just established — no inbound. noInboundFor should be near 0.
+        // Just established—no inbound. noInboundFor should be near 0.
         let t = link.noInboundFor()
         XCTAssertLessThan(t, 1.0)
         _ = srcIdentity // suppress warning

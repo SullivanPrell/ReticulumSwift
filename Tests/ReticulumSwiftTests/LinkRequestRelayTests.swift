@@ -3,7 +3,7 @@ import XCTest
 
 /// Tests for LINKREQUEST relay through a transport node.
 ///
-/// Python reference: `Transport.py` lines 1559–1633 — when the relay receives a
+/// Python reference: `Transport.py` lines 1559–1633—when the relay receives a
 /// HEADER_2 LINKREQUEST addressed to it, it must:
 ///   - If `remaining_hops == 1` (Swift: `path.hops == 0`): strip transport header
 ///     and forward as HEADER_1 so the final destination can accept it.
@@ -53,7 +53,7 @@ final class LinkRequestRelayTests: XCTestCase {
         let rT = Transport()
         let aT = Transport()
 
-        // rT is the relay — must have transport enabled.
+        // rT is the relay—must have transport enabled.
         rT.transportEnabled = true
 
         // A registers a link-accepting destination.
@@ -93,7 +93,7 @@ final class LinkRequestRelayTests: XCTestCase {
 
         // B knows A is reachable via R as relay (hops = 1, nextHopTransportID = R's ID).
         // In real operation, B learns this by receiving a HEADER_2 announce from R.
-        // Here we seed it directly to keep the test focused on LINKREQUEST relay.
+        // This test seeds it directly to keep the test focused on LINKREQUEST relay.
         bT.restore(
             path: Transport.PathEntry(
                 destinationHash: aDest.hash,
@@ -181,7 +181,7 @@ final class LinkRequestRelayTests: XCTestCase {
     /// signalling bytes are removed before forwarding. Otherwise a Python-
     /// initiated MTU upgrade would pass through a Swift relay unclamped and the
     /// endpoints could negotiate a link MTU larger than a relay hop can carry.
-    /// Stripping does not change the link_id (both sides hash the packet with
+    /// Stripping doesn't change the link_id (both sides hash the packet with
     /// signalling bytes removed), so routing is unaffected.
     func testRelayStripsMTUSignallingWhenNextHopHasNoHWMTU() throws {
         let rT = Transport()

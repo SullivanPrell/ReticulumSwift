@@ -6,7 +6,7 @@ import XCTest
 /// SINGLE announces bypass the packet-hash dedup filter (so paths can update via
 /// multiple routes), but Python's per-path `random_blobs` guard means a node
 /// keeps the FIRST-heard path for a given announce: a later copy of the *same*
-/// announce (identical random blob) is rejected regardless of hop count — this
+/// announce (identical random blob) is rejected regardless of hop count—this
 /// is the announce replay/loop protection. Hop-count optimization happens across
 /// DIFFERENT announces (the source re-announces periodically), not within a
 /// single announce flood.
@@ -43,8 +43,8 @@ final class AnnounceMultiPathTests: XCTestCase {
         if1.inboundHandler?(p3, if1)
         XCTAssertEqual(t.hopsTo(dest.hash), 3, "initial path should be 3 hops")
 
-        // Second arrival: 1 hop via if2 — but it's the SAME announce (same blob),
-        // so it is rejected as a replay and the first-heard path is kept.
+        // Second arrival: 1 hop via if2—but it's the SAME announce (same blob),
+        // so it's rejected as a replay and the first-heard path is kept.
         var p1 = packet; p1.hops = 1
         if2.inboundHandler?(p1, if2)
         XCTAssertEqual(t.hopsTo(dest.hash), 3,
@@ -73,8 +73,8 @@ final class AnnounceMultiPathTests: XCTestCase {
         XCTAssertEqual(t.hopsTo(dest.hash), 3)
 
         // A fresh announce (new random blob) at 1 hop optimizes the path. A genuine
-        // re-announce is emitted later, so it carries a strictly newer timestamp —
-        // required by the freshness gate (a same-second announce would tie).
+        // re-announce is emitted later, so it carries a strictly newer timestamp—required
+        // by the freshness gate (a same-second announce would tie).
         var second = try Announce.make(for: dest, timestamp: t0 + 2); second.hops = 1
         if2.inboundHandler?(second, if2)
         XCTAssertEqual(t.hopsTo(dest.hash), 1,

@@ -1,7 +1,7 @@
 import Foundation
 import ReticulumSwift
 
-// rncp — Reticulum File Transfer Utility.
+// rncp—Reticulum File Transfer Utility.
 //
 // Python reference: RNS/Utilities/rncp.py.
 //
@@ -14,7 +14,7 @@ import ReticulumSwift
 
 /// `erase_str = "\33[2K\r"` (rncp.py:73).
 let ERASE = RNCopyApp.eraseString
-/// `es = " "` — the single space appended by `print(end=es)` (rncp.py:72).
+/// `es = " "`—the single space appended by `print(end=es)` (rncp.py:72).
 let ES = RNCopyApp.endSpace
 
 /// `print(..., end=terminator)` + flush. Python flushes explicitly in every progress path.
@@ -28,7 +28,7 @@ final class Spinner {
     private var index = 0
     var frame: Character { RNCopyApp.spinnerFrames[index] }
     func advance() { index = (index + 1) % RNCopyApp.spinnerFrames.count }
-    /// Python: `print(("\b\b"+syms[i]+" "), end="")` — two backspaces, frame, space.
+    /// Python: `print(("\b\b"+syms[i]+" "), end="")`—two backspaces, frame, space.
     func tick() {
         emit("\u{8}\u{8}\(frame) ", terminator: "")
         advance()
@@ -44,7 +44,7 @@ func prettyHex(_ hash: Data) -> String { RNSUtilities.prettyhexrep(hash) }
 let rawArguments = Array(CommandLine.arguments.dropFirst())
 let parser = RNCopyApp.makeArgumentParser()
 
-/// Python: `parser.error(msg)` — usage block plus `rncp: error: …` on stderr, exit 2.
+/// Python: `parser.error(msg)`—usage block plus `rncp: error: …` on stderr, exit 2.
 func usageError(_ detail: String) -> Never {
     let usage = RNCopyApp.helpText.components(separatedBy: "\n\n")[0]
     FileHandle.standardError.write(Data("\(usage)\nrncp: error: \(detail)\n".utf8))
@@ -85,8 +85,8 @@ let jailArgument = arguments.value("--jail")
 let saveArgument = arguments.value("--save")
 let identityArgument = arguments.value("-i")
 let configArgument = arguments.value("--config")
-/// argparse converts `type=`d options as it consumes them, so a value it cannot parse is a
-/// usage error — not a silently-defaulted argument.
+/// argparse converts `type=`d options as it consumes them, so a value it can't parse is a
+/// usage error—not a silently defaulted argument.
 func converted<T>(_ name: String, typeName: String, default defaultValue: T,
                   convert: (String) -> T?) -> T {
     guard let raw = arguments.value(name) else { return defaultValue }
@@ -124,7 +124,7 @@ func printHelpAndExit() -> Never {
 /// Bring up the Reticulum stack the way `RNS.Reticulum(configdir=…, loglevel=…)` does.
 func startReticulum() -> InstanceConnection {
     // Reticulum.Configuration.logLevel is stored but never applied by start(), so assign
-    // the global here — exactly as Sources/rnsd/main.swift does.
+    // the global here—exactly as Sources/rnsd/main.swift does.
     Reticulum.globalLogLevel = logLevel
     do {
         return try InstanceConnection.attach(
@@ -188,8 +188,8 @@ func resolveSaveDirectory(_ value: String) -> String {
 
 // MARK: - SIGINT
 
-/// Python's handler prints "", cancels the resource, tears the link down and exits 0. It is
-/// also an upstream bug: `resource` is not a module global, so it raises NameError. The
+/// Python's handler prints "", cancels the resource, tears the link down and exits 0. It's
+/// also an upstream bug: `resource` isn't a module global, so it raises NameError. The
 /// intended behaviour is implemented here.
 final class InterruptTarget {
     var cancel: (() -> Void)?
@@ -242,7 +242,7 @@ func runListen() -> Never {
     }
 
     if printIdentity {
-        // Python: print("Identity     : "+str(identity)) — str(identity) is prettyhexrep.
+        // Python: print("Identity     : "+str(identity))—str(identity) is prettyhexrep.
         emit("Identity     : " + prettyHex(identity.hash))
         emit("Listening on : " + prettyHex(listener.destination.hash))
         exit(RNCopyApp.Result.ok.code)
@@ -257,7 +257,7 @@ func runListen() -> Never {
         allowAll = true
     } else {
         // Python wraps locating/reading/parsing in one try/except that only logs and
-        // continues; the merge, count and plural rules live in the library so they are
+        // continues; the merge, count and plural rules live in the library so they're
         // covered by RNCopyAllowedIdentitiesTests.
         let load = RNCopyApp.loadAllowedIdentities(commandLineEntries: allowedArguments,
                                                    fileSystem: fileSystem)
@@ -298,7 +298,7 @@ func runListen() -> Never {
     listener.start()
 
     // Upstream quirk (rncp.py:86-87, 222-230): `-b` defaults to -1, which `listen()` turns
-    // into Python `False`, and `False >= 0` is True — so the announce thread ALWAYS starts
+    // into Python `False`, and `False >= 0` is True—so the announce thread ALWAYS starts
     // and rncp always emits one announce at startup. Reproduced deliberately.
     DispatchQueue.global(qos: .utility).async {
         try? listener.announce()
@@ -327,11 +327,16 @@ func runSend(file: String, destination: String) -> Never {
         exit(RNCopyApp.Result.generalError.code)
     }
 
-    // Python: print(f"{erase_str}", end="") — send only; fetch does not do this.
+    // Python: print(f"{erase_str}", end="")—send only; fetch doesn't do this.
     emit(ERASE, terminator: "")
 
     let connection = startReticulum()
     let identity = prepareIdentity(connection: connection)
+    // `estab_timeout = time.time()+max(timeout, reticulum.get_medium_path_timeout())`
+    // (rncp.py:404, 660). In `rncp` the `-w` value feeds nothing but that one deadline—which
+    // covers the path wait and the link wait together—so flooring it once here is
+    // exactly Python's expression.
+    let timeout = max(timeout, connection.mediumPathTimeout())
 
     let sender = RNCopySender(
         transport: connection.reticulum.transport,
@@ -444,6 +449,11 @@ func runFetch(file: String, destination: String) -> Never {
 
     let connection = startReticulum()
     let identity = prepareIdentity(connection: connection)
+    // `estab_timeout = time.time()+max(timeout, reticulum.get_medium_path_timeout())`
+    // (rncp.py:404, 660). In `rncp` the `-w` value feeds nothing but that one deadline—which
+    // covers the path wait and the link wait together—so flooring it once here is
+    // exactly Python's expression.
+    let timeout = max(timeout, connection.mediumPathTimeout())
 
     let fetcher = RNCopyFetcher(
         transport: connection.reticulum.transport,
@@ -544,7 +554,7 @@ func runFetch(file: String, destination: String) -> Never {
         exit(RNCopyApp.Result.generalError.code)
 
     case .saveFailed, .completed:
-        // The resource itself completed. Python's save-failure paths early-return without
+        // The resource itself completed. Python's save-failure paths early return without
         // resolving and hang; the diagnostic has already been printed via onNotice, and the
         // intended final line is this one. Python prints the REMOTE path here.
         let message = "\(file) fetched from \(prettyDestination)"

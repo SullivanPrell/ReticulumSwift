@@ -8,12 +8,12 @@ import Foundation
 /// declares `-s/--service` and `-i/--interactive`.
 ///
 /// Parsing itself is delegated to the package's shared ``ArgumentParser``. What lives here is
-/// everything `argparse` does around parsing that the shared parser deliberately does not:
+/// everything `argparse` does around parsing that the shared parser deliberately doesn't:
 /// the wrapped `usage:` block, the per-parser help gutter, the two help-less rows for
 /// `-v`/`-q`, unambiguous-prefix expansion of long options, and the `prog: error: …` line.
 /// The rendered text is byte-compared against real `argparse` output in `RNSDAppTests`.
 ///
-/// Everything in this type is string-in / string-out — no terminal, no filesystem, no network.
+/// Everything in this type is string-in / string-out—no terminal, no filesystem, no network.
 public enum RNSDApp {
 
     // MARK: - Program identity
@@ -40,7 +40,7 @@ public enum RNSDApp {
     public static let logMaxSize: Int = Reticulum.logMaxSize
 
     /// Python's `rnpkg` defines its own one-line example config
-    /// (`__example_rnpkg_config__`, `rnpkg.py:75`) — **not** the RNS config.
+    /// (`__example_rnpkg_config__`, `rnpkg.py:75`)—**not** the RNS config.
     /// 57 bytes including the trailing newline; `print()` makes stdout 58.
     public static let rnpkgExampleConfig: String = "# This is an example package manager configuration file.\n"
 
@@ -64,7 +64,7 @@ public enum RNSDApp {
 
     /// The parsed command line, in Python's `args` shape.
     public struct Options: Equatable {
-        /// Python: `--config` — a config **directory**, not a file (`rnsd.py:65`).
+        /// Python: `--config`—a config **directory**, not a file (`rnsd.py:65`).
         public var configDir: String?
         /// Python: `-v/--verbose`, `action='count', default=0`.
         public var verbose: Int
@@ -116,7 +116,7 @@ public enum RNSDApp {
             case counted
             case value(metavar: String)
         }
-        /// All accepted spellings, first one first — `argparse` uses the first for `usage:`.
+        /// All accepted spellings, first one first—`argparse` uses the first for `usage:`.
         let names: [String]
         let kind: Kind
         /// `nil` means the declaration carries no `help=`, which `argparse` renders as a bare
@@ -150,12 +150,12 @@ public enum RNSDApp {
     /// Swift-only back-compatibility spellings for `--config`, kept because the pre-parity
     /// Swift `rnsd` accepted them with exactly this meaning (a config *directory*).
     ///
-    /// They are rewritten to `--config` before parsing, so they never appear in `usage:` or
-    /// the options table and never participate in prefix abbreviation — `--conf` therefore
+    /// They're rewritten to `--config` before parsing, so they never appear in `usage:` or
+    /// the options table and never participate in prefix abbreviation—`--conf` therefore
     /// resolves to `--config` as it does in Python, instead of becoming ambiguous.
     ///
     /// Python's own `-c` is **not** accepted (verified: `rnsd -c /tmp/x` → exit 2), and the
-    /// pre-parity Swift `-c` meant a config *file*, so it is deliberately not carried over.
+    /// pre-parity Swift `-c` meant a config *file*, so it's deliberately not carried over.
     static let configDirectoryAliases: [String] = ["--config-dir", "-d"]
 
     /// The declaration list, in `argparse` order. `-h/--help` is `argparse`'s implicit one and
@@ -185,8 +185,8 @@ public enum RNSDApp {
 
     /// The shared parser configured with this tool's declarations.
     ///
-    /// Note the returned parser's own ``ArgumentParser/usage`` is *not* `argparse`-shaped —
-    /// use ``helpText(program:description:allowServiceFlags:)`` for that.
+    /// Note the returned parser's own ``ArgumentParser/usage`` is *not* `argparse`-shaped—use
+    /// ``helpText(program:description:allowServiceFlags:)`` for that.
     public static func parser(program: String,
                               description: String,
                               allowServiceFlags: Bool) -> ArgumentParser {
@@ -235,8 +235,8 @@ public enum RNSDApp {
             throw ArgumentError.unrecognisedArguments(unconsumed(normalised, specs: specs))
         }
 
-        // Python: `if args.config: configarg = args.config else: configarg = None` —
-        // `--config ''` is falsy and falls back to the default search order (`rnsd.py:79-82`).
+        // Python: `if args.config: configarg = args.config else: configarg = None`—`--config
+        // ''` is falsy and falls back to the default search order (`rnsd.py:79-82`).
         let rawConfig = parsed.value("--config")
         let configDir = (rawConfig?.isEmpty == false) ? rawConfig : nil
 
@@ -253,8 +253,8 @@ public enum RNSDApp {
     /// Rewrite the Swift-only `--config` aliases to `--config`.
     ///
     /// Long-option prefix abbreviation (`--conf` → `--config`, `--ver` → ambiguous) is
-    /// `argparse`'s `allow_abbrev` and is handled by ``ArgumentParser`` for every utility,
-    /// so it is deliberately absent here. Only the aliases are rnsd's own business, and
+    /// `argparse`'s `allow_abbrev`; ``ArgumentParser`` handles it for every utility,
+    /// so it's deliberately absent here. Only the aliases are rnsd's own business, and
     /// rewriting them up front is what keeps them out of `usage:` and out of the
     /// abbreviation candidate pool.
     ///
@@ -321,7 +321,7 @@ public enum RNSDApp {
                 if match.takesValue, index < argv.count { index += 1 }
                 continue
             }
-            // Bundled single-character flags, e.g. "-vq".
+            // Bundled single-character flags, for example, "-vq".
             if !argument.hasPrefix("--"), argument.count > 2 {
                 let letters = argument.dropFirst().map { "-\($0)" }
                 let bundled = letters.allSatisfy { letter in
@@ -401,7 +401,7 @@ public enum RNSDApp {
             let invocation = spec.invocation
             guard let help = spec.help, !help.trimmingCharacters(in: .whitespaces).isEmpty else {
                 // Python: `if not action.help:` comes first, so the row is just the
-                // invocation — no padding, no trailing whitespace.
+                // invocation—no padding, no trailing whitespace.
                 lines.append("  " + invocation)
                 continue
             }
@@ -422,8 +422,8 @@ public enum RNSDApp {
 
     /// `argparse`'s `action='version'` output, without a trailing newline.
     ///
-    /// Python emits `RNS.__version__` (1.4.0). The Swift port emits ``Reticulum/version`` —
-    /// the port's own release — for consistency with the RetiOS About screen.
+    /// Python emits `RNS.__version__` (1.4.0). The Swift port emits ``Reticulum/version``—the
+    /// port's own release—for consistency with the RetiOS About screen.
     /// ``Reticulum/rnsProtocolVersion`` carries the RNS release this build matches.
     public static func versionText(program: String, version: String = Reticulum.version) -> String {
         "\(program) \(version)"

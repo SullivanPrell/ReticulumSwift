@@ -33,7 +33,7 @@ final class UDPInterfaceTests: XCTestCase {
         try b.start()
         defer { a.stop(); b.stop() }
 
-        // Give the sockets a moment to actually bind before we fire.
+        // Give the sockets a moment to actually bind before the send fires.
         Thread.sleep(forTimeInterval: 0.05)
 
         let pkt = Packet(

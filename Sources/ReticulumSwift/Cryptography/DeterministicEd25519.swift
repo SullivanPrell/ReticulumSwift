@@ -2,7 +2,7 @@
 // RFC 8032 deterministic Ed25519 signing.
 //
 // Apple CryptoKit uses a hedged (non-deterministic) Ed25519 variant: signing
-// the same message twice produces different bytes.  Python RNS verifies IFAC
+// the same message twice produces different bytes. Python RNS verifies IFAC
 // codes by re-signing and comparing, which requires deterministic output.
 // This implementation is wire-compatible with Python's pure25519 library.
 
@@ -12,11 +12,11 @@ import Foundation
 // MARK: - BigUInt (little-endian, [UInt32] limbs)
 
 /// Arbitrary-precision unsigned integer used only for the Ed25519 field/scalar
-/// arithmetic inside this file.  Not part of the public API.
+/// arithmetic inside this file. Not part of the public API.
 private struct BigUInt: Comparable, Equatable {
     var limbs: [UInt32]   // little-endian, no trailing zeros
 
-    // MARK: Initialise
+    // MARK: Initialize
 
     init() { limbs = [] }
     init(_ v: UInt64) {
@@ -39,7 +39,7 @@ private struct BigUInt: Comparable, Equatable {
         limbs = ls
         trim()
     }
-    /// From big-endian hex string (e.g. "7fff…ed").
+    /// From big-endian hex string (for example, "7fff…ed").
     init(hex h: String) {
         let s = h.count % 2 == 0 ? h : "0" + h
         var bytes: [UInt8] = []
@@ -49,7 +49,7 @@ private struct BigUInt: Comparable, Equatable {
             bytes.append(UInt8(s[idx..<next], radix: 16)!)
             idx = next
         }
-        self.init(le: bytes.reversed())   // hex is big-endian; we store LE
+        self.init(le: bytes.reversed())   // hex is big-endian; stored little-endian
     }
     init(limbs ls: [UInt32]) { self.limbs = ls; trim() }
 
@@ -331,7 +331,7 @@ private func scalarMultBase(_ s: BigUInt) -> Pt {
 /// RFC 8032 deterministic Ed25519 signing, wire-compatible with Python RNS's
 /// `Identity.sign()` (backed by pure25519 / eddsa.py).
 ///
-/// Usage: IFAC code generation only.  General signing should use
+/// Usage: IFAC code generation only. General signing should use
 /// Apple CryptoKit's `Curve25519.Signing.PrivateKey` for its security properties.
 public enum DeterministicEd25519 {
 

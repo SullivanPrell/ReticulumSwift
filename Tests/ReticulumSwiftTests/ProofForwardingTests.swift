@@ -63,7 +63,7 @@ final class ProofForwardingTests: XCTestCase {
         // Seed R's path table. B is directly reachable on the R→B interface,
         // so hops = 0 (Python remaining_hops == 1). Per the relay rules this
         // means R must strip the transport header and deliver to B as HEADER_1
-        // — B filters on transport_id, so a HEADER_2 packet bearing R's id
+        //—B filters on transport_id, so a HEADER_2 packet bearing R's id
         // would (correctly) be dropped.
         rT.restore(
             path: Transport.PathEntry(
@@ -79,7 +79,7 @@ final class ProofForwardingTests: XCTestCase {
         // A needs B's identity to encrypt
         aT.restore(identity: bId, forDestination: bDest.hash)
 
-        // Send DATA from A to B; the packet must be forwarded by R.
+        // Send DATA from A to B; R must forward the packet.
         let packet = Packet(
             destinationType: .single, packetType: .data,
             destinationHash: bDest.hash,

@@ -44,7 +44,7 @@ final class EndToEndFlowTests: XCTestCase {
         rToB.paired = bFromR; bFromR.paired = rToB
         rT.register(interface: rToB); bT.register(interface: bFromR)
 
-        // B announces — R should cache the announce and know the path to B
+        // B announces—R should cache the announce and know the path to B
         let rAnnounceReceived = expectation(description: "R receives B's announce")
         rT.onAnnounceReceived = { _, _ in rAnnounceReceived.fulfill() }
         try bT.announce(destination: bDest)
@@ -54,7 +54,7 @@ final class EndToEndFlowTests: XCTestCase {
         XCTAssertTrue(rT.hasPath(to: bDest.hash), "R should have a path to B after announce")
 
         // A should also receive the announce (R forwards it)
-        // (Already fulfilled if aT received it — let's also check A's path)
+        // (Already fulfilled if aT received it—also check A's path)
         // Actually A might not have a path immediately since B's announce was sent on R-B link.
         // A would need to receive the forwarded announce from R.
         _ = (aT, rT, bT)
@@ -81,14 +81,14 @@ final class EndToEndFlowTests: XCTestCase {
         rToB.paired = bFromR; bFromR.paired = rToB
         rT.register(interface: rToB); bT.register(interface: bFromR)
 
-        // B announces — R learns the path
+        // B announces—R learns the path
         let rHeard = expectation(description: "R hears B")
         rT.onAnnounceReceived = { _, _ in rHeard.fulfill() }
         try bT.announce(destination: bDest)
         wait(for: [rHeard], timeout: 1.0)
 
         // A already has the path (R forwarded B's announce synchronously)
-        // or we request it and R responds with the cached announce.
+        // or a request goes out and R responds with the cached announce.
         if !aT.hasPath(to: bDest.hash) {
             let aHeard = expectation(description: "A gets path via request")
             aT.onAnnounceReceived = { decoded, _ in
@@ -130,7 +130,7 @@ final class EndToEndFlowTests: XCTestCase {
         try bT.announce(destination: bDest)
         wait(for: [rHeard], timeout: 1.0)
 
-        // A may already have the path from R's announce forwarding, or we request it
+        // A may already have the path from R's announce forwarding, or a request fetches it
         if !aT.hasPath(to: bDest.hash) {
             let aHeard = expectation(description: "A gets path")
             aT.onAnnounceReceived = { decoded, _ in if decoded.destinationHash == bDest.hash { aHeard.fulfill() } }

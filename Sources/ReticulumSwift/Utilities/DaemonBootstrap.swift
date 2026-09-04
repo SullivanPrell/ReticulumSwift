@@ -4,12 +4,12 @@ import Foundation
 /// exists: work out which directory the configuration lives in, lay out the storage tree,
 /// and turn `-v`/`-q` into an actual log level.
 ///
-/// Python reference: `RNS/Reticulum.py`, `Reticulum.__init__` — specifically the
+/// Python reference: `RNS/Reticulum.py`, `Reticulum.__init__`—specifically the
 /// config-directory search at lines 229-236, the `makedirs` block at 316-322, the
 /// default-config creation at 329-333, and the `[logging] loglevel` arithmetic inside
 /// `__apply_config` at 452-460.
 ///
-/// All of this is pure or `FileManager`-injected, so it is drivable from tests with no
+/// All of this is pure or `FileManager`-injected, so it's drivable from tests with no
 /// terminal, no sockets and no live network.
 public enum DaemonBootstrap {
 
@@ -37,17 +37,17 @@ public enum DaemonBootstrap {
         public let identities: URL
         /// `<configdir>/storage/blackhole`.
         public let blackhole: URL
-        /// `<configdir>/interfaces` — where Python looks for external interface modules.
+        /// `<configdir>/interfaces`—where Python looks for external interface modules.
         public let interfaces: URL
         /// `<configdir>/logfile`. Python: `RNS.logfile = Reticulum.configdir+"/logfile"`.
         public let logFile: URL
-        /// `<configdir>/logfile.1` — the single rotated generation Python keeps.
+        /// `<configdir>/logfile.1`—the single rotated generation Python keeps.
         public let rotatedLogFile: URL
 
         public init(configDir: URL) {
             self.configDir = configDir
-            // Every path resolves through `StorageInventory` — the one place that names the
-            // files we persist. `rnsd` bootstraps here rather than through `Reticulum`, so a
+            // Every path resolves through `StorageInventory`—the one place that names the
+            // files this stack persists. `rnsd` bootstraps here rather than through `Reticulum`, so a
             // second set of literals in this file is a second place for bugs/029 to happen.
             self.configFile = StorageInventory.url(.config, in: configDir)
             let storage = StorageInventory.url(.storage, in: configDir)
@@ -91,8 +91,8 @@ public enum DaemonBootstrap {
                                         home: URL,
                                         systemConfigDir: URL = URL(fileURLWithPath: "/etc/reticulum"),
                                         fileManager: FileManager = .default) -> URL {
-        // Python: `if args.config: configarg = args.config else: configarg = None` —
-        // an empty string is falsy, so `--config ''` falls back to the search order.
+        // Python: `if args.config: configarg = args.config else: configarg = None`—an
+        // empty string is falsy, so `--config ''` falls back to the search order.
         let explicitURL = (explicit?.isEmpty == false) ? URL(fileURLWithPath: explicit!) : nil
         return InstanceConnection.resolveConfigDirectory(explicitURL,
                                                          home: home,
@@ -102,7 +102,7 @@ public enum DaemonBootstrap {
 
     /// Create the seven directories Python's constructor creates, in Python's order.
     ///
-    /// Python: `Reticulum.py:316-322` — `storage`, `storage/cache`, `storage/resources`,
+    /// Python: `Reticulum.py:316-322`—`storage`, `storage/cache`, `storage/resources`,
     /// `storage/identities`, `storage/blackhole`, `interfaces`, `storage/cache/announces`.
     /// Idempotent, exactly like `os.makedirs` behind an `isdir` guard.
     public static func createStorageTree(_ paths: Paths, fileManager: FileManager = .default) throws {
@@ -128,9 +128,9 @@ public enum DaemonBootstrap {
     /// delta into the level Python would end up with.
     ///
     /// Python, in two places:
-    /// - `Reticulum.py:298-305` — an explicit `loglevel=` argument is clamped high-first
+    /// - `Reticulum.py:298-305`—an explicit `loglevel=` argument is clamped high-first
     ///   then low into `LOG_CRITICAL...LOG_EXTREME` (0...8) and suppresses the config value.
-    /// - `Reticulum.py:452-460` — otherwise `RNS.loglevel = int(value)`, then
+    /// - `Reticulum.py:452-460`—otherwise `RNS.loglevel = int(value)`, then
     ///   `+= requested_verbosity` when a verbosity was requested, then clamped to `0...7`.
     ///
     /// Two Python quirks are reproduced deliberately:
@@ -175,8 +175,8 @@ public enum DaemonBootstrap {
     /// rule needs the distinction, so this reads the text directly.
     ///
     /// Mirrors ConfigObj's view of the file: `#` starts a comment, section headers are
-    /// `[name]`, and `[[name]]` opens a *sub*section (so `[[Default Interface]]` does not end
-    /// the `[logging]` section — but no `[[...]]` block ever appears inside it in practice).
+    /// `[name]`, and `[[name]]` opens a *sub*section (so `[[Default Interface]]` doesn't end
+    /// the `[logging]` section—but no `[[...]]` block ever appears inside it in practice).
     public static func configuredLogLevel(inConfigText text: String) -> Int? {
         var inLoggingSection = false
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -185,7 +185,7 @@ public enum DaemonBootstrap {
             if stripped.isEmpty { continue }
 
             if stripped.hasPrefix("[[") {
-                continue    // a subsection; does not change the enclosing section
+                continue    // a subsection; doesn't change the enclosing section
             }
             if stripped.hasPrefix("[") && stripped.hasSuffix("]") {
                 inLoggingSection = (stripped == "[logging]")
@@ -205,7 +205,7 @@ public enum DaemonBootstrap {
 
     /// What ``bootstrap(paths:verbosity:fileManager:)`` worked out before a stack exists.
     public struct Bootstrapped {
-        /// The configuration file's contents — the default template when one was just written.
+        /// The configuration file's contents—the default template when one was just written.
         public let configText: String
         /// The parsed configuration.
         public let config: ReticulumConfig
@@ -214,7 +214,7 @@ public enum DaemonBootstrap {
         public let logLevel: Reticulum.LogLevel
         /// Whether a default config file was created on this run. Python then sleeps 1.5 s
         /// (`Reticulum.py:333`) so the operator sees the two notices; the caller does that,
-        /// since a library function should not block.
+        /// since a library function shouldn't block.
         public let createdDefaultConfig: Bool
     }
 
@@ -260,16 +260,16 @@ public enum DaemonBootstrap {
     /// Python: `Reticulum.__jobs` (`Reticulum.py:369-386`) runs every `JOB_INTERVAL` (300 s)
     /// and calls `__persist_data()` on the `PERSIST_INTERVAL` / `GRACIOUS_PERSIST_INTERVAL`
     /// clocks. ReticulumSwift persists only from ``Reticulum/stop()``, so without this a
-    /// daemon that is killed loses every path, known destination and hashlist entry learned
+    /// daemon that's killed loses every path, known destination and hashlist entry learned
     /// since process start.
     ///
-    /// Ratchets are not included: `Reticulum` holds the tracked identity privately and
-    /// exposes no checkpoint hook for it, so they are still written only by `stop()`.
+    /// Ratchets aren't included: `Reticulum` holds the tracked identity privately and
+    /// exposes no checkpoint hook for it, so they're still written only by `stop()`.
     public static func persistState(of reticulum: Reticulum) {
         let storage = reticulum.configuration.storagePath
         try? PathStore.snapshot(of: reticulum.transport)
             .write(to: StorageInventory.url(.destinationTable, storage: storage))
-        // Python persists all three tables together — `Transport.persist_data`
+        // Python persists all three tables together—`Transport.persist_data`
         // (`Transport.py:3510-3512`).
         try? TunnelStore.snapshot(of: reticulum.transport)
             .write(to: StorageInventory.url(.tunnels, storage: storage))

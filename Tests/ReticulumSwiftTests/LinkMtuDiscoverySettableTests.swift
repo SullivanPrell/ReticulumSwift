@@ -1,7 +1,7 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `bugs/025` / `bugs/030` — `Reticulum.linkMtuDiscoveryEnabled` was declared
+/// `bugs/025` / `bugs/030`—`Reticulum.linkMtuDiscoveryEnabled` was declared
 /// `private(set)` and **nothing ever wrote it**, so Python's `link_mtu_discovery`
 /// config option (`Reticulum.py:537-539`) had nowhere to be applied. Same shape as the
 /// get-only interface attributes: adding the `[reticulum]` parser alone would not have

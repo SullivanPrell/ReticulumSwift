@@ -5,8 +5,8 @@ import XCTest
 /// Python reference: RNS/Utilities/rnx.py:326-397.
 final class RNXClientTests: XCTestCase {
 
-    /// In-memory loopback interface. Every existing test file declares its own — there is
-    /// no shared helper — so this follows the same idiom under an rnx-specific name.
+    /// In-memory loopback interface. Every existing test file declares its own—there is
+    /// no shared helper—so this follows the same idiom under an rnx-specific name.
     final class RNXLoopbackInterface: Interface {
         var name: String
         var bitrate: Int = 1_000_000
@@ -93,8 +93,8 @@ final class RNXClientTests: XCTestCase {
         initiatorTransport.register(interface: ifaceA)
         responderTransport.register(interface: ifaceB)
 
-        // The announce is what gives the initiator both a path and the listener identity —
-        // exactly the state `rnx <dest>` needs before it can open a link.
+        // The announce is what gives the initiator both a path and the listener identity—exactly
+        // the state `rnx <dest>` needs before it can open a link.
         let announced = expectation(description: "initiator sees the announce")
         initiatorTransport.onAnnounceReceived = { _, _ in announced.fulfill() }
         try listener.announce()
@@ -144,7 +144,7 @@ final class RNXClientTests: XCTestCase {
 
     func testAllowListGateSilentlyDropsUnidentifiedRequests() throws {
         // Python's ALLOW_LIST requires `__remote_identity != None` (Link.py:820-821) and
-        // sends no response at all when it fails — the client just times out (exit 245)
+        // sends no response at all when it fails—the client just times out (exit 245)
         // rather than being told it was refused. `-N/--noid` is exactly this case.
         let harness = try makeHarness(allowAll: false, allowed: [])
         try establishLink(harness, identify: false)
@@ -159,8 +159,8 @@ final class RNXClientTests: XCTestCase {
     }
 
     func testDisallowedIdentityTearsDownTheLink() throws {
-        // Python: initiator_identified tears the link down for an identity that is not on
-        // the list (rnx.py:148-153) — belt-and-braces on top of the handler gate.
+        // Python: initiator_identified tears the link down for an identity that isn't on
+        // the list (rnx.py:148-153)—belt-and-braces on top of the handler gate.
         let harness = try makeHarness(allowAll: false, allowed: [Data(repeating: 0xAA, count: 16)])
         try establishLink(harness, identify: true)
 
@@ -250,7 +250,7 @@ final class RNXClientTests: XCTestCase {
 
     func testLinkIsReusedUntilClosed() throws {
         // Python: `if link == None or link.status == CLOSED or link.status == PENDING`
-        // — ACTIVE / HANDSHAKE / STALE links are reused (rnx.py:364).
+        //—ACTIVE / HANDSHAKE / STALE links are reused (rnx.py:364).
         let harness = try makeHarness(allowAll: true)
         try establishLink(harness)
         let first = harness.client.link

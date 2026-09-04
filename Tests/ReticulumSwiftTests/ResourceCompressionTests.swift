@@ -6,7 +6,7 @@ import XCTest
 /// Note: The default compressor is `BZip2Compressor`, matching the Python
 /// reference (which bz2-compresses resource-sized payloads). The `compressed`
 /// flag is recorded per-resource in the advertisement, so this stays
-/// wire-compatible — a resource is only marked compressed when bz2 actually
+/// wire-compatible—a resource is only marked compressed when bz2 actually
 /// shrinks it. Install `NoCompressor()` to opt out.
 final class ResourceCompressionTests: XCTestCase {
 

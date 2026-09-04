@@ -7,8 +7,8 @@ import Foundation
 ///
 /// ``ArgumentParser`` (the shared in-library argparse subset) drives *parsing*, but its
 /// `usage` property emits a simplified `usage: rnx [options] …` line and pads the flag
-/// column to 26 rather than argparse's 24. Reproducing the real layout here — rather than
-/// rewriting the shared formatter that every sibling utility also renders through — keeps
+/// column to 26 rather than argparse's 24. Reproducing the real layout here—rather than
+/// rewriting the shared formatter that every sibling utility also renders through—keeps
 /// `rnx --help` diff-clean against the installed Python utility.
 ///
 /// The layout rules implemented below are argparse's own:
@@ -25,7 +25,7 @@ public enum RNXHelpText {
     /// Python: `ArgumentParser(description="Reticulum Remote Execution Utility")`.
     public static let description = "Reticulum Remote Execution Utility"
 
-    /// Python: `shutil.get_terminal_size().columns - 2`, i.e. 78 for a non-tty.
+    /// Python: `shutil.get_terminal_size().columns - 2`, that is, 78 for a non-tty.
     static let width = 78
 
     /// Python: `HelpFormatter._max_help_position` resolved against rnx's longest
@@ -40,7 +40,7 @@ public enum RNXHelpText {
     /// Order matches `add_argument` calls, which is the order argparse prints.
     static let positionals: [Entry] = [
         Entry(invocation: "destination", help: "hexadecimal hash of the listener"),
-        // Python's help string really does read "command to be execute" — reproduced verbatim.
+        // Python's help string really does read "command to be execute"—reproduced verbatim.
         Entry(invocation: "command", help: "command to be execute"),
     ]
 
@@ -88,7 +88,7 @@ public enum RNXHelpText {
         return prefix + lines.joined(separator: "\n")
     }
 
-    /// The complete `--help` output, ending in exactly one newline — what
+    /// The complete `--help` output, ending in exactly one newline—what
     /// `parser.print_help()` writes.
     public static var help: String {
         var lines: [String] = []
