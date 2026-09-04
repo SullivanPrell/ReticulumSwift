@@ -3,6 +3,50 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.19.0]—Reference parity moves to RNS 1.5.2
+
+`Reticulum.rnsProtocolVersion` names the Python RNS release whose wire protocol and
+behavior this port matches. It has read `1.4.2` since that audit. It now reads `1.5.2`.
+
+The transport half of 1.5.0 through 1.5.2 landed over the preceding releases: packet
+validation and hop limits, the inclusive `optimise_mtu` ladder, the announce and
+path-request burst detectors with their trailing-edge hold and cooldown, ingress-limited
+path requests, and `medium_path_timeout` flooring every utility's path deadline. What held
+the constant back was observability, not transport. Python 1.5.2's `rnstatus` subscripts
+`ifstat["txdrp"]` with no presence check, so a daemon that omits the key makes the
+operator's own tool raise `KeyError` instead of printing a listing.
+
+### The gate
+
+`tri-test`'s `make test-utilities` runs Python 1.5.2's `rn*` utilities against this port's
+daemon, and this port's utilities against a Python daemon: 136 passed, 1 xfailed.
+`test_json_payload_shape_is_identical` compares `rnstatus -j` key by key in order, so the
+payload matches the reference field for field, not only in the fields some renderer happens
+to read.
+
+### Keys this port emits
+
+Of upstream's 77 per-interface `ifstats` keys this port emits 73, and adds none of its own.
+All 28 top-level keys are present. Four omissions are deliberate:
+
+- `interference_last_ts` and `interference_last_dbm` are dead upstream. Upstream comments
+  out every writer (`RNodeInterface.py:957-966`), and the guard tests `type(...) == list`
+  against an attribute that starts as `None`, so a Python daemon never emits them either.
+- `blocked_ips` and `blocked_ip_list` are `BackboneInterface` server-side state. This
+  port's Backbone is client-only and holds nothing to report. `RNStatusRenderer` still
+  renders both when a Python daemon supplies them.
+
+`rnstatus.py` guards all four with `if "key" in ifstat`, so their absence costs a display
+line rather than the listing.
+
+### Still outstanding
+
+Interface-discovery *publishing* stays unimplemented (`publishesInterfaceDiscovery` reads
+`false`). The receive side is complete. `discovery_path_requests` batching needs an
+announce handler that replays to `requesting_interfaces`. Three areas stay unported on
+purpose because the seam differs, and a test pins each one: traffic classes, `ifac_handled`,
+and the adaptive dataplane controls.
+
 ## [1.18.0]—The conditional half of the interface stats payload
 
 `get_interface_stats` publishes two kinds of key: the ones every interface has, and the
