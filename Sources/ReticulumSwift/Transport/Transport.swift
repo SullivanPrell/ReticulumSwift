@@ -4535,8 +4535,12 @@ public final class Transport {
                 }
             }
             // `# Resolve potential in-flight path requests` (`Transport.py:2478-2481`). The
-            // search is over whether or not anyone was waiting on it.
-            resolveInflightPathRequest(decoded.destinationHash)
+            // search is over whether or not anyone was waiting on it—but only an announce this
+            // node actually learned from ends one, which is why upstream nests this inside `if
+            // should_add:` alongside the replay. Releasing the marker for an announce the path
+            // table declined would let the next duplicate request start a second fan-out while
+            // the first search is still outstanding.
+            if shouldUpdate { resolveInflightPathRequest(decoded.destinationHash) }
         } catch {
             // Malformed or unsigned announce—drop silently as RNS does.
         }

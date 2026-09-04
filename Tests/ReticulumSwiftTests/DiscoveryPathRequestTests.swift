@@ -450,6 +450,28 @@ final class DiscoveryPathRequestTests: XCTestCase {
                      """)
     }
 
+    func testAnAnnounceThePathTableDeclinesLeavesTheSearchOutstanding() throws {
+        // Upstream nests the release inside `if should_add:` (`Transport.py:2298`, `:2478`).
+        // Only an announce this node learned from ends a search; releasing the marker for one
+        // the freshness ladder threw away would let the next duplicate request start a second
+        // fan-out while the first is still outstanding.
+        let (t, _, egress) = makeNode()
+        let dest = try remoteDestination()
+        let now = Date().timeIntervalSince1970
+
+        egress.inboundHandler?(try Announce.make(for: dest, timestamp: now), egress)
+        XCTAssertTrue(t.hasPath(to: dest.hash), "the fixture must install a path to decline from")
+        t.registerInflightPathRequest(dest.hash, at: now)
+
+        var stale = try Announce.make(for: dest, timestamp: now - 3600)
+        stale.hops = 3
+        egress.inboundHandler?(stale, egress)
+
+        XCTAssertEqual(t.paths[dest.hash]?.hops, 0, "the fixture must produce a declined announce")
+        XCTAssertNotNil(t.inflightPathRequestTimestamp(for: dest.hash),
+                        "a declined announce is not an answer, so the search stays outstanding")
+    }
+
     // MARK: - The ingress-limit exemption
 
     func testAWaitingDiscoveryRequestExemptsItsAnnounceFromIngressLimiting() throws {
