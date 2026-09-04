@@ -31,6 +31,16 @@ public final class InterfaceFreqTracker {
     private var ip: [TimeInterval] = []  // incoming path requests
     private var op: [TimeInterval] = []  // outgoing path requests
 
+    /// Announce and path-request byte and frame totals, reported as `arxb`/`atxb`/`arxc`/
+    /// `atxc` and `prxb`/`ptxb`/`prxc`/`ptxc`.
+    ///
+    /// Python accumulates these in the same four methods that append to the deques
+    /// (`Interface.py:302-323`), so recording an event and counting it cannot drift apart.
+    /// Keeping them here preserves that: one call, one lock, both effects.
+    private var arxb = 0, atxb = 0, prxb = 0, ptxb = 0
+    private var arxc = 0, atxc = 0, prxc = 0, ptxc = 0
+    private var protocolViolations = 0, ifacViolations = 0, packetFilterHits = 0
+
     /// Guards the four deques. The tracker is recorded on inbound/outbound
     /// interface threads and read on the jobs/management threads; the frequency
     /// queries also prune (mutate) the deque, so reads and writes must be
@@ -39,21 +49,49 @@ public final class InterfaceFreqTracker {
 
     // MARK: - Record events
 
-    public func recordIncomingAnnounce(at t: TimeInterval = Date().timeIntervalSince1970) {
+    public func recordIncomingAnnounce(size: Int = 0,
+                                       at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
         append(t, to: &ia)
+        arxc += 1; arxb += size
     }
-    public func recordOutgoingAnnounce(at t: TimeInterval = Date().timeIntervalSince1970) {
+    public func recordOutgoingAnnounce(size: Int = 0,
+                                       at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
         append(t, to: &oa)
+        atxc += 1; atxb += size
     }
-    public func recordIncomingPathRequest(at t: TimeInterval = Date().timeIntervalSince1970) {
+    public func recordIncomingPathRequest(size: Int = 0,
+                                          at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
         append(t, to: &ip)
+        prxc += 1; prxb += size
     }
-    public func recordOutgoingPathRequest(at t: TimeInterval = Date().timeIntervalSince1970) {
+    public func recordOutgoingPathRequest(size: Int = 0,
+                                          at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
         append(t, to: &op)
+        ptxc += 1; ptxb += size
+    }
+
+    // MARK: - Violation counters
+
+    /// Mirrors Python's `Interface.protocol_violation()` (`Interface.py:326`). Every call
+    /// site is in `Transport`, which is why the count lives beside the frequency deques
+    /// rather than on the interface: nothing else can reach it.
+    public func recordProtocolViolation() {
+        lock.lock(); defer { lock.unlock() }
+        protocolViolations += 1
+    }
+    /// Mirrors Python's `Interface.ifac_violation()` (`Interface.py:331`).
+    public func recordIfacViolation() {
+        lock.lock(); defer { lock.unlock() }
+        ifacViolations += 1
+    }
+    /// Mirrors Python's `Interface.packet_filter_hit()` (`Interface.py:336`).
+    public func recordPacketFilterHit() {
+        lock.lock(); defer { lock.unlock() }
+        packetFilterHits += 1
     }
 
     // MARK: - Frequency queries
@@ -89,6 +127,29 @@ public final class InterfaceFreqTracker {
         lock.lock(); defer { lock.unlock() }
         return frequency(&op, decay: Self.prFreqDecay, minCount: 1, now: now,
                          extraSamples: preemptive ? 1 : 0)
+    }
+
+    // MARK: - Reading the counters
+
+    /// All eleven counters under one lock acquisition, so the pairs a reader reports
+    /// together (`arxc` with `arxb`) always describe the same set of frames.
+    public struct Counts: Sendable, Equatable {
+        public let announceRxBytes: Int, announceTxBytes: Int
+        public let announceRxCount: Int, announceTxCount: Int
+        public let pathRequestRxBytes: Int, pathRequestTxBytes: Int
+        public let pathRequestRxCount: Int, pathRequestTxCount: Int
+        public let protocolViolations: Int, ifacViolations: Int, packetFilterHits: Int
+    }
+
+    public func counts() -> Counts {
+        lock.lock(); defer { lock.unlock() }
+        return Counts(announceRxBytes: arxb, announceTxBytes: atxb,
+                      announceRxCount: arxc, announceTxCount: atxc,
+                      pathRequestRxBytes: prxb, pathRequestTxBytes: ptxb,
+                      pathRequestRxCount: prxc, pathRequestTxCount: ptxc,
+                      protocolViolations: protocolViolations,
+                      ifacViolations: ifacViolations,
+                      packetFilterHits: packetFilterHits)
     }
 
     // MARK: - Test helpers

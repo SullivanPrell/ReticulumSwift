@@ -3,6 +3,63 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.11.0]—Python's `rnstatus` couldn't display a Swift daemon at all
+
+`rnstatus` reads most of the interface-stats dictionary defensively, guarding each lookup
+with `if "key" in ifstat`. It doesn't guard `ifstat["txdrp"]` (`rnstatus.py:495`), and the
+`if "bitrate" in ifstat` on the very next line is what marks that as an upstream oversight
+rather than a contract. This port emitted no such key, so the reference status tool raised
+`KeyError` partway through rendering and printed nothing further:
+
+```
+ Shared Instance[38911]
+    Status    : Up
+    Serving   : 0 programs
+Traceback (most recent call last):
+  File ".../RNS/Utilities/rnstatus.py", line 495, in program_setup
+    if ifstat["txdrp"]:
+KeyError: 'txdrp'
+```
+
+Twenty-two of the keys Python emits unconditionally were missing. `rnstatus -j` serialises
+the dictionary with `json.dumps`, which preserves insertion order, so their positions are
+part of the output contract too—`mtu` belongs between `type` and `rxb`, and each burst
+counter interleaves with its own pair rather than appending at the end. The payload now
+carries all fifty-two keys in Python's order, verified by pointing the real Python 1.5.2
+`rnstatus` at a Swift `rnsd`.
+
+### The counters behind the new keys
+
+A key that's emitted but never incremented reports a wrong answer rather than a missing
+one: an operator reading `protocol_violations: 0` concludes the interface has seen no
+malformed traffic. So each new counter sits on the site that already makes the decision
+it reports.
+
+- **Announce and path-request byte and frame totals** (`arxb`, `atxb`, `arxc`, `atxc`,
+  `prxb`, `ptxb`, `prxc`, `ptxc`). Python bumps these in the same four methods that append
+  to the frequency deques (`Interface.py:302-323`), so an event and its count can't drift
+  apart. `InterfaceFreqTracker` now does both under one lock acquisition, and the five
+  production notification sites pass the frame's real byte count.
+- **Announce and path-request rates** (`arxs`, `atxs`, `prxs`, `ptxs`). These are the
+  derivative of the preceding totals, computed in the same pass that already produces `rxs` and
+  `txs` (`Transport.py:605-640`). A hardcoded zero would have contradicted the `arxb` total
+  published beside it.
+- **`protocol_violations` and `ifac_violations`**, wired at the four inbound checks that
+  already reject a frame: a failed IFAC unwrap, a frame past the interface MTU, a packet
+  that fails to unpack, and an oversized announce.
+- **`packet_filter_hits`**, wired to the `filterAndRecord` guard in `handleIncoming`.
+  That's this port's live filter. The public `packetFilter` covers only the hashlist
+  branch and no production path calls it, so counting there would have left the key at
+  zero forever.
+
+`burst_count` and `pr_burst_count` report `nil`, matching the base-class properties Python
+returns for every interface except a Backbone *server* (`Interface.py:341,344`), which this
+port doesn't implement. `txdrp`, `txdrb`, `txstalled` and `txbuffered` report zero and
+false: Python mutates them only from the `TransmitBuffer` dataplane in `LocalInterface` and
+`BackboneInterface`, which this port deliberately doesn't carry.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2. This closes one 1.5.2 gap, not all of them.
+
 ## [1.10.3]
 
 ### Regressions this day's own releases introduced, found by the post-release audit

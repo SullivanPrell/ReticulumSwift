@@ -94,6 +94,18 @@ public enum InterfaceStatsPayload {
             kv("rxs",     .double(t.currentRxSpeed(for: iface)))
             kv("txs",     .double(t.currentTxSpeed(for: iface)))
 
+            // Announce and path-request speeds. Python reads `current_arx_speed` and its
+            // three siblings behind a `hasattr`, falling through to 0 in the `else`
+            // (`Reticulum.py:1481-1502`), so the keys are always present. The `else` is
+            // effectively dead on a running daemon: `count_traffic_loop` assigns all four on
+            // every interface it has sampled twice (`Transport.py:631-636`), so a Python peer
+            // reports live rates here, not zeros.
+            let speeds = t.announceSpeeds(for: iface)
+            kv("arxs", .double(speeds.announceRx))
+            kv("atxs", .double(speeds.announceTx))
+            kv("prxs", .double(speeds.pathRequestRx))
+            kv("ptxs", .double(speeds.pathRequestTx))
+
             // IFAC fields. Python's order is signature, size, netname.
             if let ifacIdentity = iface.ifacIdentity {
                 // Python: interface.ifac_signature = ifac_identity.sign(full_hash(ifac_key))
@@ -129,8 +141,38 @@ public enum InterfaceStatsPayload {
             kv("short_name", .string(iface.statsShortName))
             kv("hash",       .bytes(Hashes.fullHash(Data(iface.displayName.utf8))))
             kv("type",       .string(iface.statsTypeName))
+
+            // Python emits `interface.HW_MTU`, a class attribute every interface defines
+            // (`Reticulum.py:1531`). rnstatus prints it beside the bitrate and reads it
+            // without a membership guard once `bitrate` is present, so it cannot be omitted.
+            kv("mtu",        iface.hwMtu.map { .int(Int64($0)) } ?? .nil)
             kv("rxb",        .int(Int64(iface.rxBytes)))
             kv("txb",        .int(Int64(iface.txBytes)))
+
+            let counts = t.interfaceCounts(for: iface)
+            kv("arxb", .int(Int64(counts.announceRxBytes)))
+            kv("atxb", .int(Int64(counts.announceTxBytes)))
+            kv("arxc", .int(Int64(counts.announceRxCount)))
+            kv("atxc", .int(Int64(counts.announceTxCount)))
+            kv("prxb", .int(Int64(counts.pathRequestRxBytes)))
+            kv("ptxb", .int(Int64(counts.pathRequestTxBytes)))
+            kv("prxc", .int(Int64(counts.pathRequestRxCount)))
+            kv("ptxc", .int(Int64(counts.pathRequestTxCount)))
+
+            // Transmit-drop accounting. `rnstatus` reads `ifstat["txdrp"]` as a bare
+            // subscript (`rnstatus.py:495`)—note the `if "bitrate" in ifstat` guard on the
+            // very next line, which is what marks this one as an upstream oversight rather
+            // than a contract. Omitting the key makes the reference utility raise KeyError
+            // and print nothing for any interface.
+            //
+            // Only `LocalInterface` and `BackboneInterface`'s epoll dataplane ever move
+            // these off their defaults (`LocalInterface.py:223`, `BackboneInterface.py:1036`),
+            // both through the `TransmitBuffer` this port deliberately does not have. For
+            // every other interface a Python daemon reports exactly these values.
+            kv("txdrp",      .int(0))
+            kv("txdrb",      .int(0))
+            kv("txstalled",  .bool(false))
+            kv("txbuffered", .int(0))
 
             kv("incoming_announce_frequency",  .double(t.incomingAnnounceFrequency(for: iface)))
             kv("outgoing_announce_frequency",  .double(t.outgoingAnnounceFrequency(for: iface)))
@@ -149,8 +191,15 @@ public enum InterfaceStatsPayload {
             let ingress = t.ingressState(for: iface)
             kv("burst_active",       .bool(ingress?.burstActive      ?? false))
             kv("burst_activated",    .double(ingress?.burstActivated ?? 0))
+            // Python's base `Interface.ic_burst_count` is a property returning None
+            // (`Interface.py:341`); only a `BackboneInterface` *server* overrides it, to count
+            // how many of its spawned interfaces are bursting (`BackboneInterface.py:189`).
+            // This port's Backbone is client-only and spawns nothing, so nil is what a Python
+            // daemon reports for every interface this port can have.
+            kv("burst_count",        .nil)
             kv("pr_burst_active",    .bool(ingress?.prBurstActive      ?? false))
             kv("pr_burst_activated", .double(ingress?.prBurstActivated ?? 0))
+            kv("pr_burst_count",     .nil)
 
             kv("status", .bool(iface.isOnline))
             kv("mode",   .int(Int64(iface.mode.rawValue)))
@@ -160,6 +209,10 @@ public enum InterfaceStatsPayload {
             kv("gravity", .int(Int64(iface.gravity)))
             kv("announces_to_internal",
                iface.announcesToInternal.map { MsgPack.Value.bool($0) } ?? .nil)
+
+            kv("protocol_violations", .int(Int64(counts.protocolViolations)))
+            kv("ifac_violations",     .int(Int64(counts.ifacViolations)))
+            kv("packet_filter_hits",  .int(Int64(counts.packetFilterHits)))
 
             return .map(pairs)
         }

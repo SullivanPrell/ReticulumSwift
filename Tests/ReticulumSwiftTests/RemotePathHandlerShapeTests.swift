@@ -231,8 +231,14 @@ final class RemotePathHandlerShapeTests: XCTestCase {
     func testStatusInterfaceKeyOrderMatchesPython() throws {
         // `rnstatus -j` serialises this dictionary with json.dumps, which preserves
         // insertion order, so the order is part of the -j output contract. This is Python's
-        // sequence in get_interface_stats (Reticulum.py:1326-1443) for an interface with no
+        // sequence in get_interface_stats (Reticulum.py:1397-1566) for an interface with no
         // optional blocks—checked against a live Python daemon's own -j output.
+        //
+        // `InterfaceStatsKeyParityTests` pins the same sequence, but only the unconditional
+        // tail and only through `InterfaceStatsPayload.build`. This one covers the whole
+        // emitted sequence, conditional blocks included, over the RPC path a real `rnstatus`
+        // actually calls—so a handler that reshapes a correctly built payload still fails
+        // here.
         let transport = try makeTransport()
         transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
 
@@ -246,17 +252,29 @@ final class RemotePathHandlerShapeTests: XCTestCase {
 
         XCTAssertEqual(order, [
             "clients", "bitrate", "rxs", "txs",
+            // RNS 1.5.0 added the four announce and path-request speed gauges directly
+            // after the two byte-rate ones (Reticulum.py:1482-1502).
+            "arxs", "atxs", "prxs", "ptxs",
             "ifac_signature", "ifac_size", "ifac_netname", "autoconnect_source",
-            "name", "short_name", "hash", "type", "rxb", "txb",
+            "name", "short_name", "hash", "type",
+            // `mtu` lands between `type` and `rxb`, not at the end.
+            "mtu", "rxb", "txb",
+            // Announce and path-request byte and frame totals, then the transmit-buffer
+            // drop counters `rnstatus` reads without a membership guard.
+            "arxb", "atxb", "arxc", "atxc", "prxb", "ptxb", "prxc", "ptxc",
+            "txdrp", "txdrb", "txstalled", "txbuffered",
             "incoming_announce_frequency", "outgoing_announce_frequency",
             "incoming_pr_frequency", "outgoing_pr_frequency",
             "announce_rate_target", "announce_rate_penalty", "announce_rate_grace",
             "held_announces",
-            "burst_active", "burst_activated", "pr_burst_active", "pr_burst_activated",
+            // Each burst pair gained a count, interleaved rather than appended.
+            "burst_active", "burst_activated", "burst_count",
+            "pr_burst_active", "pr_burst_activated", "pr_burst_count",
             "status", "mode",
-            // RNS 1.4.1 appended both after `mode`, and Python still emits them last
-            // in 1.4.2—so they extend this sequence rather than reordering it.
+            // RNS 1.4.1 appended both after `mode`, and Python still emits them there
+            // in 1.5.2—so they extend this sequence rather than reordering it.
             "gravity", "announces_to_internal",
+            "protocol_violations", "ifac_violations", "packet_filter_hits",
         ])
     }
 
