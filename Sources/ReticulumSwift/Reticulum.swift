@@ -13,22 +13,27 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently—a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.18.0"
+    public static let version = "1.19.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
     /// a single version string for both its library and its protocol). Bump only
     /// when parity is verified against a new RNS release. Informational only.
     ///
-    /// **Stays at 1.4.2.** Work against 1.5.0–1.5.2 has landed, listed below, but this
-    /// constant is a parity claim and 1.5.2 parity is not verified: Python 1.5.2's
-    /// `rnstatus` reads `ifstat["txdrp"]` with an unguarded subscript
-    /// (`rnstatus.py:495`) and this port's `interface_stats` emits no such key, so the
-    /// reference utility raises `KeyError` against a Swift daemon rather than printing.
-    /// Twenty-two of Python's mandatory `ifstats` keys are still missing. The constant
-    /// moves once they are emitted and the interop suite agrees.
+    /// **Moved to 1.5.2 on 2026-09-04**, once the observability surface caught up with
+    /// the transport work. The blocker this comment used to record has gone: `txdrp` and
+    /// the rest of the keys `rnstatus.py` subscripts without a presence check are now in
+    /// the payload, so Python 1.5.2's own `rnstatus` renders a Swift daemon instead of
+    /// raising `KeyError`. Of upstream's 77 per-interface keys this port emits 73 and adds
+    /// none of its own; all 28 top-level keys are present. The four it omits are
+    /// deliberate: `interference_last_ts` and `interference_last_dbm` are dead upstream
+    /// (upstream comments out every writer at `RNodeInterface.py:957-966`), and `blocked_ips`
+    /// and `blocked_ip_list` are `BackboneInterface` server state, which this client-only
+    /// Backbone never holds. `rnstatus.py` guards all four. `tri-test`'s
+    /// `make test-utilities` drives Python 1.5.2's utilities against this port's daemon
+    /// and both directions agree, including the key order of `rnstatus -j`.
     ///
-    /// What has landed so far:
+    /// What landed:
     ///
     ///  - **1.5.0**, transport core. `Packet.unpack` now rejects a zero-length data
     ///    field and validates transport-ID and destination-hash lengths; `Packet.send`
@@ -55,7 +60,7 @@ public final class Reticulum {
     /// (`publishesInterfaceDiscovery == false`, a pre-existing gap—the receive side is
     /// complete), and the `discovery_path_requests` batching, which needs the announce
     /// handler that replays to `requesting_interfaces` to be worth anything.
-    public static let rnsProtocolVersion = "1.4.2"
+    public static let rnsProtocolVersion = "1.5.2"
 
     public enum LogLevel: Int, Comparable, Sendable {
         case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme
