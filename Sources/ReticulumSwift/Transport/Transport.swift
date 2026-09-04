@@ -421,7 +421,9 @@ public final class Transport {
 
     /// Unix timestamp of the `start()` call. Used to compute transport uptime.
     /// Mirrors Python's `Transport.start_time`.
-    public private(set) var startTime: TimeInterval = 0
+    /// `start()` is the only production writer; the setter is module-internal so the
+    /// traffic sampler can be driven at fixed timestamps without running a jobs loop.
+    public internal(set) var startTime: TimeInterval = 0
 
     /// Identity used to answer incoming link requests on registered
     /// destinations. The host sets this when it knows its local identity.
@@ -614,6 +616,58 @@ public final class Transport {
     public private(set) var speedRx: Double = 0
     /// Aggregate TX speed across all interfaces (bits/sec). Mirrors Python `Transport.speed_tx`.
     public private(set) var speedTx: Double = 0
+
+    // MARK: - Transport-level announce and path-request aggregates
+    //
+    // Python derives all fourteen in the same pass of `count_traffic_loop` that produces
+    // `speedRx`/`speedTx` (`Transport.py:645-671`), which is why they live beside those two
+    // and are updated in ``sampleInterfaceSpeeds(now:)`` rather than at each recording site.
+    //
+    // The byte totals accumulate (`+=`) and the speeds and frequencies are reassigned every
+    // pass. Mixing the two up is invisible on a busy node and obvious on an idle one: an
+    // accumulating speed keeps climbing after the traffic stops.
+
+    /// Cumulative announce bytes received. Mirrors Python `Transport.announce_rxb`.
+    public private(set) var announceRxBytes: Int = 0
+    /// Cumulative announce bytes transmitted. Mirrors Python `Transport.announce_txb`.
+    public private(set) var announceTxBytes: Int = 0
+    /// Aggregate announce RX speed (bits/sec). Python `Transport.announce_speed_rx`.
+    public private(set) var announceSpeedRx: Double = 0
+    /// Aggregate announce TX speed (bits/sec). Python `Transport.announce_speed_tx`.
+    public private(set) var announceSpeedTx: Double = 0
+    /// Summed incoming announce frequency (Hz). Python `Transport.announce_freq_rx`.
+    public private(set) var announceFreqRx: Double = 0
+    /// Summed outgoing announce frequency (Hz). Python `Transport.announce_freq_tx`.
+    public private(set) var announceFreqTx: Double = 0
+    /// Cumulative path-request bytes received. Mirrors Python `Transport.pr_rxb`.
+    public private(set) var prRxBytes: Int = 0
+    /// Cumulative path-request bytes transmitted. Mirrors Python `Transport.pr_txb`.
+    public private(set) var prTxBytes: Int = 0
+    /// Aggregate path-request RX speed (bits/sec). Python `Transport.pr_speed_rx`.
+    public private(set) var prSpeedRx: Double = 0
+    /// Aggregate path-request TX speed (bits/sec). Python `Transport.pr_speed_tx`.
+    public private(set) var prSpeedTx: Double = 0
+    /// Summed incoming path-request frequency (Hz). Python `Transport.pr_freq_rx`.
+    public private(set) var prFreqRx: Double = 0
+    /// Summed outgoing path-request frequency (Hz). Python `Transport.pr_freq_tx`.
+    public private(set) var prFreqTx: Double = 0
+
+    /// Packets admitted inbound. Mirrors Python `Transport.rx_packets` (`Transport.py:1798`).
+    public private(set) var rxPackets: Int = 0
+    /// Packets handed to an interface. Mirrors Python `Transport.tx_packets`
+    /// (`Transport.py:1329`).
+    public private(set) var txPackets: Int = 0
+    /// Inbound packets per second over the last sampling interval. Python `Transport.rx_pps`.
+    public private(set) var rxPPS: Int = 0
+    /// Outbound packets per second over the last sampling interval. Python `Transport.tx_pps`.
+    public private(set) var txPPS: Int = 0
+
+    /// Timestamp of the last packets-per-second sample, or nil before the first one.
+    /// Python keeps this as the loop-local `cts`, initially unset so the first interval is
+    /// measured from `Transport.start_time` (`Transport.py:649-650`).
+    private var lastPPSSampleTime: TimeInterval? = nil
+    private var lastSampledRxPackets: Int = 0
+    private var lastSampledTxPackets: Int = 0
 
     // MARK: - Packet PHY stats cache
     // Mirrors Python's Transport.local_client_rssi_cache / snr_cache / q_cache.
@@ -1037,6 +1091,24 @@ public final class Transport {
         public let speedRx: Double
         /// Aggregate TX speed (bits/sec). Mirrors Python `Transport.speed_tx`.
         public let speedTx: Double
+        /// Announce byte, speed and frequency totals: Python's `arxb`, `atxb`, `arxs`,
+        /// `atxs`, `arxf` and `atxf` (`Reticulum.py:1583-1588`).
+        public let announceRxBytes: Int
+        public let announceTxBytes: Int
+        public let announceSpeedRx: Double
+        public let announceSpeedTx: Double
+        public let announceFreqRx: Double
+        public let announceFreqTx: Double
+        /// Path-request totals: `prxb`, `ptxb`, `prxs`, `ptxs`, `prxf`, `ptxf`.
+        public let prRxBytes: Int
+        public let prTxBytes: Int
+        public let prSpeedRx: Double
+        public let prSpeedTx: Double
+        public let prFreqRx: Double
+        public let prFreqTx: Double
+        /// Packets per second over the last sampling interval: `rxpps` and `txpps`.
+        public let rxPPS: Int
+        public let txPPS: Int
     }
 
     /// Returns aggregate transport-level traffic statistics.
@@ -1046,7 +1118,21 @@ public final class Transport {
             trafficRxBytes: trafficRxBytes,
             trafficTxBytes: trafficTxBytes,
             speedRx: speedRx,
-            speedTx: speedTx
+            speedTx: speedTx,
+            announceRxBytes: announceRxBytes,
+            announceTxBytes: announceTxBytes,
+            announceSpeedRx: announceSpeedRx,
+            announceSpeedTx: announceSpeedTx,
+            announceFreqRx: announceFreqRx,
+            announceFreqTx: announceFreqTx,
+            prRxBytes: prRxBytes,
+            prTxBytes: prTxBytes,
+            prSpeedRx: prSpeedRx,
+            prSpeedTx: prSpeedTx,
+            prFreqRx: prFreqRx,
+            prFreqTx: prFreqTx,
+            rxPPS: rxPPS,
+            txPPS: txPPS
         )
     }
 
@@ -1454,11 +1540,31 @@ public final class Transport {
         // Read the announce and path-request totals before taking `metricsLock`: `counts()`
         // acquires `trackersLock` and then the tracker's own lock, and the sampling pass is
         // the only place that would otherwise nest the three.
-        let counters = snapshot.map { ($0, tracker(for: $0)?.counts()) }
+        // The four frequency queries prune their deque, so they mutate the tracker and take
+        // the same lock `counts()` does. Read them here, in the same pass, so the aggregate
+        // frequencies describe the same instant as the byte counters beside them.
+        let counters = snapshot.map { iface -> (any Interface, InterfaceFreqTracker.Counts?, (Double, Double, Double, Double)) in
+            let tr = tracker(for: iface)
+            let freqs = (tr?.incomingAnnounceFrequency(now: now) ?? 0,
+                         tr?.outgoingAnnounceFrequency(now: now) ?? 0,
+                         tr?.incomingPathRequestFrequency(now: now) ?? 0,
+                         tr?.outgoingPathRequestFrequency(now: now) ?? 0)
+            return (iface, tr?.counts(), freqs)
+        }
         metricsLock.lock(); defer { metricsLock.unlock() }
         var totalRxSpeed: Double = 0
         var totalTxSpeed: Double = 0
-        for (iface, counts) in counters {
+        // Python's `arxs`/`atxs`/`prxs`/`ptxs` and `iafreq`/`oafreq`/`ipfreq`/`opfreq`
+        // accumulators, reset at the top of every pass (`Transport.py:598-600`).
+        var totalAnnounceRxSpeed: Double = 0, totalAnnounceTxSpeed: Double = 0
+        var totalPrRxSpeed: Double = 0, totalPrTxSpeed: Double = 0
+        var totalAnnounceRxFreq: Double = 0, totalAnnounceTxFreq: Double = 0
+        var totalPrRxFreq: Double = 0, totalPrTxFreq: Double = 0
+        for (iface, counts, freqs) in counters {
+            totalAnnounceRxFreq += freqs.0
+            totalAnnounceTxFreq += freqs.1
+            totalPrRxFreq += freqs.2
+            totalPrTxFreq += freqs.3
             let key = ObjectIdentifier(iface)
             let currentRx = iface.rxBytes
             let currentTx = iface.txBytes
@@ -1483,13 +1589,24 @@ public final class Transport {
                 func rate(_ current: Int, _ previous: Int) -> Double {
                     Double(current - previous) * 8.0 / tsDiff
                 }
-                ifaceAnnounceSpeeds[key] = AnnounceSpeeds(
+                let speeds = AnnounceSpeeds(
                     announceRx: rate(sample.announceRxBytes, prior.announceRxBytes),
                     announceTx: rate(sample.announceTxBytes, prior.announceTxBytes),
                     pathRequestRx: rate(sample.pathRequestRxBytes, prior.pathRequestRxBytes),
                     pathRequestTx: rate(sample.pathRequestTxBytes, prior.pathRequestTxBytes))
+                ifaceAnnounceSpeeds[key] = speeds
                 totalRxSpeed += rxSpeed
                 totalTxSpeed += txSpeed
+                totalAnnounceRxSpeed += speeds.announceRx
+                totalAnnounceTxSpeed += speeds.announceTx
+                totalPrRxSpeed += speeds.pathRequestRx
+                totalPrTxSpeed += speeds.pathRequestTx
+                // The byte totals take the same interval diffs the speeds are derived from,
+                // so `arxb` and `arxs` can never describe different traffic.
+                announceRxBytes += sample.announceRxBytes - prior.announceRxBytes
+                announceTxBytes += sample.announceTxBytes - prior.announceTxBytes
+                prRxBytes += sample.pathRequestRxBytes - prior.pathRequestRxBytes
+                prTxBytes += sample.pathRequestTxBytes - prior.pathRequestTxBytes
                 // Accumulate transport-level TX total from interface diffs.
                 // Mirrors Python: Transport.traffic_txb += txDiff (count_traffic_loop).
                 // handleIncoming already counts RX per packet, so this adds only TX.
@@ -1499,6 +1616,38 @@ public final class Transport {
         }
         speedRx = totalRxSpeed
         speedTx = totalTxSpeed
+        announceSpeedRx = totalAnnounceRxSpeed
+        announceSpeedTx = totalAnnounceTxSpeed
+        prSpeedRx = totalPrRxSpeed
+        prSpeedTx = totalPrTxSpeed
+        announceFreqRx = totalAnnounceRxFreq
+        announceFreqTx = totalAnnounceTxFreq
+        prFreqRx = totalPrRxFreq
+        prFreqTx = totalPrTxFreq
+        samplePacketRates(now: now)
+    }
+
+    /// Recompute ``rxPPS``/``txPPS`` from the packet counters.
+    ///
+    /// Mirrors `Transport.py:647-658`. The first interval runs from `start_time`, every later
+    /// one from the previous sample, so the reading always describes the interval just ended
+    /// rather than the node's lifetime average.
+    ///
+    /// Callers must hold `metricsLock`.
+    private func samplePacketRates(now: TimeInterval) {
+        // `if not Transport.start_time: rpps = 0; tpps = 0`—with no start time there is no
+        // interval to divide by, and no baseline is recorded either.
+        guard startTime > 0 else { rxPPS = 0; txPPS = 0; return }
+        let since = lastPPSSampleTime ?? startTime
+        let elapsed = now - since
+        guard elapsed > 0 else { return }
+        // Python's `int(round(x))` is round-half-to-even; Swift's `rounded()` rounds half
+        // away from zero, which disagrees on every exact .5 a two-second sample can produce.
+        rxPPS = Int((Double(rxPackets - lastSampledRxPackets) / elapsed).rounded(.toNearestOrEven))
+        txPPS = Int((Double(txPackets - lastSampledTxPackets) / elapsed).rounded(.toNearestOrEven))
+        lastPPSSampleTime = now
+        lastSampledRxPackets = rxPackets
+        lastSampledTxPackets = txPackets
     }
 
     /// Current RX speed for `interface` in bits/sec.
@@ -2831,7 +2980,7 @@ public final class Transport {
                 packet: forwarded, now: now, bitrate: iface.bitrate,
                 announceCap: iface.announceCap, emitted: emitted
             )
-            if canSend { try? iface.send(forwarded) }
+            if canSend { try? transmit(forwarded, on: iface) }
         }
     }
 
@@ -3100,7 +3249,7 @@ public final class Transport {
             guard let outbound = path.nextHopInterface, outbound.isOnline else {
                 // Path exists but interface is offline—broadcast as fallback.
                 for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
-                    try? iface.send(deltaMangled(packet, for: iface))
+                    try? transmit(deltaMangled(packet, for: iface), on: iface)
                 }
                 return receipt
             }
@@ -3126,7 +3275,7 @@ public final class Transport {
             }
             // Local hop-count obfuscation: hide that this packet originated here.
             if shouldApplyDelta(packet, interface: outbound) { routed.hops = localHopsDelta }
-            try outbound.send(routed)
+            try transmit(routed, on: outbound)
             // Update path timestamp on successful send (mirrors Python's path_entry[IDX_PT_TIMESTAMP]).
             lock.lock()
             if var updated = paths[packet.destinationHash] {
@@ -3136,7 +3285,7 @@ public final class Transport {
             lock.unlock()
         } else {
             for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
-                try? iface.send(deltaMangled(packet, for: iface))
+                try? transmit(deltaMangled(packet, for: iface), on: iface)
             }
         }
         return receipt
@@ -3153,12 +3302,26 @@ public final class Transport {
         return mangleHops(packet, hops: localHopsDelta, transportInsert: insert)
     }
 
+    /// Hand `packet` to `interface` and count it.
+    ///
+    /// Mirrors Python's `Transport.transmit(interface, raw)` (`Transport.py:1325-1330`),
+    /// which every outbound path funnels through and which increments `tx_packets` once the
+    /// interface has accepted the frame. Eighteen sites in this file route through here.
+    /// A counter maintained at each of those sites instead would only ever be as complete
+    /// as the last one someone remembered to update.
+    func transmit(_ packet: Packet, on interface: any Interface) throws {
+        try interface.send(packet)
+        metricsLock.lock()
+        txPackets += 1
+        metricsLock.unlock()
+    }
+
     /// Broadcast on every online routing-endpoint interface *except* the one specified.
     /// Used when relaying an announce so it doesn't go back where it
     /// came from.
     public func send(_ packet: Packet, exceptInterface excluded: Interface) {
         for interface in interfaces where interface.isOnline && interface.isRoutingEndpoint && interface !== excluded {
-            try? interface.send(packet)
+            try? transmit(packet, on: interface)
             // Mirrors Python: `interface.sent_announce()` when relaying an announce.
             if packet.packetType == .announce {
                 notifyOutgoingAnnounce(on: interface, size: packet.rawByteCount)
@@ -3182,7 +3345,7 @@ public final class Transport {
     ) throws -> PacketReceipt? {
         let packet = try Announce.make(for: destination, appData: appData, ratchet: ratchet, isPathResponse: isPathResponse)
         if let iface = onInterface {
-            try iface.send(packet)
+            try transmit(packet, on: iface)
             return nil
         }
         return try send(packet, generateReceipt: false)
@@ -3264,6 +3427,13 @@ public final class Transport {
             notifyPacketFilterHit(on: interface)
             return
         }
+
+        // `Transport.rx_packets += 1` (`Transport.py:1798`)—after the packet filter and
+        // before the hop increment, so a frame the filter rejected is never counted as
+        // received traffic. `rnstatus -p` divides this into the sampling interval.
+        metricsLock.lock()
+        rxPackets += 1
+        metricsLock.unlock()
 
         // CACHE_REQUEST: serve cached announce packet if available.
         // Mirrors Python: `if packet.context == CACHE_REQUEST: if cache_request_packet(packet): return`
@@ -3415,7 +3585,7 @@ public final class Transport {
         // routing because the link_id is hashed with signalling bytes removed.
         clampRelayedLinkRequestMtu(&forwarded, prevHop: interface, nextHop: outbound)
 
-        try? outbound.send(forwarded)
+        try? transmit(forwarded, on: outbound)
     }
 
     /// Clamp or strip the 3-byte MTU signalling tail of a relayed LINKREQUEST so
@@ -3635,7 +3805,7 @@ public final class Transport {
         let instanceLocalLink = (initIface.map(isLocalClientInterface) ?? false)
                              && (respIface.map(isLocalClientInterface) ?? false)
         forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: instanceLocalLink)
-        try? outbound.send(forwarded)
+        try? transmit(forwarded, on: outbound)
         route!.lastHeard = Date()
         lock.lock(); linkRoutes[packet.destinationHash] = route; lock.unlock()
     }
@@ -3659,7 +3829,7 @@ public final class Transport {
                 // client, so it stays in the local domain—keep its real hops.
                 let proofForLocalClient = isLocalClientInterface(receiveIface)
                 forwarded.hops = relayHops(packet, from: interface, staysLocal: proofForLocalClient)
-                try? receiveIface.send(forwarded)
+                try? transmit(forwarded, on: receiveIface)
             }
             // Don't stop here—also try to match against local receipts below
             // in case this relay is also the originator (uncommon but valid).
@@ -4084,7 +4254,7 @@ public final class Transport {
                         announceCap: iface.announceCap,
                         emitted: emitted
                     )
-                    if canSend { try? iface.send(forwarded) }
+                    if canSend { try? transmit(forwarded, on: iface) }
                 }
 
                 // Record this forwarded announce for a single retransmission
@@ -4126,7 +4296,7 @@ public final class Transport {
                 localForward.headerType = .type2
                 localForward.transportID = transportInstanceID
                 for iface in localTargets {
-                    try? iface.send(localForward)
+                    try? transmit(localForward, on: iface)
                 }
             }
         } catch {
@@ -4245,7 +4415,7 @@ public final class Transport {
             data: body
         )
         if let iface = onInterface {
-            try iface.send(packet)
+            try transmit(packet, on: iface)
             // Mirrors Python: `interface.sent_path_request(size=len(raw))` after sending
             // (`Transport.py:1601`).
             notifyOutgoingPathRequest(on: iface, size: packet.rawByteCount)
@@ -4321,7 +4491,7 @@ public final class Transport {
             lock.unlock()
             if let dest = localDest, dest.identity?.hasPrivateKey == true {
                 let pkt = try? Announce.make(for: dest, isPathResponse: true)
-                if let pkt { try? interface.send(pkt) }
+                if let pkt { try? transmit(pkt, on: interface) }
             }
             onPathRequested?(target, interface)
             return
@@ -4361,7 +4531,7 @@ public final class Transport {
             response.headerType = .type2
             response.transportType = .transport
             response.transportID = transportInstanceID
-            try? interface.send(response)
+            try? transmit(response, on: interface)
             return
         }
 
@@ -4621,7 +4791,7 @@ public final class Transport {
         )
         // Send on the same interface the data packet arrived on, so
         // the proof travels back toward the sender.
-        try? sourceInterface.send(proof)
+        try? transmit(proof, on: sourceInterface)
     }
 
     // MARK: - Announce queue helpers
@@ -4745,7 +4915,7 @@ public final class Transport {
             }
             let packets = queue.drain(now: now, bitrate: iface.bitrate,
                                       announceCap: iface.announceCap)
-            for pkt in packets { try? iface.send(pkt) }
+            for pkt in packets { try? transmit(pkt, on: iface) }
         }
     }
 
@@ -4829,7 +4999,7 @@ public final class Transport {
             reverseTableLock.unlock()
         }
 
-        try? outbound.send(forwarded)
+        try? transmit(forwarded, on: outbound)
     }
 
     // MARK: - Tunnel synthesis
@@ -4877,7 +5047,7 @@ public final class Transport {
             destinationHash: Transport.tunnelSynthesizeHash,
             data: data
         )
-        try? interface.send(packet)
+        try? transmit(packet, on: interface)
         interface.wantsTunnel = false
     }
 

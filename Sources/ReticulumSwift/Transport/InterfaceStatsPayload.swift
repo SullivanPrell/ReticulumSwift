@@ -16,14 +16,28 @@ import Foundation
 /// are *present* is as much a part of the contract as their values.
 public enum InterfaceStatsPayload {
     public static var empty: MsgPack.Value {
-        .map([
+        var pairs: [(MsgPack.Value, MsgPack.Value)] = [
             (.string("interfaces"), .array([])),
             (.string("rxb"),        .int(0)),
             (.string("txb"),        .int(0)),
             (.string("rxs"),        .double(0)),
             (.string("txs"),        .double(0)),
-            (.string("rss"),        .nil),
-        ])
+        ]
+        for key in ["arxb", "atxb"] { pairs.append((.string(key), .int(0))) }
+        for key in ["arxs", "atxs", "arxf", "atxf"] { pairs.append((.string(key), .double(0))) }
+        for key in ["prxb", "ptxb"] { pairs.append((.string(key), .int(0))) }
+        for key in ["prxs", "ptxs", "prxf", "ptxf"] { pairs.append((.string(key), .double(0))) }
+        for key in ["rxpps", "txpps"] { pairs.append((.string(key), .int(0))) }
+        for key in ["rxqt", "rxqd", "rxqa", "rxqp", "rxqil",
+                    "rxqtd", "rxqdd", "rxqad", "rxqpd", "rxqild"] {
+            pairs.append((.string(key), .int(0)))
+        }
+        for key in ["tqpressure", "dqpressure", "aqpressure", "pqpressure", "ilqpressure"] {
+            pairs.append((.string(key), .double(0)))
+        }
+        pairs.append((.string("txq"), .nil))
+        pairs.append((.string("rss"), .nil))
+        return .map(pairs)
     }
 
     public static func build(_ t: Transport) -> MsgPack.Value {
@@ -224,7 +238,48 @@ public enum InterfaceStatsPayload {
             (.string("txb"),        .int(Int64(tStats.trafficTxBytes))),
             (.string("rxs"),        .double(tStats.speedRx)),
             (.string("txs"),        .double(tStats.speedTx)),
+            // The announce and path-request aggregates `rnstatus -t -A` and `-t -P` read.
+            // Python indexes several of these with no presence guard, so a daemon that omits
+            // them makes the peer's own tool raise KeyError and print nothing at all.
+            (.string("arxb"),       .int(Int64(tStats.announceRxBytes))),
+            (.string("atxb"),       .int(Int64(tStats.announceTxBytes))),
+            (.string("arxs"),       .double(tStats.announceSpeedRx)),
+            (.string("atxs"),       .double(tStats.announceSpeedTx)),
+            (.string("arxf"),       .double(tStats.announceFreqRx)),
+            (.string("atxf"),       .double(tStats.announceFreqTx)),
+            (.string("prxb"),       .int(Int64(tStats.prRxBytes))),
+            (.string("ptxb"),       .int(Int64(tStats.prTxBytes))),
+            (.string("prxs"),       .double(tStats.prSpeedRx)),
+            (.string("ptxs"),       .double(tStats.prSpeedTx)),
+            (.string("prxf"),       .double(tStats.prFreqRx)),
+            (.string("ptxf"),       .double(tStats.prFreqTx)),
+            (.string("rxpps"),      .int(Int64(tStats.rxPPS))),
+            (.string("txpps"),      .int(Int64(tStats.txPPS))),
         ]
+
+        // Inbound queue depths and pressures, read by `rnstatus -q` (`rnstatus.py:784-800`),
+        // again without presence guards.
+        //
+        // Python fills these from `Transport.inbound_queues.snapshot()`—the traffic-class
+        // worker queues. This port has no such queues: `handleIncoming` runs the frame to
+        // completion on the receiving interface's own thread, so the momentary depth really
+        // is zero and no frame is ever dropped for want of queue space. Zero is therefore
+        // the accurate reading, not a placeholder, and it stops a Python peer's `-q` from
+        // failing outright. If the queues are ever ported, these read from the snapshot and
+        // the pressures gain real denominators.
+        //
+        // The pressures go out as floats. Python's `x/tql if x else 0` idiom emits an *int*
+        // zero on an idle node and a float otherwise, so every reader already handles both;
+        // a ratio that keeps one type is the better of the two behaviours to copy.
+        for key in ["rxqt", "rxqd", "rxqa", "rxqp", "rxqil",
+                    "rxqtd", "rxqdd", "rxqad", "rxqpd", "rxqild"] {
+            topPairs.append((.string(key), .int(0)))
+        }
+        for key in ["tqpressure", "dqpressure", "aqpressure", "pqpressure", "ilqpressure"] {
+            topPairs.append((.string(key), .double(0)))
+        }
+        // `stats["txq"] = None` unconditionally in Python too (`Reticulum.py:1613`).
+        topPairs.append((.string("txq"), .nil))
 
         if t.transportEnabled, let tid = t.transportIdentity {
             topPairs.append((.string("transport_id"), .bytes(tid.hash)))
