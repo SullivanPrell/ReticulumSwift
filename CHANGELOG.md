@@ -3,6 +3,65 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.15.0]—`packet_filter` matches upstream again
+
+Found while reading `Transport.py` for the protocol-violation counters: the packet filter
+itself had drifted from the Python function it mirrors, in four places, none of them
+visible from outside.
+
+`Reticulum.rnsProtocolVersion` stays at 1.4.2. Nothing here is a 1.5.x delta—these are
+pre-existing divergences the 1.5.2 read surfaced.
+
+### Six contexts no longer deduplicate
+
+Upstream answers `True` for `KEEPALIVE`, `RESOURCE_REQ`, `RESOURCE_PRF`, `RESOURCE`,
+`CACHE_REQUEST` and `CHANNEL` before it consults the hashlist (`Transport.py:1635-1640`).
+This port ran all six through the duplicate check.
+
+The hashable part of a packet excludes the hop count, so two sightings of one frame hash
+identically. That's what the exemption is for: every one of these contexts repeats
+legitimately, and on shared media the copy a node must forward can arrive after a copy it
+has already seen.
+
+The cost was smaller than it looks, and the reason is worth stating plainly. A fresh random
+IV encrypts every link packet, so an endpoint retransmitting its own keepalive or resource
+part produced a different ciphertext that the filter never caught. The exposure covered
+relayed link traffic over shared media—the case upstream's own comment names.
+
+### PLAIN and GROUP packets are no longer deduplicated either
+
+Both branches return before the duplicate check upstream (`Transport.py:1654-1655`,
+`:1667-1668`). The filter now drops a PLAIN or GROUP announce regardless of hop count,
+rather than passing it through for announce validation to reject later.
+
+### A client of a shared instance filters nothing
+
+`packet_filter` returns on its first line for a client (`Transport.py:1625-1627`), and
+`add_packet_hash` is a no-op there too (`:1619-1621`). This port honoured the flag only in
+the transport-id branch, so a client re-filtered traffic its instance had already vetted and
+kept a hashlist it had no use for.
+
+### A packet for a link this node carries stays out of the hashlist
+
+Upstream defers recording when the destination is in the link table (`Transport.py:1944-1952`):
+on shared media the node can see the packet before its turn to route it, and recording the
+hash then filters the copy it must forward. This port had the link-request-proof half of
+that guard and not the link-table half.
+
+### Five violation counters upstream can't reach, deliberately not ported
+
+Python counts a protocol violation at five points inside `packet_filter`. All five are
+unreachable: an `if packet.receiving_interface` guards each one, `Packet.__init__` leaves
+that `None` (`Packet.py:166`), `unpack()` never sets it, and the function's only caller
+assigns it after the filter returns (`Transport.py:1795-1799`). Counting them here would
+make this port's `Violatns.` column report events the daemon it mirrors reports as zero.
+
+### The public filter and the live filter are one function
+
+`Transport.packetFilter(_:)` was a second public implementation of the same decision,
+carrying none of these fixes and called by nothing but its own tests. Both spellings now run
+one implementation.
+
 ## [1.14.0]—The `rnstatus` and `rnir` command surfaces at RNS 1.5.2
 
 1.13.0 taught the daemon to publish the traffic aggregates a Python `rnstatus` reads. This
