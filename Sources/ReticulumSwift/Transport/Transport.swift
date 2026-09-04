@@ -3696,13 +3696,21 @@ public final class Transport {
             return
         }
 
-        forwardLinkTraffic(packet, from: interface)
-
         // `link_table[…][IDX_LT_VALIDATED] = True` (Transport.py:2661). Set only here, after
         // the signature verified, so the flag records verification rather than arrival.
+        //
+        // Python sets it one line below its transmit, this port one line ahead. The
+        // verification that the flag records has already happened either way—the signature
+        // guard sits directly ahead of it—but the transmit isn't a boundary here.
+        // Python's goes out through a socket, so the initiator's reply arrives on a later
+        // pass, while an in-process interface calls straight through: the initiator receives
+        // the proof and answers with a link RTT packet *inside* `forwardLinkTraffic`, and that
+        // reply reaches the validation gate before this line would otherwise run.
         lock.lock()
         linkRoutes[packet.destinationHash]?.validated = true
         lock.unlock()
+
+        forwardLinkTraffic(packet, from: interface)
 
         // Mirrors Python Transport.py line 2199:
         //   RNS.Identity._used_destination_data(link_entry[IDX_LT_DSTHASH])
@@ -3777,6 +3785,22 @@ public final class Transport {
         var route = linkRoutes[packet.destinationHash]
         lock.unlock()
         guard route != nil else { return }
+        // `if not link_entry[IDX_LT_VALIDATED]: ... protocol_violation("Link packet received
+        // before link validation")` (`Transport.py:2124-2128`). A link-table entry appears when
+        // a transport node relays a link request, and turns valid only once that node verifies the
+        // responder's proof. Carrying traffic before that means forwarding packets for a link
+        // that may never complete, and anyone can arrange it by pushing a link request through
+        // the node.
+        //
+        // Upstream's condition excludes ANNOUNCE, LINKREQUEST and LRPROOF (`:2122`), and only
+        // the last can reach this function. A proof relayed from `handleLinkRequestProof`
+        // arrives with the flag already up, so the exemption changes nothing on that path—but
+        // it's upstream's condition, and it keeps a proof arriving by any other route (a
+        // duplicate, or one for a torn-down link) from charging the sender.
+        if packet.context != .lrproof, !route!.validated {
+            notifyProtocolViolation(on: sourceInterface)
+            return
+        }
         let initIface = route!.initiatorSideInterface
         let respIface = route!.responderSideInterface
         // A non-transport shared instance still relays link traffic when either
@@ -4453,12 +4477,20 @@ public final class Transport {
     }
 
     private func handlePathRequest(_ packet: Packet, from interface: Interface) {
-        // Mirrors Python: `interface.received_path_request(size=len(raw))` when a path
-        // request arrives (`Transport.py:1858`).
-        notifyIncomingPathRequest(on: interface, size: packet.rawByteCount)
         let body = packet.data
         let hashLen = Constants.truncatedHashLength
-        guard body.count >= hashLen + 1 else { return }
+        // `if not len(packet.data) >= TRUNCATED_HASHLENGTH//8: return` (`Transport.py:1830`).
+        // Too short to name a destination, so upstream returns before it looks for a tag and
+        // charges nothing.
+        guard body.count >= hashLen else { return }
+        // `if tag_bytes == None: ... protocol_violation("Tagless path request")`
+        // (`:1838-1840`). One byte longer than the preceding case, and upstream treats it very
+        // differently: a tag is what makes a request distinguishable from a replay of itself,
+        // so nothing can deduplicate a request without one, and upstream declines to act.
+        guard body.count > hashLen else {
+            notifyProtocolViolation(on: interface)
+            return
+        }
         let target = Data(body.prefix(hashLen))
 
         // Extract the optional requesting transport instance ID and tag.
@@ -4478,7 +4510,16 @@ public final class Transport {
         // varying a tail nothing reads, turning one path request into as many recursive
         // fan-outs as it cares to send. The truncated tag is also what gets forwarded, so every
         // hop agrees on the identity of the request.
-        let tag = rawTag.count > hashLen ? Data(rawTag.prefix(hashLen)) : rawTag
+        // `protocol_violation("Excessive path request tag size")` accompanies the truncation
+        // (`:1845`). Upstream truncates and carries on, so this is a counter rather than a
+        // rejection—but it's the only trace a peer doing it leaves for the operator.
+        let tag: Data
+        if rawTag.count > hashLen {
+            notifyProtocolViolation(on: interface)
+            tag = Data(rawTag.prefix(hashLen))
+        } else {
+            tag = rawTag
+        }
         let dedupKey = target + tag
 
         lock.lock()
@@ -4496,6 +4537,13 @@ public final class Transport {
         let pathEntry = paths[target]
         lock.unlock()
         if alreadySeen { return }
+
+        // `interface.received_path_request(size=len(raw))` (`Transport.py:1857`). Upstream
+        // counts here, below the length guard, both tag checks and the duplicate check, so the
+        // column describes path requests this node acted on. Counting on arrival instead makes
+        // it describe path-request-shaped frames, which is a different number on any interface
+        // carrying replays.
+        notifyIncomingPathRequest(on: interface, size: packet.rawByteCount)
 
         // `should_ingress_limit = ingress_limited or attached_interface.should_ingress_limit_pr()`
         // (`Transport.py:3427`). Evaluated here, unconditionally, rather than at its single use
@@ -5162,7 +5210,21 @@ public final class Transport {
         let signature     = data[112..<176]
         let signedData    = tunnelIDData + Data(randomHash)
 
+        // Upstream's `protocol_violation("Invalid tunnel synthesis packet")`
+        // (`Transport.py:2808-2810`) stays deliberately unported, because it's unreachable.
+        // It fires from the handler's `except`, and with the length already checked nothing
+        // inside can raise: `load_public_key` swallows its own exception (`Identity.py`), and
+        // neither X25519 nor Ed25519 rejects a 32-byte value at construction—Ed25519 defers
+        // point decoding to verification time. So every correctly sized frame loads a key,
+        // reaches `validate`, and either matches or quietly doesn't.
+        //
+        // CryptoKit behaves the same way (verified against 2000 random values per curve for
+        // both curves in both libraries), so this initializer can only throw on a wrong length,
+        // which the preceding guard already excludes. Counting a violation here would charge peers
+        // for frames upstream never complains about.
         guard let remoteIdentity = try? Identity(publicKeyBytes: Data(publicKey)) else { return }
+        // A failing signature is ordinary traffic on a shared medium: upstream reaches
+        // `validate`, gets False, and falls off the end of the handler without raising.
         guard remoteIdentity.validate(signature: Data(signature), for: signedData) else { return }
 
         handleTunnel(tunnelID: tunnelID, interface: interface)

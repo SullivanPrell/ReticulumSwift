@@ -173,7 +173,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
         transport.register(interface: clientB)
 
         let linkID = Data(repeating: 0x5A, count: Constants.truncatedHashLength)
-        transport.restore(linkRoute: Transport.LinkRoute(
+        var route = Transport.LinkRoute(
             linkID: linkID,
             initiatorSideInterface: clientA,
             responderSideInterface: clientB,
@@ -181,7 +181,12 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
             responderSideInterfaceName: clientB.name,
             destinationHash: Data(repeating: 0x11, count: Constants.truncatedHashLength),
             lastHeard: Date()
-        ))
+        )
+        // A relay carries traffic only on a route whose link-request proof it verified
+        // (`Transport.py:2124-2128`). This test is about steering, not admission, so it starts
+        // the route where a real relay's would be by the time any data arrives.
+        route.validated = true
+        transport.restore(linkRoute: route)
 
         // Traffic arriving from A must leave through B, and vice versa. By name both are
         // "Client on hub", so a name-keyed steer can't tell these two cases apart.
