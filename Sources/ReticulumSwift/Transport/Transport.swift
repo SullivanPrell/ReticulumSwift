@@ -332,7 +332,24 @@ public final class Transport {
     struct SpeedSample {
         var rxBytes: Int
         var txBytes: Int
+        /// Announce and path-request byte totals at the same instant. Python keeps all six
+        /// in the one `transport_traffic_counter` dict (`Transport.py:645-648`) so every
+        /// gauge divides by the same interval; splitting them into separate snapshots would
+        /// let two rates describe two slightly different windows.
+        var announceRxBytes: Int = 0
+        var announceTxBytes: Int = 0
+        var pathRequestRxBytes: Int = 0
+        var pathRequestTxBytes: Int = 0
         var timestamp: TimeInterval
+    }
+
+    /// The four announce and path-request rates `rnstatus` reads as `arxs`, `atxs`, `prxs`
+    /// and `ptxs`, in bits per second.
+    public struct AnnounceSpeeds: Sendable, Equatable {
+        public var announceRx: Double = 0
+        public var announceTx: Double = 0
+        public var pathRequestRx: Double = 0
+        public var pathRequestTx: Double = 0
     }
 
     public private(set) var interfaces: [Interface] = []
@@ -579,6 +596,10 @@ public final class Transport {
     private var ifaceCurrentRxSpeed: [ObjectIdentifier: Double] = [:]
     /// Per-interface current TX speed (bits/sec). Mirrors Python `Interface.current_tx_speed`.
     private var ifaceCurrentTxSpeed: [ObjectIdentifier: Double] = [:]
+
+    /// Per-interface announce and path-request rates, filled by ``sampleInterfaceSpeeds(now:)``.
+    /// Guarded by `metricsLock`, like the two tables above.
+    private var ifaceAnnounceSpeeds: [ObjectIdentifier: AnnounceSpeeds] = [:]
     /// Aggregate RX speed across all interfaces (bits/sec). Mirrors Python `Transport.speed_rx`.
     public private(set) var speedRx: Double = 0
     /// Aggregate TX speed across all interfaces (bits/sec). Mirrors Python `Transport.speed_tx`.
@@ -1420,13 +1441,23 @@ public final class Transport {
         lock.lock()
         let snapshot = interfaces
         lock.unlock()
+        // Read the announce and path-request totals before taking `metricsLock`: `counts()`
+        // acquires `trackersLock` and then the tracker's own lock, and the sampling pass is
+        // the only place that would otherwise nest the three.
+        let counters = snapshot.map { ($0, tracker(for: $0)?.counts()) }
         metricsLock.lock(); defer { metricsLock.unlock() }
         var totalRxSpeed: Double = 0
         var totalTxSpeed: Double = 0
-        for iface in snapshot {
+        for (iface, counts) in counters {
             let key = ObjectIdentifier(iface)
             let currentRx = iface.rxBytes
             let currentTx = iface.txBytes
+            let sample = SpeedSample(rxBytes: currentRx, txBytes: currentTx,
+                                     announceRxBytes: counts?.announceRxBytes ?? 0,
+                                     announceTxBytes: counts?.announceTxBytes ?? 0,
+                                     pathRequestRxBytes: counts?.pathRequestRxBytes ?? 0,
+                                     pathRequestTxBytes: counts?.pathRequestTxBytes ?? 0,
+                                     timestamp: now)
             if let prior = ifaceSpeedSamples[key] {
                 let tsDiff = now - prior.timestamp
                 guard tsDiff > 0 else { continue }
@@ -1436,6 +1467,17 @@ public final class Transport {
                 let txSpeed = Double(txDiff) * 8.0 / tsDiff
                 ifaceCurrentRxSpeed[key] = rxSpeed
                 ifaceCurrentTxSpeed[key] = txSpeed
+                // Same interval, same bytes*8/seconds—Python computes all six together
+                // (`Transport.py:618-623`). Assigned every pass, including a quiet one, so
+                // an idle interface reads zero instead of holding its last rate.
+                func rate(_ current: Int, _ previous: Int) -> Double {
+                    Double(current - previous) * 8.0 / tsDiff
+                }
+                ifaceAnnounceSpeeds[key] = AnnounceSpeeds(
+                    announceRx: rate(sample.announceRxBytes, prior.announceRxBytes),
+                    announceTx: rate(sample.announceTxBytes, prior.announceTxBytes),
+                    pathRequestRx: rate(sample.pathRequestRxBytes, prior.pathRequestRxBytes),
+                    pathRequestTx: rate(sample.pathRequestTxBytes, prior.pathRequestTxBytes))
                 totalRxSpeed += rxSpeed
                 totalTxSpeed += txSpeed
                 // Accumulate transport-level TX total from interface diffs.
@@ -1443,7 +1485,7 @@ public final class Transport {
                 // handleIncoming already counts RX per packet, so this adds only TX.
                 if txDiff > 0 { trafficTxBytes += txDiff }
             }
-            ifaceSpeedSamples[key] = SpeedSample(rxBytes: currentRx, txBytes: currentTx, timestamp: now)
+            ifaceSpeedSamples[key] = sample
         }
         speedRx = totalRxSpeed
         speedTx = totalTxSpeed
@@ -1463,47 +1505,112 @@ public final class Transport {
         return ifaceCurrentTxSpeed[ObjectIdentifier(interface)] ?? 0
     }
 
+    /// Current announce RX rate for `interface` in bits/sec.
+    /// Mirrors Python's `Interface.current_arx_speed`.
+    public func currentAnnounceRxSpeed(for interface: any Interface) -> Double {
+        announceSpeeds(for: interface).announceRx
+    }
+
+    /// Current announce TX rate for `interface` in bits/sec.
+    /// Mirrors Python's `Interface.current_atx_speed`.
+    public func currentAnnounceTxSpeed(for interface: any Interface) -> Double {
+        announceSpeeds(for: interface).announceTx
+    }
+
+    /// Current path-request RX rate for `interface` in bits/sec.
+    /// Mirrors Python's `Interface.current_prx_speed`.
+    public func currentPathRequestRxSpeed(for interface: any Interface) -> Double {
+        announceSpeeds(for: interface).pathRequestRx
+    }
+
+    /// Current path-request TX rate for `interface` in bits/sec.
+    /// Mirrors Python's `Interface.current_ptx_speed`.
+    public func currentPathRequestTxSpeed(for interface: any Interface) -> Double {
+        announceSpeeds(for: interface).pathRequestTx
+    }
+
+    /// All four rates under one lock acquisition, so a caller reporting them together
+    /// describes a single sampling interval.
+    public func announceSpeeds(for interface: any Interface) -> AnnounceSpeeds {
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return ifaceAnnounceSpeeds[ObjectIdentifier(interface)] ?? AnnounceSpeeds()
+    }
+
     // MARK: - Interface frequency notifications (mirrors Python Interface.received_announce / sent_announce and so on)
 
     /// Notify that `interface` received an announce.
     /// Mirrors Python's `interface.received_announce()` call in `Transport.inbound`.
-    public func notifyIncomingAnnounce(on interface: any Interface) {
-        tracker(for: interface)?.recordIncomingAnnounce()
+    public func notifyIncomingAnnounce(on interface: any Interface, size: Int = 0) {
+        tracker(for: interface)?.recordIncomingAnnounce(size: size)
     }
 
     /// Overload accepting an explicit timestamp—used by tests and internally.
-    public func notifyIncomingAnnounce(on interface: any Interface, at t: TimeInterval) {
-        tracker(for: interface)?.recordIncomingAnnounce(at: t)
+    public func notifyIncomingAnnounce(on interface: any Interface, at t: TimeInterval,
+                                       size: Int = 0) {
+        tracker(for: interface)?.recordIncomingAnnounce(size: size, at: t)
     }
 
     /// Notify that `interface` sent an announce.
     /// Mirrors Python's `interface.sent_announce()` call in `Transport.outbound`.
-    public func notifyOutgoingAnnounce(on interface: any Interface) {
-        tracker(for: interface)?.recordOutgoingAnnounce()
+    public func notifyOutgoingAnnounce(on interface: any Interface, size: Int = 0) {
+        tracker(for: interface)?.recordOutgoingAnnounce(size: size)
     }
 
-    public func notifyOutgoingAnnounce(on interface: any Interface, at t: TimeInterval) {
-        tracker(for: interface)?.recordOutgoingAnnounce(at: t)
+    public func notifyOutgoingAnnounce(on interface: any Interface, at t: TimeInterval,
+                                       size: Int = 0) {
+        tracker(for: interface)?.recordOutgoingAnnounce(size: size, at: t)
     }
 
     /// Notify that `interface` received a path request.
     /// Mirrors Python's `interface.received_path_request()` call.
-    public func notifyIncomingPathRequest(on interface: any Interface) {
-        tracker(for: interface)?.recordIncomingPathRequest()
+    public func notifyIncomingPathRequest(on interface: any Interface, size: Int = 0) {
+        tracker(for: interface)?.recordIncomingPathRequest(size: size)
     }
 
-    public func notifyIncomingPathRequest(on interface: any Interface, at t: TimeInterval) {
-        tracker(for: interface)?.recordIncomingPathRequest(at: t)
+    public func notifyIncomingPathRequest(on interface: any Interface, at t: TimeInterval,
+                                          size: Int = 0) {
+        tracker(for: interface)?.recordIncomingPathRequest(size: size, at: t)
     }
 
     /// Notify that `interface` sent a path request.
     /// Mirrors Python's `interface.sent_path_request()` call.
-    public func notifyOutgoingPathRequest(on interface: any Interface) {
-        tracker(for: interface)?.recordOutgoingPathRequest()
+    public func notifyOutgoingPathRequest(on interface: any Interface, size: Int = 0) {
+        tracker(for: interface)?.recordOutgoingPathRequest(size: size)
     }
 
-    public func notifyOutgoingPathRequest(on interface: any Interface, at t: TimeInterval) {
-        tracker(for: interface)?.recordOutgoingPathRequest(at: t)
+    public func notifyOutgoingPathRequest(on interface: any Interface, at t: TimeInterval,
+                                          size: Int = 0) {
+        tracker(for: interface)?.recordOutgoingPathRequest(size: size, at: t)
+    }
+
+    /// Mirrors Python's `interface.protocol_violation()` (`Transport.py:1646` and eight
+    /// further call sites). Python's helper also logs at `LOG_DEBUG` and returns `None` so
+    /// the caller can `return interface.protocol_violation(...)`; here the callers already
+    /// return on their own, so this only counts.
+    public func notifyProtocolViolation(on interface: any Interface) {
+        tracker(for: interface)?.recordProtocolViolation()
+    }
+
+    /// Mirrors Python's `interface.ifac_violation()` (`Transport.py:1715` and four others).
+    public func notifyIfacViolation(on interface: any Interface) {
+        tracker(for: interface)?.recordIfacViolation()
+    }
+
+    /// Mirrors Python's `interface.packet_filter_hit()` (`Transport.py:1795`).
+    public func notifyPacketFilterHit(on interface: any Interface) {
+        tracker(for: interface)?.recordPacketFilterHit()
+    }
+
+    /// The announce, path-request and violation counters for `interface`, or all zeroes
+    /// when it is not registered. Read by `InterfaceStatsPayload`.
+    public func interfaceCounts(for interface: any Interface) -> InterfaceFreqTracker.Counts {
+        tracker(for: interface)?.counts()
+            ?? InterfaceFreqTracker.Counts(announceRxBytes: 0, announceTxBytes: 0,
+                                           announceRxCount: 0, announceTxCount: 0,
+                                           pathRequestRxBytes: 0, pathRequestTxBytes: 0,
+                                           pathRequestRxCount: 0, pathRequestTxCount: 0,
+                                           protocolViolations: 0, ifacViolations: 0,
+                                           packetFilterHits: 0)
     }
 
     /// Incoming announce frequency (Hz) for the given interface.
@@ -1823,7 +1930,13 @@ public final class Transport {
         // Raw-bytes handler used by real interfaces—verifies IFAC, parses packet.
         interface.rawInboundHandler = { [weak self] rawBytes, sourceInterface in
             guard let self else { return }
-            guard let verified = sourceInterface.unwrapIfac(rawBytes) else { return }
+            guard let verified = sourceInterface.unwrapIfac(rawBytes) else {
+                // Python counts every one of these through `interface.ifac_violation()`
+                // (`Transport.py:1715`, `:1749`, `:1773`, `:1777`, `:1784`). This port
+                // decides all five inside `unwrapIfac`, so one call covers them.
+                self.notifyIfacViolation(on: sourceInterface)
+                return
+            }
             // `if interface and len(raw) > interface.HW_MTU + (interface.ifac_size or 0):
             //      return interface.protocol_violation(...)` (`Transport.py:1789`, RNS 1.5.0).
             //
@@ -1846,8 +1959,16 @@ public final class Transport {
             // allowance, so a frame that filled the medium before the tag was stripped is
             // still accepted.
             if let hwMtu = sourceInterface.hwMtu,
-               verified.count > hwMtu + sourceInterface.ifacSize { return }
-            guard let packet = try? Packet.unpack(verified) else { return }
+               verified.count > hwMtu + sourceInterface.ifacSize {
+                self.notifyProtocolViolation(on: sourceInterface)
+                return
+            }
+            guard let packet = try? Packet.unpack(verified) else {
+                // `protocol_violation(f"Malformed packet ({len(raw)} bytes)")`
+                // (`Transport.py:1794`).
+                self.notifyProtocolViolation(on: sourceInterface)
+                return
+            }
             // `if len(raw) > RNS.Reticulum.MTU: return ... protocol_violation("Excessive
             // announce packet frame size ...")` (`Transport.py:1804`).
             //
@@ -1856,7 +1977,10 @@ public final class Transport {
             // ceiling is the protocol MTU, not the interface's—a legitimate announce fits in
             // 500 bytes on every medium, so a larger one is malformed no matter how wide the
             // link that carried it.
-            if packet.packetType == .announce, verified.count > Constants.mtu { return }
+            if packet.packetType == .announce, verified.count > Constants.mtu {
+                self.notifyProtocolViolation(on: sourceInterface)
+                return
+            }
             self.handleIncoming(packet: packet, from: sourceInterface)
         }
         // Packet handler kept for test-stub loopback interfaces that deliver
@@ -1992,6 +2116,7 @@ public final class Transport {
         ifaceSpeedSamples.removeValue(forKey: key)
         ifaceCurrentRxSpeed.removeValue(forKey: key)
         ifaceCurrentTxSpeed.removeValue(forKey: key)
+        ifaceAnnounceSpeeds.removeValue(forKey: key)
         metricsLock.unlock()
         lock.unlock()
     }
@@ -2999,7 +3124,9 @@ public final class Transport {
         for interface in interfaces where interface.isOnline && interface.isRoutingEndpoint && interface !== excluded {
             try? interface.send(packet)
             // Mirrors Python: `interface.sent_announce()` when relaying an announce.
-            if packet.packetType == .announce { notifyOutgoingAnnounce(on: interface) }
+            if packet.packetType == .announce {
+                notifyOutgoingAnnounce(on: interface, size: packet.rawByteCount)
+            }
         }
     }
 
@@ -3092,7 +3219,15 @@ public final class Transport {
 
         // Drop duplicate or replayed packets. Link handshake packets
         // (LRR and LRPROOF) are exempt so retransmissions work.
-        guard filterAndRecord(packet: packet) else { return }
+        //
+        // `if not Transport.packet_filter(packet): return interface.packet_filter_hit()`
+        // (`Transport.py:1795`). `filterAndRecord` is this port's live filter—the public
+        // `packetFilter` covers only the hashlist branch and no production path calls it—so
+        // this guard is the one place a filtered frame is observable.
+        guard filterAndRecord(packet: packet) else {
+            notifyPacketFilterHit(on: interface)
+            return
+        }
 
         // CACHE_REQUEST: serve cached announce packet if available.
         // Mirrors Python: `if packet.context == CACHE_REQUEST: if cache_request_packet(packet): return`
@@ -3496,8 +3631,9 @@ public final class Transport {
     }
 
     private func handleAnnounce(_ packet: Packet, from interface: Interface) {
-        // Mirrors Python: `interface.received_announce()` called on valid announce receipt.
-        notifyIncomingAnnounce(on: interface)
+        // Mirrors Python: `interface.received_announce(size=len(packet.raw))` on valid
+        // announce receipt (`Transport.py:1811`).
+        notifyIncomingAnnounce(on: interface, size: packet.rawByteCount)
 
         // An announce for a destination this node owns is dropped here and goes no further.
         //
@@ -4042,19 +4178,21 @@ public final class Transport {
         )
         if let iface = onInterface {
             try iface.send(packet)
-            // Mirrors Python: `interface.sent_path_request()` after sending.
-            notifyOutgoingPathRequest(on: iface)
+            // Mirrors Python: `interface.sent_path_request(size=len(raw))` after sending
+            // (`Transport.py:1601`).
+            notifyOutgoingPathRequest(on: iface, size: packet.rawByteCount)
         } else {
             try send(packet)
             for iface in interfaces where iface.isOnline {
-                notifyOutgoingPathRequest(on: iface)
+                notifyOutgoingPathRequest(on: iface, size: packet.rawByteCount)
             }
         }
     }
 
     private func handlePathRequest(_ packet: Packet, from interface: Interface) {
-        // Mirrors Python: `interface.received_path_request()` when a path request arrives.
-        notifyIncomingPathRequest(on: interface)
+        // Mirrors Python: `interface.received_path_request(size=len(raw))` when a path
+        // request arrives (`Transport.py:1858`).
+        notifyIncomingPathRequest(on: interface, size: packet.rawByteCount)
         let body = packet.data
         let hashLen = Constants.truncatedHashLength
         guard body.count >= hashLen + 1 else { return }
