@@ -13,7 +13,7 @@ public final class Reticulum {
     /// (releases are cut to mirror the RNS version they reach parity with) but
     /// advance independently—a patch release fixes the port without changing
     /// the protocol it targets.
-    public static let version = "1.19.0"
+    public static let version = "1.20.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
@@ -56,10 +56,12 @@ public final class Reticulum {
     /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
     /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
     ///
-    /// Also outstanding: interface-discovery *publishing*
-    /// (`publishesInterfaceDiscovery == false`, a pre-existing gap—the receive side is
-    /// complete), and the `discovery_path_requests` batching, which needs the announce
-    /// handler that replays to `requesting_interfaces` to be worth anything.
+    /// The two areas that were outstanding when the parity claim moved to 1.5.2 have since
+    /// landed: interface-discovery *publishing*, which now announces this node's own
+    /// discoverable interfaces and dials the ones it hears about
+    /// (``publishesInterfaceDiscovery``, ``autoconnectsDiscoveredInterfaces``); and the
+    /// `discovery_path_requests` batching, together with the announce replay that answers
+    /// the requestors it batches.
     public static let rnsProtocolVersion = "1.5.2"
 
     public enum LogLevel: Int, Comparable, Sendable {
@@ -147,12 +149,20 @@ public final class Reticulum {
         /// Mirrors the dynamic LXMF import in Python's `InterfaceAnnounceHandler`.
         public var discoveryStampValidator: (any DiscoveryStampValidator)?
 
+        /// Optional stamp generator for interface discovery.
+        ///
+        /// When any interface sets `discoverable = yes` and this property is non-nil, `start()`
+        /// calls `transport.enableDiscovery()` with it. The publish-side counterpart to
+        /// `discoveryStampValidator`, and typically backed by the same `LXStamper`.
+        public var discoveryStampGenerator: (any DiscoveryStampGenerator)?
+
         public init(storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true, logLevel: LogLevel = .notice) {
             self.storagePath = storagePath
             self.configPath = configPath
             self.shareInstance = shareInstance
             self.logLevel = logLevel
             self.discoveryStampValidator = nil
+            self.discoveryStampGenerator = nil
         }
     }
 
@@ -389,6 +399,18 @@ public final class Reticulum {
     public private(set) static var discoveredInterfaces_: [String] = []
     public static func discoveredInterfaces() -> [String] { discoveredInterfaces_ }
 
+    /// Whether any configured interface asked to be announced as a discoverable endpoint.
+    ///
+    /// Python latches this the moment it parses a `discoverable = yes` in any interface block
+    /// (`Reticulum.py:904`) and starts the announcer from it once the stack is up
+    /// (`:370`). The flag is needed because the interfaces don't exist yet when the block is
+    /// read, so there's nothing to inspect at start-up time otherwise.
+    ///
+    /// `internal(set)` for the same reason as `interfaceDiscoverySources_`: config loading is
+    /// the only production writer and lives in this module.
+    public internal(set) static var discoveryEnabled_: Bool = false
+    public static func discoveryEnabled() -> Bool { discoveryEnabled_ }
+
     /// Returns the list of network identity hashes from which interfaces are discovered.
     /// Mirrors Python's `Reticulum.interface_discovery_sources()`.
     /// `internal(set)`, not `private(set)`: the announce-time allowlist check in
@@ -486,19 +508,22 @@ public final class Reticulum {
     /// value is readable and honest about being reportable-only.
     public static func forceSharedInstanceBitrate() -> Int? { forceSharedInstanceBitrate_ }
 
-    /// **Known gap** (`fix-013 §7.8`): whether this port announces its own interfaces as
-    /// discoverable endpoints—Python's `Discovery.InterfaceAnnouncer`. The *receive* side is
-    /// implemented (a Swift node discovers Python interfaces); the publish side isn't, so the
-    /// eleven `discovery_*`/`reachable_on`/`discoverable` interface attributes have no
-    /// counterpart here. `RuntimeAttributeParityTests` fails if this ever becomes true without
-    /// those attributes landing with it.
-    public static let publishesInterfaceDiscovery = false
+    /// Whether this port announces its own interfaces as discoverable endpoints—Python's
+    /// `Discovery.InterfaceAnnouncer`. True since 2026-09-04, when the publish side landed
+    /// alongside the seventeen `discovery_*`/`reachable_on`/`discoverable` interface
+    /// attributes it carries.
+    ///
+    /// Announcing also needs a `Configuration.discoveryStampGenerator`, for the same reason
+    /// discovering needs a validator: the proof-of-work lives in LXMF.
+    public static let publishesInterfaceDiscovery = true
 
-    /// **Known gap** (`fix-013 §7.8`): whether this port dials and monitors discovered
-    /// endpoints—Python's `Discovery.py:574-742`, which writes `autoconnect_hash`,
-    /// `autoconnect_source` and `autoconnect_down`. The `autoconnect_*` policy keys parse into
-    /// statics that nothing consumes, because the subsystem is absent.
-    public static let autoconnectsDiscoveredInterfaces = false
+    /// Whether this port dials and monitors discovered endpoints—Python's
+    /// `Discovery.InterfaceDiscovery` autoconnect half, which writes `autoconnect_hash`,
+    /// `autoconnect_source` and `autoconnect_down`. True since 2026-09-04.
+    ///
+    /// Still off unless the operator sets `autoconnect_discovered_interfaces` to a non-zero
+    /// limit: the subsystem exists, and dialling strangers is opt-in.
+    public static let autoconnectsDiscoveredInterfaces = true
 
     /// Announce-rate defaults for interfaces that don't configure their own.
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
@@ -778,6 +803,20 @@ public final class Reticulum {
 
         try transport.start()
 
+        // Start announcing our own discoverable interfaces when any of them asked to be.
+        // Mirrors Python: if Reticulum.__discovery_enabled: RNS.Transport.enable_discovery()
+        // (`Reticulum.py:370`). The latch is set while parsing interface blocks, because no
+        // interface exists yet when the reticulum block is read.
+        if Reticulum.discoveryEnabled() {
+            if let stampGenerator = configuration.discoveryStampGenerator {
+                transport.enableDiscovery(stampGenerator: stampGenerator)
+            } else {
+                Reticulum.log("An interface is configured as discoverable, but no discovery "
+                              + "stamp generator was supplied. Interfaces will not be announced.",
+                              level: .error)
+            }
+        }
+
         // Start interface discovery listener when configured.
         // Mirrors Python: if Reticulum.__discover_interfaces: RNS.Transport.discover_interfaces()
         // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
@@ -790,6 +829,23 @@ public final class Reticulum {
                 requiredValue: Reticulum.requiredDiscoveryValue(),
                 stampValidator: validator
             )
+
+            // Python re-runs `_synthesize_interface` over `bootstrap_configs` when every
+            // auto-connected peer has gone (`Discovery.py:652-654`). The parsed config lives
+            // here rather than on `Transport`, so the clause is injected.
+            //
+            // Unowned-safe capture: `Reticulum` owns `transport`, which owns the discovery
+            // handler holding this closure, so a strong capture would be a cycle.
+            transport.discoveryHandler?.reenableBootstrapInterfaces = { [weak self] in
+                guard let self, let cfg = self.config else { return }
+                let bootstrapOnly = cfg.interfaces.filter {
+                    $0.enabled && $0.bool("bootstrap_only") == true
+                }
+                guard !bootstrapOnly.isEmpty else { return }
+                var subset = cfg
+                subset.interfaces = bootstrapOnly
+                try? self.synthesizeInterfaces(from: subset)
+            }
         }
 
         // Start blackhole-list updater when sources are configured.
@@ -1066,8 +1122,80 @@ public final class Reticulum {
         if let value = block.double("ic_burst_penalty")        { state.icBurstPenalty = value }
         if let value = block.double("ic_held_release_interval") { state.icHeldReleaseInterval = value }
 
+        applyDiscoveryConfiguration(to: interface, from: block)
+
         // IFAC last, as Python does (`Reticulum.py:955` follows the attribute block).
         applyIfacConfiguration(to: interface, from: block)
+    }
+
+    // MARK: - Per-interface discovery configuration
+
+    /// Read the `discoverable` block out of one interface section.
+    ///
+    /// Mirrors `Reticulum.py:900-934` (extraction plus the mode correction) and the fifteen
+    /// assignments at `:953-967`. Every key inside is read only when `discoverable` is on, so a
+    /// half-edited config can't start announcing an endpoint.
+    ///
+    /// The interface attributes these land on are the publish side of interface discovery. The
+    /// receive side has been complete since RNS 1.4.0; nothing wrote these, so a Python config
+    /// moved to a Swift node produced a stack that quietly never announced.
+    private static func applyDiscoveryConfiguration(to interface: any Interface,
+                                                    from block: ReticulumConfig.InterfaceConfig) {
+        guard block.bool("discoverable") == true else { return }
+
+        // Latched for the whole process, as Python does—the announcer starts from this flag
+        // after every interface is up (`Reticulum.py:370`).
+        Reticulum.discoveryEnabled_ = true
+        interface.discoverable = true
+
+        // Minutes on the wire of the config file, seconds on the interface, with a five-minute
+        // floor and a six-hour default (`Reticulum.py:905-909`).
+        if let minutes = block.int("announce_interval") {
+            interface.discoveryAnnounceInterval = TimeInterval(max(minutes * 60, 5 * 60))
+        } else {
+            interface.discoveryAnnounceInterval = TimeInterval(6 * 60 * 60)
+        }
+
+        interface.discoveryStampValue = block.int("discovery_stamp_value")
+        interface.discoveryName       = block["discovery_name"]
+        interface.discoveryEncrypt    = block.bool("discovery_encrypt") ?? false
+        interface.reachableOn         = block["reachable_on"]
+        interface.discoveryPublishIfac = block.bool("publish_ifac") ?? false
+        interface.discoveryLocation   = block["location_cmd"]
+        interface.discoveryLatitude   = block.double("latitude")
+        interface.discoveryLongitude  = block.double("longitude")
+        interface.discoveryHeight     = block.double("height")
+        interface.discoveryFrequency  = block.int("discovery_frequency")
+        interface.discoveryBandwidth  = block.int("discovery_bandwidth")
+        interface.discoveryModulation = block.int("discovery_modulation")
+
+        // A truncated destination hash, so exactly `TRUNCATED_HASHLENGTH//8*2` hex characters.
+        // A wrong length or a non-hex value logs and leaves the address unset
+        // (`Reticulum.py:922-926`) rather than putting a malformed address on the wire.
+        if let hex = block["discovery_lxmf_address"] {
+            if hex.count == Constants.truncatedHashLength * 2, let data = Data(hex: hex) {
+                interface.discoveryLxmfAddress = data
+            } else {
+                Reticulum.log("Invalid interface discovery LXMF address: \(hex)", level: .error)
+            }
+        }
+
+        // An announcing interface has to route for the peers that find it, so a mode that
+        // doesn't gets corrected: RNode types to access point, everything else to gateway
+        // (`Reticulum.py:927-934`). `ignore_config_warnings` opts out, leaving the mode as
+        // configured.
+        let routes: Set<InterfaceMode> = [.gateway, .accessPoint, .internal]
+        if !routes.contains(interface.mode), block.bool("ignore_config_warnings") != true {
+            if block.type == "RNodeInterface" || block.type == "RNodeMultiInterface" {
+                interface.mode = .accessPoint
+                Reticulum.log("Discovery enabled on interface \(block.name) without "
+                              + "gateway, internal or AP mode. Auto-configured to AP mode.")
+            } else {
+                interface.mode = .gateway
+                Reticulum.log("Discovery enabled on interface \(block.name) without "
+                              + "gateway, internal or AP mode. Auto-configured to gateway mode.")
+            }
+        }
     }
 
     // MARK: - Per-interface IFAC configuration
@@ -1116,6 +1244,7 @@ public final class Reticulum {
         // Python assigns both unconditionally, then derives only if either is present
         // (`Reticulum.py:955-958`).
         interface.ifacNetname = netname
+        interface.ifacNetkey = netkey
         guard netname != nil || netkey != nil else { return }
 
         Transport.configureIfac(on: interface, netname: netname, netkey: netkey, size: size)

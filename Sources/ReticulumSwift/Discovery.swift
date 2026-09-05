@@ -3,14 +3,19 @@ import Foundation
 /// Periodically broadcasts an Announce for an owned destination so peers
 /// can discover and route to it.
 ///
-/// Mirrors Python's `Reticulum.announce` polling logic. Call `start()` to
-/// begin emitting announces on the given transport and `stop()` to cancel.
-public final class InterfaceAnnouncer {
+/// Call `start()` to begin emitting announces on the given transport and `stop()` to cancel.
+///
+/// Renamed from `InterfaceAnnouncer` when the discovery publish side landed. That name belongs
+/// to Python's `Discovery.InterfaceAnnouncer`, which announces *interfaces* as discoverable
+/// endpoints and is a different thing entirely; this one re-announces one destination on a
+/// timer. Every `InterfaceAnnouncer.DEFAULT_STAMP_VALUE`-style citation in this package means
+/// the Python class, so the collision made each of them read as a reference to this type.
+public final class DestinationAnnouncer {
     public let destination: Destination
     public var interval: TimeInterval
     private weak var transport: Transport?
     private var timer: DispatchSourceTimer?
-    private let queue = DispatchQueue(label: "InterfaceAnnouncer")
+    private let queue = DispatchQueue(label: "DestinationAnnouncer")
 
     public init(destination: Destination, interval: TimeInterval = 1800, transport: Transport? = nil) {
         self.destination = destination

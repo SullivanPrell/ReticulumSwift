@@ -57,6 +57,23 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
 /// Reticulum Interfaces speak in *whole packets*: the underlying medium
 /// (TCP, UDP, BLE serial, RNode KISS) handles framing; the Interface
 /// reports clean packet bytes upward via `inboundHandler`.
+/// A radio's live operating parameters, as published in a discovery announce.
+///
+/// Mirrors the four values Python reads off an `RNodeInterface` at `Discovery.py:188-192`.
+public struct DiscoveryRadioParameters: Equatable, Sendable {
+    public let frequency: Int
+    public let bandwidth: Int
+    public let spreadingFactor: Int
+    public let codingRate: Int
+
+    public init(frequency: Int, bandwidth: Int, spreadingFactor: Int, codingRate: Int) {
+        self.frequency = frequency
+        self.bandwidth = bandwidth
+        self.spreadingFactor = spreadingFactor
+        self.codingRate = codingRate
+    }
+}
+
 public protocol Interface: AnyObject {
     var name: String { get }
 
@@ -186,6 +203,22 @@ public protocol Interface: AnyObject {
     /// Mirrors Python's `Interface.ifac_netname` (`Reticulum.py:955`); `rnstatus` reports it.
     var ifacNetname: String? { get set }
 
+    /// The IFAC segment's passphrase, as configured. Mirrors Python's
+    /// `interface.ifac_netkey`, published only when `discoveryPublishIfac` is set.
+    var ifacNetkey: String? { get set }
+
+    /// The endpoint hash this interface was auto-connected for, or nil when it was configured
+    /// by hand. Python: `interface.autoconnect_hash` (`Discovery.py:765`).
+    var autoconnectHash: Data? { get set }
+
+    /// The network identity whose announce this endpoint was discovered from.
+    /// Python: `interface.autoconnect_source` (`Discovery.py:766`).
+    var autoconnectSource: String? { get set }
+
+    /// When this auto-connected interface was first seen offline, or nil while it is up.
+    /// Python: `interface.autoconnect_down` (`Discovery.py:628`).
+    var autoconnectDown: TimeInterval? { get set }
+
     /// When true, a transport node searches for unknown paths on path requests
     /// received here regardless of this interface's `mode` (that is, even when the
     /// mode isn't in `discoverPathsFor`). Mirrors Python's RNS 1.3.6
@@ -210,6 +243,89 @@ public protocol Interface: AnyObject {
     /// the interface with the higher gravity wins the path-table entry. Higher
     /// pulls harder. Mirrors Python's RNS 1.4.1 `Interface.gravity` (default 0).
     var gravity: Int { get set }
+
+    // MARK: - Interface discovery, publish side
+
+    /// Whether this interface *type* can be announced as a discoverable endpoint.
+    ///
+    /// A per-class capability, not a config choice: the announcer's job filter is
+    /// `i.supports_discovery and i.discoverable` (`Discovery.py:82`), so a type leaving this
+    /// false never announces however an operator configures it. Mirrors Python's
+    /// `Interface.supports_discovery` (`Interface.py:117`, default False).
+    var supportsDiscovery: Bool { get }
+
+    /// Whether the operator has asked for this interface to be announced.
+    /// Mirrors Python's `interface.discoverable` (`Reticulum.py:953`).
+    var discoverable: Bool { get set }
+
+    /// When this interface last announced itself, as a Unix timestamp, or `0` for never.
+    /// Mirrors Python's `interface.last_discovery_announce` (`Discovery.py:86`).
+    var lastDiscoveryAnnounce: TimeInterval { get set }
+
+    /// Seconds between discovery announces for this interface.
+    /// Mirrors Python's `interface.discovery_announce_interval` (`Reticulum.py:954`).
+    var discoveryAnnounceInterval: TimeInterval? { get set }
+
+    /// Publish this interface's IFAC network name and key in its announces.
+    /// Mirrors Python's `interface.discovery_publish_ifac` (`Reticulum.py:955`).
+    var discoveryPublishIfac: Bool { get set }
+
+    /// Hostname or address peers should dial to reach this interface, or the path to an
+    /// executable printing one. Mirrors Python's `interface.reachable_on`.
+    var reachableOn: String? { get set }
+
+    /// Operator-facing name carried in the announce.
+    /// Mirrors Python's `interface.discovery_name`.
+    var discoveryName: String? { get set }
+
+    /// The operator's LXMF address, published as `OP_ADDR`.
+    /// Mirrors Python's `interface.discovery_lxmf_address`.
+    var discoveryLxmfAddress: Data? { get set }
+
+    /// Encrypt announce payloads to the configured network identity.
+    /// Mirrors Python's `interface.discovery_encrypt`.
+    var discoveryEncrypt: Bool { get set }
+
+    /// Proof-of-work cost for this interface's announces.
+    /// Mirrors Python's `interface.discovery_stamp_value`.
+    var discoveryStampValue: Int? { get set }
+
+    /// Path to an executable printing `latitude,longitude,height` for each announce.
+    /// Mirrors Python's `interface.discovery_location`.
+    var discoveryLocation: String? { get set }
+
+    /// Published latitude in degrees. Mirrors Python's `interface.discovery_latitude`.
+    var discoveryLatitude: Double? { get set }
+    /// Published longitude in degrees. Mirrors Python's `interface.discovery_longitude`.
+    var discoveryLongitude: Double? { get set }
+    /// Published height in metres. Mirrors Python's `interface.discovery_height`.
+    var discoveryHeight: Double? { get set }
+
+    /// Published operating frequency in Hz. Mirrors Python's `interface.discovery_frequency`.
+    var discoveryFrequency: Int? { get set }
+    /// Published bandwidth in Hz. Mirrors Python's `interface.discovery_bandwidth`.
+    var discoveryBandwidth: Int? { get set }
+    /// Published modulation. Mirrors Python's `interface.discovery_modulation`.
+    var discoveryModulation: Int? { get set }
+    /// Published channel. Mirrors Python's `interface.discovery_channel`.
+    var discoveryChannel: Int? { get set }
+
+    /// The port peers dial to reach this interface, published as `PORT`.
+    ///
+    /// Python reads `interface.bind_port` inside the listener branch of its announce builder
+    /// (`Discovery.py:182`). Declared here with a nil default rather than reached through a
+    /// cast, so a type that starts presenting a listener's published name carries its own port
+    /// instead of silently announcing without one.
+    var discoveryListenPort: Int? { get }
+
+    /// An address peers dial that isn't a hostname or IP—today only I2P's `b32`, published as
+    /// `REACHABLE_ON` and gated on the tunnel being connectable (`Discovery.py:185-186`).
+    var discoveryEndpointAddress: String? { get }
+
+    /// The radio's live operating parameters, published by the RNode branch
+    /// (`Discovery.py:188-192`). Distinct from the `discovery_*` config values, which describe
+    /// a radio this node doesn't drive itself.
+    var discoveryRadioParameters: DiscoveryRadioParameters? { get }
 
     /// Called by Transport when an outbound packet is ready for the wire.
     func send(_ packet: Packet) throws
@@ -455,6 +571,25 @@ public extension Interface {
         get { interfaceState.ifacNetname }
         set { interfaceState.ifacNetname = newValue }
     }
+    var ifacNetkey: String? {
+        get { interfaceState.ifacNetkey }
+        set { interfaceState.ifacNetkey = newValue }
+    }
+
+    var autoconnectHash: Data? {
+        get { interfaceState.autoconnectHash }
+        set { interfaceState.autoconnectHash = newValue }
+    }
+
+    var autoconnectSource: String? {
+        get { interfaceState.autoconnectSource }
+        set { interfaceState.autoconnectSource = newValue }
+    }
+
+    var autoconnectDown: TimeInterval? {
+        get { interfaceState.autoconnectDown }
+        set { interfaceState.autoconnectDown = newValue }
+    }
     var recursivePrs: Bool {
         get { interfaceState.recursivePrs }
         set { interfaceState.recursivePrs = newValue }
@@ -472,6 +607,86 @@ public extension Interface {
         get { interfaceState.gravity }
         set { interfaceState.gravity = newValue }
     }
+
+    // MARK: Interface discovery, publish side
+
+    /// Python's base-class default (`Interface.py:117`). Overridden to `true` by the types
+    /// upstream marks: `BackboneInterface.py:154`, `I2PInterface.py:762`,
+    /// `RNodeInterface.py:302` and `TCPInterface.py:134`/`:528`.
+    var supportsDiscovery: Bool { false }
+
+    var discoverable: Bool {
+        get { interfaceState.discoverable }
+        set { interfaceState.discoverable = newValue }
+    }
+    var lastDiscoveryAnnounce: TimeInterval {
+        get { interfaceState.lastDiscoveryAnnounce }
+        set { interfaceState.lastDiscoveryAnnounce = newValue }
+    }
+    var discoveryAnnounceInterval: TimeInterval? {
+        get { interfaceState.discoveryAnnounceInterval }
+        set { interfaceState.discoveryAnnounceInterval = newValue }
+    }
+    var discoveryPublishIfac: Bool {
+        get { interfaceState.discoveryPublishIfac }
+        set { interfaceState.discoveryPublishIfac = newValue }
+    }
+    var reachableOn: String? {
+        get { interfaceState.reachableOn }
+        set { interfaceState.reachableOn = newValue }
+    }
+    var discoveryName: String? {
+        get { interfaceState.discoveryName }
+        set { interfaceState.discoveryName = newValue }
+    }
+    var discoveryLxmfAddress: Data? {
+        get { interfaceState.discoveryLxmfAddress }
+        set { interfaceState.discoveryLxmfAddress = newValue }
+    }
+    var discoveryEncrypt: Bool {
+        get { interfaceState.discoveryEncrypt }
+        set { interfaceState.discoveryEncrypt = newValue }
+    }
+    var discoveryStampValue: Int? {
+        get { interfaceState.discoveryStampValue }
+        set { interfaceState.discoveryStampValue = newValue }
+    }
+    var discoveryLocation: String? {
+        get { interfaceState.discoveryLocation }
+        set { interfaceState.discoveryLocation = newValue }
+    }
+    var discoveryLatitude: Double? {
+        get { interfaceState.discoveryLatitude }
+        set { interfaceState.discoveryLatitude = newValue }
+    }
+    var discoveryLongitude: Double? {
+        get { interfaceState.discoveryLongitude }
+        set { interfaceState.discoveryLongitude = newValue }
+    }
+    var discoveryHeight: Double? {
+        get { interfaceState.discoveryHeight }
+        set { interfaceState.discoveryHeight = newValue }
+    }
+    var discoveryFrequency: Int? {
+        get { interfaceState.discoveryFrequency }
+        set { interfaceState.discoveryFrequency = newValue }
+    }
+    var discoveryBandwidth: Int? {
+        get { interfaceState.discoveryBandwidth }
+        set { interfaceState.discoveryBandwidth = newValue }
+    }
+    var discoveryModulation: Int? {
+        get { interfaceState.discoveryModulation }
+        set { interfaceState.discoveryModulation = newValue }
+    }
+    var discoveryChannel: Int? {
+        get { interfaceState.discoveryChannel }
+        set { interfaceState.discoveryChannel = newValue }
+    }
+
+    var discoveryListenPort: Int? { nil }
+    var discoveryEndpointAddress: String? { nil }
+    var discoveryRadioParameters: DiscoveryRadioParameters? { nil }
 
     var isRoutingEndpoint: Bool { true }
 

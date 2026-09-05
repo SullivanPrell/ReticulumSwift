@@ -14,6 +14,13 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
+
+    /// Python marks this type discoverable (`TCPInterface.py:528`). The announcer
+    /// still needs `discoverable` set from config before it announces anything.
+    public let supportsDiscovery = true
+
+    /// Python: `interface.bind_port`, published as `PORT` (`Discovery.py:183`).
+    public var discoveryListenPort: Int? { Int(port) }
     public let name: String
     public let port: UInt16
     /// The address reported as the listener's bind address. Python resolves `listen_ip`
@@ -267,6 +274,10 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
+
+    /// Python marks this type discoverable (`TCPInterface.py:134, the class a listener spawns per accepted connection`). The announcer
+    /// still needs `discoverable` set from config before it announces anything.
+    public let supportsDiscovery = true
 
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil

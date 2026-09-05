@@ -9,6 +9,10 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
+
+    /// Python marks this type discoverable (`TCPInterface.py:134`). The announcer
+    /// still needs `discoverable` set from config before it announces anything.
+    public let supportsDiscovery = true
     public let name: String
     public let host: String
     public let port: UInt16

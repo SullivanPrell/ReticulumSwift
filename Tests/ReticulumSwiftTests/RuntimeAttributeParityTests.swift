@@ -82,24 +82,16 @@ final class RuntimeAttributeParityTests: XCTestCase {
     /// entry here fails to describe reality and has to be updated deliberately. The gaps are
     /// recorded in `swift_devel/bugs/`—this is the index, not the analysis.
     func testTheKnownGapsAreStillTheKnownGaps() {
-        // Interface discovery, publish side: Python's `Discovery.InterfaceAnnouncer` announces
-        // an interface as a discoverable endpoint, carrying `discoverable`,
-        // `discovery_name/latitude/longitude/height/bandwidth/frequency/modulation/
-        // encrypt/stamp_value/announce_interval`, `reachable_on` and `discovery_publish_ifac`.
-        // This port implements the *receive* side only, so none of those attributes exists.
-        XCTAssertFalse(Reticulum.publishesInterfaceDiscovery,
-                       """
-                       the discovery publish side now exists — the eleven discovery_* \
-                       attributes it carries need porting and this inventory entry needs \
-                       replacing with real assertions
-                       """)
+        // Interface discovery, publish side: landed 2026-09-04. The inventory entry it used to
+        // hold is now real assertions — see `DiscoveryPublishAttributeTests` for the attributes
+        // and `InterfaceAnnouncerTests` for the announce itself.
+        XCTAssertTrue(Reticulum.publishesInterfaceDiscovery)
 
-        // Autoconnect: Python's `Discovery` dials discovered endpoints and monitors them,
-        // writing `autoconnect_hash`, `autoconnect_source` and `autoconnect_down`. The policy
-        // config keys parse here; nothing consumes them because the subsystem is absent.
-        XCTAssertFalse(Reticulum.autoconnectsDiscoveredInterfaces,
-                       "the autoconnect subsystem now exists — its three attributes need "
-                       + "porting and this entry needs replacing")
+        // Autoconnect: landed 2026-09-04, alongside the publish side. Its three attributes and
+        // the policy keys that drive them are asserted in `DiscoveryAutoconnectTests`.
+        XCTAssertTrue(Reticulum.autoconnectsDiscoveredInterfaces)
+        XCTAssertFalse(Reticulum.shouldAutoconnectDiscoveredInterfaces(),
+                       "and it stays opt-in: an unconfigured stack dials nobody")
 
         // `_force_bitrate`: Python's shared-instance startup applies
         // `force_shared_instance_bitrate` to the local interface and marks it forced

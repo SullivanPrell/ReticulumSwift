@@ -234,6 +234,17 @@ public final class RNodeInterface: Interface {
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
+    /// Python marks this type discoverable (`RNodeInterface.py:302`). The announcer
+    /// still needs `discoverable` set from config before it announces anything.
+    public let supportsDiscovery = true
+
+    /// The live radio parameters published by the RNode announce branch
+    /// (`Discovery.py:188-192`).
+    public var discoveryRadioParameters: DiscoveryRadioParameters? {
+        DiscoveryRadioParameters(frequency: Int(frequency), bandwidth: Int(bandwidth),
+                                 spreadingFactor: sf, codingRate: cr)
+    }
+
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).

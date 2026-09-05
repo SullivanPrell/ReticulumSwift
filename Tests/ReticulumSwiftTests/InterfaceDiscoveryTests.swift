@@ -126,10 +126,18 @@ final class InterfaceDiscoveryUtilTests: XCTestCase {
         XCTAssertEqual(InterfaceAnnounceHandler.sanitizeName("SERVER1"), "SERVER1")
     }
 
-    func testSanitizeNameStripLeadingLower() {
-        // "myServer": leading 'm','y' not in A-Z/0-9 → strip → "Server"
-        // trailing: 'r','e','v','r','e' not in A-Z → strip → "S"
-        XCTAssertEqual(InterfaceAnnounceHandler.sanitizeName("myServer"), "S")
+    /// Lowercase is in `san_map` (`Discovery.py:901`), so an ordinary mixed-case name passes
+    /// through untouched. This asserted `"S"` until 2026-09-04, pinning a transcription slip
+    /// that truncated most real names to their first character.
+    func testSanitizeNameKeepsMixedCase() {
+        XCTAssertEqual(InterfaceAnnounceHandler.sanitizeName("myServer"), "myServer")
+    }
+
+    /// The leading and trailing strips still fire—on characters that really are outside
+    /// `san_map`.
+    func testSanitizeNameStripsNonAlphanumericEnds() {
+        XCTAssertEqual(InterfaceAnnounceHandler.sanitizeName("--Copenhagen hub--"),
+                       "Copenhagen hub")
     }
 
     func testSanitizeNameDigitStarts() {

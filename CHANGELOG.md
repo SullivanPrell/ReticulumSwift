@@ -3,6 +3,64 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [1.20.0]—Interface discovery publishes, and path requests batch
+
+The two areas 1.19.0 listed as outstanding are now ported. Nothing in the wire protocol
+changes for a node that leaves both switched off.
+
+### Publishing
+
+Interface discovery has had a complete receive side since RNS 1.4.0: this port parsed a
+neighbour's announcement, validated its stamp, and rendered it. It had no publish side. A
+config carrying `discoverable = yes` moved from a Python node to a Swift one produced a
+stack that read every key and announced nothing, and the interface it described stayed
+invisible to every peer looking for it.
+
+`InterfaceAnnouncer` closes that. It announces `rnstransport.discovery.interface` once per
+`discovery_announce_interval`, choosing the interface that has waited longest, and emits
+msgpack in upstream's field order so a Python peer decodes it field for field. The
+`discoverable` block now parses in full: `discovery_name`, `discovery_stamp_value`,
+`discovery_encrypt`, `reachable_on`, `publish_ifac`, `location_cmd`, `latitude`,
+`longitude`, `height`, `discovery_lxmf_address`, and the three RNode radio keys. An
+announcing interface has to route for the peers that find it, so a mode that doesn't
+gets corrected the way `Reticulum.py:927-934` corrects it.
+
+Announcing costs a proof-of-work stamp, and generating one belongs to LXMF, which this
+package can't depend on. `Configuration.discoveryStampGenerator` inverts that: a host
+supplies the generator, and a stack configured as discoverable without one logs an error
+and announces nothing rather than putting an unstamped announcement on the wire.
+
+The autoconnect half dials what it hears. It connects discovered Backbone and TCP server
+endpoints under `Reticulum.maxAutoconnectedInterfaces`, skips `.onion` addresses,
+Yggdrasil `200::/7` addresses and the two invalid IP literals, monitors what it dialed,
+tears down an endpoint that stays down past the threshold, and re-enables the bootstrap
+interfaces when nothing it dialed survives.
+
+### A receive-side defect
+
+`sanitizeName` built its allowed set from two ASCII ranges where upstream's `san_map` uses
+three (`Discovery.py:898-901`), dropping lowercase. Every ordinary name truncated to its
+first character: a neighbour announcing `Example hub` arrived as `E`. The test covering
+this came from the implementation rather than the reference, so it asserted the
+truncation.
+
+### Batching
+
+A transport node that can't answer a path request from its own tables amplifies it: one
+inbound request becomes one outbound request per other interface. `inflight_path_requests`
+marks a destination as already under search, so requests arriving during that search join
+it, and `discovery_path_requests` records who joined so the announce that resolves the
+search replays to each of them as a path response. Both halves land together: batching
+alone would drop those duplicates with nothing to answer them.
+
+`Transport.pathRequestGateTimeout`, ported in 1.19.0, gets its first consumer here.
+
+### Breaking
+
+`InterfaceAnnouncer` is now the interface-discovery announcer. The unrelated type that
+held the name—a periodic announcer for a single destination, which nothing in this package
+or its dependents constructed—is now `DestinationAnnouncer`.
+
 ## [1.19.0]—Reference parity moves to RNS 1.5.2
 
 `Reticulum.rnsProtocolVersion` names the Python RNS release whose wire protocol and
