@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 /// On-disk snapshot of Transport's tunnel table—`storage/tunnels`.
@@ -14,155 +24,177 @@ import Foundation
 /// into disagreeing about what a field means.
 public struct TunnelStore {
 
-    public struct Entry {
-        /// 0—`IDX_TT_TUNNEL_ID`.
-        public var tunnelID: Data
-        /// 1—`IDX_TT_IF`, the tunnel's `interface.get_hash()`, or `nil` when the interface has
-        /// gone (`Transport.py:3456-3457`).
-        ///
-        /// The reference reads this field on restore and then doesn't use it: it rebuilds each
-        /// path's interface from that path's own field 6 and sets the tunnel's own to `None`
-        /// (`:374`, `:403`). Written because the entry is positional.
-        public var interfaceHash: Data?
-        /// 2—`IDX_TT_PATHS`.
-        public var paths: [PathStore.Entry]
-        /// 3—`IDX_TT_EXPIRES`, unix seconds.
-        public var expires: TimeInterval
+  /// One persisted tunnel and the paths reached through it.
+  public struct Entry {
+    /// 0—`IDX_TT_TUNNEL_ID`.
+    public var tunnelID: Data
+    /// 1—`IDX_TT_IF`, the tunnel's `interface.get_hash()`, or `nil` when the interface has
+    /// gone (`Transport.py:3456-3457`).
+    ///
+    /// The reference reads this field on restore and then doesn't use it: it rebuilds each
+    /// path's interface from that path's own field 6 and sets the tunnel's own to `None`
+    /// (`:374`, `:403`). Written because the entry is positional.
+    public var interfaceHash: Data?
+    /// 2—`IDX_TT_PATHS`.
+    public var paths: [PathStore.Entry]
+    /// 3—`IDX_TT_EXPIRES`, unix seconds.
+    public var expires: TimeInterval
 
-        public init(tunnelID: Data,
-                    interfaceHash: Data?,
-                    paths: [PathStore.Entry],
-                    expires: TimeInterval) {
-            self.tunnelID = tunnelID
-            self.interfaceHash = interfaceHash
-            self.paths = paths
-            self.expires = expires
-        }
+    /// Creates a tunnel table entry.
+    public init(
+      tunnelID: Data,
+      interfaceHash: Data?,
+      paths: [PathStore.Entry],
+      expires: TimeInterval
+    ) {
+      self.tunnelID = tunnelID
+      self.interfaceHash = interfaceHash
+      self.paths = paths
+      self.expires = expires
     }
+  }
 
-    public var entries: [Entry]
+  /// The stored tunnel entries.
+  public var entries: [Entry]
 
-    public init(entries: [Entry] = []) { self.entries = entries }
+  /// Creates a store holding `entries`.
+  public init(entries: [Entry] = []) { self.entries = entries }
 
-    // MARK: - Snapshot
+  // MARK: - Snapshot
 
-    public static func snapshot(of transport: Transport) -> TunnelStore {
-        transport.lock.lock()
-        let tunnels = transport.tunnels
-        transport.lock.unlock()
+  /// Captures the tunnel table of `transport`.
+  public static func snapshot(of transport: Transport) -> TunnelStore {
+    transport.lock.lock()
+    let tunnels = transport.tunnels
+    transport.lock.unlock()
 
-        var entries: [Entry] = []
-        for (tunnelID, tunnel) in tunnels {
-            // A tunnel whose interface has gone is still written, with a null interface hash—`Transport.py:3456-3457`.
-            // Unlike the path table, which skips such entries, a tunnel
-            // exists to be re-attached when its endpoint reappears.
-            let interfaceHash = tunnel.iface?.hash
-            let paths = tunnel.paths.compactMap { destHash, path -> PathStore.Entry? in
-                guard let announceHash = path.cachedAnnounceHash else { return nil }
-                // Field 6 is the *tunnel's* interface hash, not the path's—`Transport.py:3476`
-                // reuses the one computed for the preceding tunnel.
-                return PathStore.Entry(path,
-                                       destinationHash: destHash,
-                                       interfaceHash: interfaceHash,
-                                       announceHash: announceHash)
-            }
-            entries.append(Entry(tunnelID: tunnelID,
-                                 interfaceHash: interfaceHash,
-                                 paths: paths,
-                                 expires: tunnel.expires.timeIntervalSince1970))
-        }
-        return TunnelStore(entries: entries)
+    var entries: [Entry] = []
+    for (tunnelID, tunnel) in tunnels {
+      // A tunnel whose interface has gone is still written, with a null interface hash—`Transport.py:3456-3457`.
+      // Unlike the path table, which skips such entries, a tunnel
+      // exists to be re-attached when its endpoint reappears.
+      let interfaceHash = tunnel.iface?.hash
+      let paths = tunnel.paths.compactMap { destHash, path -> PathStore.Entry? in
+        guard let announceHash = path.cachedAnnounceHash else { return nil }
+        // Field 6 is the *tunnel's* interface hash, not the path's—`Transport.py:3476`
+        // reuses the one computed for the preceding tunnel.
+        return PathStore.Entry(
+          path,
+          destinationHash: destHash,
+          interfaceHash: interfaceHash,
+          announceHash: announceHash)
+      }
+      entries.append(
+        Entry(
+          tunnelID: tunnelID,
+          interfaceHash: interfaceHash,
+          paths: paths,
+          expires: tunnel.expires.timeIntervalSince1970))
     }
+    return TunnelStore(entries: entries)
+  }
 
-    // MARK: - Restore
+  // MARK: - Restore
 
-    /// Unlike ``PathStore/apply(to:)`` this needs no deferral for a late interface, because a
-    /// tunnel path doesn't depend on one: the reference restores it with
-    /// `receiving_interface = None` and gates only on the announce (`Transport.py:398-400`), then
-    /// attaches an interface to every one of the tunnel's paths when the endpoint reappears
-    /// (`:2440-2447`). So every entry here is resolved on the spot—installed or finally
-    /// dropped—and nothing is parked.
-    public func apply(to transport: Transport) {
-        for entry in entries {
-            var paths: [Data: Transport.PathEntry] = [:]
-            for path in entry.paths {
-                // Only the announce gates a tunnel path—`if announce_packet != None`
-                // (`Transport.py:398`). Deliberately weaker than the destination table's gate,
-                // which also requires a live interface (`:334`): a tunnel path with no interface
-                // is exactly what a restored tunnel holds until its endpoint reappears and
-                // `handle_tunnel` re-attaches one.
-                guard PathStore.restoredAnnounce(for: path, from: transport) != nil else {
-                    Reticulum.log("Dropping tunnel path for \(path.destinationHash.hexString): "
-                                  + "the announce packet could not be loaded from cache",
-                                  level: .debug)
-                    continue
-                }
-                let interface = path.interfaceHash
-                    .flatMap { transport.findInterface(fromHash: $0) }
-                let identityHash = transport.recall(identity: path.destinationHash)?.hash ?? Data()
-                paths[path.destinationHash] = path.pathEntry(interface: interface,
-                                                             identityHash: identityHash)
-            }
-            // `if len(tunnel_paths) > 0` (`Transport.py:402`)—a tunnel none of whose paths came
-            // back isn't installed. An empty tunnel can route nothing.
-            //
-            // Left pending rather than resolved when *any* of its paths named an interface that
-            // isn't registered yet: the tunnel becomes installable when that interface arrives.
-            // A tunnel whose paths all failed on their announce is final, and is dropped.
-            guard !paths.isEmpty else { continue }
-            // `tunnel = [tunnel_id, None, tunnel_paths, expires]` (`:403`)—the interface is
-            // null until the endpoint reappears; the restore doesn't re-attach one.
-            transport.restore(tunnel: Transport.TunnelEntry(
-                tunnelID: entry.tunnelID,
-                iface: nil,
-                paths: paths,
-                expires: Date(timeIntervalSince1970: entry.expires)
-            ))
+  /// Unlike ``PathStore/apply(to:)`` this needs no deferral for a late interface, because a
+  /// tunnel path doesn't depend on one: the reference restores it with
+  /// `receiving_interface = None` and gates only on the announce (`Transport.py:398-400`), then
+  /// attaches an interface to every one of the tunnel's paths when the endpoint reappears
+  /// (`:2440-2447`).
+  ///
+  /// So every entry here is resolved on the spot—installed or finally
+  /// dropped—and nothing is parked.
+  public func apply(to transport: Transport) {
+    for entry in entries {
+      var paths: [Data: Transport.PathEntry] = [:]
+      for path in entry.paths {
+        // Only the announce gates a tunnel path—`if announce_packet != None`
+        // (`Transport.py:398`). Deliberately weaker than the destination table's gate,
+        // which also requires a live interface (`:334`): a tunnel path with no interface
+        // is exactly what a restored tunnel holds until its endpoint reappears and
+        // `handle_tunnel` re-attaches one.
+        guard PathStore.restoredAnnounce(for: path, from: transport) != nil else {
+          Reticulum.log(
+            "Dropping tunnel path for \(path.destinationHash.hexString): "
+              + "the announce packet could not be loaded from cache",
+            level: .debug)
+          continue
         }
+        let interface = path.interfaceHash
+          .flatMap { transport.findInterface(fromHash: $0) }
+        let identityHash = transport.recall(identity: path.destinationHash)?.hash ?? Data()
+        paths[path.destinationHash] = path.pathEntry(
+          interface: interface,
+          identityHash: identityHash)
+      }
+      // `if len(tunnel_paths) > 0` (`Transport.py:402`)—a tunnel none of whose paths came
+      // back isn't installed. An empty tunnel can route nothing.
+      //
+      // Left pending rather than resolved when *any* of its paths named an interface that
+      // isn't registered yet: the tunnel becomes installable when that interface arrives.
+      // A tunnel whose paths all failed on their announce is final, and is dropped.
+      guard !paths.isEmpty else { continue }
+      // `tunnel = [tunnel_id, None, tunnel_paths, expires]` (`:403`)—the interface is
+      // null until the endpoint reappears; the restore doesn't re-attach one.
+      transport.restore(
+        tunnel: Transport.TunnelEntry(
+          tunnelID: entry.tunnelID,
+          iface: nil,
+          paths: paths,
+          expires: Date(timeIntervalSince1970: entry.expires)
+        ))
     }
+  }
 
-    // MARK: - Codec
+  // MARK: - Codec
 
-    /// `umsgpack.packb(serialised_tunnels)`—`Transport.py:3491`.
-    public func encoded() -> Data {
-        MsgPack.encode(.array(entries.map { entry in
-            .array([
-                .bytes(entry.tunnelID),
-                entry.interfaceHash.map(MsgPack.Value.bytes) ?? .nil,
-                .array(entry.paths.map(\.msgpackValue)),
-                .double(entry.expires),
-            ])
+  /// `umsgpack.packb(serialised_tunnels)`—`Transport.py:3491`.
+  public func encoded() -> Data {
+    MsgPack.encode(
+      .array(
+        entries.map { entry in
+          .array([
+            .bytes(entry.tunnelID),
+            entry.interfaceHash.map(MsgPack.Value.bytes) ?? .nil,
+            .array(entry.paths.map(\.msgpackValue)),
+            .double(entry.expires),
+          ])
         }))
-    }
+  }
 
-    /// `umsgpack.unpackb(file.read())`—`Transport.py:371`.
-    public static func decode(_ data: Data) throws -> TunnelStore {
-        guard case .array(let serialised) = try MsgPack.decode(data) else {
-            throw MsgPack.Error.typeMismatch
-        }
-        var entries: [Entry] = []
-        for element in serialised {
-            guard case .array(let f) = element, f.count == 4,
-                  case .bytes(let tunnelID) = f[0],
-                  case .array(let paths) = f[2],
-                  let expires = f[3].asDouble else { continue }
-            var interfaceHash: Data?
-            if case .bytes(let hash) = f[1] { interfaceHash = hash }
-            entries.append(Entry(tunnelID: tunnelID,
-                                 interfaceHash: interfaceHash,
-                                 paths: paths.compactMap(PathStore.Entry.decode),
-                                 expires: expires))
-        }
-        return TunnelStore(entries: entries)
+  /// `umsgpack.unpackb(file.read())`—`Transport.py:371`.
+  public static func decode(_ data: Data) throws -> TunnelStore {
+    guard case .array(let serialised) = try MsgPack.decode(data) else {
+      throw MsgPack.Error.typeMismatch
     }
-
-    // MARK: - File I/O
-
-    public func write(to url: URL) throws {
-        try encoded().write(to: url, options: .atomic)
+    var entries: [Entry] = []
+    for element in serialised {
+      guard case .array(let f) = element, f.count == 4,
+        case .bytes(let tunnelID) = f[0],
+        case .array(let paths) = f[2],
+        let expires = f[3].asDouble
+      else { continue }
+      var interfaceHash: Data?
+      if case .bytes(let hash) = f[1] { interfaceHash = hash }
+      entries.append(
+        Entry(
+          tunnelID: tunnelID,
+          interfaceHash: interfaceHash,
+          paths: paths.compactMap(PathStore.Entry.decode),
+          expires: expires))
     }
+    return TunnelStore(entries: entries)
+  }
 
-    public static func read(from url: URL) throws -> TunnelStore {
-        try decode(Data(contentsOf: url))
-    }
+  // MARK: - File I/O
+
+  /// Writes the store to `url`.
+  public func write(to url: URL) throws {
+    try encoded().write(to: url, options: .atomic)
+  }
+
+  /// Reads a store from `url`.
+  public static func read(from url: URL) throws -> TunnelStore {
+    try decode(Data(contentsOf: url))
+  }
 }

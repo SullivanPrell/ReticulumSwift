@@ -1,24 +1,39 @@
-import Foundation
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import CryptoKit
+import Foundation
 
+/// HMAC-SHA256 authentication and constant-time verification.
 public enum HMACSHA256 {
-    public static func authenticate(_ data: Data, key: Data) -> Data {
-        let symmetric = SymmetricKey(data: key)
-        let mac = CryptoKit.HMAC<SHA256>.authenticationCode(for: data, using: symmetric)
-        return Data(mac)
-    }
+  /// Returns the HMAC-SHA256 of `data` under `key`.
+  public static func authenticate(_ data: Data, key: Data) -> Data {
+    let symmetric = SymmetricKey(data: key)
+    let mac = CryptoKit.HMAC<SHA256>.authenticationCode(for: data, using: symmetric)
+    return Data(mac)
+  }
 
-    public static func verify(_ data: Data, key: Data, expected: Data) -> Bool {
-        let computed = authenticate(data, key: key)
-        return constantTimeEquals(computed, expected)
-    }
+  /// Returns whether `expected` is the HMAC-SHA256 of `data` under `key`.
+  public static func verify(_ data: Data, key: Data, expected: Data) -> Bool {
+    let computed = authenticate(data, key: key)
+    return constantTimeEquals(computed, expected)
+  }
 
-    /// Constant-time byte comparison. Avoids timing-channel leaks during
-    /// HMAC verification.
-    public static func constantTimeEquals(_ a: Data, _ b: Data) -> Bool {
-        guard a.count == b.count else { return false }
-        var diff: UInt8 = 0
-        for i in 0..<a.count { diff |= a[a.startIndex + i] ^ b[b.startIndex + i] }
-        return diff == 0
-    }
+  /// Constant-time byte comparison.
+  ///
+  /// Avoids timing-channel leaks during
+  /// HMAC verification.
+  public static func constantTimeEquals(_ a: Data, _ b: Data) -> Bool {
+    guard a.count == b.count else { return false }
+    var diff: UInt8 = 0
+    for i in 0..<a.count { diff |= a[a.startIndex + i] ^ b[b.startIndex + i] }
+    return diff == 0
+  }
 }

@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 /// A port of CPython's `shlex.split(s)`—the exact call `rnx` uses to turn a command
@@ -26,127 +36,138 @@ import Foundation
 /// argv elements, exactly as in Python. Don't "fix" this—it's wire-visible behaviour.
 public enum RNXShellWords {
 
-    /// Python: `shlex.shlex.whitespace = ' \t\r\n'`. Deliberately excludes `\u{0B}`/`\u{0C}`.
-    public static let whitespace: Set<Character> = [" ", "\t", "\r", "\n"]
+  /// Python: `shlex.shlex.whitespace = ' \t\r\n'`.
+  ///
+  /// Deliberately excludes `\u{0B}`/`\u{0C}`.
+  public static let whitespace: Set<Character> = [" ", "\t", "\r", "\n"]
 
-    /// Python: `shlex.shlex.quotes = '\'"'`.
-    private static let quotes: Set<Character> = ["'", "\""]
+  /// Python: `shlex.shlex.quotes = '\'"'`.
+  private static let quotes: Set<Character> = ["'", "\""]
 
-    /// Python: `shlex.shlex.escapedquotes = '"'`—backslash escaping only happens
-    /// inside double quotes, never inside single quotes.
-    private static let escapedQuotes: Set<Character> = ["\""]
+  /// Python: `shlex.shlex.escapedquotes = '"'`—backslash escaping only happens
+  /// inside double quotes, never inside single quotes.
+  private static let escapedQuotes: Set<Character> = ["\""]
 
-    private static let escape: Character = "\\"
+  private static let escape: Character = "\\"
 
-    public enum ShellWordsError: Error, Equatable {
-        /// Python: `ValueError("No closing quotation")`. Carries the quote character that
-        /// was left open, which CPython's message doesn't.
-        case noClosingQuotation(Character)
-        /// Python: `ValueError("No escaped character")`—a trailing lone backslash.
-        case noEscapedCharacter
-    }
+  /// A failure raised while splitting a command line.
+  public enum ShellWordsError: Error, Equatable {
+    /// Python: `ValueError("No closing quotation")`. Carries the quote character that
+    /// was left open, which CPython's message doesn't.
+    case noClosingQuotation(Character)
+    /// Python: `ValueError("No escaped character")`—a trailing lone backslash.
+    case noEscapedCharacter
+  }
 
-    /// Which branch of `read_token`'s state machine is active.
-    /// Mirrors CPython's `self.state`, where the state is literally a character.
-    private enum State: Equatable {
-        case whitespace     // Python state ' '
-        case word           // Python state 'a'
-        case quoted(Character)
-        case escaped(returningTo: EscapedState)
-    }
+  /// The branch of the tokeniser state machine that is active.
+  ///
+  /// Which branch of `read_token`'s state machine is active.
+  /// Mirrors CPython's `self.state`, where the state is literally a character.
+  private enum State: Equatable {
+    case whitespace  // Python state ' '
+    case word  // Python state 'a'
+    case quoted(Character)
+    case escaped(returningTo: EscapedState)
+  }
 
-    /// Python's `escapedstate`: either `'a'` (plain word) or the enclosing quote character.
-    private enum EscapedState: Equatable {
-        case word
-        case quote(Character)
-    }
+  /// Python's `escapedstate`: either `'a'` (plain word) or the enclosing quote character.
+  private enum EscapedState: Equatable {
+    case word
+    case quote(Character)
+  }
 
-    /// Split `input` the way `shlex.split` does.
-    ///
-    /// - Throws: ``ShellWordsError`` for an unterminated quote or a trailing backslash,
-    ///   matching the two `ValueError`s CPython raises.
-    public static func split(_ input: String) throws -> [String] {
-        var tokens: [String] = []
-        let characters = Array(input)
-        var index = 0
+  /// Split `input` the way `shlex.split` does.
+  ///
+  /// - Throws: ``ShellWordsError`` for an unterminated quote or a trailing backslash,
+  ///   matching the two `ValueError`s CPython raises.
+  public static func split(_ input: String) throws -> [String] {
+    var tokens: [String] = []
+    let characters = Array(input)
+    var index = 0
 
-        // Python's read_token loop, called repeatedly until it returns None.
-        while true {
-            var token = ""
-            var quoted = false
-            var state: State = .whitespace
-            var reachedEOF = false
+    // Python's read_token loop, called repeatedly until it returns None.
+    while true {
+      var token = ""
+      var quoted = false
+      var state: State = .whitespace
+      var reachedEOF = false
 
-            loop: while true {
-                let next: Character? = index < characters.count ? characters[index] : nil
-                if next != nil { index += 1 }
+      loop: while true {
+        let next: Character? = index < characters.count ? characters[index] : nil
+        if next != nil { index += 1 }
 
-                switch state {
-                case .whitespace:
-                    guard let c = next else { reachedEOF = true; break loop }
-                    if whitespace.contains(c) {
-                        // Python: `if self.token or (self.posix and quoted): break`
-                        if !token.isEmpty || quoted { break loop }
-                        continue
-                    } else if c == escape {
-                        state = .escaped(returningTo: .word)
-                    } else if quotes.contains(c) {
-                        // POSIX mode doesn't keep the quote character itself.
-                        state = .quoted(c)
-                    } else {
-                        // whitespace_split = True: any other character starts a word.
-                        token.append(c)
-                        state = .word
-                    }
+        switch state {
+        case .whitespace:
+          guard let c = next else {
+            reachedEOF = true
+            break loop
+          }
+          if whitespace.contains(c) {
+            // Python: `if self.token or (self.posix and quoted): break`
+            if !token.isEmpty || quoted { break loop }
+            continue
+          } else if c == escape {
+            state = .escaped(returningTo: .word)
+          } else if quotes.contains(c) {
+            // POSIX mode doesn't keep the quote character itself.
+            state = .quoted(c)
+          } else {
+            // whitespace_split = True: any other character starts a word.
+            token.append(c)
+            state = .word
+          }
 
-                case .quoted(let quote):
-                    quoted = true
-                    guard let c = next else { throw ShellWordsError.noClosingQuotation(quote) }
-                    if c == quote {
-                        state = .word
-                    } else if c == escape, escapedQuotes.contains(quote) {
-                        state = .escaped(returningTo: .quote(quote))
-                    } else {
-                        token.append(c)
-                    }
+        case .quoted(let quote):
+          quoted = true
+          guard let c = next else { throw ShellWordsError.noClosingQuotation(quote) }
+          if c == quote {
+            state = .word
+          } else if c == escape, escapedQuotes.contains(quote) {
+            state = .escaped(returningTo: .quote(quote))
+          } else {
+            token.append(c)
+          }
 
-                case .escaped(let escapedState):
-                    guard let c = next else { throw ShellWordsError.noEscapedCharacter }
-                    // Python: "In posix shells, only the quote itself or the escape
-                    // character may be escaped by it." Anything else keeps the backslash.
-                    if case .quote(let quote) = escapedState, c != escape, c != quote {
-                        token.append(escape)
-                    }
-                    token.append(c)
-                    switch escapedState {
-                    case .word:            state = .word
-                    case .quote(let q):    state = .quoted(q)
-                    }
+        case .escaped(let escapedState):
+          guard let c = next else { throw ShellWordsError.noEscapedCharacter }
+          // Python: "In posix shells, only the quote itself or the escape
+          // character may be escaped by it." Anything else keeps the backslash.
+          if case .quote(let quote) = escapedState, c != escape, c != quote {
+            token.append(escape)
+          }
+          token.append(c)
+          switch escapedState {
+          case .word: state = .word
+          case .quote(let q): state = .quoted(q)
+          }
 
-                case .word:
-                    guard let c = next else { reachedEOF = true; break loop }
-                    if whitespace.contains(c) {
-                        state = .whitespace
-                        if !token.isEmpty || quoted { break loop }
-                        continue
-                    } else if quotes.contains(c) {
-                        state = .quoted(c)
-                    } else if c == escape {
-                        state = .escaped(returningTo: .word)
-                    } else {
-                        token.append(c)
-                    }
-                }
-            }
-
-            // Python: `if self.posix and not quoted and result == '': result = None`,
-            // and a None result ends `list(lex)`. Inspecting read_token's break points
-            // shows this can only happen at end of input, so it's the loop's exit.
-            if token.isEmpty && !quoted { break }
-            tokens.append(token)
-            if reachedEOF { break }
+        case .word:
+          guard let c = next else {
+            reachedEOF = true
+            break loop
+          }
+          if whitespace.contains(c) {
+            state = .whitespace
+            if !token.isEmpty || quoted { break loop }
+            continue
+          } else if quotes.contains(c) {
+            state = .quoted(c)
+          } else if c == escape {
+            state = .escaped(returningTo: .word)
+          } else {
+            token.append(c)
+          }
         }
+      }
 
-        return tokens
+      // Python: `if self.posix and not quoted and result == '': result = None`,
+      // and a None result ends `list(lex)`. Inspecting read_token's break points
+      // shows this can only happen at end of input, so it's the loop's exit.
+      if token.isEmpty && !quoted { break }
+      tokens.append(token)
+      if reachedEOF { break }
     }
+
+    return tokens
+  }
 }

@@ -1,4 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// `~` must expand to `$HOME` when it's set, as Python's `os.path.expanduser` does.
@@ -20,33 +31,34 @@ import XCTest
 /// identity and allow-list).
 final class ConfigDirectoryHomeTests: XCTestCase {
 
-    func testHomeDirectoryHonoursTheEnvironment() {
-        let resolved = InstanceConnection.homeDirectory(environment: ["HOME": "/tmp/sandbox-home"])
-        XCTAssertEqual(resolved.path, "/tmp/sandbox-home")
-    }
+  func testHomeDirectoryHonoursTheEnvironment() {
+    let resolved = InstanceConnection.homeDirectory(environment: ["HOME": "/tmp/sandbox-home"])
+    XCTAssertEqual(resolved.path, "/tmp/sandbox-home")
+  }
 
-    /// Python's `expanduser` falls back to the password database for an unset `$HOME`.
-    func testHomeDirectoryFallsBackWhenUnset() {
-        XCTAssertEqual(InstanceConnection.homeDirectory(environment: [:]).path, NSHomeDirectory())
-    }
+  /// Python's `expanduser` falls back to the password database for an unset `$HOME`.
+  func testHomeDirectoryFallsBackWhenUnset() {
+    XCTAssertEqual(InstanceConnection.homeDirectory(environment: [:]).path, NSHomeDirectory())
+  }
 
-    /// An empty `HOME=` isn't a home directory; treat it as unset rather than resolving
-    /// the config directory to `/.reticulum`.
-    func testEmptyHomeIsTreatedAsUnset() {
-        XCTAssertEqual(InstanceConnection.homeDirectory(environment: ["HOME": ""]).path,
-                       NSHomeDirectory())
-    }
+  /// An empty `HOME=` isn't a home directory; treat it as unset rather than resolving
+  /// the config directory to `/.reticulum`.
+  func testEmptyHomeIsTreatedAsUnset() {
+    XCTAssertEqual(
+      InstanceConnection.homeDirectory(environment: ["HOME": ""]).path,
+      NSHomeDirectory())
+  }
 
-    /// The end a caller actually observes: the config directory follows the sandboxed home.
-    func testConfigDirectoryFollowsTheSandboxedHome() {
-        let home = URL(fileURLWithPath: "/tmp/sandbox-home")
-        let resolved = InstanceConnection.resolveConfigDirectory(
-            nil,
-            home: home,
-            // Point the two fixed locations somewhere that can't exist, so the search
-            // reaches the `$HOME/.reticulum` fallback deterministically on any machine.
-            systemConfigDir: URL(fileURLWithPath: "/nonexistent/etc/reticulum"),
-            fileManager: .default)
-        XCTAssertEqual(resolved.path, "/tmp/sandbox-home/.reticulum")
-    }
+  /// The end a caller actually observes: the config directory follows the sandboxed home.
+  func testConfigDirectoryFollowsTheSandboxedHome() {
+    let home = URL(fileURLWithPath: "/tmp/sandbox-home")
+    let resolved = InstanceConnection.resolveConfigDirectory(
+      nil,
+      home: home,
+      // Point the two fixed locations somewhere that can't exist, so the search
+      // reaches the `$HOME/.reticulum` fallback deterministically on any machine.
+      systemConfigDir: URL(fileURLWithPath: "/nonexistent/etc/reticulum"),
+      fileManager: .default)
+    XCTAssertEqual(resolved.path, "/tmp/sandbox-home/.reticulum")
+  }
 }

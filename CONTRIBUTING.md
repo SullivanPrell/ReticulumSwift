@@ -34,7 +34,9 @@ If you see `SwiftShims` module-cache errors: `rm -rf .build && swift test`.
 - **Errors:** `throw` for protocol errors; return `nil` / `false` for soft
   failures.
 - **Bytes:** prefer `Data`; use `[UInt8]` only on performance-critical paths.
-- **Tests:** file `Tests/.../<Feature>Tests.swift`, class `<Feature>Tests`.
+- **Tests:** XCTest, not swift-testing. File `Tests/.../<Feature>Tests.swift`,
+  class `<Feature>Tests`.
+- **Style:** [Google Swift Style Guide](https://google.github.io/swift/).
 
 ## Running a single suite
 
@@ -77,6 +79,22 @@ iOS SDK, Homebrew `cmake`, `boost`, and `openssl@3`.
 
 See [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md) for the licenses of the components
 the binary embeds.
+
+## Style checks
+
+```sh
+make fmt      # swift format, license headers
+make check    # what CI runs: format, license headers, Vale prose lint
+```
+
+Vale lints Swift comments as prose, and finds them by scanning for `//`. A `//` inside
+a string literal therefore lints code, and acting on that finding would edit it. After
+a comment-only change, confirm the code is unchanged:
+
+```sh
+git status --porcelain | awk '{print $NF}' | grep '\.swift$' \
+    | xargs python3 .vale/tools/verify_code_unchanged.py
+```
 
 ## Submitting changes
 

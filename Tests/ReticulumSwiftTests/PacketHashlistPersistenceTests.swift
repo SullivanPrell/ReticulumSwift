@@ -1,7 +1,19 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Tests for Transport packet hashlist persistence.
+///
 /// Mirrors Python's `Transport.save_packet_hashlist()` / loading in `__init__`.
 ///
 /// Hashes here are the full 32 bytes the live filter stores—`Hashes.fullHash(packet.hashablePart())`,
@@ -12,93 +24,96 @@ import XCTest
 /// and the width had to be fixed together (`bugs/029`).
 final class PacketHashlistPersistenceTests: XCTestCase {
 
-    private var tmpDir: URL!
+  private var tmpDir: URL!
 
-    override func setUp() {
-        super.setUp()
-        tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rns-hashlist-\(UUID().uuidString)")
-        try! FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+  override func setUp() {
+    super.setUp()
+    tmpDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("rns-hashlist-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+  }
+
+  override func tearDown() {
+    try? FileManager.default.removeItem(at: tmpDir)
+    super.tearDown()
+  }
+
+  // MARK: - Round-trip
+
+  func testSaveAndLoadRoundTrip() throws {
+    let t = Transport()
+    let hashes = (0..<10).map { _ in Hashes.fullHash(Hashes.randomHash()) }
+    for h in hashes { t.testInsertPacketHash(h) }
+
+    let url = tmpDir.appendingPathComponent(
+      StorageInventory.Entry.packetHashlist.components.last!)
+    try t.savePacketHashlist(to: url)
+
+    let t2 = Transport()
+    try t2.loadPacketHashlist(from: url)
+
+    for h in hashes {
+      XCTAssertTrue(t2.testContainsPacketHash(h), "loaded hashlist should contain \(h.hexString)")
     }
+  }
 
-    override func tearDown() {
-        try? FileManager.default.removeItem(at: tmpDir)
-        super.tearDown()
-    }
+  // MARK: - Duplicate rejection after load
 
-    // MARK: - Round-trip
+  func testDuplicatePacketRejectedAfterLoad() throws {
+    let t = Transport()
+    let h = Hashes.fullHash(Hashes.randomHash())
+    t.testInsertPacketHash(h)
 
-    func testSaveAndLoadRoundTrip() throws {
-        let t = Transport()
-        let hashes = (0..<10).map { _ in Hashes.fullHash(Hashes.randomHash()) }
-        for h in hashes { t.testInsertPacketHash(h) }
+    let url = tmpDir.appendingPathComponent(
+      StorageInventory.Entry.packetHashlist.components.last!)
+    try t.savePacketHashlist(to: url)
 
-        let url = tmpDir.appendingPathComponent(
-            StorageInventory.Entry.packetHashlist.components.last!)
-        try t.savePacketHashlist(to: url)
+    let t2 = Transport()
+    try t2.loadPacketHashlist(from: url)
 
-        let t2 = Transport()
-        try t2.loadPacketHashlist(from: url)
+    XCTAssertTrue(
+      t2.testContainsPacketHash(h),
+      "hash seen before save should be duplicate-rejected after load")
+  }
 
-        for h in hashes {
-            XCTAssertTrue(t2.testContainsPacketHash(h), "loaded hashlist should contain \(h.hexString)")
-        }
-    }
+  // MARK: - Missing file is a no-op
 
-    // MARK: - Duplicate rejection after load
+  func testLoadFromMissingFileIsNoop() throws {
+    let t = Transport()
+    let url = tmpDir.appendingPathComponent("nonexistent")
+    // Shouldn't throw; transport starts with empty hashlist.
+    XCTAssertNoThrow(try t.loadPacketHashlist(from: url))
+    let h = Data(repeating: 0xAB, count: Constants.fullHashLength)
+    XCTAssertFalse(t.testContainsPacketHash(h))
+  }
 
-    func testDuplicatePacketRejectedAfterLoad() throws {
-        let t = Transport()
-        let h = Hashes.fullHash(Hashes.randomHash())
-        t.testInsertPacketHash(h)
+  // MARK: - Wired into Reticulum lifecycle
 
-        let url = tmpDir.appendingPathComponent(
-            StorageInventory.Entry.packetHashlist.components.last!)
-        try t.savePacketHashlist(to: url)
+  func testReticulumStopSavesHashlistAndStartLoadsIt() throws {
+    let dir = tmpDir.appendingPathComponent("rns-lifecycle")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let config = Reticulum.Configuration(storagePath: dir.appendingPathComponent("storage"))
 
-        let t2 = Transport()
-        try t2.loadPacketHashlist(from: url)
+    let rns = try Reticulum(configuration: config)
+    try rns.start()
 
-        XCTAssertTrue(t2.testContainsPacketHash(h),
-            "hash seen before save should be duplicate-rejected after load")
-    }
+    // Insert a synthetic hash into transport's hashlist
+    let h = Hashes.fullHash(Hashes.randomHash())
+    rns.transport.testInsertPacketHash(h)
+    rns.stop()
 
-    // MARK: - Missing file is a no-op
+    // Verify the hashlist file was created
+    let hashlistURL = StorageInventory.url(.packetHashlist, in: dir)
+    XCTAssertTrue(
+      FileManager.default.fileExists(atPath: hashlistURL.path),
+      "stop() should persist packet_hashlist file")
 
-    func testLoadFromMissingFileIsNoop() throws {
-        let t = Transport()
-        let url = tmpDir.appendingPathComponent("nonexistent")
-        // Shouldn't throw; transport starts with empty hashlist.
-        XCTAssertNoThrow(try t.loadPacketHashlist(from: url))
-        let h = Data(repeating: 0xAB, count: Constants.fullHashLength)
-        XCTAssertFalse(t.testContainsPacketHash(h))
-    }
-
-    // MARK: - Wired into Reticulum lifecycle
-
-    func testReticulumStopSavesHashlistAndStartLoadsIt() throws {
-        let dir = tmpDir.appendingPathComponent("rns-lifecycle")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let config = Reticulum.Configuration(storagePath: dir.appendingPathComponent("storage"))
-
-        let rns = try Reticulum(configuration: config)
-        try rns.start()
-
-        // Insert a synthetic hash into transport's hashlist
-        let h = Hashes.fullHash(Hashes.randomHash())
-        rns.transport.testInsertPacketHash(h)
-        rns.stop()
-
-        // Verify the hashlist file was created
-        let hashlistURL = StorageInventory.url(.packetHashlist, in: dir)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: hashlistURL.path),
-            "stop() should persist packet_hashlist file")
-
-        // Start a fresh instance—hash should be seen as duplicate
-        let rns2 = try Reticulum(configuration: config)
-        try rns2.start()
-        XCTAssertTrue(rns2.transport.testContainsPacketHash(h),
-            "start() should restore packet_hashlist so seen hashes remain duplicates")
-        rns2.stop()
-    }
+    // Start a fresh instance—hash should be seen as duplicate
+    let rns2 = try Reticulum(configuration: config)
+    try rns2.start()
+    XCTAssertTrue(
+      rns2.transport.testContainsPacketHash(h),
+      "start() should restore packet_hashlist so seen hashes remain duplicates")
+    rns2.stop()
+  }
 }

@@ -1,4 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Concurrency stress test for the `WeaveDevice.endpoints` lock added in the
@@ -21,54 +32,55 @@ import XCTest
 /// is safe because a record is never mutated in place once inserted.
 final class WeaveConcurrencyStressTests: XCTestCase {
 
-    func testEndpointRegistryConcurrentLearnPruneRead() {
-        // No `rnsInterface` wired: isolates the device endpoint registry so the
-        // race under test is purely `WeaveDevice.endpoints` (not the peer table).
-        let dev        = WeaveDevice()
-        let idPool     = 64      // small pool → heavy key overlap / contention
-        let workers    = 8
-        let iterations = 3000
+  func testEndpointRegistryConcurrentLearnPruneRead() {
+    // No `rnsInterface` wired: isolates the device endpoint registry so the
+    // race under test is purely `WeaveDevice.endpoints` (not the peer table).
+    let dev = WeaveDevice()
+    let idPool = 64  // small pool → heavy key overlap / contention
+    let workers = 8
+    let iterations = 3000
 
-        let done = expectation(description: "weave endpoint stress complete")
-        DispatchQueue.global().async {
-            DispatchQueue.concurrentPerform(iterations: workers) { w in
-                for i in 0..<iterations {
-                    let n    = (w &+ i) % idPool
-                    let epID = Data([UInt8(n)]) + Data(repeating: 0, count: 7)
-                    switch (w &+ i) % 4 {
-                    case 0:
-                        dev.endpointAlive(endpointID: epID)              // insert / refresh
-                    case 1:
-                        dev.endpointVia(endpointID: epID,
-                                        viaSwitchID: Data([UInt8(n), 0x02, 0x03, 0x04]))
-                    case 2:
-                        // Aggressive prune: everything already present is "stale"
-                        // relative to a fresh `now`, so removals race the inserts
-                        // happening on the other workers.
-                        dev.pruneEndpoints(olderThan: 0, now: Date())
-                    default:
-                        // Snapshot + field reads. Safe because handed-out records
-                        // are immutable after insertion (endpointAlive/endpointVia
-                        // replace rather than mutate in place).
-                        var acc = 0
-                        for (_, ep) in dev.endpoints {
-                            acc &+= ep.endpointAddr.count &+ (ep.viaSwitchID?.count ?? 0)
-                        }
-                        _ = acc
-                    }
-                }
+    let done = expectation(description: "weave endpoint stress complete")
+    DispatchQueue.global().async {
+      DispatchQueue.concurrentPerform(iterations: workers) { w in
+        for i in 0..<iterations {
+          let n = (w &+ i) % idPool
+          let epID = Data([UInt8(n)]) + Data(repeating: 0, count: 7)
+          switch (w &+ i) % 4 {
+          case 0:
+            dev.endpointAlive(endpointID: epID)  // insert / refresh
+          case 1:
+            dev.endpointVia(
+              endpointID: epID,
+              viaSwitchID: Data([UInt8(n), 0x02, 0x03, 0x04]))
+          case 2:
+            // Aggressive prune: everything already present is "stale"
+            // relative to a fresh `now`, so removals race the inserts
+            // happening on the other workers.
+            dev.pruneEndpoints(olderThan: 0, now: Date())
+          default:
+            // Snapshot + field reads. Safe because handed-out records
+            // are immutable after insertion (endpointAlive/endpointVia
+            // replace rather than mutate in place).
+            var acc = 0
+            for (_, ep) in dev.endpoints {
+              acc &+= ep.endpointAddr.count &+ (ep.viaSwitchID?.count ?? 0)
             }
-            done.fulfill()
+            _ = acc
+          }
         }
-
-        // Generous timeout: a real deadlock never completes, so any pass here
-        // means the lock graph is acyclic on these paths.
-        wait(for: [done], timeout: 120)
-
-        // Survived without crashing/deadlocking. The registry only ever holds
-        // keys from the pool, and a final all-stale sweep must empty it.
-        XCTAssertLessThanOrEqual(dev.endpoints.count, idPool)
-        dev.pruneEndpoints(olderThan: 0, now: Date(timeIntervalSinceNow: 3600))
-        XCTAssertTrue(dev.endpoints.isEmpty)
+      }
+      done.fulfill()
     }
+
+    // Generous timeout: a real deadlock never completes, so any pass here
+    // means the lock graph is acyclic on these paths.
+    wait(for: [done], timeout: 120)
+
+    // Survived without crashing/deadlocking. The registry only ever holds
+    // keys from the pool, and a final all-stale sweep must empty it.
+    XCTAssertLessThanOrEqual(dev.endpoints.count, idPool)
+    dev.pruneEndpoints(olderThan: 0, now: Date(timeIntervalSinceNow: 3600))
+    XCTAssertTrue(dev.endpoints.isEmpty)
+  }
 }

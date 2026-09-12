@@ -1,70 +1,81 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 final class PacketReceiptGetterTests: XCTestCase {
 
-    private func makeReceipt(timeout: TimeInterval = 60) -> PacketReceipt {
-        let hash = Data(repeating: 0xAB, count: 32)
-        let r = PacketReceipt(testHash: hash)
-        r.timeout = timeout
-        return r
-    }
+  private func makeReceipt(timeout: TimeInterval = 60) -> PacketReceipt {
+    let hash = Data(repeating: 0xAB, count: 32)
+    let r = PacketReceipt(testHash: hash)
+    r.timeout = timeout
+    return r
+  }
 
-    // MARK: - getStatus
+  // MARK: - getStatus
 
-    func testGetStatusDefaultIsSent() {
-        let r = makeReceipt()
-        XCTAssertEqual(r.getStatus(), .sent)
-    }
+  func testGetStatusDefaultIsSent() {
+    let r = makeReceipt()
+    XCTAssertEqual(r.getStatus(), .sent)
+  }
 
-    // MARK: - setTimeout
+  // MARK: - setTimeout
 
-    func testSetTimeoutUpdatesTimeout() {
-        let r = makeReceipt(timeout: 30)
-        r.setTimeout(120)
-        XCTAssertEqual(r.timeout, 120)
-    }
+  func testSetTimeoutUpdatesTimeout() {
+    let r = makeReceipt(timeout: 30)
+    r.setTimeout(120)
+    XCTAssertEqual(r.timeout, 120)
+  }
 
-    // MARK: - isTimedOutMethod
+  // MARK: - isTimedOutMethod
 
-    func testIsTimedOutMethodFalseForFutureTimeout() {
-        let r = makeReceipt(timeout: 9999)
-        XCTAssertFalse(r.isTimedOutMethod())
-    }
+  func testIsTimedOutMethodFalseForFutureTimeout() {
+    let r = makeReceipt(timeout: 9999)
+    XCTAssertFalse(r.isTimedOutMethod())
+  }
 
-    func testIsTimedOutMethodTrueForExpiredTimeout() {
-        let r = makeReceipt(timeout: 0.001)
-        Thread.sleep(forTimeInterval: 0.01)
-        XCTAssertTrue(r.isTimedOutMethod())
-    }
+  func testIsTimedOutMethodTrueForExpiredTimeout() {
+    let r = makeReceipt(timeout: 0.001)
+    Thread.sleep(forTimeInterval: 0.01)
+    XCTAssertTrue(r.isTimedOutMethod())
+  }
 
-    // MARK: - getRtt
+  // MARK: - getRtt
 
-    func testGetRttNilBeforeDelivery() {
-        let r = makeReceipt()
-        XCTAssertNil(r.getRtt())
-    }
+  func testGetRttNilBeforeDelivery() {
+    let r = makeReceipt()
+    XCTAssertNil(r.getRtt())
+  }
 
-    // MARK: - setDeliveryCallback
+  // MARK: - setDeliveryCallback
 
-    func testSetDeliveryCallbackFires() {
-        let r = makeReceipt()
-        let exp = expectation(description: "delivery")
-        r.setDeliveryCallback { _ in exp.fulfill() }
-        // Prove it by injecting proof: use internal timeout fire → failed, not delivered.
-        // So just verify callback is assigned and manually invoke.
-        r.onDelivery?(r)
-        wait(for: [exp], timeout: 1)
-    }
+  func testSetDeliveryCallbackFires() {
+    let r = makeReceipt()
+    let exp = expectation(description: "delivery")
+    r.setDeliveryCallback { _ in exp.fulfill() }
+    // Prove it by injecting proof: use internal timeout fire → failed, not delivered.
+    // So just verify callback is assigned and manually invoke.
+    r.onDelivery?(r)
+    wait(for: [exp], timeout: 1)
+  }
 
-    // MARK: - setTimeoutCallback
+  // MARK: - setTimeoutCallback
 
-    func testSetTimeoutCallbackFires() {
-        let r = makeReceipt(timeout: 0.001)
-        let exp = expectation(description: "timeout")
-        r.setTimeoutCallback { _ in exp.fulfill() }
-        Thread.sleep(forTimeInterval: 0.02)
-        r.checkTimeout()
-        wait(for: [exp], timeout: 1)
-    }
+  func testSetTimeoutCallbackFires() {
+    let r = makeReceipt(timeout: 0.001)
+    let exp = expectation(description: "timeout")
+    r.setTimeoutCallback { _ in exp.fulfill() }
+    Thread.sleep(forTimeInterval: 0.02)
+    r.checkTimeout()
+    wait(for: [exp], timeout: 1)
+  }
 }

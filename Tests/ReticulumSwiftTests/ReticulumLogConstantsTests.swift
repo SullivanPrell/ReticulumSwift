@@ -1,4 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Tests for log-destination constants and compactLogFmt flag.
@@ -7,36 +18,36 @@ import XCTest
 
 final class ReticulumLogConstantsTests: XCTestCase {
 
-    func testLogDestStdout() {
-        XCTAssertEqual(Reticulum.logDestStdout, 0x91)
-    }
+  func testLogDestStdout() {
+    XCTAssertEqual(Reticulum.logDestStdout, 0x91)
+  }
 
-    func testLogDestFile() {
-        XCTAssertEqual(Reticulum.logDestFile, 0x92)
-    }
+  func testLogDestFile() {
+    XCTAssertEqual(Reticulum.logDestFile, 0x92)
+  }
 
-    func testLogDestCallback() {
-        XCTAssertEqual(Reticulum.logDestCallback, 0x93)
-    }
+  func testLogDestCallback() {
+    XCTAssertEqual(Reticulum.logDestCallback, 0x93)
+  }
 
-    func testLogMaxSize() {
-        XCTAssertEqual(Reticulum.logMaxSize, 5 * 1024 * 1024)
-    }
+  func testLogMaxSize() {
+    XCTAssertEqual(Reticulum.logMaxSize, 5 * 1024 * 1024)
+  }
 
-    func testCompactLogFmtDefaultIsFalse() {
-        // Python: compact_log_fmt = False
-        XCTAssertFalse(Reticulum.compactLogFmt)
-    }
+  func testCompactLogFmtDefaultIsFalse() {
+    // Python: compact_log_fmt = False
+    XCTAssertFalse(Reticulum.compactLogFmt)
+  }
 
-    func testCompactLogFmtIsMutable() {
-        let original = Reticulum.compactLogFmt
-        Reticulum.compactLogFmt = !original
-        XCTAssertEqual(Reticulum.compactLogFmt, !original)
-        Reticulum.compactLogFmt = original  // restore
-    }
+  func testCompactLogFmtIsMutable() {
+    let original = Reticulum.compactLogFmt
+    Reticulum.compactLogFmt = !original
+    XCTAssertEqual(Reticulum.compactLogFmt, !original)
+    Reticulum.compactLogFmt = original  // restore
+  }
 
-    func testLogDestValuesAreDistinct() {
-        let values = [Reticulum.logDestStdout, Reticulum.logDestFile, Reticulum.logDestCallback]
-        XCTAssertEqual(Set(values).count, 3)
-    }
+  func testLogDestValuesAreDistinct() {
+    let values = [Reticulum.logDestStdout, Reticulum.logDestFile, Reticulum.logDestCallback]
+    XCTAssertEqual(Set(values).count, 3)
+  }
 }

@@ -1,4 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// A restored path must survive interfaces that register *after* the tables are read.
@@ -16,148 +27,159 @@ import XCTest
 /// use.
 final class DeferredRestoreTests: XCTestCase {
 
-    private var tmpDir: URL!
+  private var tmpDir: URL!
 
-    override func setUp() {
-        super.setUp()
-        tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rns-deferred-\(UUID().uuidString)")
-        try! FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-    }
+  override func setUp() {
+    super.setUp()
+    tmpDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("rns-deferred-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+  }
 
-    override func tearDown() {
-        try? FileManager.default.removeItem(at: tmpDir)
-        super.tearDown()
-    }
+  override func tearDown() {
+    try? FileManager.default.removeItem(at: tmpDir)
+    super.tearDown()
+  }
 
-    private var tableURL: URL { StorageInventory.url(.destinationTable, storage: tmpDir) }
+  private var tableURL: URL { StorageInventory.url(.destinationTable, storage: tmpDir) }
 
-    private func makeTransport() -> Transport {
-        let transport = Transport()
-        transport.cacheDirectory = tmpDir.appendingPathComponent("cache")
-        return transport
-    }
+  private func makeTransport() -> Transport {
+    let transport = Transport()
+    transport.cacheDirectory = tmpDir.appendingPathComponent("cache")
+    return transport
+  }
 
-    /// Write a table holding one path through an interface named `eth0`.
-    private func seedTable() throws -> Data {
-        let live = makeTransport()
-        let iface = LoopbackInterface(name: "eth0")
-        live.register(interface: iface)
-        let installed = try installPersistablePath(on: live, through: iface, aspect: "deferred")
-        try PathStore.snapshot(of: live).write(to: tableURL)
-        return installed.destinationHash
-    }
+  /// Write a table holding one path through an interface named `eth0`.
+  private func seedTable() throws -> Data {
+    let live = makeTransport()
+    let iface = LoopbackInterface(name: "eth0")
+    live.register(interface: iface)
+    let installed = try installPersistablePath(on: live, through: iface, aspect: "deferred")
+    try PathStore.snapshot(of: live).write(to: tableURL)
+    return installed.destinationHash
+  }
 
-    // MARK: - The defect
+  // MARK: - The defect
 
-    func testAPathIsInstalledWhenItsInterfaceRegistersLater() throws {
-        let destHash = try seedTable()
+  func testAPathIsInstalledWhenItsInterfaceRegistersLater() throws {
+    let destHash = try seedTable()
 
-        // The daemon's order: read the tables, *then* bring up interfaces.
-        let revived = makeTransport()
-        try PathStore.read(from: tableURL).apply(to: revived)
-        XCTAssertNil(revived.paths[destHash],
-                     "nothing can be installed yet — there is no interface to resolve against")
+    // The daemon's order: read the tables, *then* bring up interfaces.
+    let revived = makeTransport()
+    try PathStore.read(from: tableURL).apply(to: revived)
+    XCTAssertNil(
+      revived.paths[destHash],
+      "nothing can be installed yet — there is no interface to resolve against")
 
-        revived.register(interface: LoopbackInterface(name: "eth0"))
+    revived.register(interface: LoopbackInterface(name: "eth0"))
 
-        XCTAssertNotNil(revived.paths[destHash],
-                        """
-                        the entry must be installed once its interface appears. Resolving only \
-                        at read time drops every entry in a real daemon, because `rnsd` \
-                        synthesises interfaces after `Reticulum.start()` returns (bugs/041).
-                        """)
-        XCTAssertEqual(revived.paths[destHash]?.nextHopInterfaceName, "eth0")
-    }
+    XCTAssertNotNil(
+      revived.paths[destHash],
+      """
+      the entry must be installed once its interface appears. Resolving only \
+      at read time drops every entry in a real daemon, because `rnsd` \
+      synthesises interfaces after `Reticulum.start()` returns (bugs/041).
+      """)
+    XCTAssertEqual(revived.paths[destHash]?.nextHopInterfaceName, "eth0")
+  }
 
-    /// The order the unit suite has always used still works, and doesn't leave the entry parked.
-    func testAPathIsInstalledImmediatelyWhenItsInterfaceIsAlreadyThere() throws {
-        let destHash = try seedTable()
+  /// The order the unit suite has always used still works, and doesn't leave the entry parked.
+  func testAPathIsInstalledImmediatelyWhenItsInterfaceIsAlreadyThere() throws {
+    let destHash = try seedTable()
 
-        let revived = makeTransport()
-        revived.register(interface: LoopbackInterface(name: "eth0"))
-        try PathStore.read(from: tableURL).apply(to: revived)
+    let revived = makeTransport()
+    revived.register(interface: LoopbackInterface(name: "eth0"))
+    try PathStore.read(from: tableURL).apply(to: revived)
 
-        XCTAssertNotNil(revived.paths[destHash])
-        XCTAssertTrue(revived.pendingPathRestores.isEmpty,
-                      "an entry installed on the spot must not also be held pending")
-    }
+    XCTAssertNotNil(revived.paths[destHash])
+    XCTAssertTrue(
+      revived.pendingPathRestores.isEmpty,
+      "an entry installed on the spot must not also be held pending")
+  }
 
-    /// An interface that never arrives costs the entry, as it does in the reference—the wait is
-    /// bounded, not indefinite. Otherwise a discovered interface registering minutes later would
-    /// install a path the reference had already discarded.
-    func testAnEntryWhoseInterfaceNeverArrivesIsGivenUpOn() throws {
-        let destHash = try seedTable()
+  /// An interface that never arrives costs the entry, as it does in the reference—the wait is
+  /// bounded, not indefinite.
+  ///
+  /// Otherwise a discovered interface registering minutes later would
+  /// install a path the reference had already discarded.
+  func testAnEntryWhoseInterfaceNeverArrivesIsGivenUpOn() throws {
+    let destHash = try seedTable()
 
-        let revived = makeTransport()
-        try PathStore.read(from: tableURL).apply(to: revived)
-        XCTAssertFalse(revived.pendingPathRestores.isEmpty, "parked, waiting for `eth0`")
+    let revived = makeTransport()
+    try PathStore.read(from: tableURL).apply(to: revived)
+    XCTAssertFalse(revived.pendingPathRestores.isEmpty, "parked, waiting for `eth0`")
 
-        // Rewind the clock past the window rather than sleeping through it.
-        revived.lock.lock()
-        revived.pendingRestoresReadAt = Date(timeIntervalSinceNow: -Transport.pendingRestoreWindow - 1)
-        revived.lock.unlock()
-        revived.sweepPendingRestores()
+    // Rewind the clock past the window rather than sleeping through it.
+    revived.lock.lock()
+    revived.pendingRestoresReadAt = Date(timeIntervalSinceNow: -Transport.pendingRestoreWindow - 1)
+    revived.lock.unlock()
+    revived.sweepPendingRestores()
 
-        XCTAssertTrue(revived.pendingPathRestores.isEmpty, "the wait is bounded")
+    XCTAssertTrue(revived.pendingPathRestores.isEmpty, "the wait is bounded")
 
-        revived.register(interface: LoopbackInterface(name: "eth0"))
-        XCTAssertNil(revived.paths[destHash],
-                     "an interface arriving after the window installs nothing — the reference "
-                     + "drops such an entry permanently (Transport.py:334,348)")
-    }
+    revived.register(interface: LoopbackInterface(name: "eth0"))
+    XCTAssertNil(
+      revived.paths[destHash],
+      "an interface arriving after the window installs nothing — the reference "
+        + "drops such an entry permanently (Transport.py:334,348)")
+  }
 
-    /// An entry that failed for a reason an interface can't fix is *not* parked. Otherwise the
-    /// pending set fills with entries that can never install, and the sweep's log line reports a
-    /// problem that isn't one.
-    func testAnEntryWithNoCachedAnnounceIsNotParked() throws {
-        let live = makeTransport()
-        let iface = LoopbackInterface(name: "eth0")
-        live.register(interface: iface)
-        try installPersistablePath(on: live, through: iface, aspect: "noannounce")
-        try PathStore.snapshot(of: live).write(to: tableURL)
-        try FileManager.default.removeItem(at: tmpDir.appendingPathComponent("cache"))
+  /// An entry that failed for a reason an interface can't fix is *not* parked.
+  ///
+  /// Otherwise the pending set fills with entries that can never install, and the sweep's
+  /// log line reports a problem that isn't one.
+  func testAnEntryWithNoCachedAnnounceIsNotParked() throws {
+    let live = makeTransport()
+    let iface = LoopbackInterface(name: "eth0")
+    live.register(interface: iface)
+    try installPersistablePath(on: live, through: iface, aspect: "noannounce")
+    try PathStore.snapshot(of: live).write(to: tableURL)
+    try FileManager.default.removeItem(at: tmpDir.appendingPathComponent("cache"))
 
-        let revived = makeTransport()
-        revived.register(interface: LoopbackInterface(name: "eth0"))
-        try PathStore.read(from: tableURL).apply(to: revived)
+    let revived = makeTransport()
+    revived.register(interface: LoopbackInterface(name: "eth0"))
+    try PathStore.read(from: tableURL).apply(to: revived)
 
-        XCTAssertTrue(revived.pendingPathRestores.isEmpty,
-                      "a missing announce is final; only a missing interface is recoverable")
-    }
+    XCTAssertTrue(
+      revived.pendingPathRestores.isEmpty,
+      "a missing announce is final; only a missing interface is recoverable")
+  }
 
-    // MARK: - Tunnels don't need this, and must not get it
+  // MARK: - Tunnels don't need this, and must not get it
 
-    /// A tunnel restores whether or not its interface is present, so it's never parked.
-    ///
-    /// The reference restores a tunnel path with `receiving_interface = None` and gates only on
-    /// the announce (`Transport.py:398-400`), attaching an interface to every one of the tunnel's
-    /// paths when the endpoint reappears (`:2440-2447`). Deferring it would delay a tunnel that
-    /// was ready, and would leave `TunnelStore`'s share of the pending machinery permanently
-    /// empty—dead code that reads as coverage.
-    func testATunnelRestoresWithoutWaitingForAnInterface() throws {
-        let live = makeTransport()
-        let iface = LoopbackInterface(name: "tun0")
-        live.register(interface: iface)
-        let installed = try installPersistablePath(on: live, through: iface, aspect: "tunnel")
-        let tunnelID = Hashes.fullHash(Data("deferred-tunnel".utf8))
-        live.tunnels[tunnelID] = Transport.TunnelEntry(
-            tunnelID: tunnelID,
-            iface: iface,
-            paths: [installed.destinationHash: live.paths[installed.destinationHash]!],
-            expires: Date().addingTimeInterval(Transport.tunnelTimeout))
-        let url = StorageInventory.url(.tunnels, storage: tmpDir)
-        try TunnelStore.snapshot(of: live).write(to: url)
+  /// A tunnel restores whether or not its interface is present, so it's never parked.
+  ///
+  /// The reference restores a tunnel path with `receiving_interface = None` and gates only on
+  /// the announce (`Transport.py:398-400`), attaching an interface to every one of the tunnel's
+  /// paths when the endpoint reappears (`:2440-2447`). Deferring it would delay a tunnel that
+  /// was ready, and would leave `TunnelStore`'s share of the pending machinery permanently
+  /// empty—dead code that reads as coverage.
+  func testATunnelRestoresWithoutWaitingForAnInterface() throws {
+    let live = makeTransport()
+    let iface = LoopbackInterface(name: "tun0")
+    live.register(interface: iface)
+    let installed = try installPersistablePath(on: live, through: iface, aspect: "tunnel")
+    let tunnelID = Hashes.fullHash(Data("deferred-tunnel".utf8))
+    live.tunnels[tunnelID] = Transport.TunnelEntry(
+      tunnelID: tunnelID,
+      iface: iface,
+      paths: [installed.destinationHash: live.paths[installed.destinationHash]!],
+      expires: Date().addingTimeInterval(Transport.tunnelTimeout))
+    let url = StorageInventory.url(.tunnels, storage: tmpDir)
+    try TunnelStore.snapshot(of: live).write(to: url)
 
-        let revived = makeTransport()
-        try TunnelStore.read(from: url).apply(to: revived)
+    let revived = makeTransport()
+    try TunnelStore.read(from: url).apply(to: revived)
 
-        let tunnel = try XCTUnwrap(revived.tunnels[tunnelID],
-                                   "the tunnel restores with no interface registered at all")
-        XCTAssertNil(tunnel.iface, "field 1 of a restored tunnel is None (Transport.py:403)")
-        XCTAssertNil(tunnel.paths[installed.destinationHash]?.nextHopInterface,
-                     "and its paths are unattached until the endpoint reappears")
-        XCTAssertTrue(revived.pendingPathRestores.isEmpty,
-                      "nothing about a tunnel is parked waiting for an interface")
-    }
+    let tunnel = try XCTUnwrap(
+      revived.tunnels[tunnelID],
+      "the tunnel restores with no interface registered at all")
+    XCTAssertNil(tunnel.iface, "field 1 of a restored tunnel is None (Transport.py:403)")
+    XCTAssertNil(
+      tunnel.paths[installed.destinationHash]?.nextHopInterface,
+      "and its paths are unattached until the endpoint reappears")
+    XCTAssertTrue(
+      revived.pendingPathRestores.isEmpty,
+      "nothing about a tunnel is parked waiting for an interface")
+  }
 }

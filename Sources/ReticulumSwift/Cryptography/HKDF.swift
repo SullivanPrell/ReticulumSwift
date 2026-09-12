@@ -1,6 +1,18 @@
-import Foundation
-import CryptoKit
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
 
+import CryptoKit
+import Foundation
+
+/// Extract-and-expand key derivation over SHA-256.
+///
 /// HKDF-SHA256 in the exact byte-for-byte form used by `RNS.Cryptography.hkdf`:
 ///
 ///   PRK   = HMAC-SHA256(salt, IKM)
@@ -11,30 +23,31 @@ import CryptoKit
 /// This matches RFC 5869 for any output length up to 8192 bytes (256 blocks);
 /// Reticulum never asks for more.
 public enum HKDF {
-    public static func derive(
-        length: Int,
-        derivedFrom ikm: Data,
-        salt: Data? = nil,
-        context: Data? = nil
-    ) -> Data {
-        precondition(length > 0, "HKDF length must be positive")
+  /// Derives `length` bytes of key material from `ikm`.
+  public static func derive(
+    length: Int,
+    derivedFrom ikm: Data,
+    salt: Data? = nil,
+    context: Data? = nil
+  ) -> Data {
+    precondition(length > 0, "HKDF length must be positive")
 
-        let usedSalt: Data = (salt?.isEmpty == false) ? salt! : Data(repeating: 0, count: 32)
-        let info: Data = context ?? Data()
+    let usedSalt: Data = salt.flatMap { $0.isEmpty ? nil : $0 } ?? Data(repeating: 0, count: 32)
+    let info: Data = context ?? Data()
 
-        let prk = HMACSHA256.authenticate(ikm, key: usedSalt)
+    let prk = HMACSHA256.authenticate(ikm, key: usedSalt)
 
-        var derived = Data()
-        var block = Data()
-        let blocksNeeded = Int((Double(length) / 32.0).rounded(.up))
-        for i in 0..<blocksNeeded {
-            var input = Data()
-            input.append(block)
-            input.append(info)
-            input.append(UInt8((i + 1) % 256))
-            block = HMACSHA256.authenticate(input, key: prk)
-            derived.append(block)
-        }
-        return derived.prefix(length)
+    var derived = Data()
+    var block = Data()
+    let blocksNeeded = Int((Double(length) / 32.0).rounded(.up))
+    for i in 0..<blocksNeeded {
+      var input = Data()
+      input.append(block)
+      input.append(info)
+      input.append(UInt8((i + 1) % 256))
+      block = HMACSHA256.authenticate(input, key: prk)
+      derived.append(block)
     }
+    return derived.prefix(length)
+  }
 }

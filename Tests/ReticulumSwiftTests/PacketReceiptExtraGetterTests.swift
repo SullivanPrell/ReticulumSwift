@@ -1,6 +1,19 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
+/// Covers the Python-parity getter methods on `PacketReceipt`.
+///
 /// Tests for the additional PacketReceipt getter methods that mirror Python's API:
 ///   PacketReceipt.get_hash()        → packetHash bytes
 ///   PacketReceipt.get_proved()      → proved flag
@@ -8,64 +21,69 @@ import XCTest
 ///   PacketReceipt.concluded_at      → completion timestamp
 final class PacketReceiptExtraGetterTests: XCTestCase {
 
-    private func makeReceipt() -> PacketReceipt {
-        PacketReceipt(testHash: Data(repeating: 0xAB, count: 32))
-    }
+  private func makeReceipt() -> PacketReceipt {
+    PacketReceipt(testHash: Data(repeating: 0xAB, count: 32))
+  }
 
-    // MARK: - getHash
+  // MARK: - getHash
 
-    func testGetHashMatchesPacketHash() {
-        let r = makeReceipt()
-        XCTAssertEqual(r.getHash(), r.packetHash,
-                       "getHash() must return the same data as packetHash")
-    }
+  func testGetHashMatchesPacketHash() {
+    let r = makeReceipt()
+    XCTAssertEqual(
+      r.getHash(), r.packetHash,
+      "getHash() must return the same data as packetHash")
+  }
 
-    func testGetHashIs32Bytes() {
-        let r = makeReceipt()
-        XCTAssertEqual(r.getHash().count, 32,
-                       "packet hash must be 32 bytes (full SHA-256)")
-    }
+  func testGetHashIs32Bytes() {
+    let r = makeReceipt()
+    XCTAssertEqual(
+      r.getHash().count, 32,
+      "packet hash must be 32 bytes (full SHA-256)")
+  }
 
-    // MARK: - getProved
+  // MARK: - getProved
 
-    func testGetProvedFalseByDefault() {
-        let r = makeReceipt()
-        XCTAssertFalse(r.getProved(),
-                       "getProved() must be false before any proof arrives")
-    }
+  func testGetProvedFalseByDefault() {
+    let r = makeReceipt()
+    XCTAssertFalse(
+      r.getProved(),
+      "getProved() must be false before any proof arrives")
+  }
 
-    func testGetProvedMatchesProvedProperty() {
-        let r = makeReceipt()
-        XCTAssertEqual(r.getProved(), r.proved)
-    }
+  func testGetProvedMatchesProvedProperty() {
+    let r = makeReceipt()
+    XCTAssertEqual(r.getProved(), r.proved)
+  }
 
-    // MARK: - getSentAt
+  // MARK: - getSentAt
 
-    func testGetSentAtMatchesSentAt() {
-        let before = Date()
-        let r = makeReceipt()
-        let after = Date()
-        let sent = r.getSentAt()
-        XCTAssertGreaterThanOrEqual(sent, before)
-        XCTAssertLessThanOrEqual(sent, after)
-        XCTAssertEqual(sent, r.sentAt)
-    }
+  func testGetSentAtMatchesSentAt() {
+    let before = Date()
+    let r = makeReceipt()
+    let after = Date()
+    let sent = r.getSentAt()
+    XCTAssertGreaterThanOrEqual(sent, before)
+    XCTAssertLessThanOrEqual(sent, after)
+    XCTAssertEqual(sent, r.sentAt)
+  }
 
-    // MARK: - getConcludedAt
+  // MARK: - getConcludedAt
 
-    func testGetConcludedAtNilBeforeConclusion() {
-        let r = makeReceipt()
-        XCTAssertNil(r.getConcludedAt(),
-                     "getConcludedAt() must be nil while the receipt is still pending")
-    }
+  func testGetConcludedAtNilBeforeConclusion() {
+    let r = makeReceipt()
+    XCTAssertNil(
+      r.getConcludedAt(),
+      "getConcludedAt() must be nil while the receipt is still pending")
+  }
 
-    func testGetConcludedAtSetAfterTimeout() {
-        let r = PacketReceipt(testHash: Data(repeating: 0xFF, count: 32))
-        r.timeout = 0   // expire immediately
-        Thread.sleep(forTimeInterval: 0.01)
-        r.checkTimeout()
-        XCTAssertNotNil(r.getConcludedAt(),
-                        "getConcludedAt() must be non-nil after the receipt times out")
-        XCTAssertEqual(r.getConcludedAt(), r.concludedAt)
-    }
+  func testGetConcludedAtSetAfterTimeout() {
+    let r = PacketReceipt(testHash: Data(repeating: 0xFF, count: 32))
+    r.timeout = 0  // expire immediately
+    Thread.sleep(forTimeInterval: 0.01)
+    r.checkTimeout()
+    XCTAssertNotNil(
+      r.getConcludedAt(),
+      "getConcludedAt() must be non-nil after the receipt times out")
+    XCTAssertEqual(r.getConcludedAt(), r.concludedAt)
+  }
 }

@@ -1,4 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Traffic counters (`rxBytes`/`txBytes`/`rxPackets`/`txPackets`) are written
@@ -28,108 +39,110 @@ import XCTest
 /// mistake a green plain `swift test` here for proof of thread safety.
 final class InterfaceCountersTests: XCTestCase {
 
-    // MARK: - The counter type itself
+  // MARK: - The counter type itself
 
-    func testConcurrentIncrementsLoseNoUpdates() {
-        let counters = InterfaceCounters()
-        let threads = 8
-        let perThread = 5_000
+  func testConcurrentIncrementsLoseNoUpdates() {
+    let counters = InterfaceCounters()
+    let threads = 8
+    let perThread = 5_000
 
-        DispatchQueue.concurrentPerform(iterations: threads) { _ in
-            for _ in 0..<perThread {
-                counters.addTx(bytes: 10)
-                counters.addRx(bytes: 3)
-            }
-        }
-
-        let total = threads * perThread
-        XCTAssertEqual(counters.txPackets, total)
-        XCTAssertEqual(counters.rxPackets, total)
-        XCTAssertEqual(counters.txBytes, total * 10)
-        XCTAssertEqual(counters.rxBytes, total * 3)
+    DispatchQueue.concurrentPerform(iterations: threads) { _ in
+      for _ in 0..<perThread {
+        counters.addTx(bytes: 10)
+        counters.addRx(bytes: 3)
+      }
     }
 
-    /// A reader must never observe a half-applied update—`snapshot()` takes
-    /// all four counters under one lock acquisition, so bytes and packets are
-    /// always consistent with each other.
-    func testSnapshotIsInternallyConsistent() {
-        let counters = InterfaceCounters()
-        let done = expectation(description: "writer finished")
+    let total = threads * perThread
+    XCTAssertEqual(counters.txPackets, total)
+    XCTAssertEqual(counters.rxPackets, total)
+    XCTAssertEqual(counters.txBytes, total * 10)
+    XCTAssertEqual(counters.rxBytes, total * 3)
+  }
 
-        DispatchQueue.global().async {
-            for _ in 0..<20_000 { counters.addTx(bytes: 100) }
-            done.fulfill()
-        }
+  /// A reader must never observe a half-applied update—`snapshot()` takes
+  /// all four counters under one lock acquisition, so bytes and packets are
+  /// always consistent with each other.
+  func testSnapshotIsInternallyConsistent() {
+    let counters = InterfaceCounters()
+    let done = expectation(description: "writer finished")
 
-        // Every observed snapshot must satisfy the invariant the writer
-        // maintains: exactly 100 bytes per packet.
-        for _ in 0..<5_000 {
-            let s = counters.snapshot()
-            XCTAssertEqual(s.txBytes, s.txPackets * 100)
-        }
-
-        wait(for: [done], timeout: 10)
-        XCTAssertEqual(counters.txPackets, 20_000)
+    DispatchQueue.global().async {
+      for _ in 0..<20_000 { counters.addTx(bytes: 100) }
+      done.fulfill()
     }
 
-    func testResetClearsEveryCounter() {
-        let counters = InterfaceCounters()
-        counters.addTx(bytes: 40)
-        counters.addRx(bytes: 60)
-        counters.reset()
-
-        let s = counters.snapshot()
-        XCTAssertEqual(s.txBytes, 0)
-        XCTAssertEqual(s.rxBytes, 0)
-        XCTAssertEqual(s.txPackets, 0)
-        XCTAssertEqual(s.rxPackets, 0)
+    // Every observed snapshot must satisfy the invariant the writer
+    // maintains: exactly 100 bytes per packet.
+    for _ in 0..<5_000 {
+      let s = counters.snapshot()
+      XCTAssertEqual(s.txBytes, s.txPackets * 100)
     }
 
-    // MARK: - A real interface under its real access pattern
+    wait(for: [done], timeout: 10)
+    XCTAssertEqual(counters.txPackets, 20_000)
+  }
 
-    /// `BLEMeshInterface` is the sharpest case in the library: `send` runs on
-    /// whichever thread `Transport` dispatches from, `handlePeerData` runs on
-    /// CoreBluetooth's queue, and the app polls the counters from the main
-    /// thread on a timer. All three touch the same four `Int`s.
-    func testInterfaceCountersSurviveConcurrentSendAndReceive() throws {
-        let transport = ThreadSafeMockBLETransport()
-        let iface = BLEMeshInterface(name: "race", transport: transport)
-        try iface.start()
+  func testResetClearsEveryCounter() {
+    let counters = InterfaceCounters()
+    counters.addTx(bytes: 40)
+    counters.addRx(bytes: 60)
+    counters.reset()
 
-        let peer: BLEMeshPeerID = "peer-1"
-        transport.simulateConnect(peer)
+    let s = counters.snapshot()
+    XCTAssertEqual(s.txBytes, 0)
+    XCTAssertEqual(s.rxBytes, 0)
+    XCTAssertEqual(s.txPackets, 0)
+    XCTAssertEqual(s.rxPackets, 0)
+  }
 
-        let packet = Packet(
-            destinationType: .single,
-            packetType: .data,
-            destinationHash: Data(repeating: 0xCD, count: Constants.truncatedHashLength),
-            data: Data("race".utf8)
-        )
-        // Pre-frame one packet so the receive side feeds well-formed frames.
-        let framed = HDLC.frame(try packet.pack())
+  // MARK: - A real interface under its real access pattern
 
-        let rounds = 2_000
-        let sendDone = expectation(description: "sends finished")
-        let recvDone = expectation(description: "receives finished")
+  /// `BLEMeshInterface` is the sharpest case in the library: `send` runs on
+  /// whichever thread `Transport` dispatches from, `handlePeerData` runs on
+  /// CoreBluetooth's queue, and the app polls the counters from the main
+  /// thread on a timer.
+  ///
+  /// All three touch the same four `Int`s.
+  func testInterfaceCountersSurviveConcurrentSendAndReceive() throws {
+    let transport = ThreadSafeMockBLETransport()
+    let iface = BLEMeshInterface(name: "race", transport: transport)
+    try iface.start()
 
-        DispatchQueue.global().async {
-            for _ in 0..<rounds { try? iface.send(packet) }
-            sendDone.fulfill()
-        }
-        DispatchQueue.global().async {
-            for _ in 0..<rounds { transport.simulateReceive(from: peer, chunk: framed) }
-            recvDone.fulfill()
-        }
-        // A third participant reading concurrently, as the UI does.
-        DispatchQueue.global().async {
-            for _ in 0..<rounds { _ = iface.txBytes + iface.rxBytes }
-        }
+    let peer: BLEMeshPeerID = "peer-1"
+    transport.simulateConnect(peer)
 
-        wait(for: [sendDone, recvDone], timeout: 30)
+    let packet = Packet(
+      destinationType: .single,
+      packetType: .data,
+      destinationHash: Data(repeating: 0xCD, count: Constants.truncatedHashLength),
+      data: Data("race".utf8)
+    )
+    // Pre-frame one packet so the receive side feeds well-formed frames.
+    let framed = HDLC.frame(try packet.pack())
 
-        XCTAssertEqual(iface.txPackets, rounds, "outbound packet count lost updates")
-        XCTAssertEqual(iface.rxPackets, rounds, "inbound packet count lost updates")
+    let rounds = 2_000
+    let sendDone = expectation(description: "sends finished")
+    let recvDone = expectation(description: "receives finished")
+
+    DispatchQueue.global().async {
+      for _ in 0..<rounds { try? iface.send(packet) }
+      sendDone.fulfill()
     }
+    DispatchQueue.global().async {
+      for _ in 0..<rounds { transport.simulateReceive(from: peer, chunk: framed) }
+      recvDone.fulfill()
+    }
+    // A third participant reading concurrently, as the UI does.
+    DispatchQueue.global().async {
+      for _ in 0..<rounds { _ = iface.txBytes + iface.rxBytes }
+    }
+
+    wait(for: [sendDone, recvDone], timeout: 30)
+
+    XCTAssertEqual(iface.txPackets, rounds, "outbound packet count lost updates")
+    XCTAssertEqual(iface.rxPackets, rounds, "inbound packet count lost updates")
+  }
 }
 
 // MARK: - Mock transport
@@ -137,31 +150,36 @@ final class InterfaceCountersTests: XCTestCase {
 /// Minimal `BLEMeshTransport` whose `send` is safe to call from several queues
 /// at once—the interface, not the mock, is what's under test here.
 private final class ThreadSafeMockBLETransport: BLEMeshTransport, @unchecked Sendable {
-    var peerConnected: ((BLEMeshPeerID) -> Void)?
-    var peerDisconnected: ((BLEMeshPeerID) -> Void)?
-    var peerDataHandler: ((BLEMeshPeerID, Data) -> Void)?
+  var peerConnected: ((BLEMeshPeerID) -> Void)?
+  var peerDisconnected: ((BLEMeshPeerID) -> Void)?
+  var peerDataHandler: ((BLEMeshPeerID, Data) -> Void)?
 
-    private let lock = NSLock()
-    private var sentCount = 0
-    private var peers: [BLEMeshPeerID] = []
+  private let lock = NSLock()
+  private var sentCount = 0
+  private var peers: [BLEMeshPeerID] = []
 
-    var connectedPeers: [BLEMeshPeerID] {
-        lock.lock(); defer { lock.unlock() }
-        return peers
-    }
+  var connectedPeers: [BLEMeshPeerID] {
+    lock.lock()
+    defer { lock.unlock() }
+    return peers
+  }
 
-    func start() throws {}
-    func stop() {}
+  func start() throws {}
+  func stop() {}
 
-    func send(_ data: Data, to peer: BLEMeshPeerID) throws {
-        lock.lock(); sentCount += 1; lock.unlock()
-    }
+  func send(_ data: Data, to peer: BLEMeshPeerID) throws {
+    lock.lock()
+    sentCount += 1
+    lock.unlock()
+  }
 
-    func simulateConnect(_ peer: BLEMeshPeerID) {
-        lock.lock(); peers.append(peer); lock.unlock()
-        peerConnected?(peer)
-    }
-    func simulateReceive(from peer: BLEMeshPeerID, chunk: Data) {
-        peerDataHandler?(peer, chunk)
-    }
+  func simulateConnect(_ peer: BLEMeshPeerID) {
+    lock.lock()
+    peers.append(peer)
+    lock.unlock()
+    peerConnected?(peer)
+  }
+  func simulateReceive(from peer: BLEMeshPeerID, chunk: Data) {
+    peerDataHandler?(peer, chunk)
+  }
 }

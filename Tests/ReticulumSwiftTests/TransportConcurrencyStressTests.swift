@@ -1,104 +1,126 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Concurrency smoke tests for the Transport bookkeeping locks introduced in the
-/// 2026-07-19 data-race hardening pass. The rest of the suite is single-threaded
+/// 2026-07-19 data-race hardening pass.
+///
+/// The rest of the suite is single-threaded
 /// and can't exercise these races; this suite hammers the lock-protected accessors
 /// from many threads at once. A lock-order inversion or reentrant self-deadlock
 /// would make the test TIME OUT; a torn dictionary/array access would CRASH.
 /// Passing proves neither happens on these paths.
 final class TransportConcurrencyStressTests: XCTestCase {
 
-    /// Minimal interface with ingress + rate control enabled so the ingress /
-    /// rate-table code paths actually execute (not just early return).
-    private final class StressIface: Interface {
-        var name: String
-        var bitrate: Int = 9600
-        var isOnline: Bool = true
-        var inboundHandler: ((Packet, any Interface) -> Void)?
-        var ingressControl: Bool { true }
-        var egressControl: Bool { true }
-        var announceRateTarget: Double? { 1.0 }
-        init(name: String) { self.name = name }
-        func start() throws {}
-        func stop() {}
-        func send(_ packet: Packet) throws {}
-    }
+  /// Minimal interface with ingress + rate control enabled so the ingress /
+  /// rate-table code paths actually execute (not just early return).
+  private final class StressIface: Interface {
+    var name: String
+    var bitrate: Int = 9600
+    var isOnline: Bool = true
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    var ingressControl: Bool { true }
+    var egressControl: Bool { true }
+    var announceRateTarget: Double? { 1.0 }
+    init(name: String) { self.name = name }
+    func start() throws {}
+    func stop() {}
+    func send(_ packet: Packet) throws {}
+  }
 
-    func testConcurrentBookkeepingDoesNotDeadlockOrCrash() {
-        let transport = Transport()
+  func testConcurrentBookkeepingDoesNotDeadlockOrCrash() {
+    let transport = Transport()
 
-        // A fixed pool of interfaces churned in and out concurrently.
-        let pool = (0..<6).map { StressIface(name: "if\($0)") }
-        for iface in pool { transport.register(interface: iface) }
+    // A fixed pool of interfaces churned in and out concurrently.
+    let pool = (0..<6).map { StressIface(name: "if\($0)") }
+    for iface in pool { transport.register(interface: iface) }
 
-        let done = expectation(description: "stress complete")
-        let workers = 8
-        let iterations = 1500
+    let done = expectation(description: "stress complete")
+    let workers = 8
+    let iterations = 1500
 
-        DispatchQueue.global().async {
-            DispatchQueue.concurrentPerform(iterations: workers) { w in
-                for i in 0..<iterations {
-                    let iface = pool[(w &+ i) % pool.count]
-                    let now = 1_700_000_000.0 + Double(i)
-                    switch (w &+ i) % 13 {
-                    case 0:  transport.register(interface: iface)          // interfaces + trackers + ingress
-                    case 1:  transport.deregister(interface: iface)        // removes all per-iface state
-                    case 2:  _ = transport.getInterfaceStats()             // snapshots interfaces + trackers
-                    case 3:  _ = transport.getTransportStats()             // metricsLock
-                    case 4:  transport.sampleInterfaceSpeeds(now: now)     // interfaces snapshot + metricsLock
-                    case 5:  transport.notifyIncomingAnnounce(on: iface, at: now)  // trackersLock -> tracker
-                    case 6:  _ = transport.shouldIngressLimit(on: iface, now: now) // ingressLock -> trackersLock
-                    case 7:  _ = transport.isAnnounceRateBlocked(destinationHash: Data(repeating: UInt8(i & 0xFF), count: 16), interface: iface, now: now) // metricsLock
-                    case 8:  let h = Data([UInt8(w & 0xFF)] + Data(repeating: UInt8(i & 0xFF), count: 15))
-                             transport.blackholeIdentity(h)               // blackholeLock (+ lock via removeBlackholedPaths)
-                    case 9:  let h = Data([UInt8(w & 0xFF)] + Data(repeating: UInt8(i & 0xFF), count: 15))
-                             _ = transport.isBlackholed(h)                // blackholeLock
-                    case 10: transport.sweepExpiredBlackholes(now: now)   // blackholeLock
-                    case 11: _ = transport.currentRxSpeed(for: iface)     // metricsLock
-                    case 12: _ = transport.getPacketRssi(packetHash: Data(repeating: UInt8(i & 0xFF), count: 16)) // metricsLock
-                    default: break
-                    }
-                }
-            }
-            done.fulfill()
+    DispatchQueue.global().async {
+      DispatchQueue.concurrentPerform(iterations: workers) { w in
+        for i in 0..<iterations {
+          let iface = pool[(w &+ i) % pool.count]
+          let now = 1_700_000_000.0 + Double(i)
+          switch (w &+ i) % 13 {
+          case 0: transport.register(interface: iface)  // interfaces + trackers + ingress
+          case 1: transport.deregister(interface: iface)  // removes all per-iface state
+          case 2: _ = transport.getInterfaceStats()  // snapshots interfaces + trackers
+          case 3: _ = transport.getTransportStats()  // metricsLock
+          case 4: transport.sampleInterfaceSpeeds(now: now)  // interfaces snapshot + metricsLock
+          case 5: transport.notifyIncomingAnnounce(on: iface, at: now)  // trackersLock -> tracker
+          // ingressLock -> trackersLock
+          case 6: _ = transport.shouldIngressLimit(on: iface, now: now)
+          case 7:
+            _ = transport.isAnnounceRateBlocked(
+              destinationHash: Data(repeating: UInt8(i & 0xFF), count: 16), interface: iface,
+              now: now)  // metricsLock
+          case 8:
+            let h = Data([UInt8(w & 0xFF)] + Data(repeating: UInt8(i & 0xFF), count: 15))
+            transport.blackholeIdentity(h)  // blackholeLock (+ lock via removeBlackholedPaths)
+          case 9:
+            let h = Data([UInt8(w & 0xFF)] + Data(repeating: UInt8(i & 0xFF), count: 15))
+            _ = transport.isBlackholed(h)  // blackholeLock
+          case 10: transport.sweepExpiredBlackholes(now: now)  // blackholeLock
+          case 11: _ = transport.currentRxSpeed(for: iface)  // metricsLock
+          case 12:
+            // metricsLock
+            _ = transport.getPacketRssi(packetHash: Data(repeating: UInt8(i & 0xFF), count: 16))
+          default: break
+          }
         }
-
-        // Generous timeout: a real deadlock never completes, so any pass here
-        // means the lock graph is acyclic on these paths.
-        wait(for: [done], timeout: 60)
+      }
+      done.fulfill()
     }
 
-    /// Directly targets the register()/deregister() atomicity fix by hammering
-    /// register and deregister of the *same* interface from many threads at once.
-    /// Before the fix, register() assigned the ARC-refcounted closure pointers
-    /// `interface.rawInboundHandler`/`inboundHandler` OUTSIDE `lock`, so two
-    /// concurrent register()s tore those pointers (a refcount race that corrupts
-    /// the heap and surfaced as an unrelated "Duplicate keys" dictionary trap),
-    /// and a register() could interleave with a deregister() of the same iface.
-    /// With the whole register()/deregister() body under `lock`, this must be
-    /// clean under `--sanitize=thread` (a torn write CRASHES; a lock-order
-    /// inversion TIMES OUT).
-    func testConcurrentSameInterfaceRegisterDeregisterIsRaceFree() {
-        let transport = Transport()
-        let iface = StressIface(name: "shared")
+    // Generous timeout: a real deadlock never completes, so any pass here
+    // means the lock graph is acyclic on these paths.
+    wait(for: [done], timeout: 60)
+  }
 
-        let done = expectation(description: "same-iface churn complete")
-        let workers = 8
-        let iterations = 2000
+  /// Directly targets the register()/deregister() atomicity fix by hammering
+  /// register and deregister of the *same* interface from many threads at once.
+  ///
+  /// Before the fix, register() assigned the ARC-refcounted closure pointers
+  /// `interface.rawInboundHandler`/`inboundHandler` OUTSIDE `lock`, so two
+  /// concurrent register()s tore those pointers (a refcount race that corrupts
+  /// the heap and surfaced as an unrelated "Duplicate keys" dictionary trap),
+  /// and a register() could interleave with a deregister() of the same iface.
+  /// With the whole register()/deregister() body under `lock`, this must be
+  /// clean under `--sanitize=thread` (a torn write CRASHES; a lock-order
+  /// inversion TIMES OUT).
+  func testConcurrentSameInterfaceRegisterDeregisterIsRaceFree() {
+    let transport = Transport()
+    let iface = StressIface(name: "shared")
 
-        DispatchQueue.global().async {
-            DispatchQueue.concurrentPerform(iterations: workers) { w in
-                for i in 0..<iterations {
-                    switch (w &+ i) % 3 {
-                    case 0:  transport.register(interface: iface)     // writes closures + dicts under lock
-                    case 1:  transport.deregister(interface: iface)   // removes all per-iface state under lock
-                    default: _ = transport.getInterfaceStats()        // snapshots interfaces under lock
-                    }
-                }
-            }
-            done.fulfill()
+    let done = expectation(description: "same-iface churn complete")
+    let workers = 8
+    let iterations = 2000
+
+    DispatchQueue.global().async {
+      DispatchQueue.concurrentPerform(iterations: workers) { w in
+        for i in 0..<iterations {
+          switch (w &+ i) % 3 {
+          case 0: transport.register(interface: iface)  // writes closures + dicts under lock
+          case 1: transport.deregister(interface: iface)  // removes all per-iface state under lock
+          default: _ = transport.getInterfaceStats()  // snapshots interfaces under lock
+          }
         }
-        wait(for: [done], timeout: 60)
+      }
+      done.fulfill()
     }
+    wait(for: [done], timeout: 60)
+  }
 }

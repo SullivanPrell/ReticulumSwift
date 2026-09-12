@@ -61,7 +61,7 @@ alone would drop those duplicates with nothing to answer them.
 held the name—a periodic announcer for a single destination, which nothing in this package
 or its dependents constructed—is now `DestinationAnnouncer`.
 
-## [1.19.0]—Reference parity moves to RNS 1.5.2
+## [1.19.0]—reference parity moves to RNS 1.5.2
 
 `Reticulum.rnsProtocolVersion` names the Python RNS release whose wire protocol and
 behavior this port matches. It has read `1.4.2` since that audit. It now reads `1.5.2`.
@@ -105,7 +105,7 @@ announce handler that replays to `requesting_interfaces`. Three areas stay unpor
 purpose because the seam differs, and a test pins each one: traffic classes, `ifac_handled`,
 and the adaptive dataplane controls.
 
-## [1.18.0]—The conditional half of the interface stats payload
+## [1.18.0]—the conditional half of the interface stats payload
 
 `get_interface_stats` publishes two kinds of key: the ones every interface has, and the
 ones it reaches through `hasattr(interface, …)` because only some types carry them
@@ -118,7 +118,7 @@ divergences that reading 1.5.2's stats surface brought to light.
 
 ### Interfaces that keep peers report how many
 
-`rnstatus` prints a peer count as "N reachable", and also falls back to it for the client
+`rnstatus` prints a peer count as `N reachable`, and also falls back to it for the client
 column when an interface reports no clients (`rnstatus.py:555, 617, 642`). Upstream
 publishes it for the two interface types that keep a peer table, `AutoInterface` and
 `WeaveInterface` (`Reticulum.py:1501-1503`). This port published neither, so a Swift daemon
@@ -128,7 +128,7 @@ clients.
 ### A spawned interface names the interface that spawned it
 
 Clients of one server share a display name by design, so the parent is the only thing in
-the listing that says which server, radio or tunnel each row belongs to. Upstream reaches
+the listing that says which server, radio, or tunnel each row belongs to. Upstream reaches
 it through `hasattr(interface, "parent_interface")` and publishes the name and hash
 (`:1412-1414`).
 
@@ -181,7 +181,7 @@ daemon supplies them, which is the half that matters here.
 
 Tests pin all four as absent, so a later change that starts emitting one has to say why.
 
-## [1.17.0]—The rest of the protocol-violation sites, and three upstream never reaches
+## [1.17.0]—the rest of the protocol-violation sites, and three upstream never reaches
 
 1.16.0 landed the announce violation. This release finishes the survey of the other six
 sites in `Transport.py`: three land here, and three stay out with the reason recorded.
@@ -262,7 +262,7 @@ porting the counter would charge peers for frames that are fine.
   degenerate key bytes load, fail verification, and go unremarked on both sides. A test
   pins that silence.
 
-## [1.16.0]—Announce admission runs in upstream's order
+## [1.16.0]—announce admission runs in upstream's order
 
 The announce counter, the blackhole list and the protocol-violation counter all hang off
 one gate in Python (`Transport.py:1806-1811`). This port ran the three checks in three
@@ -336,7 +336,7 @@ global blackhole list at that point. This port has a per-instance transport, so 
 passes the test in. The existing `Bool`-returning overload keeps its behaviour and reports
 a blackholed announcer as a plain failure, matching upstream without the flag.
 
-## [1.15.0]—`packet_filter` matches upstream again
+## [1.15.0]—the `packet_filter` surface matches upstream again
 
 Found while reading `Transport.py` for the protocol-violation counters: the packet filter
 itself had drifted from the Python function it mirrors, in four places, none of them
@@ -395,7 +395,7 @@ make this port's `Violatns.` column report events the daemon it mirrors reports 
 carrying none of these fixes and called by nothing but its own tests. Both spellings now run
 one implementation.
 
-## [1.14.0]—The `rnstatus` and `rnir` command surfaces at RNS 1.5.2
+## [1.14.0]—the `rnstatus` and `rnir` command surfaces at RNS 1.5.2
 
 1.13.0 taught the daemon to publish the traffic aggregates a Python `rnstatus` reads. This
 release is the other half: the client that renders them, and the flags that ask for them.
@@ -491,7 +491,7 @@ of the snapshot.
 
 `Reticulum.rnsProtocolVersion` stays at 1.4.2.
 
-## [1.12.0]—Relays now check the proofs they forward
+## [1.12.0]—relays now check the proofs they forward
 
 A transport node relaying a link-request proof forwarded it without looking at the signature.
 Python validates every one against the responder's recalled identity and branches hard on the
@@ -584,7 +584,7 @@ instead of dropping and counting it. Present since 1.4.2, and unchanged here.
 
 `Reticulum.rnsProtocolVersion` stays at 1.4.2.
 
-## [1.11.0]—Python's `rnstatus` couldn't display a Swift daemon at all
+## [1.11.0]—the Python `rnstatus` couldn't display a Swift daemon at all
 
 `rnstatus` reads most of the interface-stats dictionary defensively, guarding each lookup
 with `if "key" in ifstat`. It doesn't guard `ifstat["txdrp"]` (`rnstatus.py:495`), and the
@@ -885,7 +885,7 @@ than the path-response filter's—it's fixed too.
 ### Fixed—a control listener that reported a bind it didn't achieve (`bugs/040`)
 
 `NWListener` reports bind failures asynchronously through `stateUpdateHandler`. None was set,
-so a listener that never bound still logged "RPC server started on port N", and the caller
+so a listener that never bound still logged `RPC server started on port N`, and the caller
 discarded the errors that *were* raised. The daemon then ran normally while `rnstatus`,
 `rnpath`, `rnprobe`, `rnid -r` and `rnx` all answered "Couldn't connect to instance control
 socket"—from the utility's side, indistinguishable from no daemon at all. The failure is
@@ -894,8 +894,8 @@ now detected and logged at CRITICAL, naming what has become unreachable.
 ### Upgrading
 
 **Expect one cold start.** A daemon upgrading past this release meets none of its own
-previous state files and starts with an empty path table, no known destinations and an empty
-replay window, relearning them from announces. That's exactly what the reference does on a
+previous state files and starts with an empty path table, no known destinations, and an
+empty replay window, relearning them from announces. That's exactly what the reference does on a
 fresh install, and what it does for any file it can't find (`Identity.py:238-240`,
 `Transport.py:243`).
 
@@ -1050,7 +1050,7 @@ falsified both. They're corrected here rather than edited out of history.
   - `SAMSocket.connect()`—`.tcp`, so a SAM bridge that stopped answering left the I2P peer
     online forever. It now takes Python's **I2P** timing set (`I2P_USER_TIMEOUT` 45,
     `I2P_PROBE_AFTER` 10, `I2P_PROBE_INTERVAL` 9, `I2P_PROBES` 5), selected by
-    `i2p_tunneled = True` at `TCPInterface.py:190-194` — a distinction this port did not
+    `i2p_tunneled = True` at `TCPInterface.py:190-194`—a distinction this port did not
     previously have, and the direct-TCP timers would tear down a healthy tunnel.
   - `PosixTCPServer.acceptOne()`—set only `SO_NOSIGPIPE` where Python sets `TCP_NODELAY`
     on every accepted shared-instance socket (`LocalInterface.py:98-100`).
@@ -1092,7 +1092,7 @@ falsified both. They're corrected here rather than edited out of history.
 - `RNCopyDiskFileSystem.init()` gains an `environment:` parameter (defaulted, so existing
   callers are unaffected).
 
-## [1.7.0]—TCP interface naming, reconnection and keepalive
+## [1.7.0]—TCP interface naming, reconnection, and keepalive
 
 A minor rather than a patch release: the fixes add public API (`reconnectWait`,
 `maxReconnectTries`, `bindIP`, `HDLC.FrameDecoder.reset()`) and change what every TCP and
@@ -1135,7 +1135,7 @@ UDP interface calls itself—and therefore its `Interface.hash`, which is
 
   Adds `reconnectWait` (default 5 seconds) and `maxReconnectTries` (default nil = unlimited,
   config key `max_reconnect_tries`), cancels the superseded connection before each redial,
-  and logs Python's "Reconnected socket for …" / "Max reconnection attempts reached for …".
+  and logs Python's `Reconnected socket for …` and `Max reconnection attempts reached for …`.
   `.waiting` is no longer swallowed: a refused peer is retried on Python's clock instead of
   silently inside `NWConnection`.
 
@@ -1147,7 +1147,7 @@ UDP interface calls itself—and therefore its `Interface.hash`, which is
   `NWConnection(to:using: .tcp)` takes Network.framework's defaults and those have keepalive
   off. A peer that vanished *without sending FIN*—a machine that slept, a NAT that dropped
   the mapping, a peer that was hard-killed—therefore left the connection `.ready` forever:
-  no event fired, the interface kept reporting "Up", and everything sent through it was
+  no event fired, the interface kept reporting `Up`, and everything sent through it was
   silently discarded. Reported as "RetiOS doesn't reconnect to the mesh after the laptop
   sleeps", and the reason the reconnect fix above couldn't cover that case on its own—nothing
   ever triggered it.
@@ -1193,7 +1193,7 @@ UDP interface calls itself—and therefore its `Interface.hash`, which is
 - `HDLC.FrameDecoder.reset()`—drops a partially received frame, so a half-decoded frame
   can't be prepended to the first bytes of a reconnected session.
 
-## [1.6.0]—The `rn*` command-line utilities
+## [1.6.0]—the `rn*` command-line utilities
 
 Ports of the tools in `RNS/Utilities`, each split into a testable library type under
 `Sources/ReticulumSwift/Utilities/` and a thin executable target that only parses
@@ -1261,7 +1261,7 @@ client indexes directly, so the Python side raised rather than degrading.
   local client therefore redid work the shared instance had already done: `filterAndRecord`
   re-ran the HEADER_2 transport-id filter and dropped packets that had been forwarded *to
   us*, `shouldApplyDelta` applied the local hops delta a second time, and `rnprobe` took the
-  standalone branch and never reported RSSI, SNR or Link Quality.
+  standalone branch and never reported RSSI, SNR, or Link Quality.
 - **`blackholed_identities` returned `{hash: true}`.** Python returns the entry dictionary
   `{"source", "until", "reason"}` verbatim, and `rnpath -b` reads all three fields.
 - **The `/path` remote-management handler dropped keys.** `timestamp` and `interface` were
@@ -1276,11 +1276,11 @@ client indexes directly, so the Python side raised rather than degrading.
   prints as the network's "Access" fingerprint. A Swift node and a Python node on the same
   IFAC network displayed different access codes.
 - **`drop:path` over RPC returned nil** instead of the bool from `expire_path`, which
-  `rnpath` uses to choose between "Path to … was dropped" and "No path known".
+  `rnpath` uses to choose between `Path to … was dropped` and `No path known`.
 - **Interface `type` and `short_name` published Swift class names.** A Python client saw
   `PosixTCPServer` where a Python daemon reports `LocalServerInterface`, and would have seen
   `LocalInterface` for what Python calls `LocalClientInterface`; `short_name` reported
-  "Shared Instance" where Python hardcodes "Reticulum".
+  `Shared Instance` where Python hardcodes `Reticulum`.
 - **Per-interface key order in the stats payload didn't match Python's.** `rnstatus -j`
   serialises with `json.dumps`, which preserves insertion order, so the order is part of the
   `-j` output contract. `announce_queue` was also emitted unconditionally, where Python
@@ -1342,7 +1342,7 @@ ported:
   has started a stack, the code it asks for is discarded and the process exits 0. The cause
   is `Reticulum.exit_handler`, registered with `atexit` (`Reticulum.py:369`): isolated by
   unregistering it, after which the very same `sys.exit(2)` exits 2. It applies to every
-  post-stack exit in every tool—`rnstatus`'s `exit(2)` on "Could not get RNS status",
+  post-stack exit in every tool—`rnstatus`'s `exit(2)` on `Could not get RNS status`,
   `rnpath`'s `exit(1)` and `exit(20)`—so `rnstatus; echo $?` reports success when the
   status was never fetched. Matching that would mean no Swift utility could signal failure
   to a script either, so the codes each tool's own source asks for are used instead.
@@ -1360,8 +1360,8 @@ ported:
 ## [1.5.0]—RNS 1.4.1 parity: interface gravity and dynamic path re-balancing
 
 Brings the port up to Python RNS 1.4.1 (released 2026-07-24). The two headline
-features both change how paths are chosen, so a mixed Swift/Python mesh will
-converge differently than before—in the same direction Python now does.
+features both change how paths are chosen, so a mixed Swift/Python mesh
+converges differently than before—in the same direction Python now does.
 
 ### Added
 
@@ -1391,8 +1391,8 @@ converge differently than before—in the same direction Python now does.
   registered handlers. Oversized single-packet requests are dropped before the
   msgpack body is unpacked; oversized requests advertised as a Resource are
   rejected at advertisement time, so nothing transfers at all.
-- **`maxResponseSize:` on `Link.request(...)`** caps the response a caller will
-  accept, with the same two enforcement points. An over-size response fails the
+- **`maxResponseSize:` on `Link.request(...)`** caps the response a caller
+  accepts, with the same two enforcement points. An over-size response fails the
   receipt (new `RequestReceipt.responseRejected()`) rather than delivering
   truncated data.
 - **`announces_to_internal`** per-interface option. Set on the interface an
@@ -1571,7 +1571,7 @@ this minor version adds a case.
   `allowLinkPathRebalance` (the first link re-balances and proceeds); with it
   disabled, such a link stays pending.
 
-## [1.4.3]—Thread-safe traffic counters and packet-handle state
+## [1.4.3]—thread-safe traffic counters and packet-handle state
 
 Data races only, no wire-format or behavioural change. Every reported number is
 computed exactly as before; the difference is that reading one no longer races
@@ -1656,7 +1656,7 @@ full suite.
   receipt via the transfer's failure hook. Fixes NomadNet "pages won't load" for
   real pages over slower / multi-hop meshes.
 
-## [1.4.1]—Correct the reported library version
+## [1.4.1]—correct the reported library version
 
 ### Fixed
 
@@ -1673,7 +1673,7 @@ full suite.
   release `version`. Mirrors Python's single `RNS.__version__` as a parity
   reference.
 
-## [1.4.0]—Large link packets, response Resources & RNS 1.4.0 parity
+## [1.4.0]—large link packets, response Resources & RNS 1.4.0 parity
 
 ### Fixed
 
@@ -1713,7 +1713,7 @@ full suite.
   matrix over a ~2 KB page) closes the blind spot where the suites only ever served
   a 20-byte page.
 
-## [1.0.0]—Initial public release
+## [1.0.0]—initial public release
 
 First public release of ReticulumSwift—a from-scratch Swift port of the
 [Reticulum Network Stack](https://reticulum.network), wire-compatible with the

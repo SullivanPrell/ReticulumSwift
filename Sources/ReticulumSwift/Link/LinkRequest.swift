@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 /// Request/response framing over a Link, matching Python's REQUEST
@@ -21,560 +31,683 @@ import Foundation
 /// `truncated_hash(packed_request)` (plaintext hash), so Swift uses the same
 /// for large payloads.
 public final class RequestReceipt {
-    /// Mirrors Python's RequestReceipt status constants.
-    public enum Status: Equatable {
-        case sent                       // request packet/resource sent
-        case delivered                  // request delivered, awaiting response
-        case receiving(Double)          // response resource in progress (0–1)
-        case ready(Data)                // response fully received
-        case failed(reason: String)     // failed or timed out
+  /// Mirrors Python's RequestReceipt status constants.
+  public enum Status: Equatable {
+    case sent  // request packet/resource sent
+    case delivered  // request delivered, awaiting response
+    case receiving(Double)  // response resource in progress (0–1)
+    case ready(Data)  // response fully received
+    case failed(reason: String)  // failed or timed out
 
-        public static func == (lhs: Status, rhs: Status) -> Bool {
-            switch (lhs, rhs) {
-            case (.sent, .sent): return true
-            case (.delivered, .delivered): return true
-            case (.receiving(let a), .receiving(let b)): return a == b
-            case (.ready(let a), .ready(let b)): return a == b
-            case (.failed(let a), .failed(let b)): return a == b
-            default: return false
-            }
-        }
+    /// Returns whether two statuses are equal.
+    public static func == (lhs: Status, rhs: Status) -> Bool {
+      switch (lhs, rhs) {
+      case (.sent, .sent): return true
+      case (.delivered, .delivered): return true
+      case (.receiving(let a), .receiving(let b)): return a == b
+      case (.ready(let a), .ready(let b)): return a == b
+      case (.failed(let a), .failed(let b)): return a == b
+      default: return false
+      }
     }
+  }
 
-    public let requestID: Data
-    public let path: String
-    public let sentAt: Date
-    public let requestSize: Int
+  /// Identifier of the request this receipt tracks.
+  public let requestID: Data
+  /// Request path the request was sent to.
+  public let path: String
+  /// Time the request was sent.
+  public let sentAt: Date
+  /// Size of the request payload in bytes.
+  public let requestSize: Int
 
-    /// Maximum accepted response size in bytes, or `nil` for unlimited.
-    /// A response exceeding it fails the receipt instead of being delivered;
-    /// when the response arrives as a Resource the advertisement is rejected so
-    /// nothing is transferred at all.
-    /// Mirrors Python's RNS 1.4.1 `RequestReceipt.max_response_size`.
-    public let maxResponseSize: Int?
+  /// Maximum accepted response size in bytes, or `nil` for unlimited.
+  ///
+  /// A response exceeding it fails the receipt instead of being delivered;
+  /// when the response arrives as a Resource the advertisement is rejected so
+  /// nothing is transferred at all.
+  /// Mirrors Python's RNS 1.4.1 `RequestReceipt.max_response_size`.
+  public let maxResponseSize: Int?
 
-    /// Guards every mutable field and callback below. `timeoutFired()` runs on a
-    /// global queue while `deliverReady()`/`fail()`/`updateProgress()` run on the
-    /// receive thread; without synchronization they race on `status` (allowing
-    /// both onResponse and onFailed to fire) and a lockless read of the
-    /// `Status`-with-`Data` enum can tear. Callbacks always fire OUTSIDE this
-    /// lock, so it never nests with any other lock.
-    private let stateLock = NSLock()
+  /// Guards every mutable field and callback below. `timeoutFired()` runs on a
+  /// global queue while `deliverReady()`/`fail()`/`updateProgress()` run on the
+  /// receive thread; without synchronization they race on `status` (allowing
+  /// both onResponse and onFailed to fire) and a lockless read of the
+  /// `Status`-with-`Data` enum can tear.
+  ///
+  /// Callbacks always fire OUTSIDE this
+  /// lock, so it never nests with any other lock.
+  private let stateLock = NSLock()
 
-    private var _responseSize: Int?
-    public var responseSize: Int? { stateLock.lock(); defer { stateLock.unlock() }; return _responseSize }
-    private var _responseTransferSize: Int?
-    /// Bytes actually moved on the wire to deliver the response (post-compression,
-    /// including Resource framing). Mirrors Python's
-    /// `RequestReceipt.response_transfer_size` (Link.py:1314), which `rnx` renders in its
-    /// The "Receiving result" spinner (N of M).
-    public var responseTransferSize: Int? {
-        stateLock.lock(); defer { stateLock.unlock() }; return _responseTransferSize
+  private var unsafeResponseSize: Int?
+  /// Size of the response payload in bytes, or `nil` before it is known.
+  public var responseSize: Int? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeResponseSize
+  }
+  private var unsafeResponseTransferSize: Int?
+  /// Bytes actually moved on the wire to deliver the response (post-compression,
+  /// including Resource framing).
+  ///
+  /// Mirrors Python's
+  /// `RequestReceipt.response_transfer_size` (Link.py:1314), which `rnx` renders in its
+  /// The "Receiving result" spinner (N of M).
+  public var responseTransferSize: Int? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeResponseTransferSize
+  }
+
+  /// Record response sizing.
+  ///
+  /// Mirrors Python Link.py:1027-1031, where `response_size` is
+  /// set once and `response_transfer_size` accumulates across a segmented Resource.
+  ///
+  /// - Parameters:
+  ///   - size: Response payload size in bytes, recorded only the first time it is supplied.
+  ///   - transferSize: Bytes transferred so far.
+  ///   - accumulate: When true, `transferSize` is added to any existing value; when false
+  ///     it replaces it.
+  func setResponseSizes(size: Int?, transferSize: Int?, accumulate: Bool) {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    if let size, unsafeResponseSize == nil { unsafeResponseSize = size }
+    if let transferSize {
+      unsafeResponseTransferSize =
+        accumulate ? (unsafeResponseTransferSize ?? 0) + transferSize : transferSize
     }
+  }
+  private var unsafeProgress: Double = 0
+  /// Fraction of the response received so far.
+  public var progress: Double {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeProgress
+  }
+  private var unsafeConcludedAt: Date?
+  /// Time the request concluded, or `nil` while it is outstanding.
+  public var concludedAt: Date? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeConcludedAt
+  }
+  private var unsafeResponseConcludedAt: Date?
+  /// Time the response finished arriving, or `nil` before then.
+  public var responseConcludedAt: Date? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeResponseConcludedAt
+  }
+  private var unsafeStatus: Status = .sent
+  /// Current state of the request.
+  public var status: Status {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeStatus
+  }
 
-    /// Record response sizing. Mirrors Python Link.py:1027-1031, where `response_size` is
-    /// set once and `response_transfer_size` accumulates across a segmented Resource.
-    ///
-    /// - Parameter accumulate: when true, `transferSize` is added to any existing value
-    ///   (`pending_request.response_transfer_size += ...`); when false it replaces it.
-    func setResponseSizes(size: Int?, transferSize: Int?, accumulate: Bool) {
-        stateLock.lock(); defer { stateLock.unlock() }
-        if let size, _responseSize == nil { _responseSize = size }
-        if let transferSize {
-            _responseTransferSize = accumulate ? (_responseTransferSize ?? 0) + transferSize : transferSize
-        }
-    }
-    private var _progress: Double = 0
-    public var progress: Double { stateLock.lock(); defer { stateLock.unlock() }; return _progress }
-    private var _concludedAt: Date?
-    public var concludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return _concludedAt }
-    private var _responseConcludedAt: Date?
-    public var responseConcludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return _responseConcludedAt }
-    private var _status: Status = .sent
-    public var status: Status { stateLock.lock(); defer { stateLock.unlock() }; return _status }
+  private var timeoutItem: DispatchWorkItem?
 
-    private var timeoutItem: DispatchWorkItem?
+  private var unsafeOnResponse: ((Data, RequestReceipt) -> Void)?
+  /// Called with the response payload when it arrives.
+  public var onResponse: ((Data, RequestReceipt) -> Void)? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeOnResponse
+    }
+    set {
+      // Replay-if-already-ready decided atomically with the assignment,
+      // then fired outside the lock (closes the lost/double-callback window).
+      stateLock.lock()
+      unsafeOnResponse = newValue
+      var replay: Data? = nil
+      if case .ready(let d) = unsafeStatus { replay = d }
+      stateLock.unlock()
+      if let d = replay { newValue?(d, self) }
+    }
+  }
+  private var unsafeOnFailed: ((String, RequestReceipt) -> Void)?
+  /// Called with a reason when the request fails.
+  public var onFailed: ((String, RequestReceipt) -> Void)? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeOnFailed
+    }
+    set {
+      stateLock.lock()
+      unsafeOnFailed = newValue
+      var replay: String? = nil
+      if case .failed(let r) = unsafeStatus { replay = r }
+      stateLock.unlock()
+      if let r = replay { newValue?(r, self) }
+    }
+  }
+  private var unsafeOnProgress: ((Double, RequestReceipt) -> Void)?
+  /// Called as the response transfer progresses.
+  public var onProgress: ((Double, RequestReceipt) -> Void)? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeOnProgress
+    }
+    set {
+      stateLock.lock()
+      unsafeOnProgress = newValue
+      stateLock.unlock()
+    }
+  }
+  private var unsafeOnConclude: (() -> Void)?
+  /// Fires EXACTLY ONCE when the receipt concludes (ready OR failed), OUTSIDE
+  /// `stateLock`.
+  ///
+  /// Link wires this to evict the receipt from `pendingRequests` so
+  /// timed-out / failed requests are removed too (not only successful ones),
+  /// bounding the dictionary. Wire-neutral: no packet is sent on conclusion.
+  var onConclude: (() -> Void)? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeOnConclude
+    }
+    set {
+      stateLock.lock()
+      unsafeOnConclude = newValue
+      stateLock.unlock()
+    }
+  }
 
-    private var _onResponse: ((Data, RequestReceipt) -> Void)?
-    public var onResponse: ((Data, RequestReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onResponse }
-        set {
-            // Replay-if-already-ready decided atomically with the assignment,
-            // then fired outside the lock (closes the lost/double-callback window).
-            stateLock.lock()
-            _onResponse = newValue
-            var replay: Data? = nil
-            if case .ready(let d) = _status { replay = d }
-            stateLock.unlock()
-            if let d = replay { newValue?(d, self) }
-        }
+  /// Creates a receipt tracking an outbound request.
+  public init(
+    requestID: Data, path: String, requestSize: Int, timeout: TimeInterval? = nil,
+    maxResponseSize: Int? = nil
+  ) {
+    self.requestID = requestID
+    self.path = path
+    self.sentAt = Date()
+    self.requestSize = requestSize
+    self.maxResponseSize = maxResponseSize
+    if let t = timeout {
+      let item = DispatchWorkItem { [weak self] in self?.timeoutFired() }
+      self.timeoutItem = item
+      DispatchQueue.global().asyncAfter(deadline: .now() + t, execute: item)
     }
-    private var _onFailed: ((String, RequestReceipt) -> Void)?
-    public var onFailed: ((String, RequestReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onFailed }
-        set {
-            stateLock.lock()
-            _onFailed = newValue
-            var replay: String? = nil
-            if case .failed(let r) = _status { replay = r }
-            stateLock.unlock()
-            if let r = replay { newValue?(r, self) }
-        }
-    }
-    private var _onProgress: ((Double, RequestReceipt) -> Void)?
-    public var onProgress: ((Double, RequestReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onProgress }
-        set { stateLock.lock(); _onProgress = newValue; stateLock.unlock() }
-    }
-    private var _onConclude: (() -> Void)?
-    /// Fires EXACTLY ONCE when the receipt concludes (ready OR failed), OUTSIDE
-    /// `stateLock`. Link wires this to evict the receipt from `pendingRequests` so
-    /// timed-out / failed requests are removed too (not only successful ones),
-    /// bounding the dictionary. Wire-neutral: no packet is sent on conclusion.
-    var onConclude: (() -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onConclude }
-        set { stateLock.lock(); _onConclude = newValue; stateLock.unlock() }
-    }
+  }
 
-    public init(requestID: Data, path: String, requestSize: Int, timeout: TimeInterval? = nil,
-                maxResponseSize: Int? = nil) {
-        self.requestID = requestID
-        self.path = path
-        self.sentAt = Date()
-        self.requestSize = requestSize
-        self.maxResponseSize = maxResponseSize
-        if let t = timeout {
-            let item = DispatchWorkItem { [weak self] in self?.timeoutFired() }
-            self.timeoutItem = item
-            DispatchQueue.global().asyncAfter(deadline: .now() + t, execute: item)
-        }
-    }
+  func markDelivered() {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    guard case .sent = unsafeStatus else { return }
+    unsafeStatus = .delivered
+  }
 
-    func markDelivered() {
-        stateLock.lock(); defer { stateLock.unlock() }
-        guard case .sent = _status else { return }
-        _status = .delivered
+  func updateProgress(_ p: Double) {
+    stateLock.lock()
+    // Don't move backwards out of a terminal state.
+    switch unsafeStatus {
+    case .ready, .failed:
+      stateLock.unlock()
+      return
+    default: break
     }
+    unsafeProgress = p
+    unsafeStatus = .receiving(p)
+    let cb = unsafeOnProgress
+    stateLock.unlock()
+    cb?(p, self)
+  }
 
-    func updateProgress(_ p: Double) {
-        stateLock.lock()
-        // Don't move backwards out of a terminal state.
-        switch _status {
-        case .ready, .failed: stateLock.unlock(); return
-        default: break
-        }
-        _progress = p
-        _status = .receiving(p)
-        let cb = _onProgress
-        stateLock.unlock()
-        cb?(p, self)
+  /// The response has begun arriving as a Resource.
+  ///
+  /// Disarm the fixed request
+  /// timeout: from here the ResourceTransfer's own watchdog governs the
+  /// (possibly long) transfer, exactly as Python hands lifetime control to the
+  /// Resource watchdog once the RequestReceipt enters RECEIVING (Link.py
+  /// `RequestReceipt.response_resource_progress`). Without this, a response
+  /// whose Resource takes longer than the request timeout to transfer—any
+  /// real, multi-KB page over a slower/multi-hop mesh—is aborted mid-download
+  /// by `timeoutFired()` even though it's progressing normally.
+  ///
+  /// Idempotent and safe to call repeatedly; a no-op once the receipt has
+  /// concluded (ready/failed). Distinct from `updateProgress` so the request
+  /// *send* path (a large outbound request resource) is unaffected—only an
+  /// incoming response resource disarms the timeout.
+  /// - Parameter advertisedSize: the response's advertised size in bytes, if
+  ///   known. Python assigns `pending_request.response_size` from
+  ///   `ResourceAdvertisement.read_size(packet)` as soon as the response
+  ///   advertisement arrives (Link.py), which is what lets a caller's progress
+  ///   callback render "x of y bytes" while the transfer is still running.
+  ///   Without it `responseSize` stayed nil until the transfer concluded, so
+  ///   anything reading it mid-transfer saw nothing.
+  func beginReceivingResponse(advertisedSize: Int? = nil) {
+    stateLock.lock()
+    switch unsafeStatus {
+    case .ready, .failed:
+      stateLock.unlock()
+      return
+    default: break
     }
+    timeoutItem?.cancel()
+    timeoutItem = nil
+    if let advertisedSize, unsafeResponseSize == nil { unsafeResponseSize = advertisedSize }
+    unsafeStatus = .receiving(unsafeProgress)
+    stateLock.unlock()
+  }
 
-    /// The response has begun arriving as a Resource. Disarm the fixed request
-    /// timeout: from here the ResourceTransfer's own watchdog governs the
-    /// (possibly long) transfer, exactly as Python hands lifetime control to the
-    /// Resource watchdog once the RequestReceipt enters RECEIVING (Link.py
-    /// `RequestReceipt.response_resource_progress`). Without this, a response
-    /// whose Resource takes longer than the request timeout to transfer—any
-    /// real, multi-KB page over a slower/multi-hop mesh—is aborted mid-download
-    /// by `timeoutFired()` even though it's progressing normally.
-    ///
-    /// Idempotent and safe to call repeatedly; a no-op once the receipt has
-    /// concluded (ready/failed). Distinct from `updateProgress` so the request
-    /// *send* path (a large outbound request resource) is unaffected—only an
-    /// incoming response resource disarms the timeout.
-    /// - Parameter advertisedSize: the response's advertised size in bytes, if
-    ///   known. Python assigns `pending_request.response_size` from
-    ///   `ResourceAdvertisement.read_size(packet)` as soon as the response
-    ///   advertisement arrives (Link.py), which is what lets a caller's progress
-    ///   callback render "x of y bytes" while the transfer is still running.
-    ///   Without it `responseSize` stayed nil until the transfer concluded, so
-    ///   anything reading it mid-transfer saw nothing.
-    func beginReceivingResponse(advertisedSize: Int? = nil) {
-        stateLock.lock()
-        switch _status {
-        case .ready, .failed: stateLock.unlock(); return
-        default: break
-        }
-        timeoutItem?.cancel()
-        timeoutItem = nil
-        if let advertisedSize, _responseSize == nil { _responseSize = advertisedSize }
-        _status = .receiving(_progress)
-        stateLock.unlock()
+  func deliverReady(_ data: Data, size: Int? = nil) {
+    stateLock.lock()
+    // Only conclude once, from a non-terminal state.
+    switch unsafeStatus {
+    case .ready, .failed:
+      stateLock.unlock()
+      return
+    default: break
     }
+    timeoutItem?.cancel()
+    timeoutItem = nil
+    // Only overwrite when a size is supplied, so a value already recorded from a
+    // response Resource advertisement survives conclusion.
+    if let size { unsafeResponseSize = size }
+    unsafeResponseConcludedAt = Date()
+    unsafeConcludedAt = Date()
+    unsafeProgress = 1.0
+    unsafeStatus = .ready(data)
+    let cb = unsafeOnResponse
+    let conclude = unsafeOnConclude
+    stateLock.unlock()
+    cb?(data, self)
+    conclude?()
+  }
 
-    func deliverReady(_ data: Data, size: Int? = nil) {
-        stateLock.lock()
-        // Only conclude once, from a non-terminal state.
-        switch _status {
-        case .ready, .failed: stateLock.unlock(); return
-        default: break
-        }
-        timeoutItem?.cancel()
-        timeoutItem = nil
-        // Only overwrite when a size is supplied, so a value already recorded from a
-        // response Resource advertisement survives conclusion.
-        if let size { _responseSize = size }
-        _responseConcludedAt = Date()
-        _concludedAt = Date()
-        _progress = 1.0
-        _status = .ready(data)
-        let cb = _onResponse
-        let conclude = _onConclude
-        stateLock.unlock()
-        cb?(data, self)
-        conclude?()
+  func fail(_ reason: String) {
+    stateLock.lock()
+    // Only conclude once, from a non-terminal state (matches Python's guard;
+    // don't overwrite a delivered .ready result with a late timeout).
+    switch unsafeStatus {
+    case .ready, .failed:
+      stateLock.unlock()
+      return
+    default: break
     }
+    timeoutItem?.cancel()
+    timeoutItem = nil
+    unsafeConcludedAt = Date()
+    unsafeStatus = .failed(reason: reason)
+    let cb = unsafeOnFailed
+    let conclude = unsafeOnConclude
+    stateLock.unlock()
+    cb?(reason, self)
+    conclude?()
+  }
 
-    func fail(_ reason: String) {
-        stateLock.lock()
-        // Only conclude once, from a non-terminal state (matches Python's guard;
-        // don't overwrite a delivered .ready result with a late timeout).
-        switch _status {
-        case .ready, .failed: stateLock.unlock(); return
-        default: break
-        }
-        timeoutItem?.cancel()
-        timeoutItem = nil
-        _concludedAt = Date()
-        _status = .failed(reason: reason)
-        let cb = _onFailed
-        let conclude = _onConclude
-        stateLock.unlock()
-        cb?(reason, self)
-        conclude?()
-    }
+  /// Conclude this receipt because the response exceeded `maxResponseSize`.
+  ///
+  /// Mirrors Python's RNS 1.4.1 `RequestReceipt.response_rejected()`, which
+  /// runs the *failed* callback path—a caller that set a size cap wants a
+  /// failure, not a truncated success.
+  ///
+  /// Python guards on `self.status == RequestReceipt.DELIVERED`, so a rejection
+  /// arriving for a receipt that's merely `SENT`, already `RECEIVING`, or
+  /// already concluded fires nothing at all. `fail()` alone is more permissive
+  /// than that (it accepts any non-terminal state), so the state check is made
+  /// explicit here.
+  func responseRejected() {
+    stateLock.lock()
+    let isDelivered: Bool
+    if case .delivered = unsafeStatus { isDelivered = true } else { isDelivered = false }
+    stateLock.unlock()
+    guard isDelivered else { return }
+    fail("response exceeds maximum accepted size")
+  }
 
-    /// Conclude this receipt because the response exceeded `maxResponseSize`.
-    /// Mirrors Python's RNS 1.4.1 `RequestReceipt.response_rejected()`, which
-    /// runs the *failed* callback path—a caller that set a size cap wants a
-    /// failure, not a truncated success.
-    ///
-    /// Python guards on `self.status == RequestReceipt.DELIVERED`, so a rejection
-    /// arriving for a receipt that's merely `SENT`, already `RECEIVING`, or
-    /// already concluded fires nothing at all. `fail()` alone is more permissive
-    /// than that (it accepts any non-terminal state), so the state check is made
-    /// explicit here.
-    func responseRejected() {
-        stateLock.lock()
-        let isDelivered: Bool
-        if case .delivered = _status { isDelivered = true } else { isDelivered = false }
-        stateLock.unlock()
-        guard isDelivered else { return }
-        fail("response exceeds maximum accepted size")
-    }
+  private func timeoutFired() {
+    // fail() itself is guarded; calling it unconditionally is safe.
+    fail("timeout")
+  }
 
-    private func timeoutFired() {
-        // fail() itself is guarded; calling it unconditionally is safe.
-        fail("timeout")
-    }
+  /// True if the response has been fully received.
+  public var isReady: Bool {
+    if case .ready = status { return true }
+    return false
+  }
 
-    /// True if the response has been fully received.
-    public var isReady: Bool {
-        if case .ready = status { return true }
-        return false
-    }
+  /// True if the request failed or timed out.
+  public var isFailed: Bool {
+    if case .failed = status { return true }
+    return false
+  }
 
-    /// True if the request failed or timed out.
-    public var isFailed: Bool {
-        if case .failed = status { return true }
-        return false
-    }
+  /// The response data if status is `.ready`, otherwise nil.
+  public var response: Data? {
+    if case .ready(let d) = status { return d }
+    return nil
+  }
 
-    /// The response data if status is `.ready`, otherwise nil.
-    public var response: Data? {
-        if case .ready(let d) = status { return d }
-        return nil
-    }
-
-    /// Elapsed seconds from `sentAt` to when the response was received.
-    public var responseTime: TimeInterval? {
-        guard let r = responseConcludedAt else { return nil }
-        return r.timeIntervalSince(sentAt)
-    }
+  /// Elapsed seconds from `sentAt` to when the response was received.
+  public var responseTime: TimeInterval? {
+    guard let r = responseConcludedAt else { return nil }
+    return r.timeIntervalSince(sentAt)
+  }
 }
 
 extension Link {
 
-    /// Send a request along `path`. Returns a receipt the caller can attach
-    /// `onResponse`/`onFailed` to.
-    ///
-    /// For small payloads (≤ link MDU) the request is sent as a single
-    /// DATA/REQUEST packet; larger payloads go via Resource (matching Python's
-    /// Link.request behavior).
-    ///
-    /// **request_id derivation:**
-    /// - Small packets: `truncated_hash(hashable_part_of_wire_packet)`—mirrors
-    ///   Python's `request_id = packet.getTruncatedHash()`.
-    /// - Large (Resource): `truncated_hash(packed_request)`—mirrors
-    ///   Python's Resource path.
-    ///
-    /// - Parameter timeout: Optional timeout in seconds. When the deadline
-    ///   elapses without a response the receipt transitions to `.failed`
-    ///   and `onFailed` is called (matching Python's request timeout).
-    @discardableResult
-    public func request(
-        path: String,
-        data: Data? = nil,
-        responseCallback: ((Data, RequestReceipt) -> Void)? = nil,
-        failedCallback: ((String, RequestReceipt) -> Void)? = nil,
-        progressCallback: ((Double, RequestReceipt) -> Void)? = nil,
-        timeout: TimeInterval? = nil,
-        maxResponseSize: Int? = nil
-    ) throws -> RequestReceipt {
-        // Wrap raw bytes as msgpack .bytes in the outer array (backward compatible).
-        let dataValue: MsgPack.Value = data.map { .bytes($0) } ?? .nil
-        return try request(path: path, dataValue: dataValue,
-                           responseCallback: responseCallback, failedCallback: failedCallback,
-                           progressCallback: progressCallback, timeout: timeout,
-                           maxResponseSize: maxResponseSize)
+  /// Sends a request along `path`.
+  ///
+  /// A payload that fits the link MDU is sent as a single data packet; anything larger goes
+  /// as a resource, matching `Link.request`. The request identifier is the truncated hash of
+  /// the wire packet for the former and of the packed request for the latter.
+  ///
+  /// - Parameters:
+  ///   - path: Request path registered on the remote destination.
+  ///   - data: Request payload, or `nil` for a request that carries none.
+  ///   - responseCallback: Called with the response payload when it arrives.
+  ///   - failedCallback: Called with a reason when the request fails.
+  ///   - progressCallback: Called as the response transfer progresses.
+  ///   - timeout: Seconds to wait for a response. When the deadline elapses the receipt
+  ///     transitions to `.failed` and `failedCallback` is called.
+  ///   - maxResponseSize: Largest response accepted, in bytes.
+  /// - Returns: A receipt tracking the request.
+  /// - Throws: `LinkError` when the link cannot carry the request.
+  @discardableResult
+  public func request(
+    path: String,
+    data: Data? = nil,
+    responseCallback: ((Data, RequestReceipt) -> Void)? = nil,
+    failedCallback: ((String, RequestReceipt) -> Void)? = nil,
+    progressCallback: ((Double, RequestReceipt) -> Void)? = nil,
+    timeout: TimeInterval? = nil,
+    maxResponseSize: Int? = nil
+  ) throws -> RequestReceipt {
+    // Wrap raw bytes as msgpack .bytes in the outer array (backward compatible).
+    let dataValue: MsgPack.Value = data.map { .bytes($0) } ?? .nil
+    return try request(
+      path: path, dataValue: dataValue,
+      responseCallback: responseCallback, failedCallback: failedCallback,
+      progressCallback: progressCallback, timeout: timeout,
+      maxResponseSize: maxResponseSize)
+  }
+
+  /// Python-wire-compatible request: embeds `nativeValue` directly in the outer
+  /// msgpack array, matching Python's `msgpack.packb([ts, pathHash, data])` format.
+  ///
+  /// Use this when talking to Python nodes (for example, LXMF propagation).
+  @discardableResult
+  public func request(
+    path: String,
+    nativeValue: MsgPack.Value,
+    responseCallback: ((Data, RequestReceipt) -> Void)? = nil,
+    failedCallback: ((String, RequestReceipt) -> Void)? = nil,
+    progressCallback: ((Double, RequestReceipt) -> Void)? = nil,
+    timeout: TimeInterval? = nil,
+    maxResponseSize: Int? = nil
+  ) throws -> RequestReceipt {
+    try request(
+      path: path, dataValue: nativeValue,
+      responseCallback: responseCallback, failedCallback: failedCallback,
+      progressCallback: progressCallback, timeout: timeout,
+      maxResponseSize: maxResponseSize)
+  }
+
+  @discardableResult
+  private func request(
+    path: String,
+    dataValue: MsgPack.Value,
+    responseCallback: ((Data, RequestReceipt) -> Void)?,
+    failedCallback: ((String, RequestReceipt) -> Void)?,
+    progressCallback: ((Double, RequestReceipt) -> Void)?,
+    timeout: TimeInterval?,
+    maxResponseSize: Int?
+  ) throws -> RequestReceipt {
+    guard status == .active else { throw LinkError.notActive }
+
+    let pathHash = Hashes.truncatedHash(Data(path.utf8))
+    let body = MsgPack.encode(
+      .array([
+        .double(Date().timeIntervalSince1970),
+        .bytes(pathHash),
+        dataValue,
+      ]))
+
+    // Default timeout mirrors Python: rtt * TRAFFIC_TIMEOUT_FACTOR + RESPONSE_MAX_GRACE_TIME*1.125
+    let effectiveTimeout: TimeInterval?
+    if let t = timeout {
+      effectiveTimeout = t
+    } else if let rtt {
+      effectiveTimeout = rtt * Link.trafficTimeoutFactor + Link.requestTimeoutGrace
+    } else {
+      effectiveTimeout = nil
     }
 
-    /// Python-wire-compatible request: embeds `nativeValue` directly in the outer
-    /// msgpack array, matching Python's `msgpack.packb([ts, pathHash, data])` format.
-    /// Use this when talking to Python nodes (for example, LXMF propagation).
-    @discardableResult
-    public func request(
-        path: String,
-        nativeValue: MsgPack.Value,
-        responseCallback: ((Data, RequestReceipt) -> Void)? = nil,
-        failedCallback: ((String, RequestReceipt) -> Void)? = nil,
-        progressCallback: ((Double, RequestReceipt) -> Void)? = nil,
-        timeout: TimeInterval? = nil,
-        maxResponseSize: Int? = nil
-    ) throws -> RequestReceipt {
-        return try request(path: path, dataValue: nativeValue,
-                           responseCallback: responseCallback, failedCallback: failedCallback,
-                           progressCallback: progressCallback, timeout: timeout,
-                           maxResponseSize: maxResponseSize)
+    // The link's negotiated MDU, not the base constant: Python decides packet-vs-Resource
+    // on `self.mdu` (`Link.py:493`), which tracks the negotiated MTU. Same seam as
+    // `bugs/016`—see `Resource.segmentSize(for:)`.
+    guard body.count <= mdu else {
+      // ---------------------------------------------------------------
+      // Large-payload (Resource) path
+      // Python uses truncated_hash(packed_request) here, so this port matches.
+      // ---------------------------------------------------------------
+      let requestID = Hashes.truncatedHash(body)
+
+      let receipt = RequestReceipt(
+        requestID: requestID,
+        path: path,
+        requestSize: body.count,
+        timeout: effectiveTimeout,
+        maxResponseSize: maxResponseSize
+      )
+      if let cb = responseCallback { receipt.onResponse = cb }
+      if let cb = failedCallback { receipt.onFailed = cb }
+      if let cb = progressCallback { receipt.onProgress = cb }
+
+      receipt.onConclude = { [weak self] in self?.evictPendingRequest(requestID) }
+      stateLock.lock()
+      pendingRequests[requestID] = receipt
+      stateLock.unlock()
+
+      let rt = ResourceTransfer(link: self)
+      rt.onFailed = { [weak receipt] _, _ in
+        receipt?.fail("resource request transfer failed")
+      }
+      try rt.send(payload: body, requestID: requestID, isRequest: true)
+
+      return receipt
+    }
+    // ---------------------------------------------------------------
+    // Small-packet path
+    // Build the wire Packet first to compute request_id from its
+    // hashable bytes (mirrors Python's getTruncatedHash).
+    // Receipt is stored BEFORE send() so a synchronous loopback
+    // transport can deliver the response without missing the lookup.
+    // ---------------------------------------------------------------
+    let (requestPacket, requestID) = try buildRequestPacket(body)
+
+    let receipt = RequestReceipt(
+      requestID: requestID,
+      path: path,
+      requestSize: body.count,
+      timeout: effectiveTimeout,
+      maxResponseSize: maxResponseSize
+    )
+    if let cb = responseCallback { receipt.onResponse = cb }
+    if let cb = failedCallback { receipt.onFailed = cb }
+    if let cb = progressCallback { receipt.onProgress = cb }
+
+    // Store before sending—response may arrive synchronously. Evict on
+    // conclusion (success OR timeout/failure) so the dictionary stays bounded.
+    receipt.onConclude = { [weak self] in self?.evictPendingRequest(requestID) }
+    stateLock.lock()
+    pendingRequests[requestID] = receipt
+    stateLock.unlock()
+
+    try sendPrebuiltPacket(requestPacket)
+
+    return receipt
+  }
+
+  // MARK: - Incoming request (responder side)
+
+  /// Dispatch an incoming REQUEST packet to the registered handler.
+  ///
+  /// `requestID` must be the **wire-format** packet hash
+  /// (`packet.truncatedPacketHash()`), which is what Link.receive()
+  /// passes after extracting it from the raw Packet. This matches Python's
+  /// `request_id = packet.getTruncatedHash()` so the response body sent
+  /// back carries the id the initiator expects.
+  func handleIncomingRequest(_ data: Data, requestID: Data) {
+    guard case .array(let parts) = (try? MsgPack.decode(data)) ?? .nil,
+      parts.count >= 3
+    else { return }
+    let requestedAt: Double = {
+      if case .double(let t) = parts[0] { return t }
+      if case .uint(let n) = parts[0] { return Double(n) }
+      if case .int(let n) = parts[0] { return Double(n) }
+      return 0
+    }()
+    guard case .bytes(let pathHash) = parts[1] else { return }
+    // Re-encode parts[2] so bytes-based handlers receive msgpack bytes regardless of
+    // whether the sender embedded the value natively (Python) or as bytes (old Swift).
+    // A .nil parts[2] yields nil payload (matches Python's data=None).
+    let rawValue = parts[2]
+    let payload: Data? = {
+      switch parts[2] {
+      case .nil: return nil
+      case .bytes(let b):  // old Swift: try decoding inner bytes first
+        if let decoded = try? MsgPack.decode(Data(b)),
+          case .nil = decoded
+        {
+          return nil
+        }
+        return Data(b)
+      default: return MsgPack.encode(parts[2])
+      }
+    }()
+    dispatchRequest(
+      pathHash: pathHash, payload: payload, rawValue: rawValue,
+      requestID: requestID, requestedAt: requestedAt)
+  }
+
+  /// Dispatches a received request to its handler and sends the response.
+  ///
+  /// Mirrors `Link.handle_request()`, including the allow policy check and the choice
+  /// between a single packet and a resource for the response.
+  ///
+  /// - Parameters:
+  ///   - pathHash: Truncated hash of the requested path.
+  ///   - payload: Request payload as bytes, or `nil` when the request carried none.
+  ///   - rawValue: The raw value from the incoming request frame. Passed to native
+  ///     handlers and unused by byte handlers.
+  ///   - requestID: Identifier the response is tagged with.
+  ///   - requestedAt: Time the requester recorded for the request.
+  func dispatchRequest(
+    pathHash: Data, payload: Data?, rawValue: MsgPack.Value = .nil,
+    requestID: Data, requestedAt: Double
+  ) {
+    guard let entry = destination.requestHandlers[pathHash] else { return }
+
+    // Check allow policy (mirrors Python ALLOW_NONE/ALL/LIST).
+    switch entry.allow {
+    case .none:
+      return
+    case .all:
+      break
+    case .list:
+      stateLock.lock()
+      let rid = remoteIdentity
+      stateLock.unlock()
+      guard let remoteHash = rid?.hash,
+        entry.allowedHashes.contains(remoteHash)
+      else { return }
     }
 
-    @discardableResult
-    private func request(
-        path: String,
-        dataValue: MsgPack.Value,
-        responseCallback: ((Data, RequestReceipt) -> Void)?,
-        failedCallback: ((String, RequestReceipt) -> Void)?,
-        progressCallback: ((Double, RequestReceipt) -> Void)?,
-        timeout: TimeInterval?,
-        maxResponseSize: Int?
-    ) throws -> RequestReceipt {
-        guard status == .active else { throw LinkError.notActive }
-
-        let pathHash = Hashes.truncatedHash(Data(path.utf8))
-        let body = MsgPack.encode(.array([
-            .double(Date().timeIntervalSince1970),
-            .bytes(pathHash),
-            dataValue
-        ]))
-
-        // Default timeout mirrors Python: rtt * TRAFFIC_TIMEOUT_FACTOR + RESPONSE_MAX_GRACE_TIME*1.125
-        let effectiveTimeout: TimeInterval?
-        if let t = timeout {
-            effectiveTimeout = t
-        } else if let rtt {
-            effectiveTimeout = rtt * Link.trafficTimeoutFactor + Link.requestTimeoutGrace
-        } else {
-            effectiveTimeout = nil
-        }
-
-        // The link's negotiated MDU, not the base constant: Python decides packet-vs-Resource
-        // on `self.mdu` (`Link.py:493`), which tracks the negotiated MTU. Same seam as
-        // `bugs/016`—see `Resource.segmentSize(for:)`.
-        if body.count <= mdu {
-            // ---------------------------------------------------------------
-            // Small-packet path
-            // Build the wire Packet first to compute request_id from its
-            // hashable bytes (mirrors Python's getTruncatedHash).
-            // Receipt is stored BEFORE send() so a synchronous loopback
-            // transport can deliver the response without missing the lookup.
-            // ---------------------------------------------------------------
-            let (requestPacket, requestID) = try buildRequestPacket(body)
-
-            let receipt = RequestReceipt(
-                requestID: requestID,
-                path: path,
-                requestSize: body.count,
-                timeout: effectiveTimeout,
-                maxResponseSize: maxResponseSize
-            )
-            if let cb = responseCallback  { receipt.onResponse = cb }
-            if let cb = failedCallback    { receipt.onFailed = cb }
-            if let cb = progressCallback  { receipt.onProgress = cb }
-
-            // Store before sending—response may arrive synchronously. Evict on
-            // conclusion (success OR timeout/failure) so the dictionary stays bounded.
-            receipt.onConclude = { [weak self] in self?.evictPendingRequest(requestID) }
-            stateLock.lock(); pendingRequests[requestID] = receipt; stateLock.unlock()
-
-            try sendPrebuiltPacket(requestPacket)
-
-            return receipt
-        } else {
-            // ---------------------------------------------------------------
-            // Large-payload (Resource) path
-            // Python uses truncated_hash(packed_request) here, so this port matches.
-            // ---------------------------------------------------------------
-            let requestID = Hashes.truncatedHash(body)
-
-            let receipt = RequestReceipt(
-                requestID: requestID,
-                path: path,
-                requestSize: body.count,
-                timeout: effectiveTimeout,
-                maxResponseSize: maxResponseSize
-            )
-            if let cb = responseCallback  { receipt.onResponse = cb }
-            if let cb = failedCallback    { receipt.onFailed = cb }
-            if let cb = progressCallback  { receipt.onProgress = cb }
-
-            receipt.onConclude = { [weak self] in self?.evictPendingRequest(requestID) }
-            stateLock.lock(); pendingRequests[requestID] = receipt; stateLock.unlock()
-
-            let rt = ResourceTransfer(link: self)
-            rt.onFailed = { [weak receipt] _, _ in
-                receipt?.fail("resource request transfer failed")
-            }
-            try rt.send(payload: body, requestID: requestID, isRequest: true)
-
-            return receipt
-        }
+    // The Resource payload for an over-MDU response is the SAME envelope as the
+    // single-packet path: msgpack([request_id, response]). Mirrors Python
+    // Link.handle_request (Link.py:848-852) which resources `packed_response =
+    // umsgpack.packb([request_id, response])`, and its initiator-side
+    // response_resource_concluded (Link.py:890-904) which unpacks exactly that.
+    // Resourcing the bare response value instead sends an un-enveloped payload: a Python
+    // fetcher's `unpackb([request_id, response])` throws on it, which surfaces as a timeout.
+    if let native = entry.nativeHandler {
+      // Native (Python-compatible) handler: response embedded directly in envelope.
+      guard let responseValue = native(pathHash, rawValue, requestID, self, requestedAt) else {
+        return
+      }
+      let responseBody = MsgPack.encode(.array([.bytes(requestID), responseValue]))
+      if responseBody.count <= mdu {
+        try? send(responseBody, context: .response)
+      } else {
+        let rt = ResourceTransfer(link: self)
+        try? rt.send(
+          payload: responseBody, requestID: requestID, isResponse: true,
+          autoCompress: entry.autoCompress)
+      }
+    } else {
+      // Bytes handler: response wrapped as .bytes in the envelope.
+      guard let response = entry.handler(pathHash, payload, requestID, self, requestedAt) else {
+        return
+      }
+      let responseBody = MsgPack.encode(.array([.bytes(requestID), .bytes(response)]))
+      if responseBody.count <= mdu {
+        try? send(responseBody, context: .response)
+      } else {
+        let rt = ResourceTransfer(link: self)
+        try? rt.send(
+          payload: responseBody, requestID: requestID, isResponse: true,
+          autoCompress: entry.autoCompress)
+      }
     }
+  }
 
-    // MARK: - Incoming request (responder side)
+  // MARK: - Incoming response (initiator side)
 
-    /// Dispatch an incoming REQUEST packet to the registered handler.
-    ///
-    /// `requestID` must be the **wire-format** packet hash
-    /// (`packet.truncatedPacketHash()`), which is what Link.receive()
-    /// passes after extracting it from the raw Packet. This matches Python's
-    /// `request_id = packet.getTruncatedHash()` so the response body sent
-    /// back carries the id the initiator expects.
-    func handleIncomingRequest(_ data: Data, requestID: Data) {
-        guard case .array(let parts) = (try? MsgPack.decode(data)) ?? .nil,
-              parts.count >= 3 else { return }
-        let requestedAt: Double = {
-            if case .double(let t) = parts[0] { return t }
-            if case .uint(let n) = parts[0] { return Double(n) }
-            if case .int(let n) = parts[0] { return Double(n) }
-            return 0
-        }()
-        guard case .bytes(let pathHash) = parts[1] else { return }
-        // Re-encode parts[2] so bytes-based handlers receive msgpack bytes regardless of
-        // whether the sender embedded the value natively (Python) or as bytes (old Swift).
-        // A .nil parts[2] yields nil payload (matches Python's data=None).
-        let rawValue = parts[2]
-        let payload: Data? = {
-            switch parts[2] {
-            case .nil:              return nil
-            case .bytes(let b):     // old Swift: try decoding inner bytes first
-                if let decoded = try? MsgPack.decode(Data(b)),
-                   case .nil = decoded { return nil }
-                return Data(b)
-            default:                return MsgPack.encode(parts[2])
-            }
-        }()
-        dispatchRequest(pathHash: pathHash, payload: payload, rawValue: rawValue,
-                        requestID: requestID, requestedAt: requestedAt)
+  func handleIncomingResponse(_ data: Data) {
+    guard case .array(let parts) = (try? MsgPack.decode(data)) ?? .nil,
+      parts.count >= 2,
+      case .bytes(let requestID) = parts[0]
+    else { return }
+    stateLock.lock()
+    let receipt = pendingRequests.removeValue(forKey: requestID)
+    stateLock.unlock()
+    guard let receipt else { return }
+    // Response data may be any msgpack value (Python sends native objects; old Swift sent bytes).
+    // Re-encode as bytes so callbacks receive a consistent Data payload to decode.
+    let responseData: Data
+    switch parts[1] {
+    case .bytes(let b): responseData = Data(b)  // already bytes (old Swift encoding)
+    default: responseData = MsgPack.encode(parts[1])  // native value (Python encoding)
     }
-
-    /// Dispatch to registered request handler (checking allow policy) and
-    /// send response (small or Resource). Mirrors Python's
-    /// `Link.handle_request()`.
-    ///
-    /// - Parameter rawValue: The raw `MsgPack.Value` from parts[2] of the incoming
-    ///   request wire frame. Passed directly to native handlers; unused by bytes handlers.
-    func dispatchRequest(pathHash: Data, payload: Data?, rawValue: MsgPack.Value = .nil,
-                         requestID: Data, requestedAt: Double) {
-        guard let entry = destination.requestHandlers[pathHash] else { return }
-
-        // Check allow policy (mirrors Python ALLOW_NONE/ALL/LIST).
-        switch entry.allow {
-        case .none:
-            return
-        case .all:
-            break
-        case .list:
-            stateLock.lock(); let rid = remoteIdentity; stateLock.unlock()
-            guard let remoteHash = rid?.hash,
-                  entry.allowedHashes.contains(remoteHash) else { return }
-        }
-
-        // The Resource payload for an over-MDU response is the SAME envelope as the
-        // single-packet path: msgpack([request_id, response]). Mirrors Python
-        // Link.handle_request (Link.py:848-852) which resources `packed_response =
-        // umsgpack.packb([request_id, response])`, and its initiator-side
-        // response_resource_concluded (Link.py:890-904) which unpacks exactly that.
-        // (An earlier version resourced the bare response value here, so the receiver
-        // got a msgpack-wrapped / un-enveloped payload—Swift↔Swift delivered the
-        // wrong bytes and a Python fetcher's unpackb([id, resp]) threw → timeout.)
-        if let native = entry.nativeHandler {
-            // Native (Python-compatible) handler: response embedded directly in envelope.
-            guard let responseValue = native(pathHash, rawValue, requestID, self, requestedAt) else { return }
-            let responseBody = MsgPack.encode(.array([.bytes(requestID), responseValue]))
-            if responseBody.count <= mdu {
-                try? send(responseBody, context: .response)
-            } else {
-                let rt = ResourceTransfer(link: self)
-                try? rt.send(payload: responseBody, requestID: requestID, isResponse: true,
-                             autoCompress: entry.autoCompress)
-            }
-        } else {
-            // Bytes handler: response wrapped as .bytes in the envelope.
-            guard let response = entry.handler(pathHash, payload, requestID, self, requestedAt) else { return }
-            let responseBody = MsgPack.encode(.array([.bytes(requestID), .bytes(response)]))
-            if responseBody.count <= mdu {
-                try? send(responseBody, context: .response)
-            } else {
-                let rt = ResourceTransfer(link: self)
-                try? rt.send(payload: responseBody, requestID: requestID, isResponse: true,
-                             autoCompress: entry.autoCompress)
-            }
-        }
+    // RNS 1.4.1 `max_response_size`. Python measures
+    // `len(umsgpack.packb(response_data)) - 2`—the response value re-encoded
+    // as msgpack, less 2—and caps THAT, not the delivered payload. The two
+    // differ: for a native value the delivered bytes are the encoding without
+    // the -2, and for a `.bytes` response the delivered bytes omit the msgpack
+    // bin header entirely. Measure Python's quantity explicitly rather than
+    // reusing whatever `responseData` happens to be.
+    //
+    // The same quantity is what Python passes as both `response_size` and
+    // `response_transfer_size` with `update_sizes=True` (Link.py:998-999), so
+    // record it on the receipt too—rnx's `-d` "Transferred N bytes …
+    // effective rate" line has nothing to report otherwise.
+    let measuredSize = MsgPack.encode(parts[1]).count - 2
+    if let cap = receipt.maxResponseSize, measuredSize > cap {
+      Reticulum.log(
+        "Rejected response with excessive size \(measuredSize) B on \(self)", level: .debug)
+      receipt.responseRejected()
+      return
     }
+    let transferSize = max(0, measuredSize)
+    receipt.setResponseSizes(size: transferSize, transferSize: transferSize, accumulate: false)
+    receipt.deliverReady(responseData, size: transferSize)
+  }
 
-    // MARK: - Incoming response (initiator side)
+  // MARK: - Legacy stub (kept for call-site compatibility)
 
-    func handleIncomingResponse(_ data: Data) {
-        guard case .array(let parts) = (try? MsgPack.decode(data)) ?? .nil,
-              parts.count >= 2,
-              case .bytes(let requestID) = parts[0] else { return }
-        stateLock.lock(); let receipt = pendingRequests.removeValue(forKey: requestID); stateLock.unlock()
-        guard let receipt else { return }
-        // Response data may be any msgpack value (Python sends native objects; old Swift sent bytes).
-        // Re-encode as bytes so callbacks receive a consistent Data payload to decode.
-        let responseData: Data
-        switch parts[1] {
-        case .bytes(let b): responseData = Data(b)  // already bytes (old Swift encoding)
-        default:            responseData = MsgPack.encode(parts[1])  // native value (Python encoding)
-        }
-        // RNS 1.4.1 `max_response_size`. Python measures
-        // `len(umsgpack.packb(response_data)) - 2`—the response value re-encoded
-        // as msgpack, less 2—and caps THAT, not the delivered payload. The two
-        // differ: for a native value the delivered bytes are the encoding without
-        // the -2, and for a `.bytes` response the delivered bytes omit the msgpack
-        // bin header entirely. Measure Python's quantity explicitly rather than
-        // reusing whatever `responseData` happens to be.
-        //
-        // The same quantity is what Python passes as both `response_size` and
-        // `response_transfer_size` with `update_sizes=True` (Link.py:998-999), so
-        // record it on the receipt too—rnx's `-d` "Transferred N bytes …
-        // effective rate" line has nothing to report otherwise.
-        let measuredSize = MsgPack.encode(parts[1]).count - 2
-        if let cap = receipt.maxResponseSize, measuredSize > cap {
-            Reticulum.log("Rejected response with excessive size \(measuredSize) B on \(self)", level: .debug)
-            receipt.responseRejected()
-            return
-        }
-        let transferSize = max(0, measuredSize)
-        receipt.setResponseSizes(size: transferSize, transferSize: transferSize, accumulate: false)
-        receipt.deliverReady(responseData, size: transferSize)
-    }
-
-    // MARK: - Legacy stub (kept for call-site compatibility)
-
-    /// No-op. REQUEST and RESPONSE contexts are now dispatched directly in
-    /// `Link.receive()` using `packet.truncatedPacketHash()` for the request_id,
-    /// matching Python's `packet.getTruncatedHash()` wire-compat semantics.
-    func bindRequestDispatchIfNeeded() { }
+  /// No-op.
+  ///
+  /// REQUEST and RESPONSE contexts are now dispatched directly in
+  /// `Link.receive()` using `packet.truncatedPacketHash()` for the request_id,
+  /// matching Python's `packet.getTruncatedHash()` wire-compat semantics.
+  func bindRequestDispatchIfNeeded() {}
 }

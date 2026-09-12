@@ -1,78 +1,89 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Tests for Reticulum static API parity with Python Reticulum static methods.
 final class ReticulumStaticParityTests: XCTestCase {
 
-    // MARK: - shouldAutoconnectDiscoveredInterfaces / maxAutoconnectedInterfaces
+  // MARK: - shouldAutoconnectDiscoveredInterfaces / maxAutoconnectedInterfaces
 
-    func testShouldAutoconnectDefaultsFalse() {
-        // Default is 0 → false
-        XCTAssertFalse(Reticulum.shouldAutoconnectDiscoveredInterfaces())
-    }
+  func testShouldAutoconnectDefaultsFalse() {
+    // Default is 0 → false
+    XCTAssertFalse(Reticulum.shouldAutoconnectDiscoveredInterfaces())
+  }
 
-    func testMaxAutoconnectedInterfacesDefaultsZero() {
-        XCTAssertEqual(Reticulum.maxAutoconnectedInterfaces(), 0)
-    }
+  func testMaxAutoconnectedInterfacesDefaultsZero() {
+    XCTAssertEqual(Reticulum.maxAutoconnectedInterfaces(), 0)
+  }
 
-    func testShouldAutoconnectTrueWhenMaxIsPositive() {
-        let previous = Reticulum.maxAutoconnectedInterfaces_
-        Reticulum.maxAutoconnectedInterfaces_ = 3
-        XCTAssertTrue(Reticulum.shouldAutoconnectDiscoveredInterfaces())
-        XCTAssertEqual(Reticulum.maxAutoconnectedInterfaces(), 3)
-        Reticulum.maxAutoconnectedInterfaces_ = previous
-    }
+  func testShouldAutoconnectTrueWhenMaxIsPositive() {
+    let previous = Reticulum.storedMaxAutoconnectedInterfaces
+    Reticulum.storedMaxAutoconnectedInterfaces = 3
+    XCTAssertTrue(Reticulum.shouldAutoconnectDiscoveredInterfaces())
+    XCTAssertEqual(Reticulum.maxAutoconnectedInterfaces(), 3)
+    Reticulum.storedMaxAutoconnectedInterfaces = previous
+  }
 
-    // MARK: - remoteManagementEnabled / probeDestinationEnabled / linkMtuDiscovery
+  // MARK: - remoteManagementEnabled / probeDestinationEnabled / linkMtuDiscovery
 
-    func testRemoteManagementEnabledDefaultsFalse() {
-        XCTAssertFalse(Reticulum.remoteManagementEnabled())
-    }
+  func testRemoteManagementEnabledDefaultsFalse() {
+    XCTAssertFalse(Reticulum.remoteManagementEnabled())
+  }
 
-    func testProbeDestinationEnabledDefaultsFalse() {
-        XCTAssertFalse(Reticulum.probeDestinationEnabled())
-    }
+  func testProbeDestinationEnabledDefaultsFalse() {
+    XCTAssertFalse(Reticulum.probeDestinationEnabled())
+  }
 
-    func testLinkMtuDiscoveryDefaultsTrue() {
-        XCTAssertTrue(Reticulum.linkMtuDiscovery())
-    }
+  func testLinkMtuDiscoveryDefaultsTrue() {
+    XCTAssertTrue(Reticulum.linkMtuDiscovery())
+  }
 
-    // MARK: - publishBlackholeEnabled / blackholeSources
+  // MARK: - publishBlackholeEnabled / blackholeSources
 
-    func testPublishBlackholeEnabledDefaultsFalse() {
-        XCTAssertFalse(Reticulum.publishBlackholeEnabled())
-    }
+  func testPublishBlackholeEnabledDefaultsFalse() {
+    XCTAssertFalse(Reticulum.publishBlackholeEnabled())
+  }
 
-    func testBlackholeSourcesDefaultsEmpty() {
-        XCTAssertTrue(Reticulum.blackholeSources().isEmpty)
-    }
+  func testBlackholeSourcesDefaultsEmpty() {
+    XCTAssertTrue(Reticulum.blackholeSources().isEmpty)
+  }
 
-    // MARK: - requiredDiscoveryValue
+  // MARK: - requiredDiscoveryValue
 
-    func testRequiredDiscoveryValueIsPositive() {
-        XCTAssertGreaterThan(Reticulum.requiredDiscoveryValue(), 0)
-    }
+  func testRequiredDiscoveryValueIsPositive() {
+    XCTAssertGreaterThan(Reticulum.requiredDiscoveryValue(), 0)
+  }
 
-    // MARK: - interfaceDiscoverySources
+  // MARK: - interfaceDiscoverySources
 
-    func testInterfaceDiscoverySourcesDefaultsEmpty() {
-        XCTAssertTrue(Reticulum.interfaceDiscoverySources().isEmpty)
-    }
+  func testInterfaceDiscoverySourcesDefaultsEmpty() {
+    XCTAssertTrue(Reticulum.interfaceDiscoverySources().isEmpty)
+  }
 
-    // MARK: - discoveredInterfaces
+  // MARK: - discoveredInterfaces
 
-    func testDiscoveredInterfacesDefaultsEmpty() {
-        XCTAssertTrue(Reticulum.discoveredInterfaces().isEmpty)
-    }
+  func testDiscoveredInterfacesDefaultsEmpty() {
+    XCTAssertTrue(Reticulum.discoveredInterfaces().isEmpty)
+  }
 
-    // MARK: - transportEnabled / shouldUseImplicitProof
+  // MARK: - transportEnabled / shouldUseImplicitProof
 
-    func testTransportEnabledDefaultsFalse() {
-        XCTAssertFalse(Reticulum.transportEnabled())
-    }
+  func testTransportEnabledDefaultsFalse() {
+    XCTAssertFalse(Reticulum.transportEnabled())
+  }
 
-    func testShouldUseImplicitProofHasBooleanValue() {
-        let v = Reticulum.shouldUseImplicitProof()
-        XCTAssert(v == true || v == false)
-    }
+  func testShouldUseImplicitProofHasBooleanValue() {
+    let v = Reticulum.shouldUseImplicitProof()
+    XCTAssert(v == true || v == false)
+  }
 }

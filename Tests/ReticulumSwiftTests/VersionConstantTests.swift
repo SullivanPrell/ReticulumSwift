@@ -1,8 +1,21 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// `Reticulum.version` is what every `rn*` tool prints for `--version`, what `rnsd` logs at
-/// startup and what the RetiOS About screen shows. Its doc comment says "bump this on every
+/// startup and what the RetiOS About screen shows.
+///
+/// Its doc comment says "bump this on every
 /// release", and it was left at 1.9.0 across three releases—so a 1.10.2 build introduced
 /// itself as 1.9.0 everywhere.
 ///
@@ -16,42 +29,44 @@ import XCTest
 /// heading in `CHANGELOG.md`, which a release has to touch anyway.
 final class VersionConstantTests: XCTestCase {
 
-    /// The newest `## [x.y.z]` heading in the CHANGELOG, ignoring `## [Unreleased]`.
-    private func newestReleasedHeading() throws -> String {
-        // #filePath is this file inside the package, so the package root is three levels up
-        // (Tests/ReticulumSwiftTests/<file>).
-        let changelog = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("CHANGELOG.md")
-        let text = try String(contentsOf: changelog, encoding: .utf8)
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            guard line.hasPrefix("## [") else { continue }
-            let inner = line.dropFirst(4).prefix { $0 != "]" }
-            if inner == "Unreleased" { continue }
-            return String(inner)
-        }
-        throw XCTSkip("no released version heading found in CHANGELOG.md")
+  /// The newest `## [x.y.z]` heading in the CHANGELOG, ignoring `## [Unreleased]`.
+  private func newestReleasedHeading() throws -> String {
+    // #filePath is this file inside the package, so the package root is three levels up
+    // (Tests/ReticulumSwiftTests/<file>).
+    let changelog = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("CHANGELOG.md")
+    let text = try String(contentsOf: changelog, encoding: .utf8)
+    for line in text.split(separator: "\n", omittingEmptySubsequences: false)
+    where line.hasPrefix("## [") {
+      let inner = line.dropFirst(4).prefix { $0 != "]" }
+      if inner == "Unreleased" { continue }
+      return String(inner)
     }
+    throw XCTSkip("no released version heading found in CHANGELOG.md")
+  }
 
-    func testTheVersionConstantMatchesTheNewestReleasedChangelogHeading() throws {
-        let heading = try newestReleasedHeading()
-        XCTAssertEqual(Reticulum.version, heading,
-                       """
-                       `Reticulum.version` is \(Reticulum.version) while the newest released \
-                       CHANGELOG heading is \(heading). One of them is wrong, and every tool \
-                       that prints a version is reporting the constant — which is how three \
-                       releases shipped introducing themselves as 1.9.0.
-                       """)
-    }
+  func testTheVersionConstantMatchesTheNewestReleasedChangelogHeading() throws {
+    let heading = try newestReleasedHeading()
+    XCTAssertEqual(
+      Reticulum.version, heading,
+      """
+      `Reticulum.version` is \(Reticulum.version) while the newest released \
+      CHANGELOG heading is \(heading). One of them is wrong, and every tool \
+      that prints a version is reporting the constant — which is how three \
+      releases shipped introducing themselves as 1.9.0.
+      """)
+  }
 
-    /// The protocol version is a *different* contract—the Python RNS release whose wire
-    /// behaviour the port matches—and must not be quietly dragged along by a library bump.
-    func testTheProtocolVersionIsNotTheLibraryVersion() {
-        XCTAssertNotEqual(Reticulum.version, Reticulum.rnsProtocolVersion,
-                          "the library version and the RNS protocol version advance "
-                          + "independently; if they have been made equal, one of them was "
-                          + "probably edited by mistake")
-    }
+  /// The protocol version is a *different* contract—the Python RNS release whose wire
+  /// behaviour the port matches—and must not be quietly dragged along by a library bump.
+  func testTheProtocolVersionIsNotTheLibraryVersion() {
+    XCTAssertNotEqual(
+      Reticulum.version, Reticulum.rnsProtocolVersion,
+      "the library version and the RNS protocol version advance "
+        + "independently; if they have been made equal, one of them was "
+        + "probably edited by mistake")
+  }
 }

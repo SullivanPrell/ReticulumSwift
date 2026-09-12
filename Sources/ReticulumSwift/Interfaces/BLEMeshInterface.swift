@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 /// BLE-radio mesh interface—lets the device's own Bluetooth Low Energy
@@ -51,185 +61,214 @@ import Foundation
 /// nodes (iOS/macOS) can use it, and any two such nodes already agree, since
 /// they share the same `HDLC` + `Packet` wire format.
 public final class BLEMeshInterface: Interface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
 
-    // MARK: - Tunable defaults
+  // MARK: - Tunable defaults
 
-    /// Conservative throughput estimate for a BLE 5 GATT link carrying
-    /// HDLC-framed Reticulum packets. Mirrors the `bitrateGuess` convention
-    /// used by `I2PInterface`/`AX25KISSInterface`—a configurable estimate
-    /// for link-quality heuristics, not a measured value.
-    public static let bitrateGuess: Int = 1_000_000
+  /// Conservative throughput estimate for a BLE 5 GATT link carrying
+  /// HDLC-framed Reticulum packets.
+  ///
+  /// Mirrors the `bitrateGuess` convention
+  /// used by `I2PInterface`/`AX25KISSInterface`—a configurable estimate
+  /// for link-quality heuristics, not a measured value.
+  public static let bitrateGuess: Int = 1_000_000
 
-    /// Default IFAC size in bytes for this interface type, mirroring the
-    /// `DEFAULT_IFAC_SIZE` convention every custom interface must declare
-    /// per `ExampleInterface.py`.
-    public static let defaultIfacSize: Int = 8
+  /// Default IFAC size in bytes for this interface type, mirroring the
+  /// `DEFAULT_IFAC_SIZE` convention every custom interface must declare
+  /// per `ExampleInterface.py`.
+  public static let defaultIfacSize: Int = 8
 
-    // MARK: - Interface conformance
+  // MARK: - Interface conformance
 
-    public let name: String
-    public var bitrate: Int
-    private let onlineFlag = LockedFlag(false)
-    public private(set) var isOnline: Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
+  /// Interface name as it appears in configuration and status output.
+  public let name: String
+  /// Nominal interface bitrate in bits per second.
+  public var bitrate: Int
+  private let onlineFlag = LockedFlag(false)
+  /// Whether the interface is up and able to carry traffic.
+  public private(set) var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
+
+  /// A Reticulum packet must fit inside one reassembled HDLC frame, and
+  /// BLE links can't negotiate arbitrarily large MTUs—so, like
+  /// `AutoInterface`, this interface declares a fixed hardware MTU at the
+  /// standard Reticulum packet ceiling rather than auto-negotiating.
+  public let hwMtu: Int? = Constants.mtu
+  /// Whether the hardware maximum transmission unit is fixed and cannot be negotiated.
+  public let fixedMtu: Bool = true
+
+  /// Called with each packet decoded from an inbound frame.
+  public var inboundHandler: ((Packet, any Interface) -> Void)?
+  /// Called with each inbound frame, before packet decoding.
+  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+
+  /// Lock-guarded: `send` runs on the caller's thread while `handlePeerData`
+  /// runs on CoreBluetooth's queue and the UI polls from main.
+  ///
+  /// See
+  /// `InterfaceCounters`.
+  private let counters = InterfaceCounters()
+  /// Total bytes received on this interface.
+  public var rxBytes: Int { counters.rxBytes }
+  /// Total bytes transmitted on this interface.
+  public var txBytes: Int { counters.txBytes }
+  /// Total packets received on this interface.
+  public var rxPackets: Int { counters.rxPackets }
+  /// Total packets transmitted on this interface.
+  public var txPackets: Int { counters.txPackets }
+
+  /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
+  public var ifacIdentity: Identity?
+  /// Derived IFAC key used to sign and verify frames.
+  public var ifacKey: Data?
+  /// IFAC authentication field size in bytes.
+  public var ifacSize: Int = BLEMeshInterface.defaultIfacSize
+
+  // `displayName` isn't declared here: BLEMesh has no Python counterpart, and the
+  // protocol's class-qualified default already yields `BLEMeshInterface[<name>]`—the
+  // `"<Type>[<name>]"` shape every RNS interface publishes. See `Interface.displayName`.
+
+  // MARK: - State
+
+  private let transport: BLEMeshTransport
+
+  /// Per-peer reassembly state.
+  private struct PeerState {
+    let decoder = HDLC.FrameDecoder()
+    var lastHeard = Date()
+  }
+  private var peers: [BLEMeshPeerID: PeerState] = [:]
+  private let peersLock = NSLock()
+
+  /// Snapshot of meshed peer IDs.
+  ///
+  /// Safe to read from any thread—intended
+  /// for UI display (peer list, mesh size indicator, and so on).
+  public var connectedPeerIDs: [BLEMeshPeerID] {
+    peersLock.lock()
+    defer { peersLock.unlock() }
+    return Array(peers.keys)
+  }
+
+  /// Number of peers meshed with this node.
+  public var peerCount: Int {
+    peersLock.lock()
+    defer { peersLock.unlock() }
+    return peers.count
+  }
+
+  // MARK: - Init
+
+  /// - Parameters:
+  ///   - name: Interface name, as configured by the user.
+  ///   - transport: Platform-concrete BLE radio adapter (for example, a
+  ///     CoreBluetooth implementation supplied by the host app—see
+  ///     `BLEMeshTransport` for why this is injected rather than owned).
+  ///   - bitrate: Optional override of `bitrateGuess`.
+  public init(
+    name: String, transport: BLEMeshTransport, bitrate: Int = BLEMeshInterface.bitrateGuess
+  ) {
+    self.name = name
+    self.transport = transport
+    self.bitrate = bitrate
+  }
+
+  // MARK: - Lifecycle
+
+  /// Brings the interface online.
+  public func start() throws {
+    transport.peerConnected = { [weak self] peer in self?.handlePeerConnected(peer) }
+    transport.peerDisconnected = { [weak self] peer in self?.handlePeerDisconnected(peer) }
+    transport.peerDataHandler = { [weak self] peer, data in self?.handlePeerData(peer, data) }
+    try transport.start()
+    isOnline = true
+  }
+
+  /// Takes the interface offline and releases its resources.
+  public func stop() {
+    isOnline = false
+    transport.stop()
+    peersLock.lock()
+    peers.removeAll()
+    peersLock.unlock()
+  }
+
+  // MARK: - Outbound
+
+  /// Transmits `packet` on the interface.
+  ///
+  /// IFAC-wraps and HDLC-frames the packet (mirrors
+  /// `TCPClientInterface.send`'s `HDLC.frame(wrapIfac(raw))`), then
+  /// broadcasts the framed bytes to every meshed peer.
+  ///
+  /// The interface doesn't attempt to be "smart" about routing—like
+  /// `AutoInterface` fanning out to every known peer on the LAN, this
+  /// floods the frame to the whole local mesh neighbourhood and lets
+  /// `Transport`'s duplicate-suppression and path logic sort out the
+  /// rest. That's the same flood-and-suppress model the wider Reticulum
+  /// network already relies on for shared-medium interfaces.
+  public func send(_ packet: Packet) throws {
+    guard isOnline else { return }
+    let raw = try packet.pack()
+    let framed = HDLC.frame(wrapIfac(raw))
+    counters.addTx(bytes: raw.count)  // Python convention: unframed payload bytes
+
+    peersLock.lock()
+    let targets = Array(peers.keys)
+    peersLock.unlock()
+
+    for peer in targets {
+      try? transport.send(framed, to: peer)
     }
+  }
 
-    /// A Reticulum packet must fit inside one reassembled HDLC frame, and
-    /// BLE links can't negotiate arbitrarily large MTUs—so, like
-    /// `AutoInterface`, this interface declares a fixed hardware MTU at the
-    /// standard Reticulum packet ceiling rather than auto-negotiating.
-    public let hwMtu: Int? = Constants.mtu
-    public let fixedMtu: Bool = true
+  // MARK: - Peer lifecycle
 
-    public var inboundHandler: ((Packet, any Interface) -> Void)?
-    public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  private func handlePeerConnected(_ peer: BLEMeshPeerID) {
+    peersLock.lock()
+    peers[peer] = PeerState()
+    peersLock.unlock()
+  }
 
-    /// Lock-guarded: `send` runs on the caller's thread while `handlePeerData`
-    /// runs on CoreBluetooth's queue and the UI polls from main. See
-    /// `InterfaceCounters`.
-    private let counters = InterfaceCounters()
-    public var rxBytes: Int { counters.rxBytes }
-    public var txBytes: Int { counters.txBytes }
-    public var rxPackets: Int { counters.rxPackets }
-    public var txPackets: Int { counters.txPackets }
+  private func handlePeerDisconnected(_ peer: BLEMeshPeerID) {
+    peersLock.lock()
+    peers.removeValue(forKey: peer)
+    peersLock.unlock()
+  }
 
-    public var ifacIdentity: Identity?
-    public var ifacKey: Data?
-    public var ifacSize: Int = BLEMeshInterface.defaultIfacSize
+  // MARK: - Inbound
 
-    // `displayName` isn't declared here: BLEMesh has no Python counterpart, and the
-    // protocol's class-qualified default already yields `BLEMeshInterface[<name>]`—the
-    // `"<Type>[<name>]"` shape every RNS interface publishes. See `Interface.displayName`.
+  /// Feeds raw bytes from a peer into its frame decoder and delivers every completed frame.
+  ///
+  /// Mirrors the `decoder.feed` to dispatch path in `TCPClientInterface.beginReceiveLoop`.
+  private func handlePeerData(_ peer: BLEMeshPeerID, _ data: Data) {
+    peersLock.lock()
+    // Tolerate bytes arriving before/racing the connection callback—create
+    // peer state on first sight rather than dropping data.
+    if peers[peer] == nil { peers[peer] = PeerState() }
+    peers[peer]?.lastHeard = Date()
+    let frames = peers[peer]?.decoder.feed(data) ?? []
+    peersLock.unlock()
 
-    // MARK: - State
-
-    private let transport: BLEMeshTransport
-
-    /// Per-peer reassembly state.
-    private struct PeerState {
-        let decoder = HDLC.FrameDecoder()
-        var lastHeard = Date()
+    for frame in frames {
+      counters.addRx(bytes: frame.count)  // Python convention: unframed payload bytes
+      if let handler = rawInboundHandler {
+        handler(frame, self)
+      } else if let packet = try? Packet.unpack(frame) {
+        inboundHandler?(packet, self)
+      }
     }
-    private var peers: [BLEMeshPeerID: PeerState] = [:]
-    private let peersLock = NSLock()
-
-    /// Snapshot of meshed peer IDs. Safe to read from any thread—intended
-    /// for UI display (peer list, mesh size indicator, and so on).
-    public var connectedPeerIDs: [BLEMeshPeerID] {
-        peersLock.lock(); defer { peersLock.unlock() }
-        return Array(peers.keys)
-    }
-
-    /// Number of peers meshed with this node.
-    public var peerCount: Int {
-        peersLock.lock(); defer { peersLock.unlock() }
-        return peers.count
-    }
-
-    // MARK: - Init
-
-    /// - Parameters:
-    ///   - name: Interface name, as configured by the user.
-    ///   - transport: Platform-concrete BLE radio adapter (for example, a
-    ///     CoreBluetooth implementation supplied by the host app—see
-    ///     `BLEMeshTransport` for why this is injected rather than owned).
-    ///   - bitrate: Optional override of `bitrateGuess`.
-    public init(name: String, transport: BLEMeshTransport, bitrate: Int = BLEMeshInterface.bitrateGuess) {
-        self.name = name
-        self.transport = transport
-        self.bitrate = bitrate
-    }
-
-    // MARK: - Lifecycle
-
-    public func start() throws {
-        transport.peerConnected = { [weak self] peer in self?.handlePeerConnected(peer) }
-        transport.peerDisconnected = { [weak self] peer in self?.handlePeerDisconnected(peer) }
-        transport.peerDataHandler = { [weak self] peer, data in self?.handlePeerData(peer, data) }
-        try transport.start()
-        isOnline = true
-    }
-
-    public func stop() {
-        isOnline = false
-        transport.stop()
-        peersLock.lock()
-        peers.removeAll()
-        peersLock.unlock()
-    }
-
-    // MARK: - Outbound
-
-    /// IFAC-wraps and HDLC-frames the packet (mirrors
-    /// `TCPClientInterface.send`'s `HDLC.frame(wrapIfac(raw))`), then
-    /// broadcasts the framed bytes to every meshed peer.
-    ///
-    /// The interface doesn't attempt to be "smart" about routing—like
-    /// `AutoInterface` fanning out to every known peer on the LAN, this
-    /// floods the frame to the whole local mesh neighbourhood and lets
-    /// `Transport`'s duplicate-suppression and path logic sort out the
-    /// rest. That's the same flood-and-suppress model the wider Reticulum
-    /// network already relies on for shared-medium interfaces.
-    public func send(_ packet: Packet) throws {
-        guard isOnline else { return }
-        let raw = try packet.pack()
-        let framed = HDLC.frame(wrapIfac(raw))
-        counters.addTx(bytes: raw.count)  // Python convention: unframed payload bytes
-
-        peersLock.lock()
-        let targets = Array(peers.keys)
-        peersLock.unlock()
-
-        for peer in targets {
-            try? transport.send(framed, to: peer)
-        }
-    }
-
-    // MARK: - Peer lifecycle
-
-    private func handlePeerConnected(_ peer: BLEMeshPeerID) {
-        peersLock.lock()
-        peers[peer] = PeerState()
-        peersLock.unlock()
-    }
-
-    private func handlePeerDisconnected(_ peer: BLEMeshPeerID) {
-        peersLock.lock()
-        peers.removeValue(forKey: peer)
-        peersLock.unlock()
-    }
-
-    // MARK: - Inbound
-
-    /// Feeds raw bytes from one peer's link into that peer's frame decoder
-    /// and delivers every completed frame upward—mirrors
-    /// `TCPClientInterface.beginReceiveLoop`'s `decoder.feed` → dispatch.
-    private func handlePeerData(_ peer: BLEMeshPeerID, _ data: Data) {
-        peersLock.lock()
-        // Tolerate bytes arriving before/racing the connection callback—create
-        // peer state on first sight rather than dropping data.
-        if peers[peer] == nil { peers[peer] = PeerState() }
-        peers[peer]?.lastHeard = Date()
-        let frames = peers[peer]?.decoder.feed(data) ?? []
-        peersLock.unlock()
-
-        for frame in frames {
-            counters.addRx(bytes: frame.count)  // Python convention: unframed payload bytes
-            if let handler = rawInboundHandler {
-                handler(frame, self)
-            } else if let packet = try? Packet.unpack(frame) {
-                inboundHandler?(packet, self)
-            }
-        }
-    }
+  }
 }

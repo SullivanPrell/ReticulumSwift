@@ -1,4 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// `via` in a published path-table entry.
@@ -23,112 +34,118 @@ import XCTest
 /// Python client, because the fix sat on the consumer instead of the producer.
 final class PathTableViaTests: XCTestCase {
 
-    override func setUp() {
-        super.setUp()
-        Reticulum.remoteManagementEnabled_ = true
-    }
+  override func setUp() {
+    super.setUp()
+    Reticulum.storedRemoteManagementEnabled = true
+  }
 
-    override func tearDown() {
-        Reticulum.remoteManagementEnabled_ = false
-        super.tearDown()
-    }
+  override func tearDown() {
+    Reticulum.storedRemoteManagementEnabled = false
+    super.tearDown()
+  }
 
-    private let destination = Data(repeating: 0xAB, count: 16)
-    private let nextHop     = Data(repeating: 0xCD, count: 16)
+  private let destination = Data(repeating: 0xAB, count: 16)
+  private let nextHop = Data(repeating: 0xCD, count: 16)
 
-    private func makeTransport() throws -> Transport {
-        let transport = Transport()
-        transport.transportIdentity = Identity()
-        try transport.start()
-        return transport
-    }
+  private func makeTransport() throws -> Transport {
+    let transport = Transport()
+    transport.transportIdentity = Identity()
+    try transport.start()
+    return transport
+  }
 
-    private func makeMinimalLink() -> Link {
-        let identity = Identity()
-        let destination = try! Destination(identity: identity, direction: .in, kind: .single,
-                                           appName: "dummy", aspects: ["link"])
-        let transport = Transport()
-        transport.register(interface: LoopbackInterface(name: "PathViaTest"))
-        return try! Link.initiate(destination: destination, transport: transport)
-    }
+  private func makeMinimalLink() -> Link {
+    let identity = Identity()
+    let destination = try! Destination(
+      identity: identity, direction: .in, kind: .single,
+      appName: "dummy", aspects: ["link"])
+    let transport = Transport()
+    transport.register(interface: LoopbackInterface(name: "PathViaTest"))
+    return try! Link.initiate(destination: destination, transport: transport)
+  }
 
-    private func addPath(_ transport: Transport, hops: UInt8, nextHop: Data?,
-                         interfaceName: String = "TestIface") {
-        transport.restore(path: Transport.PathEntry(
-            destinationHash: destination,
-            nextHopInterfaceName: interfaceName,
-            hops: hops,
-            lastHeard: Date(),
-            identityHash: Data(repeating: 0x01, count: 16),
-            nextHopTransportID: nextHop
-        ), forDestination: destination)
-    }
+  private func addPath(
+    _ transport: Transport, hops: UInt8, nextHop: Data?,
+    interfaceName: String = "TestIface"
+  ) {
+    transport.restore(
+      path: Transport.PathEntry(
+        destinationHash: destination,
+        nextHopInterfaceName: interfaceName,
+        hops: hops,
+        lastHeard: Date(),
+        identityHash: Data(repeating: 0x01, count: 16),
+        nextHopTransportID: nextHop
+      ), forDestination: destination)
+  }
 
-    // MARK: - Transport.getPathTable
+  // MARK: - Transport.getPathTable
 
-    func testDirectPathReportsTheDestinationItself() throws {
-        // No transport id—Python's `else` branch stores the destination hash.
-        let transport = try makeTransport()
-        addPath(transport, hops: 0, nextHop: nil)
+  func testDirectPathReportsTheDestinationItself() throws {
+    // No transport id—Python's `else` branch stores the destination hash.
+    let transport = try makeTransport()
+    addPath(transport, hops: 0, nextHop: nil)
 
-        let entry = try XCTUnwrap(transport.getPathTable().first)
-        XCTAssertEqual(entry.via, destination,
-                       "a 0-hop path must publish the destination hash, never nil")
-    }
+    let entry = try XCTUnwrap(transport.getPathTable().first)
+    XCTAssertEqual(
+      entry.via, destination,
+      "a 0-hop path must publish the destination hash, never nil")
+  }
 
-    func testTransportPathReportsTheNextHop() throws {
-        let transport = try makeTransport()
-        addPath(transport, hops: 2, nextHop: nextHop)
+  func testTransportPathReportsTheNextHop() throws {
+    let transport = try makeTransport()
+    addPath(transport, hops: 2, nextHop: nextHop)
 
-        let entry = try XCTUnwrap(transport.getPathTable().first)
-        XCTAssertEqual(entry.via, nextHop)
-    }
+    let entry = try XCTUnwrap(transport.getPathTable().first)
+    XCTAssertEqual(entry.via, nextHop)
+  }
 
-    // MARK: - interface
+  // MARK: - interface
 
-    func testInterfaceIsPublishedAsItsDisplayName() throws {
-        // Python: `"interface": str(receiving_interface)` (Reticulum.py:1485), that is, the
-        // display name—"LocalInterface[56156]", not the short config name. A path entry
-        // stores only the short name, so the producer has to resolve it, exactly as `via`
-        // has to fall back. Same failure mode: visible only to a client that isn't
-        // Swift's own rnpath, which compensated for this in its bridging init.
-        let transport = try makeTransport()
-        let iface = UDPInterface(name: "Bridge", listenPort: 0)
-        transport.register(interface: iface)
-        defer { transport.deregister(interface: iface) }
-        addPath(transport, hops: 0, nextHop: nil, interfaceName: "Bridge")
+  func testInterfaceIsPublishedAsItsDisplayName() throws {
+    // Python: `"interface": str(receiving_interface)` (Reticulum.py:1485), that is, the
+    // display name—"LocalInterface[56156]", not the short config name. A path entry
+    // stores only the short name, so the producer has to resolve it, exactly as `via`
+    // has to fall back. Same failure mode: visible only to a client that isn't
+    // Swift's own rnpath, which compensated for this in its bridging init.
+    let transport = try makeTransport()
+    let iface = UDPInterface(name: "Bridge", listenPort: 0)
+    transport.register(interface: iface)
+    defer { transport.deregister(interface: iface) }
+    addPath(transport, hops: 0, nextHop: nil, interfaceName: "Bridge")
 
-        let entry = try XCTUnwrap(transport.getPathTable().first)
-        XCTAssertEqual(entry.interfaceName, iface.displayName)
-        XCTAssertNotEqual(entry.interfaceName, "Bridge", "the short name is not what Python prints")
-    }
+    let entry = try XCTUnwrap(transport.getPathTable().first)
+    XCTAssertEqual(entry.interfaceName, iface.displayName)
+    XCTAssertNotEqual(entry.interfaceName, "Bridge", "the short name is not what Python prints")
+  }
 
-    func testUnregisteredInterfaceKeepsItsStoredName() throws {
-        // A path restored from disk can outlive the interface that heard it; Python would
-        // have nothing to stringify either, so keeping the stored name is the safe fallback.
-        let transport = try makeTransport()
-        addPath(transport, hops: 0, nextHop: nil)
+  func testUnregisteredInterfaceKeepsItsStoredName() throws {
+    // A path restored from disk can outlive the interface that heard it; Python would
+    // have nothing to stringify either, so keeping the stored name is the safe fallback.
+    let transport = try makeTransport()
+    addPath(transport, hops: 0, nextHop: nil)
 
-        let entry = try XCTUnwrap(transport.getPathTable().first)
-        XCTAssertEqual(entry.interfaceName, "TestIface")
-    }
+    let entry = try XCTUnwrap(transport.getPathTable().first)
+    XCTAssertEqual(entry.interfaceName, "TestIface")
+  }
 
-    // MARK: - What actually reaches a Python client
+  // MARK: - What actually reaches a Python client
 
-    func testRemotePathHandlerNeverPublishesNilVia() throws {
-        // Python: rnpath -R -t → prettyhexrep(path["via"]).
-        let transport = try makeTransport()
-        addPath(transport, hops: 0, nextHop: nil)
+  func testRemotePathHandlerNeverPublishesNilVia() throws {
+    // Python: rnpath -R -t → prettyhexrep(path["via"]).
+    let transport = try makeTransport()
+    addPath(transport, hops: 0, nextHop: nil)
 
-        let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
-        let pathHash = Hashes.truncatedHash(Data("/path".utf8))
-        let handlerEntry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
-        let raw = try XCTUnwrap(handlerEntry.handler(
-            pathHash, MsgPack.encode(.array([.string("table")])), Data(), makeMinimalLink(), 0))
-        let entries = try XCTUnwrap(MsgPack.decode(raw).asArray)
+    let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
+    let pathHash = Hashes.truncatedHash(Data("/path".utf8))
+    let handlerEntry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
+    let raw = try XCTUnwrap(
+      handlerEntry.handler(
+        pathHash, MsgPack.encode(.array([.string("table")])), Data(), makeMinimalLink(), 0))
+    let entries = try XCTUnwrap(MsgPack.decode(raw).asArray)
 
-        let first = try XCTUnwrap(entries.first?.asDictionary)
-        XCTAssertFalse(first["via"]?.isNil ?? true, "via must not be nil on the wire")
-        XCTAssertEqual(first["via"]?.asData, destination)
-    }
+    let first = try XCTUnwrap(entries.first?.asDictionary)
+    XCTAssertFalse(first["via"]?.isNil ?? true, "via must not be nil on the wire")
+    XCTAssertEqual(first["via"]?.asData, destination)
+  }
 }

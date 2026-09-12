@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 /// Thread-safe cumulative traffic counters for an `Interface`.
@@ -44,89 +54,124 @@ import Foundation
 /// means every existing `isOnline = ...` assignment keeps working unchanged—the
 /// setter is simply guarded now.
 public final class LockedFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _value: Bool
+  private let lock = NSLock()
+  private var unsafeValue: Bool
 
-    public init(_ value: Bool) { _value = value }
+  /// Creates a flag holding `value`.
+  public init(_ value: Bool) { unsafeValue = value }
 
-    public var value: Bool {
-        get { lock.lock(); defer { lock.unlock() }; return _value }
-        set { lock.lock(); _value = newValue; lock.unlock() }
+  /// Current value of the flag.
+  public var value: Bool {
+    get {
+      lock.lock()
+      defer { lock.unlock() }
+      return unsafeValue
     }
+    set {
+      lock.lock()
+      unsafeValue = newValue
+      lock.unlock()
+    }
+  }
 }
 
+/// Thread-safe traffic counters for one interface.
 public final class InterfaceCounters: @unchecked Sendable {
 
-    /// A consistent view of all four counters, taken under a single lock
-    /// acquisition. Reading the properties one at a time is safe but can
-    /// straddle an update—a snapshot can't, so `txBytes` and `txPackets`
-    /// always describe the same set of packets.
-    public struct Snapshot: Sendable, Equatable {
-        public let rxBytes: Int
-        public let txBytes: Int
-        public let rxPackets: Int
-        public let txPackets: Int
-    }
+  /// A consistent view of all four counters, taken under a single lock
+  /// acquisition.
+  ///
+  /// Reading the properties one at a time is safe but can
+  /// straddle an update—a snapshot can't, so `txBytes` and `txPackets`
+  /// always describe the same set of packets.
+  public struct Snapshot: Sendable, Equatable {
+    /// Bytes received at the time of the snapshot.
+    public let rxBytes: Int
+    /// Bytes transmitted at the time of the snapshot.
+    public let txBytes: Int
+    /// Packets received at the time of the snapshot.
+    public let rxPackets: Int
+    /// Packets transmitted at the time of the snapshot.
+    public let txPackets: Int
+  }
 
-    private let lock = NSLock()
-    private var _rxBytes = 0
-    private var _txBytes = 0
-    private var _rxPackets = 0
-    private var _txPackets = 0
+  private let lock = NSLock()
+  private var unsafeRxBytes = 0
+  private var unsafeTxBytes = 0
+  private var unsafeRxPackets = 0
+  private var unsafeTxPackets = 0
 
-    public init() {}
+  /// Creates counters starting at zero.
+  public init() {}
 
-    // MARK: - Reading
+  // MARK: - Reading
 
-    public var rxBytes: Int {
-        lock.lock(); defer { lock.unlock() }
-        return _rxBytes
-    }
+  /// Total bytes received.
+  public var rxBytes: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return unsafeRxBytes
+  }
 
-    public var txBytes: Int {
-        lock.lock(); defer { lock.unlock() }
-        return _txBytes
-    }
+  /// Total bytes transmitted.
+  public var txBytes: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return unsafeTxBytes
+  }
 
-    public var rxPackets: Int {
-        lock.lock(); defer { lock.unlock() }
-        return _rxPackets
-    }
+  /// Total packets received.
+  public var rxPackets: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return unsafeRxPackets
+  }
 
-    public var txPackets: Int {
-        lock.lock(); defer { lock.unlock() }
-        return _txPackets
-    }
+  /// Total packets transmitted.
+  public var txPackets: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return unsafeTxPackets
+  }
 
-    public func snapshot() -> Snapshot {
-        lock.lock(); defer { lock.unlock() }
-        return Snapshot(rxBytes: _rxBytes, txBytes: _txBytes,
-                        rxPackets: _rxPackets, txPackets: _txPackets)
-    }
+  /// Returns all four counters read together.
+  public func snapshot() -> Snapshot {
+    lock.lock()
+    defer { lock.unlock() }
+    return Snapshot(
+      rxBytes: unsafeRxBytes, txBytes: unsafeTxBytes,
+      rxPackets: unsafeRxPackets, txPackets: unsafeTxPackets)
+  }
 
-    // MARK: - Writing
+  // MARK: - Writing
 
-    /// Records inbound traffic. `packets` defaults to 1—pass 0 when adding
-    /// bytes that don't correspond to a whole packet (for example, counting raw
-    /// stream bytes on an interface that tallies packets elsewhere).
-    public func addRx(bytes: Int, packets: Int = 1) {
-        lock.lock()
-        _rxBytes += bytes
-        _rxPackets += packets
-        lock.unlock()
-    }
+  /// Records inbound traffic. `packets` defaults to 1—pass 0 when adding
+  /// bytes that don't correspond to a whole packet (for example, counting raw
+  /// stream bytes on an interface that tallies packets elsewhere).
+  public func addRx(bytes: Int, packets: Int = 1) {
+    lock.lock()
+    unsafeRxBytes += bytes
+    unsafeRxPackets += packets
+    lock.unlock()
+  }
 
-    /// Records outbound traffic. See `addRx(bytes:packets:)`.
-    public func addTx(bytes: Int, packets: Int = 1) {
-        lock.lock()
-        _txBytes += bytes
-        _txPackets += packets
-        lock.unlock()
-    }
+  /// Records outbound traffic.
+  ///
+  /// See `addRx(bytes:packets:)`.
+  public func addTx(bytes: Int, packets: Int = 1) {
+    lock.lock()
+    unsafeTxBytes += bytes
+    unsafeTxPackets += packets
+    lock.unlock()
+  }
 
-    public func reset() {
-        lock.lock()
-        _rxBytes = 0; _txBytes = 0; _rxPackets = 0; _txPackets = 0
-        lock.unlock()
-    }
+  /// Resets every counter to zero.
+  public func reset() {
+    lock.lock()
+    unsafeRxBytes = 0
+    unsafeTxBytes = 0
+    unsafeRxPackets = 0
+    unsafeTxPackets = 0
+    lock.unlock()
+  }
 }

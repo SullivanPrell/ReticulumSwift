@@ -108,7 +108,7 @@ Sources/ReticulumSwift/
 - **IFAC**: uses deterministic Ed25519 (RFC 8032, pure Swift)—wire-compatible with Python's
   pure25519 signing. Python config `ifac_size` is in **bits** (so `ifac_size = 64` = 8 bytes).
 - **Ratchets**: full ratchet key rotation, persistence, and sweep implemented.
-- **Thread safety**: Transport isn't actor-isolated; callers must serialize access. Tests are single-threaded.
+- **Thread safety**: `Transport` isn't actor-isolated; callers must serialize access. Tests are single-threaded.
 
 ## Parity status
 

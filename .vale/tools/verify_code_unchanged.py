@@ -11,7 +11,17 @@ from stylefix import swift_comment_spans
 def strip(text):
     out, last = [], 0
     for s, e in swift_comment_spans(text):
-        out.append(text[last:s]); last = e          # drop the comment body
+        # swift_comment_spans returns the comment body, not its delimiters. Widen each
+        # span over them, or adding and removing whole comment lines shows up here as a
+        # code difference: the `//` markers would survive into the compared text.
+        if text[s - 2:s] == '/*':
+            s -= 2
+            if text[e:e + 2] == '*/':
+                e += 2
+        else:
+            while s > 0 and text[s - 1] == '/':
+                s -= 1
+        out.append(text[last:s]); last = e          # drop the comment
     out.append(text[last:])
     # Collapse whitespace: comment removal changes trailing space, never code tokens.
     return ' '.join(''.join(out).split())

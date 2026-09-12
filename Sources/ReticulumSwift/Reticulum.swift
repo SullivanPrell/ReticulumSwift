@@ -1,1832 +1,2086 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
-/// The Reticulum stack. Owns the Transport, persistent identity storage,
+/// The Reticulum stack.
+///
+/// Owns the Transport, persistent identity storage,
 /// and lifecycle of the registered interfaces.
 public final class Reticulum {
-    /// This library's own release version—the tag published to
-    /// `github.com/SullivanPrell/ReticulumSwift` and pinned by consumers (RetiOS).
-    /// Bump this on every release. This is the value surfaced in UI ("About")
-    /// and by `rnsd --version`; it's informational only and never travels on
-    /// the wire.
-    ///
-    /// Distinct from ``rnsProtocolVersion``: the two happen to share a lineage
-    /// (releases are cut to mirror the RNS version they reach parity with) but
-    /// advance independently—a patch release fixes the port without changing
-    /// the protocol it targets.
-    public static let version = "1.20.0"
+  /// This library's own release version—the tag published to
+  /// `github.com/SullivanPrell/ReticulumSwift` and pinned by consumers (RetiOS).
+  ///
+  /// Bump this on every release. This is the value surfaced in UI ("About")
+  /// and by `rnsd --version`; it's informational only and never travels on
+  /// the wire.
+  ///
+  /// Distinct from ``rnsProtocolVersion``: the two happen to share a lineage
+  /// (releases are cut to mirror the RNS version they reach parity with) but
+  /// advance independently—a patch release fixes the port without changing
+  /// the protocol it targets.
+  public static let version = "1.20.0"
 
-    /// The Python RNS release whose wire protocol and behavior this port matches.
-    /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
-    /// a single version string for both its library and its protocol). Bump only
-    /// when parity is verified against a new RNS release. Informational only.
-    ///
-    /// **Moved to 1.5.2 on 2026-09-04**, once the observability surface caught up with
-    /// the transport work. The blocker this comment used to record has gone: `txdrp` and
-    /// the rest of the keys `rnstatus.py` subscripts without a presence check are now in
-    /// the payload, so Python 1.5.2's own `rnstatus` renders a Swift daemon instead of
-    /// raising `KeyError`. Of upstream's 77 per-interface keys this port emits 73 and adds
-    /// none of its own; all 28 top-level keys are present. The four it omits are
-    /// deliberate: `interference_last_ts` and `interference_last_dbm` are dead upstream
-    /// (upstream comments out every writer at `RNodeInterface.py:957-966`), and `blocked_ips`
-    /// and `blocked_ip_list` are `BackboneInterface` server state, which this client-only
-    /// Backbone never holds. `rnstatus.py` guards all four. `tri-test`'s
-    /// `make test-utilities` drives Python 1.5.2's utilities against this port's daemon
-    /// and both directions agree, including the key order of `rnstatus -j`.
-    ///
-    /// What landed:
-    ///
-    ///  - **1.5.0**, transport core. `Packet.unpack` now rejects a zero-length data
-    ///    field and validates transport-ID and destination-hash lengths; `Packet.send`
-    ///    refuses `hops >= PATHFINDER_M`; `optimise_mtu`'s ladder boundaries became
-    ///    inclusive; `PATH_REQUEST_GATE_TIMEOUT` fell 120 → 45.
-    ///  - **1.5.1**, ingress control and path timeouts. The announce and path-request
-    ///    burst detectors gained a trailing-edge hold (`ic_burst_sustained`) and a
-    ///    three-evaluation cooldown, `IC_BURST_MIN_SAMPLES` became `EC_BURST_MIN_SAMPLES`
-    ///    and dropped 6 → 2, path requests became ingress-limited, and
-    ///    `Transport.medium_path_timeout()` began flooring every utility's path deadline
-    ///    at one MTU round trip on the slowest link.
-    ///  - **1.5.2**, maintenance. Its `Resource` request-window and `Buffer` MDU fixes
-    ///    were already correct here; `Resource.cancel`'s new membership guards only
-    ///    suppress a Python warning that this port's idempotent removal never emits.
-    ///
-    /// Three areas are deliberately not ported because the seam differs, each pinned by
-    /// a test: traffic classes (`TC_DATA`/`TC_ANNOUNCE`/…) presuppose Python's inbound
-    /// queue, where this port is synchronous; `ifac_handled` marks a Transport-level IFAC
-    /// seam, where this port applies IFAC inside `Interface.send`; and the adaptive
-    /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
-    /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
-    ///
-    /// The two areas that were outstanding when the parity claim moved to 1.5.2 have since
-    /// landed: interface-discovery *publishing*, which now announces this node's own
-    /// discoverable interfaces and dials the ones it hears about
-    /// (``publishesInterfaceDiscovery``, ``autoconnectsDiscoveredInterfaces``); and the
-    /// `discovery_path_requests` batching, together with the announce replay that answers
-    /// the requestors it batches.
-    public static let rnsProtocolVersion = "1.5.2"
+  /// The Python RNS release whose wire protocol and behavior this port matches.
+  ///
+  /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
+  /// a single version string for both its library and its protocol). Bump only
+  /// when parity is verified against a new RNS release. Informational only.
+  ///
+  /// **Moved to 1.5.2 on 2026-09-04**, once the observability surface caught up with
+  /// the transport work. The blocker this comment used to record has gone: `txdrp` and
+  /// the rest of the keys `rnstatus.py` subscripts without a presence check are now in
+  /// the payload, so Python 1.5.2's own `rnstatus` renders a Swift daemon instead of
+  /// raising `KeyError`. Of upstream's 77 per-interface keys this port emits 73 and adds
+  /// none of its own; all 28 top-level keys are present. The four it omits are
+  /// deliberate: `interference_last_ts` and `interference_last_dbm` are dead upstream
+  /// (upstream comments out every writer at `RNodeInterface.py:957-966`), and `blocked_ips`
+  /// and `blocked_ip_list` are `BackboneInterface` server state, which this client-only
+  /// Backbone never holds. `rnstatus.py` guards all four. `tri-test`'s
+  /// `make test-utilities` drives Python 1.5.2's utilities against this port's daemon
+  /// and both directions agree, including the key order of `rnstatus -j`.
+  ///
+  /// What landed:
+  ///
+  ///  - **1.5.0**, transport core. `Packet.unpack` now rejects a zero-length data
+  ///    field and validates transport-ID and destination-hash lengths; `Packet.send`
+  ///    refuses `hops >= PATHFINDER_M`; `optimise_mtu`'s ladder boundaries became
+  ///    inclusive; `PATH_REQUEST_GATE_TIMEOUT` fell 120 → 45.
+  ///  - **1.5.1**, ingress control and path timeouts. The announce and path-request
+  ///    burst detectors gained a trailing-edge hold (`ic_burst_sustained`) and a
+  ///    three-evaluation cooldown, `IC_BURST_MIN_SAMPLES` became `EC_BURST_MIN_SAMPLES`
+  ///    and dropped 6 → 2, path requests became ingress-limited, and
+  ///    `Transport.medium_path_timeout()` began flooring every utility's path deadline
+  ///    at one MTU round trip on the slowest link.
+  ///  - **1.5.2**, maintenance. Its `Resource` request-window and `Buffer` MDU fixes
+  ///    were already correct here; `Resource.cancel`'s new membership guards only
+  ///    suppress a Python warning that this port's idempotent removal never emits.
+  ///
+  /// Three areas are deliberately not ported because the seam differs, each pinned by
+  /// a test: traffic classes (`TC_DATA`/`TC_ANNOUNCE`/…) presuppose Python's inbound
+  /// queue, where this port is synchronous; `ifac_handled` marks a Transport-level IFAC
+  /// seam, where this port applies IFAC inside `Interface.send`; and the adaptive
+  /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
+  /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
+  ///
+  /// The two areas that were outstanding when the parity claim moved to 1.5.2 have since
+  /// landed: interface-discovery *publishing*, which now announces this node's own
+  /// discoverable interfaces and dials the ones it hears about
+  /// (``publishesInterfaceDiscovery``, ``autoconnectsDiscoveredInterfaces``); and the
+  /// `discovery_path_requests` batching, together with the announce replay that answers
+  /// the requestors it batches.
+  public static let rnsProtocolVersion = "1.5.2"
 
-    public enum LogLevel: Int, Comparable, Sendable {
-        case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme
-        public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool { lhs.rawValue < rhs.rawValue }
+  /// Log severity levels, ordered from `none` through `extreme`.
+  public enum LogLevel: Int, Comparable, Sendable {
+    case none = -1
+    case critical = 0
+    case error, warning, notice, info, verbose, debug, pathing, extreme
+    /// Orders two levels by their raw severity value.
+    public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool { lhs.rawValue < rhs.rawValue }
+  }
+
+  // MARK: - Log-level class constants (mirrors Python RNS.LOG_* module attributes)
+
+  /// Class-constant alias for `LogLevel.critical`.
+  ///
+  /// Python: `RNS.LOG_CRITICAL = 0`
+  public static let logCritical: LogLevel = .critical
+  /// Class-constant alias for `LogLevel.error`.
+  ///
+  /// Python: `RNS.LOG_ERROR = 1`
+  public static let logError: LogLevel = .error
+  /// Class-constant alias for `LogLevel.warning`.
+  ///
+  /// Python: `RNS.LOG_WARNING = 2`
+  public static let logWarning: LogLevel = .warning
+  /// Class-constant alias for `LogLevel.notice`.
+  ///
+  /// Python: `RNS.LOG_NOTICE = 3`
+  public static let logNotice: LogLevel = .notice
+  /// Class-constant alias for `LogLevel.info`.
+  ///
+  /// Python: `RNS.LOG_INFO = 4`
+  public static let logInfo: LogLevel = .info
+  /// Class-constant alias for `LogLevel.verbose`.
+  ///
+  /// Python: `RNS.LOG_VERBOSE = 5`
+  public static let logVerbose: LogLevel = .verbose
+  /// Class-constant alias for `LogLevel.debug`.
+  ///
+  /// Python: `RNS.LOG_DEBUG = 6`
+  public static let logDebug: LogLevel = .debug
+  /// Class-constant alias for `LogLevel.pathing`.
+  ///
+  /// Python: `RNS.LOG_PATHING = 7`
+  public static let logPathing: LogLevel = .pathing
+  /// Class-constant alias for `LogLevel.extreme`.
+  ///
+  /// Python: `RNS.LOG_EXTREME = 8`
+  public static let logExtreme: LogLevel = .extreme
+
+  // MARK: - Logging
+
+  /// Global log level threshold.
+  ///
+  /// Only messages at or above this level are emitted.
+  /// Defaults to `.notice` (matches Python's default log level).
+  public static var globalLogLevel: LogLevel = .notice
+
+  /// Whether to prepend a timestamp to log lines.
+  ///
+  /// Mirrors Python's `RNS.logtimestamps`.
+  public static var logTimestamps: Bool = true
+
+  /// Optional custom log handler.
+  ///
+  /// When non-nil, all log messages are routed here
+  /// instead of `print`. Allows apps to integrate with os.Logger or a custom sink.
+  public static var logHandler: ((String, LogLevel) -> Void)?
+
+  /// Emit a log message if `level >= globalLogLevel`.
+  ///
+  /// Mirrors Python's module-level `RNS.log(msg, level=LOG_NOTICE)`.
+  ///
+  /// - Parameters:
+  ///   - message:  The message to log.
+  ///   - level:    Severity level. Defaults to `.notice`.
+  public static func log(_ message: String, level: LogLevel = .notice) {
+    guard level <= globalLogLevel else { return }
+    if let handler = logHandler {
+      handler(message, level)
+    } else {
+      let prefix: String
+      switch level {
+      case .critical: prefix = "[CRITICAL]"
+      case .error: prefix = "[ERROR]"
+      case .warning: prefix = "[WARNING]"
+      case .notice: prefix = "[NOTICE]"
+      case .info: prefix = "[INFO]"
+      case .verbose: prefix = "[VERBOSE]"
+      case .debug: prefix = "[DEBUG]"
+      case .pathing: prefix = "[PATHING]"
+      case .extreme: prefix = "[EXTREME]"
+      case .none: prefix = "[NONE]"
+      }
+      let ts = logTimestamps ? "[\(Date())] " : ""
+      print("\(ts)\(prefix) \(message)")
+      fflush(stdout)
+    }
+  }
+
+  /// Stack configuration: storage location, config file, shared-instance mode and logging.
+  public struct Configuration {
+    /// Directory holding the identity, ratchets, path table and other persisted state.
+    public var storagePath: URL
+    /// Config path.
+    ///
+    /// If nil and a file exists at the standard location
+    /// (`storagePath/../config`), it's loaded automatically by `start()`.
+    public var configPath: URL?
+    /// Whether this instance serves or joins a shared instance.
+    public var shareInstance: Bool
+    /// Minimum severity a message must have to be logged.
+    public var logLevel: LogLevel
+    /// Optional stamp validator for interface discovery.
+    ///
+    /// When `discover_interfaces = Yes` is set in the config file and this
+    /// property is non-nil, `start()` calls `transport.discoverInterfaces()`
+    /// using this validator. Typically backed by `LXStamper` from LXMFSwift.
+    /// Mirrors the dynamic LXMF import in Python's `InterfaceAnnounceHandler`.
+    public var discoveryStampValidator: (any DiscoveryStampValidator)?
+
+    /// Optional stamp generator for interface discovery.
+    ///
+    /// When any interface sets `discoverable = yes` and this property is non-nil, `start()`
+    /// calls `transport.enableDiscovery()` with it. The publish-side counterpart to
+    /// `discoveryStampValidator`, and typically backed by the same `LXStamper`.
+    public var discoveryStampGenerator: (any DiscoveryStampGenerator)?
+
+    /// Creates a configuration, leaving both discovery stamp hooks unset.
+    public init(
+      storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true,
+      logLevel: LogLevel = .notice
+    ) {
+      self.storagePath = storagePath
+      self.configPath = configPath
+      self.shareInstance = shareInstance
+      self.logLevel = logLevel
+      self.discoveryStampValidator = nil
+      self.discoveryStampGenerator = nil
+    }
+  }
+
+  /// The most recently started Reticulum instance.
+  ///
+  /// Mirrors Python's
+  /// `RNS.Reticulum.get_instance()`. Set by `start()`.
+  public private(set) static var shared: Reticulum?
+
+  // MARK: - Wire-format constants (mirrors Python Reticulum class attributes)
+
+  /// Maximum Transmission Unit in bytes.
+  ///
+  /// Python: `Reticulum.MTU = 500`.
+  public static let mtu: Int = Constants.mtu  // 500
+
+  /// Maximum Data Unit (payload capacity) in bytes.
+  ///
+  /// Python: `Reticulum.MDU = 464`.
+  public static let mdu: Int = Constants.mdu  // 464
+
+  /// Minimum header size for type-1 packets.
+  ///
+  /// Python: `Reticulum.HEADER_MINSIZE = 19`.
+  public static let headerMinSize: Int = Constants.headerMinSize  // 19
+
+  /// Maximum header size (type-2 packets with transport ID).
+  ///
+  /// Python: `Reticulum.HEADER_MAXSIZE = 35`.
+  public static let headerMaxSize: Int = Constants.headerMaxSize  // 35
+
+  /// Minimum IFAC (Interface Access Code) tail size.
+  ///
+  /// Python: `Reticulum.IFAC_MIN_SIZE = 1`.
+  public static let ifacMinSize: Int = Constants.ifacMinSize  // 1
+
+  // MARK: - Announce / persistence constants (mirrors Python Reticulum class attributes)
+
+  /// Maximum percentage of interface bandwidth that announce traffic may consume.
+  ///
+  /// Used as: `announce_cap = Reticulum.ANNOUNCE_CAP / 100.0` (→ 0.02).
+  /// Python: `Reticulum.ANNOUNCE_CAP = 2`.
+  public static let announceCap: Int = 2
+
+  /// Maximum number of queued announces per interface before older ones are dropped.
+  ///
+  /// Python: `Reticulum.MAX_QUEUED_ANNOUNCES = 16384`.
+  public static let maxQueuedAnnounces: Int = 16384
+
+  /// Interval at which data is persisted when the system is idle (quick save).
+  ///
+  /// Python: `Reticulum.GRACIOUS_PERSIST_INTERVAL = 60*5`.
+  public static let graciousPersistInterval: TimeInterval = 60 * 5  // 300 s
+
+  /// Full persistence interval (paths, known destinations, hashlist).
+  ///
+  /// Python: `Reticulum.PERSIST_INTERVAL = 60*60*12`.
+  public static let persistInterval: TimeInterval = 60 * 60 * 12  // 43200 s
+
+  /// Periodic cleanup interval for caches and stale entries.
+  ///
+  /// Python: `Reticulum.CLEAN_INTERVAL = 900`.
+  public static let cleanInterval: TimeInterval = 900
+
+  /// Job loop interval (same as persist check interval).
+  ///
+  /// Python: `Reticulum.JOB_INTERVAL = 300`.
+  public static let jobInterval: TimeInterval = 300
+
+  /// Minimum bitrate in bits/s below which an interface is considered unusable.
+  ///
+  /// Python: `Reticulum.MINIMUM_BITRATE = 5`.
+  public static let minimumBitrate: Int = 5
+
+  /// How long a queued announce is kept before being dropped (seconds).
+  ///
+  /// Python: `Reticulum.QUEUED_ANNOUNCE_LIFE = 60*60*24`.
+  public static let queuedAnnounceLife: TimeInterval = 86400
+
+  /// How long resource cache entries are kept (seconds).
+  ///
+  /// Python: `Reticulum.RESOURCE_CACHE = 60*60*24`.
+  public static let resourceCacheLifetime: TimeInterval = 86400
+
+  /// Hash length in bits for truncated hashes (destination hashes, identity hashes).
+  ///
+  /// Python: `Reticulum.TRUNCATED_HASHLENGTH = 128`.
+  public static let truncatedHashLength: Int = Constants.truncatedHashLengthBits  // 128
+
+  /// IFAC salt used for Interface Access Code derivation.
+  ///
+  /// Python: `Reticulum.IFAC_SALT = bytes.fromhex("adf54d882c9a…")`.
+  public static let ifacSalt: Data = Constants.ifacSalt
+
+  // MARK: - Log destination constants (Python: RNS.LOG_STDOUT / LOG_FILE / LOG_CALLBACK)
+
+  /// Log to stdout.
+  ///
+  /// Mirrors Python `RNS.LOG_STDOUT = 0x91`.
+  public static let logDestStdout: Int = 0x91
+
+  /// Log to a file.
+  ///
+  /// Mirrors Python `RNS.LOG_FILE = 0x92`.
+  public static let logDestFile: Int = 0x92
+
+  /// Log via a callback.
+  ///
+  /// Mirrors Python `RNS.LOG_CALLBACK = 0x93`.
+  public static let logDestCallback: Int = 0x93
+
+  /// Maximum log file size in bytes (5 MiB).
+  ///
+  /// Mirrors Python `RNS.LOG_MAXSIZE = 5*1024*1024`.
+  public static let logMaxSize: Int = 5 * 1024 * 1024
+
+  /// When `true`, log lines omit the log-level label (compact format).
+  ///
+  /// Mirrors Python `RNS.compact_log_fmt = False`.
+  public static var compactLogFmt: Bool = false
+
+  // MARK: - Example configuration
+
+  /// A complete example Reticulum configuration file as a string.
+  ///
+  /// Python: `rnsd.py:90-583`, `__example_rns_config__`—the blob that
+  /// `rnsd --exampleconfig` prints. The byte-exact transcription lives in
+  /// ``RNSConfigTemplates/exampleConfig``, next to its SHA-256 regression test.
+  public static let exampleConfig: String = RNSConfigTemplates.exampleConfig
+
+  // MARK: - Static API (mirrors Python class-level static methods)
+
+  /// Returns the shared Reticulum instance.
+  ///
+  /// Mirrors Python's `RNS.Reticulum.get_instance()`.
+  public static func getInstance() -> Reticulum? { shared }
+
+  /// Returns the Transport instance from the running shared Reticulum instance, or nil.
+  ///
+  /// Mirrors Python's `RNS.Reticulum.get_transport_instance()`.
+  public static func getTransportInstance() -> Transport? { shared?.transport }
+
+  /// Returns whether this process is connected to a shared Reticulum instance
+  /// (that is, whether `Reticulum.shared` has been initialized).
+  ///
+  /// Mirrors Python's `Reticulum.is_connected_to_shared_instance()`.
+  public static func isConnectedToSharedInstance() -> Bool { shared != nil }
+
+  /// Whether proofs sent are implicit (signature only, 64 bytes) or explicit
+  /// (full hash + Ed25519 signature, 96 bytes).
+  ///
+  /// Defaults to `true` (implicit), matching
+  /// Python's `Reticulum.__use_implicit_proof = True`.
+  /// Mirrors `RNS.Reticulum.should_use_implicit_proof()`.
+  public static var useImplicitProof: Bool = true
+
+  /// Returns whether implicit proofs are in use.
+  ///
+  /// Mirrors Python's `Reticulum.should_use_implicit_proof()`.
+  public static func shouldUseImplicitProof() -> Bool { useImplicitProof }
+
+  // MARK: - Module-level utility functions (mirrors Python RNS module-level functions)
+
+  /// Returns a cryptographically random `Double` in `[0, 1)`.
+  ///
+  /// Mirrors Python's `RNS.rand()`.
+  public static func rand() -> Double {
+    let bytes = SecureRandom.bytes(8)
+    // Construct a value in [0, 1) by filling the mantissa of a 64-bit float.
+    let bits = bytes.withUnsafeBytes { $0.load(as: UInt64.self) }
+    // IEEE-754: exponent = 1023 (value 1.0..2.0), then subtract 1.0 → [0, 1)
+    let mantissa = (bits & 0x000F_FFFF_FFFF_FFFF) | 0x3FF0_0000_0000_0000
+    return Double(bitPattern: mantissa) - 1.0
+  }
+
+  /// Returns `true` if the current global log level is at or above `level`.
+  ///
+  /// Mirrors Python's `RNS.sl(level=LOG_NOTICE)`.
+  ///
+  /// - Parameter level: The threshold level to check. Defaults to `.notice` (matching Python's default of 3).
+  /// - Returns: `true` when the global log level is at or above `level`.
+  public static func sl(level: LogLevel = .notice) -> Bool {
+    globalLogLevel != .none && globalLogLevel >= level
+  }
+
+  /// Returns a dictionary of physical-layer parameters for this stack.
+  ///
+  /// Mirrors Python's `RNS.phyparams()` which prints the same values.
+  ///
+  /// Keys: `"mtu"`, `"linkMdu"`, `"linkCurve"`, `"ecPubKeySize"`, `"keySize"`.
+  public static func phyparams() -> [String: Any] {
+    [
+      "mtu": Reticulum.mtu,
+      "linkMdu": Constants.linkMdu,
+      "linkCurve": Identity.curve,
+      "ecPubKeySize": Identity.ecPubSize,
+      "keySize": Identity.keySize,
+    ]
+  }
+
+  /// Returns the human-readable name string for a log level.
+  ///
+  /// Mirrors Python's `RNS.loglevelname(level)`—note Python uses fixed-width
+  /// padded strings to align log output.
+  public static func loglevelname(_ level: LogLevel) -> String {
+    switch level {
+    case .critical: return "[Critical]"
+    case .error: return "[Error]   "
+    case .warning: return "[Warning] "
+    case .notice: return "[Notice]  "
+    case .info: return "[Info]    "
+    case .verbose: return "[Verbose] "
+    case .debug: return "[Debug]   "
+    case .pathing: return "[Pathing] "  // Python LOG_PATHING = 7
+    case .extreme: return "[Extra]   "  // Python uses "[Extra]" for LOG_EXTREME (now 8)
+    case .none: return "[None]    "
+    }
+  }
+
+  /// Whether link MTU discovery is enabled globally.
+  ///
+  /// Mirrors Python's `Reticulum.link_mtu_discovery()`.
+  /// Default: true (Python `LINK_MTU_DISCOVERY = True`).
+  ///
+  /// Settable because Python reads `link_mtu_discovery` from the `[reticulum]` config section
+  /// (`Reticulum.py:537-539`). It was `private(set)` with no writer anywhere, so the option had
+  /// nowhere to be applied—the same shape as the get-only interface attributes, and the reason
+  /// adding the config parser alone would not have been enough. See `swift_devel/bugs/025-*.md`
+  /// and `bugs/030-*.md`.
+  public static var linkMtuDiscoveryEnabled: Bool = true
+
+  /// Returns whether link MTU discovery is enabled.
+  public static func linkMtuDiscovery() -> Bool { linkMtuDiscoveryEnabled }
+
+  /// Returns whether Transport is enabled for the running shared instance.
+  ///
+  /// Mirrors Python's `Reticulum.transport_enabled()`.
+  public static func transportEnabled() -> Bool { shared?.transport.transportEnabled ?? false }
+
+  /// Whether the probe destination is enabled.
+  ///
+  /// Mirrors Python's `Reticulum.probe_destination_enabled()`.
+  /// Settable so tests can control the flag without a full config file.
+  public static var allowProbes: Bool = false
+  /// Returns whether the probe destination is enabled.
+  public static func probeDestinationEnabled() -> Bool { allowProbes }
+
+  /// Whether remote management is enabled.
+  ///
+  /// Defaults to false.
+  /// Mirrors Python's `Reticulum.remote_management_enabled()`.
+  /// Settable so tests can control the flag without a full config file.
+  public static var storedRemoteManagementEnabled: Bool = false
+  /// Returns whether remote management is enabled.
+  public static func remoteManagementEnabled() -> Bool { storedRemoteManagementEnabled }
+
+  /// Returns the required stamp value for interface discovery validation.
+  ///
+  /// Mirrors Python's `Reticulum.required_discovery_value()`.
+  public private(set) static var storedRequiredDiscoveryValue: Int = 16
+  /// Returns the required stamp value for interface discovery validation.
+  public static func requiredDiscoveryValue() -> Int { storedRequiredDiscoveryValue }
+
+  /// Returns whether blackhole list publishing is enabled.
+  ///
+  /// Mirrors Python's `Reticulum.publish_blackhole_enabled()`.
+  public private(set) static var storedPublishBlackholeEnabled: Bool = false
+  /// Returns whether blackhole list publishing is enabled.
+  public static func publishBlackholeEnabled() -> Bool { storedPublishBlackholeEnabled }
+
+  /// Returns the list of transport identity hashes from which blackhole lists are sourced.
+  ///
+  /// Mirrors Python's `Reticulum.blackhole_sources()`.
+  public private(set) static var storedBlackholeSources: [Data] = []
+  /// Returns the transport identity hashes blackhole lists are sourced from.
+  public static func blackholeSources() -> [Data] { storedBlackholeSources }
+
+  /// Interval (seconds) between blackhole list re-fetches from each source.
+  ///
+  /// Default 3600 (1 hour). Minimum 120 seconds. Configurable via the
+  /// `blackhole_update_interval` config key (value in minutes).
+  /// Mirrors Python's `Reticulum.blackhole_update_interval()` accessor +
+  /// `BlackholeUpdater.UPDATE_INTERVAL` default (RNS commit 02924656).
+  public private(set) static var storedBlackholeUpdateInterval: TimeInterval = 3600
+  /// Returns the interval in seconds between blackhole list re-fetches.
+  public static func blackholeUpdateInterval() -> TimeInterval { storedBlackholeUpdateInterval }
+
+  /// Returns a list of interfaces discovered over the network.
+  ///
+  /// Mirrors Python's `Reticulum.discovered_interfaces()`.
+  public private(set) static var storedDiscoveredInterfaces: [String] = []
+  /// Returns the interfaces discovered over the network.
+  public static func discoveredInterfaces() -> [String] { storedDiscoveredInterfaces }
+
+  /// Whether any configured interface asked to be announced as a discoverable endpoint.
+  ///
+  /// Python latches this the moment it parses a `discoverable = yes` in any interface block
+  /// (`Reticulum.py:904`) and starts the announcer from it once the stack is up
+  /// (`:370`). The flag is needed because the interfaces don't exist yet when the block is
+  /// read, so there's nothing to inspect at start-up time otherwise.
+  ///
+  /// `internal(set)` for the same reason as `storedInterfaceDiscoverySources`: config loading is
+  /// the only production writer and lives in this module.
+  public internal(set) static var storedDiscoveryEnabled: Bool = false
+  /// Returns whether any configured interface asked to be announced as discoverable.
+  public static func discoveryEnabled() -> Bool { storedDiscoveryEnabled }
+
+  /// Returns the list of network identity hashes from which interfaces are discovered.
+  ///
+  /// Mirrors Python's `Reticulum.interface_discovery_sources()`.
+  /// `internal(set)`, not `private(set)`: the announce-time allowlist check in
+  /// `InterfaceAnnounceHandler` needs to be testable, and config loading (the
+  /// only production writer) already lives in this module.
+  public internal(set) static var storedInterfaceDiscoverySources: [Data] = []
+  /// Returns the network identity hashes interfaces are discovered from.
+  public static func interfaceDiscoverySources() -> [Data] { storedInterfaceDiscoverySources }
+
+  /// Maximum number of discovered interfaces to auto-connect to.
+  /// 0 means auto-connect is disabled.
+  ///
+  /// Mirrors Python's `Reticulum.__autoconnect_discovered_interfaces`.
+  public static var storedMaxAutoconnectedInterfaces: Int = 0
+
+  /// Returns true if discovered interfaces should be automatically connected.
+  ///
+  /// Mirrors Python's `Reticulum.should_autoconnect_discovered_interfaces()`.
+  public static func shouldAutoconnectDiscoveredInterfaces() -> Bool {
+    storedMaxAutoconnectedInterfaces > 0
+  }
+
+  /// Returns the maximum number of auto-connected discovered interfaces.
+  ///
+  /// Mirrors Python's `Reticulum.max_autoconnected_interfaces()`.
+  public static func maxAutoconnectedInterfaces() -> Int { storedMaxAutoconnectedInterfaces }
+
+  // MARK: - RNS 1.4.1 gravity / autoconnect policy
+
+  /// Configured `default_gravity`, or `nil` when unset.
+  public static var storedDefaultGravity: Int? = nil
+
+  /// Gravity for an interface that doesn't configure its own.
+  ///
+  /// Mirrors Python's `Reticulum._default_gravity()`.
+  public static func defaultGravity() -> Int {
+    storedDefaultGravity ?? InterfaceMode.defaultGravity
+  }
+
+  /// Configured `autoconnect_interface_mode`, or `nil` when unset.
+  ///
+  /// Mirrors Python's `Reticulum.autoconnect_interface_mode()`.
+  public static var storedAutoconnectInterfaceMode: InterfaceMode? = nil
+  /// Returns the configured `autoconnect_interface_mode`, or `nil` when unset.
+  public static func autoconnectInterfaceMode() -> InterfaceMode? { storedAutoconnectInterfaceMode }
+
+  /// Configured `autoconnect_interface_gravity`, or `nil` when unset.
+  ///
+  /// Mirrors Python's `Reticulum.autoconnect_interface_gravity()`.
+  public static var storedAutoconnectInterfaceGravity: Int? = nil
+  /// Returns the configured `autoconnect_interface_gravity`, or `nil` when unset.
+  public static func autoconnectInterfaceGravity() -> Int? { storedAutoconnectInterfaceGravity }
+
+  /// Configured `autoconnect_announces_to_internal`, or `nil` when unset.
+  ///
+  /// Mirrors Python's `Reticulum.autoconnect_announces_to_internal()`.
+  public static var storedAutoconnectAnnouncesToInternal: Bool? = nil
+  /// Returns the configured `autoconnect_announces_to_internal`, or `nil` when unset.
+  public static func autoconnectAnnouncesToInternal() -> Bool? {
+    storedAutoconnectAnnouncesToInternal
+  }
+
+  // MARK: - `[reticulum]` global defaults (`bugs/030`)
+  //
+  // Python holds each of these as `Reticulum.__<name> = None` and exposes a `_default_<name>()`
+  // accessor that falls back to the `Interface` class constant (`Reticulum.py:1146-1185`).
+  // `Interface.__init__` reads the accessors (`Interface.py:126-136`), so the `[reticulum]`
+  // section sets the value every interface *starts* from, and a per-interface block overrides
+  // it. Both halves are needed: the parser alone leaves the value inert.
+  //
+  // The fallbacks below are `??` where Python writes `or`, which differ on zero—see
+  // `configuredOrDefault(_:_:)`.
+
+  /// Python's `or` treats `0` and `0.0` as absent, so a configured zero falls back to the
+  /// class constant rather than taking effect.
+  ///
+  /// Replicated deliberately: it's observable
+  /// behaviour of the reference, and an operator copying a working Python config onto a Swift
+  /// node must get the same tuning. Recorded here rather than left as a silent `??`.
+  @inline(__always)
+  private static func pythonOr<T: BinaryFloatingPoint>(_ configured: T?, _ fallback: T) -> T {
+    guard let configured, configured != 0 else { return fallback }
+    return configured
+  }
+
+  @inline(__always)
+  private static func pythonOr(_ configured: Int?, _ fallback: Int) -> Int {
+    guard let configured, configured != 0 else { return fallback }
+    return configured
+  }
+
+  /// Configured shared-instance RPC key, or `nil` to derive one from the transport identity.
+  ///
+  /// Mirrors Python's `self.rpc_key` (`Reticulum.py:494-499`).
+  public static var rpcKey: Data? = nil
+
+  /// Configured `instance_name`.
+  ///
+  /// Mirrors Python's `local_socket_path` (`Reticulum.py:475-478`).
+  public static var storedInstanceName: String? = nil
+  /// Returns the configured instance name, or `default` when unset.
+  public static func instanceName() -> String { storedInstanceName ?? "default" }
+
+  /// Configured `shared_instance_type`—`"tcp"` or `"unix"` (`Reticulum.py:479-484`).
+  public static var sharedInstanceType: String? = nil
+
+  /// Configured `force_shared_instance_bitrate` (`Reticulum.py:560-562`), applied to the
+  /// shared-instance interface at `:397-399` and `:424-425`.
+  public static var storedForceSharedInstanceBitrate: Int? = nil
+
+  /// The configured forced shared-instance bitrate, or nil.
+  ///
+  /// **Known gap** (`fix-013 §7.8`): the reference also marks the interface `_force_bitrate`
+  /// and uses that flag to simulate the forced link's latency
+  /// (`Reticulum.py:397-401`/`:424-428` → `LocalInterface.py:234`, propagated to spawned
+  /// clients at `:459`/`:475`). This port has neither the flag nor the simulation, so the
+  /// value is readable and honest about being reportable-only.
+  public static func forceSharedInstanceBitrate() -> Int? { storedForceSharedInstanceBitrate }
+
+  /// Whether this port announces its own interfaces as discoverable endpoints—Python's
+  /// `Discovery.InterfaceAnnouncer`.
+  ///
+  /// True since 2026-09-04, when the publish side landed
+  /// alongside the seventeen `discovery_*`/`reachable_on`/`discoverable` interface
+  /// attributes it carries.
+  ///
+  /// Announcing also needs a `Configuration.discoveryStampGenerator`, for the same reason
+  /// discovering needs a validator: the proof-of-work lives in LXMF.
+  public static let publishesInterfaceDiscovery = true
+
+  /// Whether this port dials and monitors discovered endpoints—Python's
+  /// `Discovery.InterfaceDiscovery` autoconnect half, which writes `autoconnect_hash`,
+  /// `autoconnect_source` and `autoconnect_down`.
+  ///
+  /// True since 2026-09-04.
+  ///
+  /// Still off unless the operator sets `autoconnect_discovered_interfaces` to a non-zero
+  /// limit: the subsystem exists, and dialling strangers is opt-in.
+  public static let autoconnectsDiscoveredInterfaces = true
+
+  /// Announce-rate defaults for interfaces that don't configure their own.
+  ///
+  /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
+  public static var storedDefaultArTarget: Int? = nil
+  /// Configured `default_ar_penalty`, or `nil` when unset.
+  public static var storedDefaultArPenalty: Int? = nil
+  /// Configured `default_ar_grace`, or `nil` when unset.
+  public static var storedDefaultArGrace: Int? = nil
+  /// Returns the announce-rate target an interface starts from.
+  public static func defaultArTarget() -> Int? { storedDefaultArTarget }
+  /// Returns the announce-rate penalty an interface starts from.
+  public static func defaultArPenalty() -> Int { storedDefaultArPenalty ?? 0 }
+  /// Returns the announce-rate grace an interface starts from.
+  public static func defaultArGrace() -> Int { storedDefaultArGrace ?? 0 }
+
+  /// Egress-control defaults every interface starts from.
+  ///
+  /// Mirrors `Reticulum._default_egress_control()` / `_default_ec_pr_freq()` (`:1173-1176`).
+  public static var storedDefaultEgressControl: Bool? = nil
+  /// Configured `default_ec_pr_freq`, or `nil` when unset.
+  public static var storedDefaultEcPrFreq: Double? = nil
+  /// Returns whether egress control is on for an interface that doesn't configure it.
+  public static func defaultEgressControl() -> Bool { storedDefaultEgressControl ?? false }
+  /// Returns the egress-control path-request frequency an interface starts from.
+  public static func defaultEcPrFreq() -> Double { pythonOr(storedDefaultEcPrFreq, 5.0) }
+
+  /// Ingress-control defaults every interface starts from.
+  ///
+  /// Mirrors `Reticulum._default_ic_*()` (`:1154-1185`), each falling back to the
+  /// `IngressControlState` constant that holds the Python class value.
+  public static var storedDefaultIcMaxHeldAnnounces: Int? = nil
+  /// Configured `ic_burst_hold`, or `nil` when unset.
+  public static var storedDefaultIcBurstHold: Double? = nil
+  /// Configured `ic_burst_freq_new`, or `nil` when unset.
+  public static var storedDefaultIcBurstFreqNew: Double? = nil
+  /// Configured `ic_burst_freq`, or `nil` when unset.
+  public static var storedDefaultIcBurstFreq: Double? = nil
+  /// Configured `ic_pr_burst_freq_new`, or `nil` when unset.
+  public static var storedDefaultIcPrBurstFreqNew: Double? = nil
+  /// Configured `ic_pr_burst_freq`, or `nil` when unset.
+  public static var storedDefaultIcPrBurstFreq: Double? = nil
+  /// Configured `ic_new_time`, or `nil` when unset.
+  public static var storedDefaultIcNewTime: Double? = nil
+  /// Configured `ic_burst_penalty`, or `nil` when unset.
+  public static var storedDefaultIcBurstPenalty: Double? = nil
+  /// Configured `ic_held_release_interval`, or `nil` when unset.
+  public static var storedDefaultIcHeldReleaseInterval: Double? = nil
+
+  /// Returns the held-announce ceiling every interface starts from.
+  public static func defaultIcMaxHeldAnnounces() -> Int {
+    pythonOr(storedDefaultIcMaxHeldAnnounces, IngressControlState.maxHeldAnnounces)
+  }
+  /// Returns the ingress burst hold every interface starts from.
+  public static func defaultIcBurstHold() -> Double {
+    pythonOr(storedDefaultIcBurstHold, IngressControlState.icBurstHold)
+  }
+  /// Returns the new-peer ingress burst frequency every interface starts from.
+  public static func defaultIcBurstFreqNew() -> Double {
+    pythonOr(storedDefaultIcBurstFreqNew, IngressControlState.icBurstFreqNew)
+  }
+  /// Returns the ingress burst frequency every interface starts from.
+  public static func defaultIcBurstFreq() -> Double {
+    pythonOr(storedDefaultIcBurstFreq, IngressControlState.icBurstFreq)
+  }
+  /// Returns the new-peer path-request burst frequency every interface starts from.
+  public static func defaultIcPrBurstFreqNew() -> Double {
+    pythonOr(storedDefaultIcPrBurstFreqNew, IngressControlState.icPrBurstFreqNew)
+  }
+  /// Returns the path-request burst frequency every interface starts from.
+  public static func defaultIcPrBurstFreq() -> Double {
+    pythonOr(storedDefaultIcPrBurstFreq, IngressControlState.icPrBurstFreq)
+  }
+  /// Returns how long a peer counts as new, for interfaces that don't configure it.
+  public static func defaultIcNewTime() -> Double {
+    pythonOr(storedDefaultIcNewTime, IngressControlState.icNewTime)
+  }
+  /// Returns the ingress burst penalty every interface starts from.
+  public static func defaultIcBurstPenalty() -> Double {
+    pythonOr(storedDefaultIcBurstPenalty, IngressControlState.icBurstPenalty)
+  }
+  /// Returns the held-announce release interval every interface starts from.
+  public static func defaultIcHeldReleaseInterval() -> Double {
+    pythonOr(storedDefaultIcHeldReleaseInterval, IngressControlState.icHeldReleaseInterval)
+  }
+
+  /// Copy one parsed `[reticulum]` section onto the global defaults.
+  ///
+  /// Split out of `applyConfig` so the one call site can't be the missing thing again—the
+  /// same reason `applyIfacConfiguration` and `applyInterfaceConfiguration` are separate
+  /// (`bugs/015`, `bugs/025`). Every value is applied only when the key was present, so an
+  /// absent option leaves the built-in default rather than zeroing it.
+  public static func applyGlobalDefaults(_ section: ReticulumConfig.ReticulumSection) {
+    if let v = section.rpcKey { rpcKey = v }
+    if let v = section.instanceName { storedInstanceName = v }
+    if let v = section.sharedInstanceType { sharedInstanceType = v }
+    if let v = section.useImplicitProof { useImplicitProof = v }
+    if let v = section.linkMtuDiscovery { linkMtuDiscoveryEnabled = v }
+    if let v = section.forceSharedInstanceBitrate { storedForceSharedInstanceBitrate = v }
+
+    if let v = section.defaultArTarget { storedDefaultArTarget = v }
+    if let v = section.defaultArPenalty { storedDefaultArPenalty = v }
+    if let v = section.defaultArGrace { storedDefaultArGrace = v }
+
+    if let v = section.egressControl { storedDefaultEgressControl = v }
+    if let v = section.ecPrFreq { storedDefaultEcPrFreq = v }
+
+    if let v = section.icMaxHeldAnnounces { storedDefaultIcMaxHeldAnnounces = v }
+    if let v = section.icBurstHold { storedDefaultIcBurstHold = v }
+    if let v = section.icBurstFreqNew { storedDefaultIcBurstFreqNew = v }
+    if let v = section.icBurstFreq { storedDefaultIcBurstFreq = v }
+    if let v = section.icPrBurstFreqNew { storedDefaultIcPrBurstFreqNew = v }
+    if let v = section.icPrBurstFreq { storedDefaultIcPrBurstFreq = v }
+    if let v = section.icNewTime { storedDefaultIcNewTime = v }
+    if let v = section.icBurstPenalty { storedDefaultIcBurstPenalty = v }
+    if let v = section.icHeldReleaseInterval { storedDefaultIcHeldReleaseInterval = v }
+  }
+
+  /// Configuration this stack was created with.
+  public let configuration: Configuration
+  /// Transport instance owning routing, paths and the interface list.
+  public let transport: Transport
+  /// RPC server serving the shared instance, once `start()` has brought one up.
+  public private(set) var rpcServer: RPCServer?
+
+  /// Parsed config file, if one was loaded.
+  public private(set) var config: ReticulumConfig?
+
+  /// Identity returned by `loadOrCreateIdentity`.
+  ///
+  /// Held weakly so the
+  /// stack can re-save its ratchets at checkpoint/stop time without
+  /// keeping it alive past the host's own lifetime.
+  private weak var trackedIdentity: Identity?
+
+  /// Creates a stack with the given configuration and a fresh `Transport`.
+  public init(configuration: Configuration) {
+    self.configuration = configuration
+    self.transport = Transport()
+  }
+
+  /// Convenience: init from a config directory path (mirrors Python's
+  /// `RNS.Reticulum(configdir=...)` pattern).
+  public static func fromConfigDir(_ configDir: URL) -> Reticulum {
+    let storagePath = StorageInventory.url(.storage, in: configDir)
+    let configPath = StorageInventory.url(.config, in: configDir)
+    return Reticulum(
+      configuration: Configuration(
+        storagePath: storagePath,
+        configPath: configPath
+      ))
+  }
+
+  /// The key utilities must present to reach this daemon's control socket.
+  ///
+  /// Configured value first, derived value as fallback—`Reticulum.py:494-499` sets
+  /// `self.rpc_key` from the config and `:508-511` derives one only when it's still `None`
+  /// (task 4.3, design D8). The configured form exists for platforms where two instances
+  /// can't share a config directory, so ignoring it locks the operator out of their own
+  /// daemon on exactly the systems the option was added for.
+  ///
+  /// Returns `nil` when no identity is available and no key is configured.
+  public func rpcAuthenticationKey() -> Data? {
+    if let configured = Reticulum.rpcKey { return configured }
+    // Derived from the persistent (internal) identity so it stays stable across runs even
+    // when an ephemeral transport identity is in use. Mirrors Python's
+    // `rpc_key = full_hash(Transport.internal_identity().get_private_key())`.
+    guard let identity = transport.internalIdentity ?? transport.transportIdentity,
+      let privBytes = identity.getPrivateKey()
+    else { return nil }
+    return Identity.fullHash(privBytes)
+  }
+
+  /// Start the RPC server on the specified port.
+  /// Python: `self.rpc_listener = multiprocessing.connection.Listener(...)`
+  public func startRPC(port: UInt16) throws {
+    guard let authkey = rpcAuthenticationKey() else {
+      throw ReticulumError.missingIdentity
+    }
+    let server = RPCServer(port: port, authkey: authkey)
+    server.transport = transport
+    try server.start()
+    self.rpcServer = server
+  }
+
+  /// Errors thrown by the stack itself.
+  public enum ReticulumError: Error {
+    case missingIdentity
+  }
+
+  // Every persisted path resolves through `StorageInventory`, which is the one place that
+  // names them and cites the Python file:line each name mirrors (bugs/029).
+  private var identityURL: URL {
+    StorageInventory.url(.identity, storage: configuration.storagePath)
+  }
+  private var ratchetsURL: URL {
+    StorageInventory.url(.identityRatchets, storage: configuration.storagePath)
+  }
+  private var transportIDURL: URL {
+    StorageInventory.url(.transportIdentity, storage: configuration.storagePath)
+  }
+  private var knownDestinationsURL: URL {
+    StorageInventory.url(.knownDestinations, storage: configuration.storagePath)
+  }
+
+  /// Brings the stack up: storage, config, identity, interfaces and the shared instance.
+  public func start() throws {
+    // Create storage directories.
+    try FileManager.default.createDirectory(
+      at: configuration.storagePath,
+      withIntermediateDirectories: true
+    )
+
+    // Load and apply config file if available.
+    if let cfgURL = resolvedConfigPath() {
+      if !FileManager.default.fileExists(atPath: cfgURL.path) {
+        try ReticulumConfig.defaultConfigText.write(to: cfgURL, atomically: true, encoding: .utf8)
+      }
+      if let parsed = ReticulumConfig.load(from: cfgURL) {
+        config = parsed
+        applyConfig(parsed)
+      }
     }
 
-    // MARK: - Log-level class constants (mirrors Python RNS.LOG_* module attributes)
+    // Load or create the persistent transport identity (full 64-byte private key).
+    // Mirrors Python's Transport.identity loaded from `transport_identity`.
+    let persistentIdentity: Identity
+    if let loaded = try? Identity.read(fromFile: transportIDURL) {
+      persistentIdentity = loaded
+    } else {
+      persistentIdentity = Identity()
+      try? persistentIdentity.write(toFile: transportIDURL)
+    }
+    // Keep the persistent identity as `internalIdentity` (Python's
+    // `Transport._identity`). Non-transport nodes then run behind a fresh
+    // ephemeral transport identity for privacy, unless
+    // `static_transport_identity` is configured. Mirrors RNS 1.3.7
+    // `Transport.start()`.
+    transport.internalIdentity = persistentIdentity
+    let transportIdentity: Identity
+    if !transport.transportEnabled && !(config?.reticulum.staticTransportIdentity ?? false) {
+      transportIdentity = Identity()
+    } else {
+      transportIdentity = persistentIdentity
+    }
+    transport.transportIdentity = transportIdentity
+    transport.transportInstanceID = transportIdentity.hash
 
-    /// Python: `RNS.LOG_CRITICAL = 0`
-    public static let logCritical: LogLevel = .critical
-    /// Python: `RNS.LOG_ERROR = 1`
-    public static let logError: LogLevel = .error
-    /// Python: `RNS.LOG_WARNING = 2`
-    public static let logWarning: LogLevel = .warning
-    /// Python: `RNS.LOG_NOTICE = 3`
-    public static let logNotice: LogLevel = .notice
-    /// Python: `RNS.LOG_INFO = 4`
-    public static let logInfo: LogLevel = .info
-    /// Python: `RNS.LOG_VERBOSE = 5`
-    public static let logVerbose: LogLevel = .verbose
-    /// Python: `RNS.LOG_DEBUG = 6`
-    public static let logDebug: LogLevel = .debug
-    /// Python: `RNS.LOG_PATHING = 7`
-    public static let logPathing: LogLevel = .pathing
-    /// Python: `RNS.LOG_EXTREME = 8`
-    public static let logExtreme: LogLevel = .extreme
-
-    // MARK: - Logging
-
-    /// Global log level threshold. Only messages at or above this level are emitted.
-    /// Defaults to `.notice` (matches Python's default log level).
-    public static var globalLogLevel: LogLevel = .notice
-
-    /// Whether to prepend a timestamp to log lines. Mirrors Python's `RNS.logtimestamps`.
-    public static var logTimestamps: Bool = true
-
-    /// Optional custom log handler. When non-nil, all log messages are routed here
-    /// instead of `print`. Allows apps to integrate with os.Logger or a custom sink.
-    public static var logHandler: ((String, LogLevel) -> Void)?
-
-    /// Emit a log message if `level >= globalLogLevel`.
-    ///
-    /// Mirrors Python's module-level `RNS.log(msg, level=LOG_NOTICE)`.
-    ///
-    /// - Parameters:
-    ///   - message:  The message to log.
-    ///   - level:    Severity level. Defaults to `.notice`.
-    public static func log(_ message: String, level: LogLevel = .notice) {
-        guard level <= globalLogLevel else { return }
-        if let handler = logHandler {
-            handler(message, level)
-        } else {
-            let prefix: String
-            switch level {
-            case .critical:  prefix = "[CRITICAL]"
-            case .error:     prefix = "[ERROR]"
-            case .warning:   prefix = "[WARNING]"
-            case .notice:    prefix = "[NOTICE]"
-            case .info:      prefix = "[INFO]"
-            case .verbose:   prefix = "[VERBOSE]"
-            case .debug:     prefix = "[DEBUG]"
-            case .pathing:   prefix = "[PATHING]"
-            case .extreme:   prefix = "[EXTREME]"
-            case .none:      prefix = "[NONE]"
-            }
-            let ts = logTimestamps ? "[\(Date())] " : ""
-            print("\(ts)\(prefix) \(message)")
-            fflush(stdout)
-        }
+    // When local hop-count obfuscation is enabled, pick a random per-session
+    // delta in 2...7. Mirrors Python: `if RNS.Reticulum.local_hops_delta():
+    // Transport.local_hops_delta = (ord(os.urandom(1))%6)+2`.
+    if config?.reticulum.localHopsDelta ?? false {
+      transport.localHopsDelta = UInt8.random(in: 2...7)
     }
 
-    public struct Configuration {
-        public var storagePath: URL
-        /// Config filepath. If nil and a file exists at the standard location
-        /// (`storagePath/../config`), it's loaded automatically by `start()`.
-        public var configPath: URL?
-        public var shareInstance: Bool
-        public var logLevel: LogLevel
-        /// Optional stamp validator for interface discovery.
-        ///
-        /// When `discover_interfaces = Yes` is set in the config file and this
-        /// property is non-nil, `start()` calls `transport.discoverInterfaces()`
-        /// using this validator. Typically backed by `LXStamper` from LXMFSwift.
-        /// Mirrors the dynamic LXMF import in Python's `InterfaceAnnounceHandler`.
-        public var discoveryStampValidator: (any DiscoveryStampValidator)?
+    transport.ratchetsDirectory = StorageInventory.url(
+      .ratchets, storage: configuration.storagePath)
 
-        /// Optional stamp generator for interface discovery.
-        ///
-        /// When any interface sets `discoverable = yes` and this property is non-nil, `start()`
-        /// calls `transport.enableDiscovery()` with it. The publish-side counterpart to
-        /// `discoveryStampValidator`, and typically backed by the same `LXStamper`.
-        public var discoveryStampGenerator: (any DiscoveryStampGenerator)?
+    // Set cache directory for disk-based packet (announce) cache.
+    // Mirrors Python's `RNS.Reticulum.cachepath`.
+    transport.cacheDirectory = StorageInventory.url(
+      .cache, storage: configuration.storagePath)
 
-        public init(storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true, logLevel: LogLevel = .notice) {
-            self.storagePath = storagePath
-            self.configPath = configPath
-            self.shareInstance = shareInstance
-            self.logLevel = logLevel
-            self.discoveryStampValidator = nil
-            self.discoveryStampGenerator = nil
-        }
+    // Load persisted known destinations (mirrors Python's Identity.load_known_destinations).
+    if FileManager.default.fileExists(atPath: knownDestinationsURL.path) {
+      try? transport.loadKnownDestinations(from: knownDestinationsURL)
     }
 
-    /// The most recently started Reticulum instance. Mirrors Python's
-    /// `RNS.Reticulum.get_instance()`. Set by `start()`.
-    public private(set) static var shared: Reticulum?
+    transport.loadKnownRatchets()
+    transport.sweepKnownRatchets()
 
-    // MARK: - Wire-format constants (mirrors Python Reticulum class attributes)
-
-    /// Maximum Transmission Unit in bytes. Python: `Reticulum.MTU = 500`.
-    public static let mtu: Int = Constants.mtu                       // 500
-
-    /// Maximum Data Unit (payload capacity) in bytes. Python: `Reticulum.MDU = 464`.
-    public static let mdu: Int = Constants.mdu                       // 464
-
-    /// Minimum header size for type-1 packets. Python: `Reticulum.HEADER_MINSIZE = 19`.
-    public static let headerMinSize: Int = Constants.headerMinSize   // 19
-
-    /// Maximum header size (type-2 packets with transport ID).
-    /// Python: `Reticulum.HEADER_MAXSIZE = 35`.
-    public static let headerMaxSize: Int = Constants.headerMaxSize   // 35
-
-    /// Minimum IFAC (Interface Access Code) tail size.
-    /// Python: `Reticulum.IFAC_MIN_SIZE = 1`.
-    public static let ifacMinSize: Int = Constants.ifacMinSize       // 1
-
-    // MARK: - Announce / persistence constants (mirrors Python Reticulum class attributes)
-
-    /// Maximum percentage of interface bandwidth that announce traffic may consume.
-    /// Used as: `announce_cap = Reticulum.ANNOUNCE_CAP / 100.0` (→ 0.02).
-    /// Python: `Reticulum.ANNOUNCE_CAP = 2`.
-    public static let announceCap: Int = 2
-
-    /// Maximum number of queued announces per interface before older ones are dropped.
-    /// Python: `Reticulum.MAX_QUEUED_ANNOUNCES = 16384`.
-    public static let maxQueuedAnnounces: Int = 16384
-
-    /// Interval at which data is persisted when the system is idle (quick save).
-    /// Python: `Reticulum.GRACIOUS_PERSIST_INTERVAL = 60*5`.
-    public static let graciousPersistInterval: TimeInterval = 60 * 5   // 300 s
-
-    /// Full persistence interval (paths, known destinations, hashlist).
-    /// Python: `Reticulum.PERSIST_INTERVAL = 60*60*12`.
-    public static let persistInterval: TimeInterval = 60 * 60 * 12     // 43200 s
-
-    /// Periodic cleanup interval for caches and stale entries.
-    /// Python: `Reticulum.CLEAN_INTERVAL = 900`.
-    public static let cleanInterval: TimeInterval = 900
-
-    /// Job loop interval (same as persist check interval).
-    /// Python: `Reticulum.JOB_INTERVAL = 300`.
-    public static let jobInterval: TimeInterval = 300
-
-    /// Minimum bitrate in bits/s below which an interface is considered unusable.
-    /// Python: `Reticulum.MINIMUM_BITRATE = 5`.
-    public static let minimumBitrate: Int = 5
-
-    /// How long a queued announce is kept before being dropped (seconds).
-    /// Python: `Reticulum.QUEUED_ANNOUNCE_LIFE = 60*60*24`.
-    public static let queuedAnnounceLife: TimeInterval = 86400
-
-    /// How long resource cache entries are kept (seconds).
-    /// Python: `Reticulum.RESOURCE_CACHE = 60*60*24`.
-    public static let resourceCacheLifetime: TimeInterval = 86400
-
-    /// Hash length in bits for truncated hashes (destination hashes, identity hashes).
-    /// Python: `Reticulum.TRUNCATED_HASHLENGTH = 128`.
-    public static let truncatedHashLength: Int = Constants.truncatedHashLengthBits   // 128
-
-    /// IFAC salt used for Interface Access Code derivation.
-    /// Python: `Reticulum.IFAC_SALT = bytes.fromhex("adf54d882c9a…")`.
-    public static let ifacSalt: Data = Constants.ifacSalt
-
-    // MARK: - Log destination constants (Python: RNS.LOG_STDOUT / LOG_FILE / LOG_CALLBACK)
-
-    /// Log to stdout. Mirrors Python `RNS.LOG_STDOUT = 0x91`.
-    public static let logDestStdout:   Int = 0x91
-
-    /// Log to a file. Mirrors Python `RNS.LOG_FILE = 0x92`.
-    public static let logDestFile:     Int = 0x92
-
-    /// Log via a callback. Mirrors Python `RNS.LOG_CALLBACK = 0x93`.
-    public static let logDestCallback: Int = 0x93
-
-    /// Maximum log file size in bytes (5 MiB). Mirrors Python `RNS.LOG_MAXSIZE = 5*1024*1024`.
-    public static let logMaxSize:      Int = 5 * 1024 * 1024
-
-    /// When `true`, log lines omit the log-level label (compact format).
-    /// Mirrors Python `RNS.compact_log_fmt = False`.
-    public static var compactLogFmt: Bool = false
-
-    // MARK: - Example configuration
-
-    /// A complete example Reticulum configuration file as a string.
-    ///
-    /// Python: `rnsd.py:90-583`, `__example_rns_config__`—the blob that
-    /// `rnsd --exampleconfig` prints. The byte-exact transcription lives in
-    /// ``RNSConfigTemplates/exampleConfig``, next to its SHA-256 regression test.
-    public static let exampleConfig: String = RNSConfigTemplates.exampleConfig
-
-    // MARK: - Static API (mirrors Python class-level static methods)
-
-    /// Returns the shared Reticulum instance.
-    /// Mirrors Python's `RNS.Reticulum.get_instance()`.
-    public static func getInstance() -> Reticulum? { shared }
-
-    /// Returns the Transport instance from the running shared Reticulum instance, or nil.
-    /// Mirrors Python's `RNS.Reticulum.get_transport_instance()`.
-    public static func getTransportInstance() -> Transport? { shared?.transport }
-
-    /// Returns whether this process is connected to a shared Reticulum instance
-    /// (that is, whether `Reticulum.shared` has been initialized).
-    /// Mirrors Python's `Reticulum.is_connected_to_shared_instance()`.
-    public static func isConnectedToSharedInstance() -> Bool { shared != nil }
-
-    /// Whether proofs sent are implicit (signature only, 64 bytes) or explicit
-    /// (full hash + Ed25519 signature, 96 bytes). Defaults to `true` (implicit), matching
-    /// Python's `Reticulum.__use_implicit_proof = True`.
-    /// Mirrors `RNS.Reticulum.should_use_implicit_proof()`.
-    public static var useImplicitProof: Bool = true
-
-    /// Returns whether implicit proofs are in use.
-    /// Mirrors Python's `Reticulum.should_use_implicit_proof()`.
-    public static func shouldUseImplicitProof() -> Bool { useImplicitProof }
-
-    // MARK: - Module-level utility functions (mirrors Python RNS module-level functions)
-
-    /// Returns a cryptographically random `Double` in `[0, 1)`.
-    /// Mirrors Python's `RNS.rand()`.
-    public static func rand() -> Double {
-        var bytes = [UInt8](repeating: 0, count: 8)
-        _ = SecRandomCopyBytes(kSecRandomDefault, 8, &bytes)
-        // Construct a value in [0, 1) by filling the mantissa of a 64-bit float.
-        let bits = bytes.withUnsafeBytes { $0.load(as: UInt64.self) }
-        // IEEE-754: exponent = 1023 (value 1.0..2.0), then subtract 1.0 → [0, 1)
-        let mantissa = (bits & 0x000FFFFFFFFFFFFF) | 0x3FF0000000000000
-        return Double(bitPattern: mantissa) - 1.0
-    }
-
-    /// Returns `true` if the current global log level is at or above `level`.
-    /// Mirrors Python's `RNS.sl(level=LOG_NOTICE)`.
-    ///
-    /// - Parameter level: The threshold level to check. Defaults to `.notice` (matching Python's default of 3).
-    public static func sl(level: LogLevel = .notice) -> Bool {
-        globalLogLevel != .none && globalLogLevel >= level
-    }
-
-    /// Returns a dictionary of physical-layer parameters for this stack.
-    /// Mirrors Python's `RNS.phyparams()` which prints the same values.
-    ///
-    /// Keys: `"mtu"`, `"linkMdu"`, `"linkCurve"`, `"ecPubKeySize"`, `"keySize"`.
-    public static func phyparams() -> [String: Any] {
-        [
-            "mtu":          Reticulum.mtu,
-            "linkMdu":      Constants.linkMdu,
-            "linkCurve":    Identity.curve,
-            "ecPubKeySize": Identity.ecPubSize,
-            "keySize":      Identity.keySize,
-        ]
-    }
-
-    /// Returns the human-readable name string for a log level.
-    /// Mirrors Python's `RNS.loglevelname(level)`—note Python uses fixed-width
-    /// padded strings to align log output.
-    public static func loglevelname(_ level: LogLevel) -> String {
-        switch level {
-        case .critical: return "[Critical]"
-        case .error:    return "[Error]   "
-        case .warning:  return "[Warning] "
-        case .notice:   return "[Notice]  "
-        case .info:     return "[Info]    "
-        case .verbose:  return "[Verbose] "
-        case .debug:    return "[Debug]   "
-        case .pathing:  return "[Pathing] "   // Python LOG_PATHING = 7
-        case .extreme:  return "[Extra]   "   // Python uses "[Extra]" for LOG_EXTREME (now 8)
-        case .none:     return "[None]    "
-        }
-    }
-
-    /// Whether link MTU discovery is enabled globally.
-    /// Mirrors Python's `Reticulum.link_mtu_discovery()`.
-    /// Default: true (Python `LINK_MTU_DISCOVERY = True`).
-    ///
-    /// Settable because Python reads `link_mtu_discovery` from the `[reticulum]` config section
-    /// (`Reticulum.py:537-539`). It was `private(set)` with no writer anywhere, so the option had
-    /// nowhere to be applied—the same shape as the get-only interface attributes, and the reason
-    /// adding the config parser alone would not have been enough. See `swift_devel/bugs/025-*.md`
-    /// and `bugs/030-*.md`.
-    public static var linkMtuDiscoveryEnabled: Bool = true
-
-    public static func linkMtuDiscovery() -> Bool { linkMtuDiscoveryEnabled }
-
-    /// Returns whether Transport is enabled for the running shared instance.
-    /// Mirrors Python's `Reticulum.transport_enabled()`.
-    public static func transportEnabled() -> Bool { shared?.transport.transportEnabled ?? false }
-
-    /// Whether the probe destination is enabled.
-    /// Mirrors Python's `Reticulum.probe_destination_enabled()`.
-    /// Settable so tests can control the flag without a full config file.
-    public static var allowProbes_: Bool = false
-    public static func probeDestinationEnabled() -> Bool { allowProbes_ }
-
-    /// Whether remote management is enabled. Defaults to false.
-    /// Mirrors Python's `Reticulum.remote_management_enabled()`.
-    /// Settable so tests can control the flag without a full config file.
-    public static var remoteManagementEnabled_: Bool = false
-    public static func remoteManagementEnabled() -> Bool { remoteManagementEnabled_ }
-
-    /// Returns the required stamp value for interface discovery validation.
-    /// Mirrors Python's `Reticulum.required_discovery_value()`.
-    public private(set) static var requiredDiscoveryValue_: Int = 16
-    public static func requiredDiscoveryValue() -> Int { requiredDiscoveryValue_ }
-
-    /// Returns whether blackhole list publishing is enabled.
-    /// Mirrors Python's `Reticulum.publish_blackhole_enabled()`.
-    public private(set) static var publishBlackholeEnabled_: Bool = false
-    public static func publishBlackholeEnabled() -> Bool { publishBlackholeEnabled_ }
-
-    /// Returns the list of transport identity hashes from which blackhole lists are sourced.
-    /// Mirrors Python's `Reticulum.blackhole_sources()`.
-    public private(set) static var blackholeSources_: [Data] = []
-    public static func blackholeSources() -> [Data] { blackholeSources_ }
-
-    /// Interval (seconds) between blackhole list re-fetches from each source.
-    /// Default 3600 (1 hour). Minimum 120 seconds. Configurable via the
-    /// `blackhole_update_interval` config key (value in minutes).
-    /// Mirrors Python's `Reticulum.blackhole_update_interval()` accessor +
-    /// `BlackholeUpdater.UPDATE_INTERVAL` default (RNS commit 02924656).
-    public private(set) static var blackholeUpdateInterval_: TimeInterval = 3600
-    public static func blackholeUpdateInterval() -> TimeInterval { blackholeUpdateInterval_ }
-
-    /// Returns a list of interfaces discovered over the network.
-    /// Mirrors Python's `Reticulum.discovered_interfaces()`.
-    public private(set) static var discoveredInterfaces_: [String] = []
-    public static func discoveredInterfaces() -> [String] { discoveredInterfaces_ }
-
-    /// Whether any configured interface asked to be announced as a discoverable endpoint.
-    ///
-    /// Python latches this the moment it parses a `discoverable = yes` in any interface block
-    /// (`Reticulum.py:904`) and starts the announcer from it once the stack is up
-    /// (`:370`). The flag is needed because the interfaces don't exist yet when the block is
-    /// read, so there's nothing to inspect at start-up time otherwise.
-    ///
-    /// `internal(set)` for the same reason as `interfaceDiscoverySources_`: config loading is
-    /// the only production writer and lives in this module.
-    public internal(set) static var discoveryEnabled_: Bool = false
-    public static func discoveryEnabled() -> Bool { discoveryEnabled_ }
-
-    /// Returns the list of network identity hashes from which interfaces are discovered.
-    /// Mirrors Python's `Reticulum.interface_discovery_sources()`.
-    /// `internal(set)`, not `private(set)`: the announce-time allowlist check in
-    /// `InterfaceAnnounceHandler` needs to be testable, and config loading (the
-    /// only production writer) already lives in this module.
-    public internal(set) static var interfaceDiscoverySources_: [Data] = []
-    public static func interfaceDiscoverySources() -> [Data] { interfaceDiscoverySources_ }
-
-    /// Maximum number of discovered interfaces to auto-connect to.
-    /// 0 means auto-connect is disabled. Mirrors Python's `Reticulum.__autoconnect_discovered_interfaces`.
-    public static var maxAutoconnectedInterfaces_: Int = 0
-
-    /// Returns true if discovered interfaces should be automatically connected.
-    /// Mirrors Python's `Reticulum.should_autoconnect_discovered_interfaces()`.
-    public static func shouldAutoconnectDiscoveredInterfaces() -> Bool { maxAutoconnectedInterfaces_ > 0 }
-
-    /// Returns the maximum number of auto-connected discovered interfaces.
-    /// Mirrors Python's `Reticulum.max_autoconnected_interfaces()`.
-    public static func maxAutoconnectedInterfaces() -> Int { maxAutoconnectedInterfaces_ }
-
-    // MARK: - RNS 1.4.1 gravity / autoconnect policy
-
-    /// Configured `default_gravity`, or `nil` when unset.
-    public static var defaultGravity_: Int? = nil
-
-    /// Gravity for an interface that doesn't configure its own.
-    /// Mirrors Python's `Reticulum._default_gravity()`.
-    public static func defaultGravity() -> Int {
-        defaultGravity_ ?? InterfaceMode.defaultGravity
-    }
-
-    /// Configured `autoconnect_interface_mode`, or `nil` when unset.
-    /// Mirrors Python's `Reticulum.autoconnect_interface_mode()`.
-    public static var autoconnectInterfaceMode_: InterfaceMode? = nil
-    public static func autoconnectInterfaceMode() -> InterfaceMode? { autoconnectInterfaceMode_ }
-
-    /// Configured `autoconnect_interface_gravity`, or `nil` when unset.
-    /// Mirrors Python's `Reticulum.autoconnect_interface_gravity()`.
-    public static var autoconnectInterfaceGravity_: Int? = nil
-    public static func autoconnectInterfaceGravity() -> Int? { autoconnectInterfaceGravity_ }
-
-    /// Configured `autoconnect_announces_to_internal`, or `nil` when unset.
-    /// Mirrors Python's `Reticulum.autoconnect_announces_to_internal()`.
-    public static var autoconnectAnnouncesToInternal_: Bool? = nil
-    public static func autoconnectAnnouncesToInternal() -> Bool? { autoconnectAnnouncesToInternal_ }
-
-    // MARK: - `[reticulum]` global defaults (`bugs/030`)
+    // Restore path table, dropping any expired entries.
     //
-    // Python holds each of these as `Reticulum.__<name> = None` and exposes a `_default_<name>()`
-    // accessor that falls back to the `Interface` class constant (`Reticulum.py:1146-1185`).
-    // `Interface.__init__` reads the accessors (`Interface.py:126-136`), so the `[reticulum]`
-    // section sets the value every interface *starts* from, and a per-interface block overrides
-    // it. Both halves are needed: the parser alone leaves the value inert.
-    //
-    // The fallbacks below are `??` where Python writes `or`, which differ on zero—see
-    // `configuredOrDefault(_:_:)`.
-
-    /// Python's `or` treats `0` and `0.0` as absent, so a configured zero falls back to the
-    /// class constant rather than taking effect. Replicated deliberately: it's observable
-    /// behaviour of the reference, and an operator copying a working Python config onto a Swift
-    /// node must get the same tuning. Recorded here rather than left as a silent `??`.
-    @inline(__always)
-    private static func pythonOr<T: BinaryFloatingPoint>(_ configured: T?, _ fallback: T) -> T {
-        guard let configured, configured != 0 else { return fallback }
-        return configured
+    // After known destinations and ratchets, deliberately: the reference's entry carries no
+    // identity material of its own and resolves it through `Identity.recall`, so
+    // `Reticulum.py:344` loads that file before `:346` starts Transport and reads this one.
+    // Restoring paths first would leave every restored entry without an identity hash.
+    let pathStoreURL = StorageInventory.url(
+      .destinationTable,
+      storage: configuration.storagePath)
+    if FileManager.default.fileExists(atPath: pathStoreURL.path) {
+      do {
+        try PathStore.read(from: pathStoreURL).apply(to: transport)
+      } catch {
+        // `Transport.py:357-359`—log and start with an empty path table.
+        Reticulum.log(
+          "Could not load destination table from storage, the contained "
+            + "exception was: \(error)", level: .error)
+      }
     }
 
-    @inline(__always)
-    private static func pythonOr(_ configured: Int?, _ fallback: Int) -> Int {
-        guard let configured, configured != 0 else { return fallback }
-        return configured
+    // Then the tunnel table, which the reference reads immediately after the destination
+    // table in the same block (`Transport.py:365-405`). A tunnel path is restored with no
+    // interface; `handleTunnel` re-attaches one when the endpoint reappears.
+    let tunnelStoreURL = StorageInventory.url(.tunnels, storage: configuration.storagePath)
+    if FileManager.default.fileExists(atPath: tunnelStoreURL.path) {
+      do {
+        try TunnelStore.read(from: tunnelStoreURL).apply(to: transport)
+      } catch {
+        // `Transport.py:406-407`—log and start with an empty tunnel table.
+        Reticulum.log(
+          "Could not load tunnel table from storage, the contained "
+            + "exception was: \(error)", level: .error)
+      }
     }
 
-    /// Configured shared-instance RPC key, or `nil` to derive one from the transport identity.
-    /// Mirrors Python's `self.rpc_key` (`Reticulum.py:494-499`).
-    public static var rpcKey_: Data? = nil
+    // Restore packet hashlist for replay prevention across restarts.
+    // Mirrors Python's hashlist loading in Transport.__init__.
+    let hashlistURL = StorageInventory.url(
+      .packetHashlist,
+      storage: configuration.storagePath)
+    try? transport.loadPacketHashlist(from: hashlistURL)
 
-    /// Configured `instance_name`. Mirrors Python's `local_socket_path` (`Reticulum.py:475-478`).
-    public static var instanceName_: String? = nil
-    public static func instanceName() -> String { instanceName_ ?? "default" }
+    // Load blackhole list from directory (mirrors Python's Transport.reload_blackhole()).
+    // Allows external sources listed in Reticulum.blackhole_sources().
+    let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
+    try? transport.reloadBlacklist(
+      fromDirectory: blackholePath,
+      allowedSources: Reticulum.blackholeSources())
 
-    /// Configured `shared_instance_type`—`"tcp"` or `"unix"` (`Reticulum.py:479-484`).
-    public static var sharedInstanceType_: String? = nil
+    try transport.start()
 
-    /// Configured `force_shared_instance_bitrate` (`Reticulum.py:560-562`), applied to the
-    /// shared-instance interface at `:397-399` and `:424-425`.
-    public static var forceSharedInstanceBitrate_: Int? = nil
-
-    /// The configured forced shared-instance bitrate, or nil.
-    ///
-    /// **Known gap** (`fix-013 §7.8`): the reference also marks the interface `_force_bitrate`
-    /// and uses that flag to simulate the forced link's latency
-    /// (`Reticulum.py:397-401`/`:424-428` → `LocalInterface.py:234`, propagated to spawned
-    /// clients at `:459`/`:475`). This port has neither the flag nor the simulation, so the
-    /// value is readable and honest about being reportable-only.
-    public static func forceSharedInstanceBitrate() -> Int? { forceSharedInstanceBitrate_ }
-
-    /// Whether this port announces its own interfaces as discoverable endpoints—Python's
-    /// `Discovery.InterfaceAnnouncer`. True since 2026-09-04, when the publish side landed
-    /// alongside the seventeen `discovery_*`/`reachable_on`/`discoverable` interface
-    /// attributes it carries.
-    ///
-    /// Announcing also needs a `Configuration.discoveryStampGenerator`, for the same reason
-    /// discovering needs a validator: the proof-of-work lives in LXMF.
-    public static let publishesInterfaceDiscovery = true
-
-    /// Whether this port dials and monitors discovered endpoints—Python's
-    /// `Discovery.InterfaceDiscovery` autoconnect half, which writes `autoconnect_hash`,
-    /// `autoconnect_source` and `autoconnect_down`. True since 2026-09-04.
-    ///
-    /// Still off unless the operator sets `autoconnect_discovered_interfaces` to a non-zero
-    /// limit: the subsystem exists, and dialling strangers is opt-in.
-    public static let autoconnectsDiscoveredInterfaces = true
-
-    /// Announce-rate defaults for interfaces that don't configure their own.
-    /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
-    public static var defaultArTarget_: Int? = nil
-    public static var defaultArPenalty_: Int? = nil
-    public static var defaultArGrace_: Int? = nil
-    public static func defaultArTarget() -> Int? { defaultArTarget_ }
-    public static func defaultArPenalty() -> Int { defaultArPenalty_ ?? 0 }
-    public static func defaultArGrace() -> Int { defaultArGrace_ ?? 0 }
-
-    /// Egress-control defaults every interface starts from.
-    /// Mirrors `Reticulum._default_egress_control()` / `_default_ec_pr_freq()` (`:1173-1176`).
-    public static var defaultEgressControl_: Bool? = nil
-    public static var defaultEcPrFreq_: Double? = nil
-    public static func defaultEgressControl() -> Bool { defaultEgressControl_ ?? false }
-    public static func defaultEcPrFreq() -> Double { pythonOr(defaultEcPrFreq_, 5.0) }
-
-    /// Ingress-control defaults every interface starts from.
-    /// Mirrors `Reticulum._default_ic_*()` (`:1154-1185`), each falling back to the
-    /// `IngressControlState` constant that holds the Python class value.
-    public static var defaultIcMaxHeldAnnounces_: Int? = nil
-    public static var defaultIcBurstHold_: Double? = nil
-    public static var defaultIcBurstFreqNew_: Double? = nil
-    public static var defaultIcBurstFreq_: Double? = nil
-    public static var defaultIcPrBurstFreqNew_: Double? = nil
-    public static var defaultIcPrBurstFreq_: Double? = nil
-    public static var defaultIcNewTime_: Double? = nil
-    public static var defaultIcBurstPenalty_: Double? = nil
-    public static var defaultIcHeldReleaseInterval_: Double? = nil
-
-    public static func defaultIcMaxHeldAnnounces() -> Int {
-        pythonOr(defaultIcMaxHeldAnnounces_, IngressControlState.maxHeldAnnounces)
-    }
-    public static func defaultIcBurstHold() -> Double {
-        pythonOr(defaultIcBurstHold_, IngressControlState.icBurstHold)
-    }
-    public static func defaultIcBurstFreqNew() -> Double {
-        pythonOr(defaultIcBurstFreqNew_, IngressControlState.icBurstFreqNew)
-    }
-    public static func defaultIcBurstFreq() -> Double {
-        pythonOr(defaultIcBurstFreq_, IngressControlState.icBurstFreq)
-    }
-    public static func defaultIcPrBurstFreqNew() -> Double {
-        pythonOr(defaultIcPrBurstFreqNew_, IngressControlState.icPrBurstFreqNew)
-    }
-    public static func defaultIcPrBurstFreq() -> Double {
-        pythonOr(defaultIcPrBurstFreq_, IngressControlState.icPrBurstFreq)
-    }
-    public static func defaultIcNewTime() -> Double {
-        pythonOr(defaultIcNewTime_, IngressControlState.icNewTime)
-    }
-    public static func defaultIcBurstPenalty() -> Double {
-        pythonOr(defaultIcBurstPenalty_, IngressControlState.icBurstPenalty)
-    }
-    public static func defaultIcHeldReleaseInterval() -> Double {
-        pythonOr(defaultIcHeldReleaseInterval_, IngressControlState.icHeldReleaseInterval)
+    // Start announcing this instance's discoverable interfaces when any of them asked to be.
+    // Mirrors Python: if Reticulum.__discovery_enabled: RNS.Transport.enable_discovery()
+    // (`Reticulum.py:370`). The latch is set while parsing interface blocks, because no
+    // interface exists yet when the reticulum block is read.
+    if Reticulum.discoveryEnabled() {
+      if let stampGenerator = configuration.discoveryStampGenerator {
+        transport.enableDiscovery(stampGenerator: stampGenerator)
+      } else {
+        Reticulum.log(
+          "An interface is configured as discoverable, but no discovery "
+            + "stamp generator was supplied. Interfaces will not be announced.",
+          level: .error)
+      }
     }
 
-    /// Copy one parsed `[reticulum]` section onto the global defaults.
-    ///
-    /// Split out of `applyConfig` so the one call site can't be the missing thing again—the
-    /// same reason `applyIfacConfiguration` and `applyInterfaceConfiguration` are separate
-    /// (`bugs/015`, `bugs/025`). Every value is applied only when the key was present, so an
-    /// absent option leaves the built-in default rather than zeroing it.
-    public static func applyGlobalDefaults(_ section: ReticulumConfig.ReticulumSection) {
-        if let v = section.rpcKey                    { rpcKey_ = v }
-        if let v = section.instanceName              { instanceName_ = v }
-        if let v = section.sharedInstanceType        { sharedInstanceType_ = v }
-        if let v = section.useImplicitProof          { useImplicitProof = v }
-        if let v = section.linkMtuDiscovery          { linkMtuDiscoveryEnabled = v }
-        if let v = section.forceSharedInstanceBitrate { forceSharedInstanceBitrate_ = v }
+    // Start interface discovery listener when configured.
+    // Mirrors Python: if Reticulum.__discover_interfaces: RNS.Transport.discover_interfaces()
+    // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
+    if let parsedCfg = config, parsedCfg.reticulum.discoverInterfaces,
+      let validator = configuration.discoveryStampValidator
+    {
+      let discoveryPath = StorageInventory.url(
+        .discoveredInterfaces, storage: configuration.storagePath
+      ).path
+      transport.discoverInterfaces(
+        storagePath: discoveryPath,
+        requiredValue: Reticulum.requiredDiscoveryValue(),
+        stampValidator: validator
+      )
 
-        if let v = section.defaultArTarget           { defaultArTarget_ = v }
-        if let v = section.defaultArPenalty          { defaultArPenalty_ = v }
-        if let v = section.defaultArGrace            { defaultArGrace_ = v }
-
-        if let v = section.egressControl             { defaultEgressControl_ = v }
-        if let v = section.ecPrFreq                  { defaultEcPrFreq_ = v }
-
-        if let v = section.icMaxHeldAnnounces        { defaultIcMaxHeldAnnounces_ = v }
-        if let v = section.icBurstHold               { defaultIcBurstHold_ = v }
-        if let v = section.icBurstFreqNew            { defaultIcBurstFreqNew_ = v }
-        if let v = section.icBurstFreq               { defaultIcBurstFreq_ = v }
-        if let v = section.icPrBurstFreqNew          { defaultIcPrBurstFreqNew_ = v }
-        if let v = section.icPrBurstFreq             { defaultIcPrBurstFreq_ = v }
-        if let v = section.icNewTime                 { defaultIcNewTime_ = v }
-        if let v = section.icBurstPenalty            { defaultIcBurstPenalty_ = v }
-        if let v = section.icHeldReleaseInterval     { defaultIcHeldReleaseInterval_ = v }
-    }
-
-    public let configuration: Configuration
-    public let transport: Transport
-    public private(set) var rpcServer: RPCServer?
-
-    /// Parsed config file, if one was loaded.
-    public private(set) var config: ReticulumConfig?
-
-    /// Identity returned by `loadOrCreateIdentity`. Held weakly so the
-    /// stack can re-save its ratchets at checkpoint/stop time without
-    /// keeping it alive past the host's own lifetime.
-    private weak var trackedIdentity: Identity?
-
-    public init(configuration: Configuration) {
-        self.configuration = configuration
-        self.transport = Transport()
-    }
-
-    /// Convenience: init from a config directory path (mirrors Python's
-    /// `RNS.Reticulum(configdir=...)` pattern).
-    public static func fromConfigDir(_ configDir: URL) -> Reticulum {
-        let storagePath = StorageInventory.url(.storage, in: configDir)
-        let configPath = StorageInventory.url(.config, in: configDir)
-        return Reticulum(configuration: Configuration(
-            storagePath: storagePath,
-            configPath: configPath
-        ))
-    }
-
-    /// The key utilities must present to reach this daemon's control socket.
-    ///
-    /// Configured value first, derived value as fallback—`Reticulum.py:494-499` sets
-    /// `self.rpc_key` from the config and `:508-511` derives one only when it's still `None`
-    /// (task 4.3, design D8). The configured form exists for platforms where two instances
-    /// can't share a config directory, so ignoring it locks the operator out of their own
-    /// daemon on exactly the systems the option was added for.
-    ///
-    /// Returns `nil` when no identity is available and no key is configured.
-    public func rpcAuthenticationKey() -> Data? {
-        if let configured = Reticulum.rpcKey_ { return configured }
-        // Derived from the persistent (internal) identity so it stays stable across runs even
-        // when an ephemeral transport identity is in use. Mirrors Python's
-        // `rpc_key = full_hash(Transport.internal_identity().get_private_key())`.
-        guard let identity = transport.internalIdentity ?? transport.transportIdentity,
-              let privBytes = identity.getPrivateKey() else { return nil }
-        return Identity.fullHash(privBytes)
-    }
-
-    /// Start the RPC server on the specified port.
-    /// Python: `self.rpc_listener = multiprocessing.connection.Listener(...)`
-    public func startRPC(port: UInt16) throws {
-        guard let authkey = rpcAuthenticationKey() else {
-            throw ReticulumError.missingIdentity
+      // Python re-runs `_synthesize_interface` over `bootstrap_configs` when every
+      // auto-connected peer has gone (`Discovery.py:652-654`). The parsed config lives
+      // here rather than on `Transport`, so the clause is injected.
+      //
+      // Unowned-safe capture: `Reticulum` owns `transport`, which owns the discovery
+      // handler holding this closure, so a strong capture would be a cycle.
+      transport.discoveryHandler?.reenableBootstrapInterfaces = { [weak self] in
+        guard let self, let cfg = self.config else { return }
+        let bootstrapOnly = cfg.interfaces.filter {
+          $0.enabled && $0.bool("bootstrap_only") == true
         }
-        let server = RPCServer(port: port, authkey: authkey)
-        server.transport = transport
-        try server.start()
-        self.rpcServer = server
+        guard !bootstrapOnly.isEmpty else { return }
+        var subset = cfg
+        subset.interfaces = bootstrapOnly
+        try? self.synthesizeInterfaces(from: subset)
+      }
     }
 
-    public enum ReticulumError: Error {
-        case missingIdentity
+    // Start blackhole-list updater when sources are configured.
+    // Mirrors Python: if Reticulum.__blackhole_sources: RNS.Transport.enable_blackhole_updater()
+    if let parsedCfg = config, !parsedCfg.reticulum.blackholeSources.isEmpty {
+      Reticulum.storedBlackholeSources = parsedCfg.reticulum.blackholeSources
+      transport.enableBlackholeUpdater()
     }
 
-    // Every persisted path resolves through `StorageInventory`, which is the one place that
-    // names them and cites the Python file:line each name mirrors (bugs/029).
-    private var identityURL: URL {
-        StorageInventory.url(.identity, storage: configuration.storagePath)
+    Reticulum.shared = self
+  }
+
+  /// Tears links down, stops the interfaces and checkpoints persisted state.
+  public func stop() {
+    // Tear links down first, while the interfaces can still carry the close.
+    //
+    // Mirrors `Reticulum.py:196-205`, where both signal handlers call
+    // `Transport.detach_interfaces()` before anything else: each established link is closed,
+    // the queue is given 150 ms to drain, then each interface is stopped
+    // (`Transport.py:3171-3183`). A node that exits without it leaves every peer holding the
+    // link ACTIVE until its own keepalive watchdog expires—up to `KEEPALIVE_MAX` = 360 s—with
+    // the LXMF, NomadNet and LXST sessions riding those links hanging rather than
+    // failing (`bugs/028`).
+    //
+    // Here rather than in each caller, deliberately (D9). There are at least three exit paths
+    //—`rnsd`'s signal handlers via `InstanceConnection.stop()`, the shared-instance stop,
+    // and an application's own teardown—and wiring them individually leaves whichever one is
+    // added next broken. That isn't hypothetical for this subsystem: `detachInterfaces()`
+    // itself sat here with no callers, and RetiOS shipped `StackController.tearDown()` with
+    // none until v0.3.9.
+    //
+    // Order matters as much as the call. `transport.stop()` stops every interface, so running
+    // it first would leave the close packets handed to dead interfaces—satisfying "teardown
+    // was called" while emitting nothing, which is the same silence the defect produced.
+    transport.detachInterfaces()
+    transport.stop()
+    let pathStoreURL = StorageInventory.url(
+      .destinationTable,
+      storage: configuration.storagePath)
+    try? PathStore.snapshot(of: transport).write(to: pathStoreURL)
+    try? TunnelStore.snapshot(of: transport)
+      .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
+    try? trackedIdentity?.writeRatchets(toFile: ratchetsURL)
+    // Persist known destinations (mirrors Python's Identity.save_known_destinations).
+    try? transport.saveKnownDestinations(to: knownDestinationsURL)
+    // Persist packet hashlist for replay prevention across restarts.
+    let hashlistURL = StorageInventory.url(
+      .packetHashlist,
+      storage: configuration.storagePath)
+    try? transport.savePacketHashlist(to: hashlistURL)
+    // Persist blackhole list (own entries only, mirrors Python's Transport.persist_blackhole()).
+    let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
+    try? transport.persistBlacklist(toDirectory: blackholePath)
+  }
+
+  // MARK: - Management API (mirrors Python Reticulum instance methods)
+
+  /// Drop a known path, forcing re-discovery on next attempt.
+  ///
+  /// Mirrors Python's `RNS.Reticulum.get_instance().drop_path(hash)`.
+  @discardableResult
+  public func dropPath(for destinationHash: Data) -> Bool {
+    transport.dropPath(for: destinationHash)
+  }
+
+  /// Clear all per-interface announce queues, dropping any pending relayed announces.
+  ///
+  /// Returns `true` on success.
+  /// Mirrors Python's `Reticulum.drop_announce_queues()` → `Transport.drop_announce_queues()`.
+  @discardableResult
+  public func dropAnnounceQueues() -> Bool {
+    transport.dropAnnounceQueues()
+    return true
+  }
+
+  /// Returns the current number of active links.
+  ///
+  /// Mirrors Python's `Reticulum.get_link_count()`.
+  public func getLinkCount() -> Int { transport.getLinkCount() }
+
+  /// Mirrors Python's `Reticulum.get_active_link_count()`.
+  public func getActiveLinkCount() -> Int { transport.getActiveLinkCount() }
+
+  /// Returns statistics for all registered interfaces.
+  ///
+  /// Mirrors Python's `Reticulum.get_interface_stats()`.
+  public func getInterfaceStats() -> [Transport.InterfaceStats] { transport.getInterfaceStats() }
+
+  /// Returns a snapshot of the path table, optionally filtered by max hops.
+  ///
+  /// Mirrors Python's `Reticulum.get_path_table(max_hops=None)`.
+  public func getPathTable(maxHops: UInt8? = nil) -> [Transport.PathTableEntry] {
+    transport.getPathTable(maxHops: maxHops)
+  }
+
+  /// Drop all path table entries that route via a specific transport instance.
+  ///
+  /// Returns the number of dropped paths.
+  /// Mirrors Python's `Reticulum.drop_all_via(transport_hash)`.
+  @discardableResult
+  public func dropAllVia(transportHash: Data) -> Int {
+    transport.dropAllPaths(via: transportHash)
+  }
+
+  /// Blackhole an identity hash, preventing its announces from being forwarded.
+  ///
+  /// Returns `true` on success, `nil` if already blackholed, `false` if hash length is wrong.
+  /// Mirrors Python's `Reticulum.blackhole_identity(identity_hash, until, reason)`.
+  @discardableResult
+  public func blackholeIdentity(_ identityHash: Data, until: Date? = nil, reason: String? = nil)
+    -> Bool?
+  {
+    guard identityHash.count == Constants.truncatedHashLength else { return false }
+    return transport.blackholeIdentity(
+      identityHash, until: until?.timeIntervalSince1970, reason: reason)
+  }
+
+  /// Remove an identity from the blackhole list.
+  ///
+  /// Returns `true` on success, `nil` if not blackholed, `false` if hash length is wrong.
+  /// Mirrors Python's `Reticulum.unblackhole_identity(identity_hash)`.
+  @discardableResult
+  public func unblackholeIdentity(_ identityHash: Data) -> Bool? {
+    guard identityHash.count == Constants.truncatedHashLength else { return false }
+    return transport.unblackholeIdentity(identityHash)
+  }
+
+  /// Returns all blackholed identity hashes with their entries.
+  ///
+  /// Mirrors Python's `Reticulum.get_blackholed_identities()`.
+  public func getBlackholedIdentities() -> [Data: Transport.BlackholeEntry] {
+    transport.blackholeLock.lock()
+    defer { transport.blackholeLock.unlock() }
+    return transport.blackholedIdentities
+  }
+
+  /// Returns a snapshot of the current announce rate table.
+  ///
+  /// Mirrors Python's `Reticulum.get_rate_table()`.
+  public func getRateTable() -> [Transport.RateTableEntry] {
+    transport.getRateTable()
+  }
+
+  /// Returns the cached RSSI for a received packet, or nil if not cached.
+  ///
+  /// Mirrors Python's `Reticulum.get_packet_rssi(packet_hash)`.
+  public func getPacketRssi(packetHash: Data) -> Float? {
+    transport.getPacketRssi(packetHash: packetHash)
+  }
+
+  /// Returns the cached SNR for a received packet, or nil if not cached.
+  ///
+  /// Mirrors Python's `Reticulum.get_packet_snr(packet_hash)`.
+  public func getPacketSnr(packetHash: Data) -> Float? {
+    transport.getPacketSnr(packetHash: packetHash)
+  }
+
+  /// Returns the cached signal quality for a received packet, or nil if not cached.
+  ///
+  /// Mirrors Python's `Reticulum.get_packet_q(packet_hash)`.
+  public func getPacketQ(packetHash: Data) -> Float? {
+    transport.getPacketQ(packetHash: packetHash)
+  }
+
+  /// Force-checkpoint the path table without stopping the stack—useful
+  /// from `applicationWillResignActive` on iOS.
+  public func checkpoint() throws {
+    let pathStoreURL = StorageInventory.url(
+      .destinationTable,
+      storage: configuration.storagePath)
+    try PathStore.snapshot(of: transport).write(to: pathStoreURL)
+    try TunnelStore.snapshot(of: transport)
+      .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
+    try trackedIdentity?.writeRatchets(toFile: ratchetsURL)
+  }
+
+  /// Load a persistent identity from disk, creating it if it doesn't
+  /// exist.
+  ///
+  /// The 64-byte private-key blob lives at
+  /// `<storagePath>/identity` with `0o600` semantics where the platform
+  /// supports it. Ratchet privates, if present, live in a sidecar at
+  /// `<storagePath>/identity.ratchets` and are reloaded here.
+  public func loadOrCreateIdentity() throws -> Identity {
+    let identity: Identity
+    if FileManager.default.fileExists(atPath: identityURL.path) {
+      identity = try Identity.read(fromFile: identityURL)
+    } else {
+      identity = Identity()
+      try identity.write(toFile: identityURL)
     }
-    private var ratchetsURL: URL {
-        StorageInventory.url(.identityRatchets, storage: configuration.storagePath)
+    if FileManager.default.fileExists(atPath: ratchetsURL.path) {
+      try? identity.loadRatchets(fromFile: ratchetsURL)
     }
-    private var transportIDURL: URL {
-        StorageInventory.url(.transportIdentity, storage: configuration.storagePath)
-    }
-    private var knownDestinationsURL: URL {
-        StorageInventory.url(.knownDestinations, storage: configuration.storagePath)
+    trackedIdentity = identity
+    return identity
+  }
+
+  // MARK: - Per-interface configuration
+
+  /// Apply everything one interface block configures, then its IFAC keys.
+  ///
+  /// The other half of `bugs/025`. §1 of this change made `mode`, the three `announce_rate_*`
+  /// values, `announce_cap`, `bitrate`, `ingress_control`, `egress_control`/`ec_pr_freq` and the
+  /// nine `ic_*` tunables settable, because Python mutates all of them at runtime and this port
+  /// had declared them get-only. That removed the compile-time blocker and left the values with
+  /// nowhere to come *from*: this function didn't exist, and `synthesizeInterfaces` applied
+  /// exactly two attributes—`gravity` and `announces_to_internal`. Which is the same defect one
+  /// step earlier, in the spec's words: "a configuration value with nowhere to be written is
+  /// indistinguishable from a configuration value that's never read, and both are failures of
+  /// this requirement."
+  ///
+  /// Mirrors `Reticulum.py:735-857` (extraction) and `:906-953` (application). Python applies the
+  /// first group unconditionally, from resolved defaults, and the `egress_control` / `ic_*`
+  /// group only where the key is present—so an absent key leaves the class default rather than
+  /// overwriting it with a zero.
+  ///
+  /// Called before `Transport.register` and `Interface.start`, matching `Reticulum.py:975`.
+  public static func applyInterfaceConfiguration(
+    to interface: any Interface,
+    from block: ReticulumConfig.InterfaceConfig
+  ) {
+    // `interface_mode` first, then `mode` (`Reticulum.py:736-768`). Case-insensitive, and an
+    // unrecognized value falls through leaving the default—Python's if/elif chain has no
+    // else branch, so `interface_mode` stays MODE_FULL.
+    //
+    // Divergence worth recording: Python's `interface_mode` branch reads `c["mode"]` for its
+    // `gateway` and `internal` cases (`Reticulum.py:748-751`)—a typo in the reference. With
+    // `interface_mode = gateway` and no `mode` key, configobj raises `KeyError` there. This
+    // port resolves both aliases from whichever key was given, which is what the branch plainly
+    // intends and what the spec table describes.
+    let modeString = block["interface_mode"] ?? block["mode"]
+    if let modeString, let mode = InterfaceMode(configName: modeString) {
+      interface.mode = mode
     }
 
-    public func start() throws {
-        // Create storage directories.
-        try FileManager.default.createDirectory(
-            at: configuration.storagePath,
-            withIntermediateDirectories: true
+    // An explicit `gravity` wins, else `default_gravity`, else 0 (`Reticulum.py:771-772`).
+    interface.gravity = block.int("gravity") ?? Reticulum.defaultGravity()
+
+    // A percentage in `(0, 100]`, divided by 100 (`Reticulum.py:834-837`). Out of range leaves
+    // the class default.
+    if let cap = block.double("announce_cap"), cap > 0, cap <= 100 {
+      interface.announceCap = cap / 100.0
+    }
+
+    interface.bootstrapOnly = block.bool("bootstrap_only") ?? false
+    interface.recursivePrs = block.bool("recursive_prs") ?? false
+    interface.announcesFromInternal = block.bool("announces_from_internal") ?? true
+    // No default: absent means Python's `None`, distinct from an explicit `False`.
+    interface.announcesToInternal = block.bool("announces_to_internal")
+
+    // `announce_rate_target` must be `> 0`; grace and penalty `>= 0` (`Reticulum.py:820-829`).
+    // A target with neither companion gets both defaulted to 0 (`:831-832`), so a config that
+    // sets only the target is complete rather than half-configured.
+    var target = block.int("announce_rate_target").flatMap { $0 > 0 ? $0 : nil }
+    var grace = block.int("announce_rate_grace").flatMap { $0 >= 0 ? $0 : nil }
+    var penalty = block.int("announce_rate_penalty").flatMap { $0 >= 0 ? $0 : nil }
+
+    // An unset value falls back to the `[reticulum]` section's `default_ar_*`, but **only
+    // when transport is enabled** (`Reticulum.py:854-857`). Part of `bugs/030`: the
+    // `default_ar_*` keys are global announce-rate policy for a transport node, and without
+    // this they would parse into a value no interface ever reads.
+    if Reticulum.transportEnabled() {
+      if target == nil { target = Reticulum.defaultArTarget() }
+      if penalty == nil { penalty = Reticulum.defaultArPenalty() }
+      if grace == nil { grace = Reticulum.defaultArGrace() }
+    }
+
+    interface.announceRateTarget = target.map(TimeInterval.init)
+    interface.announceRateGrace = grace ?? 0
+    interface.announceRatePenalty = TimeInterval(penalty ?? 0)
+
+    // A configured bitrate replaces the class guess when it's at least `MINIMUM_BITRATE`
+    // (`Reticulum.py:815-816`, applied at `:914`). It isn't merely reported: announce capacity
+    // and resource timings derive from it.
+    if let bitrate = block.int("bitrate"), bitrate >= Reticulum.minimumBitrate {
+      interface.bitrate = bitrate
+    }
+
+    // Immediately after the bitrate, as `Reticulum.py:915` does, and unconditionally: the
+    // gate is `autoconfigureMtu`, inside. The class MTU constants never survive Python
+    // startup—a TCP interface runs at 8192, a dialing backbone at 16384—and the value
+    // is wire-visible in the 3-byte LINKREQUEST MTU signalling.
+    interface.optimiseMtu()
+
+    interface.ingressControl = block.bool("ingress_control") ?? true
+
+    // Present-only, so an absent key leaves the class default (`Reticulum.py:942-953`).
+    let state = interface.interfaceState
+    if let value = block.bool("egress_control") { interface.egressControl = value }
+    if let value = block.double("ec_pr_freq") { interface.ecPrFreq = value }
+    if let value = block.int("ic_max_held_announces") { state.icMaxHeldAnnounces = value }
+    if let value = block.double("ic_burst_hold") { state.icBurstHold = value }
+    if let value = block.double("ic_burst_freq_new") { state.icBurstFreqNew = value }
+    if let value = block.double("ic_burst_freq") { state.icBurstFreq = value }
+    if let value = block.double("ic_pr_burst_freq_new") { state.icPrBurstFreqNew = value }
+    if let value = block.double("ic_pr_burst_freq") { state.icPrBurstFreq = value }
+    if let value = block.double("ic_new_time") { state.icNewTime = value }
+    if let value = block.double("ic_burst_penalty") { state.icBurstPenalty = value }
+    if let value = block.double("ic_held_release_interval") { state.icHeldReleaseInterval = value }
+
+    applyDiscoveryConfiguration(to: interface, from: block)
+
+    // IFAC last, as Python does (`Reticulum.py:955` follows the attribute block).
+    applyIfacConfiguration(to: interface, from: block)
+  }
+
+  // MARK: - Per-interface discovery configuration
+
+  /// Read the `discoverable` block out of one interface section.
+  ///
+  /// Mirrors `Reticulum.py:900-934` (extraction plus the mode correction) and the fifteen
+  /// assignments at `:953-967`. Every key inside is read only when `discoverable` is on, so a
+  /// half-edited config can't start announcing an endpoint.
+  ///
+  /// The interface attributes these land on are the publish side of interface discovery. The
+  /// receive side has been complete since RNS 1.4.0; nothing wrote these, so a Python config
+  /// moved to a Swift node produced a stack that quietly never announced.
+  private static func applyDiscoveryConfiguration(
+    to interface: any Interface,
+    from block: ReticulumConfig.InterfaceConfig
+  ) {
+    guard block.bool("discoverable") == true else { return }
+
+    // Latched for the whole process, as Python does—the announcer starts from this flag
+    // after every interface is up (`Reticulum.py:370`).
+    Reticulum.storedDiscoveryEnabled = true
+    interface.discoverable = true
+
+    // Minutes on the wire of the config file, seconds on the interface, with a five-minute
+    // floor and a six-hour default (`Reticulum.py:905-909`).
+    if let minutes = block.int("announce_interval") {
+      interface.discoveryAnnounceInterval = TimeInterval(max(minutes * 60, 5 * 60))
+    } else {
+      interface.discoveryAnnounceInterval = TimeInterval(6 * 60 * 60)
+    }
+
+    interface.discoveryStampValue = block.int("discovery_stamp_value")
+    interface.discoveryName = block["discovery_name"]
+    interface.discoveryEncrypt = block.bool("discovery_encrypt") ?? false
+    interface.reachableOn = block["reachable_on"]
+    interface.discoveryPublishIfac = block.bool("publish_ifac") ?? false
+    interface.discoveryLocation = block["location_cmd"]
+    interface.discoveryLatitude = block.double("latitude")
+    interface.discoveryLongitude = block.double("longitude")
+    interface.discoveryHeight = block.double("height")
+    interface.discoveryFrequency = block.int("discovery_frequency")
+    interface.discoveryBandwidth = block.int("discovery_bandwidth")
+    interface.discoveryModulation = block.int("discovery_modulation")
+
+    // A truncated destination hash, so exactly `TRUNCATED_HASHLENGTH//8*2` hex characters.
+    // A wrong length or a non-hex value logs and leaves the address unset
+    // (`Reticulum.py:922-926`) rather than putting a malformed address on the wire.
+    if let hex = block["discovery_lxmf_address"] {
+      if hex.count == Constants.truncatedHashLength * 2, let data = Data(hex: hex) {
+        interface.discoveryLxmfAddress = data
+      } else {
+        Reticulum.log("Invalid interface discovery LXMF address: \(hex)", level: .error)
+      }
+    }
+
+    // An announcing interface has to route for the peers that find it, so a mode that
+    // doesn't gets corrected: RNode types to access point, everything else to gateway
+    // (`Reticulum.py:927-934`). `ignore_config_warnings` opts out, leaving the mode as
+    // configured.
+    let routes: Set<InterfaceMode> = [.gateway, .accessPoint, .internal]
+    if !routes.contains(interface.mode), block.bool("ignore_config_warnings") != true {
+      if block.type == "RNodeInterface" || block.type == "RNodeMultiInterface" {
+        interface.mode = .accessPoint
+        Reticulum.log(
+          "Discovery enabled on interface \(block.name) without "
+            + "gateway, internal or AP mode. Auto-configured to AP mode.")
+      } else {
+        interface.mode = .gateway
+        Reticulum.log(
+          "Discovery enabled on interface \(block.name) without "
+            + "gateway, internal or AP mode. Auto-configured to gateway mode.")
+      }
+    }
+  }
+
+  // MARK: - Per-interface IFAC configuration
+
+  /// Read the IFAC keys out of one interface block and install the derived key on the interface.
+  ///
+  /// `bugs/015`. `Transport.configureIfac` was correct and thoroughly tested, and **nothing
+  /// called it**. An operator who set `network_name` and `passphrase` got an interface that came
+  /// up, reported Up and passed nothing: every frame it sent went out unflagged and was dropped
+  /// by the peer, every frame it received arrived flagged and was dropped locally. Silent in
+  /// both directions, and invisible from the Python side, which saw a peer that simply never
+  /// spoke.
+  ///
+  /// Python does this inline in `__apply_config` (`Reticulum.py:770-788` for the extraction,
+  /// `:955-973` for the derivation). Factored out here so the one call site can't be the thing
+  /// that's missing again, and so `RetiOS`—which builds interfaces without a config file—can
+  /// reach the same code.
+  ///
+  /// Must be called **before** `Transport.register` and `Interface.start`, matching
+  /// `Reticulum.py:975`: the key has to be installed before the first frame moves, or the
+  /// interface's opening announce goes out unprotected.
+  public static func applyIfacConfiguration(
+    to interface: any Interface,
+    from block: ReticulumConfig.InterfaceConfig
+  ) {
+    // Python reads both spellings and lets the later one win (`Reticulum.py:778-788`), and
+    // treats an empty string as absent.
+    func nonEmpty(_ keys: String...) -> String? {
+      var found: String?
+      for key in keys {
+        if let value = block[key], !value.isEmpty { found = value }
+      }
+      return found
+    }
+
+    let netname = nonEmpty("networkname", "network_name")
+    let netkey = nonEmpty("passphrase", "pass_phrase")
+
+    // `ifac_size` in the config is in **bits** (`Reticulum.py:776`). A value below
+    // `IFAC_MIN_SIZE * 8` is *ignored*—the assignment sits inside the `>=` guard—so the
+    // class default stays in place rather than being clamped to the minimum.
+    var size = interface.ifacSize
+    if let bits = block.int("ifac_size"), bits >= Constants.ifacMinSize * 8 {
+      size = bits / 8
+    }
+    interface.ifacSize = size
+
+    // Python assigns both unconditionally, then derives only if either is present
+    // (`Reticulum.py:955-958`).
+    interface.ifacNetname = netname
+    interface.ifacNetkey = netkey
+    guard netname != nil || netkey != nil else { return }
+
+    Transport.configureIfac(on: interface, netname: netname, netkey: netkey, size: size)
+  }
+
+  // MARK: - Interface synthesis from config
+
+  /// Create and register interfaces described in `cfg.interfaces`.
+  ///
+  /// Supports: TCPClientInterface, TCPServerInterface, UDPInterface, AutoInterface,
+  ///           BackboneInterface, LocalInterface.
+  public func synthesizeInterfaces(from cfg: ReticulumConfig) throws {
+    for ifCfg in cfg.interfaces where ifCfg.enabled {
+      let iface: (any Interface)?
+      switch ifCfg.type {
+      case "LocalInterface":
+        let host = ifCfg["connect_ip"] ?? ifCfg["host"] ?? "127.0.0.1"
+        let port = UInt16(ifCfg.int("port") ?? 37428)
+        let li = LocalInterface(name: ifCfg.name, host: host, port: port)
+        if let w = ifCfg.int("reconnect_wait") { li.reconnectWait = TimeInterval(w) }
+        if let t = ifCfg.int("max_reconnect_tries") { li.maxReconnectTries = t }
+        iface = li
+
+      case "BackboneInterface", "BackboneClientInterface":
+        // Python accepts a set of aliases for this interface family before
+        // constructing it (Reticulum.py:988-992): `remote` → `target_host`,
+        // `port` → both `listen_port` and `target_port`. Written configs—including
+        // the one RNS's own discovery emits for a backbone peer—use
+        // `remote`/`port`, so without the aliases the entry parsed to
+        // nothing and the interface was silently skipped.
+        guard let host = ifCfg["target_host"] ?? ifCfg["remote"],
+          let port = ifCfg.int("target_port") ?? ifCfg.int("port")
+        else { continue }
+        let bb = BackboneInterface(name: ifCfg.name, host: host, port: UInt16(port))
+        iface = bb
+
+      case "TCPClientInterface":
+        guard let host = ifCfg["target_host"],
+          let port = ifCfg.int("target_port")
+        else { continue }
+        let tcpClient = TCPClientInterface(name: ifCfg.name, host: host, port: UInt16(port))
+        if ifCfg.bool("bootstrap_only") == true { tcpClient.bootstrapOnly = true }
+        // Python: `max_reconnect_tries` from the interface block, else the class
+        // default of None/unlimited (TCPInterface.py:109, 135).
+        if let tries = ifCfg.int("max_reconnect_tries") { tcpClient.maxReconnectTries = tries }
+        iface = tcpClient
+
+      case "TCPServerInterface":
+        let listenPort = ifCfg.int("listen_port") ?? ifCfg.int("port") ?? 4242
+        // Python resolves `listen_ip` into `bind_ip` and renders it in `__str__`
+        // (Reticulum.py / TCPInterface.py:518). Ignoring it made every Swift
+        // listener report 0.0.0.0 regardless of configuration. `device` binds the
+        // named device's own address instead of the wildcard
+        // (`TCPServerInterface.get_address_for_if`, `TCPInterface.py:517,548`).
+        let bindIP =
+          ifCfg["listen_ip"]
+          ?? ifCfg["device"].flatMap(NetworkDeviceAddress.address(for:))
+          ?? "0.0.0.0"
+        iface = TCPServerInterface(name: ifCfg.name, port: UInt16(listenPort), bindIP: bindIP)
+
+      case "UDPInterface":
+        let listenPort = ifCfg.int("listen_port")
+        let forwardPort = ifCfg.int("forward_port")
+        // `device` names a network device whose broadcast address fills whichever of
+        // bind and forward the block leaves unset (`UDPInterface.py:82-86`); explicit
+        // `listen_ip` / `forward_ip` win, as they do there.
+        let deviceBroadcast = ifCfg["device"].flatMap(NetworkDeviceAddress.broadcast(for:))
+        let forwardHost = ifCfg["forward_ip"] ?? ifCfg["forward_host"] ?? deviceBroadcast
+        iface = UDPInterface(
+          name: ifCfg.name,
+          listenPort: listenPort.map(UInt16.init),
+          forwardHost: forwardHost,
+          forwardPort: forwardPort.map(UInt16.init),
+          // Python's `bind_ip`, which its `__str__` reports (UDPInterface.py:63).
+          bindIP: ifCfg["listen_ip"] ?? deviceBroadcast ?? "0.0.0.0"
         )
 
-        // Load and apply config file if available.
-        if let cfgURL = resolvedConfigPath() {
-            if !FileManager.default.fileExists(atPath: cfgURL.path) {
-                try ReticulumConfig.defaultConfigText.write(to: cfgURL, atomically: true, encoding: .utf8)
-            }
-            if let parsed = ReticulumConfig.load(from: cfgURL) {
-                config = parsed
-                applyConfig(parsed)
-            }
+      case "AutoInterface":
+        #if canImport(Darwin)
+        let groupID =
+          ifCfg["group_id"].flatMap { Data($0.utf8) }
+          ?? AutoInterface.defaultGroupID
+        let discoveryPort =
+          ifCfg.int("discovery_port").map(UInt16.init)
+          ?? AutoInterface.defaultDiscoveryPort
+        let dataPort =
+          ifCfg.int("data_port").map(UInt16.init)
+          ?? AutoInterface.defaultDataPort
+        let allowed =
+          ifCfg["allowed_interfaces"]?
+          .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
+        let ignored =
+          ifCfg["ignored_interfaces"]?
+          .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
+        iface = AutoInterface(
+          name: ifCfg.name,
+          groupID: groupID,
+          discoveryPort: discoveryPort,
+          dataPort: dataPort,
+          allowedInterfaces: allowed,
+          ignoredInterfaces: ignored
+        )
+        #else
+        iface = nil
+        #endif
+
+      case "RNodeInterface":
+        // Python: `RNodeInterface.py:139-360`. A missing or out-of-range radio
+        // parameter fails construction (`validcfg` → raise → `RNS.panic()`,
+        // `Reticulum.py:1087-1090`); absent *hardware* doesn't—the port opens at
+        // `start()`, and a failed open leaves the interface registered and offline.
+        guard let device = ifCfg["port"] else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+        }
+        guard let rnodeFactory = InterfaceTransportFactories.rnode else {
+          throw InterfaceTransportFactories.FactoryError.unavailable(
+            family: "RNode", device: device,
+            hint: "no RNode transport factory is registered on this platform")
+        }
+        let frequency = ifCfg.int("frequency") ?? 0
+        let bandwidth = ifCfg.int("bandwidth") ?? 0
+        let txPower = ifCfg.int("txpower") ?? 0
+        let sf = ifCfg.int("spreadingfactor") ?? 0
+        let cr = ifCfg.int("codingrate") ?? 0
+        // The reference's `validcfg` gates (`RNodeInterface.py:305-327`).
+        guard (137_000_000...3_000_000_000).contains(frequency) else {
+          throw InterfaceConstructionError.invalidValue(
+            interface: ifCfg.name, key: "frequency", value: String(frequency))
+        }
+        guard (0...37).contains(txPower) else {
+          throw InterfaceConstructionError.invalidValue(
+            interface: ifCfg.name, key: "txpower", value: String(txPower))
+        }
+        guard (7_800...1_625_000).contains(bandwidth) else {
+          throw InterfaceConstructionError.invalidValue(
+            interface: ifCfg.name, key: "bandwidth", value: String(bandwidth))
+        }
+        guard (5...12).contains(sf) else {
+          throw InterfaceConstructionError.invalidValue(
+            interface: ifCfg.name, key: "spreadingfactor", value: String(sf))
+        }
+        guard (5...8).contains(cr) else {
+          throw InterfaceConstructionError.invalidValue(
+            interface: ifCfg.name, key: "codingrate", value: String(cr))
         }
 
-        // Load or create the persistent transport identity (full 64-byte private key).
-        // Mirrors Python's Transport.identity loaded from `transport_identity`.
-        let persistentIdentity: Identity
-        if let loaded = try? Identity.read(fromFile: transportIDURL) {
-            persistentIdentity = loaded
+        let radioTransport = try rnodeFactory(device)
+        let rnode = RNodeInterface(name: ifCfg.name, transport: radioTransport)
+        rnode.ownedTransport = radioTransport
+        rnode.frequency = UInt32(frequency)
+        rnode.bandwidth = UInt32(bandwidth)
+        rnode.txPower = txPower
+        rnode.sf = sf
+        rnode.cr = cr
+        if let st = ifCfg.double("airtime_limit_short") {
+          guard (0.0...100.0).contains(st) else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: ifCfg.name, key: "airtime_limit_short", value: String(st))
+          }
+          rnode.stAlock = st
+        }
+        if let lt = ifCfg.double("airtime_limit_long") {
+          guard (0.0...100.0).contains(lt) else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: ifCfg.name, key: "airtime_limit_long", value: String(lt))
+          }
+          rnode.ltAlock = lt
+        }
+        // Both halves or neither, as the reference treats the pair
+        // (`RNodeInterface.py:333-343`), with the same length gate.
+        if let callsign = ifCfg["id_callsign"], let interval = ifCfg.int("id_interval") {
+          let encoded = Data(callsign.utf8)
+          guard encoded.count <= RNodeInterface.callsignMaxLength else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: ifCfg.name, key: "id_callsign", value: callsign)
+          }
+          rnode.idCallsign = encoded
+          rnode.idInterval = TimeInterval(interval)
+        }
+        iface = rnode
+
+      case "KISSInterface":
+        // Python: `KISSInterface.py:60-115`, with `id_interval`/`id_callsign` becoming
+        // the KISS beacon pair (`:100-113`).
+        guard let device = ifCfg["port"] else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+        }
+        guard let serialFactory = InterfaceTransportFactories.serial else {
+          throw InterfaceTransportFactories.FactoryError.unavailable(
+            family: "serial", device: device,
+            hint: "no serial transport factory is registered on this platform")
+        }
+        iface = KISSInterface(
+          name: ifCfg.name,
+          port: device,
+          speed: ifCfg.int("speed") ?? 9600,
+          dataBits: ifCfg.int("databits") ?? 8,
+          parity: SerialParity(string: ifCfg["parity"] ?? "N"),
+          stopBits: ifCfg.int("stopbits") ?? 1,
+          preamble: ifCfg.int("preamble") ?? 350,
+          txtail: ifCfg.int("txtail") ?? 20,
+          persistence: ifCfg.int("persistence") ?? 64,
+          slottime: ifCfg.int("slottime") ?? 20,
+          flowControl: ifCfg.bool("flow_control") ?? false,
+          beaconInterval: ifCfg.int("id_interval").map(TimeInterval.init),
+          beaconData: ifCfg["id_callsign"] ?? "",
+          transport: try serialFactory(device)
+        )
+
+      case "AX25KISSInterface":
+        // Python: `AX25KISSInterface.py:60-135`. The callsign and SSID gates live in the
+        // interface's own throwing init; a bad value fails construction as the
+        // reference's `validcfg` raise does.
+        guard let device = ifCfg["port"] else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+        }
+        guard let callsign = ifCfg["callsign"] else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "callsign")
+        }
+        guard let ssid = ifCfg.int("ssid") else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "ssid")
+        }
+        guard let serialFactory = InterfaceTransportFactories.serial else {
+          throw InterfaceTransportFactories.FactoryError.unavailable(
+            family: "serial", device: device,
+            hint: "no serial transport factory is registered on this platform")
+        }
+        iface = try AX25KISSInterface(
+          name: ifCfg.name,
+          port: device,
+          speed: ifCfg.int("speed") ?? 9600,
+          dataBits: ifCfg.int("databits") ?? 8,
+          parityString: ifCfg["parity"] ?? "N",
+          stopBits: ifCfg.int("stopbits") ?? 1,
+          callsign: callsign,
+          ssid: ssid,
+          preamble: ifCfg.int("preamble") ?? 350,
+          txtail: ifCfg.int("txtail") ?? 20,
+          persistence: ifCfg.int("persistence") ?? 64,
+          slottime: ifCfg.int("slottime") ?? 20,
+          flowControl: ifCfg.bool("flow_control") ?? false,
+          transport: try serialFactory(device)
+        )
+
+      case "I2PInterface":
+        // Python: `I2PInterface.py:725-745`, with `storagepath` injected by
+        // `Reticulum.py:1015`. The embedded daemon's data lives under this stack's
+        // storage, mirroring the reference keeping i2pd state under its storagepath.
+        guard let daemonFactory = InterfaceTransportFactories.i2pDaemon else {
+          throw InterfaceTransportFactories.FactoryError.unavailable(
+            family: "I2P", device: ifCfg.name,
+            hint: "no I2P daemon factory is registered on this platform")
+        }
+        let peers =
+          ifCfg["peers"]?
+          .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
+        iface = I2PInterface(
+          name: ifCfg.name,
+          daemon: try daemonFactory(),
+          // The reference's own location: `storagepath + "/i2p"`
+          // (`I2PInterface.py:90-91`), declared in `StorageInventory`.
+          dataDirectory: StorageInventory.url(.i2p, storage: configuration.storagePath),
+          connectable: ifCfg.bool("connectable") ?? false,
+          peers: peers
+        )
+
+      case "SerialInterface":
+        // Python: `Reticulum.py:1024-1026` → `SerialInterface.py:74-86`. A missing
+        // port is a raise that panics the daemon; everything else defaults
+        // (9600/8/N/1, `:77-80`).
+        guard let device = ifCfg["port"] else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+        }
+        guard let serialFactory = InterfaceTransportFactories.serial else {
+          throw InterfaceTransportFactories.FactoryError.unavailable(
+            family: "serial", device: device,
+            hint: "no serial transport factory is registered on this platform")
+        }
+        iface = SerialInterface(
+          name: ifCfg.name,
+          port: device,
+          speed: ifCfg.int("speed") ?? 9600,
+          dataBits: ifCfg.int("databits") ?? 8,
+          parityString: ifCfg["parity"] ?? "N",
+          stopBits: ifCfg.int("stopbits") ?? 1,
+          transport: try serialFactory(device)
+        )
+
+      case "RNodeMultiInterface":
+        // Python: `Reticulum.py:1044-1047` → `RNodeMultiInterface.py:160-233`. The
+        // radio rows are configobj's third section level. No port, no sub-blocks, or
+        // no *enabled* sub-blocks are all raises (`:219-224`, `:229-231`).
+        guard let device = ifCfg["port"] else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+        }
+        guard !ifCfg.subBlocks.isEmpty else {
+          // `ValueError("No subinterfaces configured for "+name)`
+          throw InterfaceConstructionError.missingKey(
+            interface: ifCfg.name, key: "subinterfaces")
+        }
+        // A sub's own `interface_enabled` enables it, as does the parent's literal
+        // `enabled` spelling—not by a parent `interface_enabled`
+        // (`RNodeMultiInterface.py:178`).
+        let enabledSubs = ifCfg.subBlocks.filter {
+          $0.bool("interface_enabled") == true || ifCfg.enabledViaEnabledKey
+        }
+        guard !enabledSubs.isEmpty else {
+          // `ValueError("No subinterfaces enabled for "+name)`
+          throw InterfaceConstructionError.invalidValue(
+            interface: ifCfg.name, key: "subinterfaces", value: "none enabled")
+        }
+        guard let rnodeFactory = InterfaceTransportFactories.rnode else {
+          throw InterfaceTransportFactories.FactoryError.unavailable(
+            family: "RNode", device: device,
+            hint: "no RNode transport factory is registered on this platform")
+        }
+        var subs: [RNodeSubInterface] = []
+        for (position, sub) in enabledSubs.enumerated() {
+          let subName = "\(ifCfg.name)/\(sub.name)"
+          let frequency = sub.int("frequency") ?? 0
+          let bandwidth = sub.int("bandwidth") ?? 0
+          let txPower = sub.int("txpower") ?? 0
+          let sf = sub.int("spreadingfactor") ?? 0
+          let cr = sub.int("codingrate") ?? 0
+          // The same `validcfg` gates the single-radio case applies
+          // (`RNodeMultiInterface.py` mirrors `RNodeInterface.py:305-327`).
+          guard (137_000_000...3_000_000_000).contains(frequency) else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: subName, key: "frequency", value: String(frequency))
+          }
+          guard (0...37).contains(txPower) else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: subName, key: "txpower", value: String(txPower))
+          }
+          guard (7_800...1_625_000).contains(bandwidth) else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: subName, key: "bandwidth", value: String(bandwidth))
+          }
+          guard (5...12).contains(sf) else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: subName, key: "spreadingfactor", value: String(sf))
+          }
+          guard (5...8).contains(cr) else {
+            throw InterfaceConstructionError.invalidValue(
+              interface: subName, key: "codingrate", value: String(cr))
+          }
+          subs.append(
+            RNodeSubInterface(
+              name: sub.name,
+              index: sub.int("vport") ?? position,
+              // The device reports the concrete chip type at detect
+              // (CMD_INTERFACES); Python fills it from that response, never from
+              // config, so construction has nothing to put here.
+              interfaceType: "",
+              frequency: UInt32(frequency),
+              bandwidth: UInt32(bandwidth),
+              txPower: txPower,
+              sf: sf,
+              cr: cr,
+              flowControl: sub.bool("flow_control") ?? false,
+              stAlock: sub.double("airtime_limit_short"),
+              ltAlock: sub.double("airtime_limit_long")
+            ))
+        }
+        let radioTransport = try rnodeFactory(device)
+        let multi = try RNodeMultiInterface(
+          name: ifCfg.name, transport: radioTransport, subInterfaces: subs)
+        multi.ownedTransport = radioTransport
+        iface = multi
+
+      case "WeaveInterface":
+        // Python: `Reticulum.py:1049-1051` → `WeaveInterface.py:849-851`, where
+        // `c["port"]` is a KeyError when absent—a raise that panics the daemon. The
+        // WDCL fabric rides an ordinary serial device, so the serial factory serves it.
+        guard let device = ifCfg["port"] else {
+          throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
+        }
+        guard let serialFactory = InterfaceTransportFactories.serial else {
+          throw InterfaceTransportFactories.FactoryError.unavailable(
+            family: "serial", device: device,
+            hint: "no serial transport factory is registered on this platform")
+        }
+        iface = WeaveInterface(
+          name: ifCfg.name, port: device, transport: try serialFactory(device))
+
+      default:
+        // The current reference no longer raises here: an unknown type goes through the
+        // external-interface-module lookup, and a missing module is an ERROR log naming
+        // it (`Reticulum.py:1055-1061`). This port loads no external modules, so the
+        // parallel observable is the same loud log—an operator's typo is named, the
+        // other interfaces still come up. `PipeInterface` deliberately stays on this
+        // path: unimplemented by design (macOS/Linux subprocess pipes, no mobile use
+        // case), pinned by `RemainingConstructionTests`.
+        Reticulum.log(
+          "Unsupported interface type '\(ifCfg.type)' for interface "
+            + "'\(ifCfg.name)' — this interface will not be created",
+          level: .error)
+        iface = nil
+      }
+      if let iface {
+        // Everything the block configures, applied before registration so Transport never
+        // observes an unconfigured interface, and before `start()` so the IFAC key is installed
+        // before the first frame moves—matching `Reticulum.py:975`. Spawned
+        // sub-interfaces pick it all up through `InterfaceState.inherit(from:)`.
+        //
+        // This used to apply `gravity` and `announces_to_internal` and nothing else, which
+        // is what `bugs/025`'s second half is: §1 made the rest settable and no parser
+        // wrote to them.
+        Reticulum.applyInterfaceConfiguration(to: iface, from: ifCfg)
+        transport.register(interface: iface)
+        try? iface.start()
+        // A radio's bring-up completes off the caller's thread (its detect response may
+        // be delivered on the thread that called `start()`—see
+        // `RNodeInterface.bringUpQueue`). This path is the one caller that genuinely
+        // wants the reference's synchronous `__init__` semantics, and it's safe here:
+        // config synthesis owns this thread and no transport delivers on it.
+        if let radio = iface as? RNodeInterface {
+          radio.waitUntilOnline(timeout: radio.detectTimeout + radio.validateTimeout + 1)
+        } else if let multi = iface as? RNodeMultiInterface {
+          multi.waitUntilOnline(timeout: multi.detectTimeout + 1)
+        }
+      }
+    }
+  }
+
+  // MARK: - Path and interface queries
+
+  /// Returns the next-hop hash for a destination.
+  ///
+  /// Mirrors Python `Reticulum.get_next_hop(destination)`.
+  public func getNextHop(for destinationHash: Data) -> Data? {
+    transport.nextHop(to: destinationHash)
+  }
+
+  /// Returns the name of the interface toward the next hop.
+  ///
+  /// Mirrors Python `Reticulum.get_next_hop_if_name(destination)`.
+  public func getNextHopIfName(for destinationHash: Data) -> String? {
+    transport.nextHopInterfaceName(for: destinationHash)
+  }
+
+  /// Returns the per-hop timeout for a destination.
+  ///
+  /// Mirrors Python `Reticulum.get_first_hop_timeout(destination)`.
+  public func getFirstHopTimeout(for destinationHash: Data) -> TimeInterval {
+    transport.firstHopTimeout(for: destinationHash)
+  }
+
+  /// Bitrate of the slowest online interface, or `nil` when none is known.
+  ///
+  /// Mirrors Python `Reticulum.get_lowest_interface_bitrate()`.
+  public func getLowestInterfaceBitrate() -> Int? {
+    transport.lowestInterfaceBitrate
+  }
+
+  /// A reasonable minimum path-request timeout for this node's slowest link, or `0` when no
+  /// bitrate is known.
+  ///
+  /// Mirrors Python `Reticulum.get_medium_path_timeout()`.
+  ///
+  /// Answers from the in-process transport. A utility attached as a *local client* must ask
+  /// the daemon instead—see ``InstanceConnection/mediumPathTimeout()``, which is where this
+  /// port keeps the `is_connected_to_shared_instance` branch Python folds into the accessor.
+  public func getMediumPathTimeout() -> TimeInterval {
+    transport.mediumPathTimeout()
+  }
+
+  // MARK: - Destination retention
+
+  /// Mark a destination as recently used.
+  ///
+  /// Mirrors Python `Reticulum._used_destination_data(destination_hash)`.
+  @discardableResult
+  public func usedDestinationData(_ destinationHash: Data) -> Bool {
+    transport.markDestinationUsed(destinationHash)
+    return transport.recall(identity: destinationHash) != nil
+  }
+
+  /// Pin a destination so `cleanKnownDestinations` never removes it.
+  ///
+  /// Mirrors Python `Reticulum._retain_destination_data(destination_hash)`.
+  @discardableResult
+  public func retainDestinationData(_ destinationHash: Data) -> Bool {
+    transport.retainDestinationData(destinationHash)
+  }
+
+  /// Unpin a previously retained destination.
+  ///
+  /// Mirrors Python `Reticulum._unretain_destination_data(destination_hash)`.
+  @discardableResult
+  public func unretainDestinationData(_ destinationHash: Data) -> Bool {
+    transport.unretainDestinationData(destinationHash)
+  }
+
+  /// Pin all destinations associated with the given identity hash.
+  ///
+  /// Mirrors Python `Reticulum._retain_identity(identity_hash)`.
+  @discardableResult
+  public func retainIdentity(_ identityHash: Data) -> Bool {
+    transport.retainIdentity(identityHash)
+  }
+
+  // MARK: - Interface management
+
+  /// No-op stub.
+  ///
+  /// Mirrors Python `Reticulum.halt_interface(interface)`.
+  public func haltInterface(_ interface: any Interface) {}
+
+  /// No-op stub.
+  ///
+  /// Mirrors Python `Reticulum.resume_interface(interface)`.
+  public func resumeInterface(_ interface: any Interface) {}
+
+  /// Stop and restart the named interface, re-applying its stored configuration.
+  ///
+  /// Returns `true` if the interface was found and reloaded; `false` if not found.
+  /// Python parity: `Reticulum.reload_interface(name)`
+  @discardableResult
+  public func reloadInterface(named name: String) -> Bool {
+    // 1. Check if the interface is registered.
+    guard transport.interfaces.first(where: { $0.name == name }) != nil else {
+      return false
+    }
+    // 2. Halt (stop) it.
+    transport.halt(interfaceName: name)
+    // 3. Resume it (restart).
+    transport.resume(interfaceName: name)
+    return true
+  }
+
+  // MARK: - Helpers
+
+  private func resolvedConfigPath() -> URL? {
+    if let explicit = configuration.configPath { return explicit }
+    // Default: one level above storagePath, matching Python's layout
+    // (<configdir>/storage ↔ <configdir>/config).
+    let parent = configuration.storagePath.deletingLastPathComponent()
+    return StorageInventory.url(.config, in: parent)
+  }
+
+  private func applyConfig(_ cfg: ReticulumConfig) {
+    transport.transportEnabled = cfg.reticulum.enableTransport
+    Reticulum.allowProbes = cfg.reticulum.allowProbes
+    Reticulum.storedRemoteManagementEnabled = cfg.reticulum.remoteManagementEnabled
+    for identity in cfg.reticulum.remoteManagementAllowed {
+      transport.remoteManagementAllowed.append(identity)
+    }
+    // Discovery-related static properties.
+    // Mirrors Python Reticulum.__init__ config application block.
+    if let rdv = cfg.reticulum.requiredDiscoveryValue {
+      Reticulum.storedRequiredDiscoveryValue = rdv
+    }
+    Reticulum.storedPublishBlackholeEnabled = cfg.reticulum.publishBlackholeEnabled
+    if let bui = cfg.reticulum.blackholeUpdateInterval {
+      Reticulum.storedBlackholeUpdateInterval = bui
+    }
+    if !cfg.reticulum.interfaceDiscoverySources.isEmpty {
+      Reticulum.storedInterfaceDiscoverySources = cfg.reticulum.interfaceDiscoverySources
+    }
+    if cfg.reticulum.autoconnectDiscoveredInterfaces > 0 {
+      Reticulum.storedMaxAutoconnectedInterfaces = cfg.reticulum.autoconnectDiscoveredInterfaces
+    }
+    // RNS 1.4.1 gravity / autoconnect policy. Each is assigned only when the
+    // key was present, so an absent option keeps the built-in default.
+    if let dg = cfg.reticulum.defaultGravity { Reticulum.storedDefaultGravity = dg }
+    if let m = cfg.reticulum.autoconnectInterfaceMode {
+      Reticulum.storedAutoconnectInterfaceMode = m
+    }
+    if let g = cfg.reticulum.autoconnectInterfaceGravity {
+      Reticulum.storedAutoconnectInterfaceGravity = g
+    }
+    if let a = cfg.reticulum.autoconnectAnnouncesToInternal {
+      Reticulum.storedAutoconnectAnnouncesToInternal = a
+    }
+
+    // A key in a section this parser owns that no branch matched is a directive the operator
+    // wrote and the daemon won't honour. D8's rationale for `bugs/030` is that an absent
+    // key fails visibly and an ignored one doesn't—so say so, rather than leaving the
+    // operator to discover it from behaviour.
+    for key in cfg.unrecognisedKeys {
+      Reticulum.log(
+        "Unrecognised configuration directive '\(key)' — it will be ignored",
+        level: .warning)
+    }
+
+    // MARK: `bugs/030`—the rest of the `[reticulum]` section
+    //
+    // Assigned before `synthesizeInterfaces` runs, matching Python's ordering: the whole
+    // section is applied in `__apply_config` and interfaces are constructed afterwards, so
+    // every `Interface.__init__` reads globals that are already final (`Interface.py:126-136`).
+    Reticulum.applyGlobalDefaults(cfg.reticulum)
+
+    // A network identity is loaded from the configured path, or generated and persisted
+    // there on first use, then handed to Transport (`Reticulum.py:513-534`).
+    if let path = cfg.reticulum.networkIdentityPath {
+      let resolved = URL(fileURLWithPath: DaemonBootstrap.expandTilde(path))
+      if let existing = try? Identity.read(fromFile: resolved) {
+        transport.setNetworkIdentity(existing)
+      } else {
+        let generated = Identity()
+        try? FileManager.default.createDirectory(
+          at: resolved.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if (try? generated.write(toFile: resolved)) != nil {
+          transport.setNetworkIdentity(generated)
         } else {
-            persistentIdentity = Identity()
-            try? persistentIdentity.write(toFile: transportIDURL)
+          Reticulum.log(
+            "Could not persist network identity to \(resolved.path)",
+            level: .error)
         }
-        // Keep the persistent identity as `internalIdentity` (Python's
-        // `Transport._identity`). Non-transport nodes then run behind a fresh
-        // ephemeral transport identity for privacy, unless
-        // `static_transport_identity` is configured. Mirrors RNS 1.3.7
-        // `Transport.start()`.
-        transport.internalIdentity = persistentIdentity
-        let transportIdentity: Identity
-        if !transport.transportEnabled && !(config?.reticulum.staticTransportIdentity ?? false) {
-            transportIdentity = Identity()
-        } else {
-            transportIdentity = persistentIdentity
-        }
-        transport.transportIdentity = transportIdentity
-        transport.transportInstanceID = transportIdentity.hash
-
-        // When local hop-count obfuscation is enabled, pick a random per-session
-        // delta in 2...7. Mirrors Python: `if RNS.Reticulum.local_hops_delta():
-        // Transport.local_hops_delta = (ord(os.urandom(1))%6)+2`.
-        if config?.reticulum.localHopsDelta ?? false {
-            transport.localHopsDelta = UInt8.random(in: 2...7)
-        }
-
-        transport.ratchetsDirectory = StorageInventory.url(
-            .ratchets, storage: configuration.storagePath)
-
-        // Set cache directory for disk-based packet (announce) cache.
-        // Mirrors Python's `RNS.Reticulum.cachepath`.
-        transport.cacheDirectory = StorageInventory.url(
-            .cache, storage: configuration.storagePath)
-
-        // Load persisted known destinations (mirrors Python's Identity.load_known_destinations).
-        if FileManager.default.fileExists(atPath: knownDestinationsURL.path) {
-            try? transport.loadKnownDestinations(from: knownDestinationsURL)
-        }
-
-        transport.loadKnownRatchets()
-        transport.sweepKnownRatchets()
-
-        // Restore path table, dropping any expired entries.
-        //
-        // After known destinations and ratchets, deliberately: the reference's entry carries no
-        // identity material of its own and resolves it through `Identity.recall`, so
-        // `Reticulum.py:344` loads that file before `:346` starts Transport and reads this one.
-        // Restoring paths first would leave every restored entry without an identity hash.
-        let pathStoreURL = StorageInventory.url(.destinationTable,
-                                                storage: configuration.storagePath)
-        if FileManager.default.fileExists(atPath: pathStoreURL.path) {
-            do {
-                try PathStore.read(from: pathStoreURL).apply(to: transport)
-            } catch {
-                // `Transport.py:357-359`—log and start with an empty path table.
-                Reticulum.log("Could not load destination table from storage, the contained "
-                              + "exception was: \(error)", level: .error)
-            }
-        }
-
-        // Then the tunnel table, which the reference reads immediately after the destination
-        // table in the same block (`Transport.py:365-405`). A tunnel path is restored with no
-        // interface; `handleTunnel` re-attaches one when the endpoint reappears.
-        let tunnelStoreURL = StorageInventory.url(.tunnels, storage: configuration.storagePath)
-        if FileManager.default.fileExists(atPath: tunnelStoreURL.path) {
-            do {
-                try TunnelStore.read(from: tunnelStoreURL).apply(to: transport)
-            } catch {
-                // `Transport.py:406-407`—log and start with an empty tunnel table.
-                Reticulum.log("Could not load tunnel table from storage, the contained "
-                              + "exception was: \(error)", level: .error)
-            }
-        }
-
-        // Restore packet hashlist for replay prevention across restarts.
-        // Mirrors Python's hashlist loading in Transport.__init__.
-        let hashlistURL = StorageInventory.url(.packetHashlist,
-                                               storage: configuration.storagePath)
-        try? transport.loadPacketHashlist(from: hashlistURL)
-
-        // Load blackhole list from directory (mirrors Python's Transport.reload_blackhole()).
-        // Allows external sources listed in Reticulum.blackhole_sources().
-        let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
-        try? transport.reloadBlacklist(fromDirectory: blackholePath,
-                                       allowedSources: Reticulum.blackholeSources())
-
-        try transport.start()
-
-        // Start announcing our own discoverable interfaces when any of them asked to be.
-        // Mirrors Python: if Reticulum.__discovery_enabled: RNS.Transport.enable_discovery()
-        // (`Reticulum.py:370`). The latch is set while parsing interface blocks, because no
-        // interface exists yet when the reticulum block is read.
-        if Reticulum.discoveryEnabled() {
-            if let stampGenerator = configuration.discoveryStampGenerator {
-                transport.enableDiscovery(stampGenerator: stampGenerator)
-            } else {
-                Reticulum.log("An interface is configured as discoverable, but no discovery "
-                              + "stamp generator was supplied. Interfaces will not be announced.",
-                              level: .error)
-            }
-        }
-
-        // Start interface discovery listener when configured.
-        // Mirrors Python: if Reticulum.__discover_interfaces: RNS.Transport.discover_interfaces()
-        // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
-        if let parsedCfg = config, parsedCfg.reticulum.discoverInterfaces,
-           let validator = configuration.discoveryStampValidator {
-            let discoveryPath = StorageInventory.url(
-                .discoveredInterfaces, storage: configuration.storagePath).path
-            transport.discoverInterfaces(
-                storagePath: discoveryPath,
-                requiredValue: Reticulum.requiredDiscoveryValue(),
-                stampValidator: validator
-            )
-
-            // Python re-runs `_synthesize_interface` over `bootstrap_configs` when every
-            // auto-connected peer has gone (`Discovery.py:652-654`). The parsed config lives
-            // here rather than on `Transport`, so the clause is injected.
-            //
-            // Unowned-safe capture: `Reticulum` owns `transport`, which owns the discovery
-            // handler holding this closure, so a strong capture would be a cycle.
-            transport.discoveryHandler?.reenableBootstrapInterfaces = { [weak self] in
-                guard let self, let cfg = self.config else { return }
-                let bootstrapOnly = cfg.interfaces.filter {
-                    $0.enabled && $0.bool("bootstrap_only") == true
-                }
-                guard !bootstrapOnly.isEmpty else { return }
-                var subset = cfg
-                subset.interfaces = bootstrapOnly
-                try? self.synthesizeInterfaces(from: subset)
-            }
-        }
-
-        // Start blackhole-list updater when sources are configured.
-        // Mirrors Python: if Reticulum.__blackhole_sources: RNS.Transport.enable_blackhole_updater()
-        if let parsedCfg = config, !parsedCfg.reticulum.blackholeSources.isEmpty {
-            Reticulum.blackholeSources_ = parsedCfg.reticulum.blackholeSources
-            transport.enableBlackholeUpdater()
-        }
-
-        Reticulum.shared = self
+      }
     }
-
-    public func stop() {
-        // Tear links down first, while the interfaces can still carry the close.
-        //
-        // Mirrors `Reticulum.py:196-205`, where both signal handlers call
-        // `Transport.detach_interfaces()` before anything else: each established link is closed,
-        // the queue is given 150 ms to drain, then each interface is stopped
-        // (`Transport.py:3171-3183`). A node that exits without it leaves every peer holding the
-        // link ACTIVE until its own keepalive watchdog expires—up to `KEEPALIVE_MAX` = 360 s—with
-        // the LXMF, NomadNet and LXST sessions riding those links hanging rather than
-        // failing (`bugs/028`).
-        //
-        // Here rather than in each caller, deliberately (D9). There are at least three exit paths
-        //—`rnsd`'s signal handlers via `InstanceConnection.stop()`, the shared-instance stop,
-        // and an application's own teardown—and wiring them individually leaves whichever one is
-        // added next broken. That isn't hypothetical for this subsystem: `detachInterfaces()`
-        // itself sat here with no callers, and RetiOS shipped `StackController.tearDown()` with
-        // none until v0.3.9.
-        //
-        // Order matters as much as the call. `transport.stop()` stops every interface, so running
-        // it first would leave the close packets handed to dead interfaces—satisfying "teardown
-        // was called" while emitting nothing, which is the same silence the defect produced.
-        transport.detachInterfaces()
-        transport.stop()
-        let pathStoreURL = StorageInventory.url(.destinationTable,
-                                                storage: configuration.storagePath)
-        try? PathStore.snapshot(of: transport).write(to: pathStoreURL)
-        try? TunnelStore.snapshot(of: transport)
-            .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
-        try? trackedIdentity?.writeRatchets(toFile: ratchetsURL)
-        // Persist known destinations (mirrors Python's Identity.save_known_destinations).
-        try? transport.saveKnownDestinations(to: knownDestinationsURL)
-        // Persist packet hashlist for replay prevention across restarts.
-        let hashlistURL = StorageInventory.url(.packetHashlist,
-                                               storage: configuration.storagePath)
-        try? transport.savePacketHashlist(to: hashlistURL)
-        // Persist blackhole list (own entries only, mirrors Python's Transport.persist_blackhole()).
-        let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
-        try? transport.persistBlacklist(toDirectory: blackholePath)
+    // Log level mapping: Python 0=critical, 4=info, 8=extreme.
+    // Python saturates rather than ignoring an out-of-range value
+    // (`if loglevel > 8: loglevel = 8`, raised from 7 in RNS 1.4.1 so
+    // LOG_EXTREME is reachable from a config file at all); clamp to match,
+    // instead of silently leaving the level at its default.
+    let clamped = min(max(cfg.logging.logLevel, 0), LogLevel.extreme.rawValue)
+    if let level = LogLevel(rawValue: clamped) {
+      Reticulum.globalLogLevel = level
     }
-
-    // MARK: - Management API (mirrors Python Reticulum instance methods)
-
-    /// Drop a known path, forcing re-discovery on next attempt.
-    /// Mirrors Python's `RNS.Reticulum.get_instance().drop_path(hash)`.
-    @discardableResult
-    public func dropPath(for destinationHash: Data) -> Bool {
-        transport.dropPath(for: destinationHash)
-    }
-
-    /// Clear all per-interface announce queues, dropping any pending relayed announces.
-    /// Returns `true` on success.
-    /// Mirrors Python's `Reticulum.drop_announce_queues()` → `Transport.drop_announce_queues()`.
-    @discardableResult
-    public func dropAnnounceQueues() -> Bool {
-        transport.dropAnnounceQueues()
-        return true
-    }
-
-    /// Returns the current number of active links.
-    /// Mirrors Python's `Reticulum.get_link_count()`.
-    public func getLinkCount() -> Int { transport.getLinkCount() }
-
-    /// Mirrors Python's `Reticulum.get_active_link_count()`.
-    public func getActiveLinkCount() -> Int { transport.getActiveLinkCount() }
-
-    /// Returns statistics for all registered interfaces.
-    /// Mirrors Python's `Reticulum.get_interface_stats()`.
-    public func getInterfaceStats() -> [Transport.InterfaceStats] { transport.getInterfaceStats() }
-
-    /// Returns a snapshot of the path table, optionally filtered by max hops.
-    /// Mirrors Python's `Reticulum.get_path_table(max_hops=None)`.
-    public func getPathTable(maxHops: UInt8? = nil) -> [Transport.PathTableEntry] {
-        transport.getPathTable(maxHops: maxHops)
-    }
-
-    /// Drop all path table entries that route via a specific transport instance.
-    /// Returns the number of dropped paths.
-    /// Mirrors Python's `Reticulum.drop_all_via(transport_hash)`.
-    @discardableResult
-    public func dropAllVia(transportHash: Data) -> Int {
-        transport.dropAllPaths(via: transportHash)
-    }
-
-    /// Blackhole an identity hash, preventing its announces from being forwarded.
-    /// Returns `true` on success, `nil` if already blackholed, `false` if hash length is wrong.
-    /// Mirrors Python's `Reticulum.blackhole_identity(identity_hash, until, reason)`.
-    @discardableResult
-    public func blackholeIdentity(_ identityHash: Data, until: Date? = nil, reason: String? = nil) -> Bool? {
-        guard identityHash.count == Constants.truncatedHashLength else { return false }
-        return transport.blackholeIdentity(identityHash, until: until?.timeIntervalSince1970, reason: reason)
-    }
-
-    /// Remove an identity from the blackhole list.
-    /// Returns `true` on success, `nil` if not blackholed, `false` if hash length is wrong.
-    /// Mirrors Python's `Reticulum.unblackhole_identity(identity_hash)`.
-    @discardableResult
-    public func unblackholeIdentity(_ identityHash: Data) -> Bool? {
-        guard identityHash.count == Constants.truncatedHashLength else { return false }
-        return transport.unblackholeIdentity(identityHash)
-    }
-
-    /// Returns all blackholed identity hashes with their entries.
-    /// Mirrors Python's `Reticulum.get_blackholed_identities()`.
-    public func getBlackholedIdentities() -> [Data: Transport.BlackholeEntry] {
-        transport.blackholeLock.lock(); defer { transport.blackholeLock.unlock() }
-        return transport.blackholedIdentities
-    }
-
-    /// Returns a snapshot of the current announce rate table.
-    /// Mirrors Python's `Reticulum.get_rate_table()`.
-    public func getRateTable() -> [Transport.RateTableEntry] {
-        transport.getRateTable()
-    }
-
-    /// Returns the cached RSSI for a received packet, or nil if not cached.
-    /// Mirrors Python's `Reticulum.get_packet_rssi(packet_hash)`.
-    public func getPacketRssi(packetHash: Data) -> Float? {
-        transport.getPacketRssi(packetHash: packetHash)
-    }
-
-    /// Returns the cached SNR for a received packet, or nil if not cached.
-    /// Mirrors Python's `Reticulum.get_packet_snr(packet_hash)`.
-    public func getPacketSnr(packetHash: Data) -> Float? {
-        transport.getPacketSnr(packetHash: packetHash)
-    }
-
-    /// Returns the cached signal quality for a received packet, or nil if not cached.
-    /// Mirrors Python's `Reticulum.get_packet_q(packet_hash)`.
-    public func getPacketQ(packetHash: Data) -> Float? {
-        transport.getPacketQ(packetHash: packetHash)
-    }
-
-    /// Force-checkpoint the path table without stopping the stack—useful
-    /// from `applicationWillResignActive` on iOS.
-    public func checkpoint() throws {
-        let pathStoreURL = StorageInventory.url(.destinationTable,
-                                                storage: configuration.storagePath)
-        try PathStore.snapshot(of: transport).write(to: pathStoreURL)
-        try TunnelStore.snapshot(of: transport)
-            .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
-        try trackedIdentity?.writeRatchets(toFile: ratchetsURL)
-    }
-
-    /// Load a persistent identity from disk, creating it if it doesn't
-    /// exist. The 64-byte private-key blob lives at
-    /// `<storagePath>/identity` with `0o600` semantics where the platform
-    /// supports it. Ratchet privates, if present, live in a sidecar at
-    /// `<storagePath>/identity.ratchets` and are reloaded here.
-    public func loadOrCreateIdentity() throws -> Identity {
-        let identity: Identity
-        if FileManager.default.fileExists(atPath: identityURL.path) {
-            identity = try Identity.read(fromFile: identityURL)
-        } else {
-            identity = Identity()
-            try identity.write(toFile: identityURL)
-        }
-        if FileManager.default.fileExists(atPath: ratchetsURL.path) {
-            try? identity.loadRatchets(fromFile: ratchetsURL)
-        }
-        trackedIdentity = identity
-        return identity
-    }
-
-    // MARK: - Per-interface configuration
-
-    /// Apply everything one interface block configures, then its IFAC keys.
-    ///
-    /// The other half of `bugs/025`. §1 of this change made `mode`, the three `announce_rate_*`
-    /// values, `announce_cap`, `bitrate`, `ingress_control`, `egress_control`/`ec_pr_freq` and the
-    /// nine `ic_*` tunables settable, because Python mutates all of them at runtime and this port
-    /// had declared them get-only. That removed the compile-time blocker and left the values with
-    /// nowhere to come *from*: this function didn't exist, and `synthesizeInterfaces` applied
-    /// exactly two attributes—`gravity` and `announces_to_internal`. Which is the same defect one
-    /// step earlier, in the spec's words: "a configuration value with nowhere to be written is
-    /// indistinguishable from a configuration value that's never read, and both are failures of
-    /// this requirement."
-    ///
-    /// Mirrors `Reticulum.py:735-857` (extraction) and `:906-953` (application). Python applies the
-    /// first group unconditionally, from resolved defaults, and the `egress_control` / `ic_*`
-    /// group only where the key is present—so an absent key leaves the class default rather than
-    /// overwriting it with a zero.
-    ///
-    /// Called before `Transport.register` and `Interface.start`, matching `Reticulum.py:975`.
-    public static func applyInterfaceConfiguration(to interface: any Interface,
-                                                   from block: ReticulumConfig.InterfaceConfig) {
-        // `interface_mode` first, then `mode` (`Reticulum.py:736-768`). Case-insensitive, and an
-        // unrecognized value falls through leaving the default—Python's if/elif chain has no
-        // else branch, so `interface_mode` stays MODE_FULL.
-        //
-        // Divergence worth recording: Python's `interface_mode` branch reads `c["mode"]` for its
-        // `gateway` and `internal` cases (`Reticulum.py:748-751`)—a typo in the reference. With
-        // `interface_mode = gateway` and no `mode` key, configobj raises `KeyError` there. This
-        // port resolves both aliases from whichever key was given, which is what the branch plainly
-        // intends and what the spec table describes.
-        let modeString = block["interface_mode"] ?? block["mode"]
-        if let modeString, let mode = InterfaceMode(configName: modeString) {
-            interface.mode = mode
-        }
-
-        // An explicit `gravity` wins, else `default_gravity`, else 0 (`Reticulum.py:771-772`).
-        interface.gravity = block.int("gravity") ?? Reticulum.defaultGravity()
-
-        // A percentage in `(0, 100]`, divided by 100 (`Reticulum.py:834-837`). Out of range leaves
-        // the class default.
-        if let cap = block.double("announce_cap"), cap > 0, cap <= 100 {
-            interface.announceCap = cap / 100.0
-        }
-
-        interface.bootstrapOnly = block.bool("bootstrap_only") ?? false
-        interface.recursivePrs = block.bool("recursive_prs") ?? false
-        interface.announcesFromInternal = block.bool("announces_from_internal") ?? true
-        // No default: absent means Python's `None`, distinct from an explicit `False`.
-        interface.announcesToInternal = block.bool("announces_to_internal")
-
-        // `announce_rate_target` must be `> 0`; grace and penalty `>= 0` (`Reticulum.py:820-829`).
-        // A target with neither companion gets both defaulted to 0 (`:831-832`), so a config that
-        // sets only the target is complete rather than half-configured.
-        var target = block.int("announce_rate_target").flatMap { $0 > 0 ? $0 : nil }
-        var grace = block.int("announce_rate_grace").flatMap { $0 >= 0 ? $0 : nil }
-        var penalty = block.int("announce_rate_penalty").flatMap { $0 >= 0 ? $0 : nil }
-
-        // An unset value falls back to the `[reticulum]` section's `default_ar_*`, but **only
-        // when transport is enabled** (`Reticulum.py:854-857`). Part of `bugs/030`: the
-        // `default_ar_*` keys are global announce-rate policy for a transport node, and without
-        // this they would parse into a value no interface ever reads.
-        if Reticulum.transportEnabled() {
-            if target == nil  { target = Reticulum.defaultArTarget() }
-            if penalty == nil { penalty = Reticulum.defaultArPenalty() }
-            if grace == nil   { grace = Reticulum.defaultArGrace() }
-        }
-
-        interface.announceRateTarget = target.map(TimeInterval.init)
-        interface.announceRateGrace = grace ?? 0
-        interface.announceRatePenalty = TimeInterval(penalty ?? 0)
-
-        // A configured bitrate replaces the class guess when it's at least `MINIMUM_BITRATE`
-        // (`Reticulum.py:815-816`, applied at `:914`). It isn't merely reported: announce capacity
-        // and resource timings derive from it.
-        if let bitrate = block.int("bitrate"), bitrate >= Reticulum.minimumBitrate {
-            interface.bitrate = bitrate
-        }
-
-        // Immediately after the bitrate, as `Reticulum.py:915` does, and unconditionally: the
-        // gate is `autoconfigureMtu`, inside. The class MTU constants never survive Python
-        // startup—a TCP interface runs at 8192, a dialing backbone at 16384—and the value
-        // is wire-visible in the 3-byte LINKREQUEST MTU signalling.
-        interface.optimiseMtu()
-
-        interface.ingressControl = block.bool("ingress_control") ?? true
-
-        // Present-only, so an absent key leaves the class default (`Reticulum.py:942-953`).
-        let state = interface.interfaceState
-        if let value = block.bool("egress_control")            { interface.egressControl = value }
-        if let value = block.double("ec_pr_freq")              { interface.ecPrFreq = value }
-        if let value = block.int("ic_max_held_announces")      { state.icMaxHeldAnnounces = value }
-        if let value = block.double("ic_burst_hold")           { state.icBurstHold = value }
-        if let value = block.double("ic_burst_freq_new")       { state.icBurstFreqNew = value }
-        if let value = block.double("ic_burst_freq")           { state.icBurstFreq = value }
-        if let value = block.double("ic_pr_burst_freq_new")    { state.icPrBurstFreqNew = value }
-        if let value = block.double("ic_pr_burst_freq")        { state.icPrBurstFreq = value }
-        if let value = block.double("ic_new_time")             { state.icNewTime = value }
-        if let value = block.double("ic_burst_penalty")        { state.icBurstPenalty = value }
-        if let value = block.double("ic_held_release_interval") { state.icHeldReleaseInterval = value }
-
-        applyDiscoveryConfiguration(to: interface, from: block)
-
-        // IFAC last, as Python does (`Reticulum.py:955` follows the attribute block).
-        applyIfacConfiguration(to: interface, from: block)
-    }
-
-    // MARK: - Per-interface discovery configuration
-
-    /// Read the `discoverable` block out of one interface section.
-    ///
-    /// Mirrors `Reticulum.py:900-934` (extraction plus the mode correction) and the fifteen
-    /// assignments at `:953-967`. Every key inside is read only when `discoverable` is on, so a
-    /// half-edited config can't start announcing an endpoint.
-    ///
-    /// The interface attributes these land on are the publish side of interface discovery. The
-    /// receive side has been complete since RNS 1.4.0; nothing wrote these, so a Python config
-    /// moved to a Swift node produced a stack that quietly never announced.
-    private static func applyDiscoveryConfiguration(to interface: any Interface,
-                                                    from block: ReticulumConfig.InterfaceConfig) {
-        guard block.bool("discoverable") == true else { return }
-
-        // Latched for the whole process, as Python does—the announcer starts from this flag
-        // after every interface is up (`Reticulum.py:370`).
-        Reticulum.discoveryEnabled_ = true
-        interface.discoverable = true
-
-        // Minutes on the wire of the config file, seconds on the interface, with a five-minute
-        // floor and a six-hour default (`Reticulum.py:905-909`).
-        if let minutes = block.int("announce_interval") {
-            interface.discoveryAnnounceInterval = TimeInterval(max(minutes * 60, 5 * 60))
-        } else {
-            interface.discoveryAnnounceInterval = TimeInterval(6 * 60 * 60)
-        }
-
-        interface.discoveryStampValue = block.int("discovery_stamp_value")
-        interface.discoveryName       = block["discovery_name"]
-        interface.discoveryEncrypt    = block.bool("discovery_encrypt") ?? false
-        interface.reachableOn         = block["reachable_on"]
-        interface.discoveryPublishIfac = block.bool("publish_ifac") ?? false
-        interface.discoveryLocation   = block["location_cmd"]
-        interface.discoveryLatitude   = block.double("latitude")
-        interface.discoveryLongitude  = block.double("longitude")
-        interface.discoveryHeight     = block.double("height")
-        interface.discoveryFrequency  = block.int("discovery_frequency")
-        interface.discoveryBandwidth  = block.int("discovery_bandwidth")
-        interface.discoveryModulation = block.int("discovery_modulation")
-
-        // A truncated destination hash, so exactly `TRUNCATED_HASHLENGTH//8*2` hex characters.
-        // A wrong length or a non-hex value logs and leaves the address unset
-        // (`Reticulum.py:922-926`) rather than putting a malformed address on the wire.
-        if let hex = block["discovery_lxmf_address"] {
-            if hex.count == Constants.truncatedHashLength * 2, let data = Data(hex: hex) {
-                interface.discoveryLxmfAddress = data
-            } else {
-                Reticulum.log("Invalid interface discovery LXMF address: \(hex)", level: .error)
-            }
-        }
-
-        // An announcing interface has to route for the peers that find it, so a mode that
-        // doesn't gets corrected: RNode types to access point, everything else to gateway
-        // (`Reticulum.py:927-934`). `ignore_config_warnings` opts out, leaving the mode as
-        // configured.
-        let routes: Set<InterfaceMode> = [.gateway, .accessPoint, .internal]
-        if !routes.contains(interface.mode), block.bool("ignore_config_warnings") != true {
-            if block.type == "RNodeInterface" || block.type == "RNodeMultiInterface" {
-                interface.mode = .accessPoint
-                Reticulum.log("Discovery enabled on interface \(block.name) without "
-                              + "gateway, internal or AP mode. Auto-configured to AP mode.")
-            } else {
-                interface.mode = .gateway
-                Reticulum.log("Discovery enabled on interface \(block.name) without "
-                              + "gateway, internal or AP mode. Auto-configured to gateway mode.")
-            }
-        }
-    }
-
-    // MARK: - Per-interface IFAC configuration
-
-    /// Read the IFAC keys out of one interface block and install the derived key on the interface.
-    ///
-    /// `bugs/015`. `Transport.configureIfac` was correct and thoroughly tested, and **nothing
-    /// called it**. An operator who set `network_name` and `passphrase` got an interface that came
-    /// up, reported Up and passed nothing: every frame it sent went out unflagged and was dropped
-    /// by the peer, every frame it received arrived flagged and was dropped locally. Silent in
-    /// both directions, and invisible from the Python side, which saw a peer that simply never
-    /// spoke.
-    ///
-    /// Python does this inline in `__apply_config` (`Reticulum.py:770-788` for the extraction,
-    /// `:955-973` for the derivation). Factored out here so the one call site can't be the thing
-    /// that's missing again, and so `RetiOS`—which builds interfaces without a config file—can
-    /// reach the same code.
-    ///
-    /// Must be called **before** `Transport.register` and `Interface.start`, matching
-    /// `Reticulum.py:975`: the key has to be installed before the first frame moves, or the
-    /// interface's opening announce goes out unprotected.
-    public static func applyIfacConfiguration(to interface: any Interface,
-                                              from block: ReticulumConfig.InterfaceConfig) {
-        // Python reads both spellings and lets the later one win (`Reticulum.py:778-788`), and
-        // treats an empty string as absent.
-        func nonEmpty(_ keys: String...) -> String? {
-            var found: String?
-            for key in keys {
-                if let value = block[key], !value.isEmpty { found = value }
-            }
-            return found
-        }
-
-        let netname = nonEmpty("networkname", "network_name")
-        let netkey = nonEmpty("passphrase", "pass_phrase")
-
-        // `ifac_size` in the config is in **bits** (`Reticulum.py:776`). A value below
-        // `IFAC_MIN_SIZE * 8` is *ignored*—the assignment sits inside the `>=` guard—so the
-        // class default stays in place rather than being clamped to the minimum.
-        var size = interface.ifacSize
-        if let bits = block.int("ifac_size"), bits >= Constants.ifacMinSize * 8 {
-            size = bits / 8
-        }
-        interface.ifacSize = size
-
-        // Python assigns both unconditionally, then derives only if either is present
-        // (`Reticulum.py:955-958`).
-        interface.ifacNetname = netname
-        interface.ifacNetkey = netkey
-        guard netname != nil || netkey != nil else { return }
-
-        Transport.configureIfac(on: interface, netname: netname, netkey: netkey, size: size)
-    }
-
-    // MARK: - Interface synthesis from config
-
-    /// Create and register interfaces described in `cfg.interfaces`.
-    /// Supports: TCPClientInterface, TCPServerInterface, UDPInterface, AutoInterface,
-    ///           BackboneInterface, LocalInterface.
-    public func synthesizeInterfaces(from cfg: ReticulumConfig) throws {
-        for ifCfg in cfg.interfaces where ifCfg.enabled {
-            let iface: (any Interface)?
-            switch ifCfg.type {
-            case "LocalInterface":
-                let host = ifCfg["connect_ip"] ?? ifCfg["host"] ?? "127.0.0.1"
-                let port = UInt16(ifCfg.int("port") ?? 37428)
-                let li = LocalInterface(name: ifCfg.name, host: host, port: port)
-                if let w = ifCfg.int("reconnect_wait") { li.reconnectWait = TimeInterval(w) }
-                if let t = ifCfg.int("max_reconnect_tries") { li.maxReconnectTries = t }
-                iface = li
-
-            case "BackboneInterface", "BackboneClientInterface":
-                // Python accepts a set of aliases for this interface family before
-                // constructing it (Reticulum.py:988-992): `remote` → `target_host`,
-                // `port` → both `listen_port` and `target_port`. Written configs—including
-                // the one RNS's own discovery emits for a backbone peer—use
-                // `remote`/`port`, so without the aliases the entry parsed to
-                // nothing and the interface was silently skipped.
-                guard let host = ifCfg["target_host"] ?? ifCfg["remote"],
-                      let port = ifCfg.int("target_port") ?? ifCfg.int("port") else { continue }
-                let bb = BackboneInterface(name: ifCfg.name, host: host, port: UInt16(port))
-                iface = bb
-
-            case "TCPClientInterface":
-                guard let host = ifCfg["target_host"],
-                      let port = ifCfg.int("target_port") else { continue }
-                let tcpClient = TCPClientInterface(name: ifCfg.name, host: host, port: UInt16(port))
-                if ifCfg.bool("bootstrap_only") == true { tcpClient.bootstrapOnly = true }
-                // Python: `max_reconnect_tries` from the interface block, else the class
-                // default of None/unlimited (TCPInterface.py:109, 135).
-                if let tries = ifCfg.int("max_reconnect_tries") { tcpClient.maxReconnectTries = tries }
-                iface = tcpClient
-
-            case "TCPServerInterface":
-                let listenPort = ifCfg.int("listen_port") ?? ifCfg.int("port") ?? 4242
-                // Python resolves `listen_ip` into `bind_ip` and renders it in `__str__`
-                // (Reticulum.py / TCPInterface.py:518). Ignoring it made every Swift
-                // listener report 0.0.0.0 regardless of configuration. `device` binds the
-                // named device's own address instead of the wildcard
-                // (`TCPServerInterface.get_address_for_if`, `TCPInterface.py:517,548`).
-                let bindIP = ifCfg["listen_ip"]
-                    ?? ifCfg["device"].flatMap(NetworkDeviceAddress.address(for:))
-                    ?? "0.0.0.0"
-                iface = TCPServerInterface(name: ifCfg.name, port: UInt16(listenPort), bindIP: bindIP)
-
-            case "UDPInterface":
-                let listenPort = ifCfg.int("listen_port")
-                let forwardPort = ifCfg.int("forward_port")
-                // `device` names a network device whose broadcast address fills whichever of
-                // bind and forward the block leaves unset (`UDPInterface.py:82-86`); explicit
-                // `listen_ip` / `forward_ip` win, as they do there.
-                let deviceBroadcast = ifCfg["device"].flatMap(NetworkDeviceAddress.broadcast(for:))
-                let forwardHost = ifCfg["forward_ip"] ?? ifCfg["forward_host"] ?? deviceBroadcast
-                iface = UDPInterface(
-                    name: ifCfg.name,
-                    listenPort: listenPort.map(UInt16.init),
-                    forwardHost: forwardHost,
-                    forwardPort: forwardPort.map(UInt16.init),
-                    // Python's `bind_ip`, which its `__str__` reports (UDPInterface.py:63).
-                    bindIP: ifCfg["listen_ip"] ?? deviceBroadcast ?? "0.0.0.0"
-                )
-
-            case "AutoInterface":
-                #if canImport(Darwin)
-                let groupID = ifCfg["group_id"].flatMap { Data($0.utf8) }
-                    ?? AutoInterface.defaultGroupID
-                let discoveryPort = ifCfg.int("discovery_port").map(UInt16.init)
-                    ?? AutoInterface.defaultDiscoveryPort
-                let dataPort = ifCfg.int("data_port").map(UInt16.init)
-                    ?? AutoInterface.defaultDataPort
-                let allowed = ifCfg["allowed_interfaces"]?
-                    .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
-                let ignored = ifCfg["ignored_interfaces"]?
-                    .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
-                iface = AutoInterface(
-                    name: ifCfg.name,
-                    groupID: groupID,
-                    discoveryPort: discoveryPort,
-                    dataPort: dataPort,
-                    allowedInterfaces: allowed,
-                    ignoredInterfaces: ignored
-                )
-                #else
-                iface = nil
-                #endif
-
-            case "RNodeInterface":
-                // Python: `RNodeInterface.py:139-360`. A missing or out-of-range radio
-                // parameter fails construction (`validcfg` → raise → `RNS.panic()`,
-                // `Reticulum.py:1087-1090`); absent *hardware* doesn't—the port opens at
-                // `start()`, and a failed open leaves the interface registered and offline.
-                guard let device = ifCfg["port"] else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
-                }
-                guard let rnodeFactory = InterfaceTransportFactories.rnode else {
-                    throw InterfaceTransportFactories.FactoryError.unavailable(
-                        family: "RNode", device: device,
-                        hint: "no RNode transport factory is registered on this platform")
-                }
-                let frequency = ifCfg.int("frequency") ?? 0
-                let bandwidth = ifCfg.int("bandwidth") ?? 0
-                let txPower   = ifCfg.int("txpower") ?? 0
-                let sf        = ifCfg.int("spreadingfactor") ?? 0
-                let cr        = ifCfg.int("codingrate") ?? 0
-                // The reference's `validcfg` gates (`RNodeInterface.py:305-327`).
-                guard (137_000_000...3_000_000_000).contains(frequency) else {
-                    throw InterfaceConstructionError.invalidValue(
-                        interface: ifCfg.name, key: "frequency", value: String(frequency))
-                }
-                guard (0...37).contains(txPower) else {
-                    throw InterfaceConstructionError.invalidValue(
-                        interface: ifCfg.name, key: "txpower", value: String(txPower))
-                }
-                guard (7_800...1_625_000).contains(bandwidth) else {
-                    throw InterfaceConstructionError.invalidValue(
-                        interface: ifCfg.name, key: "bandwidth", value: String(bandwidth))
-                }
-                guard (5...12).contains(sf) else {
-                    throw InterfaceConstructionError.invalidValue(
-                        interface: ifCfg.name, key: "spreadingfactor", value: String(sf))
-                }
-                guard (5...8).contains(cr) else {
-                    throw InterfaceConstructionError.invalidValue(
-                        interface: ifCfg.name, key: "codingrate", value: String(cr))
-                }
-
-                let radioTransport = try rnodeFactory(device)
-                let rnode = RNodeInterface(name: ifCfg.name, transport: radioTransport)
-                rnode.ownedTransport = radioTransport
-                rnode.frequency = UInt32(frequency)
-                rnode.bandwidth = UInt32(bandwidth)
-                rnode.txPower   = txPower
-                rnode.sf        = sf
-                rnode.cr        = cr
-                if let st = ifCfg.double("airtime_limit_short") {
-                    guard (0.0...100.0).contains(st) else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: ifCfg.name, key: "airtime_limit_short", value: String(st))
-                    }
-                    rnode.stAlock = st
-                }
-                if let lt = ifCfg.double("airtime_limit_long") {
-                    guard (0.0...100.0).contains(lt) else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: ifCfg.name, key: "airtime_limit_long", value: String(lt))
-                    }
-                    rnode.ltAlock = lt
-                }
-                // Both halves or neither, as the reference treats the pair
-                // (`RNodeInterface.py:333-343`), with the same length gate.
-                if let callsign = ifCfg["id_callsign"], let interval = ifCfg.int("id_interval") {
-                    let encoded = Data(callsign.utf8)
-                    guard encoded.count <= RNodeInterface.callsignMaxLength else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: ifCfg.name, key: "id_callsign", value: callsign)
-                    }
-                    rnode.idCallsign = encoded
-                    rnode.idInterval = TimeInterval(interval)
-                }
-                iface = rnode
-
-            case "KISSInterface":
-                // Python: `KISSInterface.py:60-115`, with `id_interval`/`id_callsign` becoming
-                // the KISS beacon pair (`:100-113`).
-                guard let device = ifCfg["port"] else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
-                }
-                guard let serialFactory = InterfaceTransportFactories.serial else {
-                    throw InterfaceTransportFactories.FactoryError.unavailable(
-                        family: "serial", device: device,
-                        hint: "no serial transport factory is registered on this platform")
-                }
-                iface = KISSInterface(
-                    name: ifCfg.name,
-                    port: device,
-                    speed: ifCfg.int("speed") ?? 9600,
-                    dataBits: ifCfg.int("databits") ?? 8,
-                    parity: SerialParity(string: ifCfg["parity"] ?? "N"),
-                    stopBits: ifCfg.int("stopbits") ?? 1,
-                    preamble: ifCfg.int("preamble") ?? 350,
-                    txtail: ifCfg.int("txtail") ?? 20,
-                    persistence: ifCfg.int("persistence") ?? 64,
-                    slottime: ifCfg.int("slottime") ?? 20,
-                    flowControl: ifCfg.bool("flow_control") ?? false,
-                    beaconInterval: ifCfg.int("id_interval").map(TimeInterval.init),
-                    beaconData: ifCfg["id_callsign"] ?? "",
-                    transport: try serialFactory(device)
-                )
-
-            case "AX25KISSInterface":
-                // Python: `AX25KISSInterface.py:60-135`. The callsign and SSID gates live in the
-                // interface's own throwing init; a bad value fails construction as the
-                // reference's `validcfg` raise does.
-                guard let device = ifCfg["port"] else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
-                }
-                guard let callsign = ifCfg["callsign"] else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "callsign")
-                }
-                guard let ssid = ifCfg.int("ssid") else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "ssid")
-                }
-                guard let serialFactory = InterfaceTransportFactories.serial else {
-                    throw InterfaceTransportFactories.FactoryError.unavailable(
-                        family: "serial", device: device,
-                        hint: "no serial transport factory is registered on this platform")
-                }
-                iface = try AX25KISSInterface(
-                    name: ifCfg.name,
-                    port: device,
-                    speed: ifCfg.int("speed") ?? 9600,
-                    dataBits: ifCfg.int("databits") ?? 8,
-                    parityString: ifCfg["parity"] ?? "N",
-                    stopBits: ifCfg.int("stopbits") ?? 1,
-                    callsign: callsign,
-                    ssid: ssid,
-                    preamble: ifCfg.int("preamble") ?? 350,
-                    txtail: ifCfg.int("txtail") ?? 20,
-                    persistence: ifCfg.int("persistence") ?? 64,
-                    slottime: ifCfg.int("slottime") ?? 20,
-                    flowControl: ifCfg.bool("flow_control") ?? false,
-                    transport: try serialFactory(device)
-                )
-
-            case "I2PInterface":
-                // Python: `I2PInterface.py:725-745`, with `storagepath` injected by
-                // `Reticulum.py:1015`. The embedded daemon's data lives under this stack's
-                // storage, mirroring the reference keeping i2pd state under its storagepath.
-                guard let daemonFactory = InterfaceTransportFactories.i2pDaemon else {
-                    throw InterfaceTransportFactories.FactoryError.unavailable(
-                        family: "I2P", device: ifCfg.name,
-                        hint: "no I2P daemon factory is registered on this platform")
-                }
-                let peers = ifCfg["peers"]?
-                    .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []
-                iface = I2PInterface(
-                    name: ifCfg.name,
-                    daemon: try daemonFactory(),
-                    // The reference's own location: `storagepath + "/i2p"`
-                    // (`I2PInterface.py:90-91`), declared in `StorageInventory`.
-                    dataDirectory: StorageInventory.url(.i2p, storage: configuration.storagePath),
-                    connectable: ifCfg.bool("connectable") ?? false,
-                    peers: peers
-                )
-
-            case "SerialInterface":
-                // Python: `Reticulum.py:1024-1026` → `SerialInterface.py:74-86`. A missing
-                // port is a raise that panics the daemon; everything else defaults
-                // (9600/8/N/1, `:77-80`).
-                guard let device = ifCfg["port"] else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
-                }
-                guard let serialFactory = InterfaceTransportFactories.serial else {
-                    throw InterfaceTransportFactories.FactoryError.unavailable(
-                        family: "serial", device: device,
-                        hint: "no serial transport factory is registered on this platform")
-                }
-                iface = SerialInterface(
-                    name: ifCfg.name,
-                    port: device,
-                    speed: ifCfg.int("speed") ?? 9600,
-                    dataBits: ifCfg.int("databits") ?? 8,
-                    parityString: ifCfg["parity"] ?? "N",
-                    stopBits: ifCfg.int("stopbits") ?? 1,
-                    transport: try serialFactory(device)
-                )
-
-            case "RNodeMultiInterface":
-                // Python: `Reticulum.py:1044-1047` → `RNodeMultiInterface.py:160-233`. The
-                // radio rows are configobj's third section level. No port, no sub-blocks, or
-                // no *enabled* sub-blocks are all raises (`:219-224`, `:229-231`).
-                guard let device = ifCfg["port"] else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
-                }
-                guard !ifCfg.subBlocks.isEmpty else {
-                    // `ValueError("No subinterfaces configured for "+name)`
-                    throw InterfaceConstructionError.missingKey(
-                        interface: ifCfg.name, key: "subinterfaces")
-                }
-                // A sub's own `interface_enabled` enables it, as does the parent's literal
-                // `enabled` spelling—not by a parent `interface_enabled`
-                // (`RNodeMultiInterface.py:178`).
-                let enabledSubs = ifCfg.subBlocks.filter {
-                    $0.bool("interface_enabled") == true || ifCfg.enabledViaEnabledKey
-                }
-                guard !enabledSubs.isEmpty else {
-                    // `ValueError("No subinterfaces enabled for "+name)`
-                    throw InterfaceConstructionError.invalidValue(
-                        interface: ifCfg.name, key: "subinterfaces", value: "none enabled")
-                }
-                guard let rnodeFactory = InterfaceTransportFactories.rnode else {
-                    throw InterfaceTransportFactories.FactoryError.unavailable(
-                        family: "RNode", device: device,
-                        hint: "no RNode transport factory is registered on this platform")
-                }
-                var subs: [RNodeSubInterface] = []
-                for (position, sub) in enabledSubs.enumerated() {
-                    let subName = "\(ifCfg.name)/\(sub.name)"
-                    let frequency = sub.int("frequency") ?? 0
-                    let bandwidth = sub.int("bandwidth") ?? 0
-                    let txPower   = sub.int("txpower") ?? 0
-                    let sf        = sub.int("spreadingfactor") ?? 0
-                    let cr        = sub.int("codingrate") ?? 0
-                    // The same `validcfg` gates the single-radio case applies
-                    // (`RNodeMultiInterface.py` mirrors `RNodeInterface.py:305-327`).
-                    guard (137_000_000...3_000_000_000).contains(frequency) else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: subName, key: "frequency", value: String(frequency))
-                    }
-                    guard (0...37).contains(txPower) else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: subName, key: "txpower", value: String(txPower))
-                    }
-                    guard (7_800...1_625_000).contains(bandwidth) else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: subName, key: "bandwidth", value: String(bandwidth))
-                    }
-                    guard (5...12).contains(sf) else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: subName, key: "spreadingfactor", value: String(sf))
-                    }
-                    guard (5...8).contains(cr) else {
-                        throw InterfaceConstructionError.invalidValue(
-                            interface: subName, key: "codingrate", value: String(cr))
-                    }
-                    subs.append(RNodeSubInterface(
-                        name: sub.name,
-                        index: sub.int("vport") ?? position,
-                        // The device reports the concrete chip type at detect
-                        // (CMD_INTERFACES); Python fills it from that response, never from
-                        // config, so construction has nothing to put here.
-                        interfaceType: "",
-                        frequency: UInt32(frequency),
-                        bandwidth: UInt32(bandwidth),
-                        txPower: txPower,
-                        sf: sf,
-                        cr: cr,
-                        flowControl: sub.bool("flow_control") ?? false,
-                        stAlock: sub.double("airtime_limit_short"),
-                        ltAlock: sub.double("airtime_limit_long")
-                    ))
-                }
-                let radioTransport = try rnodeFactory(device)
-                let multi = try RNodeMultiInterface(
-                    name: ifCfg.name, transport: radioTransport, subInterfaces: subs)
-                multi.ownedTransport = radioTransport
-                iface = multi
-
-            case "WeaveInterface":
-                // Python: `Reticulum.py:1049-1051` → `WeaveInterface.py:849-851`, where
-                // `c["port"]` is a KeyError when absent—a raise that panics the daemon. The
-                // WDCL fabric rides an ordinary serial device, so the serial factory serves it.
-                guard let device = ifCfg["port"] else {
-                    throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "port")
-                }
-                guard let serialFactory = InterfaceTransportFactories.serial else {
-                    throw InterfaceTransportFactories.FactoryError.unavailable(
-                        family: "serial", device: device,
-                        hint: "no serial transport factory is registered on this platform")
-                }
-                iface = WeaveInterface(
-                    name: ifCfg.name, port: device, transport: try serialFactory(device))
-
-            default:
-                // The current reference no longer raises here: an unknown type goes through the
-                // external-interface-module lookup, and a missing module is an ERROR log naming
-                // it (`Reticulum.py:1055-1061`). This port loads no external modules, so the
-                // parallel observable is the same loud log—an operator's typo is named, the
-                // other interfaces still come up. `PipeInterface` deliberately stays on this
-                // path: unimplemented by design (macOS/Linux subprocess pipes, no mobile use
-                // case), pinned by `RemainingConstructionTests`.
-                Reticulum.log("Unsupported interface type '\(ifCfg.type)' for interface "
-                              + "'\(ifCfg.name)' — this interface will not be created",
-                              level: .error)
-                iface = nil
-            }
-            if let iface {
-                // Everything the block configures, applied before registration so Transport never
-                // observes an unconfigured interface, and before `start()` so the IFAC key is installed
-                // before the first frame moves—matching `Reticulum.py:975`. Spawned
-                // sub-interfaces pick it all up through `InterfaceState.inherit(from:)`.
-                //
-                // This used to apply `gravity` and `announces_to_internal` and nothing else, which
-                // is what `bugs/025`'s second half is: §1 made the rest settable and no parser
-                // wrote to them.
-                Reticulum.applyInterfaceConfiguration(to: iface, from: ifCfg)
-                transport.register(interface: iface)
-                try? iface.start()
-                // A radio's bring-up completes off the caller's thread (its detect response may
-                // be delivered on the thread that called `start()`—see
-                // `RNodeInterface.bringUpQueue`). This path is the one caller that genuinely
-                // wants the reference's synchronous `__init__` semantics, and it's safe here:
-                // config synthesis owns this thread and no transport delivers on it.
-                if let radio = iface as? RNodeInterface {
-                    radio.waitUntilOnline(timeout: radio.detectTimeout + radio.validateTimeout + 1)
-                } else if let multi = iface as? RNodeMultiInterface {
-                    multi.waitUntilOnline(timeout: multi.detectTimeout + 1)
-                }
-            }
-        }
-    }
-
-    // MARK: - Path and interface queries
-
-    /// Returns the next-hop hash for a destination. Mirrors Python `Reticulum.get_next_hop(destination)`.
-    public func getNextHop(for destinationHash: Data) -> Data? {
-        transport.nextHop(to: destinationHash)
-    }
-
-    /// Returns the name of the interface toward the next hop. Mirrors Python `Reticulum.get_next_hop_if_name(destination)`.
-    public func getNextHopIfName(for destinationHash: Data) -> String? {
-        transport.nextHopInterfaceName(for: destinationHash)
-    }
-
-    /// Returns the per-hop timeout for a destination. Mirrors Python `Reticulum.get_first_hop_timeout(destination)`.
-    public func getFirstHopTimeout(for destinationHash: Data) -> TimeInterval {
-        transport.firstHopTimeout(for: destinationHash)
-    }
-
-    /// Bitrate of the slowest online interface, or `nil` when none is known.
-    /// Mirrors Python `Reticulum.get_lowest_interface_bitrate()`.
-    public func getLowestInterfaceBitrate() -> Int? {
-        transport.lowestInterfaceBitrate
-    }
-
-    /// A reasonable minimum path-request timeout for this node's slowest link, or `0` when no
-    /// bitrate is known. Mirrors Python `Reticulum.get_medium_path_timeout()`.
-    ///
-    /// Answers from the in-process transport. A utility attached as a *local client* must ask
-    /// the daemon instead—see ``InstanceConnection/mediumPathTimeout()``, which is where this
-    /// port keeps the `is_connected_to_shared_instance` branch Python folds into the accessor.
-    public func getMediumPathTimeout() -> TimeInterval {
-        transport.mediumPathTimeout()
-    }
-
-    // MARK: - Destination retention
-
-    /// Mark a destination as recently used. Mirrors Python `Reticulum._used_destination_data(destination_hash)`.
-    @discardableResult
-    public func usedDestinationData(_ destinationHash: Data) -> Bool {
-        transport.markDestinationUsed(destinationHash)
-        return transport.recall(identity: destinationHash) != nil
-    }
-
-    /// Pin a destination so `cleanKnownDestinations` never removes it.
-    /// Mirrors Python `Reticulum._retain_destination_data(destination_hash)`.
-    @discardableResult
-    public func retainDestinationData(_ destinationHash: Data) -> Bool {
-        transport.retainDestinationData(destinationHash)
-    }
-
-    /// Unpin a previously retained destination.
-    /// Mirrors Python `Reticulum._unretain_destination_data(destination_hash)`.
-    @discardableResult
-    public func unretainDestinationData(_ destinationHash: Data) -> Bool {
-        transport.unretainDestinationData(destinationHash)
-    }
-
-    /// Pin all destinations associated with the given identity hash.
-    /// Mirrors Python `Reticulum._retain_identity(identity_hash)`.
-    @discardableResult
-    public func retainIdentity(_ identityHash: Data) -> Bool {
-        transport.retainIdentity(identityHash)
-    }
-
-    // MARK: - Interface management
-
-    /// No-op stub. Mirrors Python `Reticulum.halt_interface(interface)`.
-    public func haltInterface(_ interface: any Interface) {}
-
-    /// No-op stub. Mirrors Python `Reticulum.resume_interface(interface)`.
-    public func resumeInterface(_ interface: any Interface) {}
-
-    /// Stop and restart the named interface, re-applying its stored configuration.
-    /// Returns `true` if the interface was found and reloaded; `false` if not found.
-    /// Python parity: `Reticulum.reload_interface(name)`
-    @discardableResult
-    public func reloadInterface(named name: String) -> Bool {
-        // 1. Check if the interface is registered.
-        guard transport.interfaces.first(where: { $0.name == name }) != nil else {
-            return false
-        }
-        // 2. Halt (stop) it.
-        transport.halt(interfaceName: name)
-        // 3. Resume it (restart).
-        transport.resume(interfaceName: name)
-        return true
-    }
-
-    // MARK: - Helpers
-
-    private func resolvedConfigPath() -> URL? {
-        if let explicit = configuration.configPath { return explicit }
-        // Default: one level above storagePath, matching Python's layout
-        // (<configdir>/storage ↔ <configdir>/config).
-        let parent = configuration.storagePath.deletingLastPathComponent()
-        return StorageInventory.url(.config, in: parent)
-    }
-
-    private func applyConfig(_ cfg: ReticulumConfig) {
-        transport.transportEnabled = cfg.reticulum.enableTransport
-        Reticulum.allowProbes_ = cfg.reticulum.allowProbes
-        Reticulum.remoteManagementEnabled_ = cfg.reticulum.remoteManagementEnabled
-        for identity in cfg.reticulum.remoteManagementAllowed {
-            transport.remoteManagementAllowed.append(identity)
-        }
-        // Discovery-related static properties.
-        // Mirrors Python Reticulum.__init__ config application block.
-        if let rdv = cfg.reticulum.requiredDiscoveryValue {
-            Reticulum.requiredDiscoveryValue_ = rdv
-        }
-        Reticulum.publishBlackholeEnabled_ = cfg.reticulum.publishBlackholeEnabled
-        if let bui = cfg.reticulum.blackholeUpdateInterval {
-            Reticulum.blackholeUpdateInterval_ = bui
-        }
-        if !cfg.reticulum.interfaceDiscoverySources.isEmpty {
-            Reticulum.interfaceDiscoverySources_ = cfg.reticulum.interfaceDiscoverySources
-        }
-        if cfg.reticulum.autoconnectDiscoveredInterfaces > 0 {
-            Reticulum.maxAutoconnectedInterfaces_ = cfg.reticulum.autoconnectDiscoveredInterfaces
-        }
-        // RNS 1.4.1 gravity / autoconnect policy. Each is assigned only when the
-        // key was present, so an absent option keeps the built-in default.
-        if let dg = cfg.reticulum.defaultGravity { Reticulum.defaultGravity_ = dg }
-        if let m  = cfg.reticulum.autoconnectInterfaceMode { Reticulum.autoconnectInterfaceMode_ = m }
-        if let g  = cfg.reticulum.autoconnectInterfaceGravity { Reticulum.autoconnectInterfaceGravity_ = g }
-        if let a  = cfg.reticulum.autoconnectAnnouncesToInternal { Reticulum.autoconnectAnnouncesToInternal_ = a }
-
-        // A key in a section this parser owns that no branch matched is a directive the operator
-        // wrote and the daemon won't honour. D8's rationale for `bugs/030` is that an absent
-        // key fails visibly and an ignored one doesn't—so say so, rather than leaving the
-        // operator to discover it from behaviour.
-        for key in cfg.unrecognisedKeys {
-            Reticulum.log("Unrecognised configuration directive '\(key)' — it will be ignored",
-                          level: .warning)
-        }
-
-        // MARK: `bugs/030`—the rest of the `[reticulum]` section
-        //
-        // Assigned before `synthesizeInterfaces` runs, matching Python's ordering: the whole
-        // section is applied in `__apply_config` and interfaces are constructed afterwards, so
-        // every `Interface.__init__` reads globals that are already final (`Interface.py:126-136`).
-        Reticulum.applyGlobalDefaults(cfg.reticulum)
-
-        // A network identity is loaded from the configured path, or generated and persisted
-        // there on first use, then handed to Transport (`Reticulum.py:513-534`).
-        if let path = cfg.reticulum.networkIdentityPath {
-            let resolved = URL(fileURLWithPath: DaemonBootstrap.expandTilde(path))
-            if let existing = try? Identity.read(fromFile: resolved) {
-                transport.setNetworkIdentity(existing)
-            } else {
-                let generated = Identity()
-                try? FileManager.default.createDirectory(
-                    at: resolved.deletingLastPathComponent(), withIntermediateDirectories: true)
-                if (try? generated.write(toFile: resolved)) != nil {
-                    transport.setNetworkIdentity(generated)
-                } else {
-                    Reticulum.log("Could not persist network identity to \(resolved.path)",
-                                  level: .error)
-                }
-            }
-        }
-        // Log level mapping: Python 0=critical, 4=info, 8=extreme.
-        // Python saturates rather than ignoring an out-of-range value
-        // (`if loglevel > 8: loglevel = 8`, raised from 7 in RNS 1.4.1 so
-        // LOG_EXTREME is reachable from a config file at all); clamp to match,
-        // instead of silently leaving the level at its default.
-        let clamped = min(max(cfg.logging.logLevel, 0), LogLevel.extreme.rawValue)
-        if let level = LogLevel(rawValue: clamped) {
-            Reticulum.globalLogLevel = level
-        }
-        Reticulum.logTimestamps = cfg.logging.logTimestamps
-    }
+    Reticulum.logTimestamps = cfg.logging.logTimestamps
+  }
 }

@@ -99,7 +99,7 @@ targets: [
 ]
 ```
 
-Or in Xcode: **File ▸ Add Package Dependencies…** and paste the repository URL.
+Or, in Xcode, choose **File ▸ Add Package Dependencies…** and paste the repository URL.
 
 ## Quick start
 

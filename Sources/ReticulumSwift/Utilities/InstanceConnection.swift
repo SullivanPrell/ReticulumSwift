@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 /// How a utility process obtains a Reticulum stack: by attaching to an instance that's
@@ -22,360 +32,387 @@ import Foundation
 /// set. Attaching is a utility-level concern, so it lives here.
 public final class InstanceConnection {
 
-    // MARK: - Role
+  // MARK: - Role
 
-    /// Which side of the shared-instance relationship this process ended up on.
-    public enum Role: Equatable {
-        /// This instance bound the shared-instance port and now serves local clients.
-        /// Python: `is_shared_instance`.
-        case sharedInstance
-        /// Another instance already owned the port, so this instance attached to it as a client.
-        /// Python: `is_connected_to_shared_instance`.
-        case localClient
-        /// Instance sharing is off, so this instance owns a private stack with no local socket.
-        /// Python: `is_standalone_instance`.
-        case standalone
-    }
-
-    // MARK: - State
-
-    /// The live stack.
-    public let reticulum: Reticulum
-
-    /// Parsed configuration file contents.
-    public let config: ReticulumConfig
-
-    /// Directory holding `config`, `storage/`, `interfaces/`.
-    public let configDirectory: URL
-
-    /// How this process is attached.
-    public private(set) var role: Role
-
-    /// Management RPC channel—non-nil only when attached as a ``Role/localClient``,
-    /// because that's the only case where another process owns the state worth asking about.
-    public private(set) var rpc: RPCClient?
-
+  /// Which side of the shared-instance relationship this process ended up on.
+  public enum Role: Equatable {
+    /// This instance bound the shared-instance port and now serves local clients.
+    /// Python: `is_shared_instance`.
+    case sharedInstance
+    /// Another instance already owned the port, so this instance attached to it as a client.
     /// Python: `is_connected_to_shared_instance`.
-    public var isConnectedToSharedInstance: Bool { role == .localClient }
+    case localClient
+    /// Instance sharing is off, so this instance owns a private stack with no local socket.
+    /// Python: `is_standalone_instance`.
+    case standalone
+  }
 
-    private var sharedInstanceServer: PosixTCPServer?
-    private var localInterface: LocalInterface?
+  // MARK: - State
 
-    private init(reticulum: Reticulum,
-                 config: ReticulumConfig,
-                 configDirectory: URL,
-                 role: Role,
-                 rpc: RPCClient?,
-                 sharedInstanceServer: PosixTCPServer?,
-                 localInterface: LocalInterface?) {
-        self.reticulum = reticulum
-        self.config = config
-        self.configDirectory = configDirectory
-        self.role = role
-        self.rpc = rpc
-        self.sharedInstanceServer = sharedInstanceServer
-        self.localInterface = localInterface
+  /// The live stack.
+  public let reticulum: Reticulum
+
+  /// Parsed configuration file contents.
+  public let config: ReticulumConfig
+
+  /// Directory holding `config`, `storage/`, `interfaces/`.
+  public let configDirectory: URL
+
+  /// How this process is attached.
+  public private(set) var role: Role
+
+  /// Management RPC channel—non-nil only when attached as a ``Role/localClient``,
+  /// because that's the only case where another process owns the state worth asking about.
+  public private(set) var rpc: RPCClient?
+
+  /// Python: `is_connected_to_shared_instance`.
+  public var isConnectedToSharedInstance: Bool { role == .localClient }
+
+  private var sharedInstanceServer: PosixTCPServer?
+  private var localInterface: LocalInterface?
+
+  private init(
+    reticulum: Reticulum,
+    config: ReticulumConfig,
+    configDirectory: URL,
+    role: Role,
+    rpc: RPCClient?,
+    sharedInstanceServer: PosixTCPServer?,
+    localInterface: LocalInterface?
+  ) {
+    self.reticulum = reticulum
+    self.config = config
+    self.configDirectory = configDirectory
+    self.role = role
+    self.rpc = rpc
+    self.sharedInstanceServer = sharedInstanceServer
+    self.localInterface = localInterface
+  }
+
+  // MARK: - Shared-instance queries
+
+  /// Python: `Reticulum.get_medium_path_timeout()` (`Reticulum.py:1766-1784`).
+  ///
+  /// The `rn*` utilities floor every path-resolution deadline at this value, so answering
+  /// from the wrong process isn't a cosmetic error: a local client's own transport has a
+  /// single loopback interface, and its bitrate would report the network as fast no matter
+  /// what radio the daemon is actually running.
+  public func mediumPathTimeout() -> TimeInterval {
+    InstanceConnection.mediumPathTimeout(
+      rpc: isConnectedToSharedInstance ? rpc : nil,
+      transport: reticulum.transport)
+  }
+
+  /// The routing decision on its own, so both arms are reachable from a test without a live
+  /// attachment. `rpc` is non-nil only for a ``Role/localClient``; `transport` may be nil for
+  /// a caller that holds no local stack, and answers `0`—the same "unknown" the accessor
+  /// returns before any bitrate has been computed.
+  public static func mediumPathTimeout(rpc: RPCClient?, transport: Transport?) -> TimeInterval {
+    // Python logs and returns `0` on any RPC failure, deliberately *not* falling back to
+    // the local value: a local client's own loopback bitrate would read as a fast network.
+    // `try?` over an optional-returning throwing call flattens both "the call threw" and
+    // "the daemon answered nil" into that same answer.
+    if let rpc { return (try? rpc.mediumPathTimeout()) ?? 0 }
+    return transport?.mediumPathTimeout() ?? 0
+  }
+
+  // MARK: - Path resolution
+
+  /// Resolve the configuration directory the way Python does.
+  ///
+  /// Python `Reticulum.__init__`:
+  /// ```
+  /// if configdir != None:                                    use it
+  /// elif /etc/reticulum/config exists:                        /etc/reticulum
+  /// elif ~/.config/reticulum/config exists:                   ~/.config/reticulum
+  /// else:                                                     ~/.reticulum
+  /// ```
+  public static func resolveConfigDirectory(_ explicit: URL? = nil) -> URL {
+    resolveConfigDirectory(
+      explicit,
+      home: homeDirectory(),
+      systemConfigDir: URL(fileURLWithPath: "/etc/reticulum"),
+      fileManager: .default)
+  }
+
+  /// The home directory the config search starts from.
+  ///
+  /// Python reaches `~/.reticulum` through `os.path.expanduser("~")`, which returns
+  /// **`$HOME` when it's set** and only falls back to the password database otherwise.
+  /// `NSHomeDirectory()` doesn't: on macOS it always reports the account's real home,
+  /// so a Swift utility launched with `HOME` pointed at a sandbox silently read and wrote
+  /// the developer's actual `~/.reticulum`—and, finding the real daemon's identity
+  /// there, authenticated to the real daemon on 37428 and reported its status. That's
+  /// how `tri-test` came to be running "isolated" Swift utilities against a live node;
+  /// its Python half was correctly sandboxed the whole time.
+  ///
+  /// `NSHomeDirectory()` stays as the fallback rather than
+  /// `FileManager.homeDirectoryForCurrentUser`, which is macOS-only—this type lives in
+  /// the library target and has to keep compiling for iOS, tvOS and watchOS.
+  static func homeDirectory(environment: [String: String] = ProcessInfo.processInfo.environment)
+    -> URL
+  {
+    if let home = environment["HOME"], !home.isEmpty {
+      return URL(fileURLWithPath: home)
+    }
+    return URL(fileURLWithPath: NSHomeDirectory())
+  }
+
+  /// `os.path.expanduser`—expand a leading `~` from `$HOME`.
+  ///
+  /// The counterpart to ``homeDirectory(environment:)`` for the paths a *user* types, and it
+  /// exists for the same reason. `NSString.expandingTildeInPath` ignores `$HOME` on macOS
+  /// exactly as `NSHomeDirectory()` does, so `--config ~/scratch` under a relocated `HOME`
+  /// resolved into the account's real home while the surrounding code believed it was
+  /// sandboxed. Eleven call sites across five utilities used it (`bugs/024`), which is why the
+  /// 1.7.0 fix—one resolver, in one place—didn't hold: it corrected where the *default*
+  /// came from and left every explicit `~` path going somewhere else.
+  ///
+  /// Semantics, matching CPython's `posixpath.expanduser`:
+  /// - `"~"` → `$HOME`, `"~/x"` → `$HOME/x`.
+  /// - A trailing slash on `$HOME` isn't doubled.
+  /// - `~user` is returned **unchanged**. CPython looks it up in the password database;
+  ///   nothing in RNS passes one, and silently resolving it to `$HOME` would be worse than
+  ///   leaving it for the filesystem to reject.
+  /// - Anything not starting with `~` is returned unchanged.
+  static func expandTilde(
+    _ path: String,
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  )
+    -> String
+  {
+    expandTilde(path, home: homeDirectory(environment: environment).path)
+  }
+
+  /// ``expandTilde(_:environment:)`` against an explicitly supplied home.
+  ///
+  /// The core implementation, separate so `rncp`—whose filesystem abstraction already carries
+  /// an injected home—reaches the same expansion rather than keeping its own copy. It had
+  /// one; the two agreed except on a home with repeated trailing slashes, where CPython's
+  /// `rstrip('/')` is what this does.
+  static func expandTilde(_ path: String, home: String) -> String {
+    guard path.hasPrefix("~") else { return path }
+    let rest = String(path.dropFirst())
+    if rest.isEmpty { return home }
+    // `~user…`—not this parser's to expand. CPython consults the password database; RNS never does,
+    // and resolving it to `$HOME` would be worse than letting the filesystem reject it.
+    guard rest.hasPrefix("/") else { return path }
+    // CPython: `userhome.rstrip('/') + path[i:]` (`posixpath.expanduser`).
+    var base = home
+    while base.count > 1, base.hasSuffix("/") { base.removeLast() }
+    if base == "/" { return rest }
+    return base + rest
+  }
+
+  /// The same search order with its two fixed locations injected, so it can be exercised
+  /// against a temporary tree instead of the real `/etc` and `$HOME`.
+  ///
+  /// Python checks `os.path.isdir(dir) and os.path.isfile(dir+"/config")`; testing only for
+  /// the `config` file is equivalent, since a file can't live inside a non-directory.
+  public static func resolveConfigDirectory(
+    _ explicit: URL?,
+    home: URL,
+    systemConfigDir: URL,
+    fileManager: FileManager
+  ) -> URL {
+    if let explicit { return explicit }
+
+    if fileManager.fileExists(atPath: StorageInventory.url(.config, in: systemConfigDir).path) {
+      return systemConfigDir
     }
 
-    // MARK: - Shared-instance queries
+    let xdg = home.appendingPathComponent(".config/reticulum")
+    if fileManager.fileExists(atPath: StorageInventory.url(.config, in: xdg).path) { return xdg }
 
-    /// Python: `Reticulum.get_medium_path_timeout()` (`Reticulum.py:1766-1784`).
-    ///
-    /// The `rn*` utilities floor every path-resolution deadline at this value, so answering
-    /// from the wrong process isn't a cosmetic error: a local client's own transport has a
-    /// single loopback interface, and its bitrate would report the network as fast no matter
-    /// what radio the daemon is actually running.
-    public func mediumPathTimeout() -> TimeInterval {
-        InstanceConnection.mediumPathTimeout(rpc: isConnectedToSharedInstance ? rpc : nil,
-                                             transport: reticulum.transport)
+    return home.appendingPathComponent(".reticulum")
+  }
+
+  /// `<configdir>/storage`.
+  ///
+  /// Python: `Reticulum.storagepath`.
+  public static func storagePath(for configDirectory: URL) -> URL {
+    StorageInventory.url(.storage, in: configDirectory)
+  }
+
+  /// `<configdir>/config`.
+  ///
+  /// Python: `Reticulum.configpath`.
+  public static func configPath(for configDirectory: URL) -> URL {
+    StorageInventory.url(.config, in: configDirectory)
+  }
+
+  // MARK: - Attach
+
+  /// Bring up a stack for a command-line utility.
+  ///
+  /// - Parameters:
+  ///   - explicitConfigDirectory: explicit config directory, or `nil` to resolve as Python does.
+  ///   - requireSharedInstance: when true, fail unless an instance is *already* running.
+  ///     Python: `RNS.Reticulum(require_shared_instance=True)`, used by `rnstatus` and
+  ///     `rnpath`, which only read state that a running daemon owns.
+  ///   - logLevel: log verbosity for the stack this call brings up.
+  ///   - synthesizeInterfaces: whether to bring up the interfaces named in the config
+  ///     file. A utility attaching as a local client must not, since the shared instance
+  ///     already owns them—this mirrors Python only adding the `LocalClientInterface`.
+  /// - Returns: A connection owning the stack the utility runs against.
+  /// - Throws: `InstanceError` when no instance is available, or the stack cannot start.
+  public static func attach(
+    configDirectory explicitConfigDirectory: URL? = nil,
+    requireSharedInstance: Bool = false,
+    logLevel: Reticulum.LogLevel = .error,
+    synthesizeInterfaces: Bool = true
+  ) throws -> InstanceConnection {
+
+    let configDirectory = resolveConfigDirectory(explicitConfigDirectory)
+    let storagePath = storagePath(for: configDirectory)
+    let configPath = configPath(for: configDirectory)
+
+    try FileManager.default.createDirectory(at: storagePath, withIntermediateDirectories: true)
+
+    let config: ReticulumConfig
+    if let loaded = ReticulumConfig.load(from: configPath) {
+      config = loaded
+    } else {
+      config = ReticulumConfig.parse(ReticulumConfig.defaultConfigText)
     }
 
-    /// The routing decision on its own, so both arms are reachable from a test without a live
-    /// attachment. `rpc` is non-nil only for a ``Role/localClient``; `transport` may be nil for
-    /// a caller that holds no local stack, and answers `0`—the same "unknown" the accessor
-    /// returns before any bitrate has been computed.
-    public static func mediumPathTimeout(rpc: RPCClient?, transport: Transport?) -> TimeInterval {
-        // Python logs and returns `0` on any RPC failure, deliberately *not* falling back to
-        // the local value: a local client's own loopback bitrate would read as a fast network.
-        // `try?` over an optional-returning throwing call flattens both "the call threw" and
-        // "the daemon answered nil" into that same answer.
-        if let rpc { return (try? rpc.mediumPathTimeout()) ?? 0 }
-        return transport?.mediumPathTimeout() ?? 0
-    }
+    Reticulum.globalLogLevel = logLevel
+    let reticulum = Reticulum(
+      configuration: Reticulum.Configuration(
+        storagePath: storagePath,
+        configPath: configPath,
+        shareInstance: config.reticulum.shareInstance,
+        logLevel: logLevel
+      ))
+    try reticulum.start()
 
-    // MARK: - Path resolution
+    let sharedPort = config.reticulum.sharedInstancePort
+    let controlPort = config.reticulum.instanceControlPort
 
-    /// Resolve the configuration directory the way Python does.
-    ///
-    /// Python `Reticulum.__init__`:
-    /// ```
-    /// if configdir != None:                                    use it
-    /// elif /etc/reticulum/config exists:                        /etc/reticulum
-    /// elif ~/.config/reticulum/config exists:                   ~/.config/reticulum
-    /// else:                                                     ~/.reticulum
-    /// ```
-    public static func resolveConfigDirectory(_ explicit: URL? = nil) -> URL {
-        resolveConfigDirectory(explicit,
-                               home: homeDirectory(),
-                               systemConfigDir: URL(fileURLWithPath: "/etc/reticulum"),
-                               fileManager: .default)
-    }
-
-    /// The home directory the config search starts from.
-    ///
-    /// Python reaches `~/.reticulum` through `os.path.expanduser("~")`, which returns
-    /// **`$HOME` when it's set** and only falls back to the password database otherwise.
-    /// `NSHomeDirectory()` doesn't: on macOS it always reports the account's real home,
-    /// so a Swift utility launched with `HOME` pointed at a sandbox silently read and wrote
-    /// the developer's actual `~/.reticulum`—and, finding the real daemon's identity
-    /// there, authenticated to the real daemon on 37428 and reported its status. That's
-    /// how `tri-test` came to be running "isolated" Swift utilities against a live node;
-    /// its Python half was correctly sandboxed the whole time.
-    ///
-    /// `NSHomeDirectory()` stays as the fallback rather than
-    /// `FileManager.homeDirectoryForCurrentUser`, which is macOS-only—this type lives in
-    /// the library target and has to keep compiling for iOS, tvOS and watchOS.
-    static func homeDirectory(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let home = environment["HOME"], !home.isEmpty {
-            return URL(fileURLWithPath: home)
-        }
-        return URL(fileURLWithPath: NSHomeDirectory())
-    }
-
-    /// `os.path.expanduser`—expand a leading `~` from `$HOME`.
-    ///
-    /// The counterpart to ``homeDirectory(environment:)`` for the paths a *user* types, and it
-    /// exists for the same reason. `NSString.expandingTildeInPath` ignores `$HOME` on macOS
-    /// exactly as `NSHomeDirectory()` does, so `--config ~/scratch` under a relocated `HOME`
-    /// resolved into the account's real home while the surrounding code believed it was
-    /// sandboxed. Eleven call sites across five utilities used it (`bugs/024`), which is why the
-    /// 1.7.0 fix—one resolver, in one place—didn't hold: it corrected where the *default*
-    /// came from and left every explicit `~` path going somewhere else.
-    ///
-    /// Semantics, matching CPython's `posixpath.expanduser`:
-    /// - `"~"` → `$HOME`, `"~/x"` → `$HOME/x`.
-    /// - A trailing slash on `$HOME` isn't doubled.
-    /// - `~user` is returned **unchanged**. CPython looks it up in the password database;
-    ///   nothing in RNS passes one, and silently resolving it to `$HOME` would be worse than
-    ///   leaving it for the filesystem to reject.
-    /// - Anything not starting with `~` is returned unchanged.
-    static func expandTilde(_ path: String,
-                            environment: [String: String] = ProcessInfo.processInfo.environment)
-    -> String {
-        expandTilde(path, home: homeDirectory(environment: environment).path)
-    }
-
-    /// ``expandTilde(_:environment:)`` against an explicitly supplied home.
-    ///
-    /// The core implementation, separate so `rncp`—whose filesystem abstraction already carries
-    /// an injected home—reaches the same expansion rather than keeping its own copy. It had
-    /// one; the two agreed except on a home with repeated trailing slashes, where CPython's
-    /// `rstrip('/')` is what this does.
-    static func expandTilde(_ path: String, home: String) -> String {
-        guard path.hasPrefix("~") else { return path }
-        let rest = String(path.dropFirst())
-        if rest.isEmpty { return home }
-        // `~user…`—not this parser's to expand. CPython consults the password database; RNS never does,
-        // and resolving it to `$HOME` would be worse than letting the filesystem reject it.
-        guard rest.hasPrefix("/") else { return path }
-        // CPython: `userhome.rstrip('/') + path[i:]` (`posixpath.expanduser`).
-        var base = home
-        while base.count > 1, base.hasSuffix("/") { base.removeLast() }
-        if base == "/" { return rest }
-        return base + rest
-    }
-
-    /// The same search order with its two fixed locations injected, so it can be exercised
-    /// against a temporary tree instead of the real `/etc` and `$HOME`.
-    ///
-    /// Python checks `os.path.isdir(dir) and os.path.isfile(dir+"/config")`; testing only for
-    /// the `config` file is equivalent, since a file can't live inside a non-directory.
-    public static func resolveConfigDirectory(_ explicit: URL?,
-                                              home: URL,
-                                              systemConfigDir: URL,
-                                              fileManager: FileManager) -> URL {
-        if let explicit { return explicit }
-
-        if fileManager.fileExists(atPath: StorageInventory.url(.config, in: systemConfigDir).path) {
-            return systemConfigDir
-        }
-
-        let xdg = home.appendingPathComponent(".config/reticulum")
-        if fileManager.fileExists(atPath: StorageInventory.url(.config, in: xdg).path) { return xdg }
-
-        return home.appendingPathComponent(".reticulum")
-    }
-
-    /// `<configdir>/storage`. Python: `Reticulum.storagepath`.
-    public static func storagePath(for configDirectory: URL) -> URL {
-        StorageInventory.url(.storage, in: configDirectory)
-    }
-
-    /// `<configdir>/config`. Python: `Reticulum.configpath`.
-    public static func configPath(for configDirectory: URL) -> URL {
-        StorageInventory.url(.config, in: configDirectory)
-    }
-
-    // MARK: - Attach
-
-    /// Bring up a stack for a command-line utility.
-    ///
-    /// - Parameters:
-    ///   - configDirectory: explicit config directory, or `nil` to resolve as Python does.
-    ///   - requireSharedInstance: when true, fail unless an instance is *already* running.
-    ///     Python: `RNS.Reticulum(require_shared_instance=True)`, used by `rnstatus` and
-    ///     `rnpath`, which only read state that a running daemon owns.
-    ///   - logLevel: log verbosity for the stack this call brings up.
-    ///   - synthesizeInterfaces: whether to bring up the interfaces named in the config
-    ///     file. A utility attaching as a local client must not, since the shared instance
-    ///     already owns them—this mirrors Python only adding the `LocalClientInterface`.
-    public static func attach(configDirectory explicitConfigDirectory: URL? = nil,
-                              requireSharedInstance: Bool = false,
-                              logLevel: Reticulum.LogLevel = .error,
-                              synthesizeInterfaces: Bool = true) throws -> InstanceConnection {
-
-        let configDirectory = resolveConfigDirectory(explicitConfigDirectory)
-        let storagePath = storagePath(for: configDirectory)
-        let configPath = configPath(for: configDirectory)
-
-        try FileManager.default.createDirectory(at: storagePath, withIntermediateDirectories: true)
-
-        let config: ReticulumConfig
-        if let loaded = ReticulumConfig.load(from: configPath) {
-            config = loaded
-        } else {
-            config = ReticulumConfig.parse(ReticulumConfig.defaultConfigText)
-        }
-
-        Reticulum.globalLogLevel = logLevel
-        let reticulum = Reticulum(configuration: Reticulum.Configuration(
-            storagePath: storagePath,
-            configPath: configPath,
-            shareInstance: config.reticulum.shareInstance,
-            logLevel: logLevel
-        ))
-        try reticulum.start()
-
-        let sharedPort = config.reticulum.sharedInstancePort
-        let controlPort = config.reticulum.instanceControlPort
-
-        // Instance sharing disabled → private stack, nothing to attach to.
-        // Python: the `else` branch of `if self.share_instance:`.
-        guard config.reticulum.shareInstance else {
-            if requireSharedInstance {
-                reticulum.stop()
-                throw InstanceError.noSharedInstance
-            }
-            if synthesizeInterfaces { try reticulum.synthesizeInterfaces(from: config) }
-            return InstanceConnection(reticulum: reticulum, config: config,
-                                      configDirectory: configDirectory, role: .standalone,
-                                      rpc: nil, sharedInstanceServer: nil, localInterface: nil)
-        }
-
-        // Try to become the shared instance by binding its port. Python does exactly this
-        // and treats the bind failure as "someone else is already the shared instance".
-        let server = PosixTCPServer(name: "Shared Instance", port: sharedPort)
-        do {
-            reticulum.transport.register(interface: server)
-            try server.start()
-        } catch {
-            // --- Someone else owns the port: attach as a local client. ---
-            reticulum.transport.deregister(interface: server)
-
-            let localInterface = LocalInterface(host: "127.0.0.1", port: sharedPort)
-            reticulum.transport.register(interface: localInterface)
-            do {
-                try localInterface.start()
-            } catch {
-                reticulum.transport.deregister(interface: localInterface)
-                reticulum.stop()
-                throw InstanceError.couldNotConnect(error)
-            }
-
-            // Python disables transport, remote management and probes on a local client,
-            // because the shared instance is the one doing all of that.
-            reticulum.transport.transportEnabled = false
-
-            // Python: `is_connected_to_shared_instance = True`, which Transport reads back
-            // as `Transport.owner.is_connected_to_shared_instance`. Without it a client
-            // re-applies work the shared instance has already done: `filterAndRecord` runs
-            // the HEADER_2 transport-id filter a second time and drops packets that were
-            // forwarded *to this node*, `shouldApplyDelta` re-applies the local hops delta, and
-            // rnprobe takes the standalone branch so it never reports RSSI/SNR/Link Quality.
-            reticulum.transport.isConnectedToSharedInstance = true
-
-            let rpc = try? RPCClient.forInstance(storagePath: storagePath, port: controlPort)
-            return InstanceConnection(reticulum: reticulum, config: config,
-                                      configDirectory: configDirectory, role: .localClient,
-                                      rpc: rpc, sharedInstanceServer: nil,
-                                      localInterface: localInterface)
-        }
-
-        // --- This instance became the shared instance. ---
-        // Python: "Existing shared instance required, but this instance started as shared
-        // instance. Aborting startup." → detach and raise.
-        if requireSharedInstance {
-            server.stop()
-            reticulum.transport.deregister(interface: server)
-            reticulum.stop()
-            throw InstanceError.noSharedInstance
-        }
-
-        // Not `try?`. A shared instance with no control socket is a daemon every `rn*` utility
-        // has lost while it keeps running and passing traffic: invisible from the daemon's side,
-        // and indistinguishable from "no daemon" from the utility's. It used to be swallowed
-        // here *and* mislogged as success inside `RPCServer.start()`—`bugs/040`.
-        //
-        // Logged rather than rethrown, deliberately and temporarily. Python raises
-        // (`Reticulum.py:359` constructs its `Listener` unguarded, so an `OSError` propagates out
-        // of `__init__`) and parity says do the same—but Python never reaches that case,
-        // because `multiprocessing.connection.SocketListener` sets `SO_REUSEADDR` and rebinds
-        // over `TIME_WAIT`. `NWListener` has no working equivalent here: `allowLocalEndpointReuse`
-        // is set on these parameters and the live daemon still gets `EADDRINUSE` restarting on a
-        // control port it recently served clients on. Until that half of `bugs/040` is fixed,
-        // rethrowing would turn "restart within TIME_WAIT gives you a daemon with no control
-        // socket" into "restart within TIME_WAIT gives you no daemon", which is worse for the
-        // operator and not what Python does either. This says so at CRITICAL and carries on.
-        do {
-            try reticulum.startRPC(port: controlPort)
-        } catch {
-            Reticulum.log("Could not start the instance control socket on port \(controlPort): "
-                          + "\(error). The daemon is running, but rnstatus, rnpath, rnprobe, "
-                          + "rnid and rnx cannot reach it. If this is a restart, the port is "
-                          + "most likely still in TIME_WAIT — see bugs/040.", level: .critical)
-        }
-        if synthesizeInterfaces { try reticulum.synthesizeInterfaces(from: config) }
-
-        return InstanceConnection(reticulum: reticulum, config: config,
-                                  configDirectory: configDirectory, role: .sharedInstance,
-                                  rpc: nil, sharedInstanceServer: server, localInterface: nil)
-    }
-
-    // MARK: - Teardown
-
-    /// Tear down whatever ``attach(configDirectory:requireSharedInstance:logLevel:synthesizeInterfaces:)`` brought up.
-    public func stop() {
-        localInterface?.stop()
-        sharedInstanceServer?.stop()
+    // Instance sharing disabled → private stack, nothing to attach to.
+    // Python: the `else` branch of `if self.share_instance:`.
+    guard config.reticulum.shareInstance else {
+      if requireSharedInstance {
         reticulum.stop()
+        throw InstanceError.noSharedInstance
+      }
+      if synthesizeInterfaces { try reticulum.synthesizeInterfaces(from: config) }
+      return InstanceConnection(
+        reticulum: reticulum, config: config,
+        configDirectory: configDirectory, role: .standalone,
+        rpc: nil, sharedInstanceServer: nil, localInterface: nil)
     }
 
-    // MARK: - Errors
+    // Try to become the shared instance by binding its port. Python does exactly this
+    // and treats the bind failure as "someone else is already the shared instance".
+    let server = PosixTCPServer(name: "Shared Instance", port: sharedPort)
+    do {
+      reticulum.transport.register(interface: server)
+      try server.start()
+    } catch {
+      // --- Someone else owns the port: attach as a local client. ---
+      reticulum.transport.deregister(interface: server)
 
-    public enum InstanceError: Error, CustomStringConvertible {
-        /// No instance was already running, and the caller required one.
-        /// Python prints "No shared RNS instance available to get status from" and exits 1.
-        case noSharedInstance
-        /// A shared instance appears to be running but couldn't be connected to.
-        case couldNotConnect(Error)
+      let localInterface = LocalInterface(host: "127.0.0.1", port: sharedPort)
+      reticulum.transport.register(interface: localInterface)
+      do {
+        try localInterface.start()
+      } catch {
+        reticulum.transport.deregister(interface: localInterface)
+        reticulum.stop()
+        throw InstanceError.couldNotConnect(error)
+      }
 
-        public var description: String {
-            switch self {
-            case .noSharedInstance:
-                return "No shared RNS instance available"
-            case .couldNotConnect(let underlying):
-                return "Local shared instance appears to be running, but it could not be connected: \(underlying)"
-            }
-        }
+      // Python disables transport, remote management and probes on a local client,
+      // because the shared instance is the one doing all of that.
+      reticulum.transport.transportEnabled = false
+
+      // Python: `is_connected_to_shared_instance = True`, which Transport reads back
+      // as `Transport.owner.is_connected_to_shared_instance`. Without it a client
+      // re-applies work the shared instance has already done: `filterAndRecord` runs
+      // the HEADER_2 transport-id filter a second time and drops packets that were
+      // forwarded *to this node*, `shouldApplyDelta` re-applies the local hops delta, and
+      // rnprobe takes the standalone branch so it never reports RSSI/SNR/Link Quality.
+      reticulum.transport.isConnectedToSharedInstance = true
+
+      let rpc = try? RPCClient.forInstance(storagePath: storagePath, port: controlPort)
+      return InstanceConnection(
+        reticulum: reticulum, config: config,
+        configDirectory: configDirectory, role: .localClient,
+        rpc: rpc, sharedInstanceServer: nil,
+        localInterface: localInterface)
     }
+
+    // --- This instance became the shared instance. ---
+    // Python: "Existing shared instance required, but this instance started as shared
+    // instance. Aborting startup." → detach and raise.
+    if requireSharedInstance {
+      server.stop()
+      reticulum.transport.deregister(interface: server)
+      reticulum.stop()
+      throw InstanceError.noSharedInstance
+    }
+
+    // Not `try?`. A shared instance with no control socket is a daemon every `rn*` utility
+    // has lost while it keeps running and passing traffic: invisible from the daemon's side,
+    // and indistinguishable from "no daemon" from the utility's. It used to be swallowed
+    // here *and* mislogged as success inside `RPCServer.start()`—`bugs/040`.
+    //
+    // Logged rather than rethrown, deliberately and temporarily. Python raises
+    // (`Reticulum.py:359` constructs its `Listener` unguarded, so an `OSError` propagates out
+    // of `__init__`) and parity says do the same—but Python never reaches that case,
+    // because `multiprocessing.connection.SocketListener` sets `SO_REUSEADDR` and rebinds
+    // over `TIME_WAIT`. `NWListener` has no working equivalent here: `allowLocalEndpointReuse`
+    // is set on these parameters and the live daemon still gets `EADDRINUSE` restarting on a
+    // control port it recently served clients on. Until that half of `bugs/040` is fixed,
+    // rethrowing would turn "restart within TIME_WAIT gives you a daemon with no control
+    // socket" into "restart within TIME_WAIT gives you no daemon", which is worse for the
+    // operator and not what Python does either. This says so at CRITICAL and carries on.
+    do {
+      try reticulum.startRPC(port: controlPort)
+    } catch {
+      Reticulum.log(
+        "Could not start the instance control socket on port \(controlPort): "
+          + "\(error). The daemon is running, but rnstatus, rnpath, rnprobe, "
+          + "rnid and rnx cannot reach it. If this is a restart, the port is "
+          + "most likely still in TIME_WAIT — see bugs/040.", level: .critical)
+    }
+    if synthesizeInterfaces { try reticulum.synthesizeInterfaces(from: config) }
+
+    return InstanceConnection(
+      reticulum: reticulum, config: config,
+      configDirectory: configDirectory, role: .sharedInstance,
+      rpc: nil, sharedInstanceServer: server, localInterface: nil)
+  }
+
+  // MARK: - Teardown
+
+  /// Tear down whatever ``attach(configDirectory:requireSharedInstance:logLevel:synthesizeInterfaces:)`` brought up.
+  public func stop() {
+    localInterface?.stop()
+    sharedInstanceServer?.stop()
+    reticulum.stop()
+  }
+
+  // MARK: - Errors
+
+  /// A failure raised while attaching to a Reticulum instance.
+  public enum InstanceError: Error, CustomStringConvertible {
+    /// No instance was already running, and the caller required one.
+    /// Python prints "No shared RNS instance available to get status from" and exits 1.
+    case noSharedInstance
+    /// A shared instance appears to be running but couldn't be connected to.
+    case couldNotConnect(Error)
+
+    /// The message printed for this failure.
+    public var description: String {
+      switch self {
+      case .noSharedInstance:
+        return "No shared RNS instance available"
+      case .couldNotConnect(let underlying):
+        return
+          "Local shared instance appears to be running, but it could not be connected: \(underlying)"
+      }
+    }
+  }
 }

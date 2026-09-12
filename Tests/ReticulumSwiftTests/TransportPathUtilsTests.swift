@@ -1,4 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Tests for Transport path/latency utility methods that mirror
@@ -6,180 +17,186 @@ import XCTest
 /// extra_link_proof_timeout, and next_hop_interface_hw_mtu.
 final class TransportPathUtilsTests: XCTestCase {
 
-    // MARK: - Mock interface
+  // MARK: - Mock interface
 
-    final class MockInterface: Interface {
-        var name: String
-        var bitrate: Int
-        var isOnline: Bool = true
-        var hwMtu: Int?
-        var autoconfigureMtu: Bool = false
-        var fixedMtu: Bool = false
-        var inboundHandler: ((Packet, any Interface) -> Void)?
+  final class MockInterface: Interface {
+    var name: String
+    var bitrate: Int
+    var isOnline: Bool = true
+    var hwMtu: Int?
+    var autoconfigureMtu: Bool = false
+    var fixedMtu: Bool = false
+    var inboundHandler: ((Packet, any Interface) -> Void)?
 
-        init(name: String, bitrate: Int = 10_000_000, hwMtu: Int? = nil,
-             autoconfigure: Bool = false, fixed: Bool = false) {
-            self.name = name
-            self.bitrate = bitrate
-            self.hwMtu = hwMtu
-            self.autoconfigureMtu = autoconfigure
-            self.fixedMtu = fixed
-        }
-
-        func start() throws { isOnline = true }
-        func stop() { isOnline = false }
-        func send(_ packet: Packet) throws {}
+    init(
+      name: String, bitrate: Int = 10_000_000, hwMtu: Int? = nil,
+      autoconfigure: Bool = false, fixed: Bool = false
+    ) {
+      self.name = name
+      self.bitrate = bitrate
+      self.hwMtu = hwMtu
+      self.autoconfigureMtu = autoconfigure
+      self.fixedMtu = fixed
     }
 
-    func makeTransportWithPath(bitrate: Int = 10_000_000, hwMtu: Int? = nil,
-                                autoconfigure: Bool = false, fixed: Bool = false)
-        -> (Transport, Data, MockInterface)
-    {
-        let transport = Transport()
-        let iface = MockInterface(name: "test0", bitrate: bitrate,
-                                  hwMtu: hwMtu, autoconfigure: autoconfigure, fixed: fixed)
-        transport.register(interface: iface)
+    func start() throws { isOnline = true }
+    func stop() { isOnline = false }
+    func send(_ packet: Packet) throws {}
+  }
 
-        let destHash = Data(repeating: 0xAB, count: 16)
-        transport.restore(
-            path: Transport.PathEntry(
-                destinationHash: destHash,
-                nextHopInterface: iface,
-                hops: 1,
-                lastHeard: Date(),
-                identityHash: Data(repeating: 0, count: 16)
-            ),
-            forDestination: destHash
-        )
-        return (transport, destHash, iface)
-    }
+  func makeTransportWithPath(
+    bitrate: Int = 10_000_000, hwMtu: Int? = nil,
+    autoconfigure: Bool = false, fixed: Bool = false
+  )
+    -> (Transport, Data, MockInterface)
+  {
+    let transport = Transport()
+    let iface = MockInterface(
+      name: "test0", bitrate: bitrate,
+      hwMtu: hwMtu, autoconfigure: autoconfigure, fixed: fixed)
+    transport.register(interface: iface)
 
-    // MARK: - nextHopInterfaceBitrate
+    let destHash = Data(repeating: 0xAB, count: 16)
+    transport.restore(
+      path: Transport.PathEntry(
+        destinationHash: destHash,
+        nextHopInterface: iface,
+        hops: 1,
+        lastHeard: Date(),
+        identityHash: Data(repeating: 0, count: 16)
+      ),
+      forDestination: destHash
+    )
+    return (transport, destHash, iface)
+  }
 
-    func testNextHopInterfaceBitrateKnownPath() {
-        let (transport, destHash, _) = makeTransportWithPath(bitrate: 9_600)
-        XCTAssertEqual(transport.nextHopInterfaceBitrate(for: destHash), 9_600)
-    }
+  // MARK: - nextHopInterfaceBitrate
 
-    func testNextHopInterfaceBitrateNilForUnknownPath() {
-        let transport = Transport()
-        let unknown = Data(repeating: 0xFF, count: 16)
-        XCTAssertNil(transport.nextHopInterfaceBitrate(for: unknown))
-    }
+  func testNextHopInterfaceBitrateKnownPath() {
+    let (transport, destHash, _) = makeTransportWithPath(bitrate: 9_600)
+    XCTAssertEqual(transport.nextHopInterfaceBitrate(for: destHash), 9_600)
+  }
 
-    func testNextHopInterfaceBitrateNilForOfflineInterface() {
-        let (transport, destHash, iface) = makeTransportWithPath(bitrate: 1_200)
-        iface.isOnline = false
-        // Interface exists but is offline—still returns bitrate (Python doesn't filter by online)
-        XCTAssertEqual(transport.nextHopInterfaceBitrate(for: destHash), 1_200)
-    }
+  func testNextHopInterfaceBitrateNilForUnknownPath() {
+    let transport = Transport()
+    let unknown = Data(repeating: 0xFF, count: 16)
+    XCTAssertNil(transport.nextHopInterfaceBitrate(for: unknown))
+  }
 
-    // MARK: - nextHopInterfaceHwMtu
+  func testNextHopInterfaceBitrateNilForOfflineInterface() {
+    let (transport, destHash, iface) = makeTransportWithPath(bitrate: 1_200)
+    iface.isOnline = false
+    // Interface exists but is offline—still returns bitrate (Python doesn't filter by online)
+    XCTAssertEqual(transport.nextHopInterfaceBitrate(for: destHash), 1_200)
+  }
 
-    func testNextHopInterfaceHwMtuWithAutoconfigure() {
-        let (transport, destHash, _) = makeTransportWithPath(hwMtu: 262144, autoconfigure: true)
-        XCTAssertEqual(transport.nextHopInterfaceHwMtu(for: destHash), 262144)
-    }
+  // MARK: - nextHopInterfaceHwMtu
 
-    func testNextHopInterfaceHwMtuWithFixedMtu() {
-        let (transport, destHash, _) = makeTransportWithPath(hwMtu: 1064, fixed: true)
-        XCTAssertEqual(transport.nextHopInterfaceHwMtu(for: destHash), 1064)
-    }
+  func testNextHopInterfaceHwMtuWithAutoconfigure() {
+    let (transport, destHash, _) = makeTransportWithPath(hwMtu: 262144, autoconfigure: true)
+    XCTAssertEqual(transport.nextHopInterfaceHwMtu(for: destHash), 262144)
+  }
 
-    func testNextHopInterfaceHwMtuNilWhenNeitherFlag() {
-        let (transport, destHash, _) = makeTransportWithPath(hwMtu: 1064,
-                                                              autoconfigure: false, fixed: false)
-        XCTAssertNil(transport.nextHopInterfaceHwMtu(for: destHash))
-    }
+  func testNextHopInterfaceHwMtuWithFixedMtu() {
+    let (transport, destHash, _) = makeTransportWithPath(hwMtu: 1064, fixed: true)
+    XCTAssertEqual(transport.nextHopInterfaceHwMtu(for: destHash), 1064)
+  }
 
-    func testNextHopInterfaceHwMtuNilForUnknownPath() {
-        let transport = Transport()
-        let unknown = Data(repeating: 0xCC, count: 16)
-        XCTAssertNil(transport.nextHopInterfaceHwMtu(for: unknown))
-    }
+  func testNextHopInterfaceHwMtuNilWhenNeitherFlag() {
+    let (transport, destHash, _) = makeTransportWithPath(
+      hwMtu: 1064,
+      autoconfigure: false, fixed: false)
+    XCTAssertNil(transport.nextHopInterfaceHwMtu(for: destHash))
+  }
 
-    // MARK: - firstHopTimeout
+  func testNextHopInterfaceHwMtuNilForUnknownPath() {
+    let transport = Transport()
+    let unknown = Data(repeating: 0xCC, count: 16)
+    XCTAssertNil(transport.nextHopInterfaceHwMtu(for: unknown))
+  }
 
-    func testFirstHopTimeoutDefaultWhenNoPath() {
-        let transport = Transport()
-        let unknown = Data(repeating: 0x11, count: 16)
-        XCTAssertEqual(transport.firstHopTimeout(for: unknown), Constants.defaultPerHopTimeout)
-    }
+  // MARK: - firstHopTimeout
 
-    func testFirstHopTimeoutDefaultWhenBitrateIsZero() {
-        let (transport, destHash, _) = makeTransportWithPath(bitrate: 0)
-        // bitrate=0 → division by zero guard → falls back to default
-        XCTAssertEqual(transport.firstHopTimeout(for: destHash), Constants.defaultPerHopTimeout)
-    }
+  func testFirstHopTimeoutDefaultWhenNoPath() {
+    let transport = Transport()
+    let unknown = Data(repeating: 0x11, count: 16)
+    XCTAssertEqual(transport.firstHopTimeout(for: unknown), Constants.defaultPerHopTimeout)
+  }
 
-    func testFirstHopTimeoutCalculatedFromBitrate() {
-        // Python: MTU * (1/bitrate * 8) + DEFAULT_PER_HOP_TIMEOUT
-        // = 500 * (8/bitrate) + 6
-        let bitrate = 1_200
-        let (transport, destHash, _) = makeTransportWithPath(bitrate: bitrate)
-        let expected = Double(Constants.mtu) * (8.0 / Double(bitrate)) + Constants.defaultPerHopTimeout
-        XCTAssertEqual(transport.firstHopTimeout(for: destHash), expected, accuracy: 1e-9)
-    }
+  func testFirstHopTimeoutDefaultWhenBitrateIsZero() {
+    let (transport, destHash, _) = makeTransportWithPath(bitrate: 0)
+    // bitrate=0 → division by zero guard → falls back to default
+    XCTAssertEqual(transport.firstHopTimeout(for: destHash), Constants.defaultPerHopTimeout)
+  }
 
-    // MARK: - extraLinkProofTimeout
+  func testFirstHopTimeoutCalculatedFromBitrate() {
+    // Python: MTU * (1/bitrate * 8) + DEFAULT_PER_HOP_TIMEOUT
+    // = 500 * (8/bitrate) + 6
+    let bitrate = 1_200
+    let (transport, destHash, _) = makeTransportWithPath(bitrate: bitrate)
+    let expected = Double(Constants.mtu) * (8.0 / Double(bitrate)) + Constants.defaultPerHopTimeout
+    XCTAssertEqual(transport.firstHopTimeout(for: destHash), expected, accuracy: 1e-9)
+  }
 
-    func testExtraLinkProofTimeoutZeroForNilInterface() {
-        XCTAssertEqual(Transport.extraLinkProofTimeout(for: nil), 0.0)
-    }
+  // MARK: - extraLinkProofTimeout
 
-    func testExtraLinkProofTimeoutZeroForZeroBitrate() {
-        let iface = MockInterface(name: "x", bitrate: 0)
-        XCTAssertEqual(Transport.extraLinkProofTimeout(for: iface), 0.0)
-    }
+  func testExtraLinkProofTimeoutZeroForNilInterface() {
+    XCTAssertEqual(Transport.extraLinkProofTimeout(for: nil), 0.0)
+  }
 
-    func testExtraLinkProofTimeoutCalculated() {
-        // Python: ((1/bitrate)*8) * MTU
-        let bitrate = 9_600
-        let iface = MockInterface(name: "x", bitrate: bitrate)
-        let expected = (8.0 / Double(bitrate)) * Double(Constants.mtu)
-        XCTAssertEqual(Transport.extraLinkProofTimeout(for: iface), expected, accuracy: 1e-9)
-    }
+  func testExtraLinkProofTimeoutZeroForZeroBitrate() {
+    let iface = MockInterface(name: "x", bitrate: 0)
+    XCTAssertEqual(Transport.extraLinkProofTimeout(for: iface), 0.0)
+  }
 
-    // MARK: - defaultPerHopTimeout constant
+  func testExtraLinkProofTimeoutCalculated() {
+    // Python: ((1/bitrate)*8) * MTU
+    let bitrate = 9_600
+    let iface = MockInterface(name: "x", bitrate: bitrate)
+    let expected = (8.0 / Double(bitrate)) * Double(Constants.mtu)
+    XCTAssertEqual(Transport.extraLinkProofTimeout(for: iface), expected, accuracy: 1e-9)
+  }
 
-    func testDefaultPerHopTimeoutIsCorrect() {
-        // Python: Reticulum.DEFAULT_PER_HOP_TIMEOUT = 6
-        XCTAssertEqual(Constants.defaultPerHopTimeout, 6.0)
-    }
+  // MARK: - defaultPerHopTimeout constant
 
-    // MARK: - Interface hwMtu defaults
+  func testDefaultPerHopTimeoutIsCorrect() {
+    // Python: Reticulum.DEFAULT_PER_HOP_TIMEOUT = 6
+    XCTAssertEqual(Constants.defaultPerHopTimeout, 6.0)
+  }
 
-    func testInterfaceHwMtuDefaultIsNil() {
-        let iface = MockInterface(name: "y")
-        // Protocol default should be nil
-        let asProtocol: any Interface = iface
-        XCTAssertNil(asProtocol.hwMtu)
-    }
+  // MARK: - Interface hwMtu defaults
 
-    func testInterfaceAutoconfigureMtuDefaultIsFalse() {
-        let iface = MockInterface(name: "y")
-        let asProtocol: any Interface = iface
-        XCTAssertFalse(asProtocol.autoconfigureMtu)
-    }
+  func testInterfaceHwMtuDefaultIsNil() {
+    let iface = MockInterface(name: "y")
+    // Protocol default should be nil
+    let asProtocol: any Interface = iface
+    XCTAssertNil(asProtocol.hwMtu)
+  }
 
-    func testInterfaceFixedMtuDefaultIsFalse() {
-        let iface = MockInterface(name: "y")
-        let asProtocol: any Interface = iface
-        XCTAssertFalse(asProtocol.fixedMtu)
-    }
+  func testInterfaceAutoconfigureMtuDefaultIsFalse() {
+    let iface = MockInterface(name: "y")
+    let asProtocol: any Interface = iface
+    XCTAssertFalse(asProtocol.autoconfigureMtu)
+  }
 
-    // MARK: - TCPClientInterface hwMtu
+  func testInterfaceFixedMtuDefaultIsFalse() {
+    let iface = MockInterface(name: "y")
+    let asProtocol: any Interface = iface
+    XCTAssertFalse(asProtocol.fixedMtu)
+  }
 
-    func testTCPClientInterfaceHwMtu() {
-        let tcp = TCPClientInterface(name: "tcp0", host: "127.0.0.1", port: 4242)
-        XCTAssertEqual(tcp.hwMtu, 262144)
-        XCTAssertTrue(tcp.autoconfigureMtu)
-    }
+  // MARK: - TCPClientInterface hwMtu
 
-    // MARK: - UDPInterface hwMtu
+  func testTCPClientInterfaceHwMtu() {
+    let tcp = TCPClientInterface(name: "tcp0", host: "127.0.0.1", port: 4242)
+    XCTAssertEqual(tcp.hwMtu, 262144)
+    XCTAssertTrue(tcp.autoconfigureMtu)
+  }
 
-    func testUDPInterfaceHwMtu() {
-        let udp = UDPInterface(name: "udp0", listenPort: 4243)
-        XCTAssertEqual(udp.hwMtu, 1064)
-    }
+  // MARK: - UDPInterface hwMtu
+
+  func testUDPInterfaceHwMtu() {
+    let udp = UDPInterface(name: "udp0", listenPort: 4243)
+    XCTAssertEqual(udp.hwMtu, 1064)
+  }
 }

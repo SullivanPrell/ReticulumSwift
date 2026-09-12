@@ -1,5 +1,15 @@
-import Foundation
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
 import Darwin
+import Foundation
 
 /// A TCP server bound with a raw POSIX socket—deliberately doesn't set SO_REUSEADDR.
 ///
@@ -12,290 +22,330 @@ import Darwin
 ///
 /// Used only for the shared-instance port (37428). All other server interfaces
 /// can continue to use `TCPServerInterface` + `NWListener`.
-public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAutoconfiguringInterface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+public final class PosixTCPServer: Interface, LocalClientServingInterface,
+  MtuAutoconfiguringInterface
+{
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
-    public let name: String
-    public let port: UInt16
-    public var bitrate: Int = 1_000_000_000
-    private let onlineFlag = LockedFlag(false)
-    public private(set) var isOnline: Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
+  /// Interface name as it appears in configuration and status output.
+  public let name: String
+  /// TCP port the server listens on.
+  public let port: UInt16
+  /// Nominal interface bitrate in bits per second.
+  public var bitrate: Int = 1_000_000_000
+  private let onlineFlag = LockedFlag(false)
+  /// Whether the interface is up and able to carry traffic.
+  public private(set) var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
+
+  /// Hardware maximum transmission unit in bytes.
+  public var hwMtu: Int? = 262_144
+  /// Whether the link maximum transmission unit is negotiated with the peer.
+  public let autoconfigureMtu: Bool = true
+
+  // Not a mesh routing endpoint: `send()` already fans out to every attached
+  // local client directly, and local-client delivery is handled by
+  // Transport's dedicated `localClientServingInterfaces` announce forward
+  // (independent of transportEnabled). Excluding it here mirrors
+  // TCPServerInterface's listener/spawned-client split and prevents
+  // double-delivery to local clients when transportEnabled is also true.
+  /// Whether Transport routes packets and forwards announces through this interface.
+  public var isRoutingEndpoint: Bool { false }
+
+  /// Called with each packet decoded from an inbound frame.
+  public var inboundHandler: ((Packet, any Interface) -> Void)?
+  /// Called with each inbound frame, before packet decoding.
+  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
+  public var ifacIdentity: Identity?
+  /// Derived IFAC key used to sign and verify frames.
+  public var ifacKey: Data?
+  /// IFAC authentication field size in bytes.
+  public var ifacSize: Int = Constants.defaultIfacSize
+
+  /// Lock-guarded—written from this interface's I/O queue while the UI
+  /// and status reporting read from another thread.
+  ///
+  /// See `InterfaceCounters`.
+  private let counters = InterfaceCounters()
+  /// Total bytes received on this interface.
+  public var rxBytes: Int { counters.rxBytes }
+  /// Total bytes transmitted on this interface.
+  public var txBytes: Int { counters.txBytes }
+
+  private var listenFD: Int32 = -1
+  private var acceptSource: DispatchSourceRead?
+  private let queue: DispatchQueue
+  /// Serial queue that all inbound frame deliveries funnel through, so the
+  /// shared `rxBytes` counter and the (non-thread-safe) inbound handler are
+  /// never invoked concurrently by multiple client connections.
+  private let deliveryQueue = DispatchQueue(label: "ReticulumSwift.PosixTCPServer.delivery")
+  private let lock = NSLock()
+  private var clients: [PosixClient] = []
+
+  /// Descriptors this server has accepted, for tests that assert the socket options actually
+  /// landed.
+  ///
+  /// Unlike the Network.framework paths, a POSIX descriptor has an authoritative
+  /// readback—`getsockopt`—so `bugs/023` is verifiable here rather than only structural.
+  private var acceptedDescriptors: [Int32] = []
+  var lastAcceptedDescriptorForTesting: Int32? {
+    lock.lock()
+    defer { lock.unlock() }
+    return acceptedDescriptors.last
+  }
+  var acceptedDescriptorHandlerForTesting: ((Int32) -> Void)?
+
+  /// Python `LocalServerInterface.__str__` (`LocalInterface.py:496-498`) returns the literal
+  /// `"Shared Instance["+str(bind_port)+"]"`.
+  ///
+  /// Shown in rnstatus output; distinct from the
+  /// client-side `"LocalInterface[…]"`.
+  ///
+  /// `"Shared Instance"` is hardcoded here, not read from `name`. Python's
+  /// `LocalServerInterface` sets `self.name = "Reticulum"` (`LocalInterface.py:391`) and its
+  /// `__str__` ignores it entirely, so building the string from `name` made this correct only
+  /// while the one caller happened to pass `name: "Shared Instance"`
+  /// (`InstanceConnection.swift:208`)—correct by coincidence at a single call site, which is
+  /// the `bugs/013` shape. Found by the enumerate-every-conformer test in `bugs/022`; not in
+  /// the audit's list of nine.
+  public var displayName: String { "Shared Instance[\(port)]" }
+
+  /// This class is Python's `LocalServerInterface`; only the Swift name differs.
+  ///
+  /// Reported
+  /// verbatim in the stats payload, where a Python `rnstatus -d` prints it and would
+  /// otherwise show "PosixTCPServer", an interface kind that doesn't exist in RNS.
+  public var statsTypeName: String { "LocalServerInterface" }
+
+  /// Python hardcodes `self.name = "Reticulum"` on `LocalServerInterface`
+  /// (RNS/Interfaces/LocalInterface.py:391), while `__str__` stays "Shared Instance[…]".
+  ///
+  /// Swift uses `name` to identify the interface internally, so the published short name
+  /// is set here rather than by renaming the interface.
+  public var statsShortName: String { "Reticulum" }
+
+  /// Number of connected clients.
+  ///
+  /// Used by buildInterfaceStats for rnstatus.
+  public var clientCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return clients.count
+  }
+
+  /// Creates a server interface listening on a TCP port.
+  public init(name: String, port: UInt16) {
+    self.name = name
+    self.port = port
+    self.queue = DispatchQueue(
+      label: "ReticulumSwift.PosixTCPServer.\(name)", attributes: .concurrent)
+  }
+
+  /// Brings the interface online.
+  public func start() throws {
+    let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else {
+      throw PosixError.errno(Darwin.errno, "socket()")
     }
 
-    public var hwMtu: Int? = 262_144
-    public let autoconfigureMtu: Bool = true
+    // Prevent SIGPIPE on writes to closed connections
+    var one: Int32 = 1
+    Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
 
-    // Not a mesh routing endpoint: `send()` already fans out to every attached
-    // local client directly, and local-client delivery is handled by
-    // Transport's dedicated `localClientServingInterfaces` announce forward
-    // (independent of transportEnabled). Excluding it here mirrors
-    // TCPServerInterface's listener/spawned-client split and prevents
-    // double-delivery to local clients when transportEnabled is also true.
-    public var isRoutingEndpoint: Bool { false }
+    // Explicitly don't set SO_REUSEADDR—this is intentional.
+    // Without it, Python's SO_REUSEADDR bind attempt fails → client mode.
 
-    public var inboundHandler: ((Packet, any Interface) -> Void)?
-    public var rawInboundHandler: ((Data, any Interface) -> Void)?
-    public var ifacIdentity: Identity?
-    public var ifacKey: Data?
-    public var ifacSize: Int = Constants.defaultIfacSize
+    var addr = sockaddr_in()
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = port.bigEndian
+    // Bind to 127.0.0.1, not INADDR_ANY. This is intentional:
+    // on macOS, SO_REUSEADDR lets a new socket rebind 0.0.0.0:port while this socket holds it,
+    // but it can't rebind 127.0.0.1:port when this socket already holds that exact address.
+    // Python's LocalServerInterface also binds to 127.0.0.1, so this binding blocks it.
+    Darwin.inet_aton("127.0.0.1", &addr.sin_addr)
 
-    /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
-    private let counters = InterfaceCounters()
-    public var rxBytes: Int { counters.rxBytes }
-    public var txBytes: Int { counters.txBytes }
-
-    private var listenFD: Int32 = -1
-    private var acceptSource: DispatchSourceRead?
-    private let queue: DispatchQueue
-    /// Serial queue that all inbound frame deliveries funnel through, so the
-    /// shared `rxBytes` counter and the (non-thread-safe) inbound handler are
-    /// never invoked concurrently by multiple client connections.
-    private let deliveryQueue = DispatchQueue(label: "ReticulumSwift.PosixTCPServer.delivery")
-    private let lock = NSLock()
-    private var clients: [PosixClient] = []
-
-    /// Descriptors this server has accepted, for tests that assert the socket options actually
-    /// landed. Unlike the Network.framework paths, a POSIX descriptor has an authoritative
-    /// readback—`getsockopt`—so `bugs/023` is verifiable here rather than only structural.
-    private var acceptedDescriptors: [Int32] = []
-    var lastAcceptedDescriptorForTesting: Int32? {
-        lock.lock(); defer { lock.unlock() }; return acceptedDescriptors.last
+    let bindRC = withUnsafePointer(to: &addr) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
     }
-    var acceptedDescriptorHandlerForTesting: ((Int32) -> Void)?
-
-    /// Python `LocalServerInterface.__str__` (`LocalInterface.py:496-498`) returns the literal
-    /// `"Shared Instance["+str(bind_port)+"]"`. Shown in rnstatus output; distinct from the
-    /// client-side `"LocalInterface[…]"`.
-    ///
-    /// `"Shared Instance"` is hardcoded here, not read from `name`. Python's
-    /// `LocalServerInterface` sets `self.name = "Reticulum"` (`LocalInterface.py:391`) and its
-    /// `__str__` ignores it entirely, so building the string from `name` made this correct only
-    /// while the one caller happened to pass `name: "Shared Instance"`
-    /// (`InstanceConnection.swift:208`)—correct by coincidence at a single call site, which is
-    /// the `bugs/013` shape. Found by the enumerate-every-conformer test in `bugs/022`; not in
-    /// the audit's list of nine.
-    public var displayName: String { "Shared Instance[\(port)]" }
-
-    /// This class is Python's `LocalServerInterface`; only the Swift name differs. Reported
-    /// verbatim in the stats payload, where a Python `rnstatus -d` prints it and would
-    /// otherwise show "PosixTCPServer", an interface kind that doesn't exist in RNS.
-    public var statsTypeName: String { "LocalServerInterface" }
-
-    /// Python hardcodes `self.name = "Reticulum"` on `LocalServerInterface`
-    /// (RNS/Interfaces/LocalInterface.py:391), while `__str__` stays "Shared Instance[…]".
-    /// Swift uses `name` to identify the interface internally, so the published short name
-    /// is set here rather than by renaming the interface.
-    public var statsShortName: String { "Reticulum" }
-
-    /// Number of connected clients. Used by buildInterfaceStats for rnstatus.
-    public var clientCount: Int {
-        lock.lock(); defer { lock.unlock() }
-        return clients.count
+    guard bindRC == 0 else {
+      Darwin.close(fd)
+      throw PosixError.errno(Darwin.errno, "bind(:\(port))")
     }
 
-    public init(name: String, port: UInt16) {
-        self.name = name
-        self.port = port
-        self.queue = DispatchQueue(label: "ReticulumSwift.PosixTCPServer.\(name)", attributes: .concurrent)
+    guard Darwin.listen(fd, 16) == 0 else {
+      Darwin.close(fd)
+      throw PosixError.errno(Darwin.errno, "listen()")
     }
 
-    public func start() throws {
-        let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else {
-            throw PosixError.errno(Darwin.errno, "socket()")
+    listenFD = fd
+    isOnline = true
+
+    let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+    src.setEventHandler { [weak self] in self?.acceptOne() }
+    src.setCancelHandler { Darwin.close(fd) }
+    src.resume()
+    acceptSource = src
+  }
+
+  /// Takes the interface offline and releases its resources.
+  public func stop() {
+    acceptSource?.cancel()
+    acceptSource = nil
+    isOnline = false
+    lock.lock()
+    let all = clients
+    clients.removeAll()
+    lock.unlock()
+    for c in all { c.close() }
+  }
+
+  /// Transmits `packet` on the interface.
+  public func send(_ packet: Packet) throws {
+    let raw = try packet.pack()
+    let framed = HDLC.frame(wrapIfac(raw))
+    counters.addTx(bytes: raw.count)
+    lock.lock()
+    let all = clients
+    lock.unlock()
+    for c in all { c.write(framed) }
+  }
+
+  // MARK: - Accept loop
+
+  private func acceptOne() {
+    var clientAddr = sockaddr_in()
+    var addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let clientFD = withUnsafeMutablePointer(to: &clientAddr) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.accept(listenFD, $0, &addrLen)
+      }
+    }
+    guard clientFD >= 0 else { return }
+
+    // Python sets `TCP_NODELAY` on every socket its shared-instance server accepts
+    // (`LocalInterface.py:98-100`)—the accepted-socket half of `bugs/023`, in the POSIX
+    // server rather than the Network.framework one. This port set only `SO_NOSIGPIPE`, so
+    // small control frames sat behind Nagle's delayed-ACK timer on every shared-instance
+    // client. Found while building `RNSSocketOptions`; not in `bugs/023` as filed.
+    RNSSocketOptions.applyLocalOptions(toFileDescriptor: clientFD)
+    lock.lock()
+    acceptedDescriptors.append(clientFD)
+    lock.unlock()
+    acceptedDescriptorHandlerForTesting?(clientFD)
+
+    let client = PosixClient(
+      fd: clientFD,
+      queue: DispatchQueue(label: "ReticulumSwift.PosixTCPServer.client", target: queue),
+      onFrame: { [weak self] data in
+        guard let self else { return }
+        // Funnel every client's delivery through one serial queue so the
+        // shared counter and inbound handler never run concurrently.
+        self.deliveryQueue.async {
+          self.counters.addRx(bytes: data.count)
+          if let h = self.rawInboundHandler {
+            h(data, self)
+          } else if let p = try? Packet.unpack(data) {
+            self.inboundHandler?(p, self)
+          }
         }
+      },
+      onClose: { [weak self] c in
+        guard let self else { return }
+        self.lock.lock()
+        self.clients.removeAll { $0 === c }
+        self.lock.unlock()
+      }
+    )
+    lock.lock()
+    clients.append(client)
+    lock.unlock()
+    client.start()
+  }
 
-        // Prevent SIGPIPE on writes to closed connections
-        var one: Int32 = 1
-        Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-
-        // Explicitly don't set SO_REUSEADDR—this is intentional.
-        // Without it, Python's SO_REUSEADDR bind attempt fails → client mode.
-
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = port.bigEndian
-        // Bind to 127.0.0.1, not INADDR_ANY. This is intentional:
-        // on macOS, SO_REUSEADDR lets a new socket rebind 0.0.0.0:port while this socket holds it,
-        // but it can't rebind 127.0.0.1:port when this socket already holds that exact address.
-        // Python's LocalServerInterface also binds to 127.0.0.1, so this binding blocks it.
-        Darwin.inet_aton("127.0.0.1", &addr.sin_addr)
-
-        let bindRC = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bindRC == 0 else {
-            Darwin.close(fd)
-            throw PosixError.errno(Darwin.errno, "bind(:\(port))")
-        }
-
-        guard Darwin.listen(fd, 16) == 0 else {
-            Darwin.close(fd)
-            throw PosixError.errno(Darwin.errno, "listen()")
-        }
-
-        listenFD = fd
-        isOnline = true
-
-        let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        src.setEventHandler { [weak self] in self?.acceptOne() }
-        src.setCancelHandler { Darwin.close(fd) }
-        src.resume()
-        acceptSource = src
+  /// Errors raised by the POSIX socket server.
+  public enum PosixError: Error {
+    case errno(Int32, String)
+    var localizedDescription: String {
+      if case .errno(let n, let ctx) = self {
+        return "\(ctx): \(String(cString: strerror(n)))"
+      }
+      return "PosixError"
     }
-
-    public func stop() {
-        acceptSource?.cancel()
-        acceptSource = nil
-        isOnline = false
-        lock.lock()
-        let all = clients
-        clients.removeAll()
-        lock.unlock()
-        for c in all { c.close() }
-    }
-
-    public func send(_ packet: Packet) throws {
-        let raw = try packet.pack()
-        let framed = HDLC.frame(wrapIfac(raw))
-        counters.addTx(bytes: raw.count)
-        lock.lock()
-        let all = clients
-        lock.unlock()
-        for c in all { c.write(framed) }
-    }
-
-    // MARK: - Accept loop
-
-    private func acceptOne() {
-        var clientAddr = sockaddr_in()
-        var addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let clientFD = withUnsafeMutablePointer(to: &clientAddr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.accept(listenFD, $0, &addrLen)
-            }
-        }
-        guard clientFD >= 0 else { return }
-
-        // Python sets `TCP_NODELAY` on every socket its shared-instance server accepts
-        // (`LocalInterface.py:98-100`)—the accepted-socket half of `bugs/023`, in the POSIX
-        // server rather than the Network.framework one. This port set only `SO_NOSIGPIPE`, so
-        // small control frames sat behind Nagle's delayed-ACK timer on every shared-instance
-        // client. Found while building `RNSSocketOptions`; not in `bugs/023` as filed.
-        RNSSocketOptions.applyLocalOptions(toFileDescriptor: clientFD)
-        lock.lock()
-        acceptedDescriptors.append(clientFD)
-        lock.unlock()
-        acceptedDescriptorHandlerForTesting?(clientFD)
-
-        let client = PosixClient(
-            fd: clientFD,
-            queue: DispatchQueue(label: "ReticulumSwift.PosixTCPServer.client", target: queue),
-            onFrame: { [weak self] data in
-                guard let self else { return }
-                // Funnel every client's delivery through one serial queue so the
-                // shared counter and inbound handler never run concurrently.
-                self.deliveryQueue.async {
-                    self.counters.addRx(bytes: data.count)
-                    if let h = self.rawInboundHandler {
-                        h(data, self)
-                    } else if let p = try? Packet.unpack(data) {
-                        self.inboundHandler?(p, self)
-                    }
-                }
-            },
-            onClose: { [weak self] c in
-                guard let self else { return }
-                self.lock.lock()
-                self.clients.removeAll { $0 === c }
-                self.lock.unlock()
-            }
-        )
-        lock.lock()
-        clients.append(client)
-        lock.unlock()
-        client.start()
-    }
-
-    public enum PosixError: Error {
-        case errno(Int32, String)
-        var localizedDescription: String {
-            if case .errno(let n, let ctx) = self {
-                return "\(ctx): \(String(cString: strerror(n)))"
-            }
-            return "PosixError"
-        }
-    }
+  }
 }
 
 // MARK: - Per-connection client
 
 private final class PosixClient {
-    private let fd: Int32
-    private let queue: DispatchQueue
-    private let onFrame: (Data) -> Void
-    private let onClose: (PosixClient) -> Void
-    private let decoder = HDLC.FrameDecoder()
-    private var io: DispatchIO?
+  private let fd: Int32
+  private let queue: DispatchQueue
+  private let onFrame: (Data) -> Void
+  private let onClose: (PosixClient) -> Void
+  private let decoder = HDLC.FrameDecoder()
+  private var io: DispatchIO?
 
-    init(fd: Int32, queue: DispatchQueue,
-         onFrame: @escaping (Data) -> Void,
-         onClose: @escaping (PosixClient) -> Void) {
-        self.fd = fd
-        self.queue = queue
-        self.onFrame = onFrame
-        self.onClose = onClose
+  init(
+    fd: Int32, queue: DispatchQueue,
+    onFrame: @escaping (Data) -> Void,
+    onClose: @escaping (PosixClient) -> Void
+  ) {
+    self.fd = fd
+    self.queue = queue
+    self.onFrame = onFrame
+    self.onClose = onClose
+  }
+
+  func start() {
+    var one: Int32 = 1
+    Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+
+    let channel = DispatchIO(type: .stream, fileDescriptor: fd, queue: queue) { _ in
+      Darwin.close(self.fd)
     }
+    channel.setLimit(lowWater: 1)
+    io = channel
+    readLoop(channel)
+  }
 
-    func start() {
-        var one: Int32 = 1
-        Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-
-        let channel = DispatchIO(type: .stream, fileDescriptor: fd, queue: queue) { _ in
-            Darwin.close(self.fd)
+  private func readLoop(_ channel: DispatchIO) {
+    channel.read(offset: 0, length: 4096, queue: queue) { [weak self] done, dispatchData, _ in
+      guard let self else { return }
+      if let dd = dispatchData, !dd.isEmpty {
+        for frame in self.decoder.feed(Data(dd)) {
+          self.onFrame(frame)
         }
-        channel.setLimit(lowWater: 1)
-        io = channel
-        readLoop(channel)
+      }
+      if done {
+        self.io = nil
+        self.onClose(self)
+        return
+      }
+      self.readLoop(channel)
     }
+  }
 
-    private func readLoop(_ channel: DispatchIO) {
-        channel.read(offset: 0, length: 4096, queue: queue) { [weak self] done, dispatchData, _ in
-            guard let self else { return }
-            if let dd = dispatchData, !dd.isEmpty {
-                for frame in self.decoder.feed(Data(dd)) {
-                    self.onFrame(frame)
-                }
-            }
-            if done {
-                self.io = nil
-                self.onClose(self)
-                return
-            }
-            self.readLoop(channel)
-        }
-    }
+  func write(_ data: Data) {
+    guard let channel = io else { return }
+    let dd = data.withUnsafeBytes { DispatchData(bytes: $0) }
+    channel.write(offset: 0, data: dd, queue: queue) { _, _, _ in }
+  }
 
-    func write(_ data: Data) {
-        guard let channel = io else { return }
-        let dd = data.withUnsafeBytes { DispatchData(bytes: $0) }
-        channel.write(offset: 0, data: dd, queue: queue) { _, _, _ in }
-    }
-
-    func close() {
-        io?.close()
-        io = nil
-    }
+  func close() {
+    io?.close()
+    io = nil
+  }
 }
