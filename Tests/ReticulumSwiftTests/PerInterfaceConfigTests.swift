@@ -147,7 +147,9 @@ final class PerInterfaceConfigTests: XCTestCase {
     // MARK: - Bitrate
 
     /// A configured bitrate replaces the class guess, if it's at least `MINIMUM_BITRATE`
-    /// (`Reticulum.py:815-816`). It matters beyond reporting: announce capacity and resource
+    /// (`Reticulum.py:815-816`).
+    ///
+    /// It matters beyond reporting: announce capacity and resource
     /// timings are derived from it.
     func testConfiguredBitrateIsHonoured() throws {
         XCTAssertEqual(try synthesise("    bitrate = 4242000").bitrate, 4_242_000)

@@ -60,7 +60,9 @@ public protocol SAMSocket: AnyObject {
 // MARK: - NWSAMSocket (production implementation)
 
 /// `SAMSocket` over `NWConnection`, always to the local SAM bridge
-/// (`127.0.0.1:<samPort>`). The blocking handshake calls are intended to run
+/// (`127.0.0.1:<samPort>`).
+///
+/// The blocking handshake calls are intended to run
 /// on a peer's dedicated dial queue—mirroring Python's thread-per-peer
 /// `tunnel_job` model—while NWConnection callbacks run on an internal queue.
 public final class NWSAMSocket: SAMSocket {

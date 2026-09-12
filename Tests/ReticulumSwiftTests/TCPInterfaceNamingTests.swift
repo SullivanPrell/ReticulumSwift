@@ -59,7 +59,9 @@ final class TCPInterfaceNamingTests: XCTestCase {
     }
 
     /// Python: `"TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"`
-    /// (`TCPInterface.py:680-686`). Not on the hide list, so this one was merely
+    /// (`TCPInterface.py:680-686`).
+    ///
+    /// Not on the hide list, so this one was merely
     /// mis-named rather than invisible—but the name feeds `Interface.hash`, so a Swift
     /// listener published a different identity than the Python listener beside it.
     func testServerUsesThePythonNameShape() {
@@ -88,7 +90,9 @@ final class TCPInterfaceNamingTests: XCTestCase {
     // MARK: - The join: object name -> stats payload -> rnstatus
 
     /// Build the payload from a live Transport, exactly as the RPC server does, and run
-    /// it through the renderer with default options. This is the end-to-end path the
+    /// it through the renderer with default options.
+    ///
+    /// This is the end-to-end path the
     /// operator sees, and it's the assertion that was missing.
     private func renderRegistered(_ interfaces: [any Interface], showAll: Bool = false) -> String {
         let transport = Transport()
@@ -169,7 +173,9 @@ final class TCPInterfaceNamingTests: XCTestCase {
     /// `UDPInterface` had the same hardcoded bind address, found by the cross-implementation
     /// name comparison in `tri-test` once it started comparing names by value: Python
     /// reported `UDPInterface[Isolated UDP/127.0.0.1:*]` for a loopback-bound interface and
-    /// Swift reported `.../0.0.0.0:*`. Python: `UDPInterface.py:63`, `:131-132`.
+    /// Swift reported `.
+    ///
+    /// ../0.0.0.0:*`. Python: `UDPInterface.py:63`, `:131-132`.
     func testUDPInterfaceReportsItsConfiguredBindAddress() {
         let iface = UDPInterface(name: "Isolated UDP", listenPort: 4242, bindIP: "127.0.0.1")
         XCTAssertEqual(iface.displayName, "UDPInterface[Isolated UDP/127.0.0.1:4242]")

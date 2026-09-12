@@ -62,7 +62,9 @@ import Foundation
 /// they share the same `HDLC` + `Packet` wire format.
 public final class BLEMeshInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -74,7 +76,9 @@ public final class BLEMeshInterface: Interface {
     // MARK: - Tunable defaults
 
     /// Conservative throughput estimate for a BLE 5 GATT link carrying
-    /// HDLC-framed Reticulum packets. Mirrors the `bitrateGuess` convention
+    /// HDLC-framed Reticulum packets.
+    ///
+    /// Mirrors the `bitrateGuess` convention
     /// used by `I2PInterface`/`AX25KISSInterface`—a configurable estimate
     /// for link-quality heuristics, not a measured value.
     public static let bitrateGuess: Int = 1_000_000
@@ -105,7 +109,9 @@ public final class BLEMeshInterface: Interface {
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
 
     /// Lock-guarded: `send` runs on the caller's thread while `handlePeerData`
-    /// runs on CoreBluetooth's queue and the UI polls from main. See
+    /// runs on CoreBluetooth's queue and the UI polls from main.
+    ///
+    /// See
     /// `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
@@ -133,7 +139,9 @@ public final class BLEMeshInterface: Interface {
     private var peers: [BLEMeshPeerID: PeerState] = [:]
     private let peersLock = NSLock()
 
-    /// Snapshot of meshed peer IDs. Safe to read from any thread—intended
+    /// Snapshot of meshed peer IDs.
+    ///
+    /// Safe to read from any thread—intended
     /// for UI display (peer list, mesh size indicator, and so on).
     public var connectedPeerIDs: [BLEMeshPeerID] {
         peersLock.lock(); defer { peersLock.unlock() }

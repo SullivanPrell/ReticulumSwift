@@ -57,7 +57,9 @@ public struct ArgumentParser {
     /// A declared option, exposed so an external formatter can reproduce `argparse`'s own
     /// help layout. Python: the fields of an `argparse.Action`.
     public struct OptionSpec {
-        /// Every spelling, in declaration order. Python: `action.option_strings`.
+        /// Every spelling, in declaration order.
+        ///
+        /// Python: `action.option_strings`.
         public let names: [String]
         /// Python: `_format_args(action, metavar)`—`nil` for `store_true`/`count`.
         public let metavar: String?
@@ -75,10 +77,14 @@ public struct ArgumentParser {
         }
     }
 
-    /// Program name, used in usage output. Python: `parser.prog`.
+    /// Program name, used in usage output.
+    ///
+    /// Python: `parser.prog`.
     public let program: String
 
-    /// One-line description printed above the option list. Python: `description=`.
+    /// One-line description printed above the option list.
+    ///
+    /// Python: `description=`.
     public let overview: String
 
     private var declarations: [Declaration] = []
@@ -89,17 +95,23 @@ public struct ArgumentParser {
         self.overview = overview
     }
 
-    /// Declare a boolean flag. Python: `action="store_true"`.
+    /// Declare a boolean flag.
+    ///
+    /// Python: `action="store_true"`.
     public mutating func flag(_ names: [String], help: String, hidden: Bool = false) {
         declarations.append(Declaration(names: names, kind: .flag, help: help, hidden: hidden))
     }
 
-    /// Declare a repeatable counting flag. Python: `action="count", default=0`.
+    /// Declare a repeatable counting flag.
+    ///
+    /// Python: `action="count", default=0`.
     public mutating func counted(_ names: [String], help: String, hidden: Bool = false) {
         declarations.append(Declaration(names: names, kind: .counted, help: help, hidden: hidden))
     }
 
-    /// Declare an option that takes one value. Python: `action="store"`.
+    /// Declare an option that takes one value.
+    ///
+    /// Python: `action="store"`.
     public mutating func option(_ names: [String], metavar: String = "VALUE",
                                 help: String, default defaultValue: String? = nil,
                                 hidden: Bool = false) {
@@ -108,7 +120,9 @@ public struct ArgumentParser {
                                         help: help, hidden: hidden))
     }
 
-    /// Declare an option collecting zero or more values. Python: `nargs="*"`.
+    /// Declare an option collecting zero or more values.
+    ///
+    /// Python: `nargs="*"`.
     ///
     /// The empty case is meaningful and must survive to the caller: Python's bare `-e`
     /// yields `[]`, which is *falsy*, so the operation is skipped entirely **and** doesn't
@@ -120,7 +134,9 @@ public struct ArgumentParser {
                                         help: help, hidden: hidden))
     }
 
-    /// Declare an option whose value is optional. Python: `nargs="?", const=…`.
+    /// Declare an option whose value is optional.
+    ///
+    /// Python: `nargs="?", const=…`.
     ///
     /// When the flag appears without a value, `const` is stored—matching argparse, where
     /// `-a` alone yields `DEFAULT_ASPECTS`. A `nil` const stores nothing but still records
@@ -133,7 +149,9 @@ public struct ArgumentParser {
                                         help: help, hidden: hidden))
     }
 
-    /// Declare a repeatable option whose values accumulate. Python: `action="append"`.
+    /// Declare a repeatable option whose values accumulate.
+    ///
+    /// Python: `action="append"`.
     ///
     /// Needed by `rnx -a <hash>` and `rncp --allowed <hash>`, where every occurrence
     /// contributes an entry rather than overwriting the previous one. Unlike ``variadic``
@@ -332,7 +350,9 @@ public struct ArgumentParser {
     }
 
     /// Resolve a `-xyz…` token into its constituent short options, or `nil` if any
-    /// character isn't a known single-character option. The first value-taking option
+    /// character isn't a known single-character option.
+    ///
+    /// The first value-taking option
     /// terminates the walk and claims the rest of the token as its (possibly empty)
     /// attached value; `-h` resolves to the implicit help option when the program hasn't
     /// declared its own. Mirrors argparse's `_parse_optional` / short-option consumption.
@@ -366,14 +386,18 @@ public struct ArgumentParser {
 
     /// Expand a single `--abbrev` token to its unambiguous long-option name under
     /// `allow_abbrev`, or return it unchanged when it isn't a long option, not a unique
-    /// prefix, or ambiguous. Lets a tool that pre-scans for `--help`/`--version` before full
+    /// prefix, or ambiguous.
+    ///
+    /// Lets a tool that pre-scans for `--help`/`--version` before full
     /// parsing (for example, rnprobe) honour abbreviations—`--hel`, `--vers`—exactly as argparse
     /// does, instead of only matching the spelled-out forms.
     public func expandedLongOption(_ argument: String) -> String {
         (try? expandingAbbreviation(argument)) ?? argument
     }
 
-    /// Every declared option, for external help formatters. Python: `parser._actions`.
+    /// Every declared option, for external help formatters.
+    ///
+    /// Python: `parser._actions`.
     public var optionSpecs: [OptionSpec] {
         declarations.map { declaration in
             switch declaration.kind {
@@ -541,10 +565,14 @@ public struct ParsedArguments {
         self.positionals = positionals
     }
 
-    /// Whether a `store_true` flag was given. Accepts any declared spelling.
+    /// Whether a `store_true` flag was given.
+    ///
+    /// Accepts any declared spelling.
     public func flag(_ name: String) -> Bool { flags.contains(name) }
 
-    /// How many times a `count` flag was given. Python's `default=0`.
+    /// How many times a `count` flag was given.
+    ///
+    /// Python's `default=0`.
     public func count(_ name: String) -> Int { counts[name] ?? 0 }
 
     /// The value of a `store` option, or its declared default, or `nil`.
@@ -563,10 +591,13 @@ public struct ParsedArguments {
     public func values(_ name: String) -> [String]? { lists[name] }
 
     /// Whether an option appeared on the command line at all, regardless of its value.
+    ///
     /// Needed for `nargs="?"` options declared without a `const`.
     public func wasProvided(_ name: String) -> Bool { provided.contains(name) }
 
-    /// Whether help was requested. Handled outside the declaration list, as `argparse` does.
+    /// Whether help was requested.
+    ///
+    /// Handled outside the declaration list, as `argparse` does.
     public var wantsHelp: Bool { flags.contains("--help") }
 }
 

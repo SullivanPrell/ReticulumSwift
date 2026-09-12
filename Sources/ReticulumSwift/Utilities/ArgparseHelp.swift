@@ -36,6 +36,7 @@ public enum ArgparseHelp {
     /// One row of a help section: the flag/positional spelling and its help string.
     public struct Entry: Equatable {
         /// The rendered invocation, for example, `"-s SIZE, --size SIZE"` or `"full_name"`.
+        ///
         /// Python: `HelpFormatter._format_action_invocation`.
         public let invocation: String
         /// The help string, or `""` for an action declared without one (argparse then

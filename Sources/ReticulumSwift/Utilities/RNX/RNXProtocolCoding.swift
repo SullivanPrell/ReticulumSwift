@@ -24,7 +24,9 @@ import Foundation
 
 public extension RNXRequest {
 
-    /// Full memberwise initializer. The declared `init(command:)` suppressed the
+    /// Full memberwise initializer.
+    ///
+    /// The declared `init(command:)` suppressed the
     /// synthesised one, so every other field had to be assigned post-hoc.
     init(command: String,
          timeout: TimeInterval? = nil,

@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Destination static hash utilities and sign method.
+///
 /// Mirrors Python's `Destination.hash()`, `Destination.hash_from_name_and_identity()`,
 /// `Destination.app_and_aspects_from_name()`, and `Destination.sign()`.
 final class DestinationHashTests: XCTestCase {

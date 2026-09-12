@@ -83,7 +83,9 @@ final class SpawnedInterfaceInheritanceTests: XCTestCase {
         XCTAssertEqual(client.ifacKey, Data(repeating: 0xAB, count: 64), "ifacKey")
     }
 
-    /// A tunnel belongs to the connection that established it. Python doesn't copy these, and
+    /// A tunnel belongs to the connection that established it.
+    ///
+    /// Python doesn't copy these, and
     /// inheriting them would attach the parent's tunnel identity to every client.
     func testSpawnedClientDoesNotInheritTunnelState() {
         let server = TCPServerInterface(name: "hub2", port: 4251)

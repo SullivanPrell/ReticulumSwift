@@ -50,7 +50,9 @@ public enum RNStatusJSON {
     }
 
     /// Python: rnstatus.py:189-191—every `bytes` value in each discovery entry becomes
-    /// undelimited hex. In practice only `stamp` and `discovery_hash` are bytes;
+    /// undelimited hex.
+    ///
+    /// In practice only `stamp` and `discovery_hash` are bytes;
     /// `transport_id` / `network_id` are already hex strings on disk.
     public static func normaliseDiscovered(_ value: MsgPack.Value) -> MsgPack.Value {
         guard case .array(let items) = value else { return value }
@@ -111,13 +113,16 @@ public enum RNStatusJSON {
     }
 
     /// `-d -j`: the normalised array of entries, on one line.
+    ///
     /// The caller supplies the leading blank line (rnstatus.py:185).
     public static func encodeDiscovered(_ interfaces: [DiscoveredInterfaceInfo]) -> String {
         encode(normaliseDiscovered(.array(interfaces.map(msgpackValue(for:)))))
     }
 
     /// The wire carries whatever msgpack decoded—in practice an integer for frequency
-    /// and bandwidth. Emit the integral form so `-j` shows `867200000`, not `867200000.0`.
+    /// and bandwidth.
+    ///
+    /// Emit the integral form so `-j` shows `867200000`, not `867200000.0`.
     private static func numeric(_ value: Double) -> MsgPack.Value {
         (value == value.rounded() && abs(value) < 9.2e18) ? .int(Int64(value)) : .double(value)
     }

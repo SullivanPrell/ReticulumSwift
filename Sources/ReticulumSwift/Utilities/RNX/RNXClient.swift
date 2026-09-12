@@ -44,7 +44,9 @@ public final class RNXClient {
     /// Python: `link.did_identify`, an ad-hoc attribute stapled onto the Link object.
     public private(set) var didIdentify: Bool = false
 
-    /// Python: the `listener_destination` module global. Never rebuilt once set, so a
+    /// Python: the `listener_destination` module global.
+    ///
+    /// Never rebuilt once set, so a
     /// failed first recall poisons the whole interactive session—reproduced.
     public private(set) var listenerDestination: Destination?
 
@@ -57,7 +59,9 @@ public final class RNXClient {
         self.destinationHash = destinationHash
     }
 
-    /// Python: rnx.py:329-339. The check is unconditional—it fires even under `-x`, and
+    /// Python: rnx.py:329-339.
+    ///
+    /// The check is unconditional—it fires even under `-x`, and
     /// it runs *before* Reticulum is constructed, so an invalid destination never brings
     /// up the stack.
     public static func parseDestination(_ hex: String) throws -> Data {
@@ -75,7 +79,9 @@ public final class RNXClient {
     /// Python: `RNS.Transport.has_path(destination_hash)`—rnx.py:348.
     public var hasPath: Bool { transport.hasPath(to: destinationHash) }
 
-    /// Python: `RNS.Transport.request_path(destination_hash)`—rnx.py:349. Fire and forget.
+    /// Python: `RNS.Transport.request_path(destination_hash)`—rnx.py:349.
+    ///
+    /// Fire and forget.
     public func requestPath() throws {
         try transport.requestPath(for: destinationHash)
     }
@@ -113,7 +119,9 @@ public final class RNXClient {
 
     public var linkStatus: Link.Status? { link?.status }
 
-    /// Python: rnx.py:372-374—skipped entirely under `-N/--noid`. Without identifying,
+    /// Python: rnx.py:372-374—skipped entirely under `-N/--noid`.
+    ///
+    /// Without identifying,
     /// an ALLOW_LIST listener silently ignores the request and the client times out at 245.
     public func identifyIfNeeded(noID: Bool) throws {
         guard !noID, !didIdentify, let link else { return }

@@ -216,12 +216,16 @@ public final class InstanceConnection {
         return home.appendingPathComponent(".reticulum")
     }
 
-    /// `<configdir>/storage`. Python: `Reticulum.storagepath`.
+    /// `<configdir>/storage`.
+    ///
+    /// Python: `Reticulum.storagepath`.
     public static func storagePath(for configDirectory: URL) -> URL {
         StorageInventory.url(.storage, in: configDirectory)
     }
 
-    /// `<configdir>/config`. Python: `Reticulum.configpath`.
+    /// `<configdir>/config`.
+    ///
+    /// Python: `Reticulum.configpath`.
     public static func configPath(for configDirectory: URL) -> URL {
         StorageInventory.url(.config, in: configDirectory)
     }

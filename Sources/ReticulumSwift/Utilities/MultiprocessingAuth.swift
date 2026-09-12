@@ -56,18 +56,22 @@ public enum MultiprocessingAuth {
     public static let failureMessage = Data("#FAILURE#".utf8)
 
     /// Random-payload length used when *issuing* a challenge.
+    ///
     /// Python ≥ 3.12: `MESSAGE_LENGTH = 40`.
     public static let messageLength = 40
 
     /// Random-payload length used by CPython ≤ 3.11 when issuing a challenge.
+    ///
     /// Python ≤ 3.11: `MESSAGE_LENGTH = 20`.
     public static let legacyMessageLength = 20
 
     /// Payload lengths that identify an unprefixed, legacy-format message.
+    ///
     /// Python: `_LEGACY_LENGTHS = frozenset({16, 20})`.
     static let legacyLengths: Set<Int> = [16, 20]
 
     /// Longest allowed digest name—`len("sha3_256")`.
+    ///
     /// Python: `_MAX_DIGEST_LEN = max(len(_) for _ in _ALLOWED_DIGESTS)`.
     static let maxDigestNameLength = 8
 
@@ -211,6 +215,7 @@ public enum MultiprocessingAuth {
     }
 
     /// Length-independent, early exit-free comparison.
+    ///
     /// Python uses `hmac.compare_digest` for the same reason.
     static func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
         guard lhs.count == rhs.count else { return false }

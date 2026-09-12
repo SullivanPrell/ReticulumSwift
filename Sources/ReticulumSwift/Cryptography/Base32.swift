@@ -35,6 +35,7 @@ public enum Base32 {
     }()
 
     /// Encode `data` as uppercase RFC 4648 base32 with `=` padding.
+    ///
     /// Python: `base64.b32encode(data).decode("utf-8")`.
     public static func encode(_ data: Data) -> String {
         if data.isEmpty { return "" }
@@ -70,7 +71,9 @@ public enum Base32 {
         return String(decoding: out, as: UTF8.self)
     }
 
-    /// Decode uppercase RFC 4648 base32. Returns `nil` for any character outside the
+    /// Decode uppercase RFC 4648 base32.
+    ///
+    /// Returns `nil` for any character outside the
     /// alphabet—including lowercase, which Python rejects too (`casefold=False`).
     ///
     /// Unlike CPython this tolerates a *missing* trailing `=` run, because the RSG decode

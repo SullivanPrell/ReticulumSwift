@@ -23,7 +23,9 @@ import XCTest
 final class DiscoveryOperatorAddressTests: XCTestCase {
 
     /// These tests are about payload decoding, so the proof-of-work gate is stubbed out—a
-    /// real stamp would make every fixture below depend on a mining run. Named locally rather
+    /// real stamp would make every fixture below depend on a mining run.
+    ///
+    /// Named locally rather
     /// than shared, matching the file-private doubles in the other discovery suites.
     private final class AcceptAnyStamp: DiscoveryStampValidator {
         let stampSize: Int = 32
@@ -84,7 +86,9 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
                        "OP_ADDR = 0xF0 (Discovery.py:38)")
     }
 
-    /// Python hardcodes `IMPLEMENTATION_NAME = "RNS"` and its own `__version__`. The field is
+    /// Python hardcodes `IMPLEMENTATION_NAME = "RNS"` and its own `__version__`.
+    ///
+    /// The field is
     /// documented as "a short, unique implementation-specific identifier and version tag", so
     /// this port announces its own rather than impersonating the reference—a discovery
     /// consumer must be able to tell a Swift node from a Python one.

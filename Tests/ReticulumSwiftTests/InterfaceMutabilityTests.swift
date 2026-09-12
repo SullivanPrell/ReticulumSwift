@@ -13,7 +13,9 @@ import XCTest
 
 /// `bugs/025`—Python mutates interface attributes at runtime; this port declared them
 /// `{ get }`-only with blanket extension defaults, so a parsed config value has nowhere to be
-/// written. Adding the missing config parser fixes none of them, because `iface.mode = …` doesn't
+/// written.
+///
+/// Adding the missing config parser fixes none of them, because `iface.mode = …` doesn't
 /// compile for `any Interface`.
 ///
 /// Python assigns all of these per interface at `RNS/Reticulum.py:900-941` (the `__apply_config`
@@ -25,7 +27,9 @@ import XCTest
 /// **A test double that can do something the real type can't isn't a test of the real type.**
 final class InterfaceMutabilityTests: XCTestCase {
 
-    /// Python: `interface.mode = …` (`Reticulum.py:910`). Every mode alias in
+    /// Python: `interface.mode = …` (`Reticulum.py:910`).
+    ///
+    /// Every mode alias in
     /// `Reticulum.py:737-769` must be reachable on every interface type.
     func testModeIsSettableOnEveryInterface() throws {
         for iface in try InterfaceConformers.everyConcreteInterface() {
@@ -43,6 +47,7 @@ final class InterfaceMutabilityTests: XCTestCase {
     }
 
     /// Python: `interface.announce_rate_target / _grace / _penalty` (`Reticulum.py:900-941`).
+    ///
     /// Without these, Transport's announce rate-limiting code is dead on every real interface.
     func testAnnounceRateControlIsSettableOnEveryInterface() throws {
         for iface in try InterfaceConformers.everyConcreteInterface() {
@@ -123,7 +128,9 @@ final class InterfaceMutabilityTests: XCTestCase {
     /// Python's IFAC defaults are per interface class, not one global value: the radio and serial
     /// classes declare 8 (`RNodeInterface.py:110`, `RNodeMultiInterface.py:137`,
     /// `SerialInterface.py:53`, `KISSInterface.py:63`, `AX25KISSInterface.py:70`) where
-    /// TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Applied at `Reticulum.py:918` / `:1110`.
+    /// TCP/UDP/Auto/Backbone/I2P/Weave declare 16.
+    ///
+    /// Applied at `Reticulum.py:918` / `:1110`.
     ///
     /// If wrong, IFAC-protected LoRa/serial links between Swift and Python drop 100% of traffic
     /// while reporting Up.

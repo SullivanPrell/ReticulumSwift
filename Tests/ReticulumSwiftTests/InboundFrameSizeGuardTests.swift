@@ -27,7 +27,9 @@ import XCTest
 final class InboundFrameSizeGuardTests: XCTestCase {
 
     /// Delivers raw bytes rather than pre-parsed packets, so the transport seam under test
-    /// actually runs. A double that calls `inboundHandler` instead would bypass every guard
+    /// actually runs.
+    ///
+    /// A double that calls `inboundHandler` instead would bypass every guard
     /// here and the suite would read as coverage while proving nothing.
     private final class RawLoopbackInterface: Interface {
         let interfaceState = InterfaceState()

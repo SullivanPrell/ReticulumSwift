@@ -94,6 +94,7 @@ public final class StreamDataMessage: MessageBase {
 // MARK: - RawChannelReader
 
 /// Receives binary stream data arriving on a Channel with a given stream_id.
+///
 /// Call `read(count:)` to consume bytes or subscribe via `onDataAvailable`.
 /// Wire-compatible with Python's RNS.Buffer.RawChannelReader.
 public final class RawChannelReader {
@@ -150,17 +151,24 @@ public final class RawChannelReader {
 
     // MARK: - io.RawIOBase metadata (Python parity)
 
-    /// Always `true`—readers are readable. Mirrors Python `RNSInputBuffer.readable()`.
+    /// Always `true`—readers are readable.
+    ///
+    /// Mirrors Python `RNSInputBuffer.readable()`.
     public var readable:  Bool { true  }
-    /// Always `false`—readers aren't writable. Mirrors Python `RNSInputBuffer.writable()`.
+    /// Always `false`—readers aren't writable.
+    ///
+    /// Mirrors Python `RNSInputBuffer.writable()`.
     public var writable:  Bool { false }
-    /// Always `false`—readers aren't seekable. Mirrors Python `RNSInputBuffer.seekable()`.
+    /// Always `false`—readers aren't seekable.
+    ///
+    /// Mirrors Python `RNSInputBuffer.seekable()`.
     public var seekable:  Bool { false }
 
     /// Whether `close()` has been called.
     public private(set) var isClosed: Bool = false
 
     /// Fill `buffer` with available bytes, up to `buffer.count`.
+    ///
     /// Returns the number of bytes written, or `nil` when the stream is closed and empty.
     /// Mirrors Python's `RNSInputBuffer.readinto(bytearray)`.
     public func readinto(_ buf: inout [UInt8]) -> Int? {
@@ -198,6 +206,7 @@ public final class RawChannelReader {
 // MARK: - RawChannelWriter
 
 /// Sends binary stream data over a Channel with a given stream_id.
+///
 /// Wire-compatible with Python's RNS.Buffer.RawChannelWriter.
 public final class RawChannelWriter {
     public let streamID: UInt16
@@ -211,17 +220,25 @@ public final class RawChannelWriter {
 
     // MARK: - io.RawIOBase metadata (Python parity)
 
-    /// Always `false`—writers aren't readable. Mirrors Python `RNSOutputBuffer.readable()`.
+    /// Always `false`—writers aren't readable.
+    ///
+    /// Mirrors Python `RNSOutputBuffer.readable()`.
     public var readable:  Bool { false }
-    /// Always `true`—writers are writable. Mirrors Python `RNSOutputBuffer.writable()`.
+    /// Always `true`—writers are writable.
+    ///
+    /// Mirrors Python `RNSOutputBuffer.writable()`.
     public var writable:  Bool { true  }
-    /// Always `false`—writers aren't seekable. Mirrors Python `RNSOutputBuffer.seekable()`.
+    /// Always `false`—writers aren't seekable.
+    ///
+    /// Mirrors Python `RNSOutputBuffer.seekable()`.
     public var seekable:  Bool { false }
 
     /// Whether `close()` has been called.
     public private(set) var isClosed: Bool = false
 
-    /// Write bytes, chunked to fit the channel MDU. Returns bytes consumed.
+    /// Write bytes, chunked to fit the channel MDU.
+    ///
+    /// Returns bytes consumed.
     @discardableResult
     public func write(_ bytes: Data) throws -> Int {
         let maxData = channel.mdu - 2   // 2-byte stream header
@@ -248,6 +265,7 @@ public final class RawChannelWriter {
 // MARK: - Buffer
 
 /// Factory for creating stream readers and writers over a Channel.
+///
 /// Wire-compatible with Python's RNS.Buffer.
 public enum Buffer {
     public static func createReader(

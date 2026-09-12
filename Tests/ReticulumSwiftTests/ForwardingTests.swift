@@ -14,7 +14,9 @@ import XCTest
 final class ForwardingTests: XCTestCase {
 
     /// Filler payload for the tests below, none of which care what the packet carries—they
-    /// assert on hop counts, drops and delivery. It has to be non-empty: RNS 1.5.0 made a
+    /// assert on hop counts, drops and delivery.
+    ///
+    /// It has to be non-empty: RNS 1.5.0 made a
     /// zero-length data field a protocol violation (`Packet.py:274`), so `Data()` no longer
     /// describes a frame that can exist on the wire and `Packet.unpack` rejects it. The relay
     /// double round-trips every packet through `pack()`/`unpack()`, so these fixtures must be
@@ -41,7 +43,9 @@ final class ForwardingTests: XCTestCase {
     }
 
     /// A relay node with two interfaces: one toward the source, one toward
-    /// a known destination. Returns the relay transport plus its source
+    /// a known destination.
+    ///
+    /// Returns the relay transport plus its source
     /// and destination side recording interfaces (the *paired* sides
     /// dummy-stand in for upstream/downstream nodes).
     func makeRelay(destination: Data) -> (

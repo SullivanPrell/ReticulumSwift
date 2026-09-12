@@ -40,6 +40,7 @@ final class AnnounceCapConsumerTests: XCTestCase {
     }
 
     /// The rate window is `txTime / cap`, so a larger cap must admit the next announce sooner.
+    ///
     /// Each probe gets a fresh queue: once an announce is queued the fast path is skipped
     /// entirely, so a single queue could only ever show the first window.
     func testTheRateWindowFollowsThePerInterfaceCap() {

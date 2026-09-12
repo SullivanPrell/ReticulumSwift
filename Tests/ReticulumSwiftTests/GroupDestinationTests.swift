@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for GROUP destination type key management.
+///
 /// Mirrors Python's `Destination.create_keys()`, `Destination.get_private_key()`,
 /// `Destination.load_private_key()`.
 final class GroupDestinationTests: XCTestCase {

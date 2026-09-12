@@ -19,6 +19,7 @@ public enum I2PDaemonError: Error {
 // MARK: - I2PDaemonProtocol
 
 /// Abstracts the lifecycle of an i2pd daemon instance.
+///
 /// Python: `I2PController` manages the i2plib event loop + SAM tunnels.
 /// Swift: this protocol lets production code use the embedded `I2PDaemon`
 /// while tests inject a `MockI2PDaemon`.
@@ -81,6 +82,7 @@ enum I2PDaemonPhase {
 import CI2PD
 
 /// Embedded i2pd daemon.
+///
 /// Wraps the lifecycle C calls exposed by `capi.h` / `capi_client.h`.
 ///
 /// Startup sequence:
@@ -109,7 +111,9 @@ public final class I2PDaemon: I2PDaemonProtocol {
 
     private static let globalLock = NSLock()
     private static var globalPhase: I2PDaemonPhase = .idle
-    /// The daemon that owns the globals. Weak: ownership of the
+    /// The daemon that owns the globals.
+    ///
+    /// Weak: ownership of the
     /// *object* stays with whoever created it, and `deinit` still stops i2pd.
     private static weak var activeDaemon: I2PDaemon?
 
@@ -138,7 +142,9 @@ public final class I2PDaemon: I2PDaemonProtocol {
         performGlobalStop()
     }
 
-    /// The C shutdown sequence. Caller must hold `globalLock` and have checked
+    /// The C shutdown sequence.
+    ///
+    /// Caller must hold `globalLock` and have checked
     /// `globalPhase == .running`.
     private static func performGlobalStop() {
         C_StopClientServices()
@@ -151,14 +157,18 @@ public final class I2PDaemon: I2PDaemonProtocol {
 
     // MARK: - Properties
 
-    /// SAM bridge TCP port. Default matches i2pd's own default (sam.port=7656).
+    /// SAM bridge TCP port.
+    ///
+    /// Default matches i2pd's own default (sam.port=7656).
     public let samPort: Int
 
     /// `true` after `start()` returns and before `stop()` is called.
     public private(set) var isRunning: Bool = false
 
     /// `true` once i2pd has been shut down in this process, after which no
-    /// daemon can be started again until relaunch. Lets callers explain the
+    /// daemon can be started again until relaunch.
+    ///
+    /// Lets callers explain the
     /// restriction up front instead of surfacing a failed `start()`.
     public static var isTerminatedForProcess: Bool {
         globalLock.lock()
@@ -225,7 +235,9 @@ public final class I2PDaemon: I2PDaemonProtocol {
         Self.performGlobalStop()
     }
 
-    /// Stops i2pd if this instance still owns it. A last resort—the owner
+    /// Stops i2pd if this instance still owns it.
+    ///
+    /// A last resort—the owner
     /// (`I2PInterface`) calls `stop()` explicitly and the `atexit` hook covers
     /// process exit—but dropping the last reference to a running daemon has
     /// always meant "shut i2pd down", and silently leaking the router threads

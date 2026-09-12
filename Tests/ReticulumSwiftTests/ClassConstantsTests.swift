@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying class-level constants match Python's reference implementation.
+///
 /// These constants are accessed as class attributes in Python (for example, `RNS.Identity.KEYSIZE`,
 /// `RNS.Packet.ENCRYPTED_MDU`, `RNS.Link.MDU`).
 final class ClassConstantsTests: XCTestCase {

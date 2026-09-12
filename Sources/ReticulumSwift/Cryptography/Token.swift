@@ -62,6 +62,7 @@ public struct Token {
     }
 
     /// Generate a fresh random 64-byte symmetric key suitable for use with `Token`.
+    ///
     /// Mirrors Python's `Token.generate_key()`.
     public static func generateKey() -> Data {
         return SecureRandom.bytes(64)

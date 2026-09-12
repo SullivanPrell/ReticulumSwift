@@ -71,7 +71,9 @@ public final class InterfaceState {
         var icBurstPenalty: TimeInterval = Reticulum.defaultIcBurstPenalty()
         var icHeldReleaseInterval: TimeInterval = Reticulum.defaultIcHeldReleaseInterval()
         /// Python reads this as the class constant `EC_BURST_MIN_SAMPLES` (`Interface.py:85`,
-        /// `:246`) and exposes no config key for it, so it stays a constant here too. RNS 1.5.1
+        /// `:246`) and exposes no config key for it, so it stays a constant here too.
+        ///
+        /// RNS 1.5.1
         /// renamed it from `IC_BURST_MIN_SAMPLES`, the single read site having always been the
         /// egress limiter.
         var ecBurstMinSamples: Int = IngressControlState.ecBurstMinSamples
@@ -104,7 +106,9 @@ public final class InterfaceState {
 
         /// Python `interface.ifac_netkey` (`Reticulum.py:990`)—the segment's raw passphrase,
         /// kept alongside the derived key because `publish_ifac` puts it in the discovery
-        /// announce (`Discovery.py:204`). This port derived the key and dropped the
+        /// announce (`Discovery.py:204`).
+        ///
+        /// This port derived the key and dropped the
         /// passphrase, so there was nothing to publish.
         var ifacNetkey: String?
 
@@ -183,6 +187,7 @@ public final class InterfaceState {
     // MARK: - Announce rate control
 
     /// Fraction of interface capacity announces may consume, for example, `0.02` for 2%.
+    ///
     /// Python: `announce_cap = Reticulum.ANNOUNCE_CAP/100.0` (`Reticulum.py:834-837`, `:912`),
     /// where the config value is a percentage in `(0, 100]`.
     public var announceCap: Double {
@@ -306,14 +311,18 @@ public final class InterfaceState {
     }
 
     /// Python: `interface.ifac_netname` (`Reticulum.py:955`)—the name of the IFAC segment this
-    /// interface is on, reported by `rnstatus`. See `bugs/015`.
+    /// interface is on, reported by `rnstatus`.
+    ///
+    /// See `bugs/015`.
     public var ifacNetname: String? {
         get { read(\.ifacNetname) }
         set { write(\.ifacNetname, newValue) }
     }
 
     /// Python: `interface.ifac_netkey` (`Reticulum.py:990`)—the segment's passphrase, as
-    /// configured. Held for `publish_ifac`, which puts it in the discovery announce so a peer
+    /// configured.
+    ///
+    /// Held for `publish_ifac`, which puts it in the discovery announce so a peer
     /// can generate a config entry that joins the segment. Never reported by `rnstatus`.
     public var ifacNetkey: String? {
         get { read(\.ifacNetkey) }
@@ -353,6 +362,7 @@ public final class InterfaceState {
     // MARK: - Interface discovery, publish side
 
     /// Python: `interface.discoverable` (`Interface.py:118`, config key at `Reticulum.py:901`).
+    ///
     /// Announcing an interface as a discoverable endpoint needs both this and
     /// `supportsDiscovery`, which is a per-type capability rather than a config choice.
     public var discoverable: Bool {
@@ -367,7 +377,9 @@ public final class InterfaceState {
         set { write(\.lastDiscoveryAnnounce, newValue) }
     }
 
-    /// Python: `interface.discovery_announce_interval`, seconds between announces. The config
+    /// Python: `interface.discovery_announce_interval`, seconds between announces.
+    ///
+    /// The config
     /// key is `announce_interval` in *minutes* with a five-minute floor, defaulting to six
     /// hours (`Reticulum.py:905-909`).
     public var discoveryAnnounceInterval: TimeInterval? {
@@ -383,7 +395,9 @@ public final class InterfaceState {
         set { write(\.discoveryPublishIfac, newValue) }
     }
 
-    /// Python: `interface.reachable_on`—the hostname or address peers should dial. Either a
+    /// Python: `interface.reachable_on`—the hostname or address peers should dial.
+    ///
+    /// Either a
     /// literal, or a path to an executable printing one (`Discovery.py:159-176`).
     public var reachableOn: String? {
         get { read(\.reachableOn) }
@@ -397,7 +411,9 @@ public final class InterfaceState {
     }
 
     /// Python: `interface.discovery_lxmf_address`—the operator's LXMF address, published as
-    /// `OP_ADDR` (`Discovery.py:147`). A truncated destination hash, so 16 bytes here.
+    /// `OP_ADDR` (`Discovery.py:147`).
+    ///
+    /// A truncated destination hash, so 16 bytes here.
     public var discoveryLxmfAddress: Data? {
         get { read(\.discoveryLxmfAddress) }
         set { write(\.discoveryLxmfAddress, newValue) }
@@ -460,7 +476,9 @@ public final class InterfaceState {
         set { write(\.discoveryModulation, newValue) }
     }
 
-    /// Python: `interface.discovery_channel`. Weave's announce branch reads it
+    /// Python: `interface.discovery_channel`.
+    ///
+    /// Weave's announce branch reads it
     /// (`Discovery.py:194`) and no config key writes it, so it stays whatever the interface
     /// itself sets.
     public var discoveryChannel: Int? {
@@ -469,20 +487,25 @@ public final class InterfaceState {
     }
 
     /// The endpoint hash this interface was auto-connected for, or nil when it was configured
-    /// by hand. Python: `interface.autoconnect_hash` (`Discovery.py:765`).
+    /// by hand.
+    ///
+    /// Python: `interface.autoconnect_hash` (`Discovery.py:765`).
     public var autoconnectHash: Data? {
         get { read(\.autoconnectHash) }
         set { write(\.autoconnectHash, newValue) }
     }
 
     /// The network identity whose announce this endpoint was discovered from, as undelimited
-    /// hex. Python: `interface.autoconnect_source` (`Discovery.py:766`).
+    /// hex.
+    ///
+    /// Python: `interface.autoconnect_source` (`Discovery.py:766`).
     public var autoconnectSource: String? {
         get { read(\.autoconnectSource) }
         set { write(\.autoconnectSource, newValue) }
     }
 
     /// When this auto-connected interface was first seen offline, or nil while it is up.
+    ///
     /// Python: `interface.autoconnect_down` (`Discovery.py:628`).
     public var autoconnectDown: TimeInterval? {
         get { read(\.autoconnectDown) }

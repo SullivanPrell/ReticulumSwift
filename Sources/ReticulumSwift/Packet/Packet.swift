@@ -72,10 +72,14 @@ public struct Packet: Equatable {
 
     // MARK: - Class-level MDU constants (mirrors Python Packet.ENCRYPTED_MDU / PLAIN_MDU)
 
-    /// Maximum payload for encrypted (SINGLE) packets. Mirrors Python `Packet.ENCRYPTED_MDU = 383`.
+    /// Maximum payload for encrypted (SINGLE) packets.
+    ///
+    /// Mirrors Python `Packet.ENCRYPTED_MDU = 383`.
     public static let encryptedMdu: Int = Constants.encryptedMdu
 
-    /// Maximum payload for unencrypted (PLAIN) packets. Mirrors Python `Packet.PLAIN_MDU = 464`.
+    /// Maximum payload for unencrypted (PLAIN) packets.
+    ///
+    /// Mirrors Python `Packet.PLAIN_MDU = 464`.
     public static let plainMdu: Int = Constants.plainMdu
 
     // MARK: - PHY stats (set by Transport on receipt from an interface with radio stats)
@@ -90,14 +94,18 @@ public struct Packet: Equatable {
 
     // MARK: - Delivery metadata (set by Transport; not part of the wire format)
 
-    /// The interface this packet arrived on. Set by Transport when the packet
+    /// The interface this packet arrived on.
+    ///
+    /// Set by Transport when the packet
     /// is delivered to an application callback, enabling `prove()` to route
     /// the proof back through the correct interface.
     /// Mirrors Python's `Packet.receiving_interface`.
     public var receivingInterface: (any Interface)?
 
     /// Marks this packet as an *outbound* path request—used by Transport's
-    /// egress-control logic to throttle recursive PR rebroadcasts. Set when
+    /// egress-control logic to throttle recursive PR rebroadcasts.
+    ///
+    /// Set when
     /// Transport relays a PR onto an interface, cleared on receive.
     /// Mirrors Python's `Packet.is_outbound_pr` slot (RNS commit 60c440a3).
     public var isOutboundPR: Bool = false
@@ -134,7 +142,9 @@ public struct Packet: Equatable {
             | packetType.rawValue
     }
 
-    /// Estimated wire byte count. Used by the announce rate limiter.
+    /// Estimated wire byte count.
+    ///
+    /// Used by the announce rate limiter.
     /// Mirrors Python's `len(packet.raw)`.
     public var rawByteCount: Int {
         let headerSize = headerType == .type2
@@ -298,6 +308,7 @@ public struct Packet: Equatable {
 
     /// "Hashable part" of the packet—used to derive a stable packet hash
     /// regardless of header type 1 vs 2 (transport ID is excluded).
+    ///
     /// Mirrors `Packet.get_hashable_part` in Python.
     public func hashablePart() throws -> Data {
         // Use packedBytes(), NOT pack(): a packet's hash is independent of the
@@ -322,12 +333,14 @@ public struct Packet: Equatable {
     }
 
     /// Truncated 16-byte hash of this packet (first 16 bytes of SHA-256 of hashable part).
+    ///
     /// Mirrors Python's `Packet.getTruncatedHash()`.
     public func truncatedPacketHash() throws -> Data {
         Hashes.truncatedHash(try hashablePart())
     }
 
     /// Send this packet via the shared Reticulum instance.
+    ///
     /// Mirrors Python's `Packet.send()` (which calls `Transport.outbound(self)`).
     /// Requires `Reticulum.start()` to have been called.
     @discardableResult
@@ -336,6 +349,7 @@ public struct Packet: Equatable {
     }
 
     /// Re-send this packet via the shared Reticulum instance.
+    ///
     /// Identical to `sendViaShared()` but semantically signals intent to
     /// retransmit an already-constructed packet.
     /// Mirrors Python's `Packet.resend()`.

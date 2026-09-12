@@ -58,7 +58,9 @@ public final class RemoteStatusQuery {
     private let managementIdentity: Identity
     private let timeout: TimeInterval
 
-    /// The link reused across monitor refreshes. Python: the `remote_link` global.
+    /// The link reused across monitor refreshes.
+    ///
+    /// Python: the `remote_link` global.
     public private(set) var link: Link?
     private var destination: Destination?
     /// Python: the `first_remote_req` global—controls the "Sending request…" banner only.
@@ -208,7 +210,9 @@ public final class RemoteStatusQuery {
 
     // MARK: - Blocking convenience
 
-    /// Blocking wrapper for the CLI. Python busy-waits on `request_concluded`.
+    /// Blocking wrapper for the CLI.
+    ///
+    /// Python busy-waits on `request_concluded`.
     public func requestBlocking(includeLinkStats: Bool,
                                 progress: ((String) -> Void)? = nil) throws -> (MsgPack.Value, Int?) {
         let semaphore = DispatchSemaphore(value: 0)
@@ -237,7 +241,9 @@ public final class RemoteStatusQuery {
         }
     }
 
-    /// Close the reused link. Python never does this explicitly—the process exits.
+    /// Close the reused link.
+    ///
+    /// Python never does this explicitly—the process exits.
     public func teardown() {
         lock.lock(); let current = link; link = nil; lock.unlock()
         try? current?.teardown()

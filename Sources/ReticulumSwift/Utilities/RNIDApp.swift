@@ -20,68 +20,84 @@ public enum RNIDApp {
     // MARK: - Application identity
 
     /// Application name used for RNS destinations.
+    ///
     /// Python: `APP_NAME = "rns"`.
     public static let appName: String = "rns"
 
     /// Default destination aspects in dotted notation.
+    ///
     /// Python: `DEFAULT_ASPECTS = f"{APP_NAME}.id"`.
     public static let defaultAspects: String = "\(appName).id"
 
     // MARK: - In-band flag bytes
 
     /// Sentinel used when no message body is provided to a signed-message operation.
+    ///
     /// Python: `NO_MESSAGE = 0x01`.
     public static let noMessage: UInt8 = 0x01
 
     /// Sentinel used when no metadata is provided.
+    ///
     /// Python: `NO_META = 0x02`.
     public static let noMeta: UInt8 = 0x02
 
     // MARK: - File extensions
 
     /// Extension for private-key identity files.
+    ///
     /// Python: `PRV_EXT = "rid"`.
     public static let prvExt: String = "rid"
 
     /// Extension for public-key identity files.
+    ///
     /// Python: `PUB_EXT = "pub"`.
     public static let pubExt: String = "pub"
 
-    /// Extension for RSG (Reticulum Signed?) signature files.
+    /// Extension for RSG (Reticulum Signed?
+    ///
+    /// ) signature files.
     /// Python: `SIG_EXT = "rsg"`.
     public static let sigExt: String = "rsg"
 
-    /// Extension for RSM (Reticulum Signed Message?) files.
+    /// Extension for RSM (Reticulum Signed Message?
+    ///
+    /// ) files.
     /// Python: `MSG_EXT = "rsm"`.
     public static let msgExt: String = "rsm"
 
     /// Extension for encrypted files.
+    ///
     /// Python: `ENCRYPT_EXT = "rfe"`.
     public static let encryptExt: String = "rfe"
 
     // MARK: - Chunk sizes for streaming encrypt/decrypt
 
     /// Number of raw bytes per encryption block (1 MiB).
+    ///
     /// Python: `CHUNK_BLOCKS = 1024*1024`.
     public static let chunkBlocks: Int = 1_048_576
 
     /// Bytes per encrypted chunk: `chunkBlocks × Identity.aes256BlockSize`.
+    ///
     /// Python: `ENC_CHUNK = CHUNK_BLOCKS * RNS.Identity.AES256_BLOCKSIZE`.
     public static let encChunk: Int = chunkBlocks * Identity.aes256BlockSize
 
     /// Bytes per decrypted chunk: `encChunk + Token.tokenOverhead × 2`.
+    ///
     /// Python: `DEC_CHUNK = ENC_CHUNK + RNS.Cryptography.Token.TOKEN_OVERHEAD*2`.
     public static let decChunk: Int = encChunk + Identity.tokenOverhead * 2
 
     // MARK: - Hash algorithm names accepted by RSG files
 
     /// Supported hash algorithm names for RSG creation/verification.
+    ///
     /// Python: `RSG_HASHTYPES = ["sha256"]`.
     public static let rsgHashTypes: [String] = ["sha256"]
 
     // MARK: - Result / exit-code enumeration
 
     /// Exit codes returned by the `rnid` command-line tool.
+    ///
     /// Mirrors the `R_*` module-level constants in `rnid.py`.
     public enum Result: UInt8, Equatable, CaseIterable {
         /// Success. Python: `R_OK = 0`.

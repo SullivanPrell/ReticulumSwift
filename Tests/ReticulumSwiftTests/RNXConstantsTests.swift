@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// rnx constants and exit codes.
+///
 /// Python reference: RNS/Utilities/rnx.py—line numbers cited per assertion.
 final class RNXConstantsTests: XCTestCase {
 

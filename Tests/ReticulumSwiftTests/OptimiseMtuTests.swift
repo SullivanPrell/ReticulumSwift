@@ -14,7 +14,9 @@ import XCTest
 /// Python recomputes `HW_MTU` from the bitrate on every autoconfiguring interface—`optimise_mtu()`
 /// (`Interface.py:205-217`), called unconditionally after the configured
 /// bitrate lands (`Reticulum.py:914-915`) and on each spawned server-side client
-/// (`TCPInterface.py:612-613`). The class attributes (262144 for TCP, 1048576 for Backbone)
+/// (`TCPInterface.py:612-613`).
+///
+/// The class attributes (262144 for TCP, 1048576 for Backbone)
 /// never survive Python startup: a TCP interface runs at 8192 (bitrate guess 10e6) and a
 /// dialing backbone at 16384 (guess 100e6). The port kept the class constants as `let`s—the
 /// audit's structural class of a runtime-mutated Python attribute frozen at `{ get }`—so
@@ -65,7 +67,9 @@ final class OptimiseMtuTests: XCTestCase {
 
     // MARK: - The ladder itself
 
-    /// Every rung, both boundary sides, exactly `Interface.py:207-217`. RNS 1.5.1 made every
+    /// Every rung, both boundary sides, exactly `Interface.py:207-217`.
+    ///
+    /// RNS 1.5.1 made every
     /// rung inclusive—through 1.4.2 only the top one was `>=` and the other nine were `>`,
     /// so each boundary bitrate fell one rung lower than it does now. Everything strictly
     /// below 62 500 bit/s still has no hardware MTU at all.
@@ -170,7 +174,9 @@ final class OptimiseMtuTests: XCTestCase {
 
     /// `autoconfigureMtu == true` promises the MTU follows the bitrate; a type that says so
     /// without a settable `hwMtu` makes `optimiseMtu()` a silent no-op—the exact `{ get }`-only
-    /// freeze this fix removes. Constructed through the same config machinery the daemon uses,
+    /// freeze this fix removes.
+    ///
+    /// Constructed through the same config machinery the daemon uses,
     /// so a new interface type joins this list by being constructible, not by being remembered.
     func testEveryAutoconfiguringTypeHasASettableMtu() throws {
         let stack = makeStack()

@@ -13,6 +13,7 @@ import Foundation
 // MARK: - SerialParity
 
 /// Parity mode for a serial port.
+///
 /// Mirrors Python pyserial PARITY_NONE / PARITY_EVEN / PARITY_ODD.
 public enum SerialParity: Equatable {
     case none
@@ -71,7 +72,9 @@ public protocol SerialPortTransport: AnyObject {
 /// interface goes offline and redials every `wait` seconds until an attempt succeeds or the
 /// interface is stopped (`SerialInterface.py:203-221`, `KISSInterface.py:371-380`,
 /// `AX25KISSInterface.py:384-393`, `RNodeInterface.py:1167-1187`—all `while True:
-/// sleep(5); try open`). One implementation so five interfaces can't drift.
+/// sleep(5); try open`).
+///
+/// One implementation so five interfaces can't drift.
 final class TransportReconnector {
     private let queue = DispatchQueue(label: "rns.transport.reconnect")
     private let lock = NSLock()
@@ -79,7 +82,9 @@ final class TransportReconnector {
     private var running = false
 
     /// Begin redialling. `attempt` returns true when the interface is back online; it runs on
-    /// the reconnector's queue. Repeated calls while a loop is running are ignored, so
+    /// the reconnector's queue.
+    ///
+    /// Repeated calls while a loop is running are ignored, so
     /// overlapping failure signals collapse into one loop.
     func begin(wait: TimeInterval, attempt: @escaping () -> Bool) {
         lock.lock()
@@ -90,7 +95,9 @@ final class TransportReconnector {
         schedule(wait: wait, generation: expected, attempt: attempt)
     }
 
-    /// Stop redialling. An in-flight attempt may still complete; no further ones fire.
+    /// Stop redialling.
+    ///
+    /// An in-flight attempt may still complete; no further ones fire.
     func cancel() {
         lock.lock()
         generation += 1

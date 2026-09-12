@@ -31,7 +31,9 @@ final class AnnounceMultiPathTests: XCTestCase {
     }
 
     /// The same announce (same random blob) arriving later via a fewer-hops path
-    /// must NOT replace the first-heard path. Mirrors Python's `random_blobs`
+    /// must NOT replace the first-heard path.
+    ///
+    /// Mirrors Python's `random_blobs`
     /// guard (`if not random_blob in random_blobs` is false → should_add=False).
     func testSameAnnounceKeepsFirstHeardPath() throws {
         let t = Transport()

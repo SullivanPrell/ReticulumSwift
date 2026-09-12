@@ -137,7 +137,9 @@ final class InterfaceDiscoveryUtilTests: XCTestCase {
     }
 
     /// Lowercase is in `san_map` (`Discovery.py:901`), so an ordinary mixed-case name passes
-    /// through untouched. This asserted `"S"` until 2026-09-04, pinning a transcription slip
+    /// through untouched.
+    ///
+    /// This asserted `"S"` until 2026-09-04, pinning a transcription slip
     /// that truncated most real names to their first character.
     func testSanitizeNameKeepsMixedCase() {
         XCTAssertEqual(InterfaceAnnounceHandler.sanitizeName("myServer"), "myServer")
@@ -285,6 +287,7 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
     }
 
     /// `interface_discovery_sources` is an allowlist of announcing identities.
+    ///
     /// Python applies it at the top of `received_announce` (Discovery.py:248-251);
     /// applying it only when pruning stored records left an unauthorised peer
     /// discoverable—and dialable—until the next prune.

@@ -41,6 +41,7 @@ final class PacketHashlistParityTests: XCTestCase {
     }
 
     /// `for packet_hash in Transport.packet_hashlist.copy(): file.write(packet_hash)`—`Transport.py:3315-3323`.
+    ///
     /// No delimiters, no length prefix, no encoding.
     func testFileIsRawConcatenatedHashes() throws {
         let transport = Transport()

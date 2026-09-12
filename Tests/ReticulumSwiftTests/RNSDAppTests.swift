@@ -199,7 +199,9 @@ options:
   --version          show program's version number and exit
 """
 
-    /// Byte-for-byte capture of `rnir --help`. No `--exampleconfig`: `rnir.py:54-58`
+    /// Byte-for-byte capture of `rnir --help`.
+    ///
+    /// No `--exampleconfig`: `rnir.py:54-58`
     /// declares four arguments, and the real tool rejects it with exit 2.
     private static let pythonRnirHelp = """
 usage: rnir [-h] [--config CONFIG] [-v] [-q] [--version]
@@ -214,7 +216,9 @@ options:
   --version        show program's version number and exit
 """
 
-    /// Byte-for-byte capture of `rnpkg --help`. Captured in full rather than derived from
+    /// Byte-for-byte capture of `rnpkg --help`.
+    ///
+    /// Captured in full rather than derived from
     /// rnir's: the two pages differ by more than a name now (`rnpkg.py:57` keeps
     /// `--exampleconfig`), and a derived expectation would have hidden exactly that.
     private static let pythonRnpkgHelp = """

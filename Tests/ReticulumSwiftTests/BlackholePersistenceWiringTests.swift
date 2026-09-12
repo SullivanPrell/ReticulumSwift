@@ -267,6 +267,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
 
     /// Encode a blackhole source file exactly as Python's `persist_blackhole` does:
     /// msgpack, keyed by the raw 16-byte identity hash.
+    ///
     /// Reference: `RNS/Transport.py:3550`.
     static func encodeBlackholeFile(_ entries: [(Data, Transport.BlackholeEntry)]) -> Data {
         MsgPack.encode(.map(entries.map { hash, entry in

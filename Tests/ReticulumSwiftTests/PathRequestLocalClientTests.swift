@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Cluster A2/A4 + C1/C3: path-request handling for shared-instance (local
-/// client) topologies and the black-hole gate. Mirrors Python
+/// client) topologies and the black-hole gate.
+///
+/// Mirrors Python
 /// `Transport.path_request` (RNS/Transport.py:2936-3077).
 final class PathRequestLocalClientTests: XCTestCase {
 

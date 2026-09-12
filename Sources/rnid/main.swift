@@ -22,7 +22,9 @@ import ReticulumSwift
 
 // MARK: - Terminal output
 
-/// Python: bare `print()` / `print(..., end="")`. No color, no ANSI, nothing on stderr.
+/// Python: bare `print()` / `print(..., end="")`.
+///
+/// No color, no ANSI, nothing on stderr.
 final class TerminalOutput: RNIDOutput {
     func line(_ text: String) {
         print(text)
@@ -125,7 +127,9 @@ final class BrailleSpinner: RNIDPathWaiter {
 
 // MARK: - Reticulum bring-up
 
-/// Python: `ensure_reticulum(args)` (rnid.py:188-195). Lazily creates the stack exactly once.
+/// Python: `ensure_reticulum(args)` (rnid.py:188-195).
+///
+/// Lazily creates the stack exactly once.
 final class ReticulumBringUp {
     private var connection: InstanceConnection?
     private let invocation: RNIDCommandLine.Invocation

@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// The sliding-window meter behind the "Receiving result" spinner.
+///
 /// Python reference: RNS/Utilities/rnx.py:274-321 and the stat_str at :288.
 final class RNXTransferStatsTests: XCTestCase {
 

@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for multi-segment resource transfer (data > MAX_EFFICIENT_SIZE ≈ 1 MB).
+///
 /// Mirrors Python's `Resource` segmented protocol: when data exceeds
 /// MAX_EFFICIENT_SIZE, it's split into multiple segments each sent as a
 /// separate advertisement round-trip.
@@ -38,7 +39,9 @@ final class ResourceMultiSegmentTests: XCTestCase {
     /// Delivers on a serial queue instead of straight down the call stack, so a large
     /// transfer's request/part/HMU round-trips don't recurse into an ever-deeper synchronous
     /// stack (which the preceding plain `LoopbackInterface` can't survive past a few hundred
-    /// bytes). Ordered delivery on one queue still models a single link faithfully.
+    /// bytes).
+    ///
+    /// Ordered delivery on one queue still models a single link faithfully.
     final class AsyncLoopbackInterface: Interface {
         var name: String; var bitrate: Int = 0; var isOnline: Bool = true
         weak var paired: AsyncLoopbackInterface?
@@ -122,6 +125,7 @@ final class ResourceMultiSegmentTests: XCTestCase {
     // MARK: - Small artificial segment size for fast multi-segment testing
 
     /// Tests multi-segment with a small test payload using overridden segment size.
+    ///
     /// Uses `testSegmentSizeOverride` to avoid 1 MB+ payloads in unit tests.
     func testTwoSegmentSmallPayload() throws {
         let (aLink, bLink) = try makeLinkedPair()
@@ -325,7 +329,9 @@ final class ResourceMultiSegmentTests: XCTestCase {
     // MARK: - Sender progress across segments
 
     /// Sender progress must climb once across the whole split transfer, not once
-    /// per segment. The per-segment counters (`sentMapHashes` / `mapHashes`) are
+    /// per segment.
+    ///
+    /// The per-segment counters (`sentMapHashes` / `mapHashes`) are
     /// both reset when a segment starts, so reading them alone reports 0→1 for
     /// every segment—reaching 1.0 while the transfer is still running and then
     /// going backwards. Python folds the segment position in
@@ -402,7 +408,9 @@ final class ResourceMultiSegmentTests: XCTestCase {
     }
 
     /// A receiver parked between segments stays registered on the link, and the
-    /// link hands every subsequent advertisement to every registered receiver. An
+    /// link hands every subsequent advertisement to every registered receiver.
+    ///
+    /// An
     /// unrelated resource advertised in that window used to end up adopted by the
     /// parked transfer—downloaded into its segment buffer and spliced into the
     /// middle of the delivered payload, while bypassing `resourceStrategy` and

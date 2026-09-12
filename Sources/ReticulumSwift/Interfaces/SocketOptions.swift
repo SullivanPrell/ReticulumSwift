@@ -35,18 +35,28 @@ enum RNSSocketOptions {
 
     // MARK: - Python's constants (`TCPInterface.py:83-86`)
 
-    /// `TCP_KEEPIDLE`—idle seconds before the first probe. Python `TCP_PROBE_AFTER`.
+    /// `TCP_KEEPIDLE`—idle seconds before the first probe.
+    ///
+    /// Python `TCP_PROBE_AFTER`.
     static let probeAfter: Int = 5
-    /// `TCP_KEEPINTVL`—seconds between probes. Python `TCP_PROBE_INTERVAL`.
+    /// `TCP_KEEPINTVL`—seconds between probes.
+    ///
+    /// Python `TCP_PROBE_INTERVAL`.
     static let probeInterval: Int = 2
-    /// `TCP_KEEPCNT`—unanswered probes before the connection is dead. Python `TCP_PROBES`.
+    /// `TCP_KEEPCNT`—unanswered probes before the connection is dead.
+    ///
+    /// Python `TCP_PROBES`.
     static let probes: Int = 12
-    /// `TCP_USER_TIMEOUT`—give up on unacknowledged data after this many seconds. Python
+    /// `TCP_USER_TIMEOUT`—give up on unacknowledged data after this many seconds.
+    ///
+    /// Python
     /// `TCP_USER_TIMEOUT`; Network.framework spells it `connectionDropTime`.
     static let userTimeout: Int = 24
 
     /// The looser set Python uses for a socket carrying I2P-tunneled traffic
-    /// (`TCPInterface.py:92-95`), selected by the `i2p_tunneled` flag at `:182` and `:204`. I2P
+    /// (`TCPInterface.py:92-95`), selected by the `i2p_tunneled` flag at `:182` and `:204`.
+    ///
+    /// I2P
     /// round-trips are long enough that the direct-TCP timers would tear down a healthy tunnel.
     static let i2pProbeAfter: Int = 10
     static let i2pProbeInterval: Int = 9

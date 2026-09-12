@@ -102,6 +102,7 @@ func emit(_ text: String) {
 }
 
 /// Python: `print("\r" + 58 spaces + "\r", end="")` then the banner, `end=" "`, flushed.
+///
 /// Suppressed entirely under `-j`, which doubles as Python's `no_output`.
 func progressBanner(_ text: String) {
     guard !jsonOutput else { return }

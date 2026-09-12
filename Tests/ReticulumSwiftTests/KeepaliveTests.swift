@@ -56,7 +56,9 @@ final class KeepaliveTests: XCTestCase {
     }
 
     /// RNS 1.4.0 (commit e64d8150): the responder only echoes `0xFE` if it hasn't
-    /// sent anything within the last `keepalive` interval. Immediately after link
+    /// sent anything within the last `keepalive` interval.
+    ///
+    /// Immediately after link
     /// establishment the responder has just sent its link proof, so it suppresses the
     /// echo—the responder receives the initiator's probe but never answers it.
     func testKeepaliveProbeSuppressedWhenResponderRecentlyActive() throws {

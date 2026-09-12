@@ -93,6 +93,7 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     // MARK: - The address filters
 
     /// Python: `is_ygg_ipv6` (`Discovery.py:877-879`)—`200::/7`, which is the Yggdrasil range.
+    ///
     /// Anything in it is only reachable through a running Yggdrasil node, and nothing here can
     /// tell whether one is running.
     func testYggdrasilAddressesAreRecognised() {
@@ -136,7 +137,9 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     }
 
     /// A discovered `TCPServerInterface` is dialled as a Backbone client, because that's the
-    /// client type for a listening endpoint (`Discovery.py:730-758`). Python degrades to
+    /// client type for a listening endpoint (`Discovery.py:730-758`).
+    ///
+    /// Python degrades to
     /// `TCPClientInterface` only on platforms with no Backbone, and then declines to connect.
     func testADiscoveredListenerIsDialledAsABackboneClient() {
         discovery.autoconnect(discovered(type: "TCPServerInterface"))
@@ -174,7 +177,9 @@ final class DiscoveryAutoconnectTests: XCTestCase {
         XCTAssertEqual(transport.interfaces.count, 2)
     }
 
-    /// Only two types are dialled (`AUTOCONNECT_TYPES`). An RNode is discoverable but not
+    /// Only two types are dialled (`AUTOCONNECT_TYPES`).
+    ///
+    /// An RNode is discoverable but not
     /// dialable—there's no radio at the other end of a hostname.
     func testUndialableTypesAreSkipped() {
         for type in ["RNodeInterface", "I2PInterface", "TCPClientInterface", "KISSInterface"] {
@@ -183,7 +188,9 @@ final class DiscoveryAutoconnectTests: XCTestCase {
         XCTAssertTrue(transport.interfaces.isEmpty)
     }
 
-    /// Each filter alone stops the dial. Yggdrasil and Tor addresses need a daemon this node
+    /// Each filter alone stops the dial.
+    ///
+    /// Yggdrasil and Tor addresses need a daemon this node
     /// can't detect; the two deny-listed IPs are this node talking to itself
     /// (`Discovery.py:738-747`).
     func testTheAddressFiltersStopTheDial() {

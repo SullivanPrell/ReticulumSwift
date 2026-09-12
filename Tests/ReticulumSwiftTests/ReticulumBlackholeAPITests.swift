@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Reticulum instance blackhole management API.
+///
 /// Mirrors Python's Reticulum.blackhole_identity(), unblackhole_identity(),
 /// and get_blackholed_identities().
 final class ReticulumBlackholeAPITests: XCTestCase {

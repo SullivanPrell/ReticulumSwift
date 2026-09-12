@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Concurrency smoke tests for the Transport bookkeeping locks introduced in the
-/// 2026-07-19 data-race hardening pass. The rest of the suite is single-threaded
+/// 2026-07-19 data-race hardening pass.
+///
+/// The rest of the suite is single-threaded
 /// and can't exercise these races; this suite hammers the lock-protected accessors
 /// from many threads at once. A lock-order inversion or reentrant self-deadlock
 /// would make the test TIME OUT; a torn dictionary/array access would CRASH.
@@ -81,6 +83,7 @@ final class TransportConcurrencyStressTests: XCTestCase {
 
     /// Directly targets the register()/deregister() atomicity fix by hammering
     /// register and deregister of the *same* interface from many threads at once.
+    ///
     /// Before the fix, register() assigned the ARC-refcounted closure pointers
     /// `interface.rawInboundHandler`/`inboundHandler` OUTSIDE `lock`, so two
     /// concurrent register()s tore those pointers (a refcount race that corrupts

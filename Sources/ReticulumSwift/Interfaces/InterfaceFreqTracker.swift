@@ -23,15 +23,20 @@ public final class InterfaceFreqTracker {
     // MARK: - Python constants
 
     /// Announce frequency decay window (seconds).
+    ///
     /// Mirrors Python: `AR_FREQ_DECAY = 1 / AR_MINFREQ_HZ = 1 / 0.1 = 10`.
     public static let arFreqDecay: Double = 10.0
     /// Path-request frequency decay window (seconds).
+    ///
     /// Mirrors Python: `PR_FREQ_DECAY = 1 / PR_MINFREQ_HZ = 1 / 0.1 = 10`.
     public static let prFreqDecay: Double = 10.0
     /// Minimum number of samples in the deque before a non-zero frequency is returned.
+    ///
     /// Mirrors Python: `IC_DEQUE_MIN_SAMPLE = 2`  (condition is `n > 2`).
     public static let minSamples: Int = 2
-    /// Maximum samples retained per deque. Mirrors Python `IA_FREQ_SAMPLES = 48`.
+    /// Maximum samples retained per deque.
+    ///
+    /// Mirrors Python `IA_FREQ_SAMPLES = 48`.
     public static let maxSamples: Int = 48
 
     // MARK: - Timestamp deques
@@ -51,7 +56,9 @@ public final class InterfaceFreqTracker {
     private var arxc = 0, atxc = 0, prxc = 0, ptxc = 0
     private var protocolViolations = 0, ifacViolations = 0, packetFilterHits = 0
 
-    /// Guards the four deques. The tracker is recorded on inbound/outbound
+    /// Guards the four deques.
+    ///
+    /// The tracker is recorded on inbound/outbound
     /// interface threads and read on the jobs/management threads; the frequency
     /// queries also prune (mutate) the deque, so reads and writes must be
     /// mutually exclusive. Self-contained—this lock never nests with any other.
@@ -86,7 +93,9 @@ public final class InterfaceFreqTracker {
 
     // MARK: - Violation counters
 
-    /// Mirrors Python's `Interface.protocol_violation()` (`Interface.py:326`). Every call
+    /// Mirrors Python's `Interface.protocol_violation()` (`Interface.py:326`).
+    ///
+    /// Every call
     /// site is in `Transport`, which is why the count lives beside the frequency deques
     /// rather than on the interface: nothing else can reach it.
     public func recordProtocolViolation() {
@@ -112,6 +121,7 @@ public final class InterfaceFreqTracker {
         return frequency(&ia, decay: Self.arFreqDecay, minCount: Self.minSamples, now: now)
     }
     /// Mirrors Python's `Interface.outgoing_announce_frequency()`.
+    ///
     /// Note: Python uses `> 1` (not `> IC_DEQUE_MIN_SAMPLE`) for outgoing.
     public func outgoingAnnounceFrequency(now: TimeInterval = Date().timeIntervalSince1970) -> Double {
         lock.lock(); defer { lock.unlock() }
@@ -178,6 +188,7 @@ public final class InterfaceFreqTracker {
     }
 
     /// Python-equivalent frequency computation.
+    ///
     /// Returns 0 when `n <= minCount` or `span <= 0`.
     /// Prunes the oldest sample when span exceeds `decay`.
     /// Callers must hold `lock`.

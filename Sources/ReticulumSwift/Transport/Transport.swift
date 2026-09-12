@@ -10,7 +10,9 @@
 
 import Foundation
 
-/// The Transport system. Owns interfaces, registered destinations, and a
+/// The Transport system.
+///
+/// Owns interfaces, registered destinations, and a
 /// path table populated from received announces. Announces are validated
 /// and forwarded; non-announce packets are delivered to any local
 /// destination matching the destination hash.
@@ -19,80 +21,116 @@ public final class Transport {
     // MARK: - Constants (mirrors Python Transport class attributes)
 
     /// Maximum percentage of interface bandwidth used for announce propagation.
+    ///
     /// Mirrors Python's `Reticulum.ANNOUNCE_CAP = 2`.
     public static let announceCap: Int = 2
 
     /// Maximum number of queued announces across all interfaces.
+    ///
     /// Mirrors Python's `Reticulum.MAX_QUEUED_ANNOUNCES = 16384`.
     public static let maxQueuedAnnounces: Int = 16384
 
     /// Lifetime of a queued announce in seconds.
+    ///
     /// Mirrors Python's `Reticulum.QUEUED_ANNOUNCE_LIFE = 86400`.
     public static let queuedAnnounceLife: TimeInterval = 86400
 
     /// Grace period before persist at shutdown (seconds).
+    ///
     /// Mirrors Python's `Reticulum.GRACIOUS_PERSIST_INTERVAL = 300`.
     public static let graciousPersistInterval: TimeInterval = 300
 
     /// Minimum bitrate (bits/second) required for Reticulum to function.
+    ///
     /// Mirrors Python's `Reticulum.MINIMUM_BITRATE = 5`.
     public static let minimumBitrate: Int = 5
 
     /// Resource cache lifetime in seconds.
+    ///
     /// Mirrors Python's `Reticulum.RESOURCE_CACHE = 24*60*60`.
     public static let resourceCacheTimeout: TimeInterval = 86400
 
     /// Background maintenance job interval in seconds.
+    ///
     /// Python's global `Reticulum.JOB_INTERVAL = 5*60 = 300`, but Swift's
     /// jobs loop runs every 5 seconds for more responsive sweeps.
     public static let cleanInterval: TimeInterval = 900   // Python: 15*60
 
     /// Interval between persistent data saves in seconds.
+    ///
     /// Mirrors Python's `Reticulum.PERSIST_INTERVAL = 60*60*12`.
     public static let persistInterval: TimeInterval = 43200
 
-    /// Default path expiry: 7 days. Python: `Transport.PATHFINDER_E = 60*60*24*7`.
+    /// Default path expiry: 7 days.
+    ///
+    /// Python: `Transport.PATHFINDER_E = 60*60*24*7`.
     public static let pathExpiry: TimeInterval = 60 * 60 * 24 * 7
-    /// Roaming-mode path expiry: 6 hours. Python: `Transport.ROAMING_PATH_TIME = 60*60*6`.
+    /// Roaming-mode path expiry: 6 hours.
+    ///
+    /// Python: `Transport.ROAMING_PATH_TIME = 60*60*6`.
     public static let roamingPathExpiry: TimeInterval = 60 * 60 * 6
-    /// Access-point path expiry: 1 day. Python: `Transport.AP_PATH_TIME = 60*60*24`.
+    /// Access-point path expiry: 1 day.
+    ///
+    /// Python: `Transport.AP_PATH_TIME = 60*60*24`.
     public static let apPathExpiry: TimeInterval = 60 * 60 * 24
     /// How often the jobs loop runs (seconds).
     public static let jobInterval: TimeInterval = 5
     /// How often the jobs loop invokes `cleanKnownDestinations`.
+    ///
     /// Mirrors Python's periodic clean-jobs scheduler in `Reticulum.__clean_caches`
     /// (RNS commit b408699e). Defaults to 1 hour to amortise the table walk.
     public static let knownDestinationsCleanInterval: TimeInterval = 60 * 60
     /// Maximum receipts tracked simultaneously.
     public static let maxReceipts: Int = 1024
     /// Maximum number of hops Reticulum transports a packet.
+    ///
     /// Python: `Transport.PATHFINDER_M = 128`.
     public static let pathfinderM: Int = 128
-    /// Announce retransmit retries. Python: `Transport.PATHFINDER_R = 1`.
+    /// Announce retransmit retries.
+    ///
+    /// Python: `Transport.PATHFINDER_R = 1`.
     public static let pathRequestRetries: Int = 1
-    /// Retry grace period in seconds. Python: `Transport.PATHFINDER_G = 5`.
+    /// Retry grace period in seconds.
+    ///
+    /// Python: `Transport.PATHFINDER_G = 5`.
     public static let pathfinderG: TimeInterval = 5
-    /// Random window for announce rebroadcast jitter. Python: `Transport.PATHFINDER_RW = 0.5`.
+    /// Random window for announce rebroadcast jitter.
+    ///
+    /// Python: `Transport.PATHFINDER_RW = 0.5`.
     public static let pathfinderRW: TimeInterval = 0.5
-    /// Timeout for `awaitPath` (seconds). Python: `Transport.PATH_REQUEST_TIMEOUT = 15`.
+    /// Timeout for `awaitPath` (seconds).
+    ///
+    /// Python: `Transport.PATH_REQUEST_TIMEOUT = 15`.
     public static let pathRequestTimeout: TimeInterval = 15
     /// Grace time before a path announcement is made, allows directly reachable
-    /// peers to respond first. Python: `Transport.PATH_REQUEST_GRACE = 0.4`.
+    /// peers to respond first.
+    ///
+    /// Python: `Transport.PATH_REQUEST_GRACE = 0.4`.
     public static let pathRequestGrace: TimeInterval = 0.4
-    /// Extra grace time for roaming-mode interfaces. Python: `Transport.PATH_REQUEST_RG = 1.5`.
+    /// Extra grace time for roaming-mode interfaces.
+    ///
+    /// Python: `Transport.PATH_REQUEST_RG = 1.5`.
     public static let pathRequestRG: TimeInterval = 1.5
-    /// Gate control timeout for path requests. Python: `Transport.PATH_REQUEST_GATE_TIMEOUT = 45`
+    /// Gate control timeout for path requests.
+    ///
+    /// Python: `Transport.PATH_REQUEST_GATE_TIMEOUT = 45`
     ///—RNS 1.5.0 cut it from 120, so a gated client clears in well under half the time.
     public static let pathRequestGateTimeout: TimeInterval = 45
-    /// Minimum interval between automated path requests. Python: `Transport.PATH_REQUEST_MI = 20`.
+    /// Minimum interval between automated path requests.
+    ///
+    /// Python: `Transport.PATH_REQUEST_MI = 20`.
     public static let pathRequestMinInterval: TimeInterval = 20
-    /// Maximum local rebroadcasts of an announce. Python: `Transport.LOCAL_REBROADCASTS_MAX = 2`.
+    /// Maximum local rebroadcasts of an announce.
+    ///
+    /// Python: `Transport.LOCAL_REBROADCASTS_MAX = 2`.
     public static let localRebroadcastsMax: Int = 2
 
     /// Stale threshold for known destinations already in use (7 days).
+    ///
     /// Mirrors Python's `Transport.DESTINATION_TIMEOUT`.
     public static let destinationTimeout: TimeInterval = 60 * 60 * 24 * 7
     /// Linger time for never-used, pathless known destinations (6 minutes).
+    ///
     /// Mirrors Python's `Transport.UNUSED_DESTINATION_LINGER`.
     public static let unusedDestinationLinger: TimeInterval = 6 * 60
 
@@ -128,30 +166,40 @@ public final class Transport {
         public var hops: UInt8
         public var lastHeard: Date
         public let identityHash: Data
-        /// Wall-clock time this path expires. Paths older than this are
+        /// Wall-clock time this path expires.
+        ///
+        /// Paths older than this are
         /// dropped by `sweepExpiredPaths()`. Matches Python's per-entry
         /// `expires` field (`PATHFINDER_E` = 7 days from announce time).
         public var expires: Date
-        /// Transport ID of the next hop along this path. Learned from
+        /// Transport ID of the next hop along this path.
+        ///
+        /// Learned from
         /// HEADER_2 announces; used to address forwarded outbound
         /// traffic. `nil` means "use this node's own transport ID".
         public var nextHopTransportID: Data?
         /// Unix timestamp (seconds) extracted from the announce's random hash.
+        ///
         /// Used to determine if a newer announce should override a worse-hop path.
         /// Mirrors Python's timebase logic in Transport.announce_emitted().
         public var announceEmittedAt: TimeInterval = 0
         /// Full 32-byte SHA-256 hash of the announce packet that established this path.
+        ///
         /// Used to retrieve the cached announce from disk when restoring the path table.
         /// Mirrors Python's `path_table[dst][IDX_PT_PACKET]` = packet_hash field.
         public var cachedAnnounceHash: Data?
         /// Recently heard 10-byte announce random blobs for this destination,
-        /// newest last and capped at `Transport.maxRandomBlobs`. Mirrors Python's
+        /// newest last and capped at `Transport.maxRandomBlobs`.
+        ///
+        /// Mirrors Python's
         /// `path_table[dst][IDX_PT_RANDBLOBS]`. An announce whose random blob is
         /// already present is a replay and is rejected (prevents path forging /
         /// network loops via captured announces).
         public var randomBlobs: [Data] = []
 
-        /// A routable path through `nextHopInterface`. The display name derives from it, so
+        /// A routable path through `nextHopInterface`.
+        ///
+        /// The display name derives from it, so
         /// the two can never disagree.
         ///
         /// This is the initializer production code uses. There is no name-only production path:
@@ -248,6 +296,7 @@ public final class Transport {
         public var isExpired: Bool { Date() >= expires }
 
         /// Hand-written because `nextHopInterface` is an existential, which the compiler can't synthesise.
+        ///
         /// Interfaces compare by **identity**, which is the whole point of `bugs/027`: two
         /// clients of one server are equal by name and aren't the same route.
         public static func == (lhs: PathEntry, rhs: PathEntry) -> Bool {
@@ -265,7 +314,9 @@ public final class Transport {
         }
     }
 
-    /// Learned routing for an in-flight or active multi-hop link. The relay
+    /// Learned routing for an in-flight or active multi-hop link.
+    ///
+    /// The relay
     /// records which interface saw the LRR (initiator side) and which it
     /// forwarded the LRR onto (responder side); subsequent traffic for the
     /// link is forwarded through whichever interface didn't deliver it.
@@ -295,6 +346,7 @@ public final class Transport {
         public let initiatorSideInterfaceName: String
         public let responderSideInterfaceName: String
         /// Original destination hash from the LINKREQUEST packet.
+        ///
         /// Mirrors Python's `link_table[link_id][IDX_LT_DSTHASH]`.
         /// Used by `handleLinkRequestProof` to call `markDestinationUsed`
         /// after a relay node successfully forwards the LRPROOF.
@@ -310,7 +362,9 @@ public final class Transport {
         /// routes ends up counting forgeries.
         public var validated: Bool = false
 
-        /// Hand-written because the interface fields are existentials. They compare by
+        /// Hand-written because the interface fields are existentials.
+        ///
+        /// They compare by
         /// **identity**—two clients of one server are equal by name and aren't the same
         /// route, which is the whole point.
         public static func == (lhs: LinkRoute, rhs: LinkRoute) -> Bool {
@@ -327,6 +381,7 @@ public final class Transport {
 
     /// A tunnel entry: tracks an interface synthesized as a tunnel endpoint
     /// and the paths learned through it.
+    ///
     /// Mirrors Python's `Transport.tunnels` table entries.
     public struct TunnelEntry {
         public let tunnelID: Data
@@ -335,10 +390,13 @@ public final class Transport {
         public var expires: Date
     }
 
-    /// Timeout for tunnel table entries. Matches Python `TUNNEL_TIMEOUT` (8 hours).
+    /// Timeout for tunnel table entries.
+    ///
+    /// Matches Python `TUNNEL_TIMEOUT` (8 hours).
     public static let tunnelTimeout: TimeInterval = 60 * 60 * 8
 
     /// Per-destination entry in the announce rate table.
+    ///
     /// Mirrors Python's rate_entry dict in `Transport.announce_rate_table`.
     struct AnnounceRateEntry {
         var last: TimeInterval       // timestamp of last accepted announce
@@ -348,11 +406,14 @@ public final class Transport {
     }
 
     /// Snapshot of an interface's byte counts used for speed computation.
+    ///
     /// Mirrors Python's `transport_traffic_counter` dict on each interface.
     struct SpeedSample {
         var rxBytes: Int
         var txBytes: Int
-        /// Announce and path-request byte totals at the same instant. Python keeps all six
+        /// Announce and path-request byte totals at the same instant.
+        ///
+        /// Python keeps all six
         /// in the one `transport_traffic_counter` dict (`Transport.py:645-648`) so every
         /// gauge divides by the same interval; splitting them into separate snapshots would
         /// let two rates describe two slightly different windows.
@@ -384,10 +445,13 @@ public final class Transport {
     public private(set) var registeredDestinations: [Data: Destination] = [:]
     public internal(set) var paths: [Data: PathEntry] = [:]
     public private(set) var knownIdentities: [Data: Identity] = [:] // by destination hash
-    /// When each known identity was last announced. Used by `cleanKnownDestinations()`.
+    /// When each known identity was last announced.
+    ///
+    /// Used by `cleanKnownDestinations()`.
     /// Mirrors Python's `Identity.known_destinations[hash][0]` (last_announce field).
     var knownDestinationAnnouncedAt: [Data: Date] = [:]
     /// When each known identity was last used (recalled for outbound). nil = never used.
+    ///
     /// Mirrors Python's `Identity.known_destinations[hash][4]` (last_use field, 0 = never).
     var knownDestinationLastUsed: [Data: Date] = [:]
     /// Full hash of the announce packet that taught each identity—`Identity.remember(packet.get_hash(),
@@ -400,55 +464,73 @@ public final class Transport {
     /// as app data.
     var knownDestinationPacketHash: [Data: Data] = [:]
     /// Destinations explicitly marked as retained—never swept by `cleanKnownDestinations`.
+    ///
     /// Mirrors Python's last_use == -1 sentinel.
     var retainedDestinations: Set<Data> = []
 
     /// Most recent ratchet public key learned per destination, from
-    /// announces. 32 bytes each. Used so outbound encryption can target
+    /// announces. 32 bytes each.
+    ///
+    /// Used so outbound encryption can target
     /// the destination's freshest ratchet (forward secrecy).
     public private(set) var knownRatchets: [Data: Data] = [:]
 
-    /// Wall-clock receive time per learned ratchet. Aged out per
+    /// Wall-clock receive time per learned ratchet.
+    ///
+    /// Aged out per
     /// `ratchetExpiry`—matches Python's `Identity._remember_ratchet`
     /// / `Identity.get_ratchet` (which discard entries older than
     /// `RATCHET_EXPIRY`).
     public private(set) var knownRatchetTimes: [Data: Date] = [:]
 
-    /// Expiry window for learned ratchets. Defaults to 30 days,
+    /// Expiry window for learned ratchets.
+    ///
+    /// Defaults to 30 days,
     /// matching `Identity.RATCHET_EXPIRY`.
     public var ratchetExpiry: TimeInterval = 60 * 60 * 24 * 30
 
     /// Optional directory where learned ratchets are persisted, one
     /// file per destination (`<dir>/<desthex>`), matching Python's
-    /// `<storagepath>/ratchets/<hex>` layout. Set by `Reticulum.start`.
+    /// `<storagepath>/ratchets/<hex>` layout.
+    ///
+    /// Set by `Reticulum.start`.
     public var ratchetsDirectory: URL?
     public private(set) var links: [Data: Link] = [:]               // by link id
     public private(set) var linkRoutes: [Data: LinkRoute] = [:]     // by link id
     /// Active tunnel entries keyed by tunnel ID (SHA-256 of pubkey+ifaceHash).
+    ///
     /// Mirrors Python's `Transport.tunnels` dict.
     public var tunnels: [Data: TunnelEntry] = [:]
     public private(set) var isRunning: Bool = false
 
-    /// Unix timestamp of the `start()` call. Used to compute transport uptime.
+    /// Unix timestamp of the `start()` call.
+    ///
+    /// Used to compute transport uptime.
     /// Mirrors Python's `Transport.start_time`.
     /// `start()` is the only production writer; the setter is module-internal so the
     /// traffic sampler can be driven at fixed timestamps without running a jobs loop.
     public internal(set) var startTime: TimeInterval = 0
 
     /// Identity used to answer incoming link requests on registered
-    /// destinations. The host sets this when it knows its local identity.
+    /// destinations.
+    ///
+    /// The host sets this when it knows its local identity.
     public var ownerIdentity: Identity?
 
     /// Optional network identity, used for remote management and interface discovery.
+    ///
     /// Once set, nothing can change it (mirrors Python's Transport.network_identity,
     /// which accepts a value only while still unset).
     public private(set) var networkIdentity: Identity?
 
     /// Returns whether this node holds a network identity.
+    ///
     /// Mirrors Python's `Transport.has_network_identity()`.
     public var hasNetworkIdentity: Bool { networkIdentity != nil }
 
-    /// Set the network identity. Only takes effect if not already set.
+    /// Set the network identity.
+    ///
+    /// Only takes effect if not already set.
     /// Mirrors Python's `Transport.set_network_identity(identity)`.
     public func setNetworkIdentity(_ identity: Identity) {
         guard networkIdentity == nil else { return }
@@ -456,13 +538,17 @@ public final class Transport {
     }
 
     /// When `true`, this node relays announces it receives to its other
-    /// interfaces (a transport-enabled mesh node). When `false`, the node
+    /// interfaces (a transport-enabled mesh node).
+    ///
+    /// When `false`, the node
     /// only originates and consumes announces (an edge node).
     public var transportEnabled: Bool = true
 
     /// When `true`, this node attaches as a *client* to an external shared
     /// instance (for example, an `rnsd` daemon over a `LocalInterface`), and that
-    /// instance performs all packet filtering/routing on this node's behalf. In that
+    /// instance performs all packet filtering/routing on this node's behalf.
+    ///
+    /// In that
     /// case `filterAndRecord` must not re-filter (mirrors Python's
     /// `if Transport.owner.is_connected_to_shared_instance: return True`).
     /// Defaults to `false` for standalone / embedded transport nodes.
@@ -472,12 +558,16 @@ public final class Transport {
     public var propagationLimit: UInt8 = UInt8(Transport.pathfinderM)
 
     /// Whether a link-request proof arriving with an unexpected hop count may
-    /// correct the path table (after its signature validates). RNS 1.4.1's
+    /// correct the path table (after its signature validates).
+    ///
+    /// RNS 1.4.1's
     /// headline path-convergence feature. Mirrors Python's
     /// `Transport.ALLOW_LINK_PATH_REBALANCE = True`.
     public static var allowLinkPathRebalance = true
 
-    /// Per-session hop-count obfuscation delta. When non-zero, packets that
+    /// Per-session hop-count obfuscation delta.
+    ///
+    /// When non-zero, packets that
     /// originate locally (`hops == 0`)—this node's own traffic and traffic relayed for
     /// directly connected local clients—have their hop count rewritten to this
     /// value when injected into the wider network, hiding that they came from
@@ -486,7 +576,9 @@ public final class Transport {
     /// Mirrors Python's `Transport.local_hops_delta`.
     public var localHopsDelta: UInt8 = 0
 
-    /// 16-byte random instance id. Generated on first access, but can be
+    /// 16-byte random instance id.
+    ///
+    /// Generated on first access, but can be
     /// overridden before `start()` to restore a persisted identity across
     /// restarts. Matches `Transport.identity.hash` semantics in Python.
     public var transportInstanceID: Data = {
@@ -494,16 +586,19 @@ public final class Transport {
     }()
 
     /// Most-recent validated announce packet keyed by destination hash.
+    ///
     /// Used to answer path requests on behalf of remote destinations this
     /// node has a path to.
     public private(set) var cachedAnnounces: [Data: Packet] = [:]
 
     /// Path responsiveness state per destination hash.
+    ///
     /// Mirrors Python's `Transport.path_states` dict.
     private var pathStates: [Data: UInt8] = [:]
     private let pathStatesLock = NSLock()
 
     /// Reverse lookup table for multi-hop proof forwarding.
+    ///
     /// Maps truncated packet hash (16 bytes) → (receiveInterface, outboundInterface).
     /// When Transport forwards a DATA packet, it stores the entry so the resulting
     /// proof can travel back to the originating interface.
@@ -545,12 +640,15 @@ public final class Transport {
     private var discoveryPathRequests: [Data: DiscoveryPathRequest] = [:]
 
     /// Dedup keys for announces already seen—`destinationHash + randomHash`.
+    ///
     /// Bounded to `announceCacheCap` entries (FIFO).
     private var announceCache: [Data] = []
     private var announceCacheSet: Set<Data> = []
     public var announceCacheCap: Int = 4096
 
-    /// A forwarded announce pending a single retransmission. Mirrors Python's
+    /// A forwarded announce pending a single retransmission.
+    ///
+    /// Mirrors Python's
     /// `Transport.announce_table` 9-tuple (`IDX_AT_*`). Swift forwards the first
     /// copy immediately, then retransmits once more (`PATHFINDER_R`) after the
     /// grace window unless neighbours carry the announce on.
@@ -569,35 +667,45 @@ public final class Transport {
         // its mode so the retry pass filters identically to the first forward.
         var receivingInterfaceAnnouncesToInternal: Bool?
     }
-    /// Pending announce retransmissions keyed by destination hash. Guarded by `lock`.
+    /// Pending announce retransmissions keyed by destination hash.
+    ///
+    /// Guarded by `lock`.
     private var announceTable: [Data: AnnounceTableEntry] = [:]
 
     /// Per-interface announce and path-request frequency tracker.
     /// Mirrors Python's Interface.ia_freq_deque and so on
     private var ifaceFreqTrackers: [ObjectIdentifier: InterfaceFreqTracker] = [:]
     /// Guards the `ifaceFreqTrackers` dictionary (not the trackers themselves—each
-    /// `InterfaceFreqTracker` is internally synchronized). Held alone; a
+    /// `InterfaceFreqTracker` is internally synchronized).
+    ///
+    /// Held alone; a
     /// holder snapshots the tracker reference and releases before calling into it.
     private let trackersLock = NSLock()
 
     /// Per-interface ingress burst control state.
     /// Mirrors Python's per-interface ic_burst_active, held_announces, and so on
     private var ingressStates: [ObjectIdentifier: IngressControlState] = [:]
-    /// Guards `ingressStates`. A leaf lock: `processHeldAnnounces` re-enters
+    /// Guards `ingressStates`.
+    ///
+    /// A leaf lock: `processHeldAnnounces` re-enters
     /// `handleIncoming` (which takes `lock`), so a holder MUST snapshot/select
     /// under this lock, release it, then make the reentrant call—never held
     /// across a callout, and never acquires `lock` while held.
     private let ingressLock = NSLock()
 
     /// Root directory for the on-disk packet cache (announce sub-cache).
+    ///
     /// Mirrors Python's `RNS.Reticulum.cachepath`.
     /// Set by `Reticulum.start()`.
     public var cacheDirectory: URL?
 
     /// Blackholed identities: identity hash → BlackholeEntry.
+    ///
     /// Mirrors Python's `Transport.blackholed_identities` dict.
     public var blackholedIdentities: [Data: BlackholeEntry] = [:]
-    /// Guards `blackholedIdentities`. Leaf lock—held alone, never across a
+    /// Guards `blackholedIdentities`.
+    ///
+    /// Leaf lock—held alone, never across a
     /// callout, never acquires `lock` while held (when both a paths read and a
     /// blackhole read are needed, `lock` is taken and released first).
     let blackholeLock = NSLock()
@@ -606,48 +714,71 @@ public final class Transport {
     /// threads and the jobs timer with no relation to routing decisions:
     /// `trafficRxBytes`, `trafficTxBytes`, the packet PHY caches, the per-interface
     /// speed sample/current maps, the aggregate `speedRx`/`speedTx`, and the
-    /// announce rate table. Leaf lock: never held across a callout, and no holder
+    /// announce rate table.
+    ///
+    /// Leaf lock: never held across a callout, and no holder
     /// acquires `lock`. If both are ever needed, `lock` is the outer lock.
     private let metricsLock = NSLock()
 
     /// Cumulative bytes received across all interfaces (inbound).
+    ///
     /// Mirrors Python's `Transport.traffic_rxb`.
     public private(set) var trafficRxBytes: Int = 0
     /// Cumulative bytes transmitted across all interfaces (outbound).
+    ///
     /// Mirrors Python's `Transport.traffic_txb`.
     public private(set) var trafficTxBytes: Int = 0
 
     /// Per-destination announce rate tracking.
+    ///
     /// Mirrors Python's `Transport.announce_rate_table`.
     private var announceRateTable: [Data: AnnounceRateEntry] = [:]
     /// Maximum announce timestamps kept per destination.
+    ///
     /// Mirrors Python's `Transport.MAX_RATE_TIMESTAMPS = 16`.
     public static let maxRateTimestamps: Int = 16
     /// Grace wait before announcing connectivity readiness (seconds).
+    ///
     /// Python: `Transport.READY_WAIT = 60`.
     public static let readyWait: TimeInterval = 60
-    /// Reverse path table entry lifetime (seconds). Python: `Transport.REVERSE_TIMEOUT = 8*60`.
+    /// Reverse path table entry lifetime (seconds).
+    ///
+    /// Python: `Transport.REVERSE_TIMEOUT = 8*60`.
     public static let reverseTimeout: TimeInterval = 8 * 60
-    /// Timeout for tunnel-sourced path entries. Python: `Transport.TUNNEL_PATH_TIMEOUT = 60*60*8`.
+    /// Timeout for tunnel-sourced path entries.
+    ///
+    /// Python: `Transport.TUNNEL_PATH_TIMEOUT = 60*60*8`.
     public static let tunnelPathTimeout: TimeInterval = 60 * 60 * 8
-    /// Maximum random blobs kept in memory. Python: `Transport.MAX_RANDOM_BLOBS = 64`.
+    /// Maximum random blobs kept in memory.
+    ///
+    /// Python: `Transport.MAX_RANDOM_BLOBS = 64`.
     public static let maxRandomBlobs: Int = 64
-    /// Number of random blobs persisted to disk. Python: `Transport.PERSIST_RANDOM_BLOBS = 32`.
+    /// Number of random blobs persisted to disk.
+    ///
+    /// Python: `Transport.PERSIST_RANDOM_BLOBS = 32`.
     public static let persistRandomBlobs: Int = 32
 
     /// Per-interface last-sampled byte counts and timestamp for speed computation.
     private var ifaceSpeedSamples: [ObjectIdentifier: SpeedSample] = [:]
-    /// Per-interface current RX speed (bits/sec). Mirrors Python `Interface.current_rx_speed`.
+    /// Per-interface current RX speed (bits/sec).
+    ///
+    /// Mirrors Python `Interface.current_rx_speed`.
     private var ifaceCurrentRxSpeed: [ObjectIdentifier: Double] = [:]
-    /// Per-interface current TX speed (bits/sec). Mirrors Python `Interface.current_tx_speed`.
+    /// Per-interface current TX speed (bits/sec).
+    ///
+    /// Mirrors Python `Interface.current_tx_speed`.
     private var ifaceCurrentTxSpeed: [ObjectIdentifier: Double] = [:]
 
     /// Per-interface announce and path-request rates, filled by ``sampleInterfaceSpeeds(now:)``.
     /// Guarded by `metricsLock`, like the two tables above.
     private var ifaceAnnounceSpeeds: [ObjectIdentifier: AnnounceSpeeds] = [:]
-    /// Aggregate RX speed across all interfaces (bits/sec). Mirrors Python `Transport.speed_rx`.
+    /// Aggregate RX speed across all interfaces (bits/sec).
+    ///
+    /// Mirrors Python `Transport.speed_rx`.
     public private(set) var speedRx: Double = 0
-    /// Aggregate TX speed across all interfaces (bits/sec). Mirrors Python `Transport.speed_tx`.
+    /// Aggregate TX speed across all interfaces (bits/sec).
+    ///
+    /// Mirrors Python `Transport.speed_tx`.
     public private(set) var speedTx: Double = 0
 
     // MARK: - Transport-level announce and path-request aggregates
@@ -660,42 +791,75 @@ public final class Transport {
     // pass. Mixing the two up is invisible on a busy node and obvious on an idle one: an
     // accumulating speed keeps climbing after the traffic stops.
 
-    /// Cumulative announce bytes received. Mirrors Python `Transport.announce_rxb`.
+    /// Cumulative announce bytes received.
+    ///
+    /// Mirrors Python `Transport.announce_rxb`.
     public private(set) var announceRxBytes: Int = 0
-    /// Cumulative announce bytes transmitted. Mirrors Python `Transport.announce_txb`.
+    /// Cumulative announce bytes transmitted.
+    ///
+    /// Mirrors Python `Transport.announce_txb`.
     public private(set) var announceTxBytes: Int = 0
-    /// Aggregate announce RX speed (bits/sec). Python `Transport.announce_speed_rx`.
+    /// Aggregate announce RX speed (bits/sec).
+    ///
+    /// Python `Transport.announce_speed_rx`.
     public private(set) var announceSpeedRx: Double = 0
-    /// Aggregate announce TX speed (bits/sec). Python `Transport.announce_speed_tx`.
+    /// Aggregate announce TX speed (bits/sec).
+    ///
+    /// Python `Transport.announce_speed_tx`.
     public private(set) var announceSpeedTx: Double = 0
-    /// Summed incoming announce frequency (Hz). Python `Transport.announce_freq_rx`.
+    /// Summed incoming announce frequency (Hz).
+    ///
+    /// Python `Transport.announce_freq_rx`.
     public private(set) var announceFreqRx: Double = 0
-    /// Summed outgoing announce frequency (Hz). Python `Transport.announce_freq_tx`.
+    /// Summed outgoing announce frequency (Hz).
+    ///
+    /// Python `Transport.announce_freq_tx`.
     public private(set) var announceFreqTx: Double = 0
-    /// Cumulative path-request bytes received. Mirrors Python `Transport.pr_rxb`.
+    /// Cumulative path-request bytes received.
+    ///
+    /// Mirrors Python `Transport.pr_rxb`.
     public private(set) var prRxBytes: Int = 0
-    /// Cumulative path-request bytes transmitted. Mirrors Python `Transport.pr_txb`.
+    /// Cumulative path-request bytes transmitted.
+    ///
+    /// Mirrors Python `Transport.pr_txb`.
     public private(set) var prTxBytes: Int = 0
-    /// Aggregate path-request RX speed (bits/sec). Python `Transport.pr_speed_rx`.
+    /// Aggregate path-request RX speed (bits/sec).
+    ///
+    /// Python `Transport.pr_speed_rx`.
     public private(set) var prSpeedRx: Double = 0
-    /// Aggregate path-request TX speed (bits/sec). Python `Transport.pr_speed_tx`.
+    /// Aggregate path-request TX speed (bits/sec).
+    ///
+    /// Python `Transport.pr_speed_tx`.
     public private(set) var prSpeedTx: Double = 0
-    /// Summed incoming path-request frequency (Hz). Python `Transport.pr_freq_rx`.
+    /// Summed incoming path-request frequency (Hz).
+    ///
+    /// Python `Transport.pr_freq_rx`.
     public private(set) var prFreqRx: Double = 0
-    /// Summed outgoing path-request frequency (Hz). Python `Transport.pr_freq_tx`.
+    /// Summed outgoing path-request frequency (Hz).
+    ///
+    /// Python `Transport.pr_freq_tx`.
     public private(set) var prFreqTx: Double = 0
 
-    /// Packets admitted inbound. Mirrors Python `Transport.rx_packets` (`Transport.py:1798`).
+    /// Packets admitted inbound.
+    ///
+    /// Mirrors Python `Transport.rx_packets` (`Transport.py:1798`).
     public private(set) var rxPackets: Int = 0
-    /// Packets handed to an interface. Mirrors Python `Transport.tx_packets`
+    /// Packets handed to an interface.
+    ///
+    /// Mirrors Python `Transport.tx_packets`
     /// (`Transport.py:1329`).
     public private(set) var txPackets: Int = 0
-    /// Inbound packets per second over the last sampling interval. Python `Transport.rx_pps`.
+    /// Inbound packets per second over the last sampling interval.
+    ///
+    /// Python `Transport.rx_pps`.
     public private(set) var rxPPS: Int = 0
-    /// Outbound packets per second over the last sampling interval. Python `Transport.tx_pps`.
+    /// Outbound packets per second over the last sampling interval.
+    ///
+    /// Python `Transport.tx_pps`.
     public private(set) var txPPS: Int = 0
 
     /// Timestamp of the last packets-per-second sample, or nil before the first one.
+    ///
     /// Python keeps this as the loop-local `cts`, initially unset so the first interval is
     /// measured from `Transport.start_time` (`Transport.py:649-650`).
     private var lastPPSSampleTime: TimeInterval? = nil
@@ -713,19 +877,26 @@ public final class Transport {
     // MARK: - Interface discovery integration
     // Mirrors Python's Transport.interface_announcer / discovery_handler / blackhole_updater.
 
-    /// Active interface-discovery listener. Created by `discoverInterfaces(storagePath:...)`.
+    /// Active interface-discovery listener.
+    ///
+    /// Created by `discoverInterfaces(storagePath:...)`.
     /// Mirrors Python `Transport.discovery_handler`.
     public var discoveryHandler: InterfaceDiscovery?
 
-    /// Active interface-discovery announcer, the publish side. Created by
+    /// Active interface-discovery announcer, the publish side.
+    ///
+    /// Created by
     /// `enableDiscovery(stampGenerator:)`. Mirrors Python `Transport.interface_announcer`.
     public var interfaceAnnouncer: InterfaceAnnouncer?
 
     /// The `AnnounceHandler` registered with this transport for interface discovery.
+    ///
     /// Kept so `stopDiscoverInterfaces()` can deregister it.
     public var discoveryAnnounceHandler: InterfaceAnnounceHandler?
 
-    /// Active blackhole-list updater. Created by `enableBlackholeUpdater()`.
+    /// Active blackhole-list updater.
+    ///
+    /// Created by `enableBlackholeUpdater()`.
     /// Mirrors Python `Transport.blackhole_updater`.
     public var blackholeUpdater: BlackholeUpdater?
 
@@ -754,32 +925,44 @@ public final class Transport {
     public var onLinkEstablished: ((Link) -> Void)?
 
     /// Fires when a path request lands on a locally registered
-    /// destination. The host should respond by emitting a fresh signed
+    /// destination.
+    ///
+    /// The host should respond by emitting a fresh signed
     /// announce for that destination on the supplied interface (Transport
     /// doesn't own destination identities, so it can't sign on its own).
     public var onPathRequested: ((Data, any Interface) -> Void)?
 
     /// Externally registered announce handlers (mirrors Python's
-    /// `Transport.announce_handlers`). Use `register(announceHandler:)`.
+    /// `Transport.announce_handlers`).
+    ///
+    /// Use `register(announceHandler:)`.
     private var announceHandlers: [any AnnounceHandler] = []
     private let announceHandlerLock = NSLock()
 
-    /// Outstanding packet receipts. Bounded to `maxReceipts`, swept by the
+    /// Outstanding packet receipts.
+    ///
+    /// Bounded to `maxReceipts`, swept by the
     /// jobs loop every second. Matches Python's `Transport.receipts`.
     private var receipts: [PacketReceipt] = []
     private let receiptsLock = NSLock()
 
-    /// Per-interface announce queues. Keyed by interface name.
+    /// Per-interface announce queues.
+    ///
+    /// Keyed by interface name.
     private var announceQueues: [String: AnnounceQueue] = [:]
     private let queueLock = NSLock()
 
-    /// Packet hashlist for replay/loop prevention. Two-generation rolling
+    /// Packet hashlist for replay/loop prevention.
+    ///
+    /// Two-generation rolling
     /// set—mirrors Python's `packet_hashlist` / `packet_hashlist_prev`.
     private var packetHashlist: Set<Data> = []
     private var packetHashlistPrev: Set<Data> = []
     private let hashlistLock = NSLock()
     /// Rotate the current hashlist into the previous slot when it reaches
-    /// this size. Half of Python's 1M default.
+    /// this size.
+    ///
+    /// Half of Python's 1M default.
     public var hashlistMaxSize: Int = 500_000
 
     let lock = NSLock()
@@ -787,6 +970,7 @@ public final class Transport {
     // Background jobs timer—nil until `start()`.
     private var jobsTimer: DispatchSourceTimer?
     /// Last time the jobs loop invoked `cleanKnownDestinations`.
+    ///
     /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
     private var lastKnownDestinationsClean: Date = .distantPast
 
@@ -795,6 +979,7 @@ public final class Transport {
     // MARK: - Announce handlers
 
     /// Register a handler that's called whenever a matching announce arrives.
+    ///
     /// Matches Python's `Transport.register_announce_handler`.
     public func register(announceHandler: any AnnounceHandler) {
         announceHandlerLock.lock(); defer { announceHandlerLock.unlock() }
@@ -810,6 +995,7 @@ public final class Transport {
     // MARK: - Path queries
 
     /// True if this Transport has a known path to `destinationHash`.
+    ///
     /// Mirrors Python's `Transport.has_path(destination_hash)`.
     public func hasPath(to destinationHash: Data) -> Bool {
         lock.lock(); defer { lock.unlock() }
@@ -817,6 +1003,7 @@ public final class Transport {
     }
 
     /// Hop count to `destinationHash`, or nil when no path exists.
+    ///
     /// Mirrors Python's `Transport.hops_to(destination_hash)`.
     public func hopsTo(_ destinationHash: Data) -> UInt8? {
         lock.lock(); defer { lock.unlock() }
@@ -824,6 +1011,7 @@ public final class Transport {
     }
 
     /// The next-hop destination hash (transport ID) for a known path, or nil.
+    ///
     /// Mirrors Python's `Transport.next_hop(destination_hash)`.
     public func nextHop(to destinationHash: Data) -> Data? {
         lock.lock(); defer { lock.unlock() }
@@ -831,6 +1019,7 @@ public final class Transport {
     }
 
     /// The interface name the next hop is reachable on, or nil if unknown.
+    ///
     /// Mirrors Python's `Transport.next_hop_interface(destination_hash)`.
     public func nextHopInterfaceName(for destinationHash: Data) -> String? {
         lock.lock(); defer { lock.unlock() }
@@ -848,6 +1037,7 @@ public final class Transport {
     }
 
     /// The registered interface whose `Interface.hash` matches, or nil.
+    ///
     /// Mirrors Python's `Transport.find_interface_from_hash` (`Transport.py:2580-2585`), used to
     /// resolve a persisted path entry back to a live interface on load.
     public func findInterface(fromHash hash: Data) -> (any Interface)? {
@@ -856,6 +1046,7 @@ public final class Transport {
     }
 
     /// The `Interface.hash` of every registered interface.
+    ///
     /// Mirrors Python's `Transport.interface_hashes()` (`Transport.py:2577`).
     func interfaceHashes() -> Set<Data> {
         lock.lock(); defer { lock.unlock() }
@@ -886,7 +1077,9 @@ public final class Transport {
 
     // MARK: - Interface management
 
-    /// Bring an interface offline. The interface stays registered but no longer
+    /// Bring an interface offline.
+    ///
+    /// The interface stays registered but no longer
     /// forwards packets. Mirrors Python `Reticulum.halt_interface()`.
     public func halt(interfaceName: String) {
         lock.lock()
@@ -896,6 +1089,7 @@ public final class Transport {
     }
 
     /// Bring a previously halted interface back online.
+    ///
     /// Mirrors Python `Reticulum.resume_interface()`.
     public func resume(interfaceName: String) {
         lock.lock()
@@ -904,7 +1098,9 @@ public final class Transport {
         try? iface?.start()
     }
 
-    /// Drop all paths that route through `transportHash`. Returns count of dropped paths.
+    /// Drop all paths that route through `transportHash`.
+    ///
+    /// Returns count of dropped paths.
     /// Mirrors Python `Reticulum.drop_all_via(transport_hash)`.
     @discardableResult
     public func dropAllPaths(via transportHash: Data) -> Int {
@@ -916,6 +1112,7 @@ public final class Transport {
     }
 
     /// Drop all queued announce packets from all interface queues.
+    ///
     /// Mirrors Python `Transport.drop_announce_queues()`.
     /// Sort registered interfaces by bitrate (descending) so that higher-bandwidth
     /// interfaces are preferred for outbound traffic.
@@ -1081,6 +1278,7 @@ public final class Transport {
     }
 
     /// Extract the announce emission timestamp from a random blob (bytes 5..9, big-endian).
+    ///
     /// Mirrors Python `Transport.timebase_from_random_blob(random_blob)`.
     public static func timebaseFromRandomBlob(_ blob: Data) -> TimeInterval {
         guard blob.count >= 10 else { return 0 }
@@ -1090,19 +1288,23 @@ public final class Transport {
     }
 
     /// Returns the maximum emission timestamp across multiple random blobs.
+    ///
     /// Mirrors Python `Transport.timebase_from_random_blobs(random_blobs)`.
     public static func timebaseFromRandomBlobs(_ blobs: [Data]) -> TimeInterval {
         blobs.reduce(0) { max($0, timebaseFromRandomBlob($1)) }
     }
 
     /// Returns true if the interface is a local-client interface.
+    ///
     /// Mirrors Python `Transport.from_local_client(packet)`—in Swift, callers supply the interface directly.
     public func fromLocalClient(interface iface: any Interface) -> Bool {
         isLocalClientInterface(iface)
     }
 
     /// Returns true if the interface is one that serves a locally connected
-    /// shared-instance client—the SERVER side. Mirrors Python
+    /// shared-instance client—the SERVER side.
+    ///
+    /// Mirrors Python
     /// `Transport.is_local_client_interface(interface)`, which is true only for a
     /// per-client connection whose `parent_interface.is_local_shared_instance`.
     /// In Swift the per-client sockets are collapsed into a single
@@ -1117,7 +1319,9 @@ public final class Transport {
     }
 
     /// Returns true if the interface is this node's own connection *to* a shared
-    /// instance (the client side). Mirrors Python
+    /// instance (the client side).
+    ///
+    /// Mirrors Python
     /// `Transport.interface_to_shared_instance(interface)` (true when the interface
     /// has `is_connected_to_shared_instance`). In Swift that's `LocalInterface`.
     public func interfaceToSharedInstance(_ interface: any Interface) -> Bool {
@@ -1126,7 +1330,9 @@ public final class Transport {
 
     /// Interfaces serving one or more locally connected shared-instance
     /// clients, excluding `excluded` (typically the interface the triggering
-    /// packet arrived on). Mirrors a non-empty Python `Transport.local_client_interfaces`.
+    /// packet arrived on).
+    ///
+    /// Mirrors a non-empty Python `Transport.local_client_interfaces`.
     private func localClientServingInterfaces(excluding excluded: (any Interface)?) -> [any Interface] {
         interfaces.filter { iface in
             guard let serving = iface as? any LocalClientServingInterface, serving.clientCount > 0 else { return false }
@@ -1135,7 +1341,9 @@ public final class Transport {
     }
 
     /// Whether the local hop-count obfuscation delta should be applied when
-    /// transmitting `packet` out over `interface`. True only for this node's own freshly
+    /// transmitting `packet` out over `interface`.
+    ///
+    /// True only for this node's own freshly
     /// originated packets (`hops == 0`) that are addressed to real (single/link)
     /// destinations and leave over a non-local, non-shared-instance interface,
     /// while the feature is enabled and this node isn't behind a shared instance.
@@ -1150,7 +1358,9 @@ public final class Transport {
             && !interfaceToSharedInstance(interface)
     }
 
-    /// Return a copy of `packet` with its hop count rewritten to `hops`. When
+    /// Return a copy of `packet` with its hop count rewritten to `hops`.
+    ///
+    /// When
     /// `transportInsert` is true, also promote it to a HEADER_2 transport packet
     /// carrying this instance's transport id (used when obfuscating a locally
     /// originated HEADER_1 announce as it's injected into transport).
@@ -1167,7 +1377,9 @@ public final class Transport {
     }
 
     /// Hop count to stamp when relaying `packet` (received on `sourceInterface`)
-    /// onward. Normally the received hop count + 1, but obfuscated to
+    /// onward.
+    ///
+    /// Normally the received hop count + 1, but obfuscated to
     /// `localHopsDelta` when the packet came from a directly connected local
     /// client and isn't staying within the local-client domain (and the feature
     /// is enabled). `staysLocal` is the site-specific "don't obfuscate" condition
@@ -1183,6 +1395,7 @@ public final class Transport {
     }
 
     /// Clear transient in-memory queues (held announces, receipts, reverse table).
+    ///
     /// Mirrors Python `Transport.void_queues()`.
     public func voidQueues() {
         ingressLock.lock()
@@ -1197,6 +1410,7 @@ public final class Transport {
     }
 
     /// Tear down all active and pending links, then stop all interfaces.
+    ///
     /// Mirrors Python `Transport.detach_interfaces()`. After tearing down
     /// any links, waits 150 ms so the teardown packets can leave the local
     /// transport before the interfaces stop. Mirrors RNS commit 695d4d86.
@@ -1212,7 +1426,9 @@ public final class Transport {
         for iface in interfaces { iface.stop() }
     }
 
-    /// Interface statistics snapshot. Mirrors the structure returned by
+    /// Interface statistics snapshot.
+    ///
+    /// Mirrors the structure returned by
     /// Python's `Reticulum.get_interface_stats()`.
     public struct InterfaceStats {
         public let name: String
@@ -1231,20 +1447,29 @@ public final class Transport {
         public let incomingPrFrequency: Double
         /// Outgoing path-request frequency in Hz. Mirrors Python `Interface.outgoing_pr_frequency()`.
         public let outgoingPrFrequency: Double
-        /// Current RX throughput in bits/sec. Mirrors Python `Interface.current_rx_speed`.
+        /// Current RX throughput in bits/sec.
+        ///
+        /// Mirrors Python `Interface.current_rx_speed`.
         public let currentRxSpeed: Double
-        /// Current TX throughput in bits/sec. Mirrors Python `Interface.current_tx_speed`.
+        /// Current TX throughput in bits/sec.
+        ///
+        /// Mirrors Python `Interface.current_tx_speed`.
         public let currentTxSpeed: Double
     }
 
     /// Aggregate transport-level traffic statistics.
+    ///
     /// Mirrors the top-level `rxb`/`txb`/`rxs`/`txs` fields in Python's `Reticulum.get_interface_stats()`.
     public struct TransportStats {
         public let trafficRxBytes: Int
         public let trafficTxBytes: Int
-        /// Aggregate RX speed (bits/sec). Mirrors Python `Transport.speed_rx`.
+        /// Aggregate RX speed (bits/sec).
+        ///
+        /// Mirrors Python `Transport.speed_rx`.
         public let speedRx: Double
-        /// Aggregate TX speed (bits/sec). Mirrors Python `Transport.speed_tx`.
+        /// Aggregate TX speed (bits/sec).
+        ///
+        /// Mirrors Python `Transport.speed_tx`.
         public let speedTx: Double
         /// Announce byte, speed and frequency totals: Python's `arxb`, `atxb`, `arxs`,
         /// `atxs`, `arxf` and `atxf` (`Reticulum.py:1583-1588`).
@@ -1292,6 +1517,7 @@ public final class Transport {
     }
 
     /// Returns statistics for all registered interfaces.
+    ///
     /// Mirrors Python's `Reticulum.get_interface_stats()`.
     public func getInterfaceStats() -> [InterfaceStats] {
         lock.lock()
@@ -1324,7 +1550,9 @@ public final class Transport {
     // MARK: - Announce rate table (mirrors Python Transport.announce_rate_table)
 
     /// Check whether an announce from `destinationHash` on `interface` warrants blocking
-    /// by the per-destination rate limiter. Updates the rate table as a side effect.
+    /// by the per-destination rate limiter.
+    ///
+    /// Updates the rate table as a side effect.
     /// Returns `false` (not blocked) when `interface.announceRateTarget == nil`.
     /// Mirrors Python's rate_blocked logic in `Transport.inbound` announce handling.
     public func isAnnounceRateBlocked(destinationHash: Data,
@@ -1377,6 +1605,7 @@ public final class Transport {
     }
 
     /// Snapshot of a rate table entry for external consumption.
+    ///
     /// Mirrors the dict fields returned by Python's `Reticulum.get_rate_table()`.
     public struct RateTableEntry {
         public var destinationHash: Data
@@ -1387,6 +1616,7 @@ public final class Transport {
     }
 
     /// Returns a snapshot of the current announce rate table.
+    ///
     /// Mirrors Python's `Reticulum.get_rate_table()`.
     public func getRateTable() -> [RateTableEntry] {
         metricsLock.lock(); defer { metricsLock.unlock() }
@@ -1436,6 +1666,7 @@ public final class Transport {
     // MARK: - Ingress burst control (mirrors Python Interface.should_ingress_limit / hold_announce / process_held_announces)
 
     /// Checks whether inbound announces on `interface` warrant holding for burst flooding.
+    ///
     /// Updates internal burst-active state as a side effect.
     /// Returns `false` when `interface.ingressControl == false`.
     ///
@@ -1507,7 +1738,9 @@ public final class Transport {
     }
 
     /// Checks whether inbound path requests on `interface` warrant suppression
-    /// due to a path-request burst. Mirrors Python's `Interface.should_ingress_limit_pr()`.
+    /// due to a path-request burst.
+    ///
+    /// Mirrors Python's `Interface.should_ingress_limit_pr()`.
     public func shouldIngressLimitPR(on interface: any Interface,
                                      now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard interface.ingressControl else { return false }
@@ -1565,7 +1798,9 @@ public final class Transport {
     }
 
     /// Checks whether outbound path requests on `interface` warrant suppression
-    /// due to outgoing frequency exceeding `ecPrFreq`. Mirrors Python's
+    /// due to outgoing frequency exceeding `ecPrFreq`.
+    ///
+    /// Mirrors Python's
     /// `Interface.should_egress_limit_pr()`.
     public func shouldEgressLimitPR(on interface: any Interface,
                                     now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
@@ -1586,6 +1821,7 @@ public final class Transport {
     }
 
     /// Hold `packet` on `interface` for deferred replay when burst ends.
+    ///
     /// Newer packets for the same destination overwrite older ones.
     /// Capped at `interface.interfaceState.icMaxHeldAnnounces`.
     ///
@@ -1609,7 +1845,9 @@ public final class Transport {
     }
 
     /// Release the lowest-hop held announce on `interface` if the release timer has elapsed
-    /// and the interface is no longer in burst mode. Returns the released packet or nil.
+    /// and the interface is no longer in burst mode.
+    ///
+    /// Returns the released packet or nil.
     ///
     /// Mirrors Python's `Interface.process_held_announces()`.
     @discardableResult
@@ -1648,13 +1886,16 @@ public final class Transport {
         return released
     }
 
-    /// Number of held announces on `interface`. Test helper.
+    /// Number of held announces on `interface`.
+    ///
+    /// Test helper.
     public func heldAnnounceCount(for interface: any Interface) -> Int {
         ingressLock.lock(); defer { ingressLock.unlock() }
         return ingressStates[ObjectIdentifier(interface)]?.heldAnnounces.count ?? 0
     }
 
     /// Returns the ingress control state for `interface`, or nil if not yet created.
+    ///
     /// Mirrors Python's per-interface `ic_burst_active` and so on fields.
     public func ingressState(for interface: any Interface) -> IngressControlState? {
         ingressLock.lock(); defer { ingressLock.unlock() }
@@ -1662,13 +1903,16 @@ public final class Transport {
     }
 
     /// Returns the number of queued announces for `interface`, or nil if no queue exists.
+    ///
     /// Mirrors Python's `len(interface.announce_queue)`.
     public func announceQueueCount(for interface: any Interface) -> Int? {
         queueLock.lock(); defer { queueLock.unlock() }
         return announceQueues[interface.name]?.count
     }
 
-    /// Force-set the `heldRelease` timestamp for `interface`. Test helper.
+    /// Force-set the `heldRelease` timestamp for `interface`.
+    ///
+    /// Test helper.
     public func forceHeldRelease(for interface: any Interface, to timestamp: TimeInterval) {
         let key = ObjectIdentifier(interface)
         ingressLock.lock(); defer { ingressLock.unlock() }
@@ -1680,7 +1924,9 @@ public final class Transport {
     // MARK: - Per-interface speed tracking (mirrors Python count_traffic_loop)
 
     /// Sample current byte counts for all interfaces and compute per-interface and
-    /// aggregate RX/TX speeds (bits/sec). Call this from the jobs loop or a dedicated
+    /// aggregate RX/TX speeds (bits/sec).
+    ///
+    /// Call this from the jobs loop or a dedicated
     /// periodic job. Mirrors Python's `Transport.count_traffic_loop`.
     ///
     /// - Parameter now: Injection point for testing; defaults to `Date().timeIntervalSince1970`.
@@ -1804,6 +2050,7 @@ public final class Transport {
     }
 
     /// Current RX speed for `interface` in bits/sec.
+    ///
     /// Mirrors Python's `Interface.current_rx_speed`.
     public func currentRxSpeed(for interface: any Interface) -> Double {
         metricsLock.lock(); defer { metricsLock.unlock() }
@@ -1811,6 +2058,7 @@ public final class Transport {
     }
 
     /// Current TX speed for `interface` in bits/sec.
+    ///
     /// Mirrors Python's `Interface.current_tx_speed`.
     public func currentTxSpeed(for interface: any Interface) -> Double {
         metricsLock.lock(); defer { metricsLock.unlock() }
@@ -1818,24 +2066,28 @@ public final class Transport {
     }
 
     /// Current announce RX rate for `interface` in bits/sec.
+    ///
     /// Mirrors Python's `Interface.current_arx_speed`.
     public func currentAnnounceRxSpeed(for interface: any Interface) -> Double {
         announceSpeeds(for: interface).announceRx
     }
 
     /// Current announce TX rate for `interface` in bits/sec.
+    ///
     /// Mirrors Python's `Interface.current_atx_speed`.
     public func currentAnnounceTxSpeed(for interface: any Interface) -> Double {
         announceSpeeds(for: interface).announceTx
     }
 
     /// Current path-request RX rate for `interface` in bits/sec.
+    ///
     /// Mirrors Python's `Interface.current_prx_speed`.
     public func currentPathRequestRxSpeed(for interface: any Interface) -> Double {
         announceSpeeds(for: interface).pathRequestRx
     }
 
     /// Current path-request TX rate for `interface` in bits/sec.
+    ///
     /// Mirrors Python's `Interface.current_ptx_speed`.
     public func currentPathRequestTxSpeed(for interface: any Interface) -> Double {
         announceSpeeds(for: interface).pathRequestTx
@@ -1851,6 +2103,7 @@ public final class Transport {
     // MARK: - Interface frequency notifications (mirrors Python Interface.received_announce / sent_announce and so on)
 
     /// Notify that `interface` received an announce.
+    ///
     /// Mirrors Python's `interface.received_announce()` call in `Transport.inbound`.
     public func notifyIncomingAnnounce(on interface: any Interface, size: Int = 0) {
         tracker(for: interface)?.recordIncomingAnnounce(size: size)
@@ -1863,6 +2116,7 @@ public final class Transport {
     }
 
     /// Notify that `interface` sent an announce.
+    ///
     /// Mirrors Python's `interface.sent_announce()` call in `Transport.outbound`.
     public func notifyOutgoingAnnounce(on interface: any Interface, size: Int = 0) {
         tracker(for: interface)?.recordOutgoingAnnounce(size: size)
@@ -1874,6 +2128,7 @@ public final class Transport {
     }
 
     /// Notify that `interface` received a path request.
+    ///
     /// Mirrors Python's `interface.received_path_request()` call.
     public func notifyIncomingPathRequest(on interface: any Interface, size: Int = 0) {
         tracker(for: interface)?.recordIncomingPathRequest(size: size)
@@ -1885,6 +2140,7 @@ public final class Transport {
     }
 
     /// Notify that `interface` sent a path request.
+    ///
     /// Mirrors Python's `interface.sent_path_request()` call.
     public func notifyOutgoingPathRequest(on interface: any Interface, size: Int = 0) {
         tracker(for: interface)?.recordOutgoingPathRequest(size: size)
@@ -1896,7 +2152,9 @@ public final class Transport {
     }
 
     /// Mirrors Python's `interface.protocol_violation()` (`Transport.py:1646` and eight
-    /// further call sites). Python's helper also logs at `LOG_DEBUG` and returns `None` so
+    /// further call sites).
+    ///
+    /// Python's helper also logs at `LOG_DEBUG` and returns `None` so
     /// the caller can `return interface.protocol_violation(...)`; here the callers already
     /// return on their own, so this only counts.
     public func notifyProtocolViolation(on interface: any Interface) {
@@ -1914,7 +2172,9 @@ public final class Transport {
     }
 
     /// The announce, path-request and violation counters for `interface`, or all zeroes
-    /// when it is not registered. Read by `InterfaceStatsPayload`.
+    /// when it is not registered.
+    ///
+    /// Read by `InterfaceStatsPayload`.
     public func interfaceCounts(for interface: any Interface) -> InterfaceFreqTracker.Counts {
         tracker(for: interface)?.counts()
             ?? InterfaceFreqTracker.Counts(announceRxBytes: 0, announceTxBytes: 0,
@@ -1963,6 +2223,7 @@ public final class Transport {
     // MARK: - Management utilities
 
     /// Returns a snapshot of the path table for display/export.
+    ///
     /// Mirrors Python's `Reticulum.get_path_table(max_hops:)`.
     public struct PathTableEntry {
         public let destinationHash: Data
@@ -2038,6 +2299,7 @@ public final class Transport {
     }
 
     /// Returns all active links as an array.
+    ///
     /// Mirrors Python's `Transport.active_links` list.
     public var activeLinks: [Link] {
         lock.lock(); defer { lock.unlock() }
@@ -2060,6 +2322,7 @@ public final class Transport {
     }
 
     /// Returns the cached RSSI for a packet hash, or nil if not in cache.
+    ///
     /// Mirrors Python's `Reticulum.get_packet_rssi(packet_hash)`.
     public func getPacketRssi(packetHash: Data) -> Float? {
         let key = Transport.phyCacheKey(packetHash)
@@ -2068,6 +2331,7 @@ public final class Transport {
     }
 
     /// Returns the cached SNR for a packet hash, or nil if not in cache.
+    ///
     /// Mirrors Python's `Reticulum.get_packet_snr(packet_hash)`.
     public func getPacketSnr(packetHash: Data) -> Float? {
         let key = Transport.phyCacheKey(packetHash)
@@ -2076,6 +2340,7 @@ public final class Transport {
     }
 
     /// Returns the cached quality for a packet hash, or nil if not in cache.
+    ///
     /// Mirrors Python's `Reticulum.get_packet_q(packet_hash)`.
     public func getPacketQ(packetHash: Data) -> Float? {
         let key = Transport.phyCacheKey(packetHash)
@@ -2085,7 +2350,9 @@ public final class Transport {
 
     // MARK: - Path responsiveness
 
-    /// Mark a known path as unresponsive. Returns true if the path exists.
+    /// Mark a known path as unresponsive.
+    ///
+    /// Returns true if the path exists.
     /// Mirrors Python's `Transport.mark_path_unresponsive`.
     @discardableResult
     public func markPathUnresponsive(for destinationHash: Data) -> Bool {
@@ -2099,7 +2366,9 @@ public final class Transport {
         return true
     }
 
-    /// Mark a known path as responsive. Returns true if the path exists.
+    /// Mark a known path as responsive.
+    ///
+    /// Returns true if the path exists.
     /// Mirrors Python's `Transport.mark_path_responsive`.
     @discardableResult
     public func markPathResponsive(for destinationHash: Data) -> Bool {
@@ -2114,6 +2383,7 @@ public final class Transport {
     }
 
     /// Reset responsiveness state to unknown.
+    ///
     /// Mirrors Python's `Transport.mark_path_unknown_state`.
     @discardableResult
     public func markPathUnknownState(for destinationHash: Data) -> Bool {
@@ -2128,6 +2398,7 @@ public final class Transport {
     }
 
     /// Returns true if the path is explicitly marked as unresponsive.
+    ///
     /// Mirrors Python's `Transport.path_is_unresponsive`.
     public func pathIsUnresponsive(to destinationHash: Data) -> Bool {
         pathStatesLock.lock(); defer { pathStatesLock.unlock() }
@@ -2135,7 +2406,9 @@ public final class Transport {
     }
 
     /// Block until a path to `destinationHash` exists, or the timeout
-    /// expires. Sends a path request when no path exists.
+    /// expires.
+    ///
+    /// Sends a path request when no path exists.
     /// Mirrors Python's `Transport.await_path`.
     ///
     /// - Parameters:
@@ -2161,6 +2434,7 @@ public final class Transport {
 
     /// Returns the bitrate of the outgoing interface for the next hop to
     /// `destinationHash`, or nil when no path exists.
+    ///
     /// Mirrors Python's `Transport.next_hop_interface_bitrate`.
     public func nextHopInterfaceBitrate(for destinationHash: Data) -> Int? {
         guard let iface = nextHopInterface(for: destinationHash) else { return nil }
@@ -2168,6 +2442,7 @@ public final class Transport {
     }
 
     /// Returns the per-bit transmission latency (seconds/bit) for the next-hop interface.
+    ///
     /// Mirrors Python's `Transport.next_hop_per_bit_latency(destination_hash)`.
     public func nextHopPerBitLatency(for destinationHash: Data) -> Double? {
         guard let bitrate = nextHopInterfaceBitrate(for: destinationHash), bitrate > 0 else { return nil }
@@ -2175,6 +2450,7 @@ public final class Transport {
     }
 
     /// Returns the per-byte transmission latency (seconds/byte) for the next-hop interface.
+    ///
     /// Mirrors Python's `Transport.next_hop_per_byte_latency(destination_hash)`.
     public func nextHopPerByteLatency(for destinationHash: Data) -> Double? {
         guard let perBit = nextHopPerBitLatency(for: destinationHash) else { return nil }
@@ -2183,6 +2459,7 @@ public final class Transport {
 
     /// Returns the hardware MTU for the next-hop interface if the interface
     /// supports MTU auto-configuration or has a fixed MTU, otherwise nil.
+    ///
     /// Mirrors Python's `Transport.next_hop_interface_hw_mtu`.
     public func nextHopInterfaceHwMtu(for destinationHash: Data) -> Int? {
         guard let iface = nextHopInterface(for: destinationHash) else { return nil }
@@ -2191,6 +2468,7 @@ public final class Transport {
     }
 
     /// Returns the estimated first-hop timeout for a path to `destinationHash`.
+    ///
     /// Falls back to `Constants.defaultPerHopTimeout` when no bitrate is available.
     /// Mirrors Python's `Transport.first_hop_timeout`.
     public func firstHopTimeout(for destinationHash: Data) -> TimeInterval {
@@ -2202,7 +2480,9 @@ public final class Transport {
     }
 
     /// Returns the extra proof timeout added to a forwarded link request based on
-    /// the receiving interface's bitrate. Returns 0 when interface is nil or bitrate is 0.
+    /// the receiving interface's bitrate.
+    ///
+    /// Returns 0 when interface is nil or bitrate is 0.
     /// Mirrors Python's `Transport.extra_link_proof_timeout`.
     public static func extraLinkProofTimeout(for interface: (any Interface)?) -> TimeInterval {
         guard let iface = interface, iface.bitrate > 0 else { return 0.0 }
@@ -2212,20 +2492,25 @@ public final class Transport {
     // MARK: - Identity recall
 
     /// Return the Identity associated with `destinationHash`, if a previous
-    /// announce carried it. Mirrors Python's `Identity.recall`.
+    /// announce carried it.
+    ///
+    /// Mirrors Python's `Identity.recall`.
     public func recall(identity destinationHash: Data) -> Identity? {
         lock.lock(); defer { lock.unlock() }
         return knownIdentities[destinationHash]
     }
 
     /// Return the app data from the most recent announce for `destinationHash`,
-    /// if any. Mirrors Python's `Identity.recall_app_data`.
+    /// if any.
+    ///
+    /// Mirrors Python's `Identity.recall_app_data`.
     public func recallAppData(forDestination destinationHash: Data) -> Data? {
         lock.lock(); defer { lock.unlock() }
         return knownIdentities[destinationHash]?.appData
     }
 
     /// Get the 10-byte ratchet ID of the known ratchet for a destination.
+    ///
     /// Returns nil when no ratchet exists. Mirrors Python's `Identity.current_ratchet_id()`.
     public func currentRatchetID(forDestination destinationHash: Data) -> Data? {
         lock.lock(); defer { lock.unlock() }
@@ -2401,7 +2686,9 @@ public final class Transport {
     /// When the pending entries were read, so they can expire.
     var pendingRestoresReadAt: Date?
 
-    /// How long a restored entry waits for its interface. Startup, plus slack for an interface
+    /// How long a restored entry waits for its interface.
+    ///
+    /// Startup, plus slack for an interface
     /// whose construction is slow (a serial port opening, an I2P tunnel building).
     public static let pendingRestoreWindow: TimeInterval = 30
 
@@ -2434,7 +2721,9 @@ public final class Transport {
         pendingRestoresReadAt = nil
     }
 
-    /// Remove an interface from the transport. Cleans up all per-interface state.
+    /// Remove an interface from the transport.
+    ///
+    /// Cleans up all per-interface state.
     /// Mirrors Python `Transport.remove_interface()` added in e7a317f0.
     public func deregister(interface iface: any Interface) {
         // Held under `lock` for the whole body so it's atomic with respect to a
@@ -2460,7 +2749,9 @@ public final class Transport {
     }
 
     /// Derive IFAC credentials from a network name and/or access key and attach
-    /// them to `interface`. Mirrors Python `Reticulum._add_interface` IFAC setup.
+    /// them to `interface`.
+    ///
+    /// Mirrors Python `Reticulum._add_interface` IFAC setup.
     ///
     /// - Parameters:
     ///   - interface: The interface to configure.
@@ -2496,6 +2787,7 @@ public final class Transport {
     }
 
     /// Remove a previously registered destination.
+    ///
     /// Mirrors Python's `Transport.deregister_destination`.
     public func deregister(destination: Destination) {
         lock.lock(); defer { lock.unlock() }
@@ -2509,7 +2801,9 @@ public final class Transport {
     }
 
     /// Bulk-load a path entry—used by `PathStore.apply` to rehydrate
-    /// state from disk on stack startup. No validation here: the caller is
+    /// state from disk on stack startup.
+    ///
+    /// No validation here: the caller is
     /// expected to have produced these entries from a previous live state.
     public func restore(path: PathEntry, forDestination destinationHash: Data) {
         lock.lock(); defer { lock.unlock() }
@@ -2531,6 +2825,7 @@ public final class Transport {
     }
 
     /// Directly insert an announce packet into the announce cache for testing.
+    ///
     /// Mirrors the side-effect of processing a real announce packet.
     public func cacheAnnounce(_ packet: Packet, forDestination hash: Data) {
         lock.lock(); defer { lock.unlock() }
@@ -2538,6 +2833,7 @@ public final class Transport {
     }
 
     /// Inject a synthetic path table entry for testing.
+    ///
     /// Sets `nextHopTransportID` to `nextHop` so a test can drive requestor-ID suppression.
     public func injectPath(_ destinationHash: Data,
                            nextHop: Data,
@@ -2575,7 +2871,9 @@ public final class Transport {
     }
 
     /// Drop learned ratchets whose `received` time is older than
-    /// `ratchetExpiry`. Mirrors Python's `Identity._clean_ratchets`.
+    /// `ratchetExpiry`.
+    ///
+    /// Mirrors Python's `Identity._clean_ratchets`.
     public func sweepKnownRatchets(now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
         for (hash, received) in knownRatchetTimes {
@@ -2729,6 +3027,7 @@ public final class Transport {
     }
 
     /// Load previously persisted `knownIdentities` from `url`.
+    ///
     /// Mirrors Python's `Identity.load_known_destinations()` (`Identity.py:216-240`).
     public func loadKnownDestinations(from url: URL) throws {
         guard case .map(let pairs) = try MsgPack.decode(Data(contentsOf: url)) else {
@@ -2788,6 +3087,7 @@ public final class Transport {
 
     /// Remove stale known-identity entries that no longer have an active path and
     /// haven't been heard from / used recently.
+    ///
     /// Mirrors Python's `Identity.clean_known_destinations()`.
     ///
     /// Stale conditions (matching Python logic):
@@ -2841,6 +3141,7 @@ public final class Transport {
     }
 
     /// Pin a destination so it's never removed by `cleanKnownDestinations`.
+    ///
     /// Mirrors Python `Identity._retain_destination_data(destination_hash)`.
     @discardableResult
     public func retainDestinationData(_ destinationHash: Data) -> Bool {
@@ -2851,6 +3152,7 @@ public final class Transport {
     }
 
     /// Unpin a previously retained destination so it becomes eligible for cleanup.
+    ///
     /// Mirrors Python `Identity._unretain_destination_data(destination_hash)`.
     @discardableResult
     public func unretainDestinationData(_ destinationHash: Data) -> Bool {
@@ -2861,6 +3163,7 @@ public final class Transport {
     }
 
     /// Pin all destinations associated with the given identity hash.
+    ///
     /// Mirrors Python `Identity._retain_identity(identity_hash)`.
     @discardableResult
     public func retainIdentity(_ identityHash: Data) -> Bool {
@@ -2892,6 +3195,7 @@ public final class Transport {
     }
 
     /// Create management/probe/network destinations based on the current config.
+    ///
     /// Mirrors Python's Transport.start() destination setup block.
     private func setupManagementDestinations() {
         guard let identity = transportIdentity else { return }
@@ -2993,6 +3297,7 @@ public final class Transport {
     }
 
     /// Creates `rnstransport.network` and `rnstransport.network.instance.<hex>` destinations.
+    ///
     /// Mirrors Python's `Transport.instance_destination` and `Transport.network_destination` setup.
     public func setupNetworkDestinations() {
         guard let netIdentity = networkIdentity else { return }
@@ -3065,7 +3370,9 @@ public final class Transport {
 
     // MARK: - Announce retransmission (announce_table)
 
-    /// Process pending announce retransmissions. Mirrors the announce_table
+    /// Process pending announce retransmissions.
+    ///
+    /// Mirrors the announce_table
     /// loop in Python's `Transport.jobs()`: an entry whose grace window has
     /// elapsed is retransmitted once more (`PATHFINDER_R = 1`) and then
     /// completed. Driven by the jobs timer in production; tests pass an
@@ -3137,7 +3444,9 @@ public final class Transport {
         }
     }
 
-    /// Receive-side cancel for a pending announce retransmission. Called when a
+    /// Receive-side cancel for a pending announce retransmission.
+    ///
+    /// Called when a
     /// forwarded (HEADER_2) announce arrives for a destination this node is about to
     /// retransmit. Mirrors Python's `Transport.inbound()` announce_table block:
     ///   - hops == stored + 1 → a sibling at this node's distance rebroadcast it;
@@ -3161,7 +3470,9 @@ public final class Transport {
         }
     }
 
-    /// Remove stale reverse-table entries. Proofs that never arrive within
+    /// Remove stale reverse-table entries.
+    ///
+    /// Proofs that never arrive within
     /// a reasonable window are dropped to prevent unbounded memory growth.
     private func sweepReverseTable(maxAge: TimeInterval = 600) {
         // The reverse table stores entries for proof forwarding. If a proof
@@ -3179,6 +3490,7 @@ public final class Transport {
     }
 
     /// Drop link-relay routes whose last activity is older than the link timeout.
+    ///
     /// Mirrors Python's `link_table` cull in `Transport.jobs()` (LINK_TIMEOUT =
     /// STALE_TIME * 1.25). Without this a transport relay accumulates one permanent
     /// `linkRoutes` entry per link it ever forwarded—an unbounded memory leak over
@@ -3193,6 +3505,7 @@ public final class Transport {
     // MARK: - Path expiry
 
     /// Remove paths whose `expires` timestamp has passed.
+    ///
     /// Mirrors Python's path table expiry in `Transport.jobs()`.
     public func sweepExpiredPaths(now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
@@ -3216,6 +3529,7 @@ public final class Transport {
     }
 
     /// Expire the path for a specific destination immediately.
+    ///
     /// Mirrors Python's `Transport.expire_path(destination_hash)`.
     @discardableResult
     public func expirePath(for destinationHash: Data) -> Bool {
@@ -3267,7 +3581,9 @@ public final class Transport {
     }
 
     /// Look up a receipt by packet hash and mark it delivered via
-    /// explicit proof (hash + Ed25519 signature). Mirrors Python's
+    /// explicit proof (hash + Ed25519 signature).
+    ///
+    /// Mirrors Python's
     /// `PacketReceipt.validate_proof`.
     func deliverProof(packetHash: Data, proof: Data) {
         receiptsLock.lock()
@@ -3470,6 +3786,7 @@ public final class Transport {
     }
 
     /// Broadcast on every online routing-endpoint interface *except* the one specified.
+    ///
     /// Used when relaying an announce so it doesn't go back where it
     /// came from.
     public func send(_ packet: Packet, exceptInterface excluded: Interface) {
@@ -3504,7 +3821,9 @@ public final class Transport {
         return try send(packet, generateReceipt: false)
     }
 
-    /// Default receipt timeout for a destination. Uses hop count if a path
+    /// Default receipt timeout for a destination.
+    ///
+    /// Uses hop count if a path
     /// is known; otherwise falls back to a single-hop estimate.
     /// Mirrors Python's `get_first_hop_timeout` + `TIMEOUT_PER_HOP`.
     private func defaultTimeout(for destinationHash: Data) -> TimeInterval {
@@ -4613,7 +4932,9 @@ public final class Transport {
 
     // MARK: - Path requests
 
-    /// Broadcast a path request for `destinationHash`. Any node within
+    /// Broadcast a path request for `destinationHash`.
+    ///
+    /// Any node within
     /// reach that already knows a path replies by re-broadcasting the
     /// cached announce.
     ///
@@ -5042,7 +5363,9 @@ public final class Transport {
         insertPacketHashLocked(hash)
     }
 
-    /// Adds `hash` to the current generation, rotating when it fills. Caller holds the lock.
+    /// Adds `hash` to the current generation, rotating when it fills.
+    ///
+    /// Caller holds the lock.
     private func insertPacketHashLocked(_ hash: Data) {
         packetHashlist.insert(hash)
         if packetHashlist.count >= hashlistMaxSize {
@@ -5104,7 +5427,9 @@ public final class Transport {
 
     /// The one key the hashlist is keyed on: the **full** 32-byte hash of the packet's hashable
     /// part, as Python stores `packet.packet_hash` (`Packet.py:342-344`) and `packet_filter`
-    /// compares it (`Transport.py:1417`). Every reader and writer of the hashlist must go
+    /// compares it (`Transport.py:1417`).
+    ///
+    /// Every reader and writer of the hashlist must go
     /// through this—`bugs/038` was the public filter computing the 16-byte truncated hash
     /// against a list of 32-byte entries, so "seen" was always false.
     private static func packetHashlistKey(_ packet: Packet) -> Data? {
@@ -5129,13 +5454,16 @@ public final class Transport {
     // MARK: - Proof generation
 
     /// Public entry point for `Packet.prove(destination:)`.
+    ///
     /// Mirrors Python's `Transport.packet_prove(packet, destination)`.
     public func provePacket(_ packet: Packet, from sourceInterface: any Interface, destination: Destination) {
         sendProof(for: packet, from: sourceInterface, destination: destination)
     }
 
     /// Send an explicit delivery proof for `packet` back on the interface it
-    /// arrived on. Wire format: `[32-byte full hash][64-byte Ed25519 sig]`.
+    /// arrived on.
+    ///
+    /// Wire format: `[32-byte full hash][64-byte Ed25519 sig]`.
     ///
     /// The proof is sent as a PROOF packet whose `destinationHash` is the
     /// truncated hash of the original packet (so the sender can match it to
@@ -5245,7 +5573,9 @@ public final class Transport {
     }
 
     /// Extract the emission timestamp from an announce's random hash
-    /// (bytes [5..9] = 5-byte big-endian unix seconds). Matches Python's
+    /// (bytes [5..9] = 5-byte big-endian unix seconds).
+    ///
+    /// Matches Python's
     /// `Transport.announce_emitted(packet)`.
     private func announceEmitted(_ packet: Packet) -> TimeInterval {
         let body = packet.data
@@ -5262,6 +5592,7 @@ public final class Transport {
     }
 
     /// Extract the 10-byte announce random blob (the announce's random hash).
+    ///
     /// Mirrors Python's `random_blob = packet.data[KEYSIZE+NAME_HASH : +10]`.
     /// Returns `nil` if the announce body is too short.
     private func announceRandomBlob(_ packet: Packet) -> Data? {
@@ -5272,6 +5603,7 @@ public final class Transport {
     }
 
     /// Drain any queued announces onto their respective interfaces.
+    ///
     /// Called from the jobs loop every `jobInterval` seconds.
     private func drainAnnounceQueues() {
         let now = Date().timeIntervalSince1970
@@ -5377,7 +5709,9 @@ public final class Transport {
     // MARK: - Tunnel synthesis
 
     /// Send a tunnel-synthesize packet on `interface` to establish this transport as
-    /// a tunnel endpoint for that interface. Matches Python `Transport.synthesize_tunnel`.
+    /// a tunnel endpoint for that interface.
+    ///
+    /// Matches Python `Transport.synthesize_tunnel`.
     ///
     /// Wire layout of the DATA payload (176 bytes):
     ///   [  0.. 63] 64 bytes: combined public key (X25519 + Ed25519)
@@ -5423,7 +5757,9 @@ public final class Transport {
         interface.wantsTunnel = false
     }
 
-    /// Handle an incoming tunnel-synthesize packet. Validates the signature and
+    /// Handle an incoming tunnel-synthesize packet.
+    ///
+    /// Validates the signature and
     /// creates a tunnel entry for the sending transport node.
     /// Matches Python `Transport.tunnel_synthesize_handler`.
     private func handleTunnelSynthesizePacket(data: Data, from interface: any Interface) {

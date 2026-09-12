@@ -42,7 +42,9 @@ final class SocketOptionsTests: XCTestCase {
         XCTAssertTrue(options.noDelay, "TCPInterface.py:149, :241 — TCP_NODELAY on every socket")
     }
 
-    /// The shared-instance option set is `TCP_NODELAY` only. Python's `LocalClientInterface`
+    /// The shared-instance option set is `TCP_NODELAY` only.
+    ///
+    /// Python's `LocalClientInterface`
     /// calls no `set_timeouts_*` on either its dial (`LocalInterface.py:147`) or the sockets its
     /// server accepts (`:100`), so enabling keepalive there would exceed the reference.
     func testFactoryLeavesKeepaliveOffForTheSharedInstanceOptionSet() {
@@ -113,7 +115,9 @@ final class SocketOptionsTests: XCTestCase {
 
     /// An accepted connection isn't constructed by this port at all—Network.framework derives
     /// it from the listener's parameters—so routing the listener through the factory is what
-    /// covers every accepted connection. Asserted rather than assumed.
+    /// covers every accepted connection.
+    ///
+    /// Asserted rather than assumed.
     func testAcceptedConnectionInheritsTheListenerParameters() throws {
         let server = TCPServerInterface(name: "optaccept", port: 45_934)
         try server.start()

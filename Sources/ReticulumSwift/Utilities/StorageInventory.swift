@@ -26,7 +26,9 @@ import Foundation
 /// in `tri-test` compare it against what a live Python daemon writes.
 public enum StorageInventory {
 
-    /// Whether the entry names a file or a directory. Both matter: the reference creates
+    /// Whether the entry names a file or a directory.
+    ///
+    /// Both matter: the reference creates
     /// `storage/blackhole` with `os.makedirs` (`Reticulum.py:324`), so getting the kind wrong is
     /// as incompatible as getting the name wrong.
     public enum Kind {
@@ -130,19 +132,25 @@ public extension StorageInventory.Entry {
 
     // The configuration directory itself.
 
-    /// `<configdir>/config`—the INI configuration file. Python: `Reticulum.py:245`.
+    /// `<configdir>/config`—the INI configuration file.
+    ///
+    /// Python: `Reticulum.py:245`.
     static let config = StorageInventory.Entry(
         ["config"], .file,
         authority: .reference("Reticulum.py:245")
     )
 
-    /// `<configdir>/storage`. Python: `Reticulum.py:246`.
+    /// `<configdir>/storage`.
+    ///
+    /// Python: `Reticulum.py:246`.
     static let storage = StorageInventory.Entry(
         ["storage"], .directory,
         authority: .reference("Reticulum.py:246")
     )
 
-    /// `<configdir>/interfaces`—external interface modules. Python: `Reticulum.py:252`.
+    /// `<configdir>/interfaces`—external interface modules.
+    ///
+    /// Python: `Reticulum.py:252`.
     static let interfaceModules = StorageInventory.Entry(
         ["interfaces"], .directory,
         authority: .reference("Reticulum.py:252")
@@ -150,7 +158,9 @@ public extension StorageInventory.Entry {
 
     // Identity material.
 
-    /// `storage/identity`—this node's primary identity. Python: `Identity.to_file` /
+    /// `storage/identity`—this node's primary identity.
+    ///
+    /// Python: `Identity.to_file` /
     /// `Reticulum.py` identity handling.
     static let identity = StorageInventory.Entry(
         ["storage", "identity"], .file,
@@ -158,13 +168,17 @@ public extension StorageInventory.Entry {
     )
 
     /// `storage/transport_identity`—the transport identity, loaded at `Transport.start` and
-    /// created if absent. Python: `Transport.py:223-231`.
+    /// created if absent.
+    ///
+    /// Python: `Transport.py:223-231`.
     static let transportIdentity = StorageInventory.Entry(
         ["storage", "transport_identity"], .file,
         authority: .reference("Transport.py:223-231")
     )
 
-    /// `storage/ratchets`—per-destination ratchet files. Python: `Identity.py:293,426,453,487`.
+    /// `storage/ratchets`—per-destination ratchet files.
+    ///
+    /// Python: `Identity.py:293,426,453,487`.
     static let ratchets = StorageInventory.Entry(
         ["storage", "ratchets"], .directory,
         authority: .reference("Identity.py:293,426,453,487")
@@ -197,6 +211,7 @@ public extension StorageInventory.Entry {
     // Routing state. These four are `bugs/029`: the reference's names and encodings.
 
     /// `storage/known_destinations`—umsgpack dict, hash → 5-element list.
+    ///
     /// Python: `Identity.py:198` (write), `:220` (read).
     static let knownDestinations = StorageInventory.Entry(
         ["storage", "known_destinations"], .file,
@@ -204,6 +219,7 @@ public extension StorageInventory.Entry {
     )
 
     /// `storage/destination_table`—umsgpack list of 8-element entries.
+    ///
     /// Python: `Transport.py:3405-3408` (write), `:307-360` (read).
     static let destinationTable = StorageInventory.Entry(
         ["storage", "destination_table"], .file,
@@ -211,6 +227,7 @@ public extension StorageInventory.Entry {
     )
 
     /// `storage/tunnels`—umsgpack list of 4-element entries.
+    ///
     /// Python: `Transport.py:3490-3493` (write), `:368-405` (read).
     static let tunnels = StorageInventory.Entry(
         ["storage", "tunnels"], .file,
@@ -218,6 +235,7 @@ public extension StorageInventory.Entry {
     )
 
     /// `storage/packet_hashlist.raw`—raw concatenated 32-byte hashes.
+    ///
     /// Python: `Transport.py:3314-3316` (write), `:242-251` (read).
     static let packetHashlist = StorageInventory.Entry(
         ["storage", "packet_hashlist.raw"], .file,
@@ -226,7 +244,9 @@ public extension StorageInventory.Entry {
 
     // Caches.
 
-    /// `storage/cache`. Python: `Reticulum.py:247`.
+    /// `storage/cache`.
+    ///
+    /// Python: `Reticulum.py:247`.
     static let cache = StorageInventory.Entry(
         ["storage", "cache"], .directory,
         authority: .reference("Reticulum.py:247")
@@ -234,6 +254,7 @@ public extension StorageInventory.Entry {
 
     /// `storage/cache/announces`—one file per cached announce, keyed by full packet hash in
     /// lowercase hex, holding umsgpack `[raw, interface_name]`.
+    ///
     /// Python: `Transport.py:2646-2657` (write), `:2663-2690` (read).
     ///
     /// Path-table restore depends on this: the reference discards any `destination_table` entry
@@ -243,7 +264,9 @@ public extension StorageInventory.Entry {
         authority: .reference("Transport.py:2646-2657,2663-2690")
     )
 
-    /// `storage/resources`—in-progress resource transfers. Python: `Reticulum.py:248`.
+    /// `storage/resources`—in-progress resource transfers.
+    ///
+    /// Python: `Reticulum.py:248`.
     static let resources = StorageInventory.Entry(
         ["storage", "resources"], .directory,
         authority: .reference("Reticulum.py:248")
@@ -257,13 +280,16 @@ public extension StorageInventory.Entry {
     )
 
     /// `storage/blackhole`—a *directory* in the reference, created with `os.makedirs`.
+    ///
     /// Python: `Reticulum.py:250,324`.
     static let blackhole = StorageInventory.Entry(
         ["storage", "blackhole"], .directory,
         authority: .reference("Reticulum.py:250,324")
     )
 
-    /// `storage/blackhole/local`—this node's own blackhole entries, umsgpack. The rest of the
+    /// `storage/blackhole/local`—this node's own blackhole entries, umsgpack.
+    ///
+    /// The rest of the
     /// directory is one file per remote source, named by its identity hash (`Discovery.py:794`,
     /// read at `Transport.py:3579-3589`).
     static let blackholeLocal = StorageInventory.Entry(
@@ -271,7 +297,9 @@ public extension StorageInventory.Entry {
         authority: .reference("Transport.py:3652-3657")
     )
 
-    /// `storage/blackhole/local.tmp`—the write-then-rename temporary for the preceding entry. The
+    /// `storage/blackhole/local.tmp`—the write-then-rename temporary for the preceding entry.
+    ///
+    /// The
     /// reference's own name: `tmppath = f"{localpath}.tmp"`.
     static let blackholeLocalTemp = StorageInventory.Entry(
         ["storage", "blackhole", "local.tmp"], .file,
@@ -294,13 +322,16 @@ public extension StorageInventory.Entry {
     /// `storage/discovery/interfaces`—one msgpack record per discovered interface, named by
     /// `hexrep(discovery_hash, delimit=False)`, holding the announce's `info` dict plus
     /// `discovered`, `last_heard` and `heard_count`.
+    ///
     /// Python: `Discovery.py:451-452` (path), `:510-560` (write), `:463-467` (read).
     static let discoveredInterfaces = StorageInventory.Entry(
         ["storage", "discovery", "interfaces"], .directory,
         authority: .reference("Discovery.py:451-452,510-560")
     )
 
-    /// `storage/i2p`—the I2P interface's own state. The reference composes
+    /// `storage/i2p`—the I2P interface's own state.
+    ///
+    /// The reference composes
     /// `rns_storagepath + "/i2p"` and creates it on interface construction
     /// (`I2PInterface.py:90-91`); the port hands it to the embedded i2pd daemon as its data
     /// directory when a config block constructs the interface (`bugs/031`).

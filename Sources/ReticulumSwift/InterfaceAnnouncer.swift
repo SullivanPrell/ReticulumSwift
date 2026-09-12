@@ -74,7 +74,9 @@ public final class InterfaceAnnouncer {
 
     // MARK: - State
 
-    /// The destination discovery announces are emitted from. Owned by the network identity when
+    /// The destination discovery announces are emitted from.
+    ///
+    /// Owned by the network identity when
     /// one is configured, so a segmented network's announces are attributable to the segment
     /// (`Discovery.py:64-67`).
     public let discoveryDestination: Destination
@@ -89,6 +91,7 @@ public final class InterfaceAnnouncer {
     private let lock = NSLock()
     private var isRunning = false
     /// Incremented on every `start()`, so a `stop()` + `start()` can't leave two loops running.
+    ///
     /// The same shape as `BlackholeUpdater`.
     private var generation = 0
 
@@ -331,6 +334,7 @@ public final class InterfaceAnnouncer {
     // MARK: - Sanitize
 
     /// Python: `InterfaceAnnouncer.sanitize` (`Discovery.py:99-104`)—newlines out, then trim.
+    ///
     /// Every published string goes through it, so a stray newline in a config value can't split
     /// the config entry a discovering node renders.
     static func sanitize(_ value: String?) -> String? {

@@ -71,7 +71,9 @@ final class InterfaceSynthesisTests: XCTestCase {
     }
 
     /// Python normalises `remote`/`port` onto `target_host`/`target_port` before
-    /// building a backbone interface (Reticulum.py:988-992). RNS's own discovery
+    /// building a backbone interface (Reticulum.py:988-992).
+    ///
+    /// RNS's own discovery
     /// writes the `remote` form, so a config that uses it must synthesize rather
     /// than being dropped for a missing `target_host`.
     func testBackboneInterfaceAcceptsRemoteAndPortAliases() throws {

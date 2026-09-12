@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for path response announces (announced in response to path requests).
+///
 /// Path response announces have context = .pathResponse and aren't forwarded.
 final class PathResponseAnnounceTests: XCTestCase {
 

@@ -19,7 +19,9 @@ import Foundation
 
 // MARK: - Byte streams
 
-/// A sequential byte source. Python: an `io.BufferedReader`.
+/// A sequential byte source.
+///
+/// Python: an `io.BufferedReader`.
 public protocol RNIDByteReader: AnyObject {
     /// Read up to `count` bytes, returning fewer only at end of stream.
     ///
@@ -30,7 +32,9 @@ public protocol RNIDByteReader: AnyObject {
     func read(upTo count: Int) throws -> Data
 }
 
-/// A sequential byte sink. Python: an `io.BufferedWriter`.
+/// A sequential byte sink.
+///
+/// Python: an `io.BufferedWriter`.
 public protocol RNIDByteWriter: AnyObject {
     /// Append `data`, returning the number of bytes written. Python: `file.write(data)`.
     @discardableResult
@@ -178,7 +182,9 @@ public final class RNIDRealFileSystem: RNIDFileSystem {
 /// (`-g` and `-e`'s `-w` are *not* expanded; `-d`'s `-w` is) are directly assertable.
 public final class RNIDMemoryFileSystem: RNIDFileSystem {
     public private(set) var files: [String: Data]
-    /// Substituted for a leading `~`. Python: the user's home directory.
+    /// Substituted for a leading `~`.
+    ///
+    /// Python: the user's home directory.
     public var homeDirectory: String
 
     public init(files: [String: Data] = [:], homeDirectory: String = "/home/test") {
@@ -253,7 +259,9 @@ public enum RNIDFileSystemError: Error, CustomStringConvertible, Equatable {
 
 // MARK: - Terminal output
 
-/// Everything `rnid` prints. Python: bare `print()` calls—no color, no ANSI, no stderr.
+/// Everything `rnid` prints.
+///
+/// Python: bare `print()` calls—no color, no ANSI, no stderr.
 public protocol RNIDOutput: AnyObject {
     /// Python: `print(text)`.
     func line(_ text: String)
@@ -279,13 +287,17 @@ public final class RNIDCapturingOutput: RNIDOutput {
 
 // MARK: - Injected side effects
 
-/// Composes a message in `$EDITOR`. Python: `get_editor_content()` (rnid.py:1034-1059),
+/// Composes a message in `$EDITOR`.
+///
+/// Python: `get_editor_content()` (rnid.py:1034-1059),
 /// which needs `subprocess` and therefore can't live in the library target.
 public protocol RNIDEditor: AnyObject {
     func composeMessage() throws -> Data
 }
 
-/// Waits for a network path. Python: `spin(until, msg, timeout)` (rnid.py:1061-1076).
+/// Waits for a network path.
+///
+/// Python: `spin(until, msg, timeout)` (rnid.py:1061-1076).
 ///
 /// The return value is deliberately advisory: Python **discards** `spin`'s result and
 /// re-invokes the predicate itself (rnid.py:259), so the resolver must do the same.

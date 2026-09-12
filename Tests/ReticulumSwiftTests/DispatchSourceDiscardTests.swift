@@ -41,7 +41,9 @@ final class DispatchSourceDiscardTests: XCTestCase {
     // MARK: - The lifecycle
 
     /// Executes the exact sequence that traps when done wrong: create, never resume, discard,
-    /// release. Passing means the process survived.
+    /// release.
+    ///
+    /// Passing means the process survived.
     func testDiscardingAnUnstartedSourceIsSafe() {
         for _ in 0..<64 {
             let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))

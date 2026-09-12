@@ -24,7 +24,9 @@ import Darwin
 /// can continue to use `TCPServerInterface` + `NWListener`.
 public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -59,7 +61,9 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
@@ -75,7 +79,9 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     private var clients: [PosixClient] = []
 
     /// Descriptors this server has accepted, for tests that assert the socket options actually
-    /// landed. Unlike the Network.framework paths, a POSIX descriptor has an authoritative
+    /// landed.
+    ///
+    /// Unlike the Network.framework paths, a POSIX descriptor has an authoritative
     /// readback—`getsockopt`—so `bugs/023` is verifiable here rather than only structural.
     private var acceptedDescriptors: [Int32] = []
     var lastAcceptedDescriptorForTesting: Int32? {
@@ -84,7 +90,9 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     var acceptedDescriptorHandlerForTesting: ((Int32) -> Void)?
 
     /// Python `LocalServerInterface.__str__` (`LocalInterface.py:496-498`) returns the literal
-    /// `"Shared Instance["+str(bind_port)+"]"`. Shown in rnstatus output; distinct from the
+    /// `"Shared Instance["+str(bind_port)+"]"`.
+    ///
+    /// Shown in rnstatus output; distinct from the
     /// client-side `"LocalInterface[…]"`.
     ///
     /// `"Shared Instance"` is hardcoded here, not read from `name`. Python's
@@ -96,18 +104,23 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     /// the audit's list of nine.
     public var displayName: String { "Shared Instance[\(port)]" }
 
-    /// This class is Python's `LocalServerInterface`; only the Swift name differs. Reported
+    /// This class is Python's `LocalServerInterface`; only the Swift name differs.
+    ///
+    /// Reported
     /// verbatim in the stats payload, where a Python `rnstatus -d` prints it and would
     /// otherwise show "PosixTCPServer", an interface kind that doesn't exist in RNS.
     public var statsTypeName: String { "LocalServerInterface" }
 
     /// Python hardcodes `self.name = "Reticulum"` on `LocalServerInterface`
     /// (RNS/Interfaces/LocalInterface.py:391), while `__str__` stays "Shared Instance[…]".
+    ///
     /// Swift uses `name` to identify the interface internally, so the published short name
     /// is set here rather than by renaming the interface.
     public var statsShortName: String { "Reticulum" }
 
-    /// Number of connected clients. Used by buildInterfaceStats for rnstatus.
+    /// Number of connected clients.
+    ///
+    /// Used by buildInterfaceStats for rnstatus.
     public var clientCount: Int {
         lock.lock(); defer { lock.unlock() }
         return clients.count

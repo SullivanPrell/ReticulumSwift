@@ -23,7 +23,9 @@ public enum HMACSHA256 {
         return constantTimeEquals(computed, expected)
     }
 
-    /// Constant-time byte comparison. Avoids timing-channel leaks during
+    /// Constant-time byte comparison.
+    ///
+    /// Avoids timing-channel leaks during
     /// HMAC verification.
     public static func constantTimeEquals(_ a: Data, _ b: Data) -> Bool {
         guard a.count == b.count else { return false }

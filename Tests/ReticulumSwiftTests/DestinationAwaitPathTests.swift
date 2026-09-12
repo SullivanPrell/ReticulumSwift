@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for `Destination.awaitPath()`.
+///
 /// Mirrors Python's convenience wrapper that requests a path and blocks.
 final class DestinationAwaitPathTests: XCTestCase {
 

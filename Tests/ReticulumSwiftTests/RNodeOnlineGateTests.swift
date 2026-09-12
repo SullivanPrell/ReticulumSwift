@@ -15,7 +15,9 @@ import XCTest
 /// (bounded), and on no answer closes the port and stays offline (`RNodeInterface.py:432-448`);
 /// on detect it runs `initRadio()` then `validateRadioState()`, and only then sets
 /// `interface_ready = True` / `online = True` (`:457-462`)—a parameter mismatch aborts
-/// startup and closes the port (`:463-467`). The port's `start()` was `open(); isOnline = true`
+/// startup and closes the port (`:463-467`).
+///
+/// The port's `start()` was `open(); isOnline = true`
 /// with `detect`/`initRadio`/`validateRadioState` production-dead (zero call sites): a
 /// host-mode RNode never received CMD_FREQUENCY/…/CMD_RADIO_STATE ON, so its radio stayed off
 /// while `rnstatus` reported the interface Up. These tests drive `start()` end to end against
@@ -24,7 +26,9 @@ import XCTest
 final class RNodeOnlineGateTests: XCTestCase {
 
     /// Answers a detect write with a detect response plus echoes of every radio parameter—what
-    /// real firmware does as each `set*` command lands. Echo values are configurable so a
+    /// real firmware does as each `set*` command lands.
+    ///
+    /// Echo values are configurable so a
     /// mismatch can be staged; defaults echo whatever the interface was configured with.
     private final class EchoingRNodeTransport: RNodeTransport {
         var onTransportError: ((Error) -> Void)?
@@ -33,7 +37,9 @@ final class RNodeOnlineGateTests: XCTestCase {
         private(set) var closed = false
         private(set) var writes: [Data] = []
 
-        /// The interface whose configured values to echo. Set after interface construction.
+        /// The interface whose configured values to echo.
+        ///
+        /// Set after interface construction.
         weak var echoSource: RNodeInterface?
         /// Override the echoed bandwidth to stage a mismatch.
         var bandwidthOverride: UInt32?
@@ -150,7 +156,9 @@ final class RNodeOnlineGateTests: XCTestCase {
 
     /// Python None-guards only the frequency comparison; bandwidth, txpower, sf and state
     /// compare unconditionally, so a device that echoed *nothing* is a mismatch
-    /// (`RNodeInterface.py:670-685`). The port guarded every comparison with `if let`, which
+    /// (`RNodeInterface.py:670-685`).
+    ///
+    /// The port guarded every comparison with `if let`, which
     /// made validation vacuously true against total silence.
     func testValidationFailsWhenNothingWasEchoed() {
         let iface = configuredInterface(transport: SilentRNodeTransport())

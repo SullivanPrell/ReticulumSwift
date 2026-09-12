@@ -22,7 +22,9 @@ public enum RNXResultRenderer {
     /// Transfer accounting the `-d` block needs, lifted off `RequestReceipt`.
     public struct Metrics: Equatable {
         /// Swift's `RequestReceipt.requestSize` is a non-optional `Int`; Python's may be
-        /// None, and the addition is guarded (rnx.py:475). Optional here for parity.
+        /// None, and the addition is guarded (rnx.py:475).
+        ///
+        /// Optional here for parity.
         public var requestSize: Int?
         public var responseSize: Int?
         public var sentAt: Date
@@ -37,7 +39,9 @@ public enum RNXResultRenderer {
     }
 
     public struct Rendered: Equatable {
-        /// Raw remote stdout. Python does `stdout.decode("utf-8")` with no error handler,
+        /// Raw remote stdout.
+        ///
+        /// Python does `stdout.decode("utf-8")` with no error handler,
         /// so non-UTF-8 remote output tracebacks the client; writing the raw bytes is
         /// better behaviour but means binary payloads won't match Python.
         public var stdoutBytes: Data
@@ -149,7 +153,9 @@ public enum RNXResultRenderer {
     }
 
     /// Python's `str(float)`—the shortest representation that round-trips, always
-    /// carrying at least one decimal digit. Swift's default `Double` description matches.
+    /// carrying at least one decimal digit.
+    ///
+    /// Swift's default `Double` description matches.
     public static func pythonRepr(_ value: Double) -> String { "\(value)" }
 
     /// Python's `str(round(value, decimals))`.

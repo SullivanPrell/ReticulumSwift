@@ -20,7 +20,9 @@ import XCTest
 final class MockSAMSocket: SAMSocket {
     private let lock = NSLock()
 
-    /// Replies returned (in order) by `readLine`. Lines are without trailing newline.
+    /// Replies returned (in order) by `readLine`.
+    ///
+    /// Lines are without trailing newline.
     var scriptedReplies: [String]
     /// Every chunk passed to `write`, in order.
     private(set) var written: [Data] = []

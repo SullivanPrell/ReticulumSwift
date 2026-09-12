@@ -18,6 +18,7 @@ import Foundation
 public enum RNXApp {
 
     /// Application name used for RNS destinations.
+    ///
     /// Python: `APP_NAME = "rnx"`.
     public static let appName: String = "rnx"
 

@@ -109,12 +109,15 @@ public enum RNIDCommandLine {
     }
 
     /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
-    /// error. Derived from ``helpText`` so the two can't drift.
+    /// error.
+    ///
+    /// Derived from ``helpText`` so the two can't drift.
     public static var usageText: String {
         helpText.components(separatedBy: "\n\n")[0]
     }
 
     /// The whole `argparse` error page: the usage block, then `rnid: error: detail`.
+    ///
     /// Python prints *only* the usage block here, never the full options table.
     public static func errorText(_ detail: String) -> String {
         "\(usageText)\n\(program): error: \(detail)"

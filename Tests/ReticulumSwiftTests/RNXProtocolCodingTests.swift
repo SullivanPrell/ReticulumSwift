@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Wire coding for the rnx request/response arrays.
+///
 /// Python reference: RNS/Utilities/rnx.py:155-160 (request decode), :167-252 (result build),
 /// :379-385 (request build), :441-457 (result decode).
 final class RNXProtocolCodingTests: XCTestCase {

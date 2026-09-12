@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for PHY stats (RSSI/SNR/quality) carried on received Packets.
+///
 /// Mirrors Python's `Packet.get_rssi()`, `Packet.get_snr()`, `Packet.get_q()`.
 final class PacketPhyStatsTests: XCTestCase {
 

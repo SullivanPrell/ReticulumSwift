@@ -29,13 +29,17 @@ public struct RNPathOptions: Equatable {
     public var dropAnnounces: Bool = false
     /// `-x` / `--drop-via`
     public var dropVia: Bool = false
-    /// `-w`—spinner deadline in the default mode. Default 15.
+    /// `-w`—spinner deadline in the default mode.
+    ///
+    /// Default 15.
     public var timeout: TimeInterval = RNPathApp.defaultTimeout
     /// `-R`—transport identity hash of the remote instance to manage.
     public var remote: String?
     /// `-i`—identity file used to authenticate remote management.
     public var managementIdentityPath: String?
-    /// `-W`—timeout for the path request toward the remote instance. Default 15.
+    /// `-W`—timeout for the path request toward the remote instance.
+    ///
+    /// Default 15.
     public var remoteTimeout: TimeInterval = RNPathApp.defaultTimeout
     /// `-b` / `--blackholed`
     public var blackholed: Bool = false
@@ -52,15 +56,21 @@ public struct RNPathOptions: Equatable {
     public var blackholedList: Bool = false
     /// `-j` / `--json`—read only by `-t` and `-r`.
     public var json: Bool = false
-    /// First positional. Overloaded per mode: a destination hash for `-t`/`-r`/`-d`/`-x`
+    /// First positional.
+    ///
+    /// Overloaded per mode: a destination hash for `-t`/`-r`/`-d`/`-x`
     /// and the default mode, an identity hash for `-B`/`-U`/`-p`, and a plain substring
     /// *filter* for `-b`.
     public var destination: String?
     /// Second positional—the filter for the remote blackhole list view.
     public var listFilter: String?
-    /// `-v`, repeatable. Log level is `clamp(3 + verbosity, 0, 8)`.
+    /// `-v`, repeatable.
+    ///
+    /// Log level is `clamp(3 + verbosity, 0, 8)`.
     public var verbosity: Int = 0
-    /// `program_setup(no_output=…)`. The CLI never sets it; kept because it gates a
+    /// `program_setup(no_output=…)`.
+    ///
+    /// The CLI never sets it; kept because it gates a
     /// dozen prints in the original and the runner reproduces that gating.
     public var noOutput: Bool = false
 
@@ -136,7 +146,9 @@ public final class TransportPathResolver: RNPathPathResolver {
 public final class RNPathRunner {
 
     /// Issues one request over the already-established management link and returns the raw
-    /// response body. Python: `remote_link.request("/path", data=[...])` plus the
+    /// response body.
+    ///
+    /// Python: `remote_link.request("/path", data=[...])` plus the
     /// `while not receipt.concluded()` spin.
     public typealias RemoteRequestHandler = (_ path: String, _ value: MsgPack.Value) throws -> Data
 
@@ -192,7 +204,9 @@ public final class RNPathRunner {
     }
 
     /// The three success-path clear strings at rnpath.py:162, 265 and 319 are emitted
-    /// **ungated** by `no_output`, unlike every failure-path print. Routing them through a
+    /// **ungated** by `no_output`, unlike every failure-path print.
+    ///
+    /// Routing them through a
     /// gated sink would drop them and mis-align the following output.
     private func progressUngated(_ text: String) {
         progressSink?(text)

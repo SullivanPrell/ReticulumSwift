@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// A transport node that can't answer a path request from its own tables amplifies it: one
-/// inbound request becomes one outbound request per other interface. RNS 1.5.x added two tables
+/// inbound request becomes one outbound request per other interface.
+///
+/// RNS 1.5.x added two tables
 /// that bound the amplification and pay for it with a compensating retransmit.
 ///
 /// `inflight_path_requests` marks a destination as already under search, so concurrent requests

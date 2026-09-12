@@ -58,10 +58,14 @@ public final class RNXListener {
     /// Python: `allow_all`, set by `-n/--noauth`.
     public private(set) var allowAll: Bool
 
-    /// Log sink. Defaults to `Reticulum.log`, which is what `RNS.log` maps to.
+    /// Log sink.
+    ///
+    /// Defaults to `Reticulum.log`, which is what `RNS.log` maps to.
     public var onLog: ((String, Reticulum.LogLevel) -> Void)?
 
-    /// Queue the (blocking) executor runs on. Mirrors Python's per-request daemon thread
+    /// Queue the (blocking) executor runs on.
+    ///
+    /// Mirrors Python's per-request daemon thread
     /// (Link.py:985-987). Inject a serial/synchronous queue in tests.
     public var executionQueue: DispatchQueue
 
@@ -273,7 +277,9 @@ public final class RNXListener {
 
     // MARK: - Allow-list parsing
 
-    /// Python: rnx.py:80-93. Length is checked before content, and both failures print a
+    /// Python: rnx.py:80-93.
+    ///
+    /// Length is checked before content, and both failures print a
     /// message and `exit(1)`.
     public static func parseAllowedHash(_ hex: String) throws -> Data {
         guard hex.count == RNXApp.destinationHexLength else {
@@ -286,7 +292,9 @@ public final class RNXListener {
     }
 
     /// Python: rnx.py:94-108—search `/etc/rnx`, `~/.config/rnx`, `~/.rnx` in order for
-    /// `allowed_identities`; first hit wins. Strip every `\r`, split on `\n`, and keep only
+    /// `allowed_identities`; first hit wins.
+    ///
+    /// Strip every `\r`, split on `\n`, and keep only
     /// lines whose length is exactly 32, so blank lines and comments are tolerated.
     ///
     /// A 32-character non-hex line raises in Python (`bytes.fromhex`) and the utility
@@ -326,13 +334,16 @@ public final class RNXListener {
     // MARK: - Identity
 
     /// `<configDir>/storage/identities/rnx`.
+    ///
     /// Python: `RNS.Reticulum.identitypath+"/"+APP_NAME`—rnx.py:53.
     public static func defaultIdentityURL(configDir: URL) -> URL {
         StorageInventory.url(.identities, in: configDir)
             .appendingPathComponent(RNXApp.identityFileName)
     }
 
-    /// Python: `prepare_identity`—rnx.py:50-61. Loads the 64-byte raw private blob if
+    /// Python: `prepare_identity`—rnx.py:50-61.
+    ///
+    /// Loads the 64-byte raw private blob if
     /// the file exists, otherwise logs at LOG_INFO, generates one and writes it.
     ///
     /// The parent directory is created first: Python's `Reticulum.__init__` does that

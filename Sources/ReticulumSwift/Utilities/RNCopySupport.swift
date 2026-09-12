@@ -28,46 +28,58 @@ import Foundation
 public extension RNCopyApp {
 
     /// Request path served by a listener started with `-F/--allow-fetch`.
+    ///
     /// Python: `destination.register_request_handler("fetch_file", …)` (rncp.py:216,218).
     static let fetchRequestPath: String = "fetch_file"
 
     /// Wire key for the fetch handler: `truncated_hash(b"fetch_file")`.
+    ///
     /// Equals `4ce505754cbdc8c2c8775a3006a712f0`.
     static var fetchRequestPathHash: Data { Hashes.truncatedHash(Data(fetchRequestPath.utf8)) }
 
     /// Single aspect of the rncp destination—full name `rncp.receive.<identity hash>`.
+    ///
     /// Python: `RNS.Destination(identity, IN, SINGLE, APP_NAME, "receive")` (rncp.py:112).
     static let receiveAspect: String = "receive"
 
     /// Basename of the default identity file, `<configdir>/storage/identities/rncp`.
+    ///
     /// Python: `identity_path = RNS.Reticulum.identitypath+"/"+APP_NAME` (rncp.py:57).
     static let identityFileName: String = appName
 
-    /// Name of the on-disk allow-list. Python: `allowed_file_name` (rncp.py:124).
+    /// Name of the on-disk allow-list.
+    ///
+    /// Python: `allowed_file_name` (rncp.py:124).
     static let allowedIdentitiesFileName: String = "allowed_identities"
 
     /// Number of hex characters in an identity/destination hash argument.
+    ///
     /// Python: `dest_len = (RNS.Reticulum.TRUNCATED_HASHLENGTH//8)*2` → 32 (rncp.py:122).
     static let destinationHexLength: Int = Constants.truncatedHashLength * 2
 
     /// Rolling-window sample cap of the transfer-rate meter.
+    ///
     /// Python: `stats_max = 32` (rncp.py:325).
     static let statsMax: Int = 32
 
     /// Braille spinner alphabet, advanced modulo 7 every 0.1 s.
+    ///
     /// Python: `syms = "⢄⢂⢁⡁⡈⡐⡠"` (rncp.py:403).
     static let spinnerFrames: [Character] = Array("⢄⢂⢁⡁⡈⡐⡠")
 
     /// ANSI "erase entire line, carriage return".
+    ///
     /// Python: `erase_str = "\33[2K\r"` (rncp.py:73).
     static let eraseString: String = "\u{1B}[2K\r"
 
     /// Single space appended by `print(end=es)` in the progress loops.
+    ///
     /// Python: `es = " "` (rncp.py:72). NOTE `send`'s inner `progress_update`
     /// deliberately shadows this with a two-space local (rncp.py:754).
     static let endSpace: String = " "
 
     /// Ordered candidate locations of the allow-list file; first hit wins.
+    ///
     /// Python: rncp.py:126-131.
     static func allowedIdentitiesSearchPaths(home: String) -> [String] {
         ["/etc/rncp/\(allowedIdentitiesFileName)",
@@ -100,7 +112,9 @@ public extension RNCopyApp {
 
 public extension RNCopyApp {
 
-    /// rncp's own `size_str`. Python: rncp.py:887-904.
+    /// rncp's own `size_str`.
+    ///
+    /// Python: rncp.py:887-904.
     ///
     /// Identical to the `size_str` in rnstatus.py and rnx.py, and therefore already
     /// implemented byte-for-byte by ``UtilityFormatting/sizeStr(_:suffix:)``—including
@@ -254,7 +268,9 @@ public extension RNCopyApp {
             .filter { $0.count == destinationHexLength }
     }
 
-    /// Rejection reasons for an `-a` / allow-list entry. The messages are the exact
+    /// Rejection reasons for an `-a` / allow-list entry.
+    ///
+    /// The messages are the exact
     /// `ValueError` texts Python raises (rncp.py:159,164) and prints.
     enum AllowedIdentityError: Swift.Error, Equatable, CustomStringConvertible {
         case invalidLength(String)
@@ -287,7 +303,9 @@ public extension RNCopyApp {
     }
 
     /// The outcome of locating, parsing and merging the `allowed_identities` file with the
-    /// `-a` entries. Python: rncp.py:122-150.
+    /// `-a` entries.
+    ///
+    /// Python: rncp.py:122-150.
     struct AllowedIdentitiesLoad: Equatable {
         /// The `-a` entries merged with the file entries, in Python's order.
         public let merged: [String]
@@ -296,7 +314,9 @@ public extension RNCopyApp {
         public let fileEntryCount: Int
         /// The file that was read, or nil when none of the three candidates existed.
         public let sourcePath: String?
-        /// The text of any exception caught while locating/reading the file. Python catches
+        /// The text of any exception caught while locating/reading the file.
+        ///
+        /// Python catches
         /// everything, logs it at ERROR, and continues without exiting.
         public let failure: String?
 
@@ -310,7 +330,9 @@ public extension RNCopyApp {
         }
     }
 
-    /// Locate, parse and merge the allow-list. Python: rncp.py:122-153.
+    /// Locate, parse and merge the allow-list.
+    ///
+    /// Python: rncp.py:122-153.
     ///
     /// The file entries REPLACE the `-a` list when it's empty, and are appended otherwise
     /// (`allowed.extend(ali)`). Only the first existing candidate is read.
@@ -356,6 +378,7 @@ public extension RNCopyApp {
 // MARK: - Fetch response classification
 
 /// How a fetch client classifies the scalar response to its `fetch_file` request.
+///
 /// Python: `request_status` (rncp.py:456-477).
 public enum RNCopyFetchStatus: String, Equatable, CaseIterable {
     case found
@@ -484,7 +507,9 @@ public enum RNCopyFetchResolution: Equatable {
 
 public extension RNCopyApp {
 
-    /// Resolve a `fetch_file` request path. Python: `fetch_request` (rncp.py:172-209).
+    /// Resolve a `fetch_file` request path.
+    ///
+    /// Python: `fetch_request` (rncp.py:172-209).
     ///
     /// With a jail: if the request already starts with `<jail>/`, Python strips it with
     /// `data.replace(fetch_jail+"/", "")`—a replace-**ALL**, not a prefix drop, so every
@@ -528,7 +553,9 @@ public enum RNCopySaveResolution: Equatable {
 
 public extension RNCopyApp {
 
-    /// Resolve the on-disk target for a received file. Python: rncp.py:287-306 (listen)
+    /// Resolve the on-disk target for a received file.
+    ///
+    /// Python: rncp.py:287-306 (listen)
     /// and rncp.py:496-515 (fetch)—the two blocks are identical apart from log vs print.
     ///
     /// - With `--save`, the target is `abspath(expanduser(save + "/" + filename))` and must
@@ -581,7 +608,9 @@ public extension RNCopyApp {
 
 // MARK: - Save-directory resolution (`--save`)
 
-/// Result of validating the `--save` argument. Python: rncp.py:96-108 / 365-375.
+/// Result of validating the `--save` argument.
+///
+/// Python: rncp.py:96-108 / 365-375.
 public enum RNCopySaveDirectory: Equatable {
     case ok(path: String)
     /// "Output directory not found" → exit 3.
@@ -592,7 +621,9 @@ public enum RNCopySaveDirectory: Equatable {
 
 public extension RNCopyApp {
 
-    /// Validate `--save`. Runs *before* `prepare_identity`, so `-p -s /bad` exits 3 or 4
+    /// Validate `--save`.
+    ///
+    /// Runs *before* `prepare_identity`, so `-p -s /bad` exits 3 or 4
     /// rather than printing the identity. Python: rncp.py:96-108.
     static func resolveSaveDirectory(_ save: String,
                                      fileSystem: RNCopyFileSystem) -> RNCopySaveDirectory {
@@ -607,6 +638,7 @@ public extension RNCopyApp {
 // MARK: - Transfer-rate meter
 
 /// The rolling-window rate meter behind rncp's progress line.
+///
 /// Python: `sender_progress` (rncp.py:318-356).
 public struct RNCopyProgressMeter {
 
@@ -674,7 +706,9 @@ public extension RNCopyApp {
             .appendingPathComponent(identityFileName)
     }
 
-    /// Load, or create and persist, the rncp identity. Python: `prepare_identity` (rncp.py:54-68).
+    /// Load, or create and persist, the rncp identity.
+    ///
+    /// Python: `prepare_identity` (rncp.py:54-68).
     ///
     /// - Throws: ``IdentityError/corruptIdentityFile(_:)`` when the file is present but
     ///   unreadable—the CLI maps that to exit code 2.
@@ -705,7 +739,9 @@ public extension RNCopyApp {
 
 public extension RNCopyApp {
 
-    /// argparse's `description=`. Python: rncp.py:796.
+    /// argparse's `description=`.
+    ///
+    /// Python: rncp.py:796.
     static let overview: String = "Reticulum File Transfer Utility"
 
     /// The `--help` output, byte-identical to Python argparse's.
@@ -793,7 +829,9 @@ public extension RNCopyApp {
     }
 
     /// Collect every occurrence of a repeatable option, reproducing argparse's
-    /// `action="append"` for `-a`. Honours `--` the same way ``ArgumentParser`` does.
+    /// `action="append"` for `-a`.
+    ///
+    /// Honours `--` the same way ``ArgumentParser`` does.
     static func collectRepeatedOption(_ name: String, in arguments: [String]) -> [String] {
         var values: [String] = []
         var index = 0

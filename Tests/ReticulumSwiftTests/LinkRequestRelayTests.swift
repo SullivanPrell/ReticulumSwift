@@ -149,7 +149,9 @@ final class LinkRequestRelayTests: XCTestCase {
     }
 
     /// End-to-end: B initiates link via relay R to destination A.
-    /// After the fix, A receives HEADER_1 and answers. The link is established.
+    /// After the fix, A receives HEADER_1 and answers.
+    ///
+    /// The link is established.
     func testRelayedLinkEstablishes() throws {
         // NB: rT must be held alive or the relay's inboundHandler becomes nil.
         let (bT, rT, aT, aDest, _, _) = try makeTopology()
@@ -192,7 +194,9 @@ final class LinkRequestRelayTests: XCTestCase {
     /// mirroring Python `Transport.inbound()` (lines ~1604-1626): when the
     /// outbound interface declares no HW MTU (Swift's default for every
     /// interface), MTU upgrade is disabled and the trailing `LINK_MTU_SIZE`
-    /// signalling bytes are removed before forwarding. Otherwise a Python-
+    /// signalling bytes are removed before forwarding.
+    ///
+    /// Otherwise a Python-
     /// initiated MTU upgrade would pass through a Swift relay unclamped and the
     /// endpoints could negotiate a link MTU larger than a relay hop can carry.
     /// Stripping doesn't change the link_id (both sides hash the packet with
@@ -246,7 +250,9 @@ final class LinkRequestRelayTests: XCTestCase {
 
     /// A SpyInterface variant that declares a HW MTU and supports MTU
     /// autoconfiguration, so the relay's clamp branch (not just the strip
-    /// branch) is exercised. Production Swift interfaces all report `hwMtu == nil`.
+    /// branch) is exercised.
+    ///
+    /// Production Swift interfaces all report `hwMtu == nil`.
     final class MtuSpyInterface: Interface {
         var name: String
         var bitrate: Int = 0
@@ -264,6 +270,7 @@ final class LinkRequestRelayTests: XCTestCase {
 
     /// When the next hop declares a HW MTU below the requested path MTU, the
     /// relay must clamp the signalling to that HW MTU (rather than strip it).
+    ///
     /// Mirrors Python's clamp branch; here the prev hop reports no HW MTU, so
     /// the clamp target is the next-hop MTU (Swift forwards rather than dropping,
     /// the documented divergence from Python's `min(None)` crash-drop).

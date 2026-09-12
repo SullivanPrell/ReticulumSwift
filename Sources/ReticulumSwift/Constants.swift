@@ -10,13 +10,16 @@
 
 import Foundation
 
-/// Protocol-level constants. Values mirror `RNS.Reticulum` and `RNS.Identity`
+/// Protocol-level constants.
+///
+/// Values mirror `RNS.Reticulum` and `RNS.Identity`
 /// in the Python reference. Changing these breaks wire compatibility.
 public enum Constants {
     public static let mtu: Int = 500
     public static let truncatedHashLengthBits: Int = 128
     public static let truncatedHashLength: Int = truncatedHashLengthBits / 8 // 16
     /// Minimum header size for type1 (single dest hash) packets.
+    ///
     /// Mirrors Python's `Reticulum.HEADER_MINSIZE = 2 + 1 + TRUNCATED_HASHLENGTH//8 = 19`.
     /// Layout: flags(1) + hops(1) + destHash(16) + context(1) = 19
     public static let headerMinSize: Int = 2 + 1 + truncatedHashLength       // 19
@@ -41,29 +44,35 @@ public enum Constants {
     public static let derivedKeyLength: Int = 64                              // 512 bits—split for Token
 
     /// Maximum data unit for an encrypted (SINGLE) packet payload.
+    ///
     /// Mirrors Python `Packet.ENCRYPTED_MDU = 383`.
     /// Formula: floor((MDU - TOKEN_OVERHEAD - ECPUBSIZE) / AES128_BLOCKSIZE) * AES128_BLOCKSIZE - 1
     ///   = floor((464 - 48 - 32) / 16) * 16 - 1 = 383
     public static let encryptedMdu: Int = (mdu - tokenOverhead - halfKeySize) / aes128BlockSize * aes128BlockSize - 1
 
     /// Maximum data unit for an unencrypted (PLAIN) packet payload.
+    ///
     /// Mirrors Python `Packet.PLAIN_MDU = MDU = 464`.
     public static let plainMdu: Int = mdu
 
     /// Maximum data unit for a Link (session-encrypted) packet.
+    ///
     /// Different from `encryptedMdu` because link packets don't have the ephemeral public key.
     /// Mirrors Python `Link.MDU`:
     ///   floor((MTU - IFAC_MIN_SIZE - HEADER_MINSIZE - TOKEN_OVERHEAD) / AES128_BLOCKSIZE) * AES128_BLOCKSIZE - 1
     ///   = floor((500 - 1 - 19 - 48) / 16) * 16 - 1 = 431
     public static let linkMdu: Int = (mtu - ifacMinSize - headerMinSize - tokenOverhead) / aes128BlockSize * aes128BlockSize - 1
 
-    /// Default per-hop timeout in seconds. Mirrors Python `Reticulum.DEFAULT_PER_HOP_TIMEOUT`.
+    /// Default per-hop timeout in seconds.
+    ///
+    /// Mirrors Python `Reticulum.DEFAULT_PER_HOP_TIMEOUT`.
     public static let defaultPerHopTimeout: TimeInterval = 6.0
 
     // IFAC—Interface Access Codes
     /// Default IFAC signature-tail size used when not overridden per-interface.
     public static let defaultIfacSize: Int = 16
     /// HKDF salt for deriving the IFAC key from networkname / networkkey.
+    ///
     /// Matches Python `RNS.Reticulum.IFAC_SALT`.
     public static let ifacSalt = Data(
         [0xad,0xf5,0x4d,0x88,0x2c,0x9a,0x9b,0x80,

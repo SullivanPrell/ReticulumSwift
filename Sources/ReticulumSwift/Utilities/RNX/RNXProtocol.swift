@@ -51,6 +51,7 @@ public struct RNXRequest {
     }
 
     /// Pack to msgpack for transmission via `link.request(data:)`.
+    ///
     /// Python: request_data[0] = command.encode("utf-8")—bytes, not a string.
     public func pack() throws -> Data {
         let arr: [MsgPack.Value] = [

@@ -229,7 +229,9 @@ extension RNPathApp {
     }
 
     /// Python: the `is_connected_to_shared_instance` branch inside every `Reticulum`
-    /// accessor. A local client must go over RPC, or it reports its own empty tables.
+    /// accessor.
+    ///
+    /// A local client must go over RPC, or it reports its own empty tables.
     ///
     /// When the role is ``InstanceConnection/Role/localClient`` but no ``RPCClient`` could
     /// be built (an unreadable `transport_identity`, say), this falls back to `.local`—the

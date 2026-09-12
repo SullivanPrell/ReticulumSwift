@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Cross-compatibility tests using known test vectors from Python reference implementation.
+///
 /// These verify that Swift produces identical results for known inputs.
 final class CrossCompatibilityTests: XCTestCase {
 

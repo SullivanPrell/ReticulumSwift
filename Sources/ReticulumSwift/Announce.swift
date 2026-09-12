@@ -35,6 +35,7 @@ public enum Announce {
         /// (Python: `packet.context == Packet.PATH_RESPONSE`).
         public let isPathResponse: Bool
         /// 16-byte (128-bit) truncated hash of the announce packet.
+        ///
         /// Mirrors Python's `packet.packet_hash` (also known as `packet.getTruncatedHash()`).
         public let packetHash: Data
     }
@@ -137,7 +138,9 @@ public enum Announce {
     /// other. They previously carried separate hand-rolled parsers that had
     /// already drifted apart over the ratchet field.
     public struct Parsed {
-        /// The announced identity, loaded from the announce's public key. Loading
+        /// The announced identity, loaded from the announce's public key.
+        ///
+        /// Loading
         /// it lets a caller test the blackhole list before spending a signature
         /// verification, which is the order Python uses
         /// (`Identity.py:551-556`).
@@ -215,7 +218,9 @@ public enum Announce {
     }
 
     /// Validate an announce packet, returning the announced identity and
-    /// associated metadata. Verifies the Ed25519 signature *and* that the
+    /// associated metadata.
+    ///
+    /// Verifies the Ed25519 signature *and* that the
     /// destination hash matches `truncated_hash(name_hash || identity_hash)`.
     public static func validate(_ packet: Packet) throws -> Decoded {
         try validate(packet, signatureVerified: false)

@@ -10,11 +10,14 @@
 
 import Foundation
 
-/// The Reticulum stack. Owns the Transport, persistent identity storage,
+/// The Reticulum stack.
+///
+/// Owns the Transport, persistent identity storage,
 /// and lifecycle of the registered interfaces.
 public final class Reticulum {
     /// This library's own release version—the tag published to
     /// `github.com/SullivanPrell/ReticulumSwift` and pinned by consumers (RetiOS).
+    ///
     /// Bump this on every release. This is the value surfaced in UI ("About")
     /// and by `rnsd --version`; it's informational only and never travels on
     /// the wire.
@@ -26,6 +29,7 @@ public final class Reticulum {
     public static let version = "1.20.0"
 
     /// The Python RNS release whose wire protocol and behavior this port matches.
+    ///
     /// Mirrors Python's `RNS.__version__` as a parity reference (Python RNS uses
     /// a single version string for both its library and its protocol). Bump only
     /// when parity is verified against a new RNS release. Informational only.
@@ -102,14 +106,20 @@ public final class Reticulum {
 
     // MARK: - Logging
 
-    /// Global log level threshold. Only messages at or above this level are emitted.
+    /// Global log level threshold.
+    ///
+    /// Only messages at or above this level are emitted.
     /// Defaults to `.notice` (matches Python's default log level).
     public static var globalLogLevel: LogLevel = .notice
 
-    /// Whether to prepend a timestamp to log lines. Mirrors Python's `RNS.logtimestamps`.
+    /// Whether to prepend a timestamp to log lines.
+    ///
+    /// Mirrors Python's `RNS.logtimestamps`.
     public static var logTimestamps: Bool = true
 
-    /// Optional custom log handler. When non-nil, all log messages are routed here
+    /// Optional custom log handler.
+    ///
+    /// When non-nil, all log messages are routed here
     /// instead of `print`. Allows apps to integrate with os.Logger or a custom sink.
     public static var logHandler: ((String, LogLevel) -> Void)?
 
@@ -146,7 +156,9 @@ public final class Reticulum {
 
     public struct Configuration {
         public var storagePath: URL
-        /// Config filepath. If nil and a file exists at the standard location
+        /// Config filepath.
+        ///
+        /// If nil and a file exists at the standard location
         /// (`storagePath/../config`), it's loaded automatically by `start()`.
         public var configPath: URL?
         public var shareInstance: Bool
@@ -176,91 +188,121 @@ public final class Reticulum {
         }
     }
 
-    /// The most recently started Reticulum instance. Mirrors Python's
+    /// The most recently started Reticulum instance.
+    ///
+    /// Mirrors Python's
     /// `RNS.Reticulum.get_instance()`. Set by `start()`.
     public private(set) static var shared: Reticulum?
 
     // MARK: - Wire-format constants (mirrors Python Reticulum class attributes)
 
-    /// Maximum Transmission Unit in bytes. Python: `Reticulum.MTU = 500`.
+    /// Maximum Transmission Unit in bytes.
+    ///
+    /// Python: `Reticulum.MTU = 500`.
     public static let mtu: Int = Constants.mtu                       // 500
 
-    /// Maximum Data Unit (payload capacity) in bytes. Python: `Reticulum.MDU = 464`.
+    /// Maximum Data Unit (payload capacity) in bytes.
+    ///
+    /// Python: `Reticulum.MDU = 464`.
     public static let mdu: Int = Constants.mdu                       // 464
 
-    /// Minimum header size for type-1 packets. Python: `Reticulum.HEADER_MINSIZE = 19`.
+    /// Minimum header size for type-1 packets.
+    ///
+    /// Python: `Reticulum.HEADER_MINSIZE = 19`.
     public static let headerMinSize: Int = Constants.headerMinSize   // 19
 
     /// Maximum header size (type-2 packets with transport ID).
+    ///
     /// Python: `Reticulum.HEADER_MAXSIZE = 35`.
     public static let headerMaxSize: Int = Constants.headerMaxSize   // 35
 
     /// Minimum IFAC (Interface Access Code) tail size.
+    ///
     /// Python: `Reticulum.IFAC_MIN_SIZE = 1`.
     public static let ifacMinSize: Int = Constants.ifacMinSize       // 1
 
     // MARK: - Announce / persistence constants (mirrors Python Reticulum class attributes)
 
     /// Maximum percentage of interface bandwidth that announce traffic may consume.
+    ///
     /// Used as: `announce_cap = Reticulum.ANNOUNCE_CAP / 100.0` (→ 0.02).
     /// Python: `Reticulum.ANNOUNCE_CAP = 2`.
     public static let announceCap: Int = 2
 
     /// Maximum number of queued announces per interface before older ones are dropped.
+    ///
     /// Python: `Reticulum.MAX_QUEUED_ANNOUNCES = 16384`.
     public static let maxQueuedAnnounces: Int = 16384
 
     /// Interval at which data is persisted when the system is idle (quick save).
+    ///
     /// Python: `Reticulum.GRACIOUS_PERSIST_INTERVAL = 60*5`.
     public static let graciousPersistInterval: TimeInterval = 60 * 5   // 300 s
 
     /// Full persistence interval (paths, known destinations, hashlist).
+    ///
     /// Python: `Reticulum.PERSIST_INTERVAL = 60*60*12`.
     public static let persistInterval: TimeInterval = 60 * 60 * 12     // 43200 s
 
     /// Periodic cleanup interval for caches and stale entries.
+    ///
     /// Python: `Reticulum.CLEAN_INTERVAL = 900`.
     public static let cleanInterval: TimeInterval = 900
 
     /// Job loop interval (same as persist check interval).
+    ///
     /// Python: `Reticulum.JOB_INTERVAL = 300`.
     public static let jobInterval: TimeInterval = 300
 
     /// Minimum bitrate in bits/s below which an interface is considered unusable.
+    ///
     /// Python: `Reticulum.MINIMUM_BITRATE = 5`.
     public static let minimumBitrate: Int = 5
 
     /// How long a queued announce is kept before being dropped (seconds).
+    ///
     /// Python: `Reticulum.QUEUED_ANNOUNCE_LIFE = 60*60*24`.
     public static let queuedAnnounceLife: TimeInterval = 86400
 
     /// How long resource cache entries are kept (seconds).
+    ///
     /// Python: `Reticulum.RESOURCE_CACHE = 60*60*24`.
     public static let resourceCacheLifetime: TimeInterval = 86400
 
     /// Hash length in bits for truncated hashes (destination hashes, identity hashes).
+    ///
     /// Python: `Reticulum.TRUNCATED_HASHLENGTH = 128`.
     public static let truncatedHashLength: Int = Constants.truncatedHashLengthBits   // 128
 
     /// IFAC salt used for Interface Access Code derivation.
+    ///
     /// Python: `Reticulum.IFAC_SALT = bytes.fromhex("adf54d882c9a…")`.
     public static let ifacSalt: Data = Constants.ifacSalt
 
     // MARK: - Log destination constants (Python: RNS.LOG_STDOUT / LOG_FILE / LOG_CALLBACK)
 
-    /// Log to stdout. Mirrors Python `RNS.LOG_STDOUT = 0x91`.
+    /// Log to stdout.
+    ///
+    /// Mirrors Python `RNS.LOG_STDOUT = 0x91`.
     public static let logDestStdout:   Int = 0x91
 
-    /// Log to a file. Mirrors Python `RNS.LOG_FILE = 0x92`.
+    /// Log to a file.
+    ///
+    /// Mirrors Python `RNS.LOG_FILE = 0x92`.
     public static let logDestFile:     Int = 0x92
 
-    /// Log via a callback. Mirrors Python `RNS.LOG_CALLBACK = 0x93`.
+    /// Log via a callback.
+    ///
+    /// Mirrors Python `RNS.LOG_CALLBACK = 0x93`.
     public static let logDestCallback: Int = 0x93
 
-    /// Maximum log file size in bytes (5 MiB). Mirrors Python `RNS.LOG_MAXSIZE = 5*1024*1024`.
+    /// Maximum log file size in bytes (5 MiB).
+    ///
+    /// Mirrors Python `RNS.LOG_MAXSIZE = 5*1024*1024`.
     public static let logMaxSize:      Int = 5 * 1024 * 1024
 
     /// When `true`, log lines omit the log-level label (compact format).
+    ///
     /// Mirrors Python `RNS.compact_log_fmt = False`.
     public static var compactLogFmt: Bool = false
 
@@ -276,31 +318,38 @@ public final class Reticulum {
     // MARK: - Static API (mirrors Python class-level static methods)
 
     /// Returns the shared Reticulum instance.
+    ///
     /// Mirrors Python's `RNS.Reticulum.get_instance()`.
     public static func getInstance() -> Reticulum? { shared }
 
     /// Returns the Transport instance from the running shared Reticulum instance, or nil.
+    ///
     /// Mirrors Python's `RNS.Reticulum.get_transport_instance()`.
     public static func getTransportInstance() -> Transport? { shared?.transport }
 
     /// Returns whether this process is connected to a shared Reticulum instance
     /// (that is, whether `Reticulum.shared` has been initialized).
+    ///
     /// Mirrors Python's `Reticulum.is_connected_to_shared_instance()`.
     public static func isConnectedToSharedInstance() -> Bool { shared != nil }
 
     /// Whether proofs sent are implicit (signature only, 64 bytes) or explicit
-    /// (full hash + Ed25519 signature, 96 bytes). Defaults to `true` (implicit), matching
+    /// (full hash + Ed25519 signature, 96 bytes).
+    ///
+    /// Defaults to `true` (implicit), matching
     /// Python's `Reticulum.__use_implicit_proof = True`.
     /// Mirrors `RNS.Reticulum.should_use_implicit_proof()`.
     public static var useImplicitProof: Bool = true
 
     /// Returns whether implicit proofs are in use.
+    ///
     /// Mirrors Python's `Reticulum.should_use_implicit_proof()`.
     public static func shouldUseImplicitProof() -> Bool { useImplicitProof }
 
     // MARK: - Module-level utility functions (mirrors Python RNS module-level functions)
 
     /// Returns a cryptographically random `Double` in `[0, 1)`.
+    ///
     /// Mirrors Python's `RNS.rand()`.
     public static func rand() -> Double {
         let bytes = SecureRandom.bytes(8)
@@ -312,6 +361,7 @@ public final class Reticulum {
     }
 
     /// Returns `true` if the current global log level is at or above `level`.
+    ///
     /// Mirrors Python's `RNS.sl(level=LOG_NOTICE)`.
     ///
     /// - Parameter level: The threshold level to check. Defaults to `.notice` (matching Python's default of 3).
@@ -320,6 +370,7 @@ public final class Reticulum {
     }
 
     /// Returns a dictionary of physical-layer parameters for this stack.
+    ///
     /// Mirrors Python's `RNS.phyparams()` which prints the same values.
     ///
     /// Keys: `"mtu"`, `"linkMdu"`, `"linkCurve"`, `"ecPubKeySize"`, `"keySize"`.
@@ -334,6 +385,7 @@ public final class Reticulum {
     }
 
     /// Returns the human-readable name string for a log level.
+    ///
     /// Mirrors Python's `RNS.loglevelname(level)`—note Python uses fixed-width
     /// padded strings to align log output.
     public static func loglevelname(_ level: LogLevel) -> String {
@@ -352,6 +404,7 @@ public final class Reticulum {
     }
 
     /// Whether link MTU discovery is enabled globally.
+    ///
     /// Mirrors Python's `Reticulum.link_mtu_discovery()`.
     /// Default: true (Python `LINK_MTU_DISCOVERY = True`).
     ///
@@ -365,37 +418,45 @@ public final class Reticulum {
     public static func linkMtuDiscovery() -> Bool { linkMtuDiscoveryEnabled }
 
     /// Returns whether Transport is enabled for the running shared instance.
+    ///
     /// Mirrors Python's `Reticulum.transport_enabled()`.
     public static func transportEnabled() -> Bool { shared?.transport.transportEnabled ?? false }
 
     /// Whether the probe destination is enabled.
+    ///
     /// Mirrors Python's `Reticulum.probe_destination_enabled()`.
     /// Settable so tests can control the flag without a full config file.
     public static var allowProbes: Bool = false
     public static func probeDestinationEnabled() -> Bool { allowProbes }
 
-    /// Whether remote management is enabled. Defaults to false.
+    /// Whether remote management is enabled.
+    ///
+    /// Defaults to false.
     /// Mirrors Python's `Reticulum.remote_management_enabled()`.
     /// Settable so tests can control the flag without a full config file.
     public static var storedRemoteManagementEnabled: Bool = false
     public static func remoteManagementEnabled() -> Bool { storedRemoteManagementEnabled }
 
     /// Returns the required stamp value for interface discovery validation.
+    ///
     /// Mirrors Python's `Reticulum.required_discovery_value()`.
     public private(set) static var storedRequiredDiscoveryValue: Int = 16
     public static func requiredDiscoveryValue() -> Int { storedRequiredDiscoveryValue }
 
     /// Returns whether blackhole list publishing is enabled.
+    ///
     /// Mirrors Python's `Reticulum.publish_blackhole_enabled()`.
     public private(set) static var storedPublishBlackholeEnabled: Bool = false
     public static func publishBlackholeEnabled() -> Bool { storedPublishBlackholeEnabled }
 
     /// Returns the list of transport identity hashes from which blackhole lists are sourced.
+    ///
     /// Mirrors Python's `Reticulum.blackhole_sources()`.
     public private(set) static var storedBlackholeSources: [Data] = []
     public static func blackholeSources() -> [Data] { storedBlackholeSources }
 
     /// Interval (seconds) between blackhole list re-fetches from each source.
+    ///
     /// Default 3600 (1 hour). Minimum 120 seconds. Configurable via the
     /// `blackhole_update_interval` config key (value in minutes).
     /// Mirrors Python's `Reticulum.blackhole_update_interval()` accessor +
@@ -404,6 +465,7 @@ public final class Reticulum {
     public static func blackholeUpdateInterval() -> TimeInterval { storedBlackholeUpdateInterval }
 
     /// Returns a list of interfaces discovered over the network.
+    ///
     /// Mirrors Python's `Reticulum.discovered_interfaces()`.
     public private(set) static var storedDiscoveredInterfaces: [String] = []
     public static func discoveredInterfaces() -> [String] { storedDiscoveredInterfaces }
@@ -421,6 +483,7 @@ public final class Reticulum {
     public static func discoveryEnabled() -> Bool { storedDiscoveryEnabled }
 
     /// Returns the list of network identity hashes from which interfaces are discovered.
+    ///
     /// Mirrors Python's `Reticulum.interface_discovery_sources()`.
     /// `internal(set)`, not `private(set)`: the announce-time allowlist check in
     /// `InterfaceAnnounceHandler` needs to be testable, and config loading (the
@@ -429,14 +492,18 @@ public final class Reticulum {
     public static func interfaceDiscoverySources() -> [Data] { storedInterfaceDiscoverySources }
 
     /// Maximum number of discovered interfaces to auto-connect to.
-    /// 0 means auto-connect is disabled. Mirrors Python's `Reticulum.__autoconnect_discovered_interfaces`.
+    /// 0 means auto-connect is disabled.
+    ///
+    /// Mirrors Python's `Reticulum.__autoconnect_discovered_interfaces`.
     public static var storedMaxAutoconnectedInterfaces: Int = 0
 
     /// Returns true if discovered interfaces should be automatically connected.
+    ///
     /// Mirrors Python's `Reticulum.should_autoconnect_discovered_interfaces()`.
     public static func shouldAutoconnectDiscoveredInterfaces() -> Bool { storedMaxAutoconnectedInterfaces > 0 }
 
     /// Returns the maximum number of auto-connected discovered interfaces.
+    ///
     /// Mirrors Python's `Reticulum.max_autoconnected_interfaces()`.
     public static func maxAutoconnectedInterfaces() -> Int { storedMaxAutoconnectedInterfaces }
 
@@ -446,22 +513,26 @@ public final class Reticulum {
     public static var storedDefaultGravity: Int? = nil
 
     /// Gravity for an interface that doesn't configure its own.
+    ///
     /// Mirrors Python's `Reticulum._default_gravity()`.
     public static func defaultGravity() -> Int {
         storedDefaultGravity ?? InterfaceMode.defaultGravity
     }
 
     /// Configured `autoconnect_interface_mode`, or `nil` when unset.
+    ///
     /// Mirrors Python's `Reticulum.autoconnect_interface_mode()`.
     public static var storedAutoconnectInterfaceMode: InterfaceMode? = nil
     public static func autoconnectInterfaceMode() -> InterfaceMode? { storedAutoconnectInterfaceMode }
 
     /// Configured `autoconnect_interface_gravity`, or `nil` when unset.
+    ///
     /// Mirrors Python's `Reticulum.autoconnect_interface_gravity()`.
     public static var storedAutoconnectInterfaceGravity: Int? = nil
     public static func autoconnectInterfaceGravity() -> Int? { storedAutoconnectInterfaceGravity }
 
     /// Configured `autoconnect_announces_to_internal`, or `nil` when unset.
+    ///
     /// Mirrors Python's `Reticulum.autoconnect_announces_to_internal()`.
     public static var storedAutoconnectAnnouncesToInternal: Bool? = nil
     public static func autoconnectAnnouncesToInternal() -> Bool? { storedAutoconnectAnnouncesToInternal }
@@ -478,7 +549,9 @@ public final class Reticulum {
     // `configuredOrDefault(_:_:)`.
 
     /// Python's `or` treats `0` and `0.0` as absent, so a configured zero falls back to the
-    /// class constant rather than taking effect. Replicated deliberately: it's observable
+    /// class constant rather than taking effect.
+    ///
+    /// Replicated deliberately: it's observable
     /// behaviour of the reference, and an operator copying a working Python config onto a Swift
     /// node must get the same tuning. Recorded here rather than left as a silent `??`.
     @inline(__always)
@@ -494,10 +567,13 @@ public final class Reticulum {
     }
 
     /// Configured shared-instance RPC key, or `nil` to derive one from the transport identity.
+    ///
     /// Mirrors Python's `self.rpc_key` (`Reticulum.py:494-499`).
     public static var rpcKey: Data? = nil
 
-    /// Configured `instance_name`. Mirrors Python's `local_socket_path` (`Reticulum.py:475-478`).
+    /// Configured `instance_name`.
+    ///
+    /// Mirrors Python's `local_socket_path` (`Reticulum.py:475-478`).
     public static var storedInstanceName: String? = nil
     public static func instanceName() -> String { storedInstanceName ?? "default" }
 
@@ -518,7 +594,9 @@ public final class Reticulum {
     public static func forceSharedInstanceBitrate() -> Int? { storedForceSharedInstanceBitrate }
 
     /// Whether this port announces its own interfaces as discoverable endpoints—Python's
-    /// `Discovery.InterfaceAnnouncer`. True since 2026-09-04, when the publish side landed
+    /// `Discovery.InterfaceAnnouncer`.
+    ///
+    /// True since 2026-09-04, when the publish side landed
     /// alongside the seventeen `discovery_*`/`reachable_on`/`discoverable` interface
     /// attributes it carries.
     ///
@@ -528,13 +606,16 @@ public final class Reticulum {
 
     /// Whether this port dials and monitors discovered endpoints—Python's
     /// `Discovery.InterfaceDiscovery` autoconnect half, which writes `autoconnect_hash`,
-    /// `autoconnect_source` and `autoconnect_down`. True since 2026-09-04.
+    /// `autoconnect_source` and `autoconnect_down`.
+    ///
+    /// True since 2026-09-04.
     ///
     /// Still off unless the operator sets `autoconnect_discovered_interfaces` to a non-zero
     /// limit: the subsystem exists, and dialling strangers is opt-in.
     public static let autoconnectsDiscoveredInterfaces = true
 
     /// Announce-rate defaults for interfaces that don't configure their own.
+    ///
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
     public static var storedDefaultArTarget: Int? = nil
     public static var storedDefaultArPenalty: Int? = nil
@@ -544,6 +625,7 @@ public final class Reticulum {
     public static func defaultArGrace() -> Int { storedDefaultArGrace ?? 0 }
 
     /// Egress-control defaults every interface starts from.
+    ///
     /// Mirrors `Reticulum._default_egress_control()` / `_default_ec_pr_freq()` (`:1173-1176`).
     public static var storedDefaultEgressControl: Bool? = nil
     public static var storedDefaultEcPrFreq: Double? = nil
@@ -551,6 +633,7 @@ public final class Reticulum {
     public static func defaultEcPrFreq() -> Double { pythonOr(storedDefaultEcPrFreq, 5.0) }
 
     /// Ingress-control defaults every interface starts from.
+    ///
     /// Mirrors `Reticulum._default_ic_*()` (`:1154-1185`), each falling back to the
     /// `IngressControlState` constant that holds the Python class value.
     public static var storedDefaultIcMaxHeldAnnounces: Int? = nil
@@ -630,7 +713,9 @@ public final class Reticulum {
     /// Parsed config file, if one was loaded.
     public private(set) var config: ReticulumConfig?
 
-    /// Identity returned by `loadOrCreateIdentity`. Held weakly so the
+    /// Identity returned by `loadOrCreateIdentity`.
+    ///
+    /// Held weakly so the
     /// stack can re-save its ratchets at checkpoint/stop time without
     /// keeping it alive past the host's own lifetime.
     private weak var trackedIdentity: Identity?
@@ -910,6 +995,7 @@ public final class Reticulum {
     // MARK: - Management API (mirrors Python Reticulum instance methods)
 
     /// Drop a known path, forcing re-discovery on next attempt.
+    ///
     /// Mirrors Python's `RNS.Reticulum.get_instance().drop_path(hash)`.
     @discardableResult
     public func dropPath(for destinationHash: Data) -> Bool {
@@ -917,6 +1003,7 @@ public final class Reticulum {
     }
 
     /// Clear all per-interface announce queues, dropping any pending relayed announces.
+    ///
     /// Returns `true` on success.
     /// Mirrors Python's `Reticulum.drop_announce_queues()` → `Transport.drop_announce_queues()`.
     @discardableResult
@@ -926,6 +1013,7 @@ public final class Reticulum {
     }
 
     /// Returns the current number of active links.
+    ///
     /// Mirrors Python's `Reticulum.get_link_count()`.
     public func getLinkCount() -> Int { transport.getLinkCount() }
 
@@ -933,16 +1021,19 @@ public final class Reticulum {
     public func getActiveLinkCount() -> Int { transport.getActiveLinkCount() }
 
     /// Returns statistics for all registered interfaces.
+    ///
     /// Mirrors Python's `Reticulum.get_interface_stats()`.
     public func getInterfaceStats() -> [Transport.InterfaceStats] { transport.getInterfaceStats() }
 
     /// Returns a snapshot of the path table, optionally filtered by max hops.
+    ///
     /// Mirrors Python's `Reticulum.get_path_table(max_hops=None)`.
     public func getPathTable(maxHops: UInt8? = nil) -> [Transport.PathTableEntry] {
         transport.getPathTable(maxHops: maxHops)
     }
 
     /// Drop all path table entries that route via a specific transport instance.
+    ///
     /// Returns the number of dropped paths.
     /// Mirrors Python's `Reticulum.drop_all_via(transport_hash)`.
     @discardableResult
@@ -951,6 +1042,7 @@ public final class Reticulum {
     }
 
     /// Blackhole an identity hash, preventing its announces from being forwarded.
+    ///
     /// Returns `true` on success, `nil` if already blackholed, `false` if hash length is wrong.
     /// Mirrors Python's `Reticulum.blackhole_identity(identity_hash, until, reason)`.
     @discardableResult
@@ -960,6 +1052,7 @@ public final class Reticulum {
     }
 
     /// Remove an identity from the blackhole list.
+    ///
     /// Returns `true` on success, `nil` if not blackholed, `false` if hash length is wrong.
     /// Mirrors Python's `Reticulum.unblackhole_identity(identity_hash)`.
     @discardableResult
@@ -969,6 +1062,7 @@ public final class Reticulum {
     }
 
     /// Returns all blackholed identity hashes with their entries.
+    ///
     /// Mirrors Python's `Reticulum.get_blackholed_identities()`.
     public func getBlackholedIdentities() -> [Data: Transport.BlackholeEntry] {
         transport.blackholeLock.lock(); defer { transport.blackholeLock.unlock() }
@@ -976,24 +1070,28 @@ public final class Reticulum {
     }
 
     /// Returns a snapshot of the current announce rate table.
+    ///
     /// Mirrors Python's `Reticulum.get_rate_table()`.
     public func getRateTable() -> [Transport.RateTableEntry] {
         transport.getRateTable()
     }
 
     /// Returns the cached RSSI for a received packet, or nil if not cached.
+    ///
     /// Mirrors Python's `Reticulum.get_packet_rssi(packet_hash)`.
     public func getPacketRssi(packetHash: Data) -> Float? {
         transport.getPacketRssi(packetHash: packetHash)
     }
 
     /// Returns the cached SNR for a received packet, or nil if not cached.
+    ///
     /// Mirrors Python's `Reticulum.get_packet_snr(packet_hash)`.
     public func getPacketSnr(packetHash: Data) -> Float? {
         transport.getPacketSnr(packetHash: packetHash)
     }
 
     /// Returns the cached signal quality for a received packet, or nil if not cached.
+    ///
     /// Mirrors Python's `Reticulum.get_packet_q(packet_hash)`.
     public func getPacketQ(packetHash: Data) -> Float? {
         transport.getPacketQ(packetHash: packetHash)
@@ -1011,7 +1109,9 @@ public final class Reticulum {
     }
 
     /// Load a persistent identity from disk, creating it if it doesn't
-    /// exist. The 64-byte private-key blob lives at
+    /// exist.
+    ///
+    /// The 64-byte private-key blob lives at
     /// `<storagePath>/identity` with `0o600` semantics where the platform
     /// supports it. Ratchet privates, if present, live in a sidecar at
     /// `<storagePath>/identity.ratchets` and are reloaded here.
@@ -1262,6 +1362,7 @@ public final class Reticulum {
     // MARK: - Interface synthesis from config
 
     /// Create and register interfaces described in `cfg.interfaces`.
+    ///
     /// Supports: TCPClientInterface, TCPServerInterface, UDPInterface, AutoInterface,
     ///           BackboneInterface, LocalInterface.
     public func synthesizeInterfaces(from cfg: ReticulumConfig) throws {
@@ -1669,29 +1770,38 @@ public final class Reticulum {
 
     // MARK: - Path and interface queries
 
-    /// Returns the next-hop hash for a destination. Mirrors Python `Reticulum.get_next_hop(destination)`.
+    /// Returns the next-hop hash for a destination.
+    ///
+    /// Mirrors Python `Reticulum.get_next_hop(destination)`.
     public func getNextHop(for destinationHash: Data) -> Data? {
         transport.nextHop(to: destinationHash)
     }
 
-    /// Returns the name of the interface toward the next hop. Mirrors Python `Reticulum.get_next_hop_if_name(destination)`.
+    /// Returns the name of the interface toward the next hop.
+    ///
+    /// Mirrors Python `Reticulum.get_next_hop_if_name(destination)`.
     public func getNextHopIfName(for destinationHash: Data) -> String? {
         transport.nextHopInterfaceName(for: destinationHash)
     }
 
-    /// Returns the per-hop timeout for a destination. Mirrors Python `Reticulum.get_first_hop_timeout(destination)`.
+    /// Returns the per-hop timeout for a destination.
+    ///
+    /// Mirrors Python `Reticulum.get_first_hop_timeout(destination)`.
     public func getFirstHopTimeout(for destinationHash: Data) -> TimeInterval {
         transport.firstHopTimeout(for: destinationHash)
     }
 
     /// Bitrate of the slowest online interface, or `nil` when none is known.
+    ///
     /// Mirrors Python `Reticulum.get_lowest_interface_bitrate()`.
     public func getLowestInterfaceBitrate() -> Int? {
         transport.lowestInterfaceBitrate
     }
 
     /// A reasonable minimum path-request timeout for this node's slowest link, or `0` when no
-    /// bitrate is known. Mirrors Python `Reticulum.get_medium_path_timeout()`.
+    /// bitrate is known.
+    ///
+    /// Mirrors Python `Reticulum.get_medium_path_timeout()`.
     ///
     /// Answers from the in-process transport. A utility attached as a *local client* must ask
     /// the daemon instead—see ``InstanceConnection/mediumPathTimeout()``, which is where this
@@ -1702,7 +1812,9 @@ public final class Reticulum {
 
     // MARK: - Destination retention
 
-    /// Mark a destination as recently used. Mirrors Python `Reticulum._used_destination_data(destination_hash)`.
+    /// Mark a destination as recently used.
+    ///
+    /// Mirrors Python `Reticulum._used_destination_data(destination_hash)`.
     @discardableResult
     public func usedDestinationData(_ destinationHash: Data) -> Bool {
         transport.markDestinationUsed(destinationHash)
@@ -1710,6 +1822,7 @@ public final class Reticulum {
     }
 
     /// Pin a destination so `cleanKnownDestinations` never removes it.
+    ///
     /// Mirrors Python `Reticulum._retain_destination_data(destination_hash)`.
     @discardableResult
     public func retainDestinationData(_ destinationHash: Data) -> Bool {
@@ -1717,6 +1830,7 @@ public final class Reticulum {
     }
 
     /// Unpin a previously retained destination.
+    ///
     /// Mirrors Python `Reticulum._unretain_destination_data(destination_hash)`.
     @discardableResult
     public func unretainDestinationData(_ destinationHash: Data) -> Bool {
@@ -1724,6 +1838,7 @@ public final class Reticulum {
     }
 
     /// Pin all destinations associated with the given identity hash.
+    ///
     /// Mirrors Python `Reticulum._retain_identity(identity_hash)`.
     @discardableResult
     public func retainIdentity(_ identityHash: Data) -> Bool {
@@ -1732,13 +1847,18 @@ public final class Reticulum {
 
     // MARK: - Interface management
 
-    /// No-op stub. Mirrors Python `Reticulum.halt_interface(interface)`.
+    /// No-op stub.
+    ///
+    /// Mirrors Python `Reticulum.halt_interface(interface)`.
     public func haltInterface(_ interface: any Interface) {}
 
-    /// No-op stub. Mirrors Python `Reticulum.resume_interface(interface)`.
+    /// No-op stub.
+    ///
+    /// Mirrors Python `Reticulum.resume_interface(interface)`.
     public func resumeInterface(_ interface: any Interface) {}
 
     /// Stop and restart the named interface, re-applying its stored configuration.
+    ///
     /// Returns `true` if the interface was found and reloaded; `false` if not found.
     /// Python parity: `Reticulum.reload_interface(name)`
     @discardableResult

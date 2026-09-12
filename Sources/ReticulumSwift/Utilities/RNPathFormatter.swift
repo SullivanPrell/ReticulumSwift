@@ -112,7 +112,9 @@ public enum RNPathFormatter {
     /// (rnpath.py:371-373).
     public static let emptyTimestampsErrorMessage = "list index out of range"
 
-    /// Python: rnpath.py:369. Returns `nil` for the entries Python fails on, that is, those with
+    /// Python: rnpath.py:369.
+    ///
+    /// Returns `nil` for the entries Python fails on, that is, those with
     /// an empty `timestamps` list—the caller then prints the two-line error and *continues*
     /// with the remaining entries, exactly as the Python `except` does.
     public static func rateLine(_ entry: RNPathRateEntry, now: TimeInterval) -> String? {

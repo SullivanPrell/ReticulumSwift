@@ -26,29 +26,53 @@ public struct RNStatusRenderer {
 
     /// The subset of `program_setup`'s parameters that affects rendering.
     public struct Options {
-        /// `-a, --all`. Python: `dispall`.
+        /// `-a, --all`.
+        ///
+        /// Python: `dispall`.
         public var showAll: Bool = false
-        /// `-A, --announce-stats`. Python: `astats`.
+        /// `-A, --announce-stats`.
+        ///
+        /// Python: `astats`.
         public var announceStats: Bool = false
-        /// `-P, --pr-stats`. Python: `pstats`.
+        /// `-P, --pr-stats`.
+        ///
+        /// Python: `pstats`.
         public var prStats: Bool = false
-        /// `-l, --link-stats`. Python: `lstats`.
+        /// `-l, --link-stats`.
+        ///
+        /// Python: `lstats`.
         public var linkStats: Bool = false
-        /// `-B, --burst`. Python: `burst_filter`.
+        /// `-B, --burst`.
+        ///
+        /// Python: `burst_filter`.
         public var burstFilter: Bool = false
-        /// `-b, --blocked-ips`. Python: `blocked_ips`.
+        /// `-b, --blocked-ips`.
+        ///
+        /// Python: `blocked_ips`.
         public var blockedIPs: Bool = false
-        /// `-t, --totals`. Python: `traffic_totals`.
+        /// `-t, --totals`.
+        ///
+        /// Python: `traffic_totals`.
         public var trafficTotals: Bool = false
-        /// `-p, --pps`. Python: `pps`. Only has an effect together with ``trafficTotals``.
+        /// `-p, --pps`.
+        ///
+        /// Python: `pps`. Only has an effect together with ``trafficTotals``.
         public var pps: Bool = false
-        /// `-q, --queues`. Python: `queue_stats`. Independent of ``trafficTotals``.
+        /// `-q, --queues`.
+        ///
+        /// Python: `queue_stats`. Independent of ``trafficTotals``.
         public var queueStats: Bool = false
-        /// Positional `filter`. Python: `name_filter`.
+        /// Positional `filter`.
+        ///
+        /// Python: `name_filter`.
         public var nameFilter: String? = nil
-        /// `-s, --sort`. Python: `sorting`.
+        /// `-s, --sort`.
+        ///
+        /// Python: `sorting`.
         public var sort: RNStatusApp.Sort? = nil
-        /// `-r, --reverse`. Python: `sort_reverse`.
+        /// `-r, --reverse`.
+        ///
+        /// Python: `sort_reverse`.
         public var sortReverse: Bool = false
 
         public init() {}
@@ -198,6 +222,7 @@ public struct RNStatusRenderer {
     // MARK: - One interface
 
     /// Render one interface block, including the blank line Python prints before it.
+    ///
     /// Python: rnstatus.py:415-640.
     public func renderInterface(_ ifstat: RNStatusInterfaceStats) -> String {
         var out = "\n"
@@ -559,7 +584,9 @@ public struct RNStatusRenderer {
 
     // MARK: - Discovered interfaces (-d)
 
-    /// The `-d` table. Python: rnstatus.py:264-306.
+    /// The `-d` table.
+    ///
+    /// Python: rnstatus.py:264-306.
     ///
     /// Column widths are Python `str.format` `<N` specifiers, which pad but **never
     /// truncate**—an over-long Type pushes the rest of the row right. Only Name is
@@ -607,7 +634,9 @@ public struct RNStatusRenderer {
         return out
     }
 
-    /// The `-D` detail view. Python: rnstatus.py:201-262.
+    /// The `-D` detail view.
+    ///
+    /// Python: rnstatus.py:201-262.
     ///
     /// Python wraps each entry in a bare `try/except: pass` spanning the *whole* render,
     /// so an entry missing `config_entry` prints its full header block and then simply
@@ -686,6 +715,7 @@ public struct RNStatusRenderer {
     }
 
     /// Python: rnstatus.py:196-199—case-insensitive substring on the discovered name.
+    ///
     /// Neither the burst filter nor the interface hide list applies in discovered mode.
     private func filtered(_ interfaces: [DiscoveredInterfaceInfo]) -> [DiscoveredInterfaceInfo] {
         guard let filter = options.nameFilter, !filter.isEmpty else { return interfaces }
@@ -789,6 +819,7 @@ public struct RNStatusRenderer {
     }
 
     /// Python `repr(float)` / `str(float)`—shortest representation that round-trips.
+    ///
     /// Swift's default `Double` description has the same shortest-round-trip contract, so
     /// `55.0` renders as `"55.0"` and `55.6761` as `"55.6761"`, matching Python.
     static func pythonFloat(_ value: Double) -> String {
@@ -804,7 +835,9 @@ public struct RNStatusRenderer {
     }
 
     /// One `int(min(100.0, (a/b)*100.0) if b and a else 0.0)` percentage, as Python spells
-    /// it at rnstatus.py:622-623 and :646-647. Both operands are truthiness-tested, so a
+    /// it at rnstatus.py:622-623 and :646-647.
+    ///
+    /// Both operands are truthiness-tested, so a
     /// zero numerator yields 0 rather than dividing.
     static func flowPercent(_ ifstat: RNStatusInterfaceStats, _ numerator: String, _ denominator: String) -> Int {
         let a = ifstat.double(numerator) ?? 0
@@ -813,7 +846,9 @@ public struct RNStatusRenderer {
         return pythonInt(min(100.0, (a / b) * 100.0))
     }
 
-    /// The `-t` Path Rqs. / Announces totals block (rnstatus.py:746-780).
+    /// The `-t` Path Rqs.
+    ///
+    /// / Announces totals block (rnstatus.py:746-780).
     ///
     /// Both blocks are the same six lines of arithmetic over a different key prefix, so
     /// they share one implementation; Python spells them out twice.

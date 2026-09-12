@@ -49,7 +49,9 @@ public enum DaemonBootstrap {
         public let blackhole: URL
         /// `<configdir>/interfaces`—where Python looks for external interface modules.
         public let interfaces: URL
-        /// `<configdir>/logfile`. Python: `RNS.logfile = Reticulum.configdir+"/logfile"`.
+        /// `<configdir>/logfile`.
+        ///
+        /// Python: `RNS.logfile = Reticulum.configdir+"/logfile"`.
         public let logFile: URL
         /// `<configdir>/logfile.1`—the single rotated generation Python keeps.
         public let rotatedLogFile: URL
@@ -222,7 +224,9 @@ public enum DaemonBootstrap {
         /// The level Python would have ended up at, already assigned to
         /// ``Reticulum/globalLogLevel``.
         public let logLevel: Reticulum.LogLevel
-        /// Whether a default config file was created on this run. Python then sleeps 1.5 s
+        /// Whether a default config file was created on this run.
+        ///
+        /// Python then sleeps 1.5 s
         /// (`Reticulum.py:333`) so the operator sees the two notices; the caller does that,
         /// since a library function shouldn't block.
         public let createdDefaultConfig: Bool

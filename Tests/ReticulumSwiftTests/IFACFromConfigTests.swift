@@ -33,7 +33,9 @@ final class IFACFromConfigTests: XCTestCase {
     }
 
     /// A loopback pair that hands whatever one side sends to the other, so "did the frame survive
-    /// IFAC on both ends" is observable without a socket. Counts rejections, because the defect's
+    /// IFAC on both ends" is observable without a socket.
+    ///
+    /// Counts rejections, because the defect's
     /// signature is silent dropping rather than an error.
     final class PairedInterface: Interface {
         let interfaceState = InterfaceState()
@@ -240,7 +242,9 @@ final class IFACFromConfigTests: XCTestCase {
 
     // MARK: - Status output
 
-    /// `rnstatus` shows the segment's network name for a Python daemon. The Swift payload
+    /// `rnstatus` shows the segment's network name for a Python daemon.
+    ///
+    /// The Swift payload
     /// hardcoded `ifac_netname` to nil (`InterfaceStatsPayload.swift:115`).
     func testIFACNetnameAppearsInStatusOutput() throws {
         let tmp = FileManager.default.temporaryDirectory
@@ -287,7 +291,9 @@ final class IFACFromConfigTests: XCTestCase {
     }
 
     /// Two paired interfaces, each configured the way a config block would configure it—through
-    /// the same entry point `synthesizeInterfaces` uses, never `Transport.configureIfac`. That
+    /// the same entry point `synthesizeInterfaces` uses, never `Transport.configureIfac`.
+    ///
+    /// That
     /// distinction is what the suite exists to preserve.
     private func pairOnSegments(_ left: (String, String)?,
                                 _ right: (String, String)?) throws -> (PairedInterface, PairedInterface) {

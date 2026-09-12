@@ -20,29 +20,37 @@ import Network
 ///   - Automatic reconnection after disconnect
 public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`BackboneInterface.py:154`). The announcer
+    /// Python marks this type discoverable (`BackboneInterface.py:154`).
+    ///
+    /// The announcer
     /// still needs `discoverable` set from config before it announces anything.
     public let supportsDiscovery = true
 
     // MARK: - Constants (mirrors Python BackboneClientInterface)
 
     /// Maximum hardware MTU in bytes.
+    ///
     /// Python: `BackboneClientInterface.HW_MTU = BackboneInterface.HW_MTU = 1_048_576`.
     public static let hwMtuConstant: Int = 1_048_576
 
     /// Default bitrate estimate in bits per second.
+    ///
     /// Python: `BackboneClientInterface.BITRATE_GUESS = 100_000_000`.
     public static let bitrateGuess: Int = 100_000_000
 
     /// Time in seconds to wait between reconnect attempts.
+    ///
     /// Python: `BackboneClientInterface.RECONNECT_WAIT = 5`.
     public static let defaultReconnectWait: TimeInterval = 5.0
 
     /// Maximum number of reconnect attempts (nil = infinite).
+    ///
     /// Python: `BackboneClientInterface.RECONNECT_MAX_TRIES = None`.
     public static let defaultMaxReconnectTries: Int? = nil
 
@@ -54,7 +62,9 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     /// Python `BackboneClientInterface.__str__` (`BackboneInterface.py:870-873`):
     /// `"BackboneInterface["+name+"/"+ip_str+":"+str(target_port)+"]"`, with an IPv6 literal
-    /// bracketed. That connecting form is the one that applies: this class dials a host, and
+    /// bracketed.
+    ///
+    /// That connecting form is the one that applies: this class dials a host, and
     /// Python's listening `BackboneInterface.__str__` (`:561-564`) uses `bind_ip`/`bind_port`,
     /// which this port has no separate object for.
     ///
@@ -69,7 +79,9 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     /// The stats `type` field is `type(interface).__name__` (`Reticulum.py:1472`), and a dialing
     /// backbone config constructs `BackboneClientInterface` on Python (`Reticulum.py:994-1000`)—the
-    /// class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener. The Swift
+    /// class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener.
+    ///
+    /// The Swift
     /// class name would report the listener's name for a client, so consumers keying on
     /// `ifstats["type"]` mis-classify it. the preceding `displayName` stays on the client `__str__` form;
     /// the two are different contracts.
@@ -108,17 +120,23 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
 
     // MARK: - Reconnect configuration
 
-    /// Seconds to wait between reconnect attempts. Python: `RECONNECT_WAIT = 5`.
+    /// Seconds to wait between reconnect attempts.
+    ///
+    /// Python: `RECONNECT_WAIT = 5`.
     public let reconnectWait: TimeInterval
 
-    /// Maximum reconnect attempts (nil = infinite). Python: `RECONNECT_MAX_TRIES = None`.
+    /// Maximum reconnect attempts (nil = infinite).
+    ///
+    /// Python: `RECONNECT_MAX_TRIES = None`.
     public let maxReconnectTries: Int?
 
     // MARK: - Private state
@@ -128,12 +146,16 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     private let decoder = HDLC.FrameDecoder()
     private var reconnectAttempts: Int = 0
     /// True between scheduling a reconnect and it firing, so overlapping failure
-    /// signals collapse to a single reconnect loop. Guarded by `stateLock`.
+    /// signals collapse to a single reconnect loop.
+    ///
+    /// Guarded by `stateLock`.
     private var reconnectPending: Bool = false
 
     /// Guards `unsafeIsStopped`, `connection`, `reconnectAttempts`, and `reconnectPending`, which are
     /// touched from the caller thread (start/stop/send) and the interface's
-    /// serial queue (openConnection/stateUpdate/scheduleReconnect/receive). See
+    /// serial queue (openConnection/stateUpdate/scheduleReconnect/receive).
+    ///
+    /// See
     /// the LocalInterface note: without it a queued reconnect can assign
     /// `connection` right after stop() cleared it, leaking a live socket.
     private let stateLock = NSLock()
@@ -193,7 +215,9 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     }
 
     /// Produce the on-wire bytes for an outbound packet: apply the IFAC mask
-    /// (when configured) then HDLC-frame. Mirrors the central IFAC application
+    /// (when configured) then HDLC-frame.
+    ///
+    /// Mirrors the central IFAC application
     /// in Python `Transport.transmit`, matching how `TCPClientInterface.send`
     /// frames its bytes. Factored out of `send(_:)` so the IFAC/framing path is
     /// unit-testable without a live `NWConnection`.

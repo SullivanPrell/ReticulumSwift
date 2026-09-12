@@ -37,7 +37,9 @@ final class PathFreshnessGateTests: XCTestCase {
     // MARK: - Freshness gate (B1/B2/B3)
 
     /// A fewer-hop announce emitted in the SAME second as the existing path must
-    /// NOT replace it. (Old "fewer hops always wins" behavior—the bug.)
+    /// NOT replace it.
+    ///
+    /// (Old "fewer hops always wins" behavior—the bug.)
     func testSameSecondFewerHopsDoesNotReplace() throws {
         let t = Transport()
         let a = NamedInterface(name: "A"); let b = NamedInterface(name: "B")

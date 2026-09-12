@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying that the wire format of packets matches Python's reference implementation.
+///
 /// These verify byte-level compatibility.
 final class WireCompatibilityTests: XCTestCase {
 

@@ -69,7 +69,9 @@ final class LocalInterfaceReadinessTests: XCTestCase {
     // MARK: - The interface itself
 
     /// The core contract: once `start()` returns, `send()` must actually put
-    /// bytes on the wire. No sleep, no polling for `isOnline`—exactly what a
+    /// bytes on the wire.
+    ///
+    /// No sleep, no polling for `isOnline`—exactly what a
     /// utility does when it announces on the line after attaching.
     func testStartBlocksUntilTheInterfaceCanSend() throws {
         let server = try startServer()

@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for packet delivery to locally registered destinations (loopback).
+///
 /// When A sends to a destination that A itself has registered, it should
 /// be delivered locally without going to an interface.
 final class LoopbackDeliveryTests: XCTestCase {

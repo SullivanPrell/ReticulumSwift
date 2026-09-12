@@ -32,7 +32,9 @@ final class RNS138ParityTests: XCTestCase {
     // MARK: - Packet.unpack hop-count guard (PATHFINDER_M = 128)
 
     /// Build a valid packed packet, then return a copy with the hop byte forced
-    /// to `hops`. Byte 1 of the header is the hop count.
+    /// to `hops`.
+    ///
+    /// Byte 1 of the header is the hop count.
     private func packedPacket(withHopByte hops: UInt8) throws -> Data {
         let packet = Packet(
             headerType: .type1,

@@ -10,7 +10,9 @@
 
 import Foundation
 
-/// PKCS#7 padding for AES-CBC. Block size is 16 bytes; pad value equals the
+/// PKCS#7 padding for AES-CBC.
+///
+/// Block size is 16 bytes; pad value equals the
 /// number of pad bytes appended.
 public enum PKCS7 {
     public static let blockSize: Int = 16

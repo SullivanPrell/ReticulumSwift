@@ -46,7 +46,9 @@ final class MediumPathTimeoutTests: XCTestCase {
     // MARK: - The timeout itself
 
     /// Python returns a bare `0` when `lowest_interface_bitrate` is still `None`, *before*
-    /// adding the per-hop constant (`Transport.py:3207`). Every caller wraps this in
+    /// adding the per-hop constant (`Transport.py:3207`).
+    ///
+    /// Every caller wraps this in
     /// `max(timeout, …)`, so zero means "contribute nothing", not "time out immediately"—returning
     /// `DEFAULT_PER_HOP_TIMEOUT` here would silently raise the floor under every
     /// utility on a node whose interfaces haven't been prioritised yet.
@@ -61,7 +63,9 @@ final class MediumPathTimeoutTests: XCTestCase {
         XCTAssertEqual(t.mediumPathTimeout(), expected(bitrate: 9600), accuracy: 1e-9)
     }
 
-    /// `max(lowest_interface_bitrate, MINIMUM_BITRATE)` (`Transport.py:3208`). Without the
+    /// `max(lowest_interface_bitrate, MINIMUM_BITRATE)` (`Transport.py:3208`).
+    ///
+    /// Without the
     /// clamp a misconfigured 1 bps interface yields an eight-thousand-second timeout, and a
     /// zero would divide by zero.
     func testABitrateBelowTheFloorIsClampedToMinimumBitrate() {
@@ -86,7 +90,9 @@ final class MediumPathTimeoutTests: XCTestCase {
     // MARK: - Which interfaces count
 
     /// Python's generator filters on `if interface.online and interface.bitrate`, and
-    /// `bitrate` is falsy for both `None` and `0`. An offline LoRa radio must not go on
+    /// `bitrate` is falsy for both `None` and `0`.
+    ///
+    /// An offline LoRa radio must not go on
     /// inflating every timeout on a node that's actually running over TCP.
     func testOfflineAndZeroBitrateInterfacesAreExcluded() {
         let t = Transport()
@@ -100,7 +106,9 @@ final class MediumPathTimeoutTests: XCTestCase {
     }
 
     /// Python's `min()` over an empty generator raises, and the `except` leaves the previous
-    /// value in place rather than clearing it (`Transport.py:568-569`). Mirrored deliberately:
+    /// value in place rather than clearing it (`Transport.py:568-569`).
+    ///
+    /// Mirrored deliberately:
     /// a node whose interfaces have all dropped has no paths to resolve either, so the only
     /// observable difference would be utilities giving up *sooner* on a network that's down.
     func testTheLastKnownBitrateSurvivesEveryInterfaceGoingOffline() {
@@ -140,7 +148,9 @@ final class MediumPathTimeoutTests: XCTestCase {
     // MARK: - The wiring
 
     /// The seam, not the value: `prioritizeInterfaces()` existed and was correct, and nothing
-    /// in `Sources/` called it. Fails if the jobs loop stops refreshing the bitrate.
+    /// in `Sources/` called it.
+    ///
+    /// Fails if the jobs loop stops refreshing the bitrate.
     func testTheJobsLoopRefreshesTheLowestBitrate() {
         let t = Transport()
         t.register(interface: Iface(name: "lora", bitrate: 1200))

@@ -273,7 +273,9 @@ final class RNS141ParityTests: XCTestCase {
     /// A gravity takeover resets the path's responsiveness state, like every
     /// other accepted announce: Python calls `mark_path_unknown_state`
     /// unconditionally inside `if should_add:` (Transport.py:2053), *after* the
-    /// path-table assignment. The per-branch inline calls higher up the ladder
+    /// path-table assignment.
+    ///
+    /// The per-branch inline calls higher up the ladder
     /// are redundant with it, so the gravity branch omitting one means nothing.
     ///
     /// This is asserted via `markPathUnresponsive` rather than
@@ -363,7 +365,9 @@ final class RNS141ParityTests: XCTestCase {
 
     /// The structural half of commit 48388756, which the preceding numeric assertions can no longer
     /// express now that both constants read 2: a subsiding announce burst must clear even
-    /// though its deque holds fewer samples than the egress floor would demand. Driven with a
+    /// though its deque holds fewer samples than the egress floor would demand.
+    ///
+    /// Driven with a
     /// three-sample deque so that raising `ecBurstMinSamples` back to 6—or repointing the
     /// deactivation gate at it—fails here.
     func testIngressBurstClearsOnADequeTooSmallForTheEgressFloor() {
@@ -407,7 +411,9 @@ final class RNS141ParityTests: XCTestCase {
     /// A link opened with no path entry has `expectedHops == nil`, which maps onto
     /// Python's PATHFINDER_M sentinel and therefore always disagrees with the
     /// proof—so an ordinary establishment over a direct interface exercises the
-    /// re-balance path. The corrected hop count must be in place *before* the link
+    /// re-balance path.
+    ///
+    /// The corrected hop count must be in place *before* the link
     /// activates: Python re-balances ahead of `validate_proof`
     /// (Transport.py:2276-2317), so no `onEstablished` observer ever receives the
     /// stale count.
@@ -421,7 +427,9 @@ final class RNS141ParityTests: XCTestCase {
 
     /// With re-balancing disabled, Python's `packet.hops == link.expected_hops`
     /// gate is never satisfied for a mismatched proof, so `validate_proof` isn't
-    /// reached and the link stays pending until it times out. Swift used to
+    /// reached and the link stays pending until it times out.
+    ///
+    /// Swift used to
     /// validate the proof first and re-balance afterwards, which established the
     /// link in a case Python leaves dead.
     func testMismatchedProofIsNotAcceptedWhenRebalanceDisabled() throws {

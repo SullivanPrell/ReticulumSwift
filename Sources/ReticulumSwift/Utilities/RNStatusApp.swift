@@ -25,21 +25,27 @@ public enum RNStatusApp {
 
     // MARK: - Identity
 
-    /// Executable name. Python: `argparse.ArgumentParser(prog=…)` defaults to `sys.argv[0]`.
+    /// Executable name.
+    ///
+    /// Python: `argparse.ArgumentParser(prog=…)` defaults to `sys.argv[0]`.
     public static let appName: String = "rnstatus"
 
     /// One-line description printed above the option list.
+    ///
     /// Python: `description="Reticulum Network Stack Status"` (rnstatus.py:689).
     public static let description: String = "Reticulum Network Stack Status"
 
     // MARK: - Remote management destination
 
     /// Dotted full name of the remote-management destination.
+    ///
     /// Python: `RNS.Destination.hash_from_name_and_identity("rnstransport.remote.management", …)`
     /// (rnstatus.py:319).
     public static let remoteManagementFullName: String = "rnstransport.remote.management"
 
-    /// App name half of the remote-management destination. Python: `Transport.APP_NAME`.
+    /// App name half of the remote-management destination.
+    ///
+    /// Python: `Transport.APP_NAME`.
     public static let remoteManagementAppName: String = "rnstransport"
 
     /// Aspects half of the remote-management destination (rnstatus.py:137).
@@ -50,43 +56,60 @@ public enum RNStatusApp {
 
     // MARK: - Timing
 
-    /// Default `-w`. Python: `RNS.Transport.PATH_REQUEST_TIMEOUT` = 15 (Transport.py:79).
+    /// Default `-w`.
+    ///
+    /// Python: `RNS.Transport.PATH_REQUEST_TIMEOUT` = 15 (Transport.py:79).
     public static let defaultRemoteTimeout: TimeInterval = Transport.pathRequestTimeout
 
-    /// Default `-I`. Python: `default=1.0` (rnstatus.py:708).
+    /// Default `-I`.
+    ///
+    /// Python: `default=1.0` (rnstatus.py:708).
     public static let defaultMonitorInterval: TimeInterval = 1.0
 
-    /// Monitor-mode sleep floor. Python: `max(args.monitor_interval-td, 0.2)` (rnstatus.py:746).
+    /// Monitor-mode sleep floor.
+    ///
+    /// Python: `max(args.monitor_interval-td, 0.2)` (rnstatus.py:746).
     public static let minimumMonitorSleep: TimeInterval = 0.2
 
     // MARK: - Wire / display constants
 
     /// Required length of the `-R` argument, in hex characters.
+    ///
     /// Python: `(RNS.Reticulum.TRUNCATED_HASHLENGTH//8)*2` = 32 (rnstatus.py:315).
     public static let destinationHexLength: Int = (Constants.truncatedHashLengthBits / 8) * 2
 
     /// The progress-erase sequence printed eight times while `-R` is negotiating.
+    ///
     /// Python: `print("\r" + 58 spaces + "\r", end="")` (rnstatus.py:80, 90, 94, 98, 105, 124, 132, 151).
     public static let eraseSequence: String = "\r" + String(repeating: " ", count: 58) + "\r"
 
     /// Cursor-home + clear-screen emitted at the top of every monitor refresh.
+    ///
     /// Python: `print("\033[H\033[2J", end="")` (rnstatus.py:742).
     public static let clearScreen: String = "\u{1b}[H\u{1b}[2J"
 
-    /// Floor for the frequency/traffic column width. Python: `max(…, 10)` (rnstatus.py:618).
+    /// Floor for the frequency/traffic column width.
+    ///
+    /// Python: `max(…, 10)` (rnstatus.py:618).
     public static let minimumColumnWidth: Int = 10
 
     /// Indent of every wrapped second line in the Path Rqs./Announces/Traffic blocks.
+    ///
     /// Python: 16 literal spaces (rnstatus.py:628, 632, 640, 661).
     public static let continuationIndent: String = String(repeating: " ", count: 16)
 
-    /// Width of the `-d` table's horizontal rule. Python: `print("-" * 89)` (rnstatus.py:266).
+    /// Width of the `-d` table's horizontal rule.
+    ///
+    /// Python: `print("-" * 89)` (rnstatus.py:266).
     public static let discoveredTableRuleWidth: Int = 89
 
-    /// Width of the `-D` between-entry separator. Python: `"="*32` (rnstatus.py:234).
+    /// Width of the `-D` between-entry separator.
+    ///
+    /// Python: `"="*32` (rnstatus.py:234).
     public static let detailSeparatorWidth: Int = 32
 
     /// Base log level; the effective level is `baseLogLevel + verbosity`.
+    ///
     /// Python: `loglevel=3+verbosity` where 3 is `RNS.LOG_NOTICE` (rnstatus.py:167).
     public static let baseLogLevel: Int = 3
 
@@ -109,7 +132,9 @@ public enum RNStatusApp {
     // MARK: - Command line
 
     /// The `-s` help string, single-sourced so the option table and ``helpText`` can't
-    /// drift apart. Python: rnstatus.py:845.
+    /// drift apart.
+    ///
+    /// Python: rnstatus.py:845.
     ///
     /// `helpText` has to carry the argparse-wrapped form, so the two spellings are
     /// unavoidably separate strings. `RNStatusAppTests` re-joins the wrapped rows and
@@ -205,12 +230,15 @@ public enum RNStatusApp {
     """
 
     /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
-    /// error. Taken from ``helpText`` rather than restated, so the two can't drift.
+    /// error.
+    ///
+    /// Taken from ``helpText`` rather than restated, so the two can't drift.
     public static var usageText: String {
         helpText.components(separatedBy: "\n\n")[0]
     }
 
     /// The whole `argparse` error page: the usage block, then `rnstatus: error: detail`.
+    ///
     /// Written to stderr, followed by exit 2.
     public static func errorText(_ detail: String) -> String {
         "\(usageText)\n\(appName): error: \(detail)"
@@ -218,7 +246,9 @@ public enum RNStatusApp {
 
     // MARK: - Exit codes
 
-    /// Process exit codes. Python calls `exit(n)` directly at each site.
+    /// Process exit codes.
+    ///
+    /// Python calls `exit(n)` directly at each site.
     public enum Result: Int32, Equatable, CaseIterable {
         /// Success—also `--version`, `--help`, `-j`, `-d`/`-D` and `KeyboardInterrupt`.
         case ok = 0
@@ -236,7 +266,9 @@ public enum RNStatusApp {
 
     // MARK: - Sort keys
 
-    /// Accepted `-s` values. Python lowercases the argument and runs a chain of
+    /// Accepted `-s` values.
+    ///
+    /// Python lowercases the argument and runs a chain of
     /// independent `if`s (rnstatus.py:377-401); an unrecognized token is silently ignored,
     /// which `Sort(rawValue:)` reproduces by returning nil.
     ///

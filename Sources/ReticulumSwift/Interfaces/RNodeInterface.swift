@@ -163,6 +163,7 @@ public enum KISS {
     }
 
     /// Convenience alias used by KISSInterface / AX25KISSInterface.
+    ///
     /// Equivalent to `frameData(data)` with `CMD_DATA`.
     public static func frame(_ data: Data) -> Data { frameData(data) }
 
@@ -181,7 +182,9 @@ public enum KISS {
         private var pendingEscape = false
         private var buffer        = Data()
 
-        /// Hard cap on an in-progress KISS frame. Far above any real RNode frame
+        /// Hard cap on an in-progress KISS frame.
+        ///
+        /// Far above any real RNode frame
         /// (MTU ~500 plus KISS escaping), so valid frames are never affected; it
         /// only bounds a garbage/malicious stream that never emits a closing FEND,
         /// which would otherwise grow `buffer` without limit.
@@ -234,17 +237,23 @@ public enum KISS {
 
 // MARK: - RNodeInterface
 
-/// KISS-framed interface to an RNode LoRa modem. The byte-stream backing
+/// KISS-framed interface to an RNode LoRa modem.
+///
+/// The byte-stream backing
 /// it (USB-serial, CoreBluetooth Nordic UART, TCP, and so on) comes from the
 /// host application as an `RNodeTransport`. This file owns KISS framing and
 /// the full RNode configuration / telemetry command set.
 public final class RNodeInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`RNodeInterface.py:302`). The announcer
+    /// Python marks this type discoverable (`RNodeInterface.py:302`).
+    ///
+    /// The announcer
     /// still needs `discoverable` set from config before it announces anything.
     public let supportsDiscovery = true
 
@@ -296,7 +305,9 @@ public final class RNodeInterface: Interface {
     public var ifacIdentity: Identity?
     public var ifacKey:      Data?
     /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
-    /// `ifac_size` is given. Python declares 8 for the RNode family—`RNodeInterface.py:110`,
+    /// `ifac_size` is given.
+    ///
+    /// Python declares 8 for the RNode family—`RNodeInterface.py:110`,
     /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
     /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
     /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
@@ -391,13 +402,16 @@ public final class RNodeInterface: Interface {
     // MARK:–Station identification (`id_callsign` / `id_interval`)
 
     /// Encoded callsign transmitted for station identification, or nil when not configured.
+    ///
     /// Python: `self.id_callsign = id_callsign.encode("utf-8")` (`RNodeInterface.py:336`).
     public var idCallsign: Data? = nil
     /// Seconds after the first transmission at which the callsign goes out.
+    ///
     /// Python: `self.id_interval` (`:337`). Set together with `idCallsign` or not at all—the
     /// reference treats a lone half of the pair as no configuration (`:333`, `:342-343`).
     public var idInterval: TimeInterval? = nil
     /// When the first non-ID transmission since the last ID happened; nil right after an ID.
+    ///
     /// Python: `self.first_tx` (`process_outgoing`, `:1018-1023`).
     private(set) var firstTx: TimeInterval? = nil
     private var idTimer: Timer? = nil
@@ -421,18 +435,23 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Interface lifecycle
 
-    /// Bound on the wait for the device's detect response. Python polls 5 s over TCP/BLE
+    /// Bound on the wait for the device's detect response.
+    ///
+    /// Python polls 5 s over TCP/BLE
     /// (`RNodeInterface.py:434-442`) and sleeps a fixed 0.2 s on serial (`:444`); this port's
     /// reads are event-driven, so one bounded poll serves every transport and exits the moment
     /// the response lands.
     public var detectTimeout: TimeInterval = 5.0
 
     /// Bound on the wait for the echoed radio parameters before `validateRadioState()` decides.
+    ///
     /// Python sleeps a fixed 0.25–1.5 s by transport (`:662-664`) and compares once; polling to
     /// the same largest bound reaches the same decision without the fixed stall.
     public var validateTimeout: TimeInterval = 1.5
 
-    /// Seconds between redial attempts after device loss; overridable for tests. Python's
+    /// Seconds between redial attempts after device loss; overridable for tests.
+    ///
+    /// Python's
     /// reconnect loop hardcodes `time.sleep(5)` (`RNodeInterface.py:1178`)—the class
     /// `reconnectWait` constant records the reference value, this carries the live one.
     public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeInterface.reconnectWait)
@@ -472,7 +491,9 @@ public final class RNodeInterface: Interface {
     }
 
     /// Block until the bring-up begun by `start()` finishes, returning whether the interface came
-    /// online. Must not be called from the transport's byte-delivery thread—see
+    /// online.
+    ///
+    /// Must not be called from the transport's byte-delivery thread—see
     /// ``bringUpQueue``. `rnsd` bringing a config-file interface up is the intended caller.
     @discardableResult
     public func waitUntilOnline(timeout: TimeInterval) -> Bool {
@@ -791,7 +812,9 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Error handling
 
-    /// Record a hardware error code. All known codes and unknown ones are
+    /// Record a hardware error code.
+    ///
+    /// All known codes and unknown ones are
     /// recorded identically. Bounded to the most recent `maxHwErrors` so a
     /// misbehaving/hostile RNode can't grow the list without limit.
     private static let maxHwErrors = 256

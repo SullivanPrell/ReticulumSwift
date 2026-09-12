@@ -192,7 +192,9 @@ final class InterfaceConstructionTests: XCTestCase {
 
     /// The current reference routes an unknown type through the external-interface-module
     /// lookup and logs an ERROR when no module exists (`Reticulum.py:1055-1061`)—it doesn't
-    /// raise, and the other interfaces still come up. This port loads no external modules, so
+    /// raise, and the other interfaces still come up.
+    ///
+    /// This port loads no external modules, so
     /// the observable is the same: named error, everything else constructed.
     func testUnknownTypeIsSkippedLoudlyWhileOthersConstruct() throws {
         registerStubs()

@@ -149,7 +149,9 @@ final class PacketProtocolViolationTests: XCTestCase {
     }
 
     /// Records what reached the wire, so the preceding assertions are about transmission rather
-    /// than about an internal flag. Same shape as the doubles in the announce-forwarding tests.
+    /// than about an internal flag.
+    ///
+    /// Same shape as the doubles in the announce-forwarding tests.
     private final class RecordingInterface: Interface {
         var name: String
         var bitrate: Int = 0

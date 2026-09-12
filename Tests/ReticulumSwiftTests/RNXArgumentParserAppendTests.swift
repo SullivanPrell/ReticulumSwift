@@ -13,6 +13,7 @@ import XCTest
 
 /// The `action="append"` support rnx's repeatable `-a` needs, plus the flag spellings rnx
 /// relies on staying distinct.
+///
 /// Python reference: RNS/Utilities/rnx.py:555-576.
 final class RNXArgumentParserAppendTests: XCTestCase {
 

@@ -12,7 +12,9 @@ import Foundation
 import Network
 
 /// Bidirectional UDP transport for Reticulum packets, wire-compatible
-/// with `RNS.Interfaces.UDPInterface`. One datagram carries exactly one
+/// with `RNS.Interfaces.UDPInterface`.
+///
+/// One datagram carries exactly one
 /// raw `Packet`—no HDLC framing.
 ///
 /// Provide a `listenPort` to receive datagrams, and a
@@ -20,7 +22,9 @@ import Network
 /// direction is optional, but at least one must be configured.
 public final class UDPInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
     public let name: String
@@ -50,7 +54,9 @@ public final class UDPInterface: Interface {
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
@@ -58,7 +64,9 @@ public final class UDPInterface: Interface {
     private var listener: NWListener?
     private var connection: NWConnection?
     private let queue: DispatchQueue
-    /// Inbound connections accepted by the listener. Retained so stop() can
+    /// Inbound connections accepted by the listener.
+    ///
+    /// Retained so stop() can
     /// cancel them (otherwise every inbound peer leaks its connection + receive
     /// loop) and pruned when their receive loop ends. Guarded by `connLock`
     /// (newConnectionHandler runs on `queue`, stop() on the caller thread).
@@ -67,7 +75,9 @@ public final class UDPInterface: Interface {
 
     /// Python `UDPInterface.__str__` (`UDPInterface.py:131-132`):
     /// `"UDPInterface["+self.name+"/"+self.bind_ip+":"+str(self.bind_port)+"]"`, where
-    /// `bind_ip` is the configured `listen_ip` (`UDPInterface.py:63`, `:91`). Hardcoding
+    /// `bind_ip` is the configured `listen_ip` (`UDPInterface.py:63`, `:91`).
+    ///
+    /// Hardcoding
     /// `0.0.0.0` here made a loopback-bound Swift interface report a different name—and
     /// so a different `Interface.hash`—than the Python interface beside it.
     public var displayName: String {
@@ -76,7 +86,9 @@ public final class UDPInterface: Interface {
         return "UDPInterface[\(name)/\(ip):\(port)]"
     }
 
-    /// The configured `listen_ip`. Python's `bind_ip`; reporting-only here, since
+    /// The configured `listen_ip`.
+    ///
+    /// Python's `bind_ip`; reporting-only here, since
     /// `NWListener` binds every address.
     public let bindIP: String
 

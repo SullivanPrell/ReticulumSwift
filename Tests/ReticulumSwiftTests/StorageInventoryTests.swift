@@ -134,7 +134,9 @@ final class StorageInventoryTests: XCTestCase {
         }
     }
 
-    /// A declared divergence has to *be* declared as one. A port-only path recorded as if the
+    /// A declared divergence has to *be* declared as one.
+    ///
+    /// A port-only path recorded as if the
     /// reference backed it's the same undocumented divergence in a costume.
     func testPortOnlyEntriesAreMarkedRatherThanCitedAsReference() {
         let suspicious = StorageInventory.Entry.all.filter {

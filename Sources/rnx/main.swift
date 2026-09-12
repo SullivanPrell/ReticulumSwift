@@ -24,7 +24,9 @@ let appName = RNXApp.appName
 
 // MARK: - Interrupt handling
 
-/// Set from the SIGINT handler. Python catches KeyboardInterrupt around the whole of
+/// Set from the SIGINT handler.
+///
+/// Python catches KeyboardInterrupt around the whole of
 /// `main()`, prints an empty line, tears the link down and exits 0 (rnx.py:671-676).
 /// A signal handler can't do that safely, so the spin loops poll this flag instead.
 nonisolated(unsafe) var rnxInterrupted: sig_atomic_t = 0
@@ -64,7 +66,9 @@ func writeErrLine(_ text: String) {
 /// Python keeps `identity`, `reticulum`, `link`, `listener_destination`, `stats`,
 /// `current_progress` and `speed` as module globals, which is precisely what lets an
 /// interactive session reuse one Link—and what makes the transfer meter carry over
-/// between commands. Same lifetime here.
+/// between commands.
+///
+/// Same lifetime here.
 final class Session {
     var connection: InstanceConnection?
     var identity: Identity?
@@ -118,7 +122,9 @@ func spin(until: () -> Bool, msg: String, timeout: TimeInterval?) -> Bool {
     return true
 }
 
-/// Python: `spin_stat(until, timeout)`—rnx.py:277-299. No initial write, a fixed
+/// Python: `spin_stat(until, timeout)`—rnx.py:277-299.
+///
+/// No initial write, a fixed
 /// 82-column blank field before each frame, and a trailing space from `print(end=" ")`.
 @discardableResult
 func spinStat(until: () -> Bool, timeout: TimeInterval?) -> Bool {
@@ -305,6 +311,7 @@ func parseOptions() -> Options {
 /// Python's `RNS.log` line shape (`__init__.py:131`):
 /// `"[" + timestamp + "] " + loglevelname(level) + " " + msg`, where `loglevelname` is
 /// ten columns wide—so a notice line carries three spaces before the message.
+///
 /// ReticulumSwift's default printer emits `"[\(Date())] [NOTICE] msg"` instead.
 func installPythonLogFormat() {
     Reticulum.logHandler = { message, level in
@@ -317,6 +324,7 @@ func installPythonLogFormat() {
 }
 
 /// Python: `RNS.Reticulum(configdir=configdir, loglevel=targetloglevel)`—rnx.py:67, 343.
+///
 /// Built exactly once per process, matching the `reticulum` module global.
 func bringUpStack(_ options: Options) -> InstanceConnection {
     if let existing = session.connection { return existing }
@@ -338,7 +346,9 @@ func bringUpStack(_ options: Options) -> InstanceConnection {
     }
 }
 
-/// Python: `prepare_identity(identitypath)`—rnx.py:50-61. Created once per process.
+/// Python: `prepare_identity(identitypath)`—rnx.py:50-61.
+///
+/// Created once per process.
 func prepareIdentity(_ options: Options, configDirectory: URL) -> Identity {
     if let existing = session.identity { return existing }
     let url = options.identityPath.map {
@@ -356,7 +366,9 @@ func prepareIdentity(_ options: Options, configDirectory: URL) -> Identity {
 
 // MARK: - Listener
 
-/// Python: `listen(...)`—rnx.py:63-138. Never returns; `-p` exits 0 partway through.
+/// Python: `listen(...)`—rnx.py:63-138.
+///
+/// Never returns; `-p` exits 0 partway through.
 func runListener(_ options: Options) -> Never {
     let connection = bringUpStack(options)
     let identity = prepareIdentity(options, configDirectory: connection.configDirectory)
@@ -632,7 +644,9 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
 
 // MARK: - Interactive REPL
 
-/// Python: rnx.py:611-664. Command history and cbreak mode are commented out there and
+/// Python: rnx.py:611-664.
+///
+/// Command history and cbreak mode are commented out there and
 /// aren't implemented here either.
 func runREPL(_ options: Options) -> Never {
     var code: Int?

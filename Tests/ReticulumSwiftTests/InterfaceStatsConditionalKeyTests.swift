@@ -55,7 +55,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
 
     // MARK: - peers
 
-    /// `if hasattr(interface, "peers"): ifstats["peers"] = len(interface.peers)`. Upstream
+    /// `if hasattr(interface, "peers"): ifstats["peers"] = len(interface.
+    ///
+    /// peers)`. Upstream
     /// emits the key for every interface that tracks peers, whether or not it has any, so a
     /// freshly built one reports zero rather than omitting the line.
     func testAnAutoInterfaceReportsItsPeerCount() throws {
@@ -70,7 +72,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     }
 
     /// The control: an interface with no notion of peers omits the key entirely, the way
-    /// `hasattr` does upstream. Emitting a hard zero here would tell an operator a UDP
+    /// `hasattr` does upstream.
+    ///
+    /// Emitting a hard zero here would tell an operator a UDP
     /// interface had lost its peers.
     func testAnInterfaceWithoutPeersOmitsTheKey() throws {
         let stats = try row(for: UDPInterface(name: "udp-nopeers", listenPort: 4271))
@@ -80,7 +84,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     // MARK: - Device load
 
     /// `cpu_load` and `mem_load` are `@property` on Python's `WeaveInterface`, so `hasattr`
-    /// is always true and the keys are always emitted. Both read through `self.device`, which
+    /// is always true and the keys are always emitted.
+    ///
+    /// Both read through `self.device`, which
     /// `final_init` assigns unconditionally (`WeaveInterface.py:883`)—so the `if not
     /// self.device: return None` arm never runs for an interface old enough to appear in a
     /// stats payload, and the readings are the device's initialised zeros until the switch
@@ -122,7 +128,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     }
 
     /// A switch that reports a zero total divides by zero upstream, so there is no reference
-    /// behaviour to copy—only a hazard to avoid. A NaN would survive into the payload and
+    /// behaviour to copy—only a hazard to avoid.
+    ///
+    /// A NaN would survive into the payload and
     /// reach `rnstatus` as a printed "nan %".
     func testAMemoryFrameReportingNoTotalDoesNotYieldANaN() throws {
         let iface = weaveInterface(name: "weave-zerototal")
@@ -145,7 +153,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     // MARK: - Radio temperature
 
     /// `self.cpu_temp = None` in `RNodeInterface.__init__` and `self.cpu_temp =
-    /// self.r_temperature` once a stats frame lands. The attribute exists either way, so
+    /// self.r_temperature` once a stats frame lands.
+    ///
+    /// The attribute exists either way, so
     /// upstream always emits the key and `rnstatus` prints the line only when it isn't None.
     func testAnRNodeInterfaceWithNoReadingReportsNullTemperature() throws {
         let stats = try row(for: RNodeInterface(name: "rnode-notemp",
@@ -163,7 +173,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     // MARK: - Parent interface
 
     /// `if hasattr(interface, "parent_interface") and interface.parent_interface != None`,
-    /// then `str(...)` and `.get_hash()`. A spawned client interface is otherwise anonymous
+    /// then `str(...)` and `.get_hash()`.
+    ///
+    /// A spawned client interface is otherwise anonymous
     /// in the listing: several may share a display name, and the parent is the only field
     /// naming which server, radio or tunnel each one belongs to.
     func testEverySpawnedInterfaceNamesItsParent() throws {
@@ -259,7 +271,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     /// The three identifiers aren't interchangeable, and upstream splits them across two
     /// types: `switch_id` and `endpoint_id` are properties of `WeaveInterface`
     /// (`WeaveInterface.py:838-845`), while `via_switch_id` is an attribute only
-    /// `WeaveInterfacePeer` declares (`:1014`). Publishing all three from the peer describes
+    /// `WeaveInterfacePeer` declares (`:1014`).
+    ///
+    /// Publishing all three from the peer describes
     /// each peer as the switch, and leaves the interface actually attached to that switch
     /// reporting nothing—`rnstatus` prints "Switch ID" from whichever row carries the key
     /// (`rnstatus.py:543-553`).
@@ -286,7 +300,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     }
 
     /// Each identifier goes through `RNS.hexrep`, whose `delimit` argument defaults to true
-    /// (`__init__.py:168-174`), so an operator reads `de:ad:be:ef`. Plain hex wouldn't match
+    /// (`__init__.py:168-174`), so an operator reads `de:ad:be:ef`.
+    ///
+    /// Plain hex wouldn't match
     /// what the same switch shows on a Python daemon.
     func testTheIdentifiersAreColonDelimitedHex() throws {
         let iface = weaveInterface(name: "weave-hex")
@@ -307,7 +323,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
 
     /// `interference_last_ts` / `interference_last_dbm` come from `r_interference_l`, which
     /// upstream initialises to `None` and never assigns: a comment disables every write
-    /// (`RNodeInterface.py:281,957-966`). The guard is `type(...) == list`, so upstream's own
+    /// (`RNodeInterface.py:281,957-966`).
+    ///
+    /// The guard is `type(...) == list`, so upstream's own
     /// keys never appear. Emitting them here would put this port's listing ahead of the
     /// reference for a field with no defined meaning yet.
     func testTheInterferenceHistoryKeysStayUnemitted() throws {

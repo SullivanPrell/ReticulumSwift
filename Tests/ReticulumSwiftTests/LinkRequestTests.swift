@@ -120,6 +120,7 @@ final class LinkRequestTests: XCTestCase {
     /// payload must be the msgpack envelope `[request_id, response]` (same as the
     /// single-packet path), and the initiator must decode it and deliver the bare
     /// response—mirroring Python Link.handle_request / response_resource_concluded.
+    ///
     /// A NATIVE handler (the NomadNet page path) previously resourced the bare
     /// msgpack-encoded value and the initiator delivered it un-decoded, so the caller
     /// received msgpack-wrapped bytes (or, cross-impl to Python, the request timed out).

@@ -81,7 +81,9 @@ public enum SAMClient {
         "NAMING LOOKUP NAME=\(name)\n"
     }
 
-    /// Unique session nickname for `SESSION CREATE`. A fresh ID per dial
+    /// Unique session nickname for `SESSION CREATE`.
+    ///
+    /// A fresh ID per dial
     /// attempt avoids `DUPLICATED_ID` while i2pd reaps a dead session.
     public static func randomSessionID() -> String {
         "reticulum-" + Hashes.randomHash().prefix(4).map { String(format: "%02x", $0) }.joined()
@@ -135,6 +137,7 @@ public enum SAMClient {
     // MARK: - Key=Value extractor
 
     /// Extract a `KEY=VALUE` pair from a SAM reply line.
+    ///
     /// Handles unquoted values that end at the next space or newline.
     public static func extractValue(for key: String, in line: String) -> String? {
         let prefix = key + "="

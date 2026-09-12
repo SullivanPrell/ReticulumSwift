@@ -10,7 +10,9 @@
 
 import Foundation
 
-/// HDLC byte-stuffing for byte-oriented serial / TCP interfaces. Frames are
+/// HDLC byte-stuffing for byte-oriented serial / TCP interfaces.
+///
+/// Frames are
 /// delimited by `FLAG`. `ESC` and `FLAG` bytes inside a frame are stuffed by
 /// emitting `ESC` followed by `byte ^ ESC_MASK`.
 public enum HDLC {
@@ -59,7 +61,9 @@ public enum HDLC {
         return out
     }
 
-    /// Stateful frame extractor. Feed bytes as they arrive; receive complete
+    /// Stateful frame extractor.
+    ///
+    /// Feed bytes as they arrive; receive complete
     /// frames as they're delimited. Tolerates back-to-back FLAGs (treated as
     /// frame boundaries with zero-byte content, which are silently dropped).
     public final class FrameDecoder {

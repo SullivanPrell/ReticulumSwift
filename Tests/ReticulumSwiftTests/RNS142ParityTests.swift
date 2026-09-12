@@ -82,7 +82,9 @@ final class RNS142ParityTests: XCTestCase {
             "an online interface must receive the recursive path request")
     }
 
-    /// RNS 1.4.2: a registered but offline interface is skipped. Sending down a
+    /// RNS 1.4.2: a registered but offline interface is skipped.
+    ///
+    /// Sending down a
     /// dead interface is a request that can never be answered, and on a
     /// reconnecting transport it's also a write into a socket that's being
     /// torn down.

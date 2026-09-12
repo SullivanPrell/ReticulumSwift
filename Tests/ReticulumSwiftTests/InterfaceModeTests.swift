@@ -162,7 +162,9 @@ final class InterfaceModeTests: XCTestCase {
     // MARK: - shouldEgressLimitPR: sample-count floor
 
     /// RNS 1.5.1 dropped the egress floor from six samples to two and renamed the constant
-    /// `EC_BURST_MIN_SAMPLES` (`Interface.py:85`). This test previously asserted the six, on
+    /// `EC_BURST_MIN_SAMPLES` (`Interface.py:85`).
+    ///
+    /// This test previously asserted the six, on
     /// the reasoning that five rapid requests already compute above `EC_PR_FREQ` and
     /// suppressing them would throttle an ordinary startup discovery burst. Upstream decided
     /// the opposite—a burst of two *is* a burst—so what remains testable through sample

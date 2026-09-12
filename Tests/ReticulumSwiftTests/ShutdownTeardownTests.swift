@@ -119,6 +119,7 @@ final class ShutdownTeardownTests: XCTestCase {
     }
 
     /// The ordering half: teardown has to happen while the interfaces can still carry the close.
+    ///
     /// Stopping the transport first silently satisfies "detachInterfaces was called" while
     /// emitting nothing, which is the same shape of failure as never calling it.
     func testTheCloseGoesOutBeforeInterfacesAreStopped() throws {

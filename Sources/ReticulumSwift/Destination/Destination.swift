@@ -24,14 +24,17 @@ public final class Destination {
     // MARK: - Class-level constants (mirrors Python Destination class attributes)
 
     /// Time window in seconds for path-request tag deduplication.
+    ///
     /// Python: `Destination.PR_TAG_WINDOW = 30`.
     public static let prTagWindow: TimeInterval = 30
 
     /// Default number of ratchet keys a destination retains.
+    ///
     /// Mirrors Python `Destination.RATCHET_COUNT = 512`.
     public static let ratchetCount: Int = 512
 
     /// Minimum interval between ratchet key rotations in seconds.
+    ///
     /// Mirrors Python `Destination.RATCHET_INTERVAL = 30*60 = 1800`.
     public static let ratchetInterval: TimeInterval = 1800
 
@@ -56,6 +59,7 @@ public final class Destination {
     public let fullName: String
 
     /// Optional default app data attached to outgoing announces.
+    ///
     /// When set, overrides any `appData` passed to `Transport.announce`.
     public var defaultAppData: Data?
 
@@ -70,10 +74,13 @@ public final class Destination {
     }
 
     /// Whether this destination accepts incoming link requests.
+    ///
     /// Mirrors Python's `Destination.accepts_links()`.
     public var acceptsLinks: Bool = true
 
-    /// Getter/setter for `acceptsLinks`. Mirrors Python's `Destination.accepts_links(accepts)`.
+    /// Getter/setter for `acceptsLinks`.
+    ///
+    /// Mirrors Python's `Destination.accepts_links(accepts)`.
     public func getAcceptsLinks() -> Bool { acceptsLinks }
     public func setAcceptsLinks(_ accepts: Bool) { acceptsLinks = accepts }
 
@@ -84,12 +91,16 @@ public final class Destination {
     // entry point: `enableRatchets(path:)`, `enforceRatchets()`,
     // `setRatchetInterval`, `setRetainedRatchets`, `latestRatchetID`.
 
-    /// True after `enableRatchets(path:)`. While set, `Announce.make`
+    /// True after `enableRatchets(path:)`.
+    ///
+    /// While set, `Announce.make`
     /// lazily calls `identity.rotateRatchetIfNeeded()` and embeds
     /// the active ratchet pub in outgoing announces.
     public private(set) var ratchetsEnabled: Bool = false
 
-    /// Path to the destination-scoped ratchet sidecar file. The actual
+    /// Path to the destination-scoped ratchet sidecar file.
+    ///
+    /// The actual
     /// file (`Identity` ratchet privates); Identity writes that one, and this
     /// is just where it lives for *this* destination.
     public private(set) var ratchetsPath: URL?
@@ -101,11 +112,15 @@ public final class Destination {
 
     /// 10-byte ID (`SHA256(ratchet_pub)[:10]`) of the most recent
     /// ratchet that successfully decrypted an inbound packet on this
-    /// destination—or nil if the static identity key did. Mirrors
+    /// destination—or nil if the static identity key did.
+    ///
+    /// Mirrors
     /// Python's `Destination.latest_ratchet_id`.
     public private(set) var latestRatchetID: Data?
 
-    /// Mirrors Python's `Destination.set_ratchet_interval`. Forwarded
+    /// Mirrors Python's `Destination.set_ratchet_interval`.
+    ///
+    /// Forwarded
     /// to the underlying Identity.
     public func setRatchetInterval(_ interval: TimeInterval) {
         identity?.ratchetInterval = interval
@@ -125,7 +140,9 @@ public final class Destination {
     }
 
     /// Enable ratchets on this destination, persisting their privates
-    /// to `path`. If the file exists, ratchet privates are loaded;
+    /// to `path`.
+    ///
+    /// If the file exists, ratchet privates are loaded;
     /// otherwise the file is written when ratchets rotate. Mirrors
     /// `Destination.enable_ratchets(ratchets_path)`.
     @discardableResult
@@ -139,7 +156,9 @@ public final class Destination {
         return true
     }
 
-    /// Mirrors `Destination.enforce_ratchets()`. Returns true if
+    /// Mirrors `Destination.enforce_ratchets()`.
+    ///
+    /// Returns true if
     /// ratchets are enabled and enforcement was applied.
     @discardableResult
     public func enforceRatchets() -> Bool {
@@ -149,7 +168,9 @@ public final class Destination {
     }
 
     /// Persist the underlying identity's ratchet privates to the
-    /// destination's configured path, if any. Called automatically
+    /// destination's configured path, if any.
+    ///
+    /// Called automatically
     /// after rotation in `Announce.make`.
     public func persistRatchets() {
         guard let identity, let url = ratchetsPath else { return }
@@ -157,6 +178,7 @@ public final class Destination {
     }
 
     /// Force a ratchet rotation for this destination if the ratchet interval has elapsed.
+    ///
     /// Mirrors Python's `Destination.rotate_ratchets()`.
     /// Returns `true` whether or not a rotation was needed (ratchets are healthy).
     /// Throws `DestinationError.ratchetsNotEnabled` if ratchets haven't been enabled.
@@ -180,14 +202,17 @@ public final class Destination {
     // MARK: - Application callbacks
 
     /// Called when a Link is established to this destination.
+    ///
     /// Mirrors Python's `Destination.set_link_established_callback`.
     public var onLinkEstablished: ((Link) -> Void)?
 
     /// Called when a DATA packet is delivered to this destination (no link).
+    ///
     /// Mirrors Python's `Destination.set_packet_callback`.
     public var onPacketReceived: ((Data, Packet) -> Void)?
 
     /// Called when this destination is asked to generate a proof.
+    ///
     /// Return `true` to allow the proof, `false` to refuse.
     /// Mirrors Python's `set_proof_strategy` / `PROVE_APP`.
     public var onProofRequested: ((Packet) -> Bool)?
@@ -197,12 +222,14 @@ public final class Destination {
     public enum ProofStrategy { case proveNone, proveAll, proveApp }
 
     /// Proof strategy for inbound DATA packets.
+    ///
     /// Default is `.proveNone`, matching Python's `PROVE_NONE` default.
     public var proofStrategy: ProofStrategy = .proveNone
 
     // MARK: - Request handlers
 
     /// Controls which remote peers are allowed to invoke a request handler.
+    ///
     /// Mirrors Python's `Destination.ALLOW_NONE / ALLOW_ALL / ALLOW_LIST`.
     public enum AllowPolicy {
         case none   // never answer (default—must opt in explicitly)
@@ -210,7 +237,9 @@ public final class Destination {
         case list   // answer only from identities in allowedList
     }
 
-    /// Synchronous request handler. Returns the response bytes, or nil
+    /// Synchronous request handler.
+    ///
+    /// Returns the response bytes, or nil
     /// to send no response. `requestData` may be nil if the request
     /// carried no payload.
     public typealias RequestHandler = (
@@ -221,7 +250,9 @@ public final class Destination {
         _ requestedAt: Double
     ) -> Data?
 
-    /// Native-value request handler. Returns a MsgPack value embedded directly
+    /// Native-value request handler.
+    ///
+    /// Returns a MsgPack value embedded directly
     /// in the response array (Python-wire-compatible). Use for handlers that serve
     /// Python clients (for example, LXMF propagation node). `requestData` is the raw
     /// MsgPack.Value from the incoming request—no double-encoding round-trip.
@@ -238,23 +269,30 @@ public final class Destination {
         public let path: String
         let handler: RequestHandler
         /// Non-nil for Python-compatible native-value handlers registered via
-        /// `registerNativeRequestHandler`. When set, `handler` is a no-op stub.
+        /// `registerNativeRequestHandler`.
+        ///
+        /// When set, `handler` is a no-op stub.
         let nativeHandler: NativeRequestHandler?
         public let allow: AllowPolicy
         /// Identity hashes (16 bytes each) that are explicitly allowed when
         /// `allow == .list`.
         let allowedHashes: Set<Data>
         /// Whether Resource responses should be auto-compressed.
+        ///
         /// Mirrors Python's `auto_compress` parameter (default `True`).
         public let autoCompress: Bool
     }
 
-    /// Path-hash → handler entry. Path hash is `truncatedHash(path.utf8)`.
+    /// Path-hash → handler entry.
+    ///
+    /// Path hash is `truncatedHash(path.utf8)`.
     public var requestHandlers: [Data: RequestHandlerEntry] = [:]
 
     /// Maximum accepted size, in bytes, of an inbound request served by this
     /// destination's registered request handlers. `nil` (the default) means
-    /// unlimited. Set it via `setMaxRequestSize(_:)`.
+    /// unlimited.
+    ///
+    /// Set it via `setMaxRequestSize(_:)`.
     /// Mirrors Python's RNS 1.4.1 `Destination.max_request_size`.
     public private(set) var maxRequestSize: Int?
 
@@ -322,6 +360,7 @@ public final class Destination {
     }
 
     /// Remove the request handler registered for `path`, if any.
+    ///
     /// Mirrors Python's `Destination.deregister_request_handler`.
     public func deregisterRequestHandler(path: String) {
         let key = Hashes.truncatedHash(Data(path.utf8))
@@ -402,6 +441,7 @@ public final class Destination {
     public var hexHash: String { hash.map { String(format: "%02x", $0) }.joined() }
 
     /// Compute destination hash for an identity, app name, and aspects.
+    ///
     /// Mirrors Python's `Destination.hash(identity, app_name, *aspects)`.
     public static func hash(identity: Identity?, appName: String, aspects: [String] = []) -> Data {
         let nameHash = computeNameHash(appName: appName, aspects: aspects)
@@ -409,6 +449,7 @@ public final class Destination {
     }
 
     /// Compute destination hash from a full dotted name string and identity.
+    ///
     /// Mirrors Python's `Destination.hash_from_name_and_identity(full_name, identity)`.
     public static func hash(fromFullName fullName: String, identity: Identity?) -> Data {
         let (appName, aspects) = appAndAspects(fromFullName: fullName)
@@ -416,6 +457,7 @@ public final class Destination {
     }
 
     /// Split a full dotted destination name into app name and aspects.
+    ///
     /// Mirrors Python's `Destination.app_and_aspects_from_name(full_name)`.
     public static func appAndAspects(fromFullName fullName: String) -> (appName: String, aspects: [String]) {
         let components = fullName.split(separator: ".").map(String.init)
@@ -426,6 +468,7 @@ public final class Destination {
     // MARK: - App data management (mirrors Python Destination.set_default_app_data / clear_default_app_data)
 
     /// Set default app data as bytes or clear it.
+    ///
     /// Mirrors Python's `Destination.set_default_app_data(app_data)` when passed bytes.
     public func setDefaultAppData(_ data: Data?) {
         defaultAppData = data
@@ -433,6 +476,7 @@ public final class Destination {
     }
 
     /// Set a callable that produces app data for each announce.
+    ///
     /// Mirrors Python's `Destination.set_default_app_data(app_data)` when passed a callable.
     public func setDefaultAppData(provider: @escaping () -> Data?) {
         defaultAppData = nil
@@ -440,6 +484,7 @@ public final class Destination {
     }
 
     /// Clear the default app data and any callable provider.
+    ///
     /// Mirrors Python's `Destination.clear_default_app_data()`.
     public func clearDefaultAppData() {
         defaultAppData = nil
@@ -449,6 +494,7 @@ public final class Destination {
     // MARK: - Proof strategy setter (mirrors Python Destination.set_proof_strategy)
 
     /// Set the proof strategy.
+    ///
     /// Mirrors Python's `Destination.set_proof_strategy(proof_strategy)`.
     public func setProofStrategy(_ strategy: ProofStrategy) {
         proofStrategy = strategy
@@ -533,33 +579,41 @@ public final class Destination {
 
     // MARK: - GROUP symmetric key management
 
-    /// Symmetric key bytes for GROUP destinations. Nil until `createKeys()` or
+    /// Symmetric key bytes for GROUP destinations.
+    ///
+    /// Nil until `createKeys()` or
     /// `loadGroupKey(_:)` is called.
     public private(set) var groupKeyBytes: Data?
 
     // MARK: - Python-compatible attribute getters
 
     /// Returns the 16-byte destination hash.
+    ///
     /// Mirrors Python's `Destination.hash` (direct attribute access via `get_hash()`).
     public func getHash() -> Data { hash }
 
     /// Returns the full expanded destination name (for example, `"appName.aspect.identity_hexhash"`).
+    ///
     /// Mirrors Python's `Destination.name` direct attribute.
     public func getName() -> String { fullName }
 
     /// Returns the destination type (`.single`, `.group`, `.plain`, `.link`).
+    ///
     /// Mirrors Python's `Destination.type` direct attribute.
     public func getType() -> Kind { kind }
 
     /// Returns the destination direction (`.in` or `.out`).
+    ///
     /// Mirrors Python's `Destination.direction` direct attribute.
     public func getDirection() -> Direction { direction }
 
     /// Returns the destination's identity, or nil for PLAIN/GROUP destinations without one.
+    ///
     /// Mirrors Python's `Destination.identity` direct attribute.
     public func getIdentity() -> Identity? { identity }
 
     /// Returns the current symmetric key for GROUP destinations, or nil.
+    ///
     /// Mirrors Python's `Destination.get_private_key()` for GROUP type.
     public func getGroupKey() -> Data? {
         guard kind == .group else { return nil }
@@ -625,6 +679,7 @@ public final class Destination {
     }
 
     /// Generate a new random symmetric key for this GROUP destination.
+    ///
     /// Mirrors Python's `Destination.create_keys()`.
     /// Returns true on success, false if called on a non-GROUP destination.
     @discardableResult
@@ -635,6 +690,7 @@ public final class Destination {
     }
 
     /// Load a symmetric key into this GROUP destination.
+    ///
     /// Mirrors Python's `Destination.load_private_key(key)` for GROUP type.
     public func loadGroupKey(_ key: Data) {
         guard kind == .group else { return }
@@ -644,6 +700,7 @@ public final class Destination {
     // MARK: - Sign
 
     /// Sign a message using this destination's identity.
+    ///
     /// Only works for `.single` destinations with a private key.
     /// Returns nil if the destination can't sign.
     /// Mirrors Python's `Destination.sign(message)`.

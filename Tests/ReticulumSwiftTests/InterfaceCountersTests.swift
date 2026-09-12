@@ -100,7 +100,9 @@ final class InterfaceCountersTests: XCTestCase {
     /// `BLEMeshInterface` is the sharpest case in the library: `send` runs on
     /// whichever thread `Transport` dispatches from, `handlePeerData` runs on
     /// CoreBluetooth's queue, and the app polls the counters from the main
-    /// thread on a timer. All three touch the same four `Int`s.
+    /// thread on a timer.
+    ///
+    /// All three touch the same four `Int`s.
     func testInterfaceCountersSurviveConcurrentSendAndReceive() throws {
         let transport = ThreadSafeMockBLETransport()
         let iface = BLEMeshInterface(name: "race", transport: transport)

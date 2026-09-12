@@ -62,6 +62,7 @@ final class DestinationExpandNameTests: XCTestCase {
 
     /// Python: `load_public_key` on a SINGLE destination always raises TypeError
     /// ("A single destination holds keys through an Identity instance").
+    ///
     /// Swift: should return false (no throw; keys are on the Identity).
     func testLoadPublicKeyOnSingleReturnsFalse() throws {
         let id = Identity()
@@ -74,6 +75,7 @@ final class DestinationExpandNameTests: XCTestCase {
     }
 
     /// Python: `load_public_key` on PLAIN raises TypeError.
+    ///
     /// Swift: should return false.
     func testLoadPublicKeyOnPlainReturnsFalse() throws {
         let dest = try Destination(identity: nil, direction: .in, kind: .plain,

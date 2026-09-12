@@ -78,7 +78,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
 
     // MARK: - Path requests
 
-    /// `Transport.py:1838-1840`. Nothing can deduplicate a path request with no tag at all, so
+    /// `Transport.
+    ///
+    /// py:1838-1840`. Nothing can deduplicate a path request with no tag at all, so
     /// upstream refuses to act on it and charges the sender a violation. The tag is what makes
     /// one request distinguishable from a replay of itself.
     func testATaglessPathRequestCountsAProtocolViolation() throws {
@@ -92,7 +94,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
         XCTAssertEqual(try violations(t, on: hop), 1)
     }
 
-    /// `Transport.py:1830`. A body too short to even hold a destination hash returns before the
+    /// `Transport.
+    ///
+    /// py:1830`. A body too short to even hold a destination hash returns before the
     /// tag logic, with no violation. The two lengths are one byte apart and upstream treats them
     /// differently, so the boundary is worth pinning.
     func testAPathRequestTooShortForADestinationHashIsSilent() throws {
@@ -105,7 +109,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
         XCTAssertEqual(try violations(t, on: hop), 0)
     }
 
-    /// `Transport.py:1843-1845`. Upstream truncates an oversized tag to the hash length and
+    /// `Transport.
+    ///
+    /// py:1843-1845`. Upstream truncates an oversized tag to the hash length and
     /// counts a violation, then carries on with the request. The truncation matters on its own
     /// (an untruncated tag in the dedup key lets a sender defeat deduplication by varying a
     /// tail nothing reads), and the counter is the only trace it leaves for the operator.
@@ -139,7 +145,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
 
     /// `received_path_request` sits below the tag checks and the duplicate check
     /// (`Transport.py:1857`), so a request upstream refuses to act on never reaches the
-    /// counter. Counting at the top instead makes the path-request column describe arrivals
+    /// counter.
+    ///
+    /// Counting at the top instead makes the path-request column describe arrivals
     /// rather than requests this node served, the same shape as the announce counter.
     func testATaglessPathRequestIsNotCountedAsReceived() throws {
         let t = Transport()
@@ -221,7 +229,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
                data: Data(repeating: 0xC3, count: 32))
     }
 
-    /// `Transport.py:2124-2128`. A link-table entry starts unvalidated and becomes validated
+    /// `Transport.
+    ///
+    /// py:2124-2128`. A link-table entry starts unvalidated and becomes validated
     /// only when the relay verifies the responder's link-request proof. Until then, upstream
     /// refuses to carry traffic on that route and counts a violation.
     ///
@@ -249,7 +259,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
     }
 
     /// Upstream's condition excludes `context == LRPROOF` (`Transport.py:2122`), because a
-    /// link-request proof is what sets the validated flag in the first place. Relaying a proof
+    /// link-request proof is what sets the validated flag in the first place.
+    ///
+    /// Relaying a proof
     /// through `handleLinkRequestProof` raises the flag before the forward, so on that path the
     /// exemption is redundant—but a proof reaching the gate any other way, such as a duplicate
     /// or one for a link already torn down, would otherwise charge a peer for a frame upstream
@@ -284,7 +296,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
     }
 
     /// Pins the decision not to port `protocol_violation("Invalid tunnel synthesis packet")`
-    /// (`Transport.py:2808-2810`). It fires from the handler's `except`, and once the length
+    /// (`Transport.py:2808-2810`).
+    ///
+    /// It fires from the handler's `except`, and once the length
     /// matches nothing inside can raise: `load_public_key` swallows its own exception, and
     /// neither curve rejects a 32-byte value at construction: Ed25519 defers point decoding
     /// to verification. Degenerate key bytes therefore load, fail `validate`, and go
@@ -304,7 +318,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
     }
 
     /// The boundary on the other side: upstream reaches `validate` without raising, the
-    /// signature simply fails, and the handler falls off the end. No exception, so no
+    /// signature simply fails, and the handler falls off the end.
+    ///
+    /// No exception, so no
     /// violation. A failed signature is an ordinary outcome on a shared medium.
     func testATunnelSynthesisPacketWithABadSignatureIsSilent() throws {
         let t = Transport()

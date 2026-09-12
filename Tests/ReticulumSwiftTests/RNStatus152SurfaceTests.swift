@@ -24,7 +24,9 @@ final class RNStatus152SurfaceTests: XCTestCase {
     // MARK: - Fixtures
 
     /// `RNStatusRendererTests.baseInterface` plus every key RNS 1.5.2 reads without a
-    /// presence guard. The 1.5.2 utility subscripts 23 per-interface keys bare, so a
+    /// presence guard.
+    ///
+    /// The 1.5.2 utility subscripts 23 per-interface keys bare, so a
     /// payload missing any of them makes the real tool raise a `KeyError`.
     static func iface(_ overrides: [(String, MsgPack.Value)] = []) -> MsgPack.Value {
         var base: [(String, MsgPack.Value)] = [
@@ -245,7 +247,9 @@ final class RNStatus152SurfaceTests: XCTestCase {
     }
 
     /// Python subscripts `ifstat['mtu']` bare inside the bitrate guard, so a payload with
-    /// a bitrate and no MTU raises there. The port renders the rate alone.
+    /// a bitrate and no MTU raises there.
+    ///
+    /// The port renders the rate alone.
     func testAMissingMTURendersTheRateAlone() {
         var pairs: [(String, MsgPack.Value)] = []
         for (key, value) in [("arxs", MsgPack.Value.double(0)), ("atxs", .double(0)),
@@ -449,7 +453,9 @@ final class RNStatus152SurfaceTests: XCTestCase {
     }
 
     /// Python subscripts every queue key bare, so a peer that omits them makes its own
-    /// tool raise. The port reads them with a zero default and still renders the block.
+    /// tool raise.
+    ///
+    /// The port reads them with a zero default and still renders the block.
     func testQueueStatsAgainstAPeerWithoutTheKeys() {
         let bare = RNStatusStats(.map([
             (.string("interfaces"), .array([])),

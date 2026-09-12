@@ -122,7 +122,9 @@ final class ResourceProgressCallbackTests: XCTestCase {
     // MARK: - Sender side
 
     /// Python's `get_progress` measures *sent* parts for the initiator
-    /// (Resource.py:1146-1149). Swift used the receive counter for both roles, so
+    /// (Resource.py:1146-1149).
+    ///
+    /// Swift used the receive counter for both roles, so
     /// a sender reported 0.0 for the entire transfer and then jumped to 1.0.
     func testSenderProgressAdvancesBeforeCompletion() throws {
         let (aLink, bLink, _) = try establishLink(asynchronous: true)

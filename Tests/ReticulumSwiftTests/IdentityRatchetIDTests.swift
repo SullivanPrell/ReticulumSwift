@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Identity.current_ratchet_id() and related ratchet ID methods.
+///
 /// Mirrors Python's `RNS.Identity.current_ratchet_id(destination_hash)`.
 final class IdentityRatchetIDTests: XCTestCase {
 

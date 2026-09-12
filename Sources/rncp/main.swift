@@ -27,7 +27,9 @@ let erase = RNCopyApp.eraseString
 /// `es = " "`—the single space appended by `print(end=es)` (rncp.py:72).
 let endSpace = RNCopyApp.endSpace
 
-/// `print(..., end=terminator)` + flush. Python flushes explicitly in every progress path.
+/// `print(..., end=terminator)` + flush.
+///
+/// Python flushes explicitly in every progress path.
 func emit(_ text: String, terminator: String = "\n") {
     print(text, terminator: terminator)
     fflush(stdout)
@@ -149,7 +151,9 @@ func startReticulum() -> InstanceConnection {
     }
 }
 
-/// Load or create the rncp identity. Python: `prepare_identity` (rncp.py:54-68).
+/// Load or create the rncp identity.
+///
+/// Python: `prepare_identity` (rncp.py:54-68).
 func prepareIdentity(connection: InstanceConnection) -> Identity {
     let url: URL
     if let identityArgument {
@@ -169,7 +173,9 @@ func prepareIdentity(connection: InstanceConnection) -> Identity {
     }
 }
 
-/// Validate the `destination` positional. Python prints the ValueError text and exits 1.
+/// Validate the `destination` positional.
+///
+/// Python prints the ValueError text and exits 1.
 func decodeDestination(_ value: String) -> Data {
     do {
         return try RNCopyApp.decodeDestinationArgument(value)
@@ -182,7 +188,9 @@ func decodeDestination(_ value: String) -> Data {
     }
 }
 
-/// `--save` validation, shared by listen and fetch. Python: rncp.py:96-108 / 365-375.
+/// `--save` validation, shared by listen and fetch.
+///
+/// Python: rncp.py:96-108 / 365-375.
 func resolveSaveDirectory(_ value: String) -> String {
     switch RNCopyApp.resolveSaveDirectory(value, fileSystem: fileSystem) {
     case .ok(let path):
@@ -198,7 +206,9 @@ func resolveSaveDirectory(_ value: String) -> String {
 
 // MARK: - SIGINT
 
-/// Python's handler prints "", cancels the resource, tears the link down and exits 0. It's
+/// Python's handler prints "", cancels the resource, tears the link down and exits 0.
+///
+/// It's
 /// also an upstream bug: `resource` isn't a module global, so it raises NameError. The
 /// intended behaviour is implemented here.
 final class InterruptTarget {

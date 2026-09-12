@@ -66,7 +66,9 @@ public enum RSG {
 
         // MARK: Accessors
 
-        /// Whether a top-level key is present. Python: `"hashtype" in signed_data`.
+        /// Whether a top-level key is present.
+        ///
+        /// Python: `"hashtype" in signed_data`.
         public func has(_ key: String) -> Bool { entries.contains { $0.0 == key } }
 
         /// The raw value for a top-level key.
@@ -74,7 +76,9 @@ public enum RSG {
             entries.first { $0.0 == key }?.1
         }
 
-        /// Python: `signed_data["hashtype"]`. Empty when absent or not a string.
+        /// Python: `signed_data["hashtype"]`.
+        ///
+        /// Empty when absent or not a string.
         public var hashType: String { value("hashtype")?.asString ?? "" }
 
         /// Python: `signed_data["hash"]`—a 32-byte SHA-256 digest.
@@ -142,7 +146,9 @@ public enum RSG {
 
     // MARK: - Inputs
 
-    /// What `get_rsg_hash` accepts. Python: `bytes`, `str` or `io.BufferedReader`
+    /// What `get_rsg_hash` accepts.
+    ///
+    /// Python: `bytes`, `str` or `io.BufferedReader`
     /// (rnid.py:421-429).
     public enum Message {
         case bytes(Data)
@@ -160,7 +166,9 @@ public enum RSG {
             }
         }
 
-        /// The bytes an embedded message is stored as. Python: `message.encode("utf-8")`
+        /// The bytes an embedded message is stored as.
+        ///
+        /// Python: `message.encode("utf-8")`
         /// for `str`, the bytes themselves otherwise.
         var embeddableBytes: Data? {
             switch self {
@@ -278,7 +286,9 @@ public enum RSG {
 
     // MARK: - Legacy detection
 
-    /// Python: `rsg_is_legacy_format(rsg)` (rnid.py:431-434). Length is the only discriminator.
+    /// Python: `rsg_is_legacy_format(rsg)` (rnid.py:431-434).
+    ///
+    /// Length is the only discriminator.
     public static func isLegacyFormat(_ rsgData: Data) -> Bool {
         guard !rsgData.isEmpty else { return false }   // Python: `if not rsg_data: return False`
         return rsgData.count == signatureLength
@@ -355,6 +365,7 @@ public enum RSG {
     }
 
     /// String-named overload for API parity with `create_rsg(..., output="hex")`.
+    ///
     /// Python: `if not output in [...]: raise TypeError("Invalid output format for rsg creation")`.
     public static func create(
         signer: Identity,

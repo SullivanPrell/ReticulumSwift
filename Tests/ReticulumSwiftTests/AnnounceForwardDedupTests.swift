@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// A transport node must forward an announce only when it would update its path
-/// table (Python forwards inside `if should_add:`). SINGLE announces bypass the
+/// table (Python forwards inside `if should_add:`).
+///
+/// SINGLE announces bypass the
 /// packet-hash dedup filter, so without this gate a duplicate announce would be
 /// re-forwarded on every arrival—an announce storm on shared media.
 final class AnnounceForwardDedupTests: XCTestCase {

@@ -90,7 +90,9 @@ public struct TunnelStore {
     /// tunnel path doesn't depend on one: the reference restores it with
     /// `receiving_interface = None` and gates only on the announce (`Transport.py:398-400`), then
     /// attaches an interface to every one of the tunnel's paths when the endpoint reappears
-    /// (`:2440-2447`). So every entry here is resolved on the spot—installed or finally
+    /// (`:2440-2447`).
+    ///
+    /// So every entry here is resolved on the spot—installed or finally
     /// dropped—and nothing is parked.
     public func apply(to transport: Transport) {
         for entry in entries {

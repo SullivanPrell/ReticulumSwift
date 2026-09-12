@@ -39,7 +39,9 @@ final class FileLogSinkTests: XCTestCase {
 
     // MARK: - Line format
 
-    /// A fixed instant so the timestamp is deterministic. Formatted in the *local* zone,
+    /// A fixed instant so the timestamp is deterministic.
+    ///
+    /// Formatted in the *local* zone,
     /// exactly as Python's `time.localtime` + `strftime` does.
     private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 

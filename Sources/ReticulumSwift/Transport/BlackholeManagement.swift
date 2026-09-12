@@ -28,6 +28,7 @@ extension Transport {
     // MARK: - Public API (mirrors Python Transport.blackhole_identity / unblackhole_identity)
 
     /// Add `identityHash` to the blackhole table.
+    ///
     /// Returns `true` on success, `nil` if already blackholed, `false` on error.
     /// Mirrors Python's `Transport.blackhole_identity(identity_hash, until, reason)`.
     @discardableResult
@@ -52,6 +53,7 @@ extension Transport {
     }
 
     /// Remove `identityHash` from the blackhole table.
+    ///
     /// Returns `true` on success, `nil` if not blackholed.
     /// Mirrors Python's `Transport.unblackhole_identity(identity_hash)`.
     @discardableResult
@@ -69,6 +71,7 @@ extension Transport {
     }
 
     /// Remove path table entries whose associated identity is blackholed.
+    ///
     /// Mirrors Python's `Transport.remove_blackholed_paths()`.
     public func removeBlackholedPaths() {
         // Snapshot (destHash → identityHash) under `lock`, decide which are
@@ -91,6 +94,7 @@ extension Transport {
 
 
     /// Remove expired blackhole entries (where `until` has passed).
+    ///
     /// Called from the jobs loop. Mirrors Python's expiry sweep in the scheduler.
     public func sweepExpiredBlackholes(now: TimeInterval = Date().timeIntervalSince1970) {
         blackholeLock.lock(); defer { blackholeLock.unlock() }

@@ -18,6 +18,7 @@ import XCTest
 ///     hop is an `internal`-mode interface.
 ///   • `internal`-mode outbound interfaces now only block on a `boundary`
 ///     next hop (previously they also blocked `roaming`).
+///
 ///   • Instance-local destinations bypass the roaming/boundary/internal blocks.
 final class RNS137AnnouncePropagationTests: XCTestCase {
 

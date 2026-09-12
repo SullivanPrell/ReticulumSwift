@@ -227,7 +227,9 @@ final class SerialReconnectTests: XCTestCase {
 
     #if os(macOS)
     /// The linchpin: `POSIXSerialPort` discarded device-gone reads (`guard count > 0 else
-    /// { return }`), so nothing above it could ever notice a flap. A pty pair gives a real
+    /// { return }`), so nothing above it could ever notice a flap.
+    ///
+    /// A pty pair gives a real
     /// tty whose master side can vanish.
     func testPOSIXSerialPortSurfacesDeviceLoss() throws {
         let master = posix_openpt(O_RDWR | O_NOCTTY)

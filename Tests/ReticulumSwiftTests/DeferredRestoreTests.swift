@@ -94,7 +94,9 @@ final class DeferredRestoreTests: XCTestCase {
     }
 
     /// An interface that never arrives costs the entry, as it does in the reference—the wait is
-    /// bounded, not indefinite. Otherwise a discovered interface registering minutes later would
+    /// bounded, not indefinite.
+    ///
+    /// Otherwise a discovered interface registering minutes later would
     /// install a path the reference had already discarded.
     func testAnEntryWhoseInterfaceNeverArrivesIsGivenUpOn() throws {
         let destHash = try seedTable()

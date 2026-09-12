@@ -43,7 +43,9 @@ final class PathRequestTransportIDTests: XCTestCase {
         }
     }
 
-    /// Make a paired requester/relay interface duo. Returns (requesterSide, relaySide).
+    /// Make a paired requester/relay interface duo.
+    ///
+    /// Returns (requesterSide, relaySide).
     /// Sending on requesterSide delivers to relay's inbound handler via relaySide.
     private func makePair(requesterName: String, relayName: String)
         -> (requester: RecordingInterface, relay: RecordingInterface)

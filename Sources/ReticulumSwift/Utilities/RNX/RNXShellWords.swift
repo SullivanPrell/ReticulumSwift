@@ -36,7 +36,9 @@ import Foundation
 /// argv elements, exactly as in Python. Don't "fix" this—it's wire-visible behaviour.
 public enum RNXShellWords {
 
-    /// Python: `shlex.shlex.whitespace = ' \t\r\n'`. Deliberately excludes `\u{0B}`/`\u{0C}`.
+    /// Python: `shlex.shlex.whitespace = ' \t\r\n'`.
+    ///
+    /// Deliberately excludes `\u{0B}`/`\u{0C}`.
     public static let whitespace: Set<Character> = [" ", "\t", "\r", "\n"]
 
     /// Python: `shlex.shlex.quotes = '\'"'`.

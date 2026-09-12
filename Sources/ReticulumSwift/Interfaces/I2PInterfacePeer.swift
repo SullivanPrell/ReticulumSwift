@@ -32,7 +32,9 @@ import Foundation
 /// like Python's `read_watchdog`.
 public final class I2PInterfacePeer: Interface, SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -97,7 +99,9 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     public var bootstrapOnly: Bool = false
 
     /// Lock-guarded—the existing `lock` serialized writers only, leaving a
-    /// reader on another thread racing every increment. See `InterfaceCounters`.
+    /// reader on another thread racing every increment.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
@@ -119,6 +123,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     public private(set) var tunnelState: TunnelState = .initializing
 
     /// Optional back-reference to parent interface.
+    ///
     /// Python: outbound config peers have `parent_count = False`, so traffic
     /// is *not* rolled up into the parent's counters.
     public weak var parentInterface: I2PInterface?
@@ -128,21 +133,32 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     /// SAM bridge TCP port of the local i2pd daemon.
     public var samPort: Int = 7656
-    /// Creates one SAM connection. Defaults to `NWSAMSocket` on `samPort`;
+    /// Creates one SAM connection.
+    ///
+    /// Defaults to `NWSAMSocket` on `samPort`;
     /// tests inject scripted sockets (RNodeTransport pattern).
     public var socketFactory: (() -> SAMSocket)?
-    /// Seconds between dial attempts. Python: `RECONNECT_WAIT`.
+    /// Seconds between dial attempts.
+    ///
+    /// Python: `RECONNECT_WAIT`.
     public var retryInterval: TimeInterval = TimeInterval(I2PInterfacePeer.reconnectWait)
-    /// Max seconds to wait for one SAM reply line. SESSION CREATE on a cold
+    /// Max seconds to wait for one SAM reply line.
+    ///
+    /// SESSION CREATE on a cold
     /// i2pd only answers once the local destination's tunnels are built,
     /// which can take minutes—be generous.
     public var handshakeTimeout: TimeInterval = 180
-    /// Idle seconds before keepalives flow. Python: `I2P_PROBE_AFTER`.
+    /// Idle seconds before keepalives flow.
+    ///
+    /// Python: `I2P_PROBE_AFTER`.
     public var probeAfterInterval: TimeInterval = TimeInterval(I2PInterfacePeer.i2pProbeAfter)
     /// Seconds without any inbound bytes before the tunnel is declared dead.
+    ///
     /// Python: `I2P_READ_TIMEOUT`.
     public var readTimeoutInterval: TimeInterval = TimeInterval(I2PInterfacePeer.i2pReadTimeout)
-    /// Watchdog cadence. Python's read_watchdog ticks every 1 s.
+    /// Watchdog cadence.
+    ///
+    /// Python's read_watchdog ticks every 1 s.
     public var watchdogTick: TimeInterval = 1
 
     /// Fired when the peer comes online (tunnel + stream established).
@@ -198,7 +214,9 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - Interface lifecycle
 
-    /// Begin dialing the remote destination through SAM. Non-blocking; the
+    /// Begin dialing the remote destination through SAM.
+    ///
+    /// Non-blocking; the
     /// peer comes online asynchronously (and keeps retrying—I2P tunnels can
     /// take minutes to build on a cold daemon).
     public func start() throws {
@@ -207,6 +225,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     }
 
     /// Detach the peer: close the tunnel and stop reconnecting.
+    ///
     /// Python: `detach()` + the `self.detached` guard in read_loop.
     public func stop() {
         lock.lock()
@@ -231,6 +250,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     }
 
     /// HDLC-frame `data` and write it to the I2P stream.
+    ///
     /// Python: `process_outgoing`—note Python counts the *framed* length
     /// (`txb += len(data)` after framing), unlike TCPInterface.
     public func processOutgoing(_ data: Data) {
@@ -401,6 +421,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     }
 
     /// Take the peer offline and (unless detached) schedule a redial.
+    ///
     /// Idempotent per connection: a stale socket's close events are ignored.
     private func disconnect(ifCurrent socket: SAMSocket?, reason: String) {
         lock.lock()
@@ -495,6 +516,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     // MARK: - HDLC decoder (inbound)
 
     /// Feed raw bytes from the I2P socket into the HDLC state machine.
+    ///
     /// Each complete frame is passed to `onFrame`. Empty frames (bare
     /// FLAG FLAG keepalives) are dropped.
     /// Python: the read_loop in `I2PInterfacePeer` does this inline.

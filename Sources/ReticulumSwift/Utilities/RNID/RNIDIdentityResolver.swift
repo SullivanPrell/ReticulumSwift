@@ -10,7 +10,9 @@
 
 import Foundation
 
-/// Where the operating identity comes from. Python: the `-g`/`-i`/`-m`/`-M` ladder in
+/// Where the operating identity comes from.
+///
+/// Python: the `-g`/`-i`/`-m`/`-M` ladder in
 /// `get_operating_identity` (rnid.py:202-370). `validate_args` has already made these
 /// mutually exclusive by the time the resolver runs.
 public enum RNIDIdentitySource: Equatable {

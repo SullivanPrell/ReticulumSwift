@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// The stats `type` field is what a Python `rnstatus -j` attached to a Swift shared instance
-/// dumps verbatim, and consumers key on it. Python instantiates `BackboneClientInterface` for
+/// dumps verbatim, and consumers key on it.
+///
+/// Python instantiates `BackboneClientInterface` for
 /// any *dialing* backbone config (`Reticulum.py:994-1000`; the class literally named
 /// `BackboneInterface`, `BackboneInterface.py:51`, is the listener)—so a dialing interface
 /// must never report the listener's class name.

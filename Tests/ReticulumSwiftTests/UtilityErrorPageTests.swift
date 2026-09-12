@@ -21,7 +21,9 @@ final class UtilityErrorPageTests: XCTestCase {
 
     // MARK: - The usage block is the first paragraph of the help text
 
-    /// A utility's error page must reuse its help text's usage block verbatim. Deriving it
+    /// A utility's error page must reuse its help text's usage block verbatim.
+    ///
+    /// Deriving it
     /// rather than restating it's what stops the two drifting apart when a flag is added.
     private func assertUsageIsHelpsFirstParagraph(_ usage: String, _ help: String,
                                                   file: StaticString = #filePath,
@@ -98,7 +100,9 @@ final class UtilityErrorPageTests: XCTestCase {
     // MARK: - Abbreviation reaches every utility
 
     /// `allow_abbrev` is an `argparse` default that none of the RNS tools disable, so it's
-    /// the shared parser's job, not any one utility's. Before this was hoisted, only `rnsd`
+    /// the shared parser's job, not any one utility's.
+    ///
+    /// Before this was hoisted, only `rnsd`
     /// accepted `--conf`, and the other eight rejected it as unrecognized.
     func testEveryUtilityParserAbbreviatesConfig() throws {
         let parsers: [(String, ArgumentParser)] = [

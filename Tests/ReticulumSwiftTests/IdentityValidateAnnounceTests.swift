@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Identity.validate_announce() static method.
+///
 /// Mirrors Python's `RNS.Identity.validate_announce(packet)`.
 final class IdentityValidateAnnounceTests: XCTestCase {
 
@@ -50,7 +51,9 @@ final class IdentityValidateAnnounceTests: XCTestCase {
 
     /// Python's `validate_announce` hangs its whole body off
     /// `if packet.packet_type == RNS.Packet.ANNOUNCE` (`Identity.py:512`) and
-    /// falls through to `return False` for anything else. The signature-only
+    /// falls through to `return False` for anything else.
+    ///
+    /// The signature-only
     /// path used to carry its own hand-rolled parse with no such gate, so a
     /// DATA packet whose payload happened to be a well-formed announce body
     /// validated as an announce.
@@ -69,7 +72,9 @@ final class IdentityValidateAnnounceTests: XCTestCase {
 
     /// A regression guard on the shared parser, not a fix for a live bug: the
     /// signature-only path and `Announce.validate` now read the announce layout
-    /// through one function, so this pins the ratchet field for both. An
+    /// through one function, so this pins the ratchet field for both.
+    ///
+    /// An
     /// announce carries a ratchet exactly when it sets the context flag
     /// (`Identity.py:522-527`), with no length test of its own.
     func testSignatureOnlyValidationAcceptsAnAnnounceCarryingARatchet() throws {

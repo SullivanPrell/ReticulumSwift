@@ -28,7 +28,9 @@ import Darwin
 ///   where the x-groups are derived from sha256("reticulum").
 public final class AutoInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -68,7 +70,9 @@ public final class AutoInterface: Interface {
     public var gravity: Int = InterfaceMode.defaultGravity
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }

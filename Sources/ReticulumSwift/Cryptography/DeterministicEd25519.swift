@@ -22,7 +22,9 @@ import Foundation
 // MARK: - BigUInt (little-endian, [UInt32] limbs)
 
 /// Arbitrary-precision unsigned integer used only for the Ed25519 field/scalar
-/// arithmetic inside this file. Not part of the public API.
+/// arithmetic inside this file.
+///
+/// Not part of the public API.
 private struct BigUInt: Comparable, Equatable {
     var limbs: [UInt32]   // little-endian, no trailing zeros
 
@@ -171,7 +173,9 @@ private struct BigUInt: Comparable, Equatable {
         return BigUInt(limbs: (0..<n).map { a.limbs[$0] & b.limbs[$0] })
     }
 
-    /// General modular reduction (binary shift-subtract). O(bitLen) iterations.
+    /// General modular reduction (binary shift-subtract).
+    ///
+    /// O(bitLen) iterations.
     static func % (a: Self, m: Self) -> Self {
         if a < m { return a }
         if a == m { return BigUInt() }
@@ -267,6 +271,7 @@ private func qinv(_ a: BigUInt) -> BigUInt {
 }
 
 /// Reduce x mod Q using the special form Q = 2^255 - 19.
+///
 /// Handles x < Q^2 (≈ 2^510) in two rounds without general division.
 private func fastReduceQ(_ x: BigUInt) -> BigUInt {
     // Round 1: x = (x mod 2^255) + 19*(x >> 255)
@@ -354,6 +359,7 @@ private func scalarMultBase(_ s: BigUInt) -> Pt {
 public enum DeterministicEd25519 {
 
     /// Signs `message` with the given 32-byte Ed25519 `seed`.
+    ///
     /// Returns a 64-byte signature: R (32 bytes) || S (32 bytes).
     public static func sign(_ message: Data, seed: Data) -> Data {
         precondition(seed.count == 32, "Ed25519 seed must be exactly 32 bytes")

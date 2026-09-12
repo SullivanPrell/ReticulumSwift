@@ -78,17 +78,23 @@ public enum WeaveEvt {
     public static let etKrnUiInit:               UInt16 = 0x2010
     public static let etProtocolWdclInit:        UInt16 = 0x3000
     public static let etProtocolWdclRunning:     UInt16 = 0x3001
-    /// Raised when WDCL connection is established. Sets `wdclConnected = true`.
+    /// Raised when WDCL connection is established.
+    ///
+    /// Sets `wdclConnected = true`.
     public static let etProtocolWdclConnection:  UInt16 = 0x3002
     /// Raised when the remote device reports the host's endpoint ID.
     public static let etProtocolWdclHostEndpoint: UInt16 = 0x3003
     public static let etProtocolWeaveInit:       UInt16 = 0x3100
     public static let etProtocolWeaveRunning:    UInt16 = 0x3101
-    /// Raised when a Weave endpoint is still alive. Payload: 8-byte endpoint_id.
+    /// Raised when a Weave endpoint is still alive.
+    ///
+    /// Payload: 8-byte endpoint_id.
     public static let etProtocolWeaveEpAlive:    UInt16 = 0x3102
     /// Raised when a Weave endpoint has timed out.
     public static let etProtocolWeaveEpTimeout:  UInt16 = 0x3103
-    /// Raised when a Weave endpoint route is known. Payload: 8-byte endpoint_id + 4-byte switch_id.
+    /// Raised when a Weave endpoint route is known.
+    ///
+    /// Payload: 8-byte endpoint_id + 4-byte switch_id.
     public static let etProtocolWeaveEpVia:      UInt16 = 0x3104
     public static let etSrvctlRemoteDisplay:     UInt16 = 0xA000
     public static let etInterfaceRegistered:     UInt16 = 0xD000
@@ -185,7 +191,9 @@ public final class WDCLTransport {
         set { onlineFlag.value = newValue }
     }
 
-    /// Serializes the actual serial-port writes. Every outbound path (peer
+    /// Serializes the actual serial-port writes.
+    ///
+    /// Every outbound path (peer
     /// processOutgoing, discover/handshake/sendCommand) funnels through
     /// `processOutgoing`, so guarding it here makes all writes mutually exclusive
     /// and prevents two HDLC frames from interleaving byte-wise on the wire.
@@ -321,7 +329,9 @@ public final class WeaveDevice {
     /// through this lock.
     private let endpointsLock = NSLock()
 
-    /// Backing store for the endpoint registry. Never touch directly—go
+    /// Backing store for the endpoint registry.
+    ///
+    /// Never touch directly—go
     /// through `endpoints` (reads) or the locked mutators below (writes).
     private var unsafeEndpoints: [Data: WeaveEndpoint] = [:]
 
@@ -582,7 +592,9 @@ public final class WeaveDevice {
 /// Python: `WeaveInterface`
 public final class WeaveInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -618,7 +630,9 @@ public final class WeaveInterface: Interface {
     }
 
     /// Lock-guarded—a peer accumulates into its parent's counters from the
-    /// WDCL transport queue while the UI reads them. See `InterfaceCounters`.
+    /// WDCL transport queue while the UI reads them.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
     public var txBytes:   Int { counters.txBytes }
@@ -660,15 +674,20 @@ public final class WeaveInterface: Interface {
     /// in `init`, so the same reading is always available and the optional never arises.
     public var cpuLoad: Double { device.cpuLoad }
 
-    /// Memory in use on the attached switch, as a percentage. Mirrors `mem_load`
+    /// Memory in use on the attached switch, as a percentage.
+    ///
+    /// Mirrors `mem_load`
     /// (`WeaveInterface.py:833-835`).
     public var memLoad: Double { device.memUsedPct }
 
     /// Identifier of the switch behind this interface, learned during the WDCL handshake.
+    ///
     /// Mirrors `switch_id` (`WeaveInterface.py:838-840`).
     public var switchID: Data? { device.switchID }
 
-    /// This host's endpoint address on the Weave fabric, as the switch assigned it. Mirrors
+    /// This host's endpoint address on the Weave fabric, as the switch assigned it.
+    ///
+    /// Mirrors
     /// `endpoint_id` (`WeaveInterface.py:843-845`).
     public var endpointID: Data? { device.endpointID }
 
@@ -689,9 +708,13 @@ public final class WeaveInterface: Interface {
 
     // MARK: - Injection points for Transport integration / tests
 
-    /// Called when a new `WeaveInterfacePeer` is spawned. Register with Transport here.
+    /// Called when a new `WeaveInterfacePeer` is spawned.
+    ///
+    /// Register with Transport here.
     public var onPeerAdded:   ((WeaveInterfacePeer) -> Void)? = nil
-    /// Called when a peer is timed out and removed. De-register from Transport here.
+    /// Called when a peer is timed out and removed.
+    ///
+    /// De-register from Transport here.
     public var onPeerRemoved: ((WeaveInterfacePeer) -> Void)? = nil
 
     // MARK: - Init
@@ -731,6 +754,7 @@ public final class WeaveInterface: Interface {
     // MARK: - Peer management
 
     /// Register a new endpoint peer or refresh an existing one.
+    ///
     /// Called by `WeaveDevice.endpointAlive()`.
     /// Python: `WeaveInterface.add_peer(endpoint_addr)`
     public func addPeer(endpointAddr: Data) {
@@ -795,6 +819,7 @@ public final class WeaveInterface: Interface {
     // MARK: - Peer timeout job
 
     /// Remove any peers that haven't been heard from in `peeringTimeout` seconds.
+    ///
     /// Called periodically (for example, every `PEERING_TIMEOUT × 1.1` seconds).
     /// Python: `WeaveInterface.peer_jobs()`
     public func peerJobs() {
@@ -833,7 +858,9 @@ public final class WeaveInterface: Interface {
 /// Python: `WeaveInterfacePeer`
 public final class WeaveInterfacePeer: Interface, SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -854,7 +881,9 @@ public final class WeaveInterfacePeer: Interface, SpawnedInterface {
     }
 
     /// Lock-guarded—a peer accumulates into its parent's counters from the
-    /// WDCL transport queue while the UI reads them. See `InterfaceCounters`.
+    /// WDCL transport queue while the UI reads them.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
     public var txBytes:   Int { counters.txBytes }
@@ -895,6 +924,7 @@ public final class WeaveInterfacePeer: Interface, SpawnedInterface {
     /// The parent WeaveInterface's device switch ID (mirrors Python `peer.switch_id`).
     public var switchID: Data? { owner?.device.switchID }
     /// The endpoint ID for this peer, derived from the endpoint address.
+    ///
     /// Mirrors Python `peer.endpoint_id`—the 8-byte endpoint address.
     public var endpointID: Data? { endpointAddr }
 

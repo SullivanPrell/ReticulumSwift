@@ -14,7 +14,9 @@ import XCTest
 /// A transport node retransmits each forwarded announce once more
 /// (Python `PATHFINDER_R = 1`) after a grace period, unless it hears
 /// neighbours carry the announce on (the "passed on" / local-rebroadcast
-/// cancel). Mirrors Python's `Transport.announce_table` mechanism in
+/// cancel).
+///
+/// Mirrors Python's `Transport.announce_table` mechanism in
 /// `Transport.jobs()` + the receive-side cancel in `Transport.inbound()`.
 ///
 /// Swift keeps the immediate first forward (interop-safe, equivalent to

@@ -66,7 +66,9 @@ public enum RNSDApp {
         }
 
         /// The `ArgumentParser(description=…)` line, printed between the usage and the
-        /// options table. Named `toolDescription` because `description` is already spoken
+        /// options table.
+        ///
+        /// Named `toolDescription` because `description` is already spoken
         /// for by `CustomStringConvertible`.
         public var toolDescription: String {
             switch self {
@@ -134,7 +136,9 @@ public enum RNSDApp {
         /// `argparse`'s implicit `-h/--help`.
         public var help: Bool
 
-        /// Python: `targetverbosity = verbosity-quietness` (`rnsd.py:41`). May be negative.
+        /// Python: `targetverbosity = verbosity-quietness` (`rnsd.py:41`).
+        ///
+        /// May be negative.
         public var verbosityDelta: Int { verbose - quiet }
 
         /// Python: service mode sets `targetverbosity = None` (`rnsd.py:45`), discarding the
@@ -486,7 +490,9 @@ public enum RNSDApp {
     }
 
     /// The `argparse` error page, without a trailing newline: the usage block, then
-    /// `prog: error: message`. Written to stderr; exit code 2.
+    /// `prog: error: message`.
+    ///
+    /// Written to stderr; exit code 2.
     public static func errorText(_ variant: Variant, error: Error) -> String {
         let message: String
         if let argumentError = error as? ArgumentError {

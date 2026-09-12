@@ -36,11 +36,13 @@ public extension RNIDApp {
         case base64
 
         /// Whether this format produces armoured text printed to stdout rather than a file.
+        ///
         /// Python: `elif output in ["base32", "base64", "base256", "hex"]` (rnid.py:780, :835).
         public var isText: Bool { self != .bin }
     }
 
     /// The encoding flag ladder shared by `sign`, `sign_message`, `-p`, `-x` and `-X`.
+    ///
     /// Python: `if args.base32 … elif args.base64 … elif args.base256 … elif args.hex … else "bin"`
     /// (rnid.py:758-762, :792-796).
     static func outputFormat(base32: Bool, base64: Bool, base256: Bool, hex: Bool) -> OutputFormat {
@@ -95,6 +97,7 @@ public extension RNIDApp {
 public enum RNIDDestinationHash {
 
     /// Python: `Destination.hash(identity_bytes, app_name, *aspects)`.
+    ///
     /// Returns `nil` where Python raises `TypeError("Invalid material supplied for
     /// destination hash calculation")`, that is, when the hash isn't exactly 16 bytes.
     public static func hash(identityHash: Data, appName: String, aspects: [String]) -> Data? {
@@ -127,11 +130,15 @@ public extension RNIDApp {
         public var outputFormat: RNIDApp.OutputFormat = .bin
         /// Python: `-f`/`--force`.
         public var force: Bool = false
-        /// Python: `--raw`. Only consulted by `-s`.
+        /// Python: `--raw`.
+        ///
+        /// Only consulted by `-s`.
         public var raw: Bool = false
         /// Python: `-w`/`--write`.
         public var write: String? = nil
-        /// Python: `-r`/`--read`. Only consulted by `-S`.
+        /// Python: `-r`/`--read`.
+        ///
+        /// Only consulted by `-S`.
         public var read: String? = nil
         /// Python: `--meta`.
         public var showMeta: Bool = false
@@ -142,7 +149,9 @@ public extension RNIDApp {
         /// Python: a bare `-E` (const `NO_META`, the int 2). `os.path.expanduser(2)` raises
         /// an *uncaught* `TypeError` in Python; this port reports ``Result/invalidArgs``.
         public var embedMetaWithoutPath: Bool = false
-        /// Python: `--meta-spec <path>`. Used raw—Python never expands it (rnid.py:813).
+        /// Python: `--meta-spec <path>`.
+        ///
+        /// Used raw—Python never expands it (rnid.py:813).
         public var metaSpec: String? = nil
         /// Python: `-t <seconds>`, defaulting to `RNS.Transport.PATH_REQUEST_TIMEOUT`.
         public var timeout: TimeInterval = Transport.pathRequestTimeout

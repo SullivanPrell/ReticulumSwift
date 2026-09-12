@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// End-to-end flow tests: announce → path discovery → link establishment → data exchange.
+///
 /// Tests the complete Reticulum protocol flow from announce propagation through
 /// multi-hop link establishment to data exchange with proof delivery.
 final class EndToEndFlowTests: XCTestCase {

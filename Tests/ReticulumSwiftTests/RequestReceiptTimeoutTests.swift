@@ -15,7 +15,9 @@ import XCTest
 /// used a fixed timeout that was never disarmed once the response began arriving
 /// as a Resource, so any response that took longer than the timeout to transfer
 /// (any real, multi-KB page over a slower / multi-hop mesh) was aborted
-/// mid-download. Python disarms the request timeout the moment the response
+/// mid-download.
+///
+/// Python disarms the request timeout the moment the response
 /// enters RECEIVING and lets the Resource's own watchdog finish the transfer
 /// (RNS/Link.py `RequestReceipt.response_resource_progress`).
 final class RequestReceiptTimeoutTests: XCTestCase {
@@ -26,7 +28,9 @@ final class RequestReceiptTimeoutTests: XCTestCase {
     }
 
     /// Baseline / fail-safe: with no response at all, the fixed timeout still
-    /// fires. (Guards against the fix accidentally disabling the timeout.)
+    /// fires.
+    ///
+    /// (Guards against the fix accidentally disabling the timeout.)
     func testTimeoutFiresWhenNoResponseArrives() {
         let receipt = makeReceipt(timeout: 0.2)
         let failed = expectation(description: "timeout fired")

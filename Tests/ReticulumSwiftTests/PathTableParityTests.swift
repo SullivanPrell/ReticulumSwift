@@ -92,7 +92,9 @@ final class PathTableParityTests: XCTestCase {
 
     /// A second transport with the same interface registered under the same name, so
     /// `Interface.hash` matches across the restart the way a real interface rebuilt from the same
-    /// config does. Shares the fixture's cache directory: the announce cache is on disk.
+    /// config does.
+    ///
+    /// Shares the fixture's cache directory: the announce cache is on disk.
     private func makeReceiver() -> (Transport, LoopbackInterface) {
         let transport = Transport()
         transport.cacheDirectory = tmpDir.appendingPathComponent("cache")
@@ -187,7 +189,9 @@ final class PathTableParityTests: XCTestCase {
     }
 
     /// Field 7 isn't merely present: the reference resolves it through `get_cached_packet` and
-    /// discards the entry when that returns None (`Transport.py:334-345`). A hash naming nothing
+    /// discards the entry when that returns None (`Transport.py:334-345`).
+    ///
+    /// A hash naming nothing
     /// is a hash that restores nothing.
     func testAnnounceHashResolvesInTheCache() throws {
         let fixture = try makeFixture()
@@ -240,7 +244,9 @@ final class PathTableParityTests: XCTestCase {
 
     /// `announce_packet.hops += 1` (`Transport.py:337-339`), asserted at the step that produces
     /// the packet—the gate `apply` gets its go/no-go from—because that's the only place the
-    /// value exists. The hop count isn't part of a packet's hashable part, so the increment
+    /// value exists.
+    ///
+    /// The hop count isn't part of a packet's hashable part, so the increment
     /// leaves the announce hash alone and the restored path still names the same cache entry.
     func testRestoredAnnounceHopCountIsIncremented() throws {
         let fixture = try makeFixture()
@@ -287,7 +293,9 @@ final class PathTableParityTests: XCTestCase {
 
     /// The identity comes back through `known_destinations`, not through the path entry—`Identity.recall(destination_hash)`,
     /// loaded at `Reticulum.py:344` *before* the path table
-    /// is read at `:346`. The entry carries no public key of its own.
+    /// is read at `:346`.
+    ///
+    /// The entry carries no public key of its own.
     func testEntryCarriesNoIdentityMaterial() throws {
         let fixture = try makeFixture()
         try PathStore.snapshot(of: fixture.transport).write(to: tableURL)

@@ -38,7 +38,9 @@ func emitError(_ line: String) {
     FileHandle.standardError.write(Data((line + "\n").utf8))
 }
 
-/// The Braille spinner writes backspaces and raw glyphs. Python does that unconditionally,
+/// The Braille spinner writes backspaces and raw glyphs.
+///
+/// Python does that unconditionally,
 /// which makes redirected output unusable for scripting; gating only the spinner on a TTY
 /// is a deliberate, documented divergence. The clear strings stay ungated so `-R`/`-p`
 /// output matches Python byte for byte.

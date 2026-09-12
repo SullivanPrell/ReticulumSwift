@@ -82,7 +82,9 @@ final class AnnounceAdmissionOrderTests: XCTestCase {
     }
 
     /// `handleAnnounce` passes `Announce.validate` an already-verified mark, because
-    /// its admission gate verified the signature. That short-circuit has to cover the
+    /// its admission gate verified the signature.
+    ///
+    /// That short-circuit has to cover the
     /// signature and nothing else. Upstream still requires
     /// `destination_hash == truncated_hash(name_hash || identity_hash)`
     /// (`Identity.py:565-567`), and a signature proves nothing about that: it covers

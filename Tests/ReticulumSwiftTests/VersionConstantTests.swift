@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// `Reticulum.version` is what every `rn*` tool prints for `--version`, what `rnsd` logs at
-/// startup and what the RetiOS About screen shows. Its doc comment says "bump this on every
+/// startup and what the RetiOS About screen shows.
+///
+/// Its doc comment says "bump this on every
 /// release", and it was left at 1.9.0 across three releases—so a 1.10.2 build introduced
 /// itself as 1.9.0 everywhere.
 ///

@@ -152,7 +152,9 @@ final class LargeRequestResponseTests: XCTestCase {
         XCTAssertEqual(received, page)
     }
 
-    /// The control: the same path, a response that fits in one packet. If this fails too, the
+    /// The control: the same path, a response that fits in one packet.
+    ///
+    /// If this fails too, the
     /// defect isn't size-dependent and the preceding test is measuring something else.
     func testASmallResponseIsDelivered() throws {
         let (link, bDest, aT, bT) = try establishedPair(aspect: "small-response")

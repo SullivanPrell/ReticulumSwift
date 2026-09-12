@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for known destinations persistence.
+///
 /// Mirrors Python's `Identity.save_known_destinations()` / `Identity.load_known_destinations()`.
 final class KnownDestinationsPersistenceTests: XCTestCase {
 

@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Transport aggregate traffic byte counters.
+///
 /// Mirrors Python's `Transport.traffic_rxb` and `Transport.traffic_txb`.
 final class TransportTrafficCounterTests: XCTestCase {
 

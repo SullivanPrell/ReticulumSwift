@@ -61,7 +61,9 @@ public struct RNCopyProgress: Equatable {
 // MARK: - Resource status ordinal mapping
 
 /// Python's `RNS.Resource` status ordinals are compared with `<` and `>` throughout rncp
-/// (rncp.py:353, 724, 733, 779). Swift's `ResourceTransfer.Status` is a non-ordinal enum,
+/// (rncp.py:353, 724, 733, 779).
+///
+/// Swift's `ResourceTransfer.Status` is a non-ordinal enum,
 /// so the three comparisons rncp actually performs are spelled out here.
 ///
 /// Python ordinals: NONE 0, QUEUED 1, ADVERTISED 2, TRANSFERRING 3, AWAITING_PROOF 4,
@@ -185,7 +187,9 @@ public final class RNCopySender {
     public struct Configuration {
         public var identity: Identity
         public var destinationHash: Data
-        /// The local path, exactly as typed. Python applies `expanduser` but **not**
+        /// The local path, exactly as typed.
+        ///
+        /// Python applies `expanduser` but **not**
         /// `abspath` (rncp.py:635), and prints this expanded form in the success line.
         public var filePath: String
         /// `-w seconds`, default `RNS.Transport.PATH_REQUEST_TIMEOUT` = 15.
@@ -232,7 +236,9 @@ public final class RNCopySender {
     /// advance the Braille spinner (`print("\b\b"+syms[i]+" ")`, rncp.py:663,692,727).
     public var onTick: (() -> Void)?
 
-    /// The expanded local path, available after `run()` starts. Python prints this—not the
+    /// The expanded local path, available after `run()` starts.
+    ///
+    /// Python prints this—not the
     /// raw argument—in the success line (rncp.py:787,789).
     public private(set) var expandedFilePath: String = ""
 
@@ -386,7 +392,9 @@ public final class RNCopyFetcher {
     public struct Configuration {
         public var identity: Identity
         public var destinationHash: Data
-        /// The path to ask the listener for. Travels as a msgpack **str**—Python's
+        /// The path to ask the listener for.
+        ///
+        /// Travels as a msgpack **str**—Python's
         /// handler calls `str.startswith` on it, so a msgpack bin would raise remotely.
         public var remotePath: String
         public var timeout: TimeInterval

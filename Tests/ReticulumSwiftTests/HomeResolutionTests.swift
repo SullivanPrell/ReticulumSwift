@@ -94,6 +94,7 @@ final class HomeResolutionTests: XCTestCase {
     // MARK: - `rncp`'s allow-list (task 2.7)
 
     /// `rncp` reads its identity store and its `~/.rncp` allow-list from the home directory.
+    ///
     /// Applying the wrong allow-list silently accepts identities the operator never authorised
     /// for that environment, or refuses the ones they did, behind a normal-looking banner.
     func testRNCopyFileSystemHomeFollowsHOME() {

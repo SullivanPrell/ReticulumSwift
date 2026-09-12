@@ -21,7 +21,9 @@ import XCTest
 // MARK: - File-system double
 
 /// In-memory ``RNCopyFileSystem`` so every path/save/fetch decision is assertable with no
-/// disk. File-scope because the suite has no shared helper file and none should be added.
+/// disk.
+///
+/// File-scope because the suite has no shared helper file and none should be added.
 /// Non-final so a test can subclass it to make one operation fail.
 class MockRNCopyFileSystem: RNCopyFileSystem {
 

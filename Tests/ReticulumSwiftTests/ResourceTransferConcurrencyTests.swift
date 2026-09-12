@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Concurrency stress tests for the `ResourceTransfer.stateLock` introduced in the
-/// 2026-07-19 deferred data-race hardening pass. The rest of the resource suite is
+/// 2026-07-19 deferred data-race hardening pass.
+///
+/// The rest of the resource suite is
 /// single-threaded and can't exercise the watchdog-vs-receive-thread races; this suite
 /// hammers the transfer's public accessors and internal entry points from many threads
 /// at once, with a fast watchdog firing on its own queue and random cancellation.

@@ -25,12 +25,15 @@ import Glibc
 // `NetworkProbe` inside the library, where it's drivable from XCTest with no terminal
 // and no network.
 
-/// Python: `--version` prints `rnprobe {RNS.__version__}`. The port prints the Swift
+/// Python: `--version` prints `rnprobe {RNS.__version__}`.
+///
+/// The port prints the Swift
 /// package version, following the rnsd precedent (Sources/rnsd/main.swift:47).
 let version = Reticulum.version
 let appName = "rnprobe"
 
 /// Retained so the SIGINT source can flip its cancellation flag.
+///
 /// Python: `except KeyboardInterrupt: print(""); exit()` (rnprobe.py:247-249).
 nonisolated(unsafe) var runningProbe: NetworkProbe?
 

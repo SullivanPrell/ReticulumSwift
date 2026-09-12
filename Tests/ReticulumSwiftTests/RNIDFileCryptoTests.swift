@@ -155,7 +155,9 @@ final class RNIDFileCryptoTests: XCTestCase {
     // MARK: - Progress-callback placement
 
     /// Python's encrypt progress `print` sits OUTSIDE the `if chunk` block, so it also fires
-    /// on the terminating iteration; decrypt's sits INSIDE it. The asymmetry is observable.
+    /// on the terminating iteration; decrypt's sits INSIDE it.
+    ///
+    /// The asymmetry is observable.
     func testProgressCallbackPlacementDiffersBetweenEncryptAndDecrypt() throws {
         let identity = Identity()
 

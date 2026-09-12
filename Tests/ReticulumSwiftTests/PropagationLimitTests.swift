@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for propagation limit (hop count enforcement).
+///
 /// Python: Transport.PATHFINDER_M = 128 max hops.
 final class PropagationLimitTests: XCTestCase {
 

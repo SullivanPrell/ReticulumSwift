@@ -86,6 +86,7 @@ public enum RNIDMeta {
     }
 
     /// Parse with an optional ConfigObj spec, coercing values the way `Validator` does.
+    ///
     /// Python: `parsed.validate(Validator())` must return exactly `True`.
     public static func parse(_ text: String, spec: String?) throws -> [(String, MsgPack.Value)] {
         let parsed = parse(text)

@@ -191,7 +191,9 @@ final class TunnelPersistenceTests: XCTestCase {
 
     /// Python persists all three tables together (`Transport.persist_data`,
     /// `Transport.py:3510-3512`) and restores the tunnel table immediately after the destination
-    /// table (`:365`). A `TunnelStore` nothing calls is the same defect one level out.
+    /// table (`:365`).
+    ///
+    /// A `TunnelStore` nothing calls is the same defect one level out.
     func testReticulumStopWritesTunnelsAndStartRestoresThem() throws {
         let dir = tmpDir.appendingPathComponent("lifecycle")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -32,7 +32,9 @@ final class ProcessCommandExecutor: RNXCommandExecutor {
     /// while leaving fast commands equally responsive.
     private static let pollInterval: TimeInterval = 0.05
 
-    /// Collector for one pipe. A background reader is required: a child that writes more
+    /// Collector for one pipe.
+    ///
+    /// A background reader is required: a child that writes more
     /// than the 64 KB pipe buffer would deadlock if the reader ran only after `waitUntilExit()`.
     private final class OutputCollector {
         private let lock = NSLock()

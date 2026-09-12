@@ -10,7 +10,9 @@
 
 import Foundation
 
-/// Protocol for pluggable data compression. Inject a concrete implementation
+/// Protocol for pluggable data compression.
+///
+/// Inject a concrete implementation
 /// to enable compressed Resource and Buffer transfers compatible with the
 /// Python reference (which uses `bz2`).
 ///
@@ -53,7 +55,9 @@ public extension DataCompressor {
     }
 }
 
-/// No-op compressor. When installed as `Resource.compressor`, resources are
+/// No-op compressor.
+///
+/// When installed as `Resource.compressor`, resources are
 /// sent uncompressed (the `compressed` flag in the advertisement is `false`),
 /// which is compatible with all RNS implementations. Received compressed data
 /// can't be decompressed while this is installed. Note this is no longer the

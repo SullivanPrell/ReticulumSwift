@@ -24,7 +24,9 @@ extension PacketReceipt: ProbeReceipt {
     /// Python: `receipt.proof_packet != None` (rnprobe.py:181).
     public var hasProofPacket: Bool { proofPacket != nil }
 
-    /// Python: `receipt.proof_packet.rssi` (rnprobe.py:182). Python's value is an int off
+    /// Python: `receipt.proof_packet.rssi` (rnprobe.py:182).
+    ///
+    /// Python's value is an int off
     /// the receiving RNode interface; Swift stores a `Float` in the same slot.
     public var proofRssi: Float? { proofPacket?.rssi }
 
@@ -126,7 +128,9 @@ public final class TransportProbeNetwork: ProbeNetwork {
         return transport.firstHopTimeout(for: destinationHash)
     }
 
-    /// Python: `Reticulum.get_medium_path_timeout()` (Reticulum.py:1766-1784). Shares the
+    /// Python: `Reticulum.get_medium_path_timeout()` (Reticulum.py:1766-1784).
+    ///
+    /// Shares the
     /// local-vs-shared routing with every other utility rather than restating it.
     public func mediumPathTimeout() -> TimeInterval {
         InstanceConnection.mediumPathTimeout(rpc: isConnectedToSharedInstance ? rpc : nil,

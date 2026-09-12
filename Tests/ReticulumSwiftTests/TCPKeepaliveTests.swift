@@ -30,7 +30,9 @@ import Network
 final class TCPKeepaliveTests: XCTestCase {
 
     /// Whether this OS reads back a TCP option that was set before the options object was
-    /// handed to `NWParameters`. It doesn't on macOS 14: `defaultProtocolStack`
+    /// handed to `NWParameters`.
+    ///
+    /// It doesn't on macOS 14: `defaultProtocolStack`
     /// `.transportProtocol` returns a *different* `NWProtocolTCP.Options` instance than the
     /// one passed in—`===` is false on every OS tested—and on 14 that re-wrapped
     /// instance reports framework defaults instead of the configured values.
@@ -60,7 +62,9 @@ final class TCPKeepaliveTests: XCTestCase {
     }
 
     /// Python sets `TCP_NODELAY` on every TCP socket it opens, on both platforms
-    /// (`TCPInterface.py:148`, `:239`). RNS packets are small and latency-sensitive;
+    /// (`TCPInterface.py:148`, `:239`).
+    ///
+    /// RNS packets are small and latency-sensitive;
     /// Nagle would coalesce them behind the 40 ms delayed-ACK timer.
     func testClientOptionsDisableNagle() {
         XCTAssertTrue(RNSSocketOptions.tcpOptions().noDelay)
@@ -89,7 +93,9 @@ final class TCPKeepaliveTests: XCTestCase {
     }
 
     /// Where the platform's readback can be trusted, verify the values actually survive the
-    /// trip through `NWParameters` rather than only asserting the value set. This is the leg
+    /// trip through `NWParameters` rather than only asserting the value set.
+    ///
+    /// This is the leg
     /// that can't run on macOS 14—and the reason it's probed rather than skipped by OS
     /// version is that a future OS regaining or losing the readback should change what runs
     /// here without anyone editing an availability check.
@@ -117,6 +123,7 @@ final class TCPKeepaliveTests: XCTestCase {
     }
 
     /// End to end: a real connection carrying these parameters still speaks to a peer.
+    ///
     /// Keepalive settings are easy to get wrong in a way that makes the connection fail to
     /// establish at all, which no amount of property assertion would catch.
     func testAConnectionWithTheseParametersStillWorks() throws {

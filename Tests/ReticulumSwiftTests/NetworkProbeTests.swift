@@ -244,7 +244,9 @@ final class NetworkProbeValidationTests: XCTestCase {
 
 // MARK: - Formatting
 
-/// Python reference: rnprobe.py:157-163 and :201-202. Every golden value below came from
+/// Python reference: rnprobe.py:157-163 and :201-202.
+///
+/// Every golden value below came from
 /// CPython and must not be regenerated from the Swift implementation.
 final class NetworkProbeFormattingTests: XCTestCase {
 
@@ -339,7 +341,9 @@ final class NetworkProbeFormattingTests: XCTestCase {
 
 // MARK: - Argument parsing
 
-/// Python reference: rnprobe.py:209-249. Every expected string below was captured from the
+/// Python reference: rnprobe.py:209-249.
+///
+/// Every expected string below was captured from the
 /// installed Python `rnprobe` (RNS 1.4.0) on this machine.
 final class NetworkProbeArgumentTests: XCTestCase {
 
@@ -989,7 +993,9 @@ final class NetworkProbeRunTests: XCTestCase {
 // MARK: - Crypto and wire format
 
 /// The stub this port replaced sent its payload in PLAINTEXT, which builds, passes every
-/// constant test and is 100% non-functional against real nodes. These tests exist to make
+/// constant test and is 100% non-functional against real nodes.
+///
+/// These tests exist to make
 /// that regression impossible.
 final class NetworkProbeCryptoTests: XCTestCase {
 
@@ -1338,7 +1344,9 @@ private final class MockProbeNetwork: ProbeNetwork {
     func packetQ(packetHash: Data) -> MsgPack.Value? { quality }
 }
 
-/// Records outbound packets instead of putting them on a wire. Same shape as the
+/// Records outbound packets instead of putting them on a wire.
+///
+/// Same shape as the
 /// `LoopbackInterface` pattern already used elsewhere in this test target.
 private final class CapturingInterface: Interface {
     var name: String = "capture"

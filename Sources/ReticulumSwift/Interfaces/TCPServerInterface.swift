@@ -21,11 +21,15 @@ import Network
 /// routing endpoint (`isRoutingEndpoint == false`); only the spawned clients are.
 public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`TCPInterface.py:528`). The announcer
+    /// Python marks this type discoverable (`TCPInterface.py:528`).
+    ///
+    /// The announcer
     /// still needs `discoverable` set from config before it announces anything.
     public let supportsDiscovery = true
 
@@ -33,7 +37,9 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     public var discoveryListenPort: Int? { Int(port) }
     public let name: String
     public let port: UInt16
-    /// The address reported as the listener's bind address. Python resolves `listen_ip`
+    /// The address reported as the listener's bind address.
+    ///
+    /// Python resolves `listen_ip`
     /// into `self.bind_ip` and prints it in `__str__` (`TCPInterface.py:518`, `:552`);
     /// `NWListener` always binds every address, so this is a reporting-only value that
     /// defaults to Python's `0.0.0.0`.
@@ -67,20 +73,28 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
 
-    /// Called by Transport when a new client connects. Transport registers the sub-interface.
+    /// Called by Transport when a new client connects.
+    ///
+    /// Transport registers the sub-interface.
     public var onClientConnected: ((any Interface) -> Void)?
-    /// Called by Transport when a client disconnects. Transport deregisters the sub-interface.
+    /// Called by Transport when a client disconnects.
+    ///
+    /// Transport deregisters the sub-interface.
     public var onClientDisconnected: ((any Interface) -> Void)?
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
 
     /// Python `TCPServerInterface.__str__` (`TCPInterface.py:680-686`):
     /// `"TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"`, with an
-    /// IPv6 literal bracketed. The old `"TCPInterface[Server on …]"` form matched no
+    /// IPv6 literal bracketed.
+    ///
+    /// The old `"TCPInterface[Server on …]"` form matched no
     /// Python string at all, which put a different `Interface.hash`—it's
     /// `fullHash(displayName)`—on the wire than the Python listener beside it.
     public var displayName: String {
@@ -88,7 +102,9 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
         return "TCPServerInterface[\(name)/\(ipString):\(port)]"
     }
 
-    /// Number of connected clients. Used by buildInterfaceStats for rnstatus.
+    /// Number of connected clients.
+    ///
+    /// Used by buildInterfaceStats for rnstatus.
     public var clientCount: Int {
         lock.lock(); defer { lock.unlock() }
         return spawned.count
@@ -173,7 +189,9 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
         isOnline = false
     }
 
-    /// Broadcast to ALL connected clients. Used only when a send must reach every peer
+    /// Broadcast to ALL connected clients.
+    ///
+    /// Used only when a send must reach every peer
     /// (for example, the PosixTCPServer shared-instance model). Transport routing uses the
     /// per-client `TCPServerClientInterface.send()` instead.
     public func send(_ packet: Packet) throws {
@@ -253,6 +271,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     }
 
     /// The remote address of an accepted connection, for the spawned interface's name.
+    ///
     /// Python reads it straight off `handler.client_address`; `NWConnection` exposes it as
     /// the endpoint it was created from.
     static func peerAddress(of conn: NWConnection) -> (host: String, port: UInt16) {
@@ -281,11 +300,15 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterface,
                                               SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`TCPInterface.py:134, the class a listener spawns per accepted connection`). The announcer
+    /// Python marks this type discoverable (`TCPInterface.py:134, the class a listener spawns per accepted connection`).
+    ///
+    /// The announcer
     /// still needs `discoverable` set from config before it announces anything.
     public let supportsDiscovery = true
 
@@ -315,7 +338,9 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
 
     /// Lock-guarded—inbound frames are counted from the parent server's
     /// delivery queue while `send` runs on the caller's thread and the UI
-    /// reads from a third. See `InterfaceCounters`.
+    /// reads from a third.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
@@ -332,7 +357,9 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     /// A spawned client shares the `TCPClientInterface.__str__` format, but its `name` is
     /// `"Client on "+servername` (`TCPInterface.py:590`)—which is exactly the prefix
     /// `rnstatus` hides (`rnstatus.py:397`), because these are per-connection
-    /// sub-interfaces rather than anything an operator configured. Python distinguishes
+    /// sub-interfaces rather than anything an operator configured.
+    ///
+    /// Python distinguishes
     /// concurrent clients by the peer address in the tail, not by the name.
     public var displayName: String {
         let ipString = peerHost.contains(":") ? "[\(peerHost)]" : peerHost

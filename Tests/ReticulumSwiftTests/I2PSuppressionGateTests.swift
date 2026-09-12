@@ -79,6 +79,7 @@ final class I2PSuppressionGateTests: XCTestCase {
     }
 
     /// The suppression must follow the *interface*, not a name an operator happened to choose.
+    ///
     /// Before `bugs/022` the row name was the configured name, so whether the gate fired
     /// depended on the operator naming their interface `"I2PInterface[…]"` by hand.
     func testSuppressionDoesNotDependOnTheConfiguredName() {

@@ -64,7 +64,9 @@ final class RPCClientTests: XCTestCase {
     // MARK: - Handshake + call round trip
 
     /// `medium_path_timeout` and `lowest_interface_bitrate` (`Reticulum.py:1292-1293`), added
-    /// in RNS 1.5.x. These exist precisely so a local client doesn't answer from its own
+    /// in RNS 1.5.x.
+    ///
+    /// These exist precisely so a local client doesn't answer from its own
     /// loopback interface, so the round trip is the behaviour, not an implementation detail.
     func testMediumPathTimeout_roundTrip() throws {
         let client = try startServer()

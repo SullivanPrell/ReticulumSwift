@@ -12,15 +12,21 @@ import Foundation
 import Network
 
 /// Connects to a remote Reticulum node over TCP and exchanges HDLC-framed
-/// packet bytes. Wire-compatible with `RNS.Interfaces.TCPInterface` running
+/// packet bytes.
+///
+/// Wire-compatible with `RNS.Interfaces.TCPInterface` running
 /// in HDLC mode (`kiss_framing=False`, the default).
 public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`TCPInterface.py:134`). The announcer
+    /// Python marks this type discoverable (`TCPInterface.py:134`).
+    ///
+    /// The announcer
     /// still needs `discoverable` set from config before it announces anything.
     public let supportsDiscovery = true
     public let name: String
@@ -50,14 +56,20 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
 
-    /// Seconds between reconnection attempts. Python: `TCPClientInterface.RECONNECT_WAIT = 5`.
+    /// Seconds between reconnection attempts.
+    ///
+    /// Python: `TCPClientInterface.RECONNECT_WAIT = 5`.
     public var reconnectWait: TimeInterval = 5
     /// Maximum reconnect attempts. nil = unlimited, matching Python's
-    /// `RECONNECT_MAX_TRIES = None`. Config key: `max_reconnect_tries`.
+    /// `RECONNECT_MAX_TRIES = None`.
+    ///
+    /// Config key: `max_reconnect_tries`.
     public var maxReconnectTries: Int?
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
@@ -72,7 +84,9 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     private var dials = 0
     /// Guards `connection`, `reconnectTimer`, `reconnectCount`, `stopped` and
     /// `everConnected`, which are touched both from the caller thread (start/stop/send)
-    /// and from this interface's serial queue (connect/stateUpdate/receive). Mirrors the
+    /// and from this interface's serial queue (connect/stateUpdate/receive).
+    ///
+    /// Mirrors the
     /// same lock in ``LocalInterface``; without it a reconnect firing from the timer can
     /// assign `connection` just after `stop()` nil'd it, leaving a connection that keeps
     /// redialing after teardown.
@@ -113,7 +127,9 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
 
     /// Python's `__init__` runs `initial_connect()` inline (`SYNCHRONOUS_START = True`) and,
     /// if that fails, starts the `reconnect()` thread rather than raising—a configured
-    /// interface whose peer is down comes up unconnected and keeps trying. This returns as
+    /// interface whose peer is down comes up unconnected and keeps trying.
+    ///
+    /// This returns as
     /// soon as the dial is in flight, which reaches the same state without stalling
     /// interface synthesis for `INITIAL_CONNECT_TIMEOUT` per unreachable peer.
     public func start() throws {

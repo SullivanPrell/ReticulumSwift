@@ -29,23 +29,29 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
 
     /// Modes for which a transport node should attempt to discover paths
     /// for unknown destinations on behalf of a path request.
+    ///
     /// Mirrors Python's `Interface.DISCOVER_PATHS_FOR`.
     public static let discoverPathsFor: Set<InterfaceMode> = [.accessPoint, .gateway, .roaming, .internal]
 
     /// Interface modes a *boundary*-mode interface is allowed to propagate
-    /// recursive path requests onto. RNS 1.4.1 lets boundary interfaces search
+    /// recursive path requests onto.
+    ///
+    /// RNS 1.4.1 lets boundary interfaces search
     /// for unknown destinations, but only towards boundary and gateway peers—never
     /// back out over access-point/roaming/internal segments.
     /// Mirrors Python's `Interface.BOUNDARY_SEARCH_MODES`.
     public static let boundarySearchModes: Set<InterfaceMode> = [.boundary, .gateway]
 
     /// Gravity assigned to an interface that has no explicit configuration.
+    ///
     /// Mirrors Python's `Interface.DEFAULT_GRAVITY = 0`.
     public static let defaultGravity: Int = 0
 
     /// Parse a config-file mode string, accepting every alias Python does
     /// (`Reticulum._config_interface_mode` / the `autoconnect_interface_mode`
-    /// parser). Comparison is case-insensitive; returns `nil` for an
+    /// parser).
+    ///
+    /// Comparison is case-insensitive; returns `nil` for an
     /// unrecognized value so callers can leave their default in place, matching
     /// Python's `if v != None:` assignment guard.
     public init?(configName: String) {
@@ -368,7 +374,9 @@ public protocol Interface: AnyObject {
 }
 
 /// An interface that can front multiple locally connected shared-instance
-/// clients (rnstatus, nomadnet, MeshChatX, …). Mirrors Python's
+/// clients (rnstatus, nomadnet, MeshChatX, …).
+///
+/// Mirrors Python's
 /// `Transport.local_client_interfaces`—a list of one per-connection
 /// `LocalClientInterface` spawned per accepted socket—collapsed here into
 /// a single object per listening server (for example, `PosixTCPServer`) since Swift
@@ -393,6 +401,7 @@ public protocol MtuAutoconfiguringInterface: Interface {
 }
 
 /// The `optimise_mtu()` bitrate → `HW_MTU` ladder, verbatim from `Interface.py:207-217`.
+///
 /// One implementation shared by every caller, so no interface can carry its own drifted copy.
 ///
 /// RNS 1.5.1 made **every** rung inclusive. Through 1.4.2 only the top rung was `>=` and the
@@ -422,7 +431,9 @@ public extension Interface {
 
     /// Record that a TCP-family connection just came up, which is where Python asks for a
     /// tunnel: `wants_tunnel = True` on a successful `initial_connect`
-    /// (`TCPInterface.py:179`, `BackboneInterface.py:653`, `I2PInterface.py:428`). The
+    /// (`TCPInterface.py:179`, `BackboneInterface.py:653`, `I2PInterface.py:428`).
+    ///
+    /// The
     /// transport serves the request on its next sweep, so the paths the remote side holds for
     /// this client survive the reconnect instead of dying with the socket.
     ///
@@ -433,7 +444,9 @@ public extension Interface {
         wantsTunnel = true
     }
 
-    /// Python `Interface.optimise_mtu()`. Called unconditionally after the configured bitrate
+    /// Python `Interface.optimise_mtu()`.
+    ///
+    /// Called unconditionally after the configured bitrate
     /// lands (`Reticulum.py:914-915`) and on spawned server-side clients after the bitrate copy
     /// (`TCPInterface.py:612-613`); the write is gated on `AUTOCONFIGURE_MTU`, so fixed-MTU
     /// interfaces keep their class value and this is safe to call on every interface.
@@ -483,19 +496,23 @@ public extension Interface {
     var statsShortName: String { name }
 
     /// SHA-256 hash of the display name (as UTF-8 bytes).
+    ///
     /// Mirrors Python's `Interface.get_hash()` = `SHA256(str(self).encode("utf-8"))`.
     var hash: Data { Hashes.fullHash(Data(displayName.utf8)) }
 
     /// Returns the SHA-256 hash of the display name.
+    ///
     /// Explicit method form of the `hash` property.
     /// Mirrors Python's `Interface.get_hash()`.
     func getHash() -> Data { hash }
 
     /// Returns the interface bitrate in bits per second.
+    ///
     /// Mirrors Python's `Interface.bitrate` direct attribute access.
     func getBitrate() -> Int { bitrate }
 
     /// Returns the interface mode (full, access-point, roaming, and so on).
+    ///
     /// Mirrors Python's `Interface.mode` direct attribute access.
     func getMode() -> InterfaceMode { mode }
 
@@ -620,7 +637,9 @@ public extension Interface {
 
     // MARK: Interface discovery, publish side
 
-    /// Python's base-class default (`Interface.py:117`). Overridden to `true` by the types
+    /// Python's base-class default (`Interface.py:117`).
+    ///
+    /// Overridden to `true` by the types
     /// upstream marks: `BackboneInterface.py:154`, `I2PInterface.py:762`,
     /// `RNodeInterface.py:302` and `TCPInterface.py:134`/`:528`.
     var supportsDiscovery: Bool { false }
@@ -725,7 +744,9 @@ public extension Interface {
 
     // MARK: - IFAC wrap / unwrap
 
-    /// Wrap `raw` with an IFAC code and mask. Returns `raw` unchanged if
+    /// Wrap `raw` with an IFAC code and mask.
+    ///
+    /// Returns `raw` unchanged if
     /// this interface has no IFAC identity configured.
     ///
     /// Wire layout of the returned bytes (matches Python `Transport.transmit`):
@@ -760,7 +781,9 @@ public extension Interface {
         return out
     }
 
-    /// Verify and strip the IFAC code from `raw`. Returns the original
+    /// Verify and strip the IFAC code from `raw`.
+    ///
+    /// Returns the original
     /// (pre-IFAC) packet bytes on success, or `nil` if verification fails
     /// or the IFAC flag state is inconsistent with this interface's config.
     func unwrapIfac(_ raw: Data) -> Data? {

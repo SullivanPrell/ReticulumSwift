@@ -203,7 +203,9 @@ final class ReticulumSectionConfigTests: XCTestCase {
     // MARK: - Global defaults reaching interfaces
 
     /// The `ic_*` and egress values are what every interface *starts* from, because Python reads
-    /// them in `Interface.__init__` (`Interface.py:126-136`). Asserted on a freshly constructed
+    /// them in `Interface.__init__` (`Interface.py:126-136`).
+    ///
+    /// Asserted on a freshly constructed
     /// interface, not on the globals—reading the globals back would prove only that the parser
     /// filled a struct.
     func testConfiguredIngressAndEgressDefaultsReachANewInterface() {
@@ -238,7 +240,9 @@ final class ReticulumSectionConfigTests: XCTestCase {
         XCTAssertEqual(state.icHeldReleaseInterval, 19.5)
     }
 
-    /// A per-interface block still wins over the global default. Both halves matter: the global
+    /// A per-interface block still wins over the global default.
+    ///
+    /// Both halves matter: the global
     /// sets the starting point, the block overrides it (`Reticulum.py:942-953`).
     func testAPerInterfaceBlockOverridesTheGlobalDefault() {
         apply("ic_burst_freq = 14.5")
@@ -255,6 +259,7 @@ final class ReticulumSectionConfigTests: XCTestCase {
 
     /// Python's `x or DEFAULT` treats a configured zero as absent (`Reticulum.py:1154-1185`), so
     /// `ic_burst_freq = 0` falls back to the class constant rather than taking effect.
+    ///
     /// Replicated because an operator moving a working Python config to a Swift node must get
     /// the same tuning, and because the guard that accepts the value (`if v >= 0`) and the
     /// accessor that discards it are four hundred lines apart in the reference.
@@ -273,7 +278,9 @@ final class ReticulumSectionConfigTests: XCTestCase {
     // MARK: - Announce-rate defaults
 
     /// `default_ar_*` is the announce-rate policy an interface inherits when its own block is
-    /// silent—and only when transport is enabled (`Reticulum.py:854-857`). Without the
+    /// silent—and only when transport is enabled (`Reticulum.py:854-857`).
+    ///
+    /// Without the
     /// application half these keys would parse into a value no interface ever reads, which is
     /// the defect, not the fix.
     func testDefaultAnnounceRatesReachAnInterfaceWhenTransportIsEnabled() throws {
@@ -395,7 +402,9 @@ final class ReticulumSectionConfigTests: XCTestCase {
     }
 
     /// Python logs and falls back to the derived key when the hex won't decode
-    /// (`Reticulum.py:494-499`). A malformed key must not become a *working* key made of
+    /// (`Reticulum.py:494-499`).
+    ///
+    /// A malformed key must not become a *working* key made of
     /// whatever decoded, and must not silently look like an absent one either.
     func testAMalformedRPCKeyFallsBackButStaysDistinguishableFromAbsent() {
         let parsed = ReticulumConfig.parse("[reticulum]\nrpc_key = nothexatall\n").reticulum

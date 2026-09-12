@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying announce bandwidth cap behavior.
+///
 /// Python: Transport uses ANNOUNCE_CAP = 2% of interface bandwidth for announces.
 final class AnnounceCapTests: XCTestCase {
 
@@ -92,6 +93,7 @@ final class AnnounceCapTests: XCTestCase {
 
     /// Python's `Transport.outbound` adds `random() * tx_time/cap` jitter so that
     /// simultaneously hearing nodes don't all rebroadcast at exactly the same moment.
+    ///
     /// With jitterMultiplierOverride = 0 the window equals exactly txTime/cap.
     func testAllowedAtAdvancedByCapWindowNoJitter() {
         let queue = AnnounceQueue()

@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Exact output strings for rnx's plain, truncation-notice and `-d` blocks.
+///
 /// Python reference: RNS/Utilities/rnx.py:459-518, plus size_str (:678) and pretty_time (:697).
 final class RNXRenderTests: XCTestCase {
 

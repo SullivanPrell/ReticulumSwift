@@ -69,21 +69,29 @@ public final class ResourceTransfer {
     static let windowInitial: Int = 4      // WINDOW
     static let windowMin: Int = 2          // WINDOW_MIN
     static let windowMax: Int = 10         // WINDOW_MAX_SLOW
-    /// Fast-window cap. Used only to size the collision-guard search window and to
+    /// Fast-window cap.
+    ///
+    /// Used only to size the collision-guard search window and to
     /// rewind the sender's search height after a hashmap update.
     /// Mirrors Python `Resource.WINDOW_MAX = WINDOW_MAX_FAST = 75`.
     static let windowMaxFast: Int = 75
-    /// Maximum efficient segment size (~1 MB). Mirrors Python Resource.MAX_EFFICIENT_SIZE.
+    /// Maximum efficient segment size (~1 MB).
+    ///
+    /// Mirrors Python Resource.MAX_EFFICIENT_SIZE.
     public static let maxEfficientSize: Int = 1 * 1024 * 1024 - 1
 
-    /// Test-only override for the segment size threshold. When non-nil, this value
+    /// Test-only override for the segment size threshold.
+    ///
+    /// When non-nil, this value
     /// is used instead of `maxEfficientSize` to enable small-payload multi-segment tests.
     /// Set to nil (default) in production code.
     var testSegmentSizeOverride: Int? = nil
 
     /// Same override, for transfers the library constructs internally—the
     /// request and response resources built inside `Link`—which a test has no
-    /// reference to. Nil in production; only ever set from tests, and only while
+    /// reference to.
+    ///
+    /// Nil in production; only ever set from tests, and only while
     /// no other transfer is running.
     static var testSegmentSizeOverrideGlobal: Int? = nil
 
@@ -91,7 +99,9 @@ public final class ResourceTransfer {
 
     public let link: Link
 
-    /// Serializes ALL mutable transfer state. A strict LEAF lock: it's NEVER
+    /// Serializes ALL mutable transfer state.
+    ///
+    /// A strict LEAF lock: it's NEVER
     /// held across any `link.*` call, callback, `Resource` init, or watchdog
     /// start/stop. Non-recursive—internal code holding it must use the `_`-backed
     /// fields (`unsafeStatus`/`unsafeAdvertisement`/…) and must never call a self-locking
@@ -100,6 +110,7 @@ public final class ResourceTransfer {
 
     private var unsafeStatus: Status = .idle
     /// Current transfer status. `stateLock` serializes reads and writes.
+    ///
     /// Torn reads of this enum (its `.failed` case carries a `String`) could
     /// crash—not merely garble—so external access goes through the lock.
     public private(set) var status: Status {
@@ -108,7 +119,9 @@ public final class ResourceTransfer {
     }
 
     private var unsafeAdvertisement: ResourceAdvertisement?
-    /// The resource advertisement (nil until sent/received). Lock-guarded: a torn
+    /// The resource advertisement (nil until sent/received).
+    ///
+    /// Lock-guarded: a torn
     /// read of this optional class reference would be an ARC use-after-free.
     public private(set) var advertisement: ResourceAdvertisement? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeAdvertisement }
@@ -116,17 +129,22 @@ public final class ResourceTransfer {
     }
 
     /// True when this transfer is the RECEIVER of an incoming resource (set once an
-    /// advertisement is received). Senders leave this false. Mirrors the inverse of
+    /// advertisement is received).
+    ///
+    /// Senders leave this false. Mirrors the inverse of
     /// Python's `Resource.initiator`: on cancel a receiver emits RESOURCE_RCL while a
     /// sender emits RESOURCE_ICL.
     private var isReceiver: Bool = false
 
     /// Wall-clock time when data transfer began (first REQ sent/received).
+    ///
     /// Used to compute `link.expectedRate` on completion. Mirrors Python `Resource.started_transferring`.
     private var startedTransferring: Date?
 
     private var unsafeResourceHash: Data = Data()
-    /// Full 32-byte SHA256 resource hash. Set after send() or receiveAdvertisement().
+    /// Full 32-byte SHA256 resource hash.
+    ///
+    /// Set after send() or receiveAdvertisement().
     /// Lock-guarded for safe concurrent reads from the public getter.
     public private(set) var resourceHash: Data {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeResourceHash }
@@ -141,6 +159,7 @@ public final class ResourceTransfer {
     // MARK: - Accessor properties (mirrors Python Resource getter methods)
 
     /// Transfer progress as a value from 0.0 to 1.0.
+    ///
     /// Mirrors Python's `Resource.get_progress()`.
     public var progress: Double {
         stateLock.lock(); defer { stateLock.unlock() }
@@ -175,6 +194,7 @@ public final class ResourceTransfer {
     }
 
     /// Number of parts this sender has transmitted at least once.
+    ///
     /// Mirrors Python `Resource.sent_parts`.
     public var sentPartCount: Int {
         stateLock.lock(); defer { stateLock.unlock() }
@@ -182,6 +202,7 @@ public final class ResourceTransfer {
     }
 
     /// Progress within the current segment only.
+    ///
     /// Mirrors Python's `Resource.get_segment_progress()` (RNS/Resource.py:1196-1205).
     ///
     /// Swift's part accounting is already per-segment—`mapHashes`/`parts` are rebuilt for
@@ -195,14 +216,17 @@ public final class ResourceTransfer {
     }
 
     /// The number of bytes needed to transfer the resource (encrypted).
+    ///
     /// Mirrors Python's `Resource.get_transfer_size()`.
     public var transferSize: Int { Int(advertisement?.transferSize ?? 0) }
 
     /// The total data size of the resource (original uncompressed).
+    ///
     /// Mirrors Python's `Resource.get_data_size()`.
     public var dataSize: Int { Int(advertisement?.dataSize ?? 0) }
 
     /// The number of parts the resource is transferred in.
+    ///
     /// Mirrors Python's `Resource.get_parts()`.
     public var partCount: Int {
         stateLock.lock(); defer { stateLock.unlock() }
@@ -210,22 +234,27 @@ public final class ResourceTransfer {
     }
 
     /// The number of segments the resource is divided into.
+    ///
     /// Mirrors Python's `Resource.get_segments()`.
     public var segmentCount: Int { Int(advertisement?.totalSegments ?? 1) }
 
     /// The resource hash (32-byte SHA-256).
+    ///
     /// Mirrors Python's `Resource.get_hash()`.
     public var hash: Data { resourceHash }
 
     /// Whether the resource data is compressed.
+    ///
     /// Mirrors Python's `Resource.is_compressed()`.
     public var isCompressed: Bool { advertisement?.compressed ?? false }
 
     /// Returns `true` if metadata was included with this resource.
+    ///
     /// Mirrors Python `Resource.has_metadata()` (on ResourceAdvertisement).
     public var hasMetadata: Bool { advertisement?.hasMetadata ?? false }
 
     /// The link this resource is being transferred over.
+    ///
     /// Mirrors Python `Resource.get_link()`.
     public var resourceLink: Link { link }
 
@@ -240,11 +269,14 @@ public final class ResourceTransfer {
 
     /// Called with (progress, resource) as each part is accepted (receiver) or a
     /// batch of parts goes out (sender).
+    ///
     /// Mirrors Python's `progress_callback` (Resource.py:889-893 receiver,
     /// 1079-1081 sender).
     public var onProgress: ((Double, ResourceTransfer) -> Void)?
 
-    /// Fire `onProgress` with the current value. Must be called with the state
+    /// Fire `onProgress` with the current value.
+    ///
+    /// Must be called with the state
     /// lock *released*: the callback is app code and reaches back into the
     /// transfer (`progress`, `resourceHash`) and, via RequestReceipt, into the
     /// link. Python has the same constraint and swallows callback exceptions;
@@ -254,22 +286,29 @@ public final class ResourceTransfer {
         cb(progress, self)
     }
 
-    /// Set the completion callback. Mirrors Python `Resource.set_callback(callback)`.
+    /// Set the completion callback.
+    ///
+    /// Mirrors Python `Resource.set_callback(callback)`.
     public func setCallback(_ callback: @escaping (ResourceTransfer) -> Void) {
         onComplete = callback
     }
 
-    /// Set the progress callback. Mirrors Python `Resource.progress_callback(callback)`.
+    /// Set the progress callback.
+    ///
+    /// Mirrors Python `Resource.progress_callback(callback)`.
     public func setProgressCallback(_ callback: @escaping (Double, ResourceTransfer) -> Void) {
         onProgress = callback
     }
 
     /// Internal hook used by Link to intercept isRequest/isResponse assemblies
-    /// before calling the public callbacks. Set by Link.receive().
+    /// before calling the public callbacks.
+    ///
+    /// Set by Link.receive().
     var onAssembledInternal: ((Data, ResourceTransfer) -> Void)?
 
     private var unsafeReceivedMetadata: Data?
     /// Set on the receiver side after successful assembly when the sender included metadata.
+    ///
     /// The bytes are the raw pre-packed metadata (without the 3-byte size prefix).
     /// Lock-guarded for safe concurrent reads.
     public private(set) var receivedMetadata: Data? {
@@ -280,11 +319,15 @@ public final class ResourceTransfer {
     // MARK: - Multi-segment receiver state
     // Mirrors Python's segmented resource protocol (total_segments > 1).
 
-    /// Accumulated payload bytes from completed prior segments (indices 1..N-1).
+    /// Accumulated payload bytes from completed prior segments (indices 1.
+    ///
+    /// .N-1).
     private var segmentBuffer: [Data] = []
     /// Original hash (same across all segments of one multi-segment transfer).
     private(set) var originalHash: Data?
-    /// Metadata extracted from the first segment (if any). Preserved across segment transitions.
+    /// Metadata extracted from the first segment (if any).
+    ///
+    /// Preserved across segment transitions.
     private var multiSegmentMetadata: Data?
 
     // MARK: - Sender state
@@ -296,7 +339,9 @@ public final class ResourceTransfer {
     /// Set of map-hashes for segments that have been sent at least once.
     private var sentMapHashes: Set<Data> = []
     /// Lower bound of the sender's part-search window, advanced as the receiver pulls
-    /// later hashmap segments. Mirrors Python `Resource.receiver_min_consecutive_height`.
+    /// later hashmap segments.
+    ///
+    /// Mirrors Python `Resource.receiver_min_consecutive_height`.
     private var receiverMinConsecutiveHeight: Int = 0
 
     // Multi-segment sender state.
@@ -327,7 +372,9 @@ public final class ResourceTransfer {
     public var maxRetries: Int = 16
     /// Maximum ADV retransmissions (sender: awaiting first REQ).
     public var maxAdvRetries: Int = 4
-    /// Timeout per retry round (seconds). Not RTT-adapted—matches Python SENDER_GRACE_TIME.
+    /// Timeout per retry round (seconds).
+    ///
+    /// Not RTT-adapted—matches Python SENDER_GRACE_TIME.
     public var retryTimeout: TimeInterval = 30.0
 
     private var retriesLeft: Int = 16
@@ -393,7 +440,9 @@ public final class ResourceTransfer {
     // MARK: - Sender
 
     /// The part count a receiver computes for itself: `ceil(size / sdu)`, matching
-    /// `Resource.py:187`. Deriving it's what makes a mismatch with the sender detectable.
+    /// `Resource.py:187`.
+    ///
+    /// Deriving it's what makes a mismatch with the sender detectable.
     static func derivedPartCount(size: Int, segmentSize: Int) -> Int {
         guard segmentSize > 0 else { return 0 }
         return (size + segmentSize - 1) / segmentSize
@@ -408,7 +457,9 @@ public final class ResourceTransfer {
         advertised != derived
     }
 
-    /// Prepare and advertise a resource. The sender registers with the link,
+    /// Prepare and advertise a resource.
+    ///
+    /// The sender registers with the link,
     /// which calls `handleRequest(_:)` when the receiver requests parts.
     /// Set `requestID` and `isRequest`/`isResponse` for request/response transfers.
     public func send(
@@ -729,7 +780,9 @@ public final class ResourceTransfer {
 
     // MARK: - Receiver
 
-    /// Bind this transfer as a receiver. The link calls `receiveAdvertisement`
+    /// Bind this transfer as a receiver.
+    ///
+    /// The link calls `receiveAdvertisement`
     /// when an ADV arrives and route RESOURCE parts here.
     public func bindAsReceiver() {
         link.registerIncomingResource(self)
@@ -983,7 +1036,9 @@ public final class ResourceTransfer {
         sendRequest()
     }
 
-    /// Cancel the resource transfer. Transitions to `.failed` and calls `onFailed`.
+    /// Cancel the resource transfer.
+    ///
+    /// Transitions to `.failed` and calls `onFailed`.
     /// Mirrors Python's `Resource.cancel()`.
     public func cancel() {
         cancel(reason: "cancelled by application")
@@ -1223,7 +1278,9 @@ public final class ResourceTransfer {
     }
 
     /// Aborts the transfer (via `fail`) when the link is no longer active, before
-    /// attempting a send. Mirrors Python `Resource.ensure_link()` (commit 3a36c367).
+    /// attempting a send.
+    ///
+    /// Mirrors Python `Resource.ensure_link()` (commit 3a36c367).
     /// Returns `true` when the link is usable.
     @discardableResult
     private func ensureLinkActive() -> Bool {

@@ -136,6 +136,7 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     /// A non-transport shared instance (enable_transport = No) must still
     /// propagate an announce originated by one of its connected clients out to
     /// the wider mesh—otherwise no peer ever learns the client's destination.
+    ///
     /// Mirrors Python `if (transport_enabled or is_from_local_client) and
     /// context != PATH_RESPONSE:` (Transport.py:1935) with immediate retransmit
     /// for local-client announces (retries = PATHFINDER_R).
@@ -167,7 +168,9 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
 
     /// Guard: a plain MESH announce (not from a local client) must NOT be
     /// relayed by a non-transport node—only transport nodes relay mesh
-    /// announces. This is the boundary the local-client OR-clause must not cross.
+    /// announces.
+    ///
+    /// This is the boundary the local-client OR-clause must not cross.
     func testMeshAnnounceNotForwardedByNonTransportNode() throws {
         let transport = Transport()
         transport.transportEnabled = false

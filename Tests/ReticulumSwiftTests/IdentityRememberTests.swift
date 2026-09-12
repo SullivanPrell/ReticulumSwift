@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Identity.remember() static method.
+///
 /// Mirrors Python's `RNS.Identity.remember(packet_hash, destination_hash, public_key, app_data)`.
 final class IdentityRememberTests: XCTestCase {
 

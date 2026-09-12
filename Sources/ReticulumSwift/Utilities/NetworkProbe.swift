@@ -48,18 +48,23 @@ public protocol ProbeReceipt: AnyObject {
 }
 
 /// Wall clock + sleep, so the wait loops can be driven deterministically in tests.
+///
 /// Python: `time.time()` and `time.sleep()`.
 public protocol ProbeClock: AnyObject {
     func now() -> TimeInterval
     func sleep(_ interval: TimeInterval)
 }
 
-/// Probe payload source. Python: `os.urandom(size)` (rnprobe.py:115).
+/// Probe payload source.
+///
+/// Python: `os.urandom(size)` (rnprobe.py:115).
 public protocol ProbeEntropy: AnyObject {
     func randomBytes(_ count: Int) -> Data
 }
 
-/// Where the tool's bytes go. Everything rnprobe prints is routed through here so a test
+/// Where the tool's bytes go.
+///
+/// Everything rnprobe prints is routed through here so a test
 /// can assert the exact byte stream, control characters and all.
 public protocol ProbeOutput: AnyObject {
     func write(_ text: String)
@@ -161,10 +166,13 @@ public final class NetworkProbe {
     // MARK: - Class constants
 
     /// Default probe payload size in bytes.
+    ///
     /// Python: `DEFAULT_PROBE_SIZE = 16` (rnprobe.py:41).
     public static let defaultProbeSize: Int = 16
 
-    /// Default reply timeout in seconds. Base of both the path-wait and the per-probe
+    /// Default reply timeout in seconds.
+    ///
+    /// Base of both the path-wait and the per-probe
     /// deadline. Python: `DEFAULT_TIMEOUT = 12` (rnprobe.py:42).
     public static let defaultTimeout: TimeInterval = 12
 
@@ -177,14 +185,19 @@ public final class NetworkProbe {
         "\u{2884}", "\u{2882}", "\u{2881}", "\u{2841}", "\u{2848}", "\u{2850}", "\u{2860}"
     ]
 
-    /// Poll interval of both wait loops. Python: `time.sleep(0.1)` (rnprobe.py:88, 137).
+    /// Poll interval of both wait loops.
+    ///
+    /// Python: `time.sleep(0.1)` (rnprobe.py:88, 137).
     public static let pollInterval: TimeInterval = 0.1
 
     /// Erase-line width before "Path request timed out" and before the receipt-failed
-    /// "Probe timed out". Python: rnprobe.py:94 and :197—both literals measure 58 spaces.
+    /// "Probe timed out".
+    ///
+    /// Python: rnprobe.py:94 and :197—both literals measure 58 spaces.
     public static let shortEraseWidth: Int = 58
 
     /// Erase-line width used by the DEADLINE "Probe timed out".
+    ///
     /// Python: rnprobe.py:143—that literal measures 64 spaces. The two widths differ in
     /// the Python source; the discrepancy is reproduced rather than harmonized.
     public static let longEraseWidth: Int = 64
@@ -194,7 +207,9 @@ public final class NetworkProbe {
 
     // MARK: - Exit codes
 
-    /// Process exit statuses. Python uses a bare `exit()` (0), `exit(1)`, `exit(2)` and
+    /// Process exit statuses.
+    ///
+    /// Python uses a bare `exit()` (0), `exit(1)`, `exit(2)` and
     /// `exit(3)`. Note that 2 is overloaded—argparse also exits 2 on a usage error, so a
     /// script can't tell packet loss from a bad command line. Inherited, not "fixed".
     public enum Result: Int32, Equatable, CaseIterable {
@@ -216,7 +231,9 @@ public final class NetworkProbe {
         public var fullName: String?
         /// Python positional `destination_hash`, default `None`.
         public var destinationHexhash: String?
-        /// Python `--config`. A config *directory*, despite the flag's spelling.
+        /// Python `--config`.
+        ///
+        /// A config *directory*, despite the flag's spelling.
         public var configDir: URL?
         /// Python `-s/--size`, default `None` → ``NetworkProbe/defaultProbeSize``.
         public var size: Int?
@@ -247,12 +264,16 @@ public final class NetworkProbe {
             self.verbosity = verbosity
         }
 
-        /// Python: `more_output = verbosity > 0` (rnprobe.py:69-74). Gates only the
+        /// Python: `more_output = verbosity > 0` (rnprobe.py:69-74).
+        ///
+        /// Gates only the
         /// " via …/ on …" annotation on the "Sent probe" line.
         public var moreOutput: Bool { verbosity > 0 }
 
         /// Python: `RNS.Reticulum(loglevel = 3 + verbosity)` where `verbosity` has already
-        /// been decremented once in *both* branches (rnprobe.py:69-77). So no `-v` gives
+        /// been decremented once in *both* branches (rnprobe.py:69-77).
+        ///
+        /// So no `-v` gives
         /// LOG_WARNING (2)—quieter than the RNS default of 4—and each extra `-v` adds
         /// one level.
         ///
@@ -323,7 +344,9 @@ public final class NetworkProbe {
         public let receptionStats: String
         /// Swift-only diagnostic Python lacks: true when the destination built from
         /// `full_name` + the recalled identity doesn't equal the typed
-        /// `destination_hash`. Never printed—Python is silent about this, and reproducing
+        /// `destination_hash`.
+        ///
+        /// Never printed—Python is silent about this, and reproducing
         /// the silence is what parity requires.
         public let destinationHashMismatch: Bool
 
@@ -404,6 +427,7 @@ public final class NetworkProbe {
     // MARK: - Cancellation
 
     /// Cooperative cancellation for the executable's SIGINT handler.
+    ///
     /// Python: `except KeyboardInterrupt: print(""); exit()` (rnprobe.py:247-249).
     ///
     /// Signal handling itself must stay in the executable target—the library has no
@@ -419,6 +443,7 @@ public final class NetworkProbe {
     // MARK: - Pure helpers
 
     /// Parse and validate the typed destination hash.
+    ///
     /// Python: rnprobe.py:57-64. `bytes.fromhex` is case-insensitive, so `AABB…` is valid.
     public static func parseDestinationHash(_ hexhash: String) throws -> Data {
         guard hexhash.count == destinationHexLength else { throw ValidationError.badHashLength }
@@ -450,7 +475,9 @@ public final class NetworkProbe {
     }
 
     /// Python `str(float)`—shortest round-trip repr, always with at least one fractional
-    /// digit (`0.5` → `"0.5"`, `1000.0` → `"1000.0"`). A `String(format: "%.3f")` would
+    /// digit (`0.5` → `"0.5"`, `1000.0` → `"1000.0"`).
+    ///
+    /// A `String(format: "%.3f")` would
     /// print `"0.500"` and diverge.
     public static func pythonFloatString(_ value: Double) -> String {
         "\(value)"
@@ -467,10 +494,14 @@ public final class NetworkProbe {
         return (value * scale).rounded(.toNearestOrEven) / scale
     }
 
-    /// Python `str(int)`—no decimal point. Used for RSSI, which is an int in Python.
+    /// Python `str(int)`—no decimal point.
+    ///
+    /// Used for RSSI, which is an int in Python.
     public static func pythonIntString(_ value: Int) -> String { "\(value)" }
 
-    /// Python: rnprobe.py:157-163. The boundary is `rtt >= 1`.
+    /// Python: rnprobe.py:157-163.
+    ///
+    /// The boundary is `rtt >= 1`.
     public static func rttString(_ rtt: TimeInterval) -> String {
         if rtt >= 1 {
             return pythonFloatString(pythonRound(rtt, 3)) + " seconds"

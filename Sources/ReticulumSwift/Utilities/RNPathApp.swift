@@ -25,10 +25,13 @@ public enum RNPathApp {
 
     // MARK: - Application identity
 
-    /// Executable name. Python: `argparse.ArgumentParser(prog=...)` defaults to `rnpath`.
+    /// Executable name.
+    ///
+    /// Python: `argparse.ArgumentParser(prog=...)` defaults to `rnpath`.
     public static let appName: String = "rnpath"
 
     /// App name of the remote-management and blackhole destinations.
+    ///
     /// Python: `RNS.Destination(remote_identity, OUT, SINGLE, "rnstransport", ...)` (rnpath.py:87-88).
     public static let transportAppName: String = "rnstransport"
 
@@ -92,7 +95,9 @@ public enum RNPathApp {
     public static let hexHashLength: Int = Constants.truncatedHashLength * 2
 
     /// Python: `RNS.Transport.PATHFINDER_M`—the hop count `Transport.hops_to()` returns
-    /// for an unknown destination (Transport.py:2676-2683). Swift's ``Transport/hopsTo(_:)``
+    /// for an unknown destination (Transport.py:2676-2683).
+    ///
+    /// Swift's ``Transport/hopsTo(_:)``
     /// returns `nil` there instead, so callers map `nil` → 128.
     public static let unknownHops: UInt8 = 128
 
@@ -174,12 +179,15 @@ public enum RNPathApp {
         public var description: String { message }
     }
 
-    /// Python: `parse_hash(input_str)` (rnpath.py:93-99). Used by `-p`, `-B` and `-U`.
+    /// Python: `parse_hash(input_str)` (rnpath.py:93-99).
+    ///
+    /// Used by `-p`, `-B` and `-U`.
     public static func parseHash(_ input: String) throws -> Data {
         try decodeHash(input, lengthError: .invalidHashLength, contentError: .invalidHash)
     }
 
     /// The inline variant duplicated in the `-t`, `-r`, `-d`, `-x` and default branches.
+    ///
     /// Same logic, different wording, different exit code.
     public static func parseDestination(_ input: String) throws -> Data {
         try decodeHash(input, lengthError: .invalidDestinationLength, contentError: .invalidDestination)
@@ -277,12 +285,15 @@ public enum RNPathApp {
     """
 
     /// The `usage:` block alone, as `parser.print_usage(sys.stderr)` writes it ahead of an
-    /// error. Taken from ``helpText`` rather than restated, so the two can't drift.
+    /// error.
+    ///
+    /// Taken from ``helpText`` rather than restated, so the two can't drift.
     public static var usageText: String {
         helpText.components(separatedBy: "\n\n")[0]
     }
 
     /// The whole `argparse` error page: the usage block, then `rnpath: error: detail`.
+    ///
     /// Written to stderr, followed by exit 2.
     public static func errorText(_ detail: String) -> String {
         "\(usageText)\n\(appName): error: \(detail)"

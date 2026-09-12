@@ -104,7 +104,9 @@ public struct BZip2Compressor: DataCompressor {
         }
     }
 
-    /// Decompress `data` with a hard cap on the output size. If the
+    /// Decompress `data` with a hard cap on the output size.
+    ///
+    /// If the
     /// decompressed stream would exceed `maxLength` bytes, returns
     /// `.exceededMaxLength` without allocating the bomb output.
     /// Mirrors Python's `BZ2Decompressor.decompress(data, max_length=…)` +

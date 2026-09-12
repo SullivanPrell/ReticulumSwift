@@ -22,11 +22,14 @@ public final class PacketReceipt {
 
     // MARK: - Wire sizes
 
-    /// Implicit proof: Ed25519 signature only (64 bytes). Python default.
+    /// Implicit proof: Ed25519 signature only (64 bytes).
+    ///
+    /// Python default.
     /// Mirrors Python `PacketReceipt.IMPL_LENGTH`.
     public static let implicitProofLength = Constants.signatureLength
 
     /// Explicit proof: full hash (32 bytes) + Ed25519 signature (64 bytes).
+    ///
     /// Mirrors Python `PacketReceipt.EXPL_LENGTH`.
     public static let explicitProofLength = Constants.fullHashLength + Constants.signatureLength
 
@@ -52,24 +55,31 @@ public final class PacketReceipt {
     /// `snr`, `quality`—which `rnprobe` reports for a delivered probe.
     public private(set) var proofPacket: Packet?
 
-    /// Timeout interval in seconds. When `sentAt + timeout < now` the
+    /// Timeout interval in seconds.
+    ///
+    /// When `sentAt + timeout < now` the
     /// receipt transitions to `.failed` (or `.culled` when `timeout == -1`).
     public var timeout: TimeInterval
 
     /// The identity whose public key validates the proof signature.
+    ///
     /// For outbound packets this is the remote destination's identity
     /// (public key only), looked up from `Transport.knownIdentities`.
     public var peerIdentity: Identity?
 
     /// Guards `status`, `proved`, `concludedAt`, and the two callbacks so that
-    /// the terminal-state transition is check-and-set atomic. Without this,
+    /// the terminal-state transition is check-and-set atomic.
+    ///
+    /// Without this,
     /// `checkTimeout()` (jobs thread, under Transport.receiptsLock) races
     /// `validateExplicit/ImplicitProof` (receive thread) over `status`, allowing
     /// both a delivery and a timeout callback to fire. Self-contained: callbacks
     /// are always invoked OUTSIDE this lock, so it never nests with any other.
     private let stateLock = NSLock()
 
-    /// Fires when the receipt is proved/delivered. If the proof already
+    /// Fires when the receipt is proved/delivered.
+    ///
+    /// If the proof already
     /// arrived before this callback was set (synchronous loopback), it
     /// is replayed immediately on assignment.
     private var unsafeOnDelivery: ((PacketReceipt) -> Void)?
@@ -116,7 +126,9 @@ public final class PacketReceipt {
 
     public var isTimedOut: Bool { sentAt.addingTimeInterval(timeout) < Date() }
 
-    /// Check whether the receipt has timed out. Called periodically by
+    /// Check whether the receipt has timed out.
+    ///
+    /// Called periodically by
     /// the Transport jobs loop. Matches Python's `PacketReceipt.check_timeout`.
     func checkTimeout() {
         stateLock.lock()
@@ -139,6 +151,7 @@ public final class PacketReceipt {
     // MARK: - Proof validation
 
     /// Validate an explicit proof: `[32-byte packet hash][64-byte sig]`.
+    ///
     /// If the signature over the packet hash verifies against the
     /// destination's identity, marks the receipt delivered.
     /// Mirrors Python's `PacketReceipt.validate_proof` (EXPL_LENGTH branch).
@@ -159,7 +172,9 @@ public final class PacketReceipt {
     }
 
     /// Validate an implicit proof: just a 64-byte Ed25519 signature over the
-    /// packet hash. Mirrors Python's `PacketReceipt.validate_proof` (IMPL_LENGTH branch).
+    /// packet hash.
+    ///
+    /// Mirrors Python's `PacketReceipt.validate_proof` (IMPL_LENGTH branch).
     ///
     /// Unlike explicit proofs, implicit proofs can't be pre-filtered by hash,
     /// so the caller must try this against every outstanding receipt.
@@ -183,7 +198,9 @@ public final class PacketReceipt {
         markDelivered(packet)
     }
 
-    /// Atomic terminal-state commit. Returns `true` iff this call won the race
+    /// Atomic terminal-state commit.
+    ///
+    /// Returns `true` iff this call won the race
     /// (transitioned from `.sent` to `.delivered`); a loser returns `false`
     /// without firing a callback. The delivery callback fires outside the lock.
     @discardableResult
@@ -213,37 +230,53 @@ public final class PacketReceipt {
 
     // MARK: - Python-compatible getter/setter methods
 
-    /// Returns the RTT in seconds. Mirrors Python `PacketReceipt.get_rtt()`.
+    /// Returns the RTT in seconds.
+    ///
+    /// Mirrors Python `PacketReceipt.get_rtt()`.
     public func getRtt() -> TimeInterval? { rtt }
 
-    /// Returns whether the receipt has timed out. Mirrors Python `PacketReceipt.is_timed_out()`.
+    /// Returns whether the receipt has timed out.
+    ///
+    /// Mirrors Python `PacketReceipt.is_timed_out()`.
     public func isTimedOutMethod() -> Bool { isTimedOut }
 
-    /// Sets the timeout. Mirrors Python `PacketReceipt.set_timeout(timeout)`.
+    /// Sets the timeout.
+    ///
+    /// Mirrors Python `PacketReceipt.set_timeout(timeout)`.
     public func setTimeout(_ t: TimeInterval) { timeout = t }
 
-    /// Sets the delivery callback. Mirrors Python `PacketReceipt.set_delivery_callback(callback)`.
+    /// Sets the delivery callback.
+    ///
+    /// Mirrors Python `PacketReceipt.set_delivery_callback(callback)`.
     public func setDeliveryCallback(_ cb: @escaping (PacketReceipt) -> Void) { onDelivery = cb }
 
-    /// Sets the timeout callback. Mirrors Python `PacketReceipt.set_timeout_callback(callback)`.
+    /// Sets the timeout callback.
+    ///
+    /// Mirrors Python `PacketReceipt.set_timeout_callback(callback)`.
     public func setTimeoutCallback(_ cb: @escaping (PacketReceipt) -> Void) { onTimeout = cb }
 
-    /// Returns the receipt status. Mirrors Python `PacketReceipt.get_status()`.
+    /// Returns the receipt status.
+    ///
+    /// Mirrors Python `PacketReceipt.get_status()`.
     public func getStatus() -> Status { status }
 
     /// Returns the full 32-byte SHA-256 packet hash.
+    ///
     /// Mirrors Python `PacketReceipt.get_hash()`.
     public func getHash() -> Data { packetHash }
 
     /// Returns whether the remote destination proved the receipt.
+    ///
     /// Mirrors Python `PacketReceipt.get_proved()`.
     public func getProved() -> Bool { proved }
 
     /// Returns the time the packet was sent.
+    ///
     /// Mirrors Python `PacketReceipt.sent_at` (direct attribute access in Python).
     public func getSentAt() -> Date { sentAt }
 
     /// Returns the time the receipt was concluded (delivered or timed out), or nil.
+    ///
     /// Mirrors Python `PacketReceipt.concluded_at`.
     public func getConcludedAt() -> Date? { concludedAt }
 }

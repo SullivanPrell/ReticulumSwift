@@ -95,7 +95,9 @@ final class RNIDIdentityResolverTests: XCTestCase {
     }
 
     /// A shared Python/Swift quirk: `from_file` → `load_private_key` accepts ANY 64 bytes, so
-    /// pointing `-i` at a 64-byte `.pub` file silently yields a WRONG identity. Don't "fix"
+    /// pointing `-i` at a 64-byte `.pub` file silently yields a WRONG identity.
+    ///
+    /// Don't "fix"
     /// this, or `-i` behaviour diverges from Python.
     func testIdentityFilePointedAtAPublicBlobSilentlyLoadsAWrongIdentity() {
         let source = Identity()

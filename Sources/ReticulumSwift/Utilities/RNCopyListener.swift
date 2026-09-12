@@ -11,6 +11,7 @@
 import Foundation
 
 /// Errors surfaced while saving a received resource.
+///
 /// Python has no error type—each failure is a log line or a `print`—so the cases here
 /// map one-to-one onto the messages in rncp.py:281-313 / 490-521.
 public enum RNCopyError: Swift.Error, Equatable {
@@ -114,19 +115,33 @@ public final class RNCopyListener {
     public struct Configuration {
         /// The identity the `rncp.receive` destination is built on.
         public var identity: Identity
-        /// 16-byte IDENTITY hashes permitted to send/fetch. Python: `allowed_identity_hashes`.
+        /// 16-byte IDENTITY hashes permitted to send/fetch.
+        ///
+        /// Python: `allowed_identity_hashes`.
         public var allowedIdentityHashes: Set<Data>
-        /// `-n/--no-auth`. Python: `allow_all`.
+        /// `-n/--no-auth`.
+        ///
+        /// Python: `allow_all`.
         public var allowAll: Bool
-        /// `-F/--allow-fetch`. Python: `allow_fetch`.
+        /// `-F/--allow-fetch`.
+        ///
+        /// Python: `allow_fetch`.
         public var allowFetch: Bool
-        /// `not -C`. Python: `fetch_auto_compress`.
+        /// `not -C`.
+        ///
+        /// Python: `fetch_auto_compress`.
         public var fetchAutoCompress: Bool
-        /// `-O/--overwrite`. Python: `allow_overwrite_on_receive`.
+        /// `-O/--overwrite`.
+        ///
+        /// Python: `allow_overwrite_on_receive`.
         public var allowOverwriteOnReceive: Bool
-        /// `-j/--jail`, already absolutised. Python: `fetch_jail`.
+        /// `-j/--jail`, already absolutised.
+        ///
+        /// Python: `fetch_jail`.
         public var fetchJail: String?
-        /// `-s/--save`, already absolutised and validated. Python: `save_path`.
+        /// `-s/--save`, already absolutised and validated.
+        ///
+        /// Python: `save_path`.
         public var savePath: String?
 
         public init(identity: Identity,
@@ -150,7 +165,9 @@ public final class RNCopyListener {
 
     // MARK: - State
 
-    /// `RNS.Destination(identity, IN, SINGLE, "rncp", "receive")`. Python: rncp.py:112.
+    /// `RNS.
+    ///
+    /// Destination(identity, IN, SINGLE, "rncp", "receive")`. Python: rncp.py:112.
     public let destination: Destination
 
     public var configuration: Configuration
@@ -158,7 +175,9 @@ public final class RNCopyListener {
     private let transport: Transport
     private let fileSystem: RNCopyFileSystem
 
-    /// Guards the small amount of cross-thread bookkeeping below. Resource callbacks fire
+    /// Guards the small amount of cross-thread bookkeeping below.
+    ///
+    /// Resource callbacks fire
     /// on the Link receive thread and on the ResourceTransfer watchdog queue.
     private let stateLock = NSLock()
     /// Transfers accepted but not yet concluded, so the conclusion callback (which is only
@@ -198,7 +217,9 @@ public final class RNCopyListener {
 
     // MARK: - Lifecycle
 
-    /// Register the destination and wire every callback. Python: rncp.py:212-220.
+    /// Register the destination and wire every callback.
+    ///
+    /// Python: rncp.py:212-220.
     public func start() {
         transport.register(destination: destination)
         destination.setLinkEstablishedCallback { [weak self] link in
@@ -278,7 +299,9 @@ public final class RNCopyListener {
         // allow_all → Python's explicit `pass`.
     }
 
-    /// The `ACCEPT_APP` decision. Python: `receive_resource_callback` (rncp.py:254-266).
+    /// The `ACCEPT_APP` decision.
+    ///
+    /// Python: `receive_resource_callback` (rncp.py:254-266).
     /// Returning false makes RNS reject the resource with RESOURCE_RCL.
     public func acceptResource(from link: Link) -> Bool {
         if let senderIdentity = link.getRemoteIdentity(),
@@ -388,7 +411,9 @@ public final class RNCopyListener {
 
     // MARK: - Fetch handler
 
-    /// Serve a `fetch_file` request. Python: `fetch_request` (rncp.py:172-209).
+    /// Serve a `fetch_file` request.
+    ///
+    /// Python: `fetch_request` (rncp.py:172-209).
     ///
     /// Returns the scalar that goes into the response envelope
     /// `msgpack([request_id, <value>])`, or `nil` to send no response at all—which is

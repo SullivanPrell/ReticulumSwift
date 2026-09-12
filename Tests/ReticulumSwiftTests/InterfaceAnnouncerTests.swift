@@ -125,7 +125,9 @@ final class InterfaceAnnouncerTests: XCTestCase {
     // MARK: - Payload contents
 
     /// RNS 1.5.0 added `TRANSPORT_IMPL` and `TRANSPORT_VERS` so a discovering node can tell
-    /// which implementation is behind an endpoint (`Discovery.py:143-144`). This port names
+    /// which implementation is behind an endpoint (`Discovery.py:143-144`).
+    ///
+    /// This port names
     /// itself, rather than claiming to be the Python one.
     func testTheAnnounceNamesTheImplementationAndItsVersion() throws {
         let data = try XCTUnwrap(try announcer().announceData(for: discoverableServer()))
@@ -202,7 +204,9 @@ final class InterfaceAnnouncerTests: XCTestCase {
     }
 
     /// `publish_ifac` puts the segment's name and passphrase in the announce so a peer can
-    /// generate a config entry that actually joins it (`Discovery.py:203-205`). Off by default,
+    /// generate a config entry that actually joins it (`Discovery.py:203-205`).
+    ///
+    /// Off by default,
     /// because the passphrase is the segment's shared secret.
     func testPublishIfacCarriesTheSegmentNameAndKey() throws {
         let server = discoverableServer()
@@ -224,7 +228,9 @@ final class InterfaceAnnouncerTests: XCTestCase {
     // MARK: - Stamp
 
     /// The stamp is taken over the hash of the *packed* info, at this interface's configured
-    /// cost, over the discovery expand rounds (`Discovery.py:207-212`). Measuring it over
+    /// cost, over the discovery expand rounds (`Discovery.py:207-212`).
+    ///
+    /// Measuring it over
     /// anything else makes every announce fail validation at the far end.
     func testTheStampCoversThePackedInfoAtTheConfiguredCost() throws {
         let server = discoverableServer()
@@ -360,7 +366,9 @@ final class InterfaceAnnouncerTests: XCTestCase {
     // MARK: - Transport lifecycle
 
     /// Python: `Transport.enable_discovery()` (`Transport.py:574-577`)—create the announcer once
-    /// and start it. The second call is a no-op, so a stack that reloads its config doesn't end
+    /// and start it.
+    ///
+    /// The second call is a no-op, so a stack that reloads its config doesn't end
     /// up with two announcers racing over `last_discovery_announce`.
     func testEnablingDiscoveryIsIdempotent() throws {
         transport.enableDiscovery(stampGenerator: generator)
@@ -390,7 +398,9 @@ final class InterfaceAnnouncerTests: XCTestCase {
     // MARK: - Round trip
 
     /// The whole point of the publish side: a payload built here has to decode through the
-    /// receive side, which was written against Python's announces. Anything that disagrees
+    /// receive side, which was written against Python's announces.
+    ///
+    /// Anything that disagrees
     /// about key numbering, value types or the stamp's position fails here.
     func testTheEmittedPayloadDecodesThroughThisPortsReceiveSide() throws {
         let server = discoverableServer()

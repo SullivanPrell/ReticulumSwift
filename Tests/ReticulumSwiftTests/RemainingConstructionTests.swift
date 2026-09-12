@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// The last three implemented interface types a config file couldn't build—the remainder of
-/// `bugs/031` after the first four cases landed. Python constructs `SerialInterface`
+/// `bugs/031` after the first four cases landed.
+///
+/// Python constructs `SerialInterface`
 /// (`Reticulum.py:1024-1026`), `RNodeMultiInterface` (`:1044-1047`, plus `start()`) and
 /// `WeaveInterface` (`:1049-1051`) from their blocks; this port had real, tested classes for all
 /// three and dropped their config entries through the default case with an ERROR log calling
@@ -213,7 +215,9 @@ final class RemainingConstructionTests: XCTestCase {
 
     /// A sub-block is enabled when its own `interface_enabled` is true **or the parent used the
     /// literal `enabled` spelling** (`RNodeMultiInterface.py:178`,`:188`)—a parent enabled via
-    /// `interface_enabled` doesn't blanket-enable its subs. Faithfully quirky.
+    /// `interface_enabled` doesn't blanket-enable its subs.
+    ///
+    /// Faithfully quirky.
     func testSubInterfaceEnablementFollowsThePythonQuirk() {
         let stack = makeStack()
         XCTAssertThrowsError(try stack.synthesizeInterfaces(from: parse("""

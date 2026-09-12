@@ -31,6 +31,7 @@ public struct RNStatusInterfaceStats {
     private let index: [String: MsgPack.Value]
 
     /// Decode one element of the top-level `interfaces` array.
+    ///
     /// Returns nil for anything that isn't a msgpack map.
     public init?(_ value: MsgPack.Value) {
         guard case .map(let raw) = value else { return nil }
@@ -49,7 +50,9 @@ public struct RNStatusInterfaceStats {
 
     // MARK: - Accessors
 
-    /// Python: `"key" in ifstat`. True even when the value is msgpack nil.
+    /// Python: `"key" in ifstat`.
+    ///
+    /// True even when the value is msgpack nil.
     public func has(_ key: String) -> Bool { index[key] != nil }
 
     /// The raw value, or nil when the key is absent.
@@ -72,7 +75,9 @@ public struct RNStatusInterfaceStats {
     /// Python: `ifstat["mode"]`, an `Interface.MODE_*` constant.
     public var mode: UInt8 { UInt8(clamping: int("mode") ?? 0) }
 
-    /// Python: the `modestr` chain at rnstatus.py:421-427. Every unrecognized value—including
+    /// Python: the `modestr` chain at rnstatus.py:421-427.
+    ///
+    /// Every unrecognized value—including
     /// `MODE_FULL` itself—falls through to `"Full"`.
     public var modeDescription: String {
         switch mode {
@@ -108,6 +113,7 @@ public struct RNStatusStats {
     public var rss: Int?   { index["rss"]?.asInt }
 
     /// Python: `"transport_id" in stats and stats["transport_id"] != None` (rnstatus.py:663).
+    ///
     /// Note the *value* test as well as presence—Python emits `transport_id` only when
     /// transport is enabled, but a nil value must render identically to an absent key.
     public var hasTransportID: Bool { transportID != nil }
@@ -117,14 +123,20 @@ public struct RNStatusStats {
     public var probeResponder: Data?  { index["probe_responder"]?.asData }
     public var transportUptime: TimeInterval? { index["transport_uptime"]?.asDouble }
 
-    /// The raw top-level value, or nil when the key is absent. Used where the int-vs-float
+    /// The raw top-level value, or nil when the key is absent.
+    ///
+    /// Used where the int-vs-float
     /// wire type matters (`prettytime` renders `12s` for an int and `12.0s` for a float).
     public func raw(_ key: String) -> MsgPack.Value? { index[key] }
 
-    /// Python: `"key" in stats`. True even when the value is msgpack nil.
+    /// Python: `"key" in stats`.
+    ///
+    /// True even when the value is msgpack nil.
     public func has(_ key: String) -> Bool { index[key] != nil }
 
-    /// A top-level number, defaulting to zero. Python subscripts the traffic-aggregate,
+    /// A top-level number, defaulting to zero.
+    ///
+    /// Python subscripts the traffic-aggregate,
     /// packet-rate and queue keys bare, so an absent one raises there; the port renders a
     /// zero instead, which is what an instance without that counter actually measured.
     public func double(_ key: String) -> Double { index[key]?.asDouble ?? 0 }
@@ -133,6 +145,7 @@ public struct RNStatusStats {
     public func int(_ key: String) -> Int { index[key]?.asInt ?? 0 }
 
     /// Decode the map returned by `get_interface_stats()`.
+    ///
     /// Returns nil for anything without an `interfaces` array—which is also the guard
     /// that catches a malformed `/status` response from a remote instance.
     public init?(_ value: MsgPack.Value) {

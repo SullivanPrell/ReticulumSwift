@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for `Reticulum.reloadInterface(named:)`.
+///
 /// Python parity: `Reticulum.reload_interface(name)`—stop + restart a named interface.
 final class ReticulumReloadInterfaceTests: XCTestCase {
 

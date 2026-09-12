@@ -54,71 +54,91 @@ public struct ReticulumConfig {
         public var enableTransport: Bool = false
         /// When true, a non-transport node keeps using its persistent identity
         /// as the transport identity instead of a fresh ephemeral one.
+        ///
         /// Mirrors Python's `static_transport_identity = No` (RNS 1.3.7).
         public var staticTransportIdentity: Bool = false
         /// When true, this instance obfuscates the hop count of packets that
         /// originate locally (its own traffic and directly connected local
         /// clients) by replacing `hops == 0` with a random per-session delta
-        /// when injecting them into the wider network. Privacy hardening for
+        /// when injecting them into the wider network.
+        ///
+        /// Privacy hardening for
         /// shared/transport instances. Mirrors Python's `local_hops_delta = No`.
         public var localHopsDelta: Bool = false
         public var shareInstance: Bool = true
         /// TCP port the shared instance serves local clients on.
+        ///
         /// Mirrors Python's `shared_instance_port = 37428`.
         public var sharedInstancePort: UInt16 = 37428
         /// TCP port the shared instance answers management RPC on.
+        ///
         /// Mirrors Python's `instance_control_port = 37429`.
         public var instanceControlPort: UInt16 = 37429
         public var panicOnInterfaceError: Bool = false
         /// Whether the probe destination is enabled.
+        ///
         /// Mirrors Python's `allow_probes = True`.
         public var allowProbes: Bool = false
         /// Whether remote management is enabled.
+        ///
         /// Mirrors Python's `enable_remote_management = True`.
         public var remoteManagementEnabled: Bool = false
         /// Identities allowed to access remote management.
+        ///
         /// Mirrors Python's `remote_management_allowed = <hex>`.
         public var remoteManagementAllowed: [Identity] = []
         /// Whether to start listening for on-network interface discovery announces.
+        ///
         /// Mirrors Python's `discover_interfaces = No`. Defaults to `false`.
         public var discoverInterfaces: Bool = false
         /// Trusted source identity hashes for the blackhole list updater.
+        ///
         /// Mirrors Python's `blackhole_sources = <hex>, <hex>, ...`. Defaults to `[]`.
         public var blackholeSources: [Data] = []
-        /// Blackhole list re-fetch interval, in seconds. Config value is in
+        /// Blackhole list re-fetch interval, in seconds.
+        ///
+        /// Config value is in
         /// minutes (minimum 2 → 120 s). `nil` means use the default 3600 s.
         /// Mirrors Python's `blackhole_update_interval = <minutes>` config key
         /// (RNS commit 02924656).
         public var blackholeUpdateInterval: TimeInterval? = nil
         /// Minimum PoW stamp value required to accept a discovery announce.
         /// `nil` means use `Reticulum.requiredDiscoveryValue()` default (14).
+        ///
         /// Mirrors Python's `required_discovery_value`. Positive → override; 0 or missing → nil.
         public var requiredDiscoveryValue: Int? = nil
         /// Whether to publish this node's blackhole list to the network.
+        ///
         /// Mirrors Python's `publish_blackhole = No`. Defaults to `false`.
         public var publishBlackholeEnabled: Bool = false
         /// Trusted source identity hashes for interface discovery announce filtering.
+        ///
         /// Mirrors Python's `interface_discovery_sources`. Defaults to `[]`.
         public var interfaceDiscoverySources: [Data] = []
         /// Maximum number of discovered interfaces to auto-connect.
         /// 0 (default) means auto-connect is disabled.
+        ///
         /// Mirrors Python's `autoconnect_discovered_interfaces`. Positive → enabled.
         public var autoconnectDiscoveredInterfaces: Int = 0
         /// Gravity applied to interfaces that don't set `gravity` themselves.
         /// `nil` falls back to `InterfaceMode.defaultGravity` (0).
+        ///
         /// Mirrors Python's `default_gravity` (RNS 1.4.1).
         public var defaultGravity: Int? = nil
         /// Interface mode assigned to auto-connected discovered interfaces.
         /// `nil` keeps Python's default of `.gateway` when transport is enabled,
         /// and no mode at all otherwise.
+        ///
         /// Mirrors Python's `autoconnect_interface_mode` (RNS 1.4.1).
         public var autoconnectInterfaceMode: InterfaceMode? = nil
         /// Gravity assigned to auto-connected discovered interfaces. `nil` uses
         /// Python's `InterfaceDiscovery.AC_GRAVITY` (0).
+        ///
         /// Mirrors Python's `autoconnect_interface_gravity` (RNS 1.4.1).
         public var autoconnectInterfaceGravity: Int? = nil
         /// `announces_to_internal` assigned to auto-connected discovered
         /// interfaces. `nil` means unset, matching Python's `None`.
+        ///
         /// Mirrors Python's `autoconnect_announces_to_internal` (RNS 1.4.1).
         public var autoconnectAnnouncesToInternal: Bool? = nil
 
@@ -130,14 +150,18 @@ public struct ReticulumConfig {
         //—which is how Python's `if option ==` chain behaves.
 
         /// Shared-instance RPC authentication key, as raw bytes.
+        ///
         /// Mirrors Python's `rpc_key` (`Reticulum.py:494-499`), specified in hexadecimal.
         /// `nil` when absent **or malformed**: Python logs and falls back to the derived key.
         public var rpcKey: Data? = nil
         /// Whether an `rpc_key` was present at all, so a malformed value stays distinguishable
-        /// from an absent one. Both fall back to the derived key, but only one of them is an
+        /// from an absent one.
+        ///
+        /// Both fall back to the derived key, but only one of them is an
         /// operator mistake worth reporting.
         public var rpcKeySpecified: Bool = false
         /// Distinguishes multiple shared instances on one host.
+        ///
         /// Mirrors Python's `instance_name` (`Reticulum.py:475-478`), which uses it as the
         /// domain-socket path component. `nil` means Python's `"default"`.
         public var instanceName: String? = nil
@@ -145,6 +169,7 @@ public struct ReticulumConfig {
         /// (`Reticulum.py:479-484`). `nil` means unset, letting the platform decide.
         public var sharedInstanceType: String? = nil
         /// Path to the shared network identity file, created if absent.
+        ///
         /// Mirrors Python's `network_identity` (`Reticulum.py:513-534`).
         public var networkIdentityPath: String? = nil
         /// Mirrors Python's `use_implicit_proof` (`Reticulum.py:568-571`), which assigns both
@@ -154,11 +179,13 @@ public struct ReticulumConfig {
         /// default of `true`.
         public var linkMtuDiscovery: Bool? = nil
         /// Overrides the bitrate reported by the shared-instance interface.
+        ///
         /// Mirrors Python's `force_shared_instance_bitrate` (`Reticulum.py:560-562`).
         public var forceSharedInstanceBitrate: Int? = nil
 
         /// Announce-rate defaults applied to any interface that doesn't set its own, and only
         /// when transport is enabled (`Reticulum.py:854-857`, accessors at `:1146-1152`).
+        ///
         /// Python maps a configured `0` target to "no target" (`:643-645`).
         public var defaultArTarget: Int? = nil
         public var defaultArPenalty: Int? = nil
@@ -170,7 +197,9 @@ public struct ReticulumConfig {
         public var ecPrFreq: Double? = nil
 
         /// Ingress-control defaults every interface starts from (`Interface.py:126-134`,
-        /// accessors at `Reticulum.py:1154-1185`). A per-interface block still overrides them.
+        /// accessors at `Reticulum.py:1154-1185`).
+        ///
+        /// A per-interface block still overrides them.
         public var icMaxHeldAnnounces: Int? = nil
         public var icBurstHold: Double? = nil
         public var icBurstFreqNew: Double? = nil
@@ -185,9 +214,13 @@ public struct ReticulumConfig {
     // MARK: - [logging] section
 
     public struct LoggingSection {
-        /// 0=critical … 7=extreme. Matches Python's `loglevel`.
+        /// 0=critical … 7=extreme.
+        ///
+        /// Matches Python's `loglevel`.
         public var logLevel: Int = 4
-        /// Whether to prepend timestamps to log lines. Mirrors Python's `logtimestamps`.
+        /// Whether to prepend timestamps to log lines.
+        ///
+        /// Mirrors Python's `logtimestamps`.
         public var logTimestamps: Bool = true
     }
 
@@ -219,17 +252,21 @@ public struct ReticulumConfig {
         public subscript(_ key: String) -> String? { parameters[key] }
         public func int(_ key: String) -> Int? { parameters[key].flatMap(Int.init) }
         public func bool(_ key: String) -> Bool? { parameters[key].flatMap(parseBool) }
-        /// Python's `c.as_float(key)`. Used by the `ic_*` / `ec_pr_freq` family, all of which
+        /// Python's `c.as_float(key)`.
+        ///
+        /// Used by the `ic_*` / `ec_pr_freq` family, all of which
         /// Python reads as floats (`Reticulum.py:791-813`).
         public func double(_ key: String) -> Double? { parameters[key].flatMap(Double.init) }
 
         /// Nested `[[[sub]]]` blocks—configobj's third section level, which
         /// `RNodeMultiInterface` reads as its per-radio rows (`RNodeMultiInterface.py:169-218`).
+        ///
         /// Before these existed, a `[[[sub]]]` line satisfied the parser's `[[` / `]]` checks
         /// and every radio row became a *top-level* interface named `[sub]` with type Unknown.
         public var subBlocks: [SubBlockConfig] = []
 
         /// True when this block's enabled state came from the literal `enabled` key.
+        ///
         /// RNodeMulti sub-interface gating inherits **only** that spelling
         /// (`RNodeMultiInterface.py:178`): a parent enabled via `interface_enabled` doesn't
         /// blanket-enable its subs.
@@ -255,13 +292,17 @@ public struct ReticulumConfig {
 
     // MARK: - Parsing
 
-    /// Parse a config file at `url`. Returns `nil` if the file can't be read.
+    /// Parse a config file at `url`.
+    ///
+    /// Returns `nil` if the file can't be read.
     public static func load(from url: URL) -> ReticulumConfig? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return parse(text)
     }
 
-    /// Parse a config string. Returns a config with defaults if `text` is empty.
+    /// Parse a config string.
+    ///
+    /// Returns a config with defaults if `text` is empty.
     public static func parse(_ text: String) -> ReticulumConfig {
         var cfg = ReticulumConfig()
         var currentSection: String? = nil

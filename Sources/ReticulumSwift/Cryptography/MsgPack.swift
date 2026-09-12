@@ -187,7 +187,9 @@ public enum MsgPack {
         return value
     }
 
-    /// Maximum msgpack nesting depth. Legitimate Reticulum payloads are shallow
+    /// Maximum msgpack nesting depth.
+    ///
+    /// Legitimate Reticulum payloads are shallow
     /// (a few levels at most); bounding recursion means a maliciously deeply
     /// nested wire payload (for example, thousands of nested 1-element arrays in a tiny
     /// packet) can't overflow the stack and crash the process. Wire-neutral: no
@@ -300,7 +302,9 @@ public enum MsgPack {
 
     // MARK: - Convenience
 
-    /// Encode a Double as msgpack `float64` (9 bytes). Kept for the LRRTT
+    /// Encode a Double as msgpack `float64` (9 bytes).
+    ///
+    /// Kept for the LRRTT
     /// path which only ever carries a float.
     public static func encodeDouble(_ value: Double) -> Data {
         encode(.double(value))
@@ -328,6 +332,7 @@ public enum MsgPack {
 public extension MsgPack.Value {
 
     /// Integer value, accepting both signed and unsigned encodings.
+    ///
     /// Returns `nil` for non-integer values, or for unsigned values above `Int.max`.
     var asInt: Int? {
         switch self {
@@ -372,6 +377,7 @@ public extension MsgPack.Value {
     }
 
     /// Map flattened to a `String`-keyed dictionary, dropping any non-string keys.
+    ///
     /// This matches how every RNS RPC and request payload is actually shaped.
     var asDictionary: [String: MsgPack.Value]? {
         guard case .map(let pairs) = self else { return nil }

@@ -20,12 +20,16 @@ public enum RNIDEncoding {
 
     // MARK: - Hex
 
-    /// Undelimited lowercase hex. Python: `RNS.hexrep(data, delimit=False)`.
+    /// Undelimited lowercase hex.
+    ///
+    /// Python: `RNS.hexrep(data, delimit=False)`.
     public static func hexEncode(_ data: Data) -> String {
         RNSUtilities.hexrep(data, delimit: false)
     }
 
-    /// Python: `bytes.fromhex(text)`. Accepts either case; requires an even number of
+    /// Python: `bytes.fromhex(text)`.
+    ///
+    /// Accepts either case; requires an even number of
     /// hex digits and nothing else.
     public static func hexDecode(_ text: String) -> Data? {
         let characters = Array(text.utf8)

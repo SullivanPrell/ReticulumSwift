@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Destination allow policy constants and request handler integration.
+///
 /// Mirrors Python's ALLOW_NONE / ALLOW_ALL / ALLOW_LIST constants.
 final class DestinationAllowPolicyTests: XCTestCase {
 

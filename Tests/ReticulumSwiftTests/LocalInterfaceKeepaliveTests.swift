@@ -23,7 +23,9 @@ import XCTest
 final class LocalInterfaceKeepaliveTests: XCTestCase {
 
     /// A minimal but structurally valid packet: HEADER_1, 16-byte destination, one context
-    /// byte, a payload. Long enough that Python's own deframer (`frame_len > HEADER_MINSIZE`)
+    /// byte, a payload.
+    ///
+    /// Long enough that Python's own deframer (`frame_len > HEADER_MINSIZE`)
     /// would also pass it, so the fixtures below describe frames both stacks accept.
     private static var realPacket: Data {
         Data([0x00, 0x00]) + Data(repeating: 0xAB, count: Constants.truncatedHashLength)

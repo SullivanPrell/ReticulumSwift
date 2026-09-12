@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for automatic path response generation when a path request arrives
-/// for a locally registered destination. Mirrors Python's
+/// for a locally registered destination.
+///
+/// Mirrors Python's
 /// Transport.path_request_handler → destination.announce(path_response=True).
 final class AutoPathResponseTests: XCTestCase {
 

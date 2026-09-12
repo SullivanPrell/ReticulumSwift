@@ -75,7 +75,9 @@ final class ResourceSafeguardsTests: XCTestCase {
     }
 
     /// A receiver that cancels an in-progress incoming transfer must send a
-    /// RESOURCE_RCL packet to the sender. Mirrors Python Resource.cancel()
+    /// RESOURCE_RCL packet to the sender.
+    ///
+    /// Mirrors Python Resource.cancel()
     /// receiver branch (commit bb289744).
     func testReceiverCancelEmitsResourceReceiverCancel() throws {
         let (aLink, bLink) = try establishLink()
@@ -98,7 +100,9 @@ final class ResourceSafeguardsTests: XCTestCase {
     }
 
     /// unpack must reject an advertisement whose declared transfer size exceeds
-    /// 3× the max efficient size (Python raises ValueError). The boundary value
+    /// 3× the max efficient size (Python raises ValueError).
+    ///
+    /// The boundary value
     /// (exactly 3×) is still accepted.
     func testAdvertisementUnpackRejectsOversizedTransfer() throws {
         let cap = ResourceTransfer.maxEfficientSize * 3   // (1 MiB − 1) × 3

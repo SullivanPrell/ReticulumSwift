@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Identity.load_private_key() and Identity.load_public_key() Python API parity.
+///
 /// Note: In Swift, Identity is immutable. These methods return a NEW Identity.
 final class IdentityLoadKeyTests: XCTestCase {
 

@@ -194,6 +194,7 @@ final class LinkMTUSignallingTests: XCTestCase {
 
     /// When the next-hop interface has a known HW MTU (AUTOCONFIGURE_MTU or
     /// FIXED_MTU), Link.initiate signals that MTU instead of the default 500.
+    ///
     /// Mirrors Python: Transport.next_hop_interface_hw_mtu → Link.signalling_bytes.
     func testInitiatorSignalsHwMtuWhenPathKnown() throws {
         final class HighMtuInterface: Interface {

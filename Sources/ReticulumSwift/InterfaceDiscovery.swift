@@ -13,6 +13,7 @@ import Foundation
 // MARK: - Constants
 
 /// Msgpack key byte values for discovery announce payloads.
+///
 /// Matches Python's `RNS/Discovery.py` module-level constants.
 enum DiscoveryFieldKey: UInt64 {
     case interfaceType  = 0x00
@@ -43,6 +44,7 @@ enum DiscoveryFieldKey: UInt64 {
 }
 
 /// String keys used when persisting `DiscoveredInterfaceInfo` as a msgpack map.
+///
 /// Matches the Python dict key names so files are cross-compatible.
 private enum PersistKey {
     static let type         = "type"
@@ -157,6 +159,7 @@ public enum InterfaceDiscoveryHelpers {
     public static let implementationVersion = Reticulum.version
 
     /// Return true if `address` is a valid IPv4 or IPv6 address string.
+    ///
     /// Mirrors Python `is_ip_address(address_string)` which uses `ipaddress.ip_address`.
     public static func isIPAddress(_ address: String) -> Bool {
         guard !address.isEmpty else { return false }
@@ -169,6 +172,7 @@ public enum InterfaceDiscoveryHelpers {
     }
 
     /// Return true if `address` falls in `200::/7`, the Yggdrasil address range.
+    ///
     /// Mirrors Python `is_ygg_ipv6(address_string)` (`Discovery.py:877-879`).
     ///
     /// An address in this range is only reachable through a running Yggdrasil node, and nothing
@@ -183,6 +187,7 @@ public enum InterfaceDiscoveryHelpers {
     }
 
     /// Return true if `address` is a Tor onion address.
+    ///
     /// Mirrors Python `is_onion_address(address_string)` (`Discovery.py:881-883`)—a
     /// case-insensitive suffix match, not a validity check.
     public static func isOnionAddress(_ address: String) -> Bool {
@@ -190,6 +195,7 @@ public enum InterfaceDiscoveryHelpers {
     }
 
     /// Addresses that never name a reachable peer, because they name this node.
+    ///
     /// Mirrors Python `INVALID_IP_ADDRESSES` (`Discovery.py:885`)—an exact two-entry deny
     /// list, so `127.0.0.2` is not on it.
     public static let invalidIPAddresses: Set<String> = ["127.0.0.1", "0.0.0.0"]
@@ -200,6 +206,7 @@ public enum InterfaceDiscoveryHelpers {
     }
 
     /// Return true if `hostname` is a syntactically valid DNS hostname.
+    ///
     /// Mirrors Python `is_hostname(hostname)`.
     public static func isHostname(_ hostname: String) -> Bool {
         var h = hostname
@@ -237,9 +244,11 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     /// Announce payload flag: payload is encrypted with the network identity.
     public static let flagEncrypted: UInt8 = 0b00000010
     /// PoW workblock expansion rounds for interface discovery stamps.
+    ///
     /// Matches Python `InterfaceAnnouncer.WORKBLOCK_EXPAND_ROUNDS`.
     public static let workblockExpandRounds: Int = 20
     /// Default minimum stamp value required to accept a discovery announce.
+    ///
     /// Mirrors Python `InterfaceAnnouncer.DEFAULT_STAMP_VALUE` (bumped 14 → 16 in
     /// RNS 1.4.0, commit be36abd8).
     public static let defaultRequiredValue: Int = 16
@@ -610,11 +619,13 @@ public final class InterfaceDiscovery {
     public static let detachThreshold: TimeInterval = 12
 
     /// The two types autoconnect will dial, matched against the announced type.
+    ///
     /// Python: `InterfaceDiscovery.AUTOCONNECT_TYPES` (`Discovery.py:449`). Both are dialled as
     /// a Backbone client, because both describe a listening TCP endpoint.
     public static let autoconnectTypes: Set<String> = ["BackboneInterface", "TCPServerInterface"]
 
     /// The mode a transport node adopts a discovered peer under.
+    ///
     /// Python: `InterfaceDiscovery.AC_TRANSPORT_MODE` (`Discovery.py:452`).
     public static let acTransportMode: InterfaceMode = .gateway
 
@@ -641,7 +652,9 @@ public final class InterfaceDiscovery {
     private let lock = NSLock()
 
     /// Predicate used to drop persisted discoveries belonging to blackholed
-    /// identities. Python reaches its `Reticulum` singleton
+    /// identities.
+    ///
+    /// Python reaches its `Reticulum` singleton
     /// (`self.rns_instance.is_blackholed(...)`); Swift has no such singleton, so
     /// the owner injects the check. Left `nil` the blackhole clauses are skipped,
     /// which is the pre-1.4.1 behaviour.
@@ -652,7 +665,9 @@ public final class InterfaceDiscovery {
 
     // MARK: - Autoconnect collaborators
 
-    /// The transport autoconnect attaches to and reads the interface list from. Python reaches
+    /// The transport autoconnect attaches to and reads the interface list from.
+    ///
+    /// Python reaches
     /// the `RNS.Transport` global; here the owner sets it, so a test can drive autoconnect
     /// against a bare transport.
     ///
@@ -667,12 +682,16 @@ public final class InterfaceDiscovery {
     /// bootstrap interface has nothing to bring back.
     public var reenableBootstrapInterfaces: (() -> Void)?
 
-    /// Interfaces this object dialled and is watching. Python: `monitored_interfaces`.
+    /// Interfaces this object dialled and is watching.
+    ///
+    /// Python: `monitored_interfaces`.
     private var monitoredInterfaces: [any Interface] = []
     private var monitoringAutoconnects = false
     private var monitorGeneration = 0
 
-    /// Whether the startup reconnect pass has run. The opportunistic top-up in the monitor job
+    /// Whether the startup reconnect pass has run.
+    ///
+    /// The opportunistic top-up in the monitor job
     /// waits for it, so a node doesn't dial a random discovered peer before it has tried the
     /// ones it already knew about (`Discovery.py:655`).
     public private(set) var initialAutoconnectRan = false
@@ -688,7 +707,9 @@ public final class InterfaceDiscovery {
 
     // MARK: - Public API
 
-    /// Record a newly discovered interface. Persists to disk.
+    /// Record a newly discovered interface.
+    ///
+    /// Persists to disk.
     /// Matches Python `InterfaceDiscovery.interface_discovered(info)`.
     public func interfaceDiscovered(_ info: DiscoveredInterfaceInfo) {
         guard let discoveryHash = info.discoveryHash else { return }
@@ -712,6 +733,7 @@ public final class InterfaceDiscovery {
     }
 
     /// List all valid discovered interfaces, applying age-based status and filtering.
+    ///
     /// Matches Python `InterfaceDiscovery.list_discovered_interfaces(only_available:only_transport:)`.
     public func listDiscoveredInterfaces(onlyAvailable: Bool = false,
                                          onlyTransport: Bool = false) -> [DiscoveredInterfaceInfo] {
@@ -868,6 +890,7 @@ public final class InterfaceDiscovery {
     }
 
     /// Dial everything already persisted, so a restart doesn't have to re-hear every peer.
+    ///
     /// Mirrors Python's `connect_discovered` (`Discovery.py:678-689`).
     public func connectDiscovered() {
         guard Reticulum.shouldAutoconnectDiscoveredInterfaces() else { return }
@@ -905,12 +928,16 @@ public final class InterfaceDiscovery {
         return false
     }
 
-    /// How many attached interfaces this object dialled. Python: `autoconnect_count`.
+    /// How many attached interfaces this object dialled.
+    ///
+    /// Python: `autoconnect_count`.
     public func autoconnectCount() -> Int {
         transport?.interfaces.filter { $0.autoconnectHash != nil }.count ?? 0
     }
 
-    /// How many attached interfaces exist only to bootstrap. Python: `bootstrap_interface_count`.
+    /// How many attached interfaces exist only to bootstrap.
+    ///
+    /// Python: `bootstrap_interface_count`.
     public func bootstrapInterfaceCount() -> Int {
         transport?.interfaces.filter(\.bootstrapOnly).count ?? 0
     }
@@ -918,6 +945,7 @@ public final class InterfaceDiscovery {
     // MARK: - Monitoring
 
     /// Start watching an auto-connected interface, starting the monitor job on the first one.
+    ///
     /// Mirrors `monitor_interface` (`Discovery.py:602-609`).
     public func monitorInterface(_ interface: any Interface) {
         lock.lock()
@@ -1023,7 +1051,9 @@ public final class InterfaceDiscovery {
         for interface in detached { teardownInterface(interface) }
     }
 
-    /// Detach an interface and stop watching it. Mirrors `teardown_interface`
+    /// Detach an interface and stop watching it.
+    ///
+    /// Mirrors `teardown_interface`
     /// (`Discovery.py:670-673`).
     public func teardownInterface(_ interface: any Interface) {
         interface.stop()
@@ -1034,6 +1064,7 @@ public final class InterfaceDiscovery {
     }
 
     /// Compute a stable hash for the network endpoint described by `info`.
+    ///
     /// Matches Python `InterfaceDiscovery.endpoint_hash(info)`.
     public func endpointHash(_ info: DiscoveredInterfaceInfo) -> Data {
         var specifier = ""

@@ -85,7 +85,9 @@ final class TunnelRequestTests: XCTestCase {
     // MARK: - The trigger
 
     /// Python re-synthesizes on every reconnect (`TCPInterface.py:298` calls
-    /// `Transport.synthesize_tunnel` directly after the redial succeeds). The port's connect
+    /// `Transport.synthesize_tunnel` directly after the redial succeeds).
+    ///
+    /// The port's connect
     /// happens asynchronously *after* `register`, so a registration-time check alone can't
     /// see it: the transport sweeps its interfaces instead.
     func testTheTransportSynthesizesForAnInterfaceThatAsksAfterRegistration() {

@@ -25,7 +25,9 @@ import XCTest
 /// can't isn't a test of the real type (`bugs/025`, "Why the tests do not catch any of it").
 enum InterfaceConformers {
 
-    /// The Swift type names of every conformer. Note these are *not* always the same as the
+    /// The Swift type names of every conformer.
+    ///
+    /// Note these are *not* always the same as the
     /// published `statsTypeName`—a spawned TCP-server client is a `TCPServerClientInterface`
     /// in Swift and publishes `TCPClientInterface`, which is correct per Python and is exactly
     /// what `bugs/022` is about. `InterfaceConformerCoverageTests` cross-checks this list against
@@ -53,6 +55,7 @@ enum InterfaceConformers {
     ]
 
     /// Every concrete conformer, constructed with the least ceremony that yields a usable object.
+    ///
     /// Nothing here is started, so no socket is opened and no device is touched.
     static func everyConcreteInterface() throws -> [any Interface] {
         var all: [any Interface] = []

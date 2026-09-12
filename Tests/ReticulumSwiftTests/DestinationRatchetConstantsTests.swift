@@ -26,6 +26,7 @@ final class DestinationRatchetConstantsTests: XCTestCase {
     }
 
     /// The constant is only worth anything if a destination actually retains that many.
+    ///
     /// This assertion used to re-check `Destination.ratchetCount == 512`—the same check
     /// as the preceding `testRatchetCountConstant`—under a name that implied it covered the
     /// runtime default, while the default was 8 and nothing tested it.

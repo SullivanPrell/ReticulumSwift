@@ -32,7 +32,9 @@ import Foundation
 public enum InterfaceTransportFactories {
 
     /// Serial families (`KISSInterface`, `AX25KISSInterface`): a device path such as
-    /// `/dev/ttyUSB0` becomes an unopened serial transport. Opening happens in the interface's
+    /// `/dev/ttyUSB0` becomes an unopened serial transport.
+    ///
+    /// Opening happens in the interface's
     /// own `start()`, so constructing an interface never touches hardware—absent hardware
     /// fails at bring-up with the cause, exactly as the reference's open failure does, while
     /// invalid *configuration* fails at construction (`RNodeInterface.py:346` vs `:354-360`).
@@ -42,12 +44,16 @@ public enum InterfaceTransportFactories {
     /// BLE-backed factory the application registers (CoreBluetooth is an app-side concern).
     public static var rnode: ((_ device: String) throws -> RNodeTransport)? = defaultRNodeFactory
 
-    /// `I2PInterface`: the embedded i2pd daemon. Available on every Apple platform, because the
+    /// `I2PInterface`: the embedded i2pd daemon.
+    ///
+    /// Available on every Apple platform, because the
     /// CI2PD xcframework ships in this package.
     public static var i2pDaemon: (() throws -> I2PDaemonProtocol)? = { I2PDaemon() }
 
     /// What construction throws when a family has no registered factory, or the registered one
-    /// can't serve the device string. Deliberately loud: the defect class this closes is a
+    /// can't serve the device string.
+    ///
+    /// Deliberately loud: the defect class this closes is a
     /// daemon that starts, reports healthy, and silently doesn't have the radio the operator
     /// enabled.
     public enum FactoryError: Error, LocalizedError, Equatable {
@@ -137,7 +143,9 @@ enum NetworkDeviceAddress {
 
 // MARK: - Construction errors
 
-/// A config block that names an interface but can't produce it. Thrown from
+/// A config block that names an interface but can't produce it.
+///
+/// Thrown from
 /// `synthesizeInterfaces`, whose callers propagate—taking the daemon down with the cause,
 /// which is the reference's own behaviour for a failed interface construction
 /// (`Reticulum.py:1087-1090` logs and calls `RNS.panic()`).
@@ -197,7 +205,9 @@ public final class SerialRNodeTransport: RNodeTransport {
 // MARK: - POSIX serial port (macOS)
 
 /// A real serial port over POSIX termios—the first concrete `SerialPortTransport` in the
-/// package. Until it existed, every serial-family interface could only ever be constructed with
+/// package.
+///
+/// Until it existed, every serial-family interface could only ever be constructed with
 /// a test mock, which is half of how `bugs/031` stayed invisible: there was nothing a real
 /// config *could* construct.
 public final class POSIXSerialPort: SerialPortTransport {

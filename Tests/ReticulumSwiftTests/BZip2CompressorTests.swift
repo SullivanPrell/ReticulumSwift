@@ -68,7 +68,9 @@ final class BZip2CompressorTests: XCTestCase {
     // MARK: - Bounded decompression (decompression bomb guard)
 
     /// Bounded decompress returns `.success` when the output fits within
-    /// `maxLength`. Mirrors Python's `BZ2Decompressor.decompress(max_length=...)`
+    /// `maxLength`.
+    ///
+    /// Mirrors Python's `BZ2Decompressor.decompress(max_length=...)`
     /// happy path (RNS commit 09b0469f).
     func testBoundedDecompressSuccessWithinLimit() throws {
         let original = Data(repeating: 0xCD, count: 1024)
@@ -77,7 +79,9 @@ final class BZip2CompressorTests: XCTestCase {
         XCTAssertEqual(result, .success(original))
     }
 
-    /// Bounded decompress refuses output that exceeds the cap. This is the
+    /// Bounded decompress refuses output that exceeds the cap.
+    ///
+    /// This is the
     /// decompression-bomb guard: a tiny compressed blob expanding to
     /// hundreds of MB must NOT be allocated.
     func testBoundedDecompressRefusesBomb() throws {

@@ -29,7 +29,9 @@ import XCTest
 /// `first(where:)` is accidentally correct. A second client is the whole test.
 final class PathTableInterfaceIdentityTests: XCTestCase {
 
-    /// Records what it was asked to send. Two of these share one `name`, exactly as Python's
+    /// Records what it was asked to send.
+    ///
+    /// Two of these share one `name`, exactly as Python's
     /// spawned `"Client on <server>"` interfaces do.
     private final class RecordingInterface: Interface {
         let name: String
@@ -38,7 +40,9 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
         var isOnline: Bool = true
         var inboundHandler: ((Packet, any Interface) -> Void)?
         private(set) var sent: [Packet] = []
-        /// Announces are relayed to sibling interfaces, so total sends are noise. Routing is
+        /// Announces are relayed to sibling interfaces, so total sends are noise.
+        ///
+        /// Routing is
         /// only ever a claim about where the *data* went.
         var dataSent: [Packet] { sent.filter { $0.packetType == .data } }
 
@@ -316,6 +320,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
     // MARK: - A vanished interface isn't a routing target
 
     /// Spec: "A vanished client does not remain a routing target"—the deregistration half.
+    ///
     /// A route through a client that's gone must stop resolving rather than silently falling
     /// back to a sibling that shares its name.
     func testARouteThroughADeregisteredClientDoesNotFallBackToItsSibling() throws {

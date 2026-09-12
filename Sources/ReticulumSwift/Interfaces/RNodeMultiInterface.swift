@@ -13,6 +13,7 @@ import Foundation
 // MARK: - RNodeSubInterface
 
 /// Per-channel radio configuration for one physical radio channel on a multi-interface RNode.
+///
 /// Corresponds to Python `RNodeSubInterface`.
 ///
 /// This is a class (not a struct) so it can conform to `Interface` (which requires `AnyObject`)
@@ -20,7 +21,9 @@ import Foundation
 /// back to `RNodeSubInterface` for channel identification.
 public final class RNodeSubInterface: Interface, SpawnedInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -35,7 +38,9 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
     public let index:         Int           // vport index (0-based)
     public let interfaceType: String        // "SX127X", "SX126X", or "SX128X"
 
-    /// The `RNodeMultiInterface` this sub-channel belongs to. Python's
+    /// The `RNodeMultiInterface` this sub-channel belongs to.
+    ///
+    /// Python's
     /// `RNodeSubInterface.__init__` takes `parent_interface` as an argument
     /// (`RNodeMultiInterface.py:939`, stored at `:997`); Swift builds the subs before the
     /// parent exists, so `RNodeMultiInterface.init` assigns this after adopting them. Weak: the
@@ -101,7 +106,9 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
     // MARK:–Statistics (override Interface default extensions that return 0)
 
     /// Lock-guarded—the parent counts traffic on this sub-channel from the
-    /// RNode read thread while the UI reads it. See `InterfaceCounters`.
+    /// RNode read thread while the UI reads it.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     /// Total bytes received on this sub-channel
     public var rxBytes: Int { counters.rxBytes }
@@ -129,7 +136,9 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
     public var ifacIdentity: Identity? = nil
     public var ifacKey:      Data?     = nil
     /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
-    /// `ifac_size` is given. Python declares 8 for the RNode family—`RNodeInterface.py:110`,
+    /// `ifac_size` is given.
+    ///
+    /// Python declares 8 for the RNode family—`RNodeInterface.py:110`,
     /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
     /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
     /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
@@ -138,7 +147,9 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
     public var ifacSize:     Int       = RNodeSubInterface.defaultIfacSize
 
     /// Sends are routed through the parent `RNodeMultiInterface`, which owns the single
-    /// physical transport all sub-interfaces share. A sub with no parent—which only a
+    /// physical transport all sub-interfaces share.
+    ///
+    /// A sub with no parent—which only a
     /// hand-built test object can be—has nowhere to send, and says so rather than
     /// silently discarding the packet.
     public func send(_ packet: Packet) throws {
@@ -184,6 +195,7 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
 // MARK: - RNodeMultiInterface
 
 /// Multi-channel RNode interface that manages N sub-interfaces over a single physical transport.
+///
 /// Corresponds to Python `RNodeMultiInterface`.
 ///
 /// Multiplexing scheme (from Python):
@@ -197,7 +209,9 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
 ///   (frequency, bandwidth, RSSI, SNR, and so on) are attributed to `subInterfaces[selectedIndex]`.
 public final class RNodeMultiInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -236,7 +250,9 @@ public final class RNodeMultiInterface: Interface {
     public var ifacIdentity: Identity?
     public var ifacKey:      Data?
     /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
-    /// `ifac_size` is given. Python declares 8 for the RNode family—`RNodeInterface.py:110`,
+    /// `ifac_size` is given.
+    ///
+    /// Python declares 8 for the RNode family—`RNodeInterface.py:110`,
     /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
     /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
     /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
@@ -258,7 +274,9 @@ public final class RNodeMultiInterface: Interface {
 
     /// Keeps a factory-created transport alive: `transport` is deliberately `weak` (an
     /// application owning its BLE/USB stack the interface must not retain it), so when the
-    /// *config path* creates the transport, the interface is the only candidate owner. Same
+    /// *config path* creates the transport, the interface is the only candidate owner.
+    ///
+    /// Same
     /// pattern as `RNodeInterface.ownedTransport`.
     internal var ownedTransport: AnyObject? = nil
     private let decoder = KISS.FrameDecoder()
@@ -336,7 +354,9 @@ public final class RNodeMultiInterface: Interface {
         bringUpQueue.async { [weak self] in self?.completeBringUp() }
     }
 
-    /// Block until the bring-up finishes, returning whether the interface came online. Must not
+    /// Block until the bring-up finishes, returning whether the interface came online.
+    ///
+    /// Must not
     /// be called from the transport's byte-delivery thread.
     @discardableResult
     public func waitUntilOnline(timeout: TimeInterval) -> Bool {
@@ -460,6 +480,7 @@ public final class RNodeMultiInterface: Interface {
     // MARK:–initRadio per sub-interface (Python: RNodeSubInterface.initRadio)
 
     /// Configure one sub-interface: sends all parameters in order then turns radio ON.
+    ///
     /// Mutates `sub.state` to `radioStateOn`.
     public func initRadio(for sub: inout RNodeSubInterface) throws {
         try setFrequency(for: sub)
@@ -483,6 +504,7 @@ public final class RNodeMultiInterface: Interface {
     // MARK:–Outgoing data (Python: process_outgoing(data, interface))
 
     /// Send `data` on the specified sub-interface's channel.
+    ///
     /// Format: `[FEND CMD_SEL_INT index FEND FEND CMD_DATA escaped_data FEND]`
     /// If `subInterface` is nil, does nothing (matches Python behaviour for direct calls on parent).
     public func processOutgoing(_ data: Data, subInterface: RNodeSubInterface?) throws {

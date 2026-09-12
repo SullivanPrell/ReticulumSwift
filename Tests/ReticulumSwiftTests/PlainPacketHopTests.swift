@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying PLAIN packet hop count enforcement.
+///
 /// Python: PLAIN packets with hops > 1 are dropped; hops == 0 or 1 are accepted.
 final class PlainPacketHopTests: XCTestCase {
 

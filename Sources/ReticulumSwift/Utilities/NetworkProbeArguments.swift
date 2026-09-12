@@ -125,7 +125,9 @@ public extension NetworkProbe {
 
         // MARK: - Parsing
 
-        /// Parse `argv`. Element 0 is the program path and is ignored.
+        /// Parse `argv`.
+        ///
+        /// Element 0 is the program path and is ignored.
         public static func parse(_ argv: [String]) -> Action {
             let tokens = Array(argv.dropFirst())
 

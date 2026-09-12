@@ -12,7 +12,9 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Cluster A3: a non-transport shared instance must still carry DATA traffic
-/// to and from its directly connected local clients. Mirrors Python's inbound
+/// to and from its directly connected local clients.
+///
+/// Mirrors Python's inbound
 /// relay gate `transport_enabled or from_local_client or for_local_client`
 /// (RNS/Transport.py:1573).
 final class LocalClientDataRelayTests: XCTestCase {

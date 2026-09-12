@@ -33,6 +33,7 @@ final class MockRNXCommandExecutor: RNXCommandExecutor {
 }
 
 /// The `rnx -l` half.
+///
 /// Python reference: RNS/Utilities/rnx.py:63-252.
 final class RNXListenerTests: XCTestCase {
 

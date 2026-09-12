@@ -68,7 +68,9 @@ public final class LockedFlag: @unchecked Sendable {
 public final class InterfaceCounters: @unchecked Sendable {
 
     /// A consistent view of all four counters, taken under a single lock
-    /// acquisition. Reading the properties one at a time is safe but can
+    /// acquisition.
+    ///
+    /// Reading the properties one at a time is safe but can
     /// straddle an update—a snapshot can't, so `txBytes` and `txPackets`
     /// always describe the same set of packets.
     public struct Snapshot: Sendable, Equatable {
@@ -126,7 +128,9 @@ public final class InterfaceCounters: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// Records outbound traffic. See `addRx(bytes:packets:)`.
+    /// Records outbound traffic.
+    ///
+    /// See `addRx(bytes:packets:)`.
     public func addTx(bytes: Int, packets: Int = 1) {
         lock.lock()
         unsafeTxBytes += bytes

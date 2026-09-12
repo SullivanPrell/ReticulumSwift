@@ -33,7 +33,9 @@ public final class DestinationAnnouncer {
         self.transport = transport
     }
 
-    /// Start emitting periodic announces. The first announce fires immediately.
+    /// Start emitting periodic announces.
+    ///
+    /// The first announce fires immediately.
     public func start(on transport: Transport? = nil) {
         if let t = transport { self.transport = t }
         guard self.transport != nil else { return }
@@ -75,7 +77,9 @@ public final class BlackholeUpdater {
     public private(set) var isRunning = false
     /// Incremented on every start(); a job loop exits when its captured
     /// generation no longer matches, so a stop()+start() can't leave two loops
-    /// running. Guarded by `lock`.
+    /// running.
+    ///
+    /// Guarded by `lock`.
     private var generation = 0
     private var lastUpdates: [Data: Date] = [:]
     private let lock = NSLock()
@@ -119,7 +123,9 @@ public final class BlackholeUpdater {
         }
     }
 
-    /// Single iteration of the job loop. Checks each blackhole source and
+    /// Single iteration of the job loop.
+    ///
+    /// Checks each blackhole source and
     /// initiates a fetch when `updateInterval` has elapsed.
     /// Exported for unit tests (avoids needing a live background thread).
     public func tick() {

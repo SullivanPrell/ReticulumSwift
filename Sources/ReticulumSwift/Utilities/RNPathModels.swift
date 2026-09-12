@@ -37,7 +37,9 @@ public struct RNPathTableEntry: Equatable {
     public var destinationHash: Data
     /// Python key `"timestamp"`—last-heard, seconds since the epoch.
     public var timestamp: TimeInterval
-    /// Python key `"via"`. Nil only before ``resolvedVia`` is consulted; Python never emits null.
+    /// Python key `"via"`.
+    ///
+    /// Nil only before ``resolvedVia`` is consulted; Python never emits null.
     public var via: Data?
     /// Python key `"hops"`.
     public var hops: UInt8
@@ -203,7 +205,9 @@ public struct RNPathRateEntry: Equatable {
     }
 
     /// Python: `sorted(table, key=lambda e: e["last"])` (rnpath.py:326)—applied in **both**
-    /// the local and the remote case, unlike the path table's sort. Stable, for the same
+    /// the local and the remote case, unlike the path table's sort.
+    ///
+    /// Stable, for the same
     /// reason as ``RNPathTableEntry/sortedForDisplay(_:)``.
     public static func sortedByLast(_ entries: [RNPathRateEntry]) -> [RNPathRateEntry] {
         entries.enumerated().sorted { lhs, rhs in
@@ -225,7 +229,9 @@ public struct RNPathBlackholeEntry: Equatable {
     public var identityHash: Data
     /// Identity hash of whoever issued the blackhole, or nil.
     public var source: Data?
-    /// Expiry, seconds since the epoch. Nil **or zero** both render as "indefinitely",
+    /// Expiry, seconds since the epoch.
+    ///
+    /// Nil **or zero** both render as "indefinitely",
     /// because Python tests `if until:` rather than `if until is not None:`.
     public var until: TimeInterval?
     public var reason: String?

@@ -29,14 +29,18 @@ final class SustainedBurstControlTests: XCTestCase {
     private static let mature = IngressControlState.icNewTime + 1
 
     /// Interface age is `now - createdAt`, and `createdAt` is a real epoch date, so the `now`
-    /// these tests hand the limiter has to be a real epoch value too. A synthetic base like
+    /// these tests hand the limiter has to be a real epoch value too.
+    ///
+    /// A synthetic base like
     /// `1000` makes the age hugely negative, which reads as *new* and quietly swaps in the
     /// lower `IC_BURST_FREQ_NEW`/`IC_PR_BURST_FREQ_NEW` thresholds—the opposite of what a
     /// test naming a mature interface means to exercise.
     private static func base() -> TimeInterval { Date().timeIntervalSince1970 }
 
     /// A deque holds at most `InterfaceFreqTracker.maxSamples` timestamps, so appending a full
-    /// deque's worth evicts every older one. That's the only way to move `oldest` forward in
+    /// deque's worth evicts every older one.
+    ///
+    /// That's the only way to move `oldest` forward in
     /// one step, and these tests need it: frequency is `n / (now - oldest)`, so without a full
     /// roll a stale first sample pins the span open and no later burst can be expressed.
     private func rollDeque(_ record: (TimeInterval) -> Void, from start: TimeInterval) {

@@ -31,7 +31,9 @@ public struct RNXTransferStats {
     /// Python: `response_transfer_size`, in bytes.
     public private(set) var transferSize: Int = 0
 
-    /// **Bytes** per second over the window. Fed to `size_str(..., "b")`, which multiplies
+    /// **Bytes** per second over the window.
+    ///
+    /// Fed to `size_str(..., "b")`, which multiplies
     /// by 8—so render it with `UtilityFormatting.sizeStr(speed, suffix: "b") + "ps"`,
     /// never `RNSUtilities.prettyspeed`, which expects bits/sec and divides by 8 first.
     public private(set) var speed: Double = 0
@@ -40,7 +42,9 @@ public struct RNXTransferStats {
 
     public init() {}
 
-    /// Python: rnx.py:307-321. Note the callback also fires once on READY
+    /// Python: rnx.py:307-321.
+    ///
+    /// Note the callback also fires once on READY
     /// (Link.py:1413-1415), so the last sample is always 100%.
     public mutating func record(progress: Double, transferSize: Int, at now: TimeInterval) {
         self.progress = progress
@@ -54,7 +58,9 @@ public struct RNXTransferStats {
         speed = span == 0 ? 0 : (got - samples[0].got) / span
     }
 
-    /// Number of samples retained. Exposed so the 32-entry cap is assertable.
+    /// Number of samples retained.
+    ///
+    /// Exposed so the 32-entry cap is assertable.
     public var sampleCount: Int { samples.count }
 
     /// Python: `stat_str = str(percent)+"% - "+size_str(int(prg*size))+" of "+size_str(size)

@@ -24,7 +24,9 @@ import Network
 /// ```
 public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -37,13 +39,17 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public let port: UInt16
     public var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
 
-    /// `LocalClientInterface.HW_MTU = 262144` (`LocalInterface.py:71`). Without it this
+    /// `LocalClientInterface.HW_MTU = 262144` (`LocalInterface.py:71`).
+    ///
+    /// Without it this
     /// interface reported no hardware MTU at all, which disables link-MTU discovery for every
     /// link that crosses a Swift shared instance—stuck at the 500-byte default where the
     /// Python pair negotiates upward.
     public var hwMtu: Int? = 262_144
 
-    /// `AUTOCONFIGURE_MTU = True` (`LocalInterface.py:64`). Python only *runs* the optimiser
+    /// `AUTOCONFIGURE_MTU = True` (`LocalInterface.py:64`).
+    ///
+    /// Python only *runs* the optimiser
     /// here from the `_force_shared_instance_bitrate` branch (`Reticulum.py:424-428`), so the
     /// 262144 stands in normal operation.
     public let autoconfigureMtu: Bool = true
@@ -61,22 +67,28 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes: Int { counters.rxBytes }
     public var txBytes: Int { counters.txBytes }
 
-    /// Seconds between reconnection attempts. Mirrors Python `LocalClientInterface.RECONNECT_WAIT = 8`.
+    /// Seconds between reconnection attempts.
+    ///
+    /// Mirrors Python `LocalClientInterface.RECONNECT_WAIT = 8`.
     public var reconnectWait: TimeInterval = 8
     /// Maximum reconnect attempts. nil = unlimited (mirrors Python's `RECONNECT_MAX_TRIES = None`).
     public var maxReconnectTries: Int?
     /// Seconds `start()` waits for the initial connection before giving up.
+    ///
     /// Python's `connect()` is a blocking `socket.connect()` with no explicit
     /// deadline of its own; the cap here plays the role of the OS connect timeout
     /// so a wedged shared instance can't hang a utility's startup forever.
     public var connectTimeout: TimeInterval = 5
 
     /// Raised by ``start()`` when the shared instance couldn't be reached.
+    ///
     /// Python raises out of `LocalClientInterface.connect()`, which
     /// `Reticulum.__start_local_client` turns into "Local shared instance appears
     /// to be running, but it couldn't be connected".
@@ -103,7 +115,9 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     private var stopped = false
     /// Guards `stopped`, `connection`, and `reconnectTimer`, which are touched
     /// both from the caller thread (start/stop/send) and the interface's serial
-    /// queue (connect/stateUpdate/scheduleReconnect/receive). Without it, a
+    /// queue (connect/stateUpdate/scheduleReconnect/receive).
+    ///
+    /// Without it, a
     /// reconnect scheduled on the queue can assign `connection` just after
     /// stop() nil'd it, leaking a connection that keeps reconnecting.
     private let stateLock = NSLock()
@@ -115,7 +129,9 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public var displayName: String { "LocalInterface[\(port)]" }
 
     /// This class is Python's `LocalClientInterface`—the client half of the shared
-    /// instance. The Swift name says "LocalInterface", which is Python's `__str__`, not its
+    /// instance.
+    ///
+    /// The Swift name says "LocalInterface", which is Python's `__str__`, not its
     /// class name, so the stats payload would otherwise publish the wrong kind.
     public var statsTypeName: String { "LocalClientInterface" }
 

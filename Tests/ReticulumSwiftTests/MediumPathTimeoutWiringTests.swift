@@ -49,7 +49,9 @@ final class MediumPathTimeoutWiringTests: XCTestCase {
     }
 
     /// Python logs the exception and returns `0` (`Reticulum.py:1780-1781`)—not the local
-    /// value. Falling back to the local transport here would be worse than useless: it would
+    /// value.
+    ///
+    /// Falling back to the local transport here would be worse than useless: it would
     /// answer with the client's loopback bitrate and read as a successful, fast link.
     func testAFailedRPCAnswersZeroRatherThanTheClientsOwnBitrate() {
         let t = transport(bitrate: 1200)
@@ -61,7 +63,9 @@ final class MediumPathTimeoutWiringTests: XCTestCase {
     // MARK: - The probe's own timeout shape
 
     /// `timeout or max(DEFAULT_TIMEOUT+first_hop_timeout, medium_path_timeout)`
-    /// (rnprobe.py:84). The `max` is inside the `or`, so an explicit `-t` still wins outright.
+    /// (rnprobe.py:84).
+    ///
+    /// The `max` is inside the `or`, so an explicit `-t` still wins outright.
     func testProbeTimeoutTakesTheLargerOfTheHopSumAndTheMediumTimeout() {
         // Medium timeout loses: 12 + 6 = 18 > 7.
         XCTAssertEqual(NetworkProbe.effectiveTimeout(nil, firstHopTimeout: 6, mediumPathTimeout: 7),
@@ -86,7 +90,9 @@ final class MediumPathTimeoutWiringTests: XCTestCase {
     // MARK: - rnpath's spinner deadline
 
     /// The runner-level half of `limit = time.time()+max(timeout, medium_path_timeout())`
-    /// (rnpath.py:455). Driven by an advancing clock and a destination that never resolves, so
+    /// (rnpath.py:455).
+    ///
+    /// Driven by an advancing clock and a destination that never resolves, so
     /// the number of polls before the loop gives up *is* the deadline.
     private func pollsBeforeGivingUp(timeout: TimeInterval, mediumPathTimeout: TimeInterval) -> Int {
         var options = RNPathOptions()

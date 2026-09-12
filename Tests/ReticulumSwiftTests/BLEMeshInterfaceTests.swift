@@ -14,6 +14,7 @@ import XCTest
 // MARK: - Mock BLE mesh transport
 
 /// In-memory stand-in for a CoreBluetooth-backed `BLEMeshTransport`.
+///
 /// Lets tests simulate peer connect/disconnect and byte arrival without
 /// any live radio hardware—exactly the role `MockRNodeTransport` plays
 /// for `RNodeInterfaceTests`.

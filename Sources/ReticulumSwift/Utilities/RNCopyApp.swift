@@ -18,10 +18,12 @@ import Foundation
 public enum RNCopyApp {
 
     /// Application name used for RNS destinations.
+    ///
     /// Python: `APP_NAME = "rncp"`.
     public static let appName: String = "rncp"
 
     /// Response code returned when a fetch request isn't authorised.
+    ///
     /// Python: `REQ_FETCH_NOT_ALLOWED = 0xF0`.
     public static let reqFetchNotAllowed: UInt8 = 0xF0
 }

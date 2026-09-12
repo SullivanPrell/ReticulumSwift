@@ -19,12 +19,14 @@ public enum RSGArmour {
 
     /// `"#### Start of rsg data #########################################"`—exactly 64
     /// characters, 41 trailing `#`.
+    ///
     /// Python: `RSG_ASCII_HEADER + b"#"*(RSG_ASCII_ROW_WIDTH-len(RSG_ASCII_HEADER))`.
     public static let header: String = RNIDApp.rsgAsciiHeader
         + String(repeating: "#", count: RNIDApp.rsgAsciiRowWidth - RNIDApp.rsgAsciiHeader.count)
 
     /// `"########################################### End of rsg data ####"`—exactly 64
     /// characters, 43 leading `#`.
+    ///
     /// Python: `b"#"*(RSG_ASCII_ROW_WIDTH-len(RSG_ASCII_FOOTER)) + RSG_ASCII_FOOTER`.
     public static let footer: String =
         String(repeating: "#", count: RNIDApp.rsgAsciiRowWidth - RNIDApp.rsgAsciiFooter.count)

@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Transport packet hashlist persistence.
+///
 /// Mirrors Python's `Transport.save_packet_hashlist()` / loading in `__init__`.
 ///
 /// Hashes here are the full 32 bytes the live filter stores—`Hashes.fullHash(packet.hashablePart())`,

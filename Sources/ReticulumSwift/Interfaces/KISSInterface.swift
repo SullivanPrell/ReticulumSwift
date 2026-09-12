@@ -29,7 +29,9 @@ public enum KISSInterfaceError: Error {
 /// `SerialPortTransport` so the interface is unit-testable without hardware.
 public final class KISSInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -60,7 +62,9 @@ public final class KISSInterface: Interface {
     }
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
     public var txBytes:   Int { counters.txBytes }
@@ -89,13 +93,21 @@ public final class KISSInterface: Interface {
 
     // MARK: - KISS configuration (Python defaults)
 
-    /// Preamble in milliseconds. Python default: `350`.
+    /// Preamble in milliseconds.
+    ///
+    /// Python default: `350`.
     public var preamble:     Int = 350
-    /// TX tail in milliseconds. Python default: `20`.
+    /// TX tail in milliseconds.
+    ///
+    /// Python default: `20`.
     public var txtail:       Int = 20
-    /// Persistence (0–255).  Python default: `64`.
+    /// Persistence (0–255).
+    ///
+    /// Python default: `64`.
     public var persistence:  Int = 64
-    /// Slot time in milliseconds. Python default: `20`.
+    /// Slot time in milliseconds.
+    ///
+    /// Python default: `20`.
     public var slottime:     Int = 20
     /// Whether to use hardware flow control (CMD_READY handshake).
     public var flowControl:  Bool = false
@@ -110,6 +122,7 @@ public final class KISSInterface: Interface {
     // MARK: - Flow control state
 
     /// True when the TNC is ready to accept the next frame.
+    ///
     /// Set to false after sending when `flowControl = true`; restored on CMD_READY.
     public private(set) var interfaceReady: Bool = false
 
@@ -156,6 +169,7 @@ public final class KISSInterface: Interface {
     }
 
     /// Convenience init that parses parity from an INI config string ("N", "E", "O").
+    ///
     /// Use `SerialParity(string:)` at the call site when parsing config files.
     public convenience init(name:          String,
                             port:          String,
@@ -183,7 +197,9 @@ public final class KISSInterface: Interface {
 
     // MARK: - Interface lifecycle
 
-    /// Seconds between redial attempts after device loss. Python's reconnect loop hardcodes
+    /// Seconds between redial attempts after device loss.
+    ///
+    /// Python's reconnect loop hardcodes
     /// `time.sleep(5)` (`KISSInterface.py:373`).
     public var reconnectWait: TimeInterval = 5.0
     private let reconnector = TransportReconnector()
@@ -276,7 +292,9 @@ public final class KISSInterface: Interface {
 
     // MARK: - Outgoing
 
-    /// Send a Reticulum packet. Called by Transport.
+    /// Send a Reticulum packet.
+    ///
+    /// Called by Transport.
     ///
     /// Applies the IFAC mask (when an IFAC key is configured) before KISS
     /// framing, mirroring the central IFAC application in Python

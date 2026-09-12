@@ -11,7 +11,9 @@
 import XCTest
 @testable import ReticulumSwift
 
-/// `fix-013 §7.8/§7.9`. The reference mutates interface attributes at runtime—`Reticulum`
+/// `fix-013 §7.
+///
+/// 8/§7.9`. The reference mutates interface attributes at runtime—`Reticulum`
 /// writes config, `Transport` writes routing and rate state, the interfaces write their own
 /// connection state. The audit's structural finding was that many of those were ported as
 /// `{ get }`-only, which makes the write *impossible to express*: no amount of parser work can

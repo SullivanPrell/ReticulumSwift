@@ -57,6 +57,7 @@ public final class RequestReceipt {
     public let requestSize: Int
 
     /// Maximum accepted response size in bytes, or `nil` for unlimited.
+    ///
     /// A response exceeding it fails the receipt instead of being delivered;
     /// when the response arrives as a Resource the advertisement is rejected so
     /// nothing is transferred at all.
@@ -67,7 +68,9 @@ public final class RequestReceipt {
     /// global queue while `deliverReady()`/`fail()`/`updateProgress()` run on the
     /// receive thread; without synchronization they race on `status` (allowing
     /// both onResponse and onFailed to fire) and a lockless read of the
-    /// `Status`-with-`Data` enum can tear. Callbacks always fire OUTSIDE this
+    /// `Status`-with-`Data` enum can tear.
+    ///
+    /// Callbacks always fire OUTSIDE this
     /// lock, so it never nests with any other lock.
     private let stateLock = NSLock()
 
@@ -75,14 +78,18 @@ public final class RequestReceipt {
     public var responseSize: Int? { stateLock.lock(); defer { stateLock.unlock() }; return unsafeResponseSize }
     private var unsafeResponseTransferSize: Int?
     /// Bytes actually moved on the wire to deliver the response (post-compression,
-    /// including Resource framing). Mirrors Python's
+    /// including Resource framing).
+    ///
+    /// Mirrors Python's
     /// `RequestReceipt.response_transfer_size` (Link.py:1314), which `rnx` renders in its
     /// The "Receiving result" spinner (N of M).
     public var responseTransferSize: Int? {
         stateLock.lock(); defer { stateLock.unlock() }; return unsafeResponseTransferSize
     }
 
-    /// Record response sizing. Mirrors Python Link.py:1027-1031, where `response_size` is
+    /// Record response sizing.
+    ///
+    /// Mirrors Python Link.py:1027-1031, where `response_size` is
     /// set once and `response_transfer_size` accumulates across a segmented Resource.
     ///
     /// - Parameter accumulate: when true, `transferSize` is added to any existing value
@@ -138,7 +145,9 @@ public final class RequestReceipt {
     }
     private var unsafeOnConclude: (() -> Void)?
     /// Fires EXACTLY ONCE when the receipt concludes (ready OR failed), OUTSIDE
-    /// `stateLock`. Link wires this to evict the receipt from `pendingRequests` so
+    /// `stateLock`.
+    ///
+    /// Link wires this to evict the receipt from `pendingRequests` so
     /// timed-out / failed requests are removed too (not only successful ones),
     /// bounding the dictionary. Wire-neutral: no packet is sent on conclusion.
     var onConclude: (() -> Void)? {
@@ -180,7 +189,9 @@ public final class RequestReceipt {
         cb?(p, self)
     }
 
-    /// The response has begun arriving as a Resource. Disarm the fixed request
+    /// The response has begun arriving as a Resource.
+    ///
+    /// Disarm the fixed request
     /// timeout: from here the ResourceTransfer's own watchdog governs the
     /// (possibly long) transfer, exactly as Python hands lifetime control to the
     /// Resource watchdog once the RequestReceipt enters RECEIVING (Link.py
@@ -256,6 +267,7 @@ public final class RequestReceipt {
     }
 
     /// Conclude this receipt because the response exceeded `maxResponseSize`.
+    ///
     /// Mirrors Python's RNS 1.4.1 `RequestReceipt.response_rejected()`, which
     /// runs the *failed* callback path—a caller that set a size cap wants a
     /// failure, not a truncated success.
@@ -306,7 +318,9 @@ public final class RequestReceipt {
 
 extension Link {
 
-    /// Send a request along `path`. Returns a receipt the caller can attach
+    /// Send a request along `path`.
+    ///
+    /// Returns a receipt the caller can attach
     /// `onResponse`/`onFailed` to.
     ///
     /// For small payloads (≤ link MDU) the request is sent as a single
@@ -342,6 +356,7 @@ extension Link {
 
     /// Python-wire-compatible request: embeds `nativeValue` directly in the outer
     /// msgpack array, matching Python's `msgpack.packb([ts, pathHash, data])` format.
+    ///
     /// Use this when talking to Python nodes (for example, LXMF propagation).
     @discardableResult
     public func request(
@@ -489,7 +504,9 @@ extension Link {
     }
 
     /// Dispatch to registered request handler (checking allow policy) and
-    /// send response (small or Resource). Mirrors Python's
+    /// send response (small or Resource).
+    ///
+    /// Mirrors Python's
     /// `Link.handle_request()`.
     ///
     /// - Parameter rawValue: The raw `MsgPack.Value` from parts[2] of the incoming
@@ -583,7 +600,9 @@ extension Link {
 
     // MARK: - Legacy stub (kept for call-site compatibility)
 
-    /// No-op. REQUEST and RESPONSE contexts are now dispatched directly in
+    /// No-op.
+    ///
+    /// REQUEST and RESPONSE contexts are now dispatched directly in
     /// `Link.receive()` using `packet.truncatedPacketHash()` for the request_id,
     /// matching Python's `packet.getTruncatedHash()` wire-compat semantics.
     func bindRequestDispatchIfNeeded() { }

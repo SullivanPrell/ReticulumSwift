@@ -34,6 +34,7 @@ final class LinkParityTests: XCTestCase {
     // MARK: - Helpers
 
     /// Interface that silently drops all outbound packets (one-way sink).
+    ///
     /// Used to isolate the initiator so the link stays in .pending state.
     final class SinkInterface: Interface {
         var name = "sink"; var bitrate = 0; var isOnline = true
@@ -205,6 +206,7 @@ final class LinkParityTests: XCTestCase {
     // MARK: - 4. receiveRTT uses max(measured_rtt, reported_rtt)
 
     /// After the fix, the responder's rtt = max(measured, reported).
+    ///
     /// Since measured ≈ reported in a synchronous loopback, this test only checks that rtt is set and positive.
     func testReceiveRTTSetsRTTOnResponder() throws {
         let (_, bLink, aT, bT) = try establishLink()
@@ -214,7 +216,9 @@ final class LinkParityTests: XCTestCase {
     }
 
     /// RNS 1.3.8 (commit b7068888): the responder must also record the link's
-    /// hop count, taken from the incoming RTT packet. In a direct loopback the
+    /// hop count, taken from the incoming RTT packet.
+    ///
+    /// In a direct loopback the
     /// RTT packet arrives with hops == 0, so expectedHops must be 0 (not nil).
     func testReceiveRTTSetsExpectedHopsOnResponder() throws {
         let (_, bLink, aT, bT) = try establishLink()
@@ -224,6 +228,7 @@ final class LinkParityTests: XCTestCase {
     }
 
     /// The responder's rtt must be ≥ the time from requestTime to link activation.
+    ///
     /// This validates the `max` picks the larger of measured vs reported.
     func testReceiveRTTIsAtLeastMeasuredRoundTrip() throws {
         let (_, bLink, aT, bT) = try establishLink()
@@ -270,6 +275,7 @@ final class LinkParityTests: XCTestCase {
 
 extension Transport {
     /// Test helper: compute the firstHopTimeout for a destination in a given transport.
+    ///
     /// Mirrors Python `Transport.first_hop_timeout(destination_hash)`.
     static func firstHopTimeout(for destinationHash: Data, in transport: Transport) -> TimeInterval {
         transport.firstHopTimeout(for: destinationHash)

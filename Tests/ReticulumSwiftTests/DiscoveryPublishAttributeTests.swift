@@ -264,7 +264,9 @@ final class DiscoveryPublishConfigTests: XCTestCase {
     }
 
     /// The operator's LXMF address is a truncated destination hash, so it has to be exactly
-    /// `TRUNCATED_HASHLENGTH//8*2` hex characters. Anything else logs and stays unset
+    /// `TRUNCATED_HASHLENGTH//8*2` hex characters.
+    ///
+    /// Anything else logs and stays unset
     /// (`Reticulum.py:922-926`) rather than putting a malformed address on the wire.
     func testTheOperatorAddressIsLengthCheckedAndDecoded() {
         let valid = String(repeating: "5a", count: Constants.truncatedHashLength)
@@ -306,7 +308,9 @@ final class DiscoveryPublishConfigTests: XCTestCase {
     }
 
     /// Python latches a module-level flag the moment any interface is discoverable, and starts
-    /// the announcer from it at `Reticulum.py:370`. Without the flag the subsystem has no
+    /// the announcer from it at `Reticulum.py:370`.
+    ///
+    /// Without the flag the subsystem has no
     /// trigger, because the interfaces aren't built yet when the block is parsed.
     func testAnyDiscoverableInterfaceEnablesTheAnnouncer() {
         let saved = Reticulum.discoveryEnabled()

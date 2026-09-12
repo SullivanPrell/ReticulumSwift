@@ -98,7 +98,9 @@ public final class FileLogSink {
 
     // MARK: - File destination
 
-    /// `<configdir>/logfile`. Python: `RNS.logfile`.
+    /// `<configdir>/logfile`.
+    ///
+    /// Python: `RNS.logfile`.
     public let fileURL: URL
 
     /// `<configdir>/logfile.1`—the single generation Python keeps.
@@ -107,11 +109,15 @@ public final class FileLogSink {
     /// Python: `RNS.LOG_MAXSIZE = 5*1024*1024`.
     public let maxSize: Int
 
-    /// Set permanently after any write failure. Python: the module-global
+    /// Set permanently after any write failure.
+    ///
+    /// Python: the module-global
     /// `_always_override_destination` latch (`RNS/__init__.py:93`, set at `152`).
     public private(set) var fellBackToConsole: Bool = false
 
-    /// Where fallback output goes. Injectable so tests can capture it.
+    /// Where fallback output goes.
+    ///
+    /// Injectable so tests can capture it.
     public var consoleWriter: (String) -> Void
 
     private let fileManager: FileManager

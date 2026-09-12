@@ -11,6 +11,7 @@
 import Foundation
 
 /// Local address book mapping human-readable labels to Destination hashes.
+///
 /// Reticulum has no DNS—this is just a keyring.
 public final class Resolver {
     public struct Entry: Sendable, Equatable, Codable {

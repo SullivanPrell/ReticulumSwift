@@ -137,6 +137,7 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     // MARK: - The regression
 
     /// The exact bug-013 condition: the peer accepts and immediately sends FIN.
+    ///
     /// Python redials every `RECONNECT_WAIT`; Swift used to stop forever after the first.
     func testRedialsAfterThePeerHangsUpImmediately() throws {
         let listener = try makeListener(hangUp: true)
@@ -222,7 +223,9 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     }
 
     /// An interface pointed at a port nobody is listening on keeps trying, rather than
-    /// coming up dead and silent. Python: `initial_connect()` failing starts `reconnect()`,
+    /// coming up dead and silent.
+    ///
+    /// Python: `initial_connect()` failing starts `reconnect()`,
     /// which retries forever by default.
     func testAnUnreachablePeerKeepsBeingRetried() throws {
         let iface = makeClient(port: try deadPort())

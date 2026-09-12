@@ -110,14 +110,18 @@ final class LargeResourceTests: XCTestCase {
 
     /// The hashmap segment length must mirror Python's
     /// `HASHMAP_MAX_LEN = floor((Link.MDU - OVERHEAD)/MAPHASH_LEN) = 74`, not the
-    /// window-max (10). The collision-guard window must be `2*75 + 74 = 224`.
+    /// window-max (10).
+    ///
+    /// The collision-guard window must be `2*75 + 74 = 224`.
     func testHashmapConstantsMatchPython() {
         XCTAssertEqual(ResourceAdvertisement.hashmapMaxLength, 74)
         XCTAssertEqual(ResourceAdvertisement.collisionGuardSize, 224)
     }
 
     /// A resource advertisement must carry only the first `HASHMAP_MAX_LEN` part-hashes
-    /// on the wire (the rest are delivered via HMU). Before the fix, `pack()` emitted the
+    /// on the wire (the rest are delivered via HMU).
+    ///
+    /// Before the fix, `pack()` emitted the
     /// whole hashmap, which both overflows the link MDU and mis-indexes HMU segments
     /// against a Python peer. Mirrors Python `ResourceAdvertisement.pack(segment=0)`.
     func testAdvertisementCarriesOnlyFirstHashmapSegment() throws {
@@ -151,7 +155,9 @@ final class LargeResourceTests: XCTestCase {
     }
 
     /// End-to-end transfer of a single-segment resource with far more parts than fit in
-    /// one advertisement (>2 hashmap segments). This forces the receiver to pull later
+    /// one advertisement (>2 hashmap segments).
+    ///
+    /// This forces the receiver to pull later
     /// hashmap segments via HMU packets and the sender to emit them indexed by
     /// `partIndex / HASHMAP_MAX_LEN`. It only completes when both sides agree on the
     /// segment length (74)—the regression this guards against.

@@ -13,7 +13,9 @@ import XCTest
 
 /// `bugs/022`—every interface must publish the name its Python counterpart's `__str__`
 /// produces, because `Interface.hash` is `fullHash(displayName)` and `rnstatus` filters and
-/// hides rows by prefix. A bare configuration name is a different identity on the wire than
+/// hides rows by prefix.
+///
+/// A bare configuration name is a different identity on the wire than
 /// the Python interface sitting beside it.
 ///
 /// This suite exists in this shape because the 1.7.0 fix covered the TCP/UDP families only and
@@ -163,7 +165,9 @@ final class InterfaceDisplayNameTests: XCTestCase {
     }
 
     /// The other half of "enforceable rather than defaulted": whatever the default is, it may
-    /// not be the bare configuration name. A new conformer that declares nothing must still
+    /// not be the bare configuration name.
+    ///
+    /// A new conformer that declares nothing must still
     /// publish something class-qualified.
     func testNoConformerPublishesABareConfigurationName() throws {
         let bare = try InterfaceConformers.everyConcreteInterface()

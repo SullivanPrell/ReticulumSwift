@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for proof forwarding through relay/transport nodes.
+///
 /// In Python, Transport maintains a `reverse_table` so that when a DATA packet
 /// is forwarded through a relay, the resulting proof travels back the same path.
 ///

@@ -41,7 +41,9 @@ final class PathStoreTests: XCTestCase {
 
     /// Same type and same name on both sides, so `Interface.hash`—`fullHash(displayName)`—matches
     /// across the round trip, exactly as it does for a real interface rebuilt from the
-    /// same config. The cache directory is shared for the same reason: the announce cache is on
+    /// same config.
+    ///
+    /// The cache directory is shared for the same reason: the announce cache is on
     /// disk and outlives the process.
     private func makeTransport() -> (Transport, LoopbackInterface) {
         let transport = Transport()
@@ -74,7 +76,9 @@ final class PathStoreTests: XCTestCase {
 
     /// The identity comes back through `known_destinations`, not through the path entry—so a
     /// transport that has loaded it resolves the entry's identity hash, and one that hasn't
-    /// still routes. Mirrors `Identity.recall` at `Transport.py:331` and the load order at
+    /// still routes.
+    ///
+    /// Mirrors `Identity.recall` at `Transport.py:331` and the load order at
     /// `Reticulum.py:344-346`.
     func testIdentityIsResolvedFromKnownDestinationsNotTheEntry() throws {
         let (live, eth0) = makeTransport()

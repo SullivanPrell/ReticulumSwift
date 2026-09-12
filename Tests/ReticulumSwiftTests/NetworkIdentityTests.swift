@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Transport.set_network_identity() and Transport.has_network_identity().
+///
 /// Mirrors Python's Transport.network_identity concept used for remote management
 /// and interface discovery.
 final class NetworkIdentityTests: XCTestCase {

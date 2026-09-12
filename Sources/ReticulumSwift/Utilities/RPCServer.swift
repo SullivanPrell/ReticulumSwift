@@ -36,6 +36,7 @@ public final class RPCServer {
     private let queue = DispatchQueue(label: "ReticulumSwift.RPCServer")
 
     /// Live transport reference—set by `Reticulum.startRPC` after creation.
+    ///
     /// Weak to avoid a retain cycle (Transport → Reticulum → RPCServer → Transport).
     public weak var transport: Transport?
 
@@ -115,7 +116,9 @@ public final class RPCServer {
         Reticulum.log("RPC server started on port \(port)", level: .info)
     }
 
-    /// How long `start()` waits for the listener to reach a terminal state. Generous: this is a
+    /// How long `start()` waits for the listener to reach a terminal state.
+    ///
+    /// Generous: this is a
     /// loopback bind, so anything approaching it means the framework isn't going to answer.
     private static let bindTimeout: DispatchTimeInterval = .seconds(5)
 

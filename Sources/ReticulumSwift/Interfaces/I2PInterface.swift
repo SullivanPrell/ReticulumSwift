@@ -22,7 +22,9 @@ import Foundation
 /// pass`). Packets are HDLC-framed (same as BackboneInterface/TCPInterface).
 public final class I2PInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -109,13 +111,17 @@ public final class I2PInterface: Interface {
     /// Human-readable tunnel state description. Python: `tunnelstate`
     public var tunnelState:       String? = nil
 
-    /// Remote destinations to dial (`.b32.i2p` or base64). Python: `peers`.
+    /// Remote destinations to dial (`.b32.i2p` or base64).
+    ///
+    /// Python: `peers`.
     public let peers: [String]
 
     /// Overrides the SAM socket factory on every spawned peer (tests).
     public var samSocketFactory: (() -> SAMSocket)?
 
-    /// Called when a dialed peer comes online. Transport wires this to
+    /// Called when a dialed peer comes online.
+    ///
+    /// Transport wires this to
     /// `register(interface:)`—mirroring `TCPServerInterface.onClientConnected`.
     public var onPeerConnected:    ((any Interface) -> Void)?
     /// Called when a dialed peer drops offline; Transport deregisters it.
@@ -161,6 +167,7 @@ public final class I2PInterface: Interface {
     // MARK: - Interface lifecycle
 
     /// Start the embedded i2pd daemon and dial all configured peers.
+    ///
     /// Python: `I2PInterface.__init__` peer loop—`interface_name
     /// = self.name + " to " + peer_addr`.
     public func start() throws {
@@ -207,7 +214,9 @@ public final class I2PInterface: Interface {
     // MARK: - Packet send
 
     /// The parent isn't a routing endpoint; Transport routes through the
-    /// individual peers. Kept as a broadcast for API compatibility.
+    /// individual peers.
+    ///
+    /// Kept as a broadcast for API compatibility.
     public func send(_ packet: Packet) throws {
         lock.lock(); let all = peerInterfaces + spawned; lock.unlock()
         for peer in all where peer.online { try? peer.send(packet) }

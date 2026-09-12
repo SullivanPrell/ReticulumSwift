@@ -160,7 +160,9 @@ final class RatchetStoreParityTests: XCTestCase {
     }
 
     /// A file this implementation can't parse is removed, which is what the reference does with
-    /// one it can't parse at this path (`Identity.py:459-462,476`). That's also what retires
+    /// one it can't parse at this path (`Identity.py:459-462,476`).
+    ///
+    /// That's also what retires
     /// the port's own JSON ratchets on the first start after this change: unlike
     /// `known_destinations.json` and its siblings, these sit at a name the reference *does* use,
     /// so leaving them would mean leaving a file a Python daemon deletes anyway.

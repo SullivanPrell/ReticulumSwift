@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests verifying destination hash computation against Python reference test vectors.
+///
 /// These use the same test vectors as Python's tests/link.py.
 final class KnownDestinationHashTests: XCTestCase {
 

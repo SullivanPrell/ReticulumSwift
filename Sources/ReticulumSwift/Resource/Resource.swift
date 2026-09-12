@@ -178,6 +178,7 @@ public final class Resource {
     }
 
     /// Reconstruct a resource from the encrypted stream and advertisement fields.
+    ///
     /// Decrypts, strips random hash, decompresses if needed, verifies hash,
     /// and separates metadata from payload when `hasMetadata` is true.
     ///
@@ -230,18 +231,21 @@ public final class Resource {
     }
 
     /// Returns `true` if the advertisement packet carries the request flag.
+    ///
     /// Mirrors Python `Resource.is_request(advertisement_packet)`.
     public static func isRequest(advertisementPacket packet: Packet) -> Bool {
         decodeAd(packet)?.isRequest ?? false
     }
 
     /// Returns `true` if the advertisement packet carries the response flag.
+    ///
     /// Mirrors Python `Resource.is_response(advertisement_packet)`.
     public static func isResponse(advertisementPacket packet: Packet) -> Bool {
         decodeAd(packet)?.isResponse ?? false
     }
 
     /// Returns the request ID embedded in the advertisement, or `nil`.
+    ///
     /// Mirrors Python `Resource.read_request_id(advertisement_packet)`.
     public static func readRequestID(advertisementPacket packet: Packet) -> Data? {
         guard let ad = decodeAd(packet) else { return nil }
@@ -249,12 +253,14 @@ public final class Resource {
     }
 
     /// Returns the encoded (wire) transfer size in bytes.
+    ///
     /// Mirrors Python `Resource.read_transfer_size(advertisement_packet)`.
     public static func readTransferSize(advertisementPacket packet: Packet) -> Int {
         Int(decodeAd(packet)?.transferSize ?? 0)
     }
 
     /// Returns the original (plaintext) data size in bytes.
+    ///
     /// Mirrors Python `Resource.read_size(advertisement_packet)`.
     public static func readSize(advertisementPacket packet: Packet) -> Int {
         Int(decodeAd(packet)?.dataSize ?? 0)
@@ -262,19 +268,25 @@ public final class Resource {
 }
 
 /// Wire-compatible Resource advertisement matching Python's
-/// `RNS.Resource.ResourceAdvertisement`. Encoded as a msgpack map with
+/// `RNS.Resource.ResourceAdvertisement`.
+///
+/// Encoded as a msgpack map with
 /// keys `t, d, n, h, r, o, i, l, q, f, m` in that insertion order.
 public struct ResourceAdvertisement: Equatable {
     /// Bytes per map hash entry (matches Python MAPHASH_LEN = 4).
     public static let mapHashLength = 4
 
     /// Fixed advertisement overhead in bytes (msgpack envelope plus all fixed-size
-    /// fields, excluding the variable-length hashmap). Mirrors Python
+    /// fields, excluding the variable-length hashmap).
+    ///
+    /// Mirrors Python
     /// `ResourceAdvertisement.OVERHEAD = 134`.
     public static let overhead = 134
 
     /// Maximum number of part-hashes carried in a single advertisement or
-    /// hashmap-update (HMU) segment. Mirrors Python
+    /// hashmap-update (HMU) segment.
+    ///
+    /// Mirrors Python
     /// `HASHMAP_MAX_LEN = floor((Link.MDU - OVERHEAD) / MAPHASH_LEN)`—which is 74 at
     /// the default MTU (Link.MDU = 431). Resources with more parts than this are
     /// advertised one segment at a time; the receiver pulls later segments via HMU
@@ -283,7 +295,9 @@ public struct ResourceAdvertisement: Equatable {
 
     /// Sender-side search window (in parts) used both for matching requested
     /// part-hashes and for locating the HMU pivot, sized to tolerate 4-byte map-hash
-    /// collisions. Mirrors Python
+    /// collisions.
+    ///
+    /// Mirrors Python
     /// `COLLISION_GUARD_SIZE = 2*WINDOW_MAX + HASHMAP_MAX_LEN` (= 224), where
     /// `WINDOW_MAX` is the fast-window cap (75).
     public static let collisionGuardSize = 2 * ResourceTransfer.windowMaxFast + hashmapMaxLength
@@ -351,7 +365,9 @@ public struct ResourceAdvertisement: Equatable {
     }
 
     /// Pack the advertisement, carrying only the `segment`-th window of part-hashes in
-    /// the `m` field. Later segments are delivered to the receiver via HMU packets.
+    /// the `m` field.
+    ///
+    /// Later segments are delivered to the receiver via HMU packets.
     /// Mirrors Python `ResourceAdvertisement.pack(segment=0)`: a full hashmap may be
     /// held in `self.hashmap`, but the wire form never carries more than
     /// `HASHMAP_MAX_LEN` (74) hashes—otherwise large resources would produce an

@@ -11,7 +11,9 @@
 import Foundation
 import CommonCrypto
 
-/// AES-CBC primitives. CryptoKit doesn't expose CBC mode, so this uses
+/// AES-CBC primitives.
+///
+/// CryptoKit doesn't expose CBC mode, so this uses
 /// CommonCrypto. Reticulum uses AES-128-CBC for 32-byte token keys and
 /// AES-256-CBC for 64-byte token keys; the key length determines the
 /// algorithm.

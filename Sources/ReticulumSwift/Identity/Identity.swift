@@ -11,7 +11,9 @@
 import Foundation
 import CryptoKit
 
-/// A Reticulum Identity. Combines an X25519 key pair (for ECDH-derived
+/// A Reticulum Identity.
+///
+/// Combines an X25519 key pair (for ECDH-derived
 /// encryption) with an Ed25519 key pair (for signatures).
 ///
 /// Wire serialization, identical to the Python reference implementation:
@@ -33,12 +35,16 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// Sendable`, and the send path uses the same identity (and rotates
     /// the ratchet) and the receive path (which reads the key pool to decrypt)
     /// concurrently—an unsynchronized read of the `Data?`/array while rotation
-    /// writes it can tear. Self-contained leaf lock: the guarded regions make no
+    /// writes it can tear.
+    ///
+    /// Self-contained leaf lock: the guarded regions make no
     /// callouts, so it never nests with any other lock. Internal helpers suffixed
     /// `Locked` assume the caller already holds it (the lock is non-recursive).
     private let ratchetLock = NSLock()
 
-    /// Active ratchet private key (32 bytes). Set by
+    /// Active ratchet private key (32 bytes).
+    ///
+    /// Set by
     /// `rotateRatchet()`; the public part is what the
     /// next announce carries so peers encrypt to it (forward secrecy).
     private var unsafeActiveRatchetPrivateKey: Data?
@@ -47,7 +53,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         set { ratchetLock.lock(); unsafeActiveRatchetPrivateKey = newValue; ratchetLock.unlock() }
     }
 
-    /// Retired ratchet privates, newest first. A sender keeps using the ratchet it last
+    /// Retired ratchet privates, newest first.
+    ///
+    /// A sender keeps using the ratchet it last
     /// heard announced until that ratchet expires or a newer announce arrives, so inbound
     /// packets stay addressed to a retired ratchet for as long as the peer stays quiet—days,
     /// not seconds. Bounded by `ratchetHistoryDepth` and aged out per `ratchetExpiry`.
@@ -70,7 +78,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// the same peer talking to a Python node was fine for thirty days.
     public var ratchetHistoryDepth: Int = Destination.ratchetCount - 1
 
-    /// Mirrors Python's `RNS.Identity.RATCHET_EXPIRY` (30 days). Historical
+    /// Mirrors Python's `RNS.Identity.RATCHET_EXPIRY` (30 days).
+    ///
+    /// Historical
     /// ratchet privates older than this are dropped on rotation/sweep.
     public var ratchetExpiry: TimeInterval = 60 * 60 * 24 * 30
 
@@ -79,7 +89,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// has elapsed since the active ratchet was generated.
     public var ratchetInterval: TimeInterval = 30 * 60
 
-    /// Wall-clock time the active ratchet was generated. Nil until the
+    /// Wall-clock time the active ratchet was generated.
+    ///
+    /// Nil until the
     /// first rotation.
     private var unsafeActiveRatchetTime: Date?
     public private(set) var activeRatchetTime: Date? {
@@ -99,7 +111,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         return unsafePreviousRatchets.map { $0.privateKey }
     }
 
-    /// Rotate the active ratchet. Generates a fresh X25519 keypair,
+    /// Rotate the active ratchet.
+    ///
+    /// Generates a fresh X25519 keypair,
     /// stores the private locally, returns the 32-byte public bytes
     /// to embed in the next announce.
     @discardableResult
@@ -111,7 +125,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         return prv.publicKey.rawRepresentation
     }
 
-    /// Perform the rotation bookkeeping. Caller must hold `ratchetLock`.
+    /// Perform the rotation bookkeeping.
+    ///
+    /// Caller must hold `ratchetLock`.
     private func rotateRatchetLocked(to newPrivate: Data) {
         if let existing = unsafeActiveRatchetPrivateKey {
             unsafePreviousRatchets.insert(
@@ -125,7 +141,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     }
 
     /// Rotate only if `ratchetInterval` has elapsed since the last
-    /// rotation. Mirrors `Destination.rotate_ratchets` in Python, which
+    /// rotation.
+    ///
+    /// Mirrors `Destination.rotate_ratchets` in Python, which
     /// runs lazily on every announce. Returns the active public bytes
     /// (rotated or not), or nil if the ratchet was never initialized.
     @discardableResult
@@ -154,7 +172,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         sweepExpiredRatchetsLocked(now: now)
     }
 
-    /// Sweep body. Caller must hold `ratchetLock`.
+    /// Sweep body.
+    ///
+    /// Caller must hold `ratchetLock`.
     private func sweepExpiredRatchetsLocked(now: Date = Date()) {
         unsafePreviousRatchets.removeAll {
             now.timeIntervalSince($0.retiredAt) > ratchetExpiry
@@ -171,7 +191,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         return activeRatchetPublicKeyLocked()
     }
 
-    /// Compute the active ratchet public key. Caller must hold `ratchetLock`.
+    /// Compute the active ratchet public key.
+    ///
+    /// Caller must hold `ratchetLock`.
     private func activeRatchetPublicKeyLocked() -> Data? {
         guard let prvBytes = unsafeActiveRatchetPrivateKey,
               let prv = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: prvBytes)
@@ -244,49 +266,78 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     // MARK: - Class-level constants (mirrors Python RNS.Identity class attributes)
 
-    /// Elliptic curve used. Mirrors Python `Identity.CURVE = 'Curve25519'`.
+    /// Elliptic curve used.
+    ///
+    /// Mirrors Python `Identity.CURVE = 'Curve25519'`.
     public static let curve: String = "Curve25519"
 
-    /// Key size in bits (512). Mirrors Python `Identity.KEYSIZE = 256*2`.
+    /// Key size in bits (512).
+    ///
+    /// Mirrors Python `Identity.KEYSIZE = 256*2`.
     public static let keySize: Int = Constants.keySize * 8          // 512 bits
-    /// X.25519 key size in bits (256). Mirrors Python `Identity.ECPUBSIZE//2 = 32*8`.
+    /// X.25519 key size in bits (256).
+    ///
+    /// Mirrors Python `Identity.ECPUBSIZE//2 = 32*8`.
     public static let ecPubSize: Int = Constants.halfKeySize * 8    // 256 bits
-    /// Signature length in bits (512). Mirrors Python `Identity.SIGLENGTH = KEYSIZE`.
+    /// Signature length in bits (512).
+    ///
+    /// Mirrors Python `Identity.SIGLENGTH = KEYSIZE`.
     public static let sigLength: Int = Constants.signatureLength * 8 // 512 bits
-    /// Ratchet key size in bits (256). Mirrors Python `Identity.RATCHETSIZE = 256`.
+    /// Ratchet key size in bits (256).
+    ///
+    /// Mirrors Python `Identity.RATCHETSIZE = 256`.
     public static let ratchetSize: Int = 256                         // bits (32 bytes)
-    /// Full SHA-256 hash length in bits (256). Mirrors Python `Identity.HASHLENGTH = 256`.
+    /// Full SHA-256 hash length in bits (256).
+    ///
+    /// Mirrors Python `Identity.HASHLENGTH = 256`.
     public static let hashLength: Int = 256                          // bits (32 bytes)
-    /// Token overhead in bytes (48). Mirrors Python `Identity.TOKEN_OVERHEAD = Token.TOKEN_OVERHEAD`.
+    /// Token overhead in bytes (48).
+    ///
+    /// Mirrors Python `Identity.TOKEN_OVERHEAD = Token.TOKEN_OVERHEAD`.
     public static let tokenOverhead: Int = Constants.tokenOverhead   // 48 bytes
-    /// AES-128 block size in bytes (16). Mirrors Python `Identity.AES128_BLOCKSIZE = 16`.
+    /// AES-128 block size in bytes (16).
+    ///
+    /// Mirrors Python `Identity.AES128_BLOCKSIZE = 16`.
     public static let aes128BlockSize: Int = Constants.aes128BlockSize  // 16 bytes
-    /// HKDF derived key length in bytes (64). Mirrors Python `Identity.DERIVED_KEY_LENGTH = 512//8`.
+    /// HKDF derived key length in bytes (64).
+    ///
+    /// Mirrors Python `Identity.DERIVED_KEY_LENGTH = 512//8`.
     public static let derivedKeyLength: Int = Constants.derivedKeyLength  // 64 bytes
-    /// Truncated hash length in bits (128). Mirrors Python `Identity.TRUNCATED_HASHLENGTH = 128`.
+    /// Truncated hash length in bits (128).
+    ///
+    /// Mirrors Python `Identity.TRUNCATED_HASHLENGTH = 128`.
     public static let truncatedHashLength: Int = Constants.truncatedHashLengthBits  // 128 bits
-    /// Name hash length in bits (80). Mirrors Python `Identity.NAME_HASH_LENGTH = 80`.
+    /// Name hash length in bits (80).
+    ///
+    /// Mirrors Python `Identity.NAME_HASH_LENGTH = 80`.
     public static let nameHashLength: Int = Constants.nameHashLengthBits            // 80 bits
-    /// AES-256 block size in bytes (16). Mirrors Python `Identity.AES256_BLOCKSIZE = 16`.
+    /// AES-256 block size in bytes (16).
+    ///
+    /// Mirrors Python `Identity.AES256_BLOCKSIZE = 16`.
     public static let aes256BlockSize: Int = 16
     /// Legacy HKDF derived key length in bytes (32, AES-128).
+    ///
     /// Python: `Identity.DERIVED_KEY_LENGTH_LEGACY = 256//8`.
     public static let derivedKeyLengthLegacy: Int = 32
     /// Default ratchet expiry in seconds (30 days).
+    ///
     /// Python: `Identity.RATCHET_EXPIRY = 60*60*24*30`.
     public static let defaultRatchetExpiry: TimeInterval = 60 * 60 * 24 * 30
 
     // MARK: - Static hash utilities (mirrors Python RNS.Identity class-level static methods)
 
     /// Compute the full SHA-256 hash of data.
+    ///
     /// Mirrors Python's `RNS.Identity.full_hash(data)`.
     public static func fullHash(_ data: Data) -> Data { Hashes.fullHash(data) }
 
     /// Compute a truncated (128-bit) SHA-256 hash of data.
+    ///
     /// Mirrors Python's `RNS.Identity.truncated_hash(data)`.
     public static func truncatedHash(_ data: Data) -> Data { Hashes.truncatedHash(data) }
 
     /// Generate a random truncated hash.
+    ///
     /// Mirrors Python's `RNS.Identity.get_random_hash()`.
     public static func randomHash() -> Data { Hashes.randomHash() }
 
@@ -350,6 +401,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     }
 
     /// Validate an announce packet.
+    ///
     /// Returns true if the announce's signature is valid (and optionally the destination hash matches).
     /// Mirrors Python's `RNS.Identity.validate_announce(packet, only_validate_signature=False)`,
     /// which reports a blackholed announcer as a plain failure unless asked to
@@ -364,6 +416,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     // MARK: - Static ratchet ID utilities
 
     /// Get the 10-byte ID of the known ratchet key for a destination.
+    ///
     /// Delegates to `Reticulum.shared?.transport.currentRatchetID(forDestination:)`.
     /// Mirrors Python's `RNS.Identity.current_ratchet_id(destination_hash)`.
     public static func currentRatchetID(for destinationHash: Data) -> Data? {
@@ -395,7 +448,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     // MARK: - Static recall (mirrors Python RNS.Identity.recall / recall_app_data)
 
     /// Recall the identity associated with a destination hash from the shared
-    /// Reticulum instance. Delegates to `Reticulum.shared?.transport.recall(identity:)`.
+    /// Reticulum instance.
+    ///
+    /// Delegates to `Reticulum.shared?.transport.recall(identity:)`.
     ///
     /// Mirrors Python's `RNS.Identity.recall(target_hash)`.
     public static func recall(destinationHash: Data) -> Identity? {
@@ -469,7 +524,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     /// Decrypt result. `ratchetID` is the 10-byte name-hash ID of the
     /// ratchet public key whose private successfully decrypted the
-    /// token (mirrors Python's `latest_ratchet_id`). Nil if the
+    /// token (mirrors Python's `latest_ratchet_id`).
+    ///
+    /// Nil if the
     /// destination's static identity key did the work.
     public struct DecryptResult: Equatable {
         public var plaintext: Data
@@ -541,13 +598,17 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     // MARK: - Python-style key loading (mirrors Python Identity.load_private_key / load_public_key)
     // Note: Swift Identity is immutable; these methods return NEW Identity instances.
 
-    /// Load a private key, returning a new Identity. Returns nil on failure.
+    /// Load a private key, returning a new Identity.
+    ///
+    /// Returns nil on failure.
     /// Mirrors Python's `Identity.load_private_key(prv_bytes)`.
     public func loadPrivateKey(_ bytes: Data) -> Identity? {
         try? Identity(privateKeyBytes: bytes)
     }
 
-    /// Load a public key, returning a new public-only Identity. Returns nil on failure.
+    /// Load a public key, returning a new public-only Identity.
+    ///
+    /// Returns nil on failure.
     /// Mirrors Python's `Identity.load_public_key(pub_bytes)`.
     public func loadPublicKey(_ bytes: Data) throws -> Identity? {
         try Identity(publicKeyBytes: bytes)
@@ -556,6 +617,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     // MARK: - Python-style factory methods (mirrors Python Identity.from_bytes / from_file)
 
     /// Create an Identity from private key bytes.
+    ///
     /// Returns nil if the bytes are invalid.
     /// Mirrors Python's `Identity.from_bytes(prv_bytes)`.
     public static func fromBytes(_ bytes: Data) -> Identity? {
@@ -563,6 +625,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     }
 
     /// Load an Identity from a file.
+    ///
     /// Returns nil if the file doesn't exist or is invalid.
     /// Mirrors Python's `Identity.from_file(path)`.
     public static func fromFile(_ url: URL) -> Identity? {
@@ -570,6 +633,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     }
 
     /// Save this Identity's private key to a file.
+    ///
     /// Returns true on success. Mirrors Python's `Identity.to_file(path)`.
     @discardableResult
     public func toFile(_ url: URL) throws -> Bool {
@@ -579,6 +643,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     }
 
     /// Save this Identity's public key to a file.
+    ///
     /// Returns true on success. Mirrors Python's `Identity.pub_to_file(path)`.
     @discardableResult
     public func pubToFile(_ url: URL) -> Bool {
@@ -589,18 +654,23 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     // MARK: - Python-style key accessors (mirrors Python Identity.get_private_key / get_public_key)
 
     /// Returns the private key bytes, or nil if this is a public-only identity.
+    ///
     /// Mirrors Python's `Identity.get_private_key()`.
     public func getPrivateKey() -> Data? { privateKeyBytes }
 
     /// Returns the public key bytes (64 bytes: X25519 + Ed25519).
+    ///
     /// Mirrors Python's `Identity.get_public_key()`.
     public func getPublicKey() -> Data { publicKeyBytes }
 
     /// Returns the identity hash (truncated 16-byte SHA-256 of public key).
+    ///
     /// Mirrors Python's `Identity.get_salt()`.
     public func getSalt() -> Data { hash }
 
-    /// Returns nil (no context defined for Identity). Mirrors Python's `Identity.get_context()`.
+    /// Returns nil (no context defined for Identity).
+    ///
+    /// Mirrors Python's `Identity.get_context()`.
     public func getContext() -> Data? { nil }
 
     // MARK: - Persistence

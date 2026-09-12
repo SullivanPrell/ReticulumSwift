@@ -745,7 +745,9 @@ final class RNIDOperationsTests: XCTestCase {
 
     /// Python's `R_NO_PUBKEY` (3) and `R_NO_KEYS` (5) branches are structurally unreachable in
     /// Swift, because `Identity.publicKeyBytes` is non-optional—every Identity holds a
-    /// public key. They're kept for source parity and deliberately have no test.
+    /// public key.
+    ///
+    /// They're kept for source parity and deliberately have no test.
     func testEveryIdentityHoldsAPublicKey() throws {
         let publicOnly = try Identity(publicKeyBytes: Identity().getPublicKey())
         XCTAssertEqual(publicOnly.getPublicKey().count, 64)

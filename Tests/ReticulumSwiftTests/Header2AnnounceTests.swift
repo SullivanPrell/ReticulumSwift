@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for announces arriving with HEADER_2 (transport header).
+///
 /// When an announce arrives via a relay (HEADER_2), the relay's transport ID
 /// should be stored as the next-hop transport ID in the path table.
 final class Header2AnnounceTests: XCTestCase {
@@ -150,7 +151,9 @@ final class Header2AnnounceTests: XCTestCase {
 
     /// A shared-instance client reaches the instance's OWN local clients at zero hops:
     /// the path is learned from the instance's HEADER_2 announce (so it carries a next-hop
-    /// transport ID) yet the destination is delivered locally by the instance. Such a packet
+    /// transport ID) yet the destination is delivered locally by the instance.
+    ///
+    /// Such a packet
     /// must go out HEADER_1. Stamping HEADER_2 with the instance's transport ID—which the
     /// old `nextHopTransportID != nil` gate did—produced a packet a Python peer drops (a
     /// local client isn't the addressed transport), silently breaking every link a Swift

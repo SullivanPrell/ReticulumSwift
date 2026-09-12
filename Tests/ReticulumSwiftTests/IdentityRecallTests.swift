@@ -12,6 +12,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for Identity.recall() and Identity.recallAppData() static methods.
+///
 /// Mirrors Python's `RNS.Identity.recall(target_hash)` API.
 final class IdentityRecallTests: XCTestCase {
 

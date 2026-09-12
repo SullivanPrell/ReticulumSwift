@@ -19,18 +19,22 @@ import Foundation
 public extension RNXApp {
 
     /// Destination aspect for the listener endpoint.
+    ///
     /// Python: `RNS.Destination(identity, IN, SINGLE, APP_NAME, "execute")`—rnx.py:70.
     static let aspect: String = "execute"
 
     /// Request path the listener registers a handler on.
+    ///
     /// Python: `register_request_handler(path = "command", ...)`—rnx.py:120.
     static let requestPath: String = "command"
 
     /// Filename of the utility's own identity inside `<configdir>/storage/identities`.
+    ///
     /// Python: `identity_path = RNS.Reticulum.identitypath+"/"+APP_NAME`—rnx.py:53.
     static let identityFileName: String = "rnx"
 
     /// Filename searched for the listener's allow-list.
+    ///
     /// Python: `allowed_file_name = "allowed_identities"`—rnx.py:95.
     static let allowedIdentitiesFileName: String = "allowed_identities"
 
@@ -39,37 +43,46 @@ public extension RNXApp {
     static let allowedIdentitiesSearchPaths: [String] = ["/etc/rnx", "~/.config/rnx", "~/.rnx"]
 
     /// Extra seconds added to the request timeout to cover remote scheduling overhead.
+    ///
     /// Python: `remote_exec_grace = 2.0`—rnx.py:325.
     static let remoteExecGrace: TimeInterval = 2.0
 
     /// RTT multiplier used when deriving the request timeout.
+    ///
     /// Python: `rexec_timeout = timeout+link.rtt*4+remote_exec_grace`—rnx.py:388.
     /// Note this is **4**, not `Link.trafficTimeoutFactor` (6).
     static let rexecRttFactor: Double = 4.0
 
     /// Number of hex characters in a destination / identity hash argument.
+    ///
     /// Python: `(RNS.Reticulum.TRUNCATED_HASHLENGTH//8)*2`—rnx.py:83, 330.
     static let destinationHexLength: Int = 32
 
     /// Lowest log level a `-q` run can reach.
+    ///
     /// Python clamps the requested level to `LOG_CRITICAL`—Reticulum.py:302.
     /// `-qqqq` therefore yields 0, and can never reach `LOG_NONE` (-1).
     static let minLogLevel: Int = 0
 
     /// Highest log level a `-v` run can reach.
+    ///
     /// Python clamps the requested level to `LOG_EXTREME`—Reticulum.py:301.
     static let maxLogLevel: Int = 8
 
     /// Braille spinner frames, advanced every 100 ms.
+    ///
     /// Python: `syms = "⢄⢂⢁⡁⡈⡐⡠"`—rnx.py:256, 280.
     static let spinnerSymbols: [Character] = ["\u{2884}", "\u{2882}", "\u{2881}",
                                               "\u{2841}", "\u{2848}", "\u{2850}", "\u{2860}"]
 
     /// Width of the blank field `spin_stat` writes before each status line.
+    ///
     /// Python: the literal run of spaces at rnx.py:289 and rnx.py:294—exactly 82.
     static let statClearWidth: Int = 82
 
-    /// Process exit codes. Python calls `exit(<int>)` directly at each site.
+    /// Process exit codes.
+    ///
+    /// Python calls `exit(<int>)` directly at each site.
     ///
     /// Note the collision Python itself has: 244 is used both for "link was closed"
     /// (rnx.py:407) and for "request receipt FAILED" (rnx.py:414). Reproduced as-is.
@@ -111,6 +124,7 @@ public extension RNXApp {
 /// shared surface that could collide with a sibling utility.
 enum RNXHex {
     /// Python: `bytes.fromhex(s)`—accepts upper and lower case, rejects anything else.
+    ///
     /// Unlike CPython, an odd-length string is rejected rather than raising a
     /// differently worded error.
     static func decode(_ hex: String) -> Data? {

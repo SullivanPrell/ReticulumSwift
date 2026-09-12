@@ -195,7 +195,9 @@ final class ChannelTests: XCTestCase {
     /// Regression: receive() previously held `lock` across the throwing
     /// `envelope.unpack`, so an unknown-msgtype or short frame leaked the
     /// non-recursive lock and permanently deadlocked the channel (every later
-    /// send/receive/shutdown blocked). A single mismatched peer packet was enough.
+    /// send/receive/shutdown blocked).
+    ///
+    /// A single mismatched peer packet was enough.
     /// After the fix the channel must stay fully usable after malformed frames.
     func testMalformedFrameDoesNotDeadlockChannel() throws {
         let outlet = MockChannelOutlet()

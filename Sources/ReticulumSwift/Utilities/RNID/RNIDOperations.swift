@@ -73,6 +73,7 @@ public final class RNIDOperations {
     // MARK: - Encoding helper
 
     /// Python: `if args.base64 … elif args.base32 … else RNS.hexrep(..., delimit=False)`.
+    ///
     /// Note `-U`/`--base256` is **not** honoured by `-p`, `-x` or `-X`; it falls through to hex.
     private func encodeKeyBlob(_ blob: Data) -> String {
         switch options.outputFormat {
@@ -85,6 +86,7 @@ public final class RNIDOperations {
     // MARK: - -p / --print-identity
 
     /// Python: `print_identity_information` (rnid.py:971-982).
+    ///
     /// The label column is 14 characters wide so the colons align.
     @discardableResult
     public func printIdentityInformation() -> RNIDApp.Result {
@@ -104,7 +106,9 @@ public final class RNIDOperations {
 
     // MARK: - -x / --export-pub
 
-    /// Python: `export_pub_identity` (rnid.py:1013-1019). The 22-character label aligns with
+    /// Python: `export_pub_identity` (rnid.py:1013-1019).
+    ///
+    /// The 22-character label aligns with
     /// the private form.
     @discardableResult
     public func exportPublicIdentity() -> RNIDApp.Result {
@@ -117,7 +121,9 @@ public final class RNIDOperations {
 
     // MARK: - -X / --export-prv
 
-    /// Python: `export_prv_identity` (rnid.py:1021-1027). Prints the private key with no
+    /// Python: `export_prv_identity` (rnid.py:1021-1027).
+    ///
+    /// Prints the private key with no
     /// confirmation prompt, and does **not** require `-P`.
     @discardableResult
     public func exportPrivateIdentity() -> RNIDApp.Result {

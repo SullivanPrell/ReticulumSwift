@@ -16,13 +16,17 @@ import Foundation
 /// `stderr` and `process.returncode` (rnx.py:178-241).
 public struct RNXExecution: Equatable {
 
-    /// Whether `subprocess.Popen` succeeded. Python sets `result[0] = True` immediately
+    /// Whether `subprocess.Popen` succeeded.
+    ///
+    /// Python sets `result[0] = True` immediately
     /// after the constructor returns and `False` (returning at once) if it raised—command
     /// not found, permission denied, or an **empty argv** (`Popen([])` →
     /// `IndexError`), which is what an empty interactive line produces.
     public var spawned: Bool
 
-    /// `process.returncode`. After `terminate()` + `wait()` this is a negative signal
+    /// `process.
+    ///
+    /// returncode`. After `terminate()` + `wait()` this is a negative signal
     /// number on Unix (-15 for SIGTERM); Python passes it straight through.
     public var returnCode: Int?
 
@@ -33,7 +37,9 @@ public struct RNXExecution: Equatable {
     /// Captured stderr; same nil semantics as ``stdout``.
     public var stderr: Data?
 
-    /// Whether the deadline fired and the child was killed. Python has no such flag—it
+    /// Whether the deadline fired and the child was killed.
+    ///
+    /// Python has no such flag—it
     /// re-derives the condition from the wall clock at rnx.py:218, and its `timed_out`
     /// local is dead code (rnx.py:188, 243). Carrying it explicitly makes the
     /// concluded-timestamp rule testable without a clock.

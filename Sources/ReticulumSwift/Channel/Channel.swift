@@ -35,7 +35,9 @@ public enum ChannelError: Error, Equatable {
 
 // MARK: - MessageBase
 
-/// Base for all Channel messages. Subclasses must override `typeID` with a
+/// Base for all Channel messages.
+///
+/// Subclasses must override `typeID` with a
 /// non-zero value (< 0xF000 for user types). Values ≥ 0xF000 are system-reserved.
 open class MessageBase {
     public required init() {}
@@ -64,7 +66,9 @@ public final class ChannelPacketHandle {
     /// Written from whichever thread the outlet confirms delivery on (a link
     /// proof callback, a timeout work item) and read from another—`Channel`
     /// polls it via `ChannelOutlet.getPacketState`, and `Link` filters its
-    /// proof waiters on it. The writes below were already under `lock`, but
+    /// proof waiters on it.
+    ///
+    /// The writes below were already under `lock`, but
     /// while this was a stored property every *read* still raced them.
     ///
     /// `lock` is a plain `NSLock` and is therefore NOT recursive: the mutators
@@ -182,7 +186,9 @@ final class Envelope {
         return out
     }
 
-    /// Decode from wire bytes. Populates `sequence` and `message`.
+    /// Decode from wire bytes.
+    ///
+    /// Populates `sequence` and `message`.
     func unpack(messageFactories: [UInt16: () -> MessageBase]) throws -> MessageBase {
         guard let raw, raw.count >= 6 else { throw ChannelError.invalidMsgType }
         let msgtype = UInt16(raw[0]) << 8 | UInt16(raw[1])
@@ -211,48 +217,81 @@ public final class Channel {
     // its per-instance counterpart differ only in case (`WINDOW` / `window`) and that
     // distinction does not survive the move to lowerCamelCase.
 
-    /// Initial send window. Python: `Channel.WINDOW`.
+    /// Initial send window.
+    ///
+    /// Python: `Channel.WINDOW`.
     public static let defaultWindow:            Int          = 2
-    /// Initial lower bound on the send window. Python: `Channel.WINDOW_MIN`.
+    /// Initial lower bound on the send window.
+    ///
+    /// Python: `Channel.WINDOW_MIN`.
     public static let defaultWindowMin:         Int          = 2
-    /// Window floor once the link is classed slow. Python: `Channel.WINDOW_MIN_LIMIT_SLOW`.
+    /// Window floor once the link is classed slow.
+    ///
+    /// Python: `Channel.WINDOW_MIN_LIMIT_SLOW`.
     public static let windowMinLimitSlow:       Int          = 2
-    /// Window floor once the link is classed medium. Python: `Channel.WINDOW_MIN_LIMIT_MEDIUM`.
+    /// Window floor once the link is classed medium.
+    ///
+    /// Python: `Channel.WINDOW_MIN_LIMIT_MEDIUM`.
     public static let windowMinLimitMedium:     Int          = 5
-    /// Window floor once the link is classed fast. Python: `Channel.WINDOW_MIN_LIMIT_FAST`.
+    /// Window floor once the link is classed fast.
+    ///
+    /// Python: `Channel.WINDOW_MIN_LIMIT_FAST`.
     public static let windowMinLimitFast:       Int          = 16
-    /// Window ceiling for a slow link. Python: `Channel.WINDOW_MAX_SLOW`.
+    /// Window ceiling for a slow link.
+    ///
+    /// Python: `Channel.WINDOW_MAX_SLOW`.
     public static let windowMaxSlow:            Int          = 5
-    /// Window ceiling for a medium link. Python: `Channel.WINDOW_MAX_MEDIUM`.
+    /// Window ceiling for a medium link.
+    ///
+    /// Python: `Channel.WINDOW_MAX_MEDIUM`.
     public static let windowMaxMedium:          Int          = 12
-    /// Window ceiling for a fast link. Python: `Channel.WINDOW_MAX_FAST`.
+    /// Window ceiling for a fast link.
+    ///
+    /// Python: `Channel.WINDOW_MAX_FAST`.
     public static let windowMaxFast:            Int          = 48
     /// Ceiling over every rate class, and the bound the RX stale-sequence gate uses.
+    ///
     /// Python: `Channel.WINDOW_MAX`.
     public static let windowMaxLimit:           Int          = windowMaxFast
     /// Consecutive rounds at a rate before the window is widened to that rate's ceiling.
+    ///
     /// Python: `Channel.FAST_RATE_THRESHOLD`.
     public static let fastRateThreshold:        Int          = 10
-    /// RTT at or below which a link is classed fast. Python: `Channel.RTT_FAST`.
+    /// RTT at or below which a link is classed fast.
+    ///
+    /// Python: `Channel.RTT_FAST`.
     public static let rttFast:                  TimeInterval = 0.18
-    /// RTT at or below which a link is classed medium. Python: `Channel.RTT_MEDIUM`.
+    /// RTT at or below which a link is classed medium.
+    ///
+    /// Python: `Channel.RTT_MEDIUM`.
     public static let rttMedium:                TimeInterval = 0.75
-    /// RTT above which a link starts with a window of 1. Python: `Channel.RTT_SLOW`.
+    /// RTT above which a link starts with a window of 1.
+    ///
+    /// Python: `Channel.RTT_SLOW`.
     public static let rttSlow:                  TimeInterval = 1.45
-    /// Initial slack between the window and its ceiling. Python: `Channel.WINDOW_FLEXIBILITY`.
+    /// Initial slack between the window and its ceiling.
+    ///
+    /// Python: `Channel.WINDOW_FLEXIBILITY`.
     public static let defaultWindowFlexibility: Int          = 4
-    /// Highest representable sequence number. Python: `Channel.SEQ_MAX`.
+    /// Highest representable sequence number.
+    ///
+    /// Python: `Channel.SEQ_MAX`.
     public static let seqMax:                   UInt32       = 0xFFFF
-    /// Modulus the sequence counter wraps on. Python: `Channel.SEQ_MODULUS`.
+    /// Modulus the sequence counter wraps on.
+    ///
+    /// Python: `Channel.SEQ_MODULUS`.
     public static let seqModulus:               UInt32       = 0x10000
     /// Bytes consumed by the channel envelope header (msgtype + sequence + length).
+    ///
     /// Python: `Channel.MDU_OVERHEAD = 4 + 2` (actually 6).
     public static let mduOverhead:              Int          = 6
 
     private let outlet: ChannelOutlet
     private let lock     = NSLock()
     /// Serialises the sequence-reservation + outlet.send() pair so that _tx_ring
-    /// never holds an envelope without a valid packet handle. Mirrors Python's
+    /// never holds an envelope without a valid packet handle.
+    ///
+    /// Mirrors Python's
     /// Channel._send_lock added in the 1.3.0 race-condition fix.
     private let sendLock = NSLock()
 
@@ -492,7 +531,9 @@ public final class Channel {
     // MARK: - Private helpers
 
     /// Whether an inbound envelope's sequence falls outside the acceptable RX
-    /// window and must be dropped. Faithful port of the gate at the top of
+    /// window and must be dropped.
+    ///
+    /// Faithful port of the gate at the top of
     /// Python's `Channel._receive` (RNS/Channel.py:357-369).
     ///
     /// Two cases:
@@ -531,6 +572,7 @@ public final class Channel {
     }
 
     /// Insert `envelope` into `ring` in ascending sequence order.
+    ///
     /// Returns false if a duplicate sequence is already present.
     @discardableResult
     private func emplaceEnvelope(_ envelope: Envelope, in ring: inout [Envelope]) -> Bool {
@@ -549,7 +591,9 @@ public final class Channel {
     }
 
     /// Mirrors Python's `(next_rx_sequence - envelope.sequence) > SEQ_MAX//2`,
-    /// which is computed in *signed* integer arithmetic. Returns true when
+    /// which is computed in *signed* integer arithmetic.
+    ///
+    /// Returns true when
     /// `seq` is wrapped-around-future relative to `reference`.
     private func isWraparound(_ seq: UInt16, reference: UInt16) -> Bool {
         let diff = Int(reference) - Int(seq)
@@ -668,7 +712,9 @@ public final class Channel {
 
 // MARK: - LinkChannelOutlet
 
-/// Adapts a Link into a ChannelOutlet. Wire-compatible with Python's
+/// Adapts a Link into a ChannelOutlet.
+///
+/// Wire-compatible with Python's
 /// RNS.Channel.LinkChannelOutlet.
 public final class LinkChannelOutlet: ChannelOutlet {
     // Weak: the Link strongly owns its Channel, which strongly owns this outlet.

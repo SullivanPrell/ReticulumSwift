@@ -36,6 +36,7 @@ extension Transport {
     // MARK: - Write
 
     /// Write `packet` to the announce cache keyed by its full SHA-256 packet hash.
+    ///
     /// Creates the `announces/` subdirectory if needed.
     /// Mirrors Python's `Transport.cache(packet, force_cache=True, packet_type="announce")`.
     public func cacheAnnounce(_ packet: Packet, receivingInterfaceName: String? = nil) throws {
@@ -59,6 +60,7 @@ extension Transport {
     // MARK: - Read
 
     /// Load a cached announce packet by its full packet hash.
+    ///
     /// Returns nil if not found or if the file is corrupt.
     /// Mirrors Python's `Transport.get_cached_packet(hash, packet_type="announce")`.
     public func getCachedAnnounce(hash: Data) throws -> Packet? {
@@ -87,6 +89,7 @@ extension Transport {
     // MARK: - Clean
 
     /// Remove cached announces that are no longer referenced by any active path or tunnel.
+    ///
     /// Mirrors Python's `Transport.clean_announce_cache()`.
     public func cleanAnnounceCache() throws {
         guard let dir = announcesDirectory else { return }

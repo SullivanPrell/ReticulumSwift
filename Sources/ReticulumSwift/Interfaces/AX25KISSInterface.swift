@@ -13,6 +13,7 @@ import Foundation
 // MARK: - AX25
 
 /// AX.25 frame constants.
+///
 /// Mirrors the `AX25` class in Python `AX25KISSInterface.py`.
 public struct AX25 {
     /// No-layer-3 protocol identifier. Python: `PID_NOLAYER3 = 0xF0`
@@ -71,7 +72,9 @@ public enum AX25KISSInterfaceError: Error {
 /// Wire-compatible with Python `RNS/Interfaces/AX25KISSInterface.py`.
 public final class AX25KISSInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -102,7 +105,9 @@ public final class AX25KISSInterface: Interface {
     }
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
     public var txBytes:   Int { counters.txBytes }
@@ -220,7 +225,9 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Interface lifecycle
 
-    /// Seconds between redial attempts after device loss. Python's reconnect loop hardcodes
+    /// Seconds between redial attempts after device loss.
+    ///
+    /// Python's reconnect loop hardcodes
     /// `time.sleep(5)` (`AX25KISSInterface.py:386`).
     public var reconnectWait: TimeInterval = 5.0
     private let reconnector = TransportReconnector()
@@ -292,7 +299,9 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Outgoing
 
-    /// Send a Reticulum packet. Called by Transport.
+    /// Send a Reticulum packet.
+    ///
+    /// Called by Transport.
     ///
     /// Applies the IFAC mask (when an IFAC key is configured) to the packet
     /// before the AX.25 header is prepended and the frame is KISS-escaped,

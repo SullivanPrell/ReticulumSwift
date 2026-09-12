@@ -19,7 +19,9 @@ final class RNStatusStatsTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// One interface map. Only the keys a test cares about are supplied, which is exactly
+    /// One interface map.
+    ///
+    /// Only the keys a test cares about are supplied, which is exactly
     /// how Python's builder behaves—most fields are `hasattr`-gated.
     static func interface(_ pairs: [(String, MsgPack.Value)]) -> MsgPack.Value {
         .map(pairs.map { (.string($0.0), $0.1) })

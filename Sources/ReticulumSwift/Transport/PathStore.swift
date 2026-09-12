@@ -35,13 +35,17 @@ public struct PathStore {
     /// Field order is load-bearing: Python indexes positionally (`Transport.py:317-327`), so a
     /// field in the wrong slot is a silently wrong path rather than a parse failure.
     public struct Entry {
-        /// 0—the 16-byte destination hash. Python drops any entry of a different length
+        /// 0—the 16-byte destination hash.
+        ///
+        /// Python drops any entry of a different length
         /// (`Transport.py:319`).
         public var destinationHash: Data
         /// 1—`IDX_PT_TIMESTAMP`, when the path was last heard, as unix seconds.
         public var timestamp: TimeInterval
         /// 2—`received_from`: the next hop's transport ID, inserted verbatim as the HEADER_2
-        /// transport field when forwarding (`Transport.py:1158`). The reference falls back to the
+        /// transport field when forwarding (`Transport.py:1158`).
+        ///
+        /// The reference falls back to the
         /// destination hash for an announce that arrived without one (`:1798`), and this mirrors
         /// that, so `nil` in memory and the fallback on disk stay the same value.
         public var receivedFrom: Data
@@ -49,7 +53,9 @@ public struct PathStore {
         public var hops: UInt8
         /// 4—wall-clock expiry, unix seconds.
         public var expires: TimeInterval
-        /// 5—recently heard announce random blobs, newest last. Replay protection and the
+        /// 5—recently heard announce random blobs, newest last.
+        ///
+        /// Replay protection and the
         /// path-freshness timebase both come from these, so they have to survive a restart.
         public var randomBlobs: [Data]
         /// 6—`interface.get_hash()` (`Transport.py:3388`), resolved back through
@@ -91,7 +97,9 @@ public struct PathStore {
 
         /// The reference serialises a destination-table entry and a tunnel path with the *same*
         /// eight fields in the same order (`Transport.py:3390-3397` and `:3470-3479`), and reads
-        /// them back with the same positional indexing (`:317-327` and `:379-386`). One codec, so
+        /// them back with the same positional indexing (`:317-327` and `:379-386`).
+        ///
+        /// One codec, so
         /// the two files can't drift into disagreeing about a field's meaning.
         public var msgpackValue: MsgPack.Value {
             .array([
@@ -106,7 +114,9 @@ public struct PathStore {
             ])
         }
 
-        /// Returns `nil` for anything that isn't the reference's 8-element entry. The caller
+        /// Returns `nil` for anything that isn't the reference's 8-element entry.
+        ///
+        /// The caller
         /// skips it rather than aborting the file, as the reference's per-entry `try` does.
         public static func decode(_ value: MsgPack.Value) -> Entry? {
             guard case .array(let f) = value, f.count == 8,

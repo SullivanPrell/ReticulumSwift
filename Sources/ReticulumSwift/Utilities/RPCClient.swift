@@ -39,6 +39,7 @@ public final class RPCClient {
     // MARK: - Configuration
 
     /// Default instance-control port.
+    ///
     /// Python: `Reticulum.local_control_port = 37429`.
     public static let defaultControlPort: UInt16 = 37429
 
@@ -154,7 +155,9 @@ public final class RPCClient {
     /// Python: `get_link_count()`.
     public func linkCount() throws -> Int? { try get("link_count").asInt }
 
-    /// Python: `get_active_link_count()`. A daemon predating the verb answers nil, and every
+    /// Python: `get_active_link_count()`.
+    ///
+    /// A daemon predating the verb answers nil, and every
     /// caller treats that the same as "no suffix to render".
     public func activeLinkCount() throws -> Int? { try get("active_link_count").asInt }
 
@@ -339,6 +342,7 @@ public final class RPCClient {
     }
 
     /// Python `Connection._recv_bytes`: read the 4-byte header, then that many bytes.
+    ///
     /// A header of `-1` introduces an 8-byte length for payloads above 2 GiB.
     private func receiveFrame(_ fd: Int32) throws -> Data {
         let header = try readExactly(fd, 4)

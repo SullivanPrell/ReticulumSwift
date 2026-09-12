@@ -12,10 +12,13 @@ import XCTest
 @testable import ReticulumSwift
 
 /// The `rnx <destination> <command>` half, plus an in-process client↔listener round trip.
+///
 /// Python reference: RNS/Utilities/rnx.py:326-397.
 final class RNXClientTests: XCTestCase {
 
-    /// In-memory loopback interface. Every existing test file declares its own—there is
+    /// In-memory loopback interface.
+    ///
+    /// Every existing test file declares its own—there is
     /// no shared helper—so this follows the same idiom under an rnx-specific name.
     final class RNXLoopbackInterface: Interface {
         var name: String

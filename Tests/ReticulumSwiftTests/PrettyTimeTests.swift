@@ -14,7 +14,9 @@ import XCTest
 /// `prettytime` pins match Python reference output. `prettyshorttime` pins marked
 /// "DIVERGES from Python 1.4.2" pin a **deliberate divergence**: Python keeps microseconds as a
 /// float (`RNS/__init__.py:296`, `:305`) and emits `.0`-suffixed and artifact strings; this port
-/// pre-rounds to integer microseconds (see the doc comment on `prettyshorttime`). Each divergent
+/// pre-rounds to integer microseconds (see the doc comment on `prettyshorttime`).
+///
+/// Each divergent
 /// pin records the string live Python 1.4.2 produces for the same input, so the next parity
 /// sweep doesn't re-derive the difference. This header previously claimed the whole file
 /// matched Python reference output, which five of these pins never did.

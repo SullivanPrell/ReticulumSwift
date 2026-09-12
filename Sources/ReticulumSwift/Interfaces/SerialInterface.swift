@@ -29,7 +29,9 @@ public enum SerialInterfaceError: Error {
 /// the interface can be unit-tested without physical hardware.
 public final class SerialInterface: Interface {
     /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables). One stored property satisfies the whole settable set;
+    /// control, the `ic_*` tunables).
+    ///
+    /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
 
@@ -60,7 +62,9 @@ public final class SerialInterface: Interface {
     }
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread. See `InterfaceCounters`.
+    /// and status reporting read from another thread.
+    ///
+    /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
     public var rxBytes:   Int { counters.rxBytes }
     public var txBytes:   Int { counters.txBytes }
@@ -84,16 +88,24 @@ public final class SerialInterface: Interface {
     /// Device path (for example, `/dev/cu.usbserial-0001`).
     public let port: String
 
-    /// Baud rate. Python default: `9600`.
+    /// Baud rate.
+    ///
+    /// Python default: `9600`.
     public let speed: Int
 
-    /// Data bits per character. Python default: `8`.
+    /// Data bits per character.
+    ///
+    /// Python default: `8`.
     public let dataBits: Int
 
-    /// Parity mode. Python default: `PARITY_NONE`.
+    /// Parity mode.
+    ///
+    /// Python default: `PARITY_NONE`.
     public let parity: SerialParity
 
-    /// Stop bits. Python default: `1`.
+    /// Stop bits.
+    ///
+    /// Python default: `1`.
     public let stopBits: Int
 
     // MARK: - Private
@@ -131,6 +143,7 @@ public final class SerialInterface: Interface {
     }
 
     /// Convenience init that parses parity from an INI config string ("N", "E", "O").
+    ///
     /// Disambiguated from the designated init via the `parityString:` label.
     public convenience init(name:         String,
                             port:         String,
@@ -147,7 +160,9 @@ public final class SerialInterface: Interface {
 
     // MARK: - Interface lifecycle
 
-    /// Seconds between redial attempts after device loss. Python's reconnect loop hardcodes
+    /// Seconds between redial attempts after device loss.
+    ///
+    /// Python's reconnect loop hardcodes
     /// `time.sleep(5)` (`SerialInterface.py:210`).
     public var reconnectWait: TimeInterval = 5.0
     private let reconnector = TransportReconnector()
@@ -187,7 +202,9 @@ public final class SerialInterface: Interface {
 
     // MARK: - Outgoing
 
-    /// Send a Reticulum packet. Called by Transport.
+    /// Send a Reticulum packet.
+    ///
+    /// Called by Transport.
     ///
     /// Applies the IFAC mask (when an IFAC key is configured) before framing,
     /// mirroring the central IFAC application in Python `Transport.transmit`.

@@ -15,12 +15,16 @@ public enum RNSUtilities {
 
     // MARK: - Hex representation
 
-    /// Wrapped hex: `"<deadbeef>"`. Mirrors Python `RNS.prettyhexrep(data)`.
+    /// Wrapped hex: `"<deadbeef>"`.
+    ///
+    /// Mirrors Python `RNS.prettyhexrep(data)`.
     public static func prettyhexrep(_ data: Data) -> String {
         "<" + data.map { String(format: "%02x", $0) }.joined() + ">"
     }
 
-    /// Colon-delimited (or plain) hex string. Mirrors Python `RNS.hexrep(data, delimit=True)`.
+    /// Colon-delimited (or plain) hex string.
+    ///
+    /// Mirrors Python `RNS.hexrep(data, delimit=True)`.
     public static func hexrep(_ data: Data, delimit: Bool = true) -> String {
         let hex = data.map { String(format: "%02x", $0) }
         return delimit ? hex.joined(separator: ":") : hex.joined()
@@ -28,7 +32,9 @@ public enum RNSUtilities {
 
     // MARK: - Size / speed formatting (1000-based SI, matching Python)
 
-    /// Human-readable SI size. Mirrors Python `RNS.prettysize(num, suffix='B')`.
+    /// Human-readable SI size.
+    ///
+    /// Mirrors Python `RNS.prettysize(num, suffix='B')`.
     /// Uses 1000 as divisor (SI prefix, matching Python). Base unit uses no decimal ("500 B");
     /// prefixed units use 2 decimals ("1.00 KB").
     /// When suffix == "b", multiplies by 8 first (converts bytes to bits).
@@ -54,7 +60,9 @@ public enum RNSUtilities {
         prettysize(Double(bytes), suffix: suffix)
     }
 
-    /// Human-readable data rate. Mirrors Python `RNS.prettyspeed(num, suffix='b')`.
+    /// Human-readable data rate.
+    ///
+    /// Mirrors Python `RNS.prettyspeed(num, suffix='b')`.
     /// Input is bits per second.
     public static func prettyspeed(_ bps: Double) -> String {
         prettysize(bps / 8, suffix: "b") + "ps"
@@ -62,7 +70,9 @@ public enum RNSUtilities {
 
     // MARK: - Time formatting
 
-    /// Human-readable duration. Mirrors Python `RNS.prettytime(time, verbose=False, compact=False)`.
+    /// Human-readable duration.
+    ///
+    /// Mirrors Python `RNS.prettytime(time, verbose=False, compact=False)`.
     ///
     /// - `verbose`: use "1 second" instead of "1s", pluralise.
     /// - `compact`: limit to 2 components; truncate seconds to integer.
@@ -170,7 +180,9 @@ public enum RNSUtilities {
 
     // MARK: - Frequency / distance formatting
 
-    /// Human-readable frequency. Mirrors Python `RNS.prettyfrequency(hz, suffix="Hz", d=2, lpf=False)`.
+    /// Human-readable frequency.
+    ///
+    /// Mirrors Python `RNS.prettyfrequency(hz, suffix="Hz", d=2, lpf=False)`.
     ///
     /// - `lpf`: if true, start at Hz instead of µHz.
     public static func prettyfrequency(_ hz: Double, suffix: String = "Hz", d: Int = 2, lpf: Bool = false) -> String {
@@ -188,7 +200,9 @@ public enum RNSUtilities {
         return String(format: "%.2f Y%@", num, suffix)
     }
 
-    /// Human-readable distance. Mirrors Python `RNS.prettydistance(m, suffix="m")`.
+    /// Human-readable distance.
+    ///
+    /// Mirrors Python `RNS.prettydistance(m, suffix="m")`.
     /// Input in meters; output in µm/mm/cm/m/Km.
     public static func prettydistance(_ meters: Double, suffix: String = "m") -> String {
         var num = meters * 1_000_000 // start in µm
@@ -206,7 +220,9 @@ public enum RNSUtilities {
 
     // MARK: - Base-256 compact representation
 
-    /// 256-character alphabet for compact hash display. Mirrors Python `RNS.b256`.
+    /// 256-character alphabet for compact hash display.
+    ///
+    /// Mirrors Python `RNS.b256`.
     public static let b256Alphabet: [String] = [
         // 0x0 Latin & numerals
         "a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p",
@@ -242,24 +258,30 @@ public enum RNSUtilities {
         "𐌳","𐌸","𐌾","𐐀","𐐁","𐐂","𐐆","𐐇","𐐈","𐐉","𐐊","𐐋","𐐌","𐐍","𐐎","𐐏",
     ]
 
-    /// Map a single byte to its b256 character. Mirrors Python `RNS.b256_rep(input_byte)`.
+    /// Map a single byte to its b256 character.
+    ///
+    /// Mirrors Python `RNS.b256_rep(input_byte)`.
     public static func b256rep(_ byte: UInt8) -> String {
         b256Alphabet[Int(byte)]
     }
 
-    /// Compact hash display using the b256 alphabet. Mirrors Python `RNS.prettyb256rep(data)`.
+    /// Compact hash display using the b256 alphabet.
+    ///
+    /// Mirrors Python `RNS.prettyb256rep(data)`.
     /// Each byte maps to one character → 16-byte hash becomes a 16-char string wrapped in `<>`.
     public static func prettyb256rep(_ data: Data) -> String {
         "<" + data.map { b256rep($0) }.joined() + ">"
     }
 
     /// Encode `data` as a b256 string (no delimiter, no wrapping).
+    ///
     /// Mirrors Python `RNS.b256rep(data)` which joins all bytes into a single string.
     public static func b256rep(_ data: Data) -> String {
         data.map { b256rep($0) }.joined()
     }
 
     /// Decode a single b256 character back to its byte value.
+    ///
     /// Returns `nil` if `ch` isn't in the alphabet.
     /// Mirrors Python `RNS.b256_to_byte(point)`.
     public static func b256ToByte(_ ch: Character) -> UInt8? {
@@ -269,6 +291,7 @@ public enum RNSUtilities {
     }
 
     /// Decode a b256-encoded string to `Data`.
+    ///
     /// Returns `nil` if any character isn't in the alphabet.
     /// Mirrors Python `RNS.b256_to_bytes(b256rep)`.
     public static func b256ToBytes(_ s: String) -> Data? {
@@ -284,6 +307,7 @@ public enum RNSUtilities {
     // MARK: - Timestamp formatting
 
     /// Format a Unix timestamp as `"yyyy-MM-dd HH:mm:ss"`.
+    ///
     /// Mirrors Python `RNS.timestamp_str(time_s)` using `logtimefmt = "%Y-%m-%d %H:%M:%S"`.
     public static func timestampStr(_ timeS: TimeInterval) -> String {
         let formatter = DateFormatter()
@@ -292,6 +316,7 @@ public enum RNSUtilities {
     }
 
     /// Format *now* as `"HH:mm:ss.SSS"` (millisecond precision).
+    ///
     /// Mirrors Python `RNS.precise_timestamp_str()` using `logtimefmt_p = "%H:%M:%S.%f"` (trimmed to 3 ms digits).
     public static func preciseTimestampStr() -> String {
         let formatter = DateFormatter()
