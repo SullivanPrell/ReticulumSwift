@@ -4,11 +4,11 @@ import XCTest
 /// Records what it was asked to run and hands back a canned outcome.
 final class MockRNXCommandExecutor: RNXCommandExecutor {
     private let lock = NSLock()
-    private var _calls: [(command: String, stdin: Data?, timeout: TimeInterval?)] = []
+    private var unsafeCalls: [(command: String, stdin: Data?, timeout: TimeInterval?)] = []
     var calls: [(command: String, stdin: Data?, timeout: TimeInterval?)] {
-        lock.lock(); defer { lock.unlock() }; return _calls
+        lock.lock(); defer { lock.unlock() }; return unsafeCalls
     }
-    var callCount: Int { lock.lock(); defer { lock.unlock() }; return _calls.count }
+    var callCount: Int { lock.lock(); defer { lock.unlock() }; return unsafeCalls.count }
 
     var result: RNXExecution = RNXExecution(spawned: true, returnCode: 0,
                                             stdout: Data(), stderr: Data())
@@ -16,7 +16,7 @@ final class MockRNXCommandExecutor: RNXCommandExecutor {
     var gate: DispatchSemaphore?
 
     func execute(command: String, stdin: Data?, timeout: TimeInterval?) -> RNXExecution {
-        lock.lock(); _calls.append((command, stdin, timeout)); lock.unlock()
+        lock.lock(); unsafeCalls.append((command, stdin, timeout)); lock.unlock()
         gate?.wait()
         return result
     }

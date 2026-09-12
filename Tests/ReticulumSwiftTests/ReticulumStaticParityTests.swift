@@ -16,11 +16,11 @@ final class ReticulumStaticParityTests: XCTestCase {
     }
 
     func testShouldAutoconnectTrueWhenMaxIsPositive() {
-        let previous = Reticulum.maxAutoconnectedInterfaces_
-        Reticulum.maxAutoconnectedInterfaces_ = 3
+        let previous = Reticulum.storedMaxAutoconnectedInterfaces
+        Reticulum.storedMaxAutoconnectedInterfaces = 3
         XCTAssertTrue(Reticulum.shouldAutoconnectDiscoveredInterfaces())
         XCTAssertEqual(Reticulum.maxAutoconnectedInterfaces(), 3)
-        Reticulum.maxAutoconnectedInterfaces_ = previous
+        Reticulum.storedMaxAutoconnectedInterfaces = previous
     }
 
     // MARK: - remoteManagementEnabled / probeDestinationEnabled / linkMtuDiscovery

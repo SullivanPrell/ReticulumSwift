@@ -299,7 +299,7 @@ public final class WeaveDevice {
 
     // MARK: - Endpoint registry
 
-    /// Serializes every access to `_endpoints`.
+    /// Serializes every access to `unsafeEndpoints`.
     ///
     /// The registry is mutated from the WDCL receive thread (`endpointAlive` /
     /// `endpointVia`, reached via `incomingFrame`) and both read and pruned
@@ -307,13 +307,13 @@ public final class WeaveDevice {
     /// `pruneEndpoints`). Those run on *different* threads—the Python
     /// reference gets away with it under the GIL, but Swift has none, so an
     /// unsynchronized `Dictionary` here races and can crash ("Fatal error:
-    /// Duplicate keys" / heap corruption). Every touch of `_endpoints` funnels
+    /// Duplicate keys" / heap corruption). Every touch of `unsafeEndpoints` funnels
     /// through this lock.
     private let endpointsLock = NSLock()
 
     /// Backing store for the endpoint registry. Never touch directly—go
     /// through `endpoints` (reads) or the locked mutators below (writes).
-    private var _endpoints: [Data: WeaveEndpoint] = [:]
+    private var unsafeEndpoints: [Data: WeaveEndpoint] = [:]
 
     /// Snapshot of the endpoint registry, copied under `endpointsLock`.
     ///
@@ -323,7 +323,7 @@ public final class WeaveDevice {
     /// snapshot is race-free even while the receive/jobs threads keep working.
     public var endpoints: [Data: WeaveEndpoint] {
         endpointsLock.lock(); defer { endpointsLock.unlock() }
-        return _endpoints
+        return unsafeEndpoints
     }
 
     // MARK: - Stats
@@ -405,12 +405,12 @@ public final class WeaveDevice {
     /// the lock is released to avoid holding it across foreign code.
     public func endpointAlive(endpointID: Data) {
         endpointsLock.lock()
-        if let existing = _endpoints[endpointID] {
+        if let existing = unsafeEndpoints[endpointID] {
             let refreshed = WeaveEndpoint(endpointAddr: endpointID)
             refreshed.viaSwitchID = existing.viaSwitchID   // carry the known route forward
-            _endpoints[endpointID] = refreshed
+            unsafeEndpoints[endpointID] = refreshed
         } else {
-            _endpoints[endpointID] = WeaveEndpoint(endpointAddr: endpointID)
+            unsafeEndpoints[endpointID] = WeaveEndpoint(endpointAddr: endpointID)
         }
         endpointsLock.unlock()
         rnsInterface?.addPeer(endpointAddr: endpointID)
@@ -423,11 +423,11 @@ public final class WeaveDevice {
     /// in place, keeping previously handed-out snapshots immutable.
     public func endpointVia(endpointID: Data, viaSwitchID: Data) {
         endpointsLock.lock()
-        if let existing = _endpoints[endpointID] {
+        if let existing = unsafeEndpoints[endpointID] {
             let updated = WeaveEndpoint(endpointAddr: endpointID)
             updated.lastSeen    = existing.lastSeen        // preserve liveness timestamp
             updated.viaSwitchID = viaSwitchID
-            _endpoints[endpointID] = updated
+            unsafeEndpoints[endpointID] = updated
         }
         endpointsLock.unlock()
         rnsInterface?.endpointVia(endpointAddr: endpointID, viaSwitchID: viaSwitchID)
@@ -449,10 +449,10 @@ public final class WeaveDevice {
     @discardableResult
     public func pruneEndpoints(olderThan timeout: TimeInterval, now: Date = Date()) -> [Data] {
         endpointsLock.lock(); defer { endpointsLock.unlock() }
-        let expired = _endpoints.compactMap { addr, endpoint in
+        let expired = unsafeEndpoints.compactMap { addr, endpoint in
             now.timeIntervalSince(endpoint.lastSeen) > timeout ? addr : nil
         }
-        for addr in expired { _endpoints.removeValue(forKey: addr) }
+        for addr in expired { unsafeEndpoints.removeValue(forKey: addr) }
         return expired
     }
 

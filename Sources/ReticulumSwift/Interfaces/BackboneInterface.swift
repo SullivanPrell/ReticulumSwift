@@ -121,16 +121,16 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// signals collapse to a single reconnect loop. Guarded by `stateLock`.
     private var reconnectPending: Bool = false
 
-    /// Guards `_isStopped`, `connection`, `reconnectAttempts`, and `reconnectPending`, which are
+    /// Guards `unsafeIsStopped`, `connection`, `reconnectAttempts`, and `reconnectPending`, which are
     /// touched from the caller thread (start/stop/send) and the interface's
     /// serial queue (openConnection/stateUpdate/scheduleReconnect/receive). See
     /// the LocalInterface note: without it a queued reconnect can assign
     /// `connection` right after stop() cleared it, leaking a live socket.
     private let stateLock = NSLock()
-    private var _isStopped: Bool = false
+    private var unsafeIsStopped: Bool = false
     private var isStopped: Bool {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _isStopped }
-        set { stateLock.lock(); _isStopped = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeIsStopped }
+        set { stateLock.lock(); unsafeIsStopped = newValue; stateLock.unlock() }
     }
 
     // MARK: - Init
@@ -154,7 +154,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     public func start() throws {
         stateLock.lock()
-        _isStopped = false
+        unsafeIsStopped = false
         reconnectAttempts = 0
         stateLock.unlock()
         openConnection()
@@ -162,7 +162,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     public func stop() {
         stateLock.lock()
-        _isStopped = true
+        unsafeIsStopped = true
         let conn = connection; connection = nil
         stateLock.unlock()
         isOnline = false
@@ -214,7 +214,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
         let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
         // Re-check stopped and publish the connection atomically (see LocalInterface).
         stateLock.lock()
-        guard !_isStopped else { stateLock.unlock(); return }
+        guard !unsafeIsStopped else { stateLock.unlock(); return }
         connection = conn
         stateLock.unlock()
 
@@ -251,7 +251,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
         // A single disconnect can trigger both the .failed state handler and the
         // receive-error callback; `reconnectPending` collapses them so only ONE
         // reconnect loop is scheduled (was: two concurrent overlapping loops).
-        if _isStopped || reconnectPending { stateLock.unlock(); return }
+        if unsafeIsStopped || reconnectPending { stateLock.unlock(); return }
         let attempts = reconnectAttempts
         if let maxTries = maxReconnectTries, attempts >= maxTries {
             stateLock.unlock()
@@ -270,7 +270,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
             guard let self else { return }
             self.stateLock.lock()
             self.reconnectPending = false
-            let stopped = self._isStopped
+            let stopped = self.unsafeIsStopped
             self.stateLock.unlock()
             guard !stopped else { return }
             self.openConnection()

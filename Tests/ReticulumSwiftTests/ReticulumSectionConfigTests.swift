@@ -21,46 +21,46 @@ final class ReticulumSectionConfigTests: XCTestCase {
     private struct Snapshot {
         let useImplicitProof = Reticulum.useImplicitProof
         let linkMtuDiscovery = Reticulum.linkMtuDiscoveryEnabled
-        let rpcKey = Reticulum.rpcKey_
-        let instanceName = Reticulum.instanceName_
-        let sharedInstanceType = Reticulum.sharedInstanceType_
-        let forceBitrate = Reticulum.forceSharedInstanceBitrate_
-        let arTarget = Reticulum.defaultArTarget_
-        let arPenalty = Reticulum.defaultArPenalty_
-        let arGrace = Reticulum.defaultArGrace_
-        let egressControl = Reticulum.defaultEgressControl_
-        let ecPrFreq = Reticulum.defaultEcPrFreq_
-        let icMaxHeld = Reticulum.defaultIcMaxHeldAnnounces_
-        let icBurstHold = Reticulum.defaultIcBurstHold_
-        let icBurstFreqNew = Reticulum.defaultIcBurstFreqNew_
-        let icBurstFreq = Reticulum.defaultIcBurstFreq_
-        let icPrBurstFreqNew = Reticulum.defaultIcPrBurstFreqNew_
-        let icPrBurstFreq = Reticulum.defaultIcPrBurstFreq_
-        let icNewTime = Reticulum.defaultIcNewTime_
-        let icBurstPenalty = Reticulum.defaultIcBurstPenalty_
-        let icHeldRelease = Reticulum.defaultIcHeldReleaseInterval_
+        let rpcKey = Reticulum.rpcKey
+        let instanceName = Reticulum.storedInstanceName
+        let sharedInstanceType = Reticulum.sharedInstanceType
+        let forceBitrate = Reticulum.storedForceSharedInstanceBitrate
+        let arTarget = Reticulum.storedDefaultArTarget
+        let arPenalty = Reticulum.storedDefaultArPenalty
+        let arGrace = Reticulum.storedDefaultArGrace
+        let egressControl = Reticulum.storedDefaultEgressControl
+        let ecPrFreq = Reticulum.storedDefaultEcPrFreq
+        let icMaxHeld = Reticulum.storedDefaultIcMaxHeldAnnounces
+        let icBurstHold = Reticulum.storedDefaultIcBurstHold
+        let icBurstFreqNew = Reticulum.storedDefaultIcBurstFreqNew
+        let icBurstFreq = Reticulum.storedDefaultIcBurstFreq
+        let icPrBurstFreqNew = Reticulum.storedDefaultIcPrBurstFreqNew
+        let icPrBurstFreq = Reticulum.storedDefaultIcPrBurstFreq
+        let icNewTime = Reticulum.storedDefaultIcNewTime
+        let icBurstPenalty = Reticulum.storedDefaultIcBurstPenalty
+        let icHeldRelease = Reticulum.storedDefaultIcHeldReleaseInterval
 
         func restore() {
             Reticulum.useImplicitProof = useImplicitProof
             Reticulum.linkMtuDiscoveryEnabled = linkMtuDiscovery
-            Reticulum.rpcKey_ = rpcKey
-            Reticulum.instanceName_ = instanceName
-            Reticulum.sharedInstanceType_ = sharedInstanceType
-            Reticulum.forceSharedInstanceBitrate_ = forceBitrate
-            Reticulum.defaultArTarget_ = arTarget
-            Reticulum.defaultArPenalty_ = arPenalty
-            Reticulum.defaultArGrace_ = arGrace
-            Reticulum.defaultEgressControl_ = egressControl
-            Reticulum.defaultEcPrFreq_ = ecPrFreq
-            Reticulum.defaultIcMaxHeldAnnounces_ = icMaxHeld
-            Reticulum.defaultIcBurstHold_ = icBurstHold
-            Reticulum.defaultIcBurstFreqNew_ = icBurstFreqNew
-            Reticulum.defaultIcBurstFreq_ = icBurstFreq
-            Reticulum.defaultIcPrBurstFreqNew_ = icPrBurstFreqNew
-            Reticulum.defaultIcPrBurstFreq_ = icPrBurstFreq
-            Reticulum.defaultIcNewTime_ = icNewTime
-            Reticulum.defaultIcBurstPenalty_ = icBurstPenalty
-            Reticulum.defaultIcHeldReleaseInterval_ = icHeldRelease
+            Reticulum.rpcKey = rpcKey
+            Reticulum.storedInstanceName = instanceName
+            Reticulum.sharedInstanceType = sharedInstanceType
+            Reticulum.storedForceSharedInstanceBitrate = forceBitrate
+            Reticulum.storedDefaultArTarget = arTarget
+            Reticulum.storedDefaultArPenalty = arPenalty
+            Reticulum.storedDefaultArGrace = arGrace
+            Reticulum.storedDefaultEgressControl = egressControl
+            Reticulum.storedDefaultEcPrFreq = ecPrFreq
+            Reticulum.storedDefaultIcMaxHeldAnnounces = icMaxHeld
+            Reticulum.storedDefaultIcBurstHold = icBurstHold
+            Reticulum.storedDefaultIcBurstFreqNew = icBurstFreqNew
+            Reticulum.storedDefaultIcBurstFreq = icBurstFreq
+            Reticulum.storedDefaultIcPrBurstFreqNew = icPrBurstFreqNew
+            Reticulum.storedDefaultIcPrBurstFreq = icPrBurstFreq
+            Reticulum.storedDefaultIcNewTime = icNewTime
+            Reticulum.storedDefaultIcBurstPenalty = icBurstPenalty
+            Reticulum.storedDefaultIcHeldReleaseInterval = icHeldRelease
         }
     }
 
@@ -136,8 +136,8 @@ final class ReticulumSectionConfigTests: XCTestCase {
         XCTAssertFalse(Reticulum.useImplicitProof)
         XCTAssertFalse(Reticulum.linkMtuDiscoveryEnabled)
         XCTAssertEqual(Reticulum.instanceName(), "from_disk")
-        XCTAssertEqual(Reticulum.sharedInstanceType_, "tcp")
-        XCTAssertEqual(Reticulum.rpcKey_, Data([1, 2, 3, 4, 5, 6, 7, 8]))
+        XCTAssertEqual(Reticulum.sharedInstanceType, "tcp")
+        XCTAssertEqual(Reticulum.rpcKey, Data([1, 2, 3, 4, 5, 6, 7, 8]))
         XCTAssertEqual(Reticulum.defaultIcBurstFreq(), 9.5)
     }
 
@@ -152,16 +152,16 @@ final class ReticulumSectionConfigTests: XCTestCase {
     func testSharedInstanceTypeAcceptsOnlyTheTwoPythonAccepts() {
         // `Reticulum.py:479-484` takes "tcp" and "unix" and ignores anything else.
         apply("shared_instance_type = TCP")
-        XCTAssertEqual(Reticulum.sharedInstanceType_, "tcp", "matched case-insensitively, stored lowered")
+        XCTAssertEqual(Reticulum.sharedInstanceType, "tcp", "matched case-insensitively, stored lowered")
 
-        Reticulum.sharedInstanceType_ = nil
+        Reticulum.sharedInstanceType = nil
         apply("shared_instance_type = smoke_signals")
-        XCTAssertNil(Reticulum.sharedInstanceType_, "an unrecognised value must leave it unset")
+        XCTAssertNil(Reticulum.sharedInstanceType, "an unrecognised value must leave it unset")
     }
 
     func testForceSharedInstanceBitrateIsHonoured() {
         apply("force_shared_instance_bitrate = 1000000")
-        XCTAssertEqual(Reticulum.forceSharedInstanceBitrate_, 1_000_000)
+        XCTAssertEqual(Reticulum.storedForceSharedInstanceBitrate, 1_000_000)
     }
 
     // MARK: - Proof and MTU policy

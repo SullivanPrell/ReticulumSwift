@@ -45,13 +45,13 @@ import Foundation
 /// setter is simply guarded now.
 public final class LockedFlag: @unchecked Sendable {
     private let lock = NSLock()
-    private var _value: Bool
+    private var unsafeValue: Bool
 
-    public init(_ value: Bool) { _value = value }
+    public init(_ value: Bool) { unsafeValue = value }
 
     public var value: Bool {
-        get { lock.lock(); defer { lock.unlock() }; return _value }
-        set { lock.lock(); _value = newValue; lock.unlock() }
+        get { lock.lock(); defer { lock.unlock() }; return unsafeValue }
+        set { lock.lock(); unsafeValue = newValue; lock.unlock() }
     }
 }
 
@@ -69,10 +69,10 @@ public final class InterfaceCounters: @unchecked Sendable {
     }
 
     private let lock = NSLock()
-    private var _rxBytes = 0
-    private var _txBytes = 0
-    private var _rxPackets = 0
-    private var _txPackets = 0
+    private var unsafeRxBytes = 0
+    private var unsafeTxBytes = 0
+    private var unsafeRxPackets = 0
+    private var unsafeTxPackets = 0
 
     public init() {}
 
@@ -80,28 +80,28 @@ public final class InterfaceCounters: @unchecked Sendable {
 
     public var rxBytes: Int {
         lock.lock(); defer { lock.unlock() }
-        return _rxBytes
+        return unsafeRxBytes
     }
 
     public var txBytes: Int {
         lock.lock(); defer { lock.unlock() }
-        return _txBytes
+        return unsafeTxBytes
     }
 
     public var rxPackets: Int {
         lock.lock(); defer { lock.unlock() }
-        return _rxPackets
+        return unsafeRxPackets
     }
 
     public var txPackets: Int {
         lock.lock(); defer { lock.unlock() }
-        return _txPackets
+        return unsafeTxPackets
     }
 
     public func snapshot() -> Snapshot {
         lock.lock(); defer { lock.unlock() }
-        return Snapshot(rxBytes: _rxBytes, txBytes: _txBytes,
-                        rxPackets: _rxPackets, txPackets: _txPackets)
+        return Snapshot(rxBytes: unsafeRxBytes, txBytes: unsafeTxBytes,
+                        rxPackets: unsafeRxPackets, txPackets: unsafeTxPackets)
     }
 
     // MARK: - Writing
@@ -111,22 +111,22 @@ public final class InterfaceCounters: @unchecked Sendable {
     /// stream bytes on an interface that tallies packets elsewhere).
     public func addRx(bytes: Int, packets: Int = 1) {
         lock.lock()
-        _rxBytes += bytes
-        _rxPackets += packets
+        unsafeRxBytes += bytes
+        unsafeRxPackets += packets
         lock.unlock()
     }
 
     /// Records outbound traffic. See `addRx(bytes:packets:)`.
     public func addTx(bytes: Int, packets: Int = 1) {
         lock.lock()
-        _txBytes += bytes
-        _txPackets += packets
+        unsafeTxBytes += bytes
+        unsafeTxPackets += packets
         lock.unlock()
     }
 
     public func reset() {
         lock.lock()
-        _rxBytes = 0; _txBytes = 0; _rxPackets = 0; _txPackets = 0
+        unsafeRxBytes = 0; unsafeTxBytes = 0; unsafeRxPackets = 0; unsafeTxPackets = 0
         lock.unlock()
     }
 }

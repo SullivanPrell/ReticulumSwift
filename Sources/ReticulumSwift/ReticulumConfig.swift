@@ -273,14 +273,14 @@ public struct ReticulumConfig {
             flushSubBlock()
             if let name = currentIfaceName {
                 let enabled = resolveEnabled(currentInterface)
-                let type_ = currentInterface["type"] ?? "Unknown"
+                let interfaceType = currentInterface["type"] ?? "Unknown"
                 let viaEnabledKey = currentInterface["enabled"].flatMap(parseBool) == true
                 var params = currentInterface
                 params.removeValue(forKey: "type")
                 params.removeValue(forKey: "enabled")
                 params.removeValue(forKey: "interface_enabled")
                 var block = InterfaceConfig(
-                    name: name, type: type_, enabled: enabled, parameters: params
+                    name: name, type: interfaceType, enabled: enabled, parameters: params
                 )
                 block.subBlocks = currentSubBlocks
                 block.enabledViaEnabledKey = viaEnabledKey

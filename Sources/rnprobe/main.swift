@@ -17,14 +17,14 @@ import Glibc
 
 /// Python: `--version` prints `rnprobe {RNS.__version__}`. The port prints the Swift
 /// package version, following the rnsd precedent (Sources/rnsd/main.swift:47).
-let VERSION = Reticulum.version
-let APP_NAME = "rnprobe"
+let version = Reticulum.version
+let appName = "rnprobe"
 
 /// Retained so the SIGINT source can flip its cancellation flag.
 /// Python: `except KeyboardInterrupt: print(""); exit()` (rnprobe.py:247-249).
 nonisolated(unsafe) var runningProbe: NetworkProbe?
 
-struct rnprobe {
+struct RNProbeMain {
 
     static func main() {
         let output = StandardProbeOutput()
@@ -44,7 +44,7 @@ struct rnprobe {
             exit(0)
 
         case .version:
-            output.write("\(APP_NAME) \(VERSION)\n")
+            output.write("\(appName) \(version)\n")
             output.flush()
             exit(0)
 
@@ -114,4 +114,4 @@ struct rnprobe {
     }
 }
 
-rnprobe.main()
+RNProbeMain.main()

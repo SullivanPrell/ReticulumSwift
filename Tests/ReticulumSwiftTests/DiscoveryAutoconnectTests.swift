@@ -44,7 +44,7 @@ final class DiscoveryAutoconnectTests: XCTestCase {
         transport.transportIdentity = Identity()
         discovery = InterfaceDiscovery(storagePath: storage.path)
         discovery.transport = transport
-        Reticulum.maxAutoconnectedInterfaces_ = 4
+        Reticulum.storedMaxAutoconnectedInterfaces = 4
     }
 
     override func tearDown() {
@@ -52,10 +52,10 @@ final class DiscoveryAutoconnectTests: XCTestCase {
         // pass. Left running it outlives the test and interleaves its output with the next
         // suite's.
         discovery.stopMonitoring()
-        Reticulum.maxAutoconnectedInterfaces_ = 0
-        Reticulum.autoconnectInterfaceMode_ = nil
-        Reticulum.autoconnectInterfaceGravity_ = nil
-        Reticulum.autoconnectAnnouncesToInternal_ = nil
+        Reticulum.storedMaxAutoconnectedInterfaces = 0
+        Reticulum.storedAutoconnectInterfaceMode = nil
+        Reticulum.storedAutoconnectInterfaceGravity = nil
+        Reticulum.storedAutoconnectAnnouncesToInternal = nil
         try? FileManager.default.removeItem(at: storage)
         super.tearDown()
     }
@@ -149,13 +149,13 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     /// Off by default: `autoconnect_discovered_interfaces` defaults to 0, and 0 disables the
     /// whole subsystem (`Reticulum.should_autoconnect_discovered_interfaces`).
     func testAutoconnectIsOffWhenTheLimitIsZero() {
-        Reticulum.maxAutoconnectedInterfaces_ = 0
+        Reticulum.storedMaxAutoconnectedInterfaces = 0
         discovery.autoconnect(discovered())
         XCTAssertTrue(transport.interfaces.isEmpty)
     }
 
     func testTheLimitIsRespected() {
-        Reticulum.maxAutoconnectedInterfaces_ = 2
+        Reticulum.storedMaxAutoconnectedInterfaces = 2
         for i in 0..<4 {
             var info = discovered(reachableOn: "hub\(i).example.net", name: "hub\(i)")
             info.discoveryHash = Data(repeating: UInt8(i), count: 32)
@@ -235,9 +235,9 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     }
 
     func testTheConfiguredPolicyOverridesTheDefaults() throws {
-        Reticulum.autoconnectInterfaceMode_ = .accessPoint
-        Reticulum.autoconnectInterfaceGravity_ = 7
-        Reticulum.autoconnectAnnouncesToInternal_ = true
+        Reticulum.storedAutoconnectInterfaceMode = .accessPoint
+        Reticulum.storedAutoconnectInterfaceGravity = 7
+        Reticulum.storedAutoconnectAnnouncesToInternal = true
 
         discovery.autoconnect(discovered())
         let iface = try XCTUnwrap(transport.interfaces.first)
@@ -315,7 +315,7 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     /// Reaching the target count tears down bootstrap-only interfaces, which exist to get a
     /// node its first peers and are meant to go away once it has them (`Discovery.py:643-648`).
     func testBootstrapInterfacesAreTornDownOnceTheTargetIsMet() {
-        Reticulum.maxAutoconnectedInterfaces_ = 1
+        Reticulum.storedMaxAutoconnectedInterfaces = 1
 
         let bootstrap = MonitoredInterface(name: "bootstrap", online: true)
         bootstrap.bootstrapOnly = true

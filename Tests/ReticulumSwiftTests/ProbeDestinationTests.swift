@@ -6,13 +6,13 @@ final class ProbeDestinationTests: XCTestCase {
     override func setUp() {
         super.setUp()
         // Reset static flags after each test.
-        Reticulum.allowProbes_ = false
-        Reticulum.remoteManagementEnabled_ = false
+        Reticulum.allowProbes = false
+        Reticulum.storedRemoteManagementEnabled = false
     }
 
     override func tearDown() {
-        Reticulum.allowProbes_ = false
-        Reticulum.remoteManagementEnabled_ = false
+        Reticulum.allowProbes = false
+        Reticulum.storedRemoteManagementEnabled = false
         super.tearDown()
     }
 
@@ -25,7 +25,7 @@ final class ProbeDestinationTests: XCTestCase {
     }
 
     func testProbeDestinationCreatedWhenEnabled() {
-        Reticulum.allowProbes_ = true
+        Reticulum.allowProbes = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -34,7 +34,7 @@ final class ProbeDestinationTests: XCTestCase {
     }
 
     func testProbeDestinationHasProveAllStrategy() {
-        Reticulum.allowProbes_ = true
+        Reticulum.allowProbes = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -42,7 +42,7 @@ final class ProbeDestinationTests: XCTestCase {
     }
 
     func testProbeDestinationDoesNotAcceptLinks() {
-        Reticulum.allowProbes_ = true
+        Reticulum.allowProbes = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -50,7 +50,7 @@ final class ProbeDestinationTests: XCTestCase {
     }
 
     func testProbeDestinationIsSingleType() {
-        Reticulum.allowProbes_ = true
+        Reticulum.allowProbes = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -58,7 +58,7 @@ final class ProbeDestinationTests: XCTestCase {
     }
 
     func testProbeDestinationUsesTransportIdentity() {
-        Reticulum.allowProbes_ = true
+        Reticulum.allowProbes = true
         let identity = Identity()
         let transport = Transport()
         transport.transportIdentity = identity
@@ -67,7 +67,7 @@ final class ProbeDestinationTests: XCTestCase {
     }
 
     func testProbeDestinationHashMatchesExpected() throws {
-        Reticulum.allowProbes_ = true
+        Reticulum.allowProbes = true
         let identity = Identity()
         let transport = Transport()
         transport.transportIdentity = identity
@@ -80,7 +80,7 @@ final class ProbeDestinationTests: XCTestCase {
     }
 
     func testProbeDestinationRegisteredInTransport() {
-        Reticulum.allowProbes_ = true
+        Reticulum.allowProbes = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()

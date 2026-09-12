@@ -139,8 +139,8 @@ final class ChannelTests: XCTestCase {
 
         // Use reflection-like approach: send 65535 messages would be slow.
         // Instead, directly validate the modulus.
-        XCTAssertEqual(Channel.SEQ_MODULUS, 0x10000)
-        XCTAssertEqual(Channel.SEQ_MAX, 0xFFFF)
+        XCTAssertEqual(Channel.seqModulus, 0x10000)
+        XCTAssertEqual(Channel.seqMax, 0xFFFF)
     }
 
     // MARK: - Message type registry
@@ -376,14 +376,14 @@ final class ChannelTests: XCTestCase {
     }
 
     func testMDUOverheadConstantIs6() {
-        XCTAssertEqual(Channel.MDU_OVERHEAD, 6)
+        XCTAssertEqual(Channel.mduOverhead, 6)
     }
 
     func testMDUUsesOverheadConstant() {
         let outlet = MockChannelOutlet()
         outlet.mockMDU = 100
         let channel = Channel(outlet: outlet)
-        XCTAssertEqual(channel.mdu, 100 - Channel.MDU_OVERHEAD)
+        XCTAssertEqual(channel.mdu, 100 - Channel.mduOverhead)
     }
 
     func testTooBigThrows() throws {

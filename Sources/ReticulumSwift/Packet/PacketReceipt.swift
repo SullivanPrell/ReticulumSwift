@@ -62,25 +62,25 @@ public final class PacketReceipt {
     /// Fires when the receipt is proved/delivered. If the proof already
     /// arrived before this callback was set (synchronous loopback), it
     /// is replayed immediately on assignment.
-    private var _onDelivery: ((PacketReceipt) -> Void)?
+    private var unsafeOnDelivery: ((PacketReceipt) -> Void)?
     public var onDelivery: ((PacketReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onDelivery }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnDelivery }
         set {
             // Set the callback and decide whether to replay atomically, then
             // fire outside the lock. This closes the window where a concurrent
             // markDelivered() and this assignment could each miss the other and
             // drop the callback entirely.
             stateLock.lock()
-            _onDelivery = newValue
+            unsafeOnDelivery = newValue
             let replay = (status == .delivered)
             stateLock.unlock()
             if replay { newValue?(self) }
         }
     }
-    private var _onTimeout: ((PacketReceipt) -> Void)?
+    private var unsafeOnTimeout: ((PacketReceipt) -> Void)?
     public var onTimeout: ((PacketReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onTimeout }
-        set { stateLock.lock(); _onTimeout = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnTimeout }
+        set { stateLock.lock(); unsafeOnTimeout = newValue; stateLock.unlock() }
     }
 
     // MARK: - Init
@@ -113,8 +113,8 @@ public final class PacketReceipt {
         guard status == .sent, isTimedOut else { stateLock.unlock(); return }
         concludedAt = Date()
         status = timeout < 0 ? .culled : .failed
-        let cb = _onTimeout
-        _onTimeout = nil
+        let cb = unsafeOnTimeout
+        unsafeOnTimeout = nil
         stateLock.unlock()
         DispatchQueue.global(qos: .utility).async { cb?(self) }
     }
@@ -186,8 +186,8 @@ public final class PacketReceipt {
         // seen `.delivered` always receives the matching proof packet.
         proofPacket = packet
         concludedAt = Date()
-        let cb = _onDelivery
-        _onDelivery = nil
+        let cb = unsafeOnDelivery
+        unsafeOnDelivery = nil
         stateLock.unlock()
         DispatchQueue.global(qos: .utility).async { cb?(self) }
         return true

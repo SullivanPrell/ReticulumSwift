@@ -13,9 +13,9 @@ import ReticulumSwift
 // MARK: - Terminal helpers
 
 /// `erase_str = "\33[2K\r"` (rncp.py:73).
-let ERASE = RNCopyApp.eraseString
+let erase = RNCopyApp.eraseString
 /// `es = " "`—the single space appended by `print(end=es)` (rncp.py:72).
-let ES = RNCopyApp.endSpace
+let endSpace = RNCopyApp.endSpace
 
 /// `print(..., end=terminator)` + flush. Python flushes explicitly in every progress path.
 func emit(_ text: String, terminator: String = "\n") {
@@ -328,7 +328,7 @@ func runSend(file: String, destination: String) -> Never {
     }
 
     // Python: print(f"{erase_str}", end="")—send only; fetch doesn't do this.
-    emit(ERASE, terminator: "")
+    emit(erase, terminator: "")
 
     let connection = startReticulum()
     let identity = prepareIdentity(connection: connection)
@@ -354,17 +354,17 @@ func runSend(file: String, destination: String) -> Never {
         switch stage {
         case .requestingPath:
             if silent { emit("Path to \(prettyDestination) requested") }
-            else      { emit("Path to \(prettyDestination) requested  ", terminator: ES) }
+            else      { emit("Path to \(prettyDestination) requested  ", terminator: endSpace) }
         case .establishingLink:
             if silent { emit("Establishing link with \(prettyDestination)") }
             // NOTE: send appends ONE literal space here; fetch appends TWO.
-            else      { emit("\(ERASE)Establishing link with \(prettyDestination) ", terminator: ES) }
+            else      { emit("\(erase)Establishing link with \(prettyDestination) ", terminator: endSpace) }
         case .advertising:
             if silent { emit("Advertising file resource...") }
-            else      { emit("\(ERASE)Advertising file resource  ", terminator: ES) }
+            else      { emit("\(erase)Advertising file resource  ", terminator: endSpace) }
         case .transferring:
             if silent { emit("Transferring file...") }
-            else      { emit("\(ERASE)Transferring file  ", terminator: ES) }
+            else      { emit("\(erase)Transferring file  ", terminator: endSpace) }
         case .requestingFile, .waitingForTransfer:
             break
         }
@@ -380,9 +380,9 @@ func runSend(file: String, destination: String) -> Never {
                                           phySpeed: phy)
         // `progress_update` shadows the global `es` with a TWO-space local (rncp.py:754).
         if progress.done {
-            emit("\(ERASE)Transfer complete  \(stat)", terminator: "  ")
+            emit("\(erase)Transfer complete  \(stat)", terminator: "  ")
         } else {
-            emit("\(ERASE)Transferring file \(spinner.frame) \(stat)", terminator: "  ")
+            emit("\(erase)Transferring file \(spinner.frame) \(stat)", terminator: "  ")
             spinner.advance()
         }
     }
@@ -393,24 +393,24 @@ func runSend(file: String, destination: String) -> Never {
         exit(RNCopyApp.Result.generalError.code)
 
     case .pathNotFound:
-        if silent { emit("Path not found") } else { emit("\(ERASE)Path not found") }
+        if silent { emit("Path not found") } else { emit("\(erase)Path not found") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .linkTimedOut:
         let message = "Link establishment with \(prettyDestination) timed out"
-        if silent { emit(message) } else { emit("\(ERASE)\(message)") }
+        if silent { emit(message) } else { emit("\(erase)\(message)") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .noPathFound:
         let message = "No path found to \(prettyDestination)"
-        if silent { emit(message) } else { emit("\(ERASE)\(message)") }
+        if silent { emit(message) } else { emit("\(erase)\(message)") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .identityUnknown:
         // Python raises an unhandled exception in Destination.__init__ here; reporting it
         // cleanly and exiting 1 is a deliberate improvement.
         let message = "No known identity for \(prettyDestination)"
-        if silent { emit(message) } else { emit("\(ERASE)\(message)") }
+        if silent { emit(message) } else { emit("\(erase)\(message)") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .startFailed(let reason):
@@ -419,11 +419,11 @@ func runSend(file: String, destination: String) -> Never {
 
     case .notAccepted:
         let message = "File was not accepted by \(prettyDestination)"
-        if silent { emit(message) } else { emit("\(ERASE)\(message)") }
+        if silent { emit(message) } else { emit("\(erase)\(message)") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .transferFailed:
-        if silent { emit("The transfer failed") } else { emit("\(ERASE)The transfer failed") }
+        if silent { emit("The transfer failed") } else { emit("\(erase)The transfer failed") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .completed:
@@ -473,14 +473,14 @@ func runFetch(file: String, destination: String) -> Never {
         switch stage {
         case .requestingPath:
             if silent { emit("Path to \(prettyDestination) requested") }
-            else      { emit("Path to \(prettyDestination) requested  ", terminator: ES) }
+            else      { emit("Path to \(prettyDestination) requested  ", terminator: endSpace) }
         case .establishingLink:
             if silent { emit("Establishing link with \(prettyDestination)") }
             // NOTE: fetch appends TWO literal spaces here; send appends ONE.
-            else      { emit("\(ERASE)Establishing link with \(prettyDestination)  ", terminator: ES) }
+            else      { emit("\(erase)Establishing link with \(prettyDestination)  ", terminator: endSpace) }
         case .requestingFile:
             if silent { emit("Requesting file from remote...") }
-            else      { emit("\(ERASE)Requesting file from remote  ", terminator: ES) }
+            else      { emit("\(erase)Requesting file from remote  ", terminator: endSpace) }
         case .advertising, .transferring, .waitingForTransfer:
             break
         }
@@ -488,7 +488,7 @@ func runFetch(file: String, destination: String) -> Never {
 
     fetcher.onWaiting = {
         guard !silent else { return }
-        emit("\(ERASE)Waiting for transfer to start \(spinner.frame) ", terminator: ES)
+        emit("\(erase)Waiting for transfer to start \(spinner.frame) ", terminator: endSpace)
         spinner.advance()
     }
 
@@ -502,20 +502,20 @@ func runFetch(file: String, destination: String) -> Never {
                                               speed: progress.speed,
                                               phySpeed: phy,
                                               elapsed: progress.elapsed)
-            emit("\(ERASE)Transfer complete  \(stat)", terminator: ES)
+            emit("\(erase)Transfer complete  \(stat)", terminator: endSpace)
         } else {
             let stat = RNCopyApp.transferStat(progress: progress.fraction,
                                               totalSize: progress.totalBytes,
                                               speed: progress.speed,
                                               phySpeed: phy)
-            emit("\(ERASE)Transferring file \(spinner.frame) \(stat)", terminator: ES)
+            emit("\(erase)Transferring file \(spinner.frame) \(stat)", terminator: endSpace)
             spinner.advance()
         }
     }
 
     /// Every failed-request branch erases, prints, tears down, sleeps 0.15 and exits **0**.
     func concludeRequestFailure(_ message: String) -> Never {
-        if !silent { emit(ERASE, terminator: "") }
+        if !silent { emit(erase, terminator: "") }
         emit(message)
         fetcher.teardown()
         Thread.sleep(forTimeInterval: 0.15)
@@ -524,17 +524,17 @@ func runFetch(file: String, destination: String) -> Never {
 
     switch fetcher.run() {
     case .pathNotFound:
-        if silent { emit("Path not found") } else { emit("\(ERASE)Path not found") }
+        if silent { emit("Path not found") } else { emit("\(erase)Path not found") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .linkFailed:
         let message = "Could not establish link with \(prettyDestination)"
-        if silent { emit(message) } else { emit("\(ERASE)\(message)") }
+        if silent { emit(message) } else { emit("\(erase)\(message)") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .identityUnknown:
         let message = "No known identity for \(prettyDestination)"
-        if silent { emit(message) } else { emit("\(ERASE)\(message)") }
+        if silent { emit(message) } else { emit("\(erase)\(message)") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .requestFailed(let status):
@@ -550,7 +550,7 @@ func runFetch(file: String, destination: String) -> Never {
         }
 
     case .transferFailed:
-        if silent { emit("The transfer failed") } else { emit("\(ERASE)The transfer failed") }
+        if silent { emit("The transfer failed") } else { emit("\(erase)The transfer failed") }
         exit(RNCopyApp.Result.generalError.code)
 
     case .saveFailed, .completed:

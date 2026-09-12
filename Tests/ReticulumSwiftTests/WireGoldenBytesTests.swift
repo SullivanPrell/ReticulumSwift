@@ -220,7 +220,7 @@ final class WireGoldenBytesTests: XCTestCase {
     func testChannelEnvelopeGolden() throws {
         let outlet = MinimalOutlet()
         let channel = Channel(outlet: outlet)
-        try channel._registerMessageType(TestMsg.self, isSystemType: true)
+        try channel.registerMessageType(TestMsg.self, isSystemType: true)
         let msg = TestMsg(body: Data("hello".utf8))
         let env = Envelope(outlet: outlet, message: msg, sequence: 0)
         let raw = try env.pack(messageFactories: [TestMsg.typeID: { TestMsg() }])

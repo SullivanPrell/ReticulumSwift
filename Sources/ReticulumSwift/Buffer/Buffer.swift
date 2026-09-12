@@ -98,13 +98,13 @@ public final class RawChannelReader {
     public init(streamID: UInt16, channel: Channel) {
         self.streamID = streamID
         self.channel  = channel
-        try? channel._registerMessageType(StreamDataMessage.self, isSystemType: true)
+        try? channel.registerMessageType(StreamDataMessage.self, isSystemType: true)
         handlerToken = channel.addMessageHandler { [weak self] msg -> Bool in
-            self?._handle(msg) ?? false
+            self?.handle(msg) ?? false
         }
     }
 
-    private func _handle(_ message: MessageBase) -> Bool {
+    private func handle(_ message: MessageBase) -> Bool {
         guard let msg = message as? StreamDataMessage, msg.streamID == streamID else { return false }
         lock.lock()
         if !msg.data.isEmpty { buffer.append(msg.data) }

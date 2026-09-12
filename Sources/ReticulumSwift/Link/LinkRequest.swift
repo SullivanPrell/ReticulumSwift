@@ -61,15 +61,15 @@ public final class RequestReceipt {
     /// lock, so it never nests with any other lock.
     private let stateLock = NSLock()
 
-    private var _responseSize: Int?
-    public var responseSize: Int? { stateLock.lock(); defer { stateLock.unlock() }; return _responseSize }
-    private var _responseTransferSize: Int?
+    private var unsafeResponseSize: Int?
+    public var responseSize: Int? { stateLock.lock(); defer { stateLock.unlock() }; return unsafeResponseSize }
+    private var unsafeResponseTransferSize: Int?
     /// Bytes actually moved on the wire to deliver the response (post-compression,
     /// including Resource framing). Mirrors Python's
     /// `RequestReceipt.response_transfer_size` (Link.py:1314), which `rnx` renders in its
     /// The "Receiving result" spinner (N of M).
     public var responseTransferSize: Int? {
-        stateLock.lock(); defer { stateLock.unlock() }; return _responseTransferSize
+        stateLock.lock(); defer { stateLock.unlock() }; return unsafeResponseTransferSize
     }
 
     /// Record response sizing. Mirrors Python Link.py:1027-1031, where `response_size` is
@@ -79,61 +79,61 @@ public final class RequestReceipt {
     ///   (`pending_request.response_transfer_size += ...`); when false it replaces it.
     func setResponseSizes(size: Int?, transferSize: Int?, accumulate: Bool) {
         stateLock.lock(); defer { stateLock.unlock() }
-        if let size, _responseSize == nil { _responseSize = size }
+        if let size, unsafeResponseSize == nil { unsafeResponseSize = size }
         if let transferSize {
-            _responseTransferSize = accumulate ? (_responseTransferSize ?? 0) + transferSize : transferSize
+            unsafeResponseTransferSize = accumulate ? (unsafeResponseTransferSize ?? 0) + transferSize : transferSize
         }
     }
-    private var _progress: Double = 0
-    public var progress: Double { stateLock.lock(); defer { stateLock.unlock() }; return _progress }
-    private var _concludedAt: Date?
-    public var concludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return _concludedAt }
-    private var _responseConcludedAt: Date?
-    public var responseConcludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return _responseConcludedAt }
-    private var _status: Status = .sent
-    public var status: Status { stateLock.lock(); defer { stateLock.unlock() }; return _status }
+    private var unsafeProgress: Double = 0
+    public var progress: Double { stateLock.lock(); defer { stateLock.unlock() }; return unsafeProgress }
+    private var unsafeConcludedAt: Date?
+    public var concludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return unsafeConcludedAt }
+    private var unsafeResponseConcludedAt: Date?
+    public var responseConcludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return unsafeResponseConcludedAt }
+    private var unsafeStatus: Status = .sent
+    public var status: Status { stateLock.lock(); defer { stateLock.unlock() }; return unsafeStatus }
 
     private var timeoutItem: DispatchWorkItem?
 
-    private var _onResponse: ((Data, RequestReceipt) -> Void)?
+    private var unsafeOnResponse: ((Data, RequestReceipt) -> Void)?
     public var onResponse: ((Data, RequestReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onResponse }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnResponse }
         set {
             // Replay-if-already-ready decided atomically with the assignment,
             // then fired outside the lock (closes the lost/double-callback window).
             stateLock.lock()
-            _onResponse = newValue
+            unsafeOnResponse = newValue
             var replay: Data? = nil
-            if case .ready(let d) = _status { replay = d }
+            if case .ready(let d) = unsafeStatus { replay = d }
             stateLock.unlock()
             if let d = replay { newValue?(d, self) }
         }
     }
-    private var _onFailed: ((String, RequestReceipt) -> Void)?
+    private var unsafeOnFailed: ((String, RequestReceipt) -> Void)?
     public var onFailed: ((String, RequestReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onFailed }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnFailed }
         set {
             stateLock.lock()
-            _onFailed = newValue
+            unsafeOnFailed = newValue
             var replay: String? = nil
-            if case .failed(let r) = _status { replay = r }
+            if case .failed(let r) = unsafeStatus { replay = r }
             stateLock.unlock()
             if let r = replay { newValue?(r, self) }
         }
     }
-    private var _onProgress: ((Double, RequestReceipt) -> Void)?
+    private var unsafeOnProgress: ((Double, RequestReceipt) -> Void)?
     public var onProgress: ((Double, RequestReceipt) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onProgress }
-        set { stateLock.lock(); _onProgress = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnProgress }
+        set { stateLock.lock(); unsafeOnProgress = newValue; stateLock.unlock() }
     }
-    private var _onConclude: (() -> Void)?
+    private var unsafeOnConclude: (() -> Void)?
     /// Fires EXACTLY ONCE when the receipt concludes (ready OR failed), OUTSIDE
     /// `stateLock`. Link wires this to evict the receipt from `pendingRequests` so
     /// timed-out / failed requests are removed too (not only successful ones),
     /// bounding the dictionary. Wire-neutral: no packet is sent on conclusion.
     var onConclude: (() -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onConclude }
-        set { stateLock.lock(); _onConclude = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnConclude }
+        set { stateLock.lock(); unsafeOnConclude = newValue; stateLock.unlock() }
     }
 
     public init(requestID: Data, path: String, requestSize: Int, timeout: TimeInterval? = nil,
@@ -152,20 +152,20 @@ public final class RequestReceipt {
 
     func markDelivered() {
         stateLock.lock(); defer { stateLock.unlock() }
-        guard case .sent = _status else { return }
-        _status = .delivered
+        guard case .sent = unsafeStatus else { return }
+        unsafeStatus = .delivered
     }
 
     func updateProgress(_ p: Double) {
         stateLock.lock()
         // Don't move backwards out of a terminal state.
-        switch _status {
+        switch unsafeStatus {
         case .ready, .failed: stateLock.unlock(); return
         default: break
         }
-        _progress = p
-        _status = .receiving(p)
-        let cb = _onProgress
+        unsafeProgress = p
+        unsafeStatus = .receiving(p)
+        let cb = unsafeOnProgress
         stateLock.unlock()
         cb?(p, self)
     }
@@ -192,21 +192,21 @@ public final class RequestReceipt {
     ///   anything reading it mid-transfer saw nothing.
     func beginReceivingResponse(advertisedSize: Int? = nil) {
         stateLock.lock()
-        switch _status {
+        switch unsafeStatus {
         case .ready, .failed: stateLock.unlock(); return
         default: break
         }
         timeoutItem?.cancel()
         timeoutItem = nil
-        if let advertisedSize, _responseSize == nil { _responseSize = advertisedSize }
-        _status = .receiving(_progress)
+        if let advertisedSize, unsafeResponseSize == nil { unsafeResponseSize = advertisedSize }
+        unsafeStatus = .receiving(unsafeProgress)
         stateLock.unlock()
     }
 
     func deliverReady(_ data: Data, size: Int? = nil) {
         stateLock.lock()
         // Only conclude once, from a non-terminal state.
-        switch _status {
+        switch unsafeStatus {
         case .ready, .failed: stateLock.unlock(); return
         default: break
         }
@@ -214,13 +214,13 @@ public final class RequestReceipt {
         timeoutItem = nil
         // Only overwrite when a size is supplied, so a value already recorded from a
         // response Resource advertisement survives conclusion.
-        if let size { _responseSize = size }
-        _responseConcludedAt = Date()
-        _concludedAt = Date()
-        _progress = 1.0
-        _status = .ready(data)
-        let cb = _onResponse
-        let conclude = _onConclude
+        if let size { unsafeResponseSize = size }
+        unsafeResponseConcludedAt = Date()
+        unsafeConcludedAt = Date()
+        unsafeProgress = 1.0
+        unsafeStatus = .ready(data)
+        let cb = unsafeOnResponse
+        let conclude = unsafeOnConclude
         stateLock.unlock()
         cb?(data, self)
         conclude?()
@@ -230,16 +230,16 @@ public final class RequestReceipt {
         stateLock.lock()
         // Only conclude once, from a non-terminal state (matches Python's guard;
         // don't overwrite a delivered .ready result with a late timeout).
-        switch _status {
+        switch unsafeStatus {
         case .ready, .failed: stateLock.unlock(); return
         default: break
         }
         timeoutItem?.cancel()
         timeoutItem = nil
-        _concludedAt = Date()
-        _status = .failed(reason: reason)
-        let cb = _onFailed
-        let conclude = _onConclude
+        unsafeConcludedAt = Date()
+        unsafeStatus = .failed(reason: reason)
+        let cb = unsafeOnFailed
+        let conclude = unsafeOnConclude
         stateLock.unlock()
         cb?(reason, self)
         conclude?()
@@ -258,7 +258,7 @@ public final class RequestReceipt {
     func responseRejected() {
         stateLock.lock()
         let isDelivered: Bool
-        if case .delivered = _status { isDelivered = true } else { isDelivered = false }
+        if case .delivered = unsafeStatus { isDelivered = true } else { isDelivered = false }
         stateLock.unlock()
         guard isDelivered else { return }
         fail("response exceeds maximum accepted size")

@@ -5,13 +5,13 @@ final class RemoteManagementDestinationTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        Reticulum.allowProbes_ = false
-        Reticulum.remoteManagementEnabled_ = false
+        Reticulum.allowProbes = false
+        Reticulum.storedRemoteManagementEnabled = false
     }
 
     override func tearDown() {
-        Reticulum.allowProbes_ = false
-        Reticulum.remoteManagementEnabled_ = false
+        Reticulum.allowProbes = false
+        Reticulum.storedRemoteManagementEnabled = false
         super.tearDown()
     }
 
@@ -23,7 +23,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testRemoteManagementDestinationCreatedWhenEnabled() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -31,7 +31,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testRemoteManagementDestinationIsSingleType() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -39,7 +39,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testRemoteManagementDestinationHashMatchesExpected() throws {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let identity = Identity()
         let transport = Transport()
         transport.transportIdentity = identity
@@ -51,7 +51,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testRemoteManagementDestinationRegistersStatusHandler() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -65,7 +65,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testRemoteManagementDestinationRegistersPathHandler() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -79,7 +79,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testStatusHandlerAllowListPolicy() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -93,7 +93,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testPathHandlerAllowListPolicy() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -107,7 +107,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testStatusHandlerReturnsNilForNilData() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -125,7 +125,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testPathHandlerReturnsNilForNilData() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()
@@ -142,7 +142,7 @@ final class RemoteManagementDestinationTests: XCTestCase {
     }
 
     func testRemoteManagementDestinationRegisteredInTransport() {
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
         let transport = Transport()
         transport.transportIdentity = Identity()
         try? transport.start()

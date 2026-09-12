@@ -279,12 +279,12 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
     /// applying it only when pruning stored records left an unauthorised peer
     /// discoverable—and dialable—until the next prune.
     func testAnnounceFromUnauthorizedIdentityIsIgnored() {
-        let previous = Reticulum.interfaceDiscoverySources_
-        defer { Reticulum.interfaceDiscoverySources_ = previous }
+        let previous = Reticulum.storedInterfaceDiscoverySources
+        defer { Reticulum.storedInterfaceDiscoverySources = previous }
 
         let authorized = makeIdentity()
         let stranger   = makeIdentity()
-        Reticulum.interfaceDiscoverySources_ = [authorized.hash]
+        Reticulum.storedInterfaceDiscoverySources = [authorized.hash]
 
         var result: DiscoveredInterfaceInfo?
         let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough) { result = $0 }
@@ -303,9 +303,9 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
     /// An empty allowlist means "no restriction", not "reject everything".
     func testEmptyDiscoverySourcesAllowsAnyIdentity() {
-        let previous = Reticulum.interfaceDiscoverySources_
-        defer { Reticulum.interfaceDiscoverySources_ = previous }
-        Reticulum.interfaceDiscoverySources_ = []
+        let previous = Reticulum.storedInterfaceDiscoverySources
+        defer { Reticulum.storedInterfaceDiscoverySources = previous }
+        Reticulum.storedInterfaceDiscoverySources = []
 
         var result: DiscoveredInterfaceInfo?
         let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough) { result = $0 }

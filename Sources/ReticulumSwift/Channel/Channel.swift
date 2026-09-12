@@ -58,13 +58,13 @@ public final class ChannelPacketHandle {
     /// while this was a stored property every *read* still raced them.
     ///
     /// `lock` is a plain `NSLock` and is therefore NOT recursive: the mutators
-    /// below must go through `_state` directly, never this accessor, or they
+    /// below must go through `unsafeState` directly, never this accessor, or they
     /// would deadlock against the lock they already hold.
     public var state: State {
         lock.lock(); defer { lock.unlock() }
-        return _state
+        return unsafeState
     }
-    private var _state: State = .sent
+    private var unsafeState: State = .sent
 
     let raw: Data
     private var deliveredCallback: ((ChannelPacketHandle) -> Void)?
@@ -95,8 +95,8 @@ public final class ChannelPacketHandle {
 
     func markDelivered() {
         lock.lock()
-        guard _state == .sent else { lock.unlock(); return }
-        _state = .delivered
+        guard unsafeState == .sent else { lock.unlock(); return }
+        unsafeState = .delivered
         timeoutWork?.cancel()
         timeoutWork = nil
         let cb = deliveredCallback
@@ -107,7 +107,7 @@ public final class ChannelPacketHandle {
 
     func markFailed() {
         lock.lock()
-        _state = .failed
+        unsafeState = .failed
         timeoutWork?.cancel()
         timeoutWork = nil
         deliveredCallback = nil
@@ -196,26 +196,48 @@ final class Envelope {
 /// Wire-compatible with Python's RNS.Channel.
 public final class Channel {
 
-    // Window constants (mirror Python Channel.py)
-    public static let WINDOW:                  Int          = 2
-    public static let WINDOW_MIN:              Int          = 2
-    public static let WINDOW_MIN_LIMIT_SLOW:   Int          = 2
-    public static let WINDOW_MIN_LIMIT_MEDIUM: Int          = 5
-    public static let WINDOW_MIN_LIMIT_FAST:   Int          = 16
-    public static let WINDOW_MAX_SLOW:         Int          = 5
-    public static let WINDOW_MAX_MEDIUM:       Int          = 12
-    public static let WINDOW_MAX_FAST:         Int          = 48
-    public static let WINDOW_MAX:              Int          = WINDOW_MAX_FAST
-    public static let FAST_RATE_THRESHOLD:     Int          = 10
-    public static let RTT_FAST:                TimeInterval = 0.18
-    public static let RTT_MEDIUM:              TimeInterval = 0.75
-    public static let RTT_SLOW:                TimeInterval = 1.45
-    public static let WINDOW_FLEXIBILITY:      Int          = 4
-    public static let SEQ_MAX:                 UInt32       = 0xFFFF
-    public static let SEQ_MODULUS:             UInt32       = 0x10000
+    // Window constants (mirror Python Channel.py). The three that seed an instance's
+    // adaptive window carry a `default` prefix, because Python's class attribute and
+    // its per-instance counterpart differ only in case (`WINDOW` / `window`) and that
+    // distinction does not survive the move to lowerCamelCase.
+
+    /// Initial send window. Python: `Channel.WINDOW`.
+    public static let defaultWindow:            Int          = 2
+    /// Initial lower bound on the send window. Python: `Channel.WINDOW_MIN`.
+    public static let defaultWindowMin:         Int          = 2
+    /// Window floor once the link is classed slow. Python: `Channel.WINDOW_MIN_LIMIT_SLOW`.
+    public static let windowMinLimitSlow:       Int          = 2
+    /// Window floor once the link is classed medium. Python: `Channel.WINDOW_MIN_LIMIT_MEDIUM`.
+    public static let windowMinLimitMedium:     Int          = 5
+    /// Window floor once the link is classed fast. Python: `Channel.WINDOW_MIN_LIMIT_FAST`.
+    public static let windowMinLimitFast:       Int          = 16
+    /// Window ceiling for a slow link. Python: `Channel.WINDOW_MAX_SLOW`.
+    public static let windowMaxSlow:            Int          = 5
+    /// Window ceiling for a medium link. Python: `Channel.WINDOW_MAX_MEDIUM`.
+    public static let windowMaxMedium:          Int          = 12
+    /// Window ceiling for a fast link. Python: `Channel.WINDOW_MAX_FAST`.
+    public static let windowMaxFast:            Int          = 48
+    /// Ceiling over every rate class, and the bound the RX stale-sequence gate uses.
+    /// Python: `Channel.WINDOW_MAX`.
+    public static let windowMaxLimit:           Int          = windowMaxFast
+    /// Consecutive rounds at a rate before the window is widened to that rate's ceiling.
+    /// Python: `Channel.FAST_RATE_THRESHOLD`.
+    public static let fastRateThreshold:        Int          = 10
+    /// RTT at or below which a link is classed fast. Python: `Channel.RTT_FAST`.
+    public static let rttFast:                  TimeInterval = 0.18
+    /// RTT at or below which a link is classed medium. Python: `Channel.RTT_MEDIUM`.
+    public static let rttMedium:                TimeInterval = 0.75
+    /// RTT above which a link starts with a window of 1. Python: `Channel.RTT_SLOW`.
+    public static let rttSlow:                  TimeInterval = 1.45
+    /// Initial slack between the window and its ceiling. Python: `Channel.WINDOW_FLEXIBILITY`.
+    public static let defaultWindowFlexibility: Int          = 4
+    /// Highest representable sequence number. Python: `Channel.SEQ_MAX`.
+    public static let seqMax:                   UInt32       = 0xFFFF
+    /// Modulus the sequence counter wraps on. Python: `Channel.SEQ_MODULUS`.
+    public static let seqModulus:               UInt32       = 0x10000
     /// Bytes consumed by the channel envelope header (msgtype + sequence + length).
-    /// Mirrors Python `Channel.MDU_OVERHEAD = 4 + 2` (actually 6).
-    public static let MDU_OVERHEAD:            Int          = 6
+    /// Python: `Channel.MDU_OVERHEAD = 4 + 2` (actually 6).
+    public static let mduOverhead:              Int          = 6
 
     private let outlet: ChannelOutlet
     private let lock     = NSLock()
@@ -242,26 +264,31 @@ public final class Channel {
 
     public init(outlet: ChannelOutlet) {
         self.outlet = outlet
-        if outlet.rtt > Channel.RTT_SLOW {
+        if outlet.rtt > Channel.rttSlow {
             window            = 1
             windowMax         = 1
             windowMin         = 1
             windowFlexibility = 1
         } else {
-            window            = Channel.WINDOW
-            windowMax         = Channel.WINDOW_MAX_SLOW
-            windowMin         = Channel.WINDOW_MIN
-            windowFlexibility = Channel.WINDOW_FLEXIBILITY
+            window            = Channel.defaultWindow
+            windowMax         = Channel.windowMaxSlow
+            windowMin         = Channel.defaultWindowMin
+            windowFlexibility = Channel.defaultWindowFlexibility
         }
     }
 
     // MARK: - Type registry
 
     public func registerMessageType(_ type: MessageBase.Type) throws {
-        try _registerMessageType(type, isSystemType: false)
+        try registerMessageType(type, isSystemType: false)
     }
 
-    func _registerMessageType(_ type: MessageBase.Type, isSystemType: Bool = false) throws {
+    /// Registers `type` with no cap on its `typeID`, for the system message types.
+    ///
+    /// The default the public overload passes is spelled at that call site rather than
+    /// here: with a default value this signature would also match a bare
+    /// `registerMessageType(type)` and make every such call ambiguous.
+    func registerMessageType(_ type: MessageBase.Type, isSystemType: Bool) throws {
         lock.lock(); defer { lock.unlock() }
         guard type.typeID != 0 else { throw ChannelError.invalidMsgType }
         if type.typeID >= 0xF000 && !isSystemType { throw ChannelError.invalidMsgType }
@@ -287,7 +314,7 @@ public final class Channel {
     // MARK: - MDU
 
     public var mdu: Int {
-        let m = outlet.mdu - Channel.MDU_OVERHEAD
+        let m = outlet.mdu - Channel.mduOverhead
         return min(m, Int(UInt16.max))
     }
 
@@ -296,11 +323,11 @@ public final class Channel {
     public func isReadyToSend() -> Bool {
         guard outlet.isUsable else { return false }
         lock.lock(); defer { lock.unlock() }
-        return _isReadyToSendLocked()
+        return isReadyToSendLocked()
     }
 
     /// Lock must already be held.
-    private func _isReadyToSendLocked() -> Bool {
+    private func isReadyToSendLocked() -> Bool {
         let outstanding = txRing.filter { env in
             guard let pkt = env.packet else { return true }
             return outlet.getPacketState(pkt) != .delivered
@@ -329,7 +356,7 @@ public final class Channel {
         let raw: Data
 
         lock.lock()
-        guard _isReadyToSendLocked() else {
+        guard isReadyToSendLocked() else {
             lock.unlock()
             throw ChannelError.linkNotReady
         }
@@ -345,7 +372,7 @@ public final class Channel {
             lock.unlock()
             throw ChannelError.tooBig
         }
-        nextSequence = UInt16((UInt32(reservedSequence) + 1) % Channel.SEQ_MODULUS)
+        nextSequence = UInt16((UInt32(reservedSequence) + 1) % Channel.seqModulus)
         lock.unlock()
 
         // --- Phase 2: transmit (outside main lock to avoid re-entrancy) ---
@@ -365,21 +392,21 @@ public final class Channel {
         var alreadyDelivered = false
         lock.lock()
         envelope.packet = pkt
-        _emplaceEnvelope(envelope, in: &txRing)
+        emplaceEnvelope(envelope, in: &txRing)
         envelope.tries += 1
         outlet.setPacketDeliveredCallback(pkt, callback: { [weak self] p in
-            self?._packetDelivered(p)
+            self?.packetDelivered(p)
         })
-        outlet.setPacketTimeoutCallback(pkt, timeout: _getPacketTimeout(tries: envelope.tries), callback: { [weak self] p in
-            self?._packetTimeout(p)
+        outlet.setPacketTimeoutCallback(pkt, timeout: getPacketTimeout(tries: envelope.tries), callback: { [weak self] p in
+            self?.packetTimeout(p)
         })
-        _updatePacketTimeouts()
+        updatePacketTimeouts()
         // Proof may have arrived between outlet.send() and installing the callback.
         alreadyDelivered = (outlet.getPacketState(pkt) == .delivered)
         lock.unlock()
 
         // Synthesise delivery outside the lock (mirrors Python's already_delivered path).
-        if alreadyDelivered { _packetDelivered(pkt) }
+        if alreadyDelivered { packetDelivered(pkt) }
     }
 
     // MARK: - Receive (called by Link when a CHANNEL-context packet arrives)
@@ -400,11 +427,11 @@ public final class Channel {
 
             lock.lock()
             // Drop stale sequences (before the current RX window).
-            if _isStaleSequence(envelope.sequence) {
+            if isStaleSequence(envelope.sequence) {
                 lock.unlock()
                 return
             }
-            let isNew = _emplaceEnvelope(envelope, in: &rxRing)
+            let isNew = emplaceEnvelope(envelope, in: &rxRing)
             lock.unlock()
 
             guard isNew else { return }
@@ -422,12 +449,12 @@ public final class Channel {
                     let e = rxRing.remove(at: idx)
                     let m: MessageBase
                     if e.unpacked, let em = e.message { m = em } else { m = try e.unpack(messageFactories: messageFactories) }
-                    nextRxSequence = UInt16((UInt32(nextRxSequence) + 1) % Channel.SEQ_MODULUS)
+                    nextRxSequence = UInt16((UInt32(nextRxSequence) + 1) % Channel.seqModulus)
                     toDeliver.append(m)
                 }
             }
 
-            for m in toDeliver { _runCallbacks(m) }
+            for m in toDeliver { runCallbacks(m) }
 
         } catch {
             // Unknown message type or decode failure—drop silently.
@@ -462,26 +489,26 @@ public final class Channel {
     ///
     /// * **Below `nextRxSequence`**—normally stale (already delivered), and
     ///   dropped. The exception is a sequence that has *wrapped*: when
-    ///   `nextRxSequence + WINDOW_MAX` overflows the 16-bit sequence space,
+    ///   `nextRxSequence + windowMaxLimit` overflows the 16-bit sequence space,
     ///   sequence numbers from 0 up to that overflow point are legitimately
     ///   **future** frames and must be accepted, not dropped.
-    /// * **Above `nextRxSequence + WINDOW_MAX`**—too far in the future to be
+    /// * **Above `nextRxSequence + windowMaxLimit`**—too far in the future to be
     ///   real, so dropped (RNS 1.4.1, commit a29a0871). This bounds how much a
     ///   peer can force buffering by sending a wild sequence number.
     ///
     /// Both the window bound and the future guard use the class-level
-    /// `WINDOW_MAX` (48), not the adaptive per-instance `windowMax`—Python
+    /// `windowMaxLimit` (48), not the adaptive per-instance `windowMax`—Python
     /// reads `self.WINDOW_MAX`, which resolves to the class attribute because
     /// the adaptive value lives under the distinct lowercase name `window_max`.
     /// The future comparison is deliberately non-modular, matching Python: near
-    /// the top of the sequence space `nextRxSequence + WINDOW_MAX` exceeds any
+    /// the top of the sequence space `nextRxSequence + windowMaxLimit` exceeds any
     /// representable sequence, so the guard simply stops firing there rather
     /// than wrapping around and rejecting valid frames.
-    private func _isStaleSequence(_ seq: UInt16) -> Bool {
+    private func isStaleSequence(_ seq: UInt16) -> Bool {
         let nrx = UInt32(nextRxSequence)
         let s   = UInt32(seq)
         if s < nrx {
-            let windowOverflow = (nrx + UInt32(Channel.WINDOW_MAX)) % Channel.SEQ_MODULUS
+            let windowOverflow = (nrx + UInt32(Channel.windowMaxLimit)) % Channel.seqModulus
             if windowOverflow < nrx {
                 // The window wrapped: (windowOverflow, nrx) is stale, but
                 // [0, windowOverflow] is wrapped-future and must be kept.
@@ -489,18 +516,18 @@ public final class Channel {
             }
             return true
         }
-        if s > nrx + UInt32(Channel.WINDOW_MAX) { return true }
+        if s > nrx + UInt32(Channel.windowMaxLimit) { return true }
         return false
     }
 
     /// Insert `envelope` into `ring` in ascending sequence order.
     /// Returns false if a duplicate sequence is already present.
     @discardableResult
-    private func _emplaceEnvelope(_ envelope: Envelope, in ring: inout [Envelope]) -> Bool {
+    private func emplaceEnvelope(_ envelope: Envelope, in ring: inout [Envelope]) -> Bool {
         for (i, existing) in ring.enumerated() {
             if envelope.sequence == existing.sequence { return false }
             if envelope.sequence < existing.sequence &&
-               !(_isWraparound(envelope.sequence, reference: nextRxSequence)) {
+               !(isWraparound(envelope.sequence, reference: nextRxSequence)) {
                 ring.insert(envelope, at: i)
                 envelope.tracked = true
                 return true
@@ -514,12 +541,12 @@ public final class Channel {
     /// Mirrors Python's `(next_rx_sequence - envelope.sequence) > SEQ_MAX//2`,
     /// which is computed in *signed* integer arithmetic. Returns true when
     /// `seq` is wrapped-around-future relative to `reference`.
-    private func _isWraparound(_ seq: UInt16, reference: UInt16) -> Bool {
+    private func isWraparound(_ seq: UInt16, reference: UInt16) -> Bool {
         let diff = Int(reference) - Int(seq)
-        return diff > Int(Channel.SEQ_MAX) / 2
+        return diff > Int(Channel.seqMax) / 2
     }
 
-    private func _runCallbacks(_ message: MessageBase) {
+    private func runCallbacks(_ message: MessageBase) {
         lock.lock()
         let handlers = messageHandlers
         lock.unlock()
@@ -528,22 +555,22 @@ public final class Channel {
         }
     }
 
-    private func _getPacketTimeout(tries: Int) -> TimeInterval {
+    private func getPacketTimeout(tries: Int) -> TimeInterval {
         let t = max(tries, 1)
         return pow(1.5, Double(t - 1)) * max(outlet.rtt * 2.5, 0.025) * Double(txRing.count + 1)
     }
 
-    private func _updatePacketTimeouts() {
+    private func updatePacketTimeouts() {
         for env in txRing {
             guard let pkt = env.packet else { continue }
-            let updated = _getPacketTimeout(tries: env.tries)
+            let updated = getPacketTimeout(tries: env.tries)
             outlet.setPacketTimeoutCallback(pkt, timeout: updated, callback: { [weak self] p in
-                self?._packetTimeout(p)
+                self?.packetTimeout(p)
             })
         }
     }
 
-    private func _packetDelivered(_ packet: ChannelPacketHandle) {
+    private func packetDelivered(_ packet: ChannelPacketHandle) {
         lock.lock()
         guard let idx = txRing.firstIndex(where: {
             guard let p = $0.packet else { return false }
@@ -556,29 +583,29 @@ public final class Channel {
         // Update window tier based on RTT.
         let rtt = outlet.rtt
         if rtt != 0 {
-            if rtt > Channel.RTT_FAST {
+            if rtt > Channel.rttFast {
                 fastRateRounds = 0
-                if rtt > Channel.RTT_MEDIUM {
+                if rtt > Channel.rttMedium {
                     mediumRateRounds = 0
                 } else {
                     mediumRateRounds += 1
-                    if windowMax < Channel.WINDOW_MAX_MEDIUM && mediumRateRounds == Channel.FAST_RATE_THRESHOLD {
-                        windowMax = Channel.WINDOW_MAX_MEDIUM
-                        windowMin = Channel.WINDOW_MIN_LIMIT_MEDIUM
+                    if windowMax < Channel.windowMaxMedium && mediumRateRounds == Channel.fastRateThreshold {
+                        windowMax = Channel.windowMaxMedium
+                        windowMin = Channel.windowMinLimitMedium
                     }
                 }
             } else {
                 fastRateRounds += 1
-                if windowMax < Channel.WINDOW_MAX_FAST && fastRateRounds == Channel.FAST_RATE_THRESHOLD {
-                    windowMax = Channel.WINDOW_MAX_FAST
-                    windowMin = Channel.WINDOW_MIN_LIMIT_FAST
+                if windowMax < Channel.windowMaxFast && fastRateRounds == Channel.fastRateThreshold {
+                    windowMax = Channel.windowMaxFast
+                    windowMin = Channel.windowMinLimitFast
                 }
             }
         }
         lock.unlock()
     }
 
-    private func _packetTimeout(_ packet: ChannelPacketHandle) {
+    private func packetTimeout(_ packet: ChannelPacketHandle) {
         // Bail early if proof already arrived (avoids spurious retransmits).
         guard outlet.getPacketState(packet) != .delivered else { return }
 
@@ -618,13 +645,13 @@ public final class Channel {
 
             var alreadyDelivered = false
             lock.lock()
-            outlet.setPacketDeliveredCallback(pkt, callback: { [weak self] p in self?._packetDelivered(p) })
-            outlet.setPacketTimeoutCallback(pkt, timeout: _getPacketTimeout(tries: env.tries), callback: { [weak self] p in self?._packetTimeout(p) })
-            _updatePacketTimeouts()
+            outlet.setPacketDeliveredCallback(pkt, callback: { [weak self] p in self?.packetDelivered(p) })
+            outlet.setPacketTimeoutCallback(pkt, timeout: getPacketTimeout(tries: env.tries), callback: { [weak self] p in self?.packetTimeout(p) })
+            updatePacketTimeouts()
             alreadyDelivered = (outlet.getPacketState(pkt) == .delivered)
             lock.unlock()
 
-            if alreadyDelivered { _packetDelivered(pkt) }
+            if alreadyDelivered { packetDelivered(pkt) }
         }
     }
 }
@@ -648,8 +675,8 @@ public final class LinkChannelOutlet: ChannelOutlet {
         // Send via the Link's channel path so the sent packet's hash is learned and
         // can match the returning delivery proof (see Link.channelProofWaiters).
         // Without this the handle would never transition to .delivered, the
-        // Channel send window (WINDOW = 2) would never drain, and the third send
-        // would throw linkNotReady. See swift_devel bug 005.
+        // Channel send window (defaultWindow = 2) would never drain, and the third
+        // send would throw linkNotReady. See swift_devel bug 005.
         if let hash = link?.sendChannelData(raw) {
             link?.trackChannelProof(hash: hash, handle: handle)
         }

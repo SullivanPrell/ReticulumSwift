@@ -18,11 +18,11 @@ final class RemotePathHandlerShapeTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        Reticulum.remoteManagementEnabled_ = true
+        Reticulum.storedRemoteManagementEnabled = true
     }
 
     override func tearDown() {
-        Reticulum.remoteManagementEnabled_ = false
+        Reticulum.storedRemoteManagementEnabled = false
         super.tearDown()
     }
 

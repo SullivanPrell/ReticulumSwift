@@ -48,7 +48,7 @@ final class BlackholeUpdaterTests: XCTestCase {
 
     func testTickDoesNothingWithNoSources() {
         // When blackholeSources() returns [] tick() must not crash.
-        // Reticulum.blackholeSources_ defaults to [] so no mutation needed.
+        // Reticulum.storedBlackholeSources defaults to [] so no mutation needed.
         let updater = BlackholeUpdater()
         updater.tick()  // must not crash
     }

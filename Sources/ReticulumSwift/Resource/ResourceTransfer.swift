@@ -84,25 +84,25 @@ public final class ResourceTransfer {
     /// Serializes ALL mutable transfer state. A strict LEAF lock: it's NEVER
     /// held across any `link.*` call, callback, `Resource` init, or watchdog
     /// start/stop. Non-recursive—internal code holding it must use the `_`-backed
-    /// fields (`_status`/`_advertisement`/…) and must never call a self-locking
+    /// fields (`unsafeStatus`/`unsafeAdvertisement`/…) and must never call a self-locking
     /// method (`sendRequest`/`assemble`/`fail`/`cancel`/`sendSegment`) while held.
     private let stateLock = NSLock()
 
-    private var _status: Status = .idle
+    private var unsafeStatus: Status = .idle
     /// Current transfer status. `stateLock` serializes reads and writes.
     /// Torn reads of this enum (its `.failed` case carries a `String`) could
     /// crash—not merely garble—so external access goes through the lock.
     public private(set) var status: Status {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _status }
-        set { stateLock.lock(); _status = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeStatus }
+        set { stateLock.lock(); unsafeStatus = newValue; stateLock.unlock() }
     }
 
-    private var _advertisement: ResourceAdvertisement?
+    private var unsafeAdvertisement: ResourceAdvertisement?
     /// The resource advertisement (nil until sent/received). Lock-guarded: a torn
     /// read of this optional class reference would be an ARC use-after-free.
     public private(set) var advertisement: ResourceAdvertisement? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _advertisement }
-        set { stateLock.lock(); _advertisement = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeAdvertisement }
+        set { stateLock.lock(); unsafeAdvertisement = newValue; stateLock.unlock() }
     }
 
     /// True when this transfer is the RECEIVER of an incoming resource (set once an
@@ -115,12 +115,12 @@ public final class ResourceTransfer {
     /// Used to compute `link.expectedRate` on completion. Mirrors Python `Resource.started_transferring`.
     private var startedTransferring: Date?
 
-    private var _resourceHash: Data = Data()
+    private var unsafeResourceHash: Data = Data()
     /// Full 32-byte SHA256 resource hash. Set after send() or receiveAdvertisement().
     /// Lock-guarded for safe concurrent reads from the public getter.
     public private(set) var resourceHash: Data {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _resourceHash }
-        set { stateLock.lock(); _resourceHash = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeResourceHash }
+        set { stateLock.lock(); unsafeResourceHash = newValue; stateLock.unlock() }
     }
 
     public var onComplete: ((ResourceTransfer) -> Void)?
@@ -139,7 +139,7 @@ public final class ResourceTransfer {
 
     /// `progress` without taking the lock, for callers that already hold it.
     private func progressLocked() -> Double {
-        if case .complete = _status { return 1.0 }
+        if case .complete = unsafeStatus { return 1.0 }
         // Python's `get_progress` branches on `self.initiator`: a sender measures
         // parts *sent*, a receiver parts *received* (Resource.py:1146-1149). Using
         // the receive counter for both left every sender pinned at 0.0 until the
@@ -258,13 +258,13 @@ public final class ResourceTransfer {
     /// before calling the public callbacks. Set by Link.receive().
     var onAssembledInternal: ((Data, ResourceTransfer) -> Void)?
 
-    private var _receivedMetadata: Data?
+    private var unsafeReceivedMetadata: Data?
     /// Set on the receiver side after successful assembly when the sender included metadata.
     /// The bytes are the raw pre-packed metadata (without the 3-byte size prefix).
     /// Lock-guarded for safe concurrent reads.
     public private(set) var receivedMetadata: Data? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _receivedMetadata }
-        set { stateLock.lock(); _receivedMetadata = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeReceivedMetadata }
+        set { stateLock.lock(); unsafeReceivedMetadata = newValue; stateLock.unlock() }
     }
 
     // MARK: - Multi-segment receiver state
@@ -349,15 +349,15 @@ public final class ResourceTransfer {
 
     private func watchdogTick() {
         stateLock.lock()
-        if _status.isTerminal { stateLock.unlock(); stopWatchdog(); return }
+        if unsafeStatus.isTerminal { stateLock.unlock(); stopWatchdog(); return }
         let sinceActivity = Date().timeIntervalSince(lastActivity)
         guard sinceActivity >= retryTimeout else { stateLock.unlock(); return }
 
         if retriesLeft > 0 {
             retriesLeft -= 1
             lastActivity = Date()
-            let snapStatus = _status
-            let adv = _advertisement
+            let snapStatus = unsafeStatus
+            let adv = unsafeAdvertisement
             stateLock.unlock()
 
             // ACT OUTSIDE LOCK—every branch below calls into Link.
@@ -472,7 +472,7 @@ public final class ResourceTransfer {
         encryptedSegments = resource.encryptedSegments
         mapHashes = resource.mapHashes
         randomHash = resource.randomHash
-        _resourceHash = resource.resourceHash
+        unsafeResourceHash = resource.resourceHash
         expectedProof = resource.expectedProof
         // Each segment is a distinct Resource with its own hashmap, so the sender's
         // per-segment part-serving cursors must restart. `receiverMinConsecutiveHeight`
@@ -514,8 +514,8 @@ public final class ResourceTransfer {
         )
 
         stateLock.lock()
-        _advertisement = adv
-        _status = .advertised
+        unsafeAdvertisement = adv
+        unsafeStatus = .advertised
         retriesLeft = maxAdvRetries
         lastActivity = Date()
         stateLock.unlock()
@@ -543,11 +543,11 @@ public final class ResourceTransfer {
         }
 
         stateLock.lock()
-        guard _status == .advertised || _status == .transferring || _status == .awaitingProof else {
+        guard unsafeStatus == .advertised || unsafeStatus == .transferring || unsafeStatus == .awaitingProof else {
             stateLock.unlock(); return
         }
-        if _status != .transferring {
-            _status = .transferring
+        if unsafeStatus != .transferring {
+            unsafeStatus = .transferring
             if startedTransferring == nil { startedTransferring = Date() }
         }
         lastActivity = Date()
@@ -605,7 +605,7 @@ public final class ResourceTransfer {
                     cancelReason = "resource HMU error"
                 } else {
                     let hmuHashmap = mapHashes[hashmapStart ..< hashmapEnd].reduce(Data(), +)
-                    hmuPayload = _resourceHash + MsgPack.encode(.array([
+                    hmuPayload = unsafeResourceHash + MsgPack.encode(.array([
                         .uint(UInt64(segment)),
                         .bytes(hmuHashmap)
                     ]))
@@ -631,8 +631,8 @@ public final class ResourceTransfer {
         // If proof already arrived (loopback) leave the completed status alone.
         // Advance to awaitingProof once every segment has been sent at least once.
         stateLock.lock()
-        if _status != .complete, _status != .rejected, sentMapHashes.count == mapHashes.count {
-            _status = .awaitingProof
+        if unsafeStatus != .complete, unsafeStatus != .rejected, sentMapHashes.count == mapHashes.count {
+            unsafeStatus = .awaitingProof
         }
         stateLock.unlock()
 
@@ -658,7 +658,7 @@ public final class ResourceTransfer {
         // Snapshot conclusion / segment-advance state under the lock; act outside.
         stateLock.lock()
         let started = startedTransferring
-        let advDataSize = Int(_advertisement?.dataSize ?? 0)
+        let advDataSize = Int(unsafeAdvertisement?.dataSize ?? 0)
         let hasMoreSegments = !pendingSegments.isEmpty
         var nextSegment: Data? = nil
         var nextReqID: Data? = nil
@@ -687,7 +687,7 @@ public final class ResourceTransfer {
 
         // Multi-segment: if more segments remain, advance and advertise next.
         if hasMoreSegments, let next = nextSegment {
-            stateLock.lock(); _status = .idle; stateLock.unlock()
+            stateLock.lock(); unsafeStatus = .idle; stateLock.unlock()
             do {
                 try sendSegment(
                     payload: next,
@@ -706,12 +706,12 @@ public final class ResourceTransfer {
             return
         }
 
-        stateLock.lock(); _status = .complete; stateLock.unlock()
+        stateLock.lock(); unsafeStatus = .complete; stateLock.unlock()
         onComplete?(self)
     }
 
     internal func reject() {
-        stateLock.lock(); _status = .rejected; stateLock.unlock()
+        stateLock.lock(); unsafeStatus = .rejected; stateLock.unlock()
         stopWatchdog()
         link.unregisterOutgoingResource(self)
         onFailed?(self, .rejected)
@@ -810,8 +810,8 @@ public final class ResourceTransfer {
 
         stateLock.lock()
         isReceiver = true
-        _advertisement = adv
-        _resourceHash = adv.resourceHash
+        unsafeAdvertisement = adv
+        unsafeResourceHash = adv.resourceHash
         totalParts = derived
 
         // Build hashmap array from advertisement bytes.
@@ -847,7 +847,7 @@ public final class ResourceTransfer {
         window = ResourceTransfer.windowInitial
         outstandingParts = 0
         waitingForHMU = false
-        _status = .transferring
+        unsafeStatus = .transferring
         retriesLeft = maxRetries
         lastActivity = Date()
         if startedTransferring == nil { startedTransferring = Date() }
@@ -862,7 +862,7 @@ public final class ResourceTransfer {
     /// Called by Link for each inbound RESOURCE data part (raw pre-encrypted bytes).
     internal func receivePart(_ data: Data) {
         stateLock.lock()
-        guard _status == .transferring else { stateLock.unlock(); return }
+        guard unsafeStatus == .transferring else { stateLock.unlock(); return }
         lastActivity = Date()
         retriesLeft = maxRetries
 
@@ -929,7 +929,7 @@ public final class ResourceTransfer {
               case .bytes(let hmap) = arr[1] else { return }
 
         stateLock.lock()
-        guard _status == .transferring else { stateLock.unlock(); return }
+        guard unsafeStatus == .transferring else { stateLock.unlock(); return }
         // Only process a hashmap update this side actually requested; unsolicited or
         // duplicate HMUs are ignored. Mirrors Python `hashmap_update_packet`
         // gating on `self.waiting_for_hmu` (commit 3a36c367).
@@ -987,7 +987,7 @@ public final class ResourceTransfer {
 
     /// Caller MUST hold `stateLock`.
     private func randomHashForReceiverLocked() -> Data {
-        _advertisement?.randomHash ?? Data()
+        unsafeAdvertisement?.randomHash ?? Data()
     }
 
     private func sendRequest() {
@@ -1031,7 +1031,7 @@ public final class ResourceTransfer {
         } else {
             reqData.append(ResourceTransfer.hashmapIsNotExhausted)
         }
-        reqData.append(contentsOf: _resourceHash)
+        reqData.append(contentsOf: unsafeResourceHash)
         reqData.append(contentsOf: requestedHashes)
         stateLock.unlock()
 
@@ -1041,10 +1041,10 @@ public final class ResourceTransfer {
 
     private func assemble() {
         stateLock.lock()
-        _status = .transferring
+        unsafeStatus = .transferring
         let allParts = parts.compactMap { $0 }
         let totalPartsSnapshot = totalParts
-        let adv = _advertisement
+        let adv = unsafeAdvertisement
         stateLock.unlock()
 
         guard allParts.count == totalPartsSnapshot, let adv else {
@@ -1117,12 +1117,12 @@ public final class ResourceTransfer {
             // Accumulate bytes BEFORE sending proof so the receiver is ready when the
             // next ADV arrives synchronously (loopback interfaces cascade instantly).
             stateLock.lock()
-            _receivedMetadata = result.metadata
+            unsafeReceivedMetadata = result.metadata
             segmentBuffer.append(plaintext)
             originalHash = Data(adv.originalHash)
             // Preserve metadata from segment 1 (subsequent segments have no metadata).
             if result.metadata != nil { multiSegmentMetadata = result.metadata }
-            _status = .idle
+            unsafeStatus = .idle
             stateLock.unlock()
             stopWatchdog()
             // Stay registered in incomingResources so the next ADV is dispatched
@@ -1155,13 +1155,13 @@ public final class ResourceTransfer {
 
         // All segments received—concatenate and deliver.
         stateLock.lock()
-        _receivedMetadata = result.metadata
+        unsafeReceivedMetadata = result.metadata
         segmentBuffer.append(plaintext)
         let fullPayload = segmentBuffer.reduce(Data(), +)
         segmentBuffer.removeAll()
         // Use metadata from segment 1 if this was a multi-segment transfer.
         if multiSegmentMetadata != nil {
-            _receivedMetadata = multiSegmentMetadata
+            unsafeReceivedMetadata = multiSegmentMetadata
             multiSegmentMetadata = nil
         }
         let startedSnapshot = startedTransferring
@@ -1206,7 +1206,7 @@ public final class ResourceTransfer {
             link.resourceConcluded(dataSize: Int(adv.dataSize), duration: duration)
         }
 
-        stateLock.lock(); _status = .complete; stateLock.unlock()
+        stateLock.lock(); unsafeStatus = .complete; stateLock.unlock()
         stopWatchdog()
         link.unregisterIncomingResource(self)
         onComplete?(self)
@@ -1231,10 +1231,10 @@ public final class ResourceTransfer {
         // (including a prior .complete/.rejected), exactly as the original did—the
         // ResourceCancel/LinkDrop tests rely on cancel-after-reject → .failed.
         // The lock adds atomicity; it doesn't change the state-machine semantics.
-        if case .failed = _status { stateLock.unlock(); return }
-        _status = s
+        if case .failed = unsafeStatus { stateLock.unlock(); return }
+        unsafeStatus = s
         let receiver = isReceiver
-        let rhash = _resourceHash
+        let rhash = unsafeResourceHash
         stateLock.unlock()
 
         stopWatchdog()

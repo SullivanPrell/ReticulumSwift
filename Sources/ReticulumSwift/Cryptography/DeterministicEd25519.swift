@@ -206,11 +206,12 @@ private struct BigUInt: Comparable, Equatable {
 
 // MARK: - Ed25519 constants (all precomputed, verified against RFC 8032)
 
-// Q = 2^255 - 19  (field prime)
-private let Q = BigUInt(hex: "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed")
+// The field prime Q = 2^255 - 19. Spelled out because the RFC's one-letter symbols
+// are not lowerCamelCase; the `q`-prefixed helpers below still read "mod Q".
+private let fieldPrime = BigUInt(hex: "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed")
 
-// L = 2^252 + 27742317777372353535851937790883648493  (group order)
-private let L = BigUInt(hex: "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed")
+// The group order L = 2^252 + 27742317777372353535851937790883648493
+private let groupOrder = BigUInt(hex: "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed")
 
 // d = -121665/121666 mod Q
 private let dConst = BigUInt(hex: "52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3")
@@ -218,9 +219,9 @@ private let dConst = BigUInt(hex: "52036cee2b6ffe738cc740797779e89800700a4d4141d
 // 2*d mod Q
 private let d2 = BigUInt(hex: "2406d9dc56dffce7198e80f2eef3d13000e0149a8283b156ebd69b9426b2f159")
 
-// Base point B affine coordinates
-private let Bx = BigUInt(hex: "216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a")
-private let By = BigUInt(hex: "6666666666666666666666666666666666666666666666666666666666666658")
+// Affine coordinates of the base point B
+private let basePointX = BigUInt(hex: "216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a")
+private let basePointY = BigUInt(hex: "6666666666666666666666666666666666666666666666666666666666666658")
 
 // mask255 = 2^255 - 1
 private let mask255 = BigUInt(hex: "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
@@ -230,14 +231,14 @@ private let mask255 = BigUInt(hex: "7fffffffffffffffffffffffffffffffffffffffffff
 /// a + b mod Q  (a, b < Q)
 private func qadd(_ a: BigUInt, _ b: BigUInt) -> BigUInt {
     var r = a + b
-    if r >= Q { r = r - Q }
+    if r >= fieldPrime { r = r - fieldPrime }
     return r
 }
 
 /// a - b mod Q  (a, b < Q)
 private func qsub(_ a: BigUInt, _ b: BigUInt) -> BigUInt {
     if a >= b { return a - b }
-    return (Q - b) + a   // = Q + a - b; since a < b, result ∈ [1, Q-1]
+    return (fieldPrime - b) + a   // = Q + a - b; since a < b, result ∈ [1, Q-1]
 }
 
 /// a * b mod Q
@@ -247,12 +248,12 @@ private func qmul(_ a: BigUInt, _ b: BigUInt) -> BigUInt {
 
 /// -a mod Q
 private func qneg(_ a: BigUInt) -> BigUInt {
-    a.isZero ? BigUInt() : Q - a
+    a.isZero ? BigUInt() : fieldPrime - a
 }
 
 /// a^(Q-2) mod Q  (multiplicative inverse)
 private func qinv(_ a: BigUInt) -> BigUInt {
-    a.powmod(Q - BigUInt(2), Q)
+    a.powmod(fieldPrime - BigUInt(2), fieldPrime)
 }
 
 /// Reduce x mod Q using the special form Q = 2^255 - 19.
@@ -261,56 +262,60 @@ private func fastReduceQ(_ x: BigUInt) -> BigUInt {
     // Round 1: x = (x mod 2^255) + 19*(x >> 255)
     let lo1 = x & mask255
     let hi1 = x >> 255
-    if hi1.isZero { return lo1 >= Q ? lo1 - Q : lo1 }
+    if hi1.isZero { return lo1 >= fieldPrime ? lo1 - fieldPrime : lo1 }
     var r = lo1 + BigUInt(19) * hi1      // < 2^260 for x < Q^2
     // Round 2
     let lo2 = r & mask255
     let hi2 = r >> 255
     if !hi2.isZero { r = lo2 + BigUInt(19) * hi2 }   // r < Q + 627 < 2Q
-    if r >= Q { r = r - Q }
+    if r >= fieldPrime { r = r - fieldPrime }
     return r
 }
 
 // MARK: - Extended Edwards point (X:Y:Z:T), x=X/Z, y=Y/Z, T=XY/Z
+//
+// The RFC and the EFD formulas write the coordinates and the addition/doubling
+// intermediates in uppercase; both are spelled lowercase here, position for
+// position, so the formulas below still read against their published form.
 
 private struct Pt {
-    var X, Y, Z, T: BigUInt
+    var x, y, z, t: BigUInt
 
-    static let identity = Pt(X: .init(), Y: .init(1), Z: .init(1), T: .init())
+    static let identity = Pt(x: .init(), y: .init(1), z: .init(1), t: .init())
 
     // Unified point addition (add-2008-hwcd-3)
     func add(_ o: Pt) -> Pt {
-        let A = qmul(qsub(Y, X), qsub(o.Y, o.X))
-        let B = qmul(qadd(Y, X), qadd(o.Y, o.X))
-        let C = qmul(T, qmul(d2, o.T))
-        let D = qmul(qadd(Z, Z), o.Z)          // 2*Z1*Z2
-        let E = qsub(B, A)
-        let F = qsub(D, C)
-        let G = qadd(D, C)
-        let H = qadd(B, A)
-        return Pt(X: qmul(E, F), Y: qmul(G, H), Z: qmul(F, G), T: qmul(E, H))
+        let a = qmul(qsub(y, x), qsub(o.y, o.x))
+        let b = qmul(qadd(y, x), qadd(o.y, o.x))
+        let c = qmul(t, qmul(d2, o.t))
+        let d = qmul(qadd(z, z), o.z)          // 2*Z1*Z2
+        let e = qsub(b, a)
+        let f = qsub(d, c)
+        let g = qadd(d, c)
+        let h = qadd(b, a)
+        return Pt(x: qmul(e, f), y: qmul(g, h), z: qmul(f, g), t: qmul(e, h))
     }
 
     // Point doubling (dbl-2008-hwcd)
     func doubled() -> Pt {
-        let A  = qmul(X, X)
-        let B  = qmul(Y, Y)
-        let C  = qadd(qmul(Z, Z), qmul(Z, Z))  // 2*Z^2
-        let D  = qneg(A)
-        let E  = qsub(qsub(qmul(qadd(X, Y), qadd(X, Y)), A), B)   // (X+Y)^2-A-B
-        let G  = qadd(D, B)
-        let F  = qsub(G, C)
-        let H  = qsub(D, B)
-        return Pt(X: qmul(E, F), Y: qmul(G, H), Z: qmul(F, G), T: qmul(E, H))
+        let a = qmul(x, x)
+        let b = qmul(y, y)
+        let c = qadd(qmul(z, z), qmul(z, z))  // 2*Z^2
+        let d = qneg(a)
+        let e = qsub(qsub(qmul(qadd(x, y), qadd(x, y)), a), b)   // (X+Y)^2-A-B
+        let g = qadd(d, b)
+        let f = qsub(g, c)
+        let h = qsub(d, b)
+        return Pt(x: qmul(e, f), y: qmul(g, h), z: qmul(f, g), t: qmul(e, h))
     }
 
     /// Compressed 32-byte encoding (RFC 8032 §5.1.2).
     var encodedBytes: [UInt8] {
-        let zi = qinv(Z)
-        let x  = qmul(X, zi)
-        let y  = qmul(Y, zi)
-        var out = y.toBytes(count: 32)    // little-endian y
-        if x.bit(0) { out[31] |= 0x80 }  // sign bit = low bit of x
+        let zi = qinv(z)
+        let affineX = qmul(x, zi)
+        let affineY = qmul(y, zi)
+        var out = affineY.toBytes(count: 32)     // little-endian y
+        if affineX.bit(0) { out[31] |= 0x80 }    // sign bit = low bit of x
         return out
     }
 }
@@ -319,12 +324,12 @@ private struct Pt {
 /// `s` must be in [0, L) for correct results.
 private func scalarMultBase(_ s: BigUInt) -> Pt {
     guard !s.isZero else { return .identity }
-    let base = Pt(X: Bx, Y: By, Z: .init(1), T: qmul(Bx, By))
+    let base = Pt(x: basePointX, y: basePointY, z: .init(1), t: qmul(basePointX, basePointY))
     var result = Pt.identity
-    var P = base
+    var p = base
     for i in 0..<s.bitLength {
-        if s.bit(i) { result = result.add(P) }
-        P = P.doubled()
+        if s.bit(i) { result = result.add(p) }
+        p = p.doubled()
     }
     return result
 }
@@ -357,25 +362,25 @@ public enum DeterministicEd25519 {
         let a = BigUInt(le: aBytes)                   // private scalar a ∈ [2^254, 2^255)
 
         // 3. Public key A = (a mod L) * B
-        let A_bytes = scalarMultBase(a % L).encodedBytes
+        let encodedA = scalarMultBase(a % groupOrder).encodedBytes
 
         // 4. Nonce r = SHA-512(b || M) as a little-endian integer
         let rHash = [UInt8](SHA512.hash(data: Data(bBytes + msgBytes)))
         let r     = BigUInt(le: rHash)                // 512-bit nonce, not yet reduced
 
         // 5. R = (r mod L) * B
-        let R_bytes = scalarMultBase(r % L).encodedBytes
+        let encodedR = scalarMultBase(r % groupOrder).encodedBytes
 
         // 6. k = SHA-512(R || A || M) as a little-endian integer
-        let kHash = [UInt8](SHA512.hash(data: Data(R_bytes + A_bytes + msgBytes)))
+        let kHash = [UInt8](SHA512.hash(data: Data(encodedR + encodedA + msgBytes)))
         let k     = BigUInt(le: kHash)                // 512-bit
 
         // 7. S = (r + k * a) mod L
         //    Using full (un-reduced) r and a gives the same result mod L.
-        let S       = (r + k * a) % L
-        let S_bytes = S.toBytes(count: 32)
+        let sScalar  = (r + k * a) % groupOrder
+        let encodedS = sScalar.toBytes(count: 32)
 
-        return Data(R_bytes + S_bytes)
+        return Data(encodedR + encodedS)
     }
 
     /// Returns the 32-byte Ed25519 public key for the given 32-byte seed.
@@ -386,6 +391,6 @@ public enum DeterministicEd25519 {
         aBytes[0]  &= 0xF8
         aBytes[31] &= 0x7F
         aBytes[31] |= 0x40
-        return Data(scalarMultBase(BigUInt(le: aBytes) % L).encodedBytes)
+        return Data(scalarMultBase(BigUInt(le: aBytes) % groupOrder).encodedBytes)
     }
 }

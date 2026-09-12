@@ -9,8 +9,8 @@ import ReticulumSwift
 // and every exit code. All protocol work lives in ReticulumSwift's RNX* types, which are
 // pure and unit-tested; nothing here does anything a test would want to assert.
 
-let VERSION = Reticulum.version
-let APP_NAME = RNXApp.appName
+let version = Reticulum.version
+let appName = RNXApp.appName
 
 // MARK: - Interrupt handling
 
@@ -144,7 +144,7 @@ func handleInterruptIfNeeded() {
 // MARK: - Argument parser
 
 func makeParser() -> ArgumentParser {
-    var parser = ArgumentParser(program: APP_NAME, overview: RNXHelpText.description)
+    var parser = ArgumentParser(program: appName, overview: RNXHelpText.description)
     parser.positional("destination", help: "hexadecimal hash of the listener", required: false)
     parser.positional("command", help: "command to be execute", required: false)
     parser.option(["--config"], metavar: "path",
@@ -173,7 +173,7 @@ func makeParser() -> ArgumentParser {
 /// Python: argparse writes the usage line and an error to **stderr** and exits 2.
 func usageError(_ message: String) -> Never {
     writeErrLine(RNXHelpText.usage)
-    writeErrLine("\(APP_NAME): error: \(message)")
+    writeErrLine("\(appName): error: \(message)")
     exit(Int32(RNXApp.Result.usageError.rawValue))
 }
 
@@ -231,7 +231,7 @@ func parseOptions() -> Options {
     }
     if parsed.flag("--version") {
         // Python: argparse's version action prints "rnx {RNS.__version__}".
-        print("\(APP_NAME) \(VERSION)")
+        print("\(appName) \(version)")
         exit(0)
     }
 
@@ -650,7 +650,7 @@ func runREPL(_ options: Options) -> Never {
 
 // MARK: - Entry point
 
-struct rnx {
+struct RNXMain {
     static func main() {
         signal(SIGINT) { _ in rnxInterrupted = 1 }
         installPythonLogFormat()
@@ -677,4 +677,4 @@ struct rnx {
     }
 }
 
-rnx.main()
+RNXMain.main()

@@ -540,17 +540,17 @@ final class RNS141ParityTests: XCTestCase {
         //
         // Distinguishing the two takes care: an out-of-window frame that's
         // buffered still delivers nothing on arrival (it isn't contiguous), so
-        // filling only 0..<WINDOW_MAX can't tell "dropped" from "buffered"—both
-        // yield WINDOW_MAX deliveries. Fill 0...WINDOW_MAX instead, which
-        // advances nextRxSequence to WINDOW_MAX+1: if the frame had been
+        // filling only 0..<windowMaxLimit can't tell "dropped" from "buffered"—both
+        // yield windowMaxLimit deliveries. Fill 0...windowMaxLimit instead, which
+        // advances nextRxSequence to windowMaxLimit+1: if the frame had been
         // buffered it would now become contiguous and deliver too.
-        ch.receive(Self.frame(seq: UInt16(Channel.WINDOW_MAX + 1), value: 0x01))
+        ch.receive(Self.frame(seq: UInt16(Channel.windowMaxLimit + 1), value: 0x01))
         XCTAssertEqual(delivered, 0, "an out-of-window frame delivers nothing on arrival")
 
-        for s in 0...Channel.WINDOW_MAX {
+        for s in 0...Channel.windowMaxLimit {
             ch.receive(Self.frame(seq: UInt16(s), value: 0x02))
         }
-        XCTAssertEqual(delivered, Channel.WINDOW_MAX + 1,
+        XCTAssertEqual(delivered, Channel.windowMaxLimit + 1,
                        "the far-future frame must have been dropped; if it were buffered it would deliver here too")
     }
 

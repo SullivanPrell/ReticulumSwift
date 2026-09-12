@@ -300,9 +300,9 @@ final class DiscoveryPublishConfigTests: XCTestCase {
     /// trigger, because the interfaces aren't built yet when the block is parsed.
     func testAnyDiscoverableInterfaceEnablesTheAnnouncer() {
         let saved = Reticulum.discoveryEnabled()
-        defer { Reticulum.discoveryEnabled_ = saved }
+        defer { Reticulum.storedDiscoveryEnabled = saved }
 
-        Reticulum.discoveryEnabled_ = false
+        Reticulum.storedDiscoveryEnabled = false
         _ = configured(["discovery_name": "not discoverable"])
         XCTAssertFalse(Reticulum.discoveryEnabled())
 

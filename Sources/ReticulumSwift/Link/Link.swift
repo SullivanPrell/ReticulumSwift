@@ -42,11 +42,11 @@ public final class Link {
         case destinationClosed  // remote (initiator) received a close packet
     }
     /// Set when the link enters `.closed` or `.failed`. Nil while active.
-    /// Serialized by `stateLock`; internal under-lock code uses `_teardownReason`.
-    private var _teardownReason: TeardownReason?
+    /// Serialized by `stateLock`; internal under-lock code uses `unsafeTeardownReason`.
+    private var unsafeTeardownReason: TeardownReason?
     public private(set) var teardownReason: TeardownReason? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _teardownReason }
-        set { stateLock.lock(); _teardownReason = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeTeardownReason }
+        set { stateLock.lock(); unsafeTeardownReason = newValue; stateLock.unlock() }
     }
 
     /// Bytes exchanged during link establishment (LRR + LRPR).
@@ -201,11 +201,11 @@ public final class Link {
 
     public let role: Role
     /// Current link status. `stateLock` serializes reads and writes; internal code
-    /// holding the lock uses `_status` directly (the lock is non-recursive).
-    private var _status: Status = .pending
+    /// holding the lock uses `unsafeStatus` directly (the lock is non-recursive).
+    private var unsafeStatus: Status = .pending
     public private(set) var status: Status {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _status }
-        set { stateLock.lock(); _status = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeStatus }
+        set { stateLock.lock(); unsafeStatus = newValue; stateLock.unlock() }
     }
 
     /// Initiator: target destination. Responder: local registered destination
@@ -226,13 +226,13 @@ public final class Link {
     public private(set) var peerSigPubBytes: Data?
 
     public private(set) var linkID: Data?
-    private var _derivedKey: Data?
+    private var unsafeDerivedKey: Data?
     /// The 64-byte HKDF-derived session key. Lock-guarded: `close()` nils it on one
     /// thread while other threads may read it, and a torn read of the `Data` buffer
-    /// could crash. Internal code holding `stateLock` uses `_derivedKey`.
+    /// could crash. Internal code holding `stateLock` uses `unsafeDerivedKey`.
     public private(set) var derivedKey: Data? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _derivedKey }
-        set { stateLock.lock(); _derivedKey = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeDerivedKey }
+        set { stateLock.lock(); unsafeDerivedKey = newValue; stateLock.unlock() }
     }
     public private(set) var rtt: TimeInterval?
 
@@ -271,13 +271,13 @@ public final class Link {
     /// link-request proof that can arrive on a different interface thread while
     /// the watchdog is reading it.
     public var expectedHops: Int? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _expectedHops }
-        set { stateLock.lock(); _expectedHops = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeExpectedHops }
+        set { stateLock.lock(); unsafeExpectedHops = newValue; stateLock.unlock() }
     }
     /// Backing store for `expectedHops`, for the call sites that already hold
     /// `stateLock` (it's a plain `NSLock`, so re-entering through the property
     /// would deadlock).
-    var _expectedHops: Int?
+    var unsafeExpectedHops: Int?
 
     /// When this link's path was re-balanced from a link-request proof whose
     /// hop count disagreed with `expectedHops`, or `nil` if it never was.
@@ -286,9 +286,9 @@ public final class Link {
     /// rewriting the path table for the lifetime of the link.
     /// Mirrors Python's RNS 1.4.1 `Link.rebalanced`.
     public var rebalanced: Date? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _rebalanced }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeRebalanced }
     }
-    private var _rebalanced: Date?
+    private var unsafeRebalanced: Date?
 
     /// Claim the once-only re-balance for this link, recording `hops` as the new
     /// expectation if the claim succeeds.
@@ -302,9 +302,9 @@ public final class Link {
     /// is Transport.lock last, never over a link's own lock.
     func claimRebalance(toHops hops: Int) -> Bool {
         stateLock.lock(); defer { stateLock.unlock() }
-        guard _rebalanced == nil else { return false }
-        _rebalanced = Date()
-        _expectedHops = hops
+        guard unsafeRebalanced == nil else { return false }
+        unsafeRebalanced = Date()
+        unsafeExpectedHops = hops
         return true
     }
 
@@ -314,12 +314,12 @@ public final class Link {
     /// Guarded by `stateLock`, like `status`: `Link.initiate` starts the
     /// watchdog before returning, so the watchdog thread is already reading
     /// this by the time the caller assigns it on the very next line. Internal
-    /// code holding the lock must use `_establishmentTimeout`—`stateLock` is
+    /// code holding the lock must use `unsafeEstablishmentTimeout`—`stateLock` is
     /// not recursive.
-    private var _establishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
+    private var unsafeEstablishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
     public var establishmentTimeout: TimeInterval {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _establishmentTimeout }
-        set { stateLock.lock(); _establishmentTimeout = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeEstablishmentTimeout }
+        set { stateLock.lock(); unsafeEstablishmentTimeout = newValue; stateLock.unlock() }
     }
 
     /// Fires when the link transitions to `.active`. If the link is already
@@ -334,10 +334,10 @@ public final class Link {
     /// Guarded by `stateLock` for the same reason as `establishmentTimeout`—the
     /// watchdog takes and clears this callback while the caller that just
     /// created the link is still installing it.
-    private var _onTimeout: ((Link) -> Void)?
+    private var unsafeOnTimeout: ((Link) -> Void)?
     public var onTimeout: ((Link) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _onTimeout }
-        set { stateLock.lock(); _onTimeout = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnTimeout }
+        set { stateLock.lock(); unsafeOnTimeout = newValue; stateLock.unlock() }
     }
     /// Called when the remote peer reveals their identity via `identify`.
     /// Mirrors Python's `LinkCallbacks.remote_identified`.
@@ -375,10 +375,10 @@ public final class Link {
 
     /// Expected in-flight data rate in bits per second, updated after each
     /// completed Resource transfer. Mirrors Python `Link.expected_rate`.
-    private var _expectedRate: Double?
+    private var unsafeExpectedRate: Double?
     public private(set) var expectedRate: Double? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return _expectedRate }
-        set { stateLock.lock(); _expectedRate = newValue; stateLock.unlock() }
+        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeExpectedRate }
+        set { stateLock.lock(); unsafeExpectedRate = newValue; stateLock.unlock() }
     }
 
     // MARK: - Traffic statistics (mirrors Python Link.tx/rx/txbytes/rxbytes)
@@ -475,7 +475,7 @@ public final class Link {
     var pendingRequests: [Data: RequestReceipt] = [:]
 
     /// Channel attached to this link (lazy; created by `getChannel()`). Guarded by `stateLock`.
-    private var _channel: Channel?
+    private var channel: Channel?
 
     /// Full packet-hash → the `ChannelPacketHandle` awaiting a delivery proof.
     /// Populated by `sendChannelData` (via `trackChannelProof`), matched by an
@@ -586,8 +586,8 @@ public final class Link {
         stateLock.lock(); incomingResources.removeAll { $0 === rt }; stateLock.unlock()
     }
 
-    private var lastResourceWindow_: Int? = nil
-    private var lastResourceEifr_: Double? = nil
+    private var lastResourceWindow: Int? = nil
+    private var lastResourceEifr: Double? = nil
 
     /// Returns whether the given resource is in the incoming queue. Mirrors Python `Link.has_incoming_resource()`.
     public func hasIncomingResource(_ rt: ResourceTransfer) -> Bool {
@@ -597,12 +597,12 @@ public final class Link {
 
     /// Returns the window size of the last completed incoming resource. Mirrors Python `Link.get_last_resource_window()`.
     public func getLastResourceWindow() -> Int? {
-        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceWindow_
+        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceWindow
     }
 
     /// Returns the EIFR of the last completed incoming resource. Mirrors Python `Link.get_last_resource_eifr()`.
     public func getLastResourceEifr() -> Double? {
-        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceEifr_
+        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceEifr
     }
 
     /// Removes the resource from the outgoing queue. Mirrors Python `Link.cancel_outgoing_resource()`.
@@ -622,14 +622,14 @@ public final class Link {
 
     /// Called by ResourceTransfer when an incoming resource concludes—records window and EIFR.
     func recordIncomingResourceConclusion(window: Int, eifr: Double?) {
-        stateLock.lock(); lastResourceWindow_ = window; lastResourceEifr_ = eifr; stateLock.unlock()
+        stateLock.lock(); lastResourceWindow = window; lastResourceEifr = eifr; stateLock.unlock()
     }
 
     func testSetLastResourceWindow(_ w: Int) {
-        stateLock.lock(); lastResourceWindow_ = w; stateLock.unlock()
+        stateLock.lock(); lastResourceWindow = w; stateLock.unlock()
     }
     func testSetLastResourceEifr(_ e: Double) {
-        stateLock.lock(); lastResourceEifr_ = e; stateLock.unlock()
+        stateLock.lock(); lastResourceEifr = e; stateLock.unlock()
     }
 
     /// Record outbound-packet bookkeeping (timestamps + counters) under `stateLock`.
@@ -687,15 +687,15 @@ public final class Link {
     /// Matches Python's `Link.get_channel()`.
     public func getChannel() -> Channel {
         stateLock.lock()
-        if let ch = _channel { stateLock.unlock(); return ch }
+        if let ch = channel { stateLock.unlock(); return ch }
         stateLock.unlock()
         // Construct OUTSIDE the lock (the Channel initializer may touch the outlet),
         // then double-check under the lock so a concurrent caller can't install two.
         let outlet = LinkChannelOutlet(link: self)
         let ch = Channel(outlet: outlet)
         stateLock.lock()
-        if let existing = _channel { stateLock.unlock(); return existing }
-        _channel = ch
+        if let existing = channel { stateLock.unlock(); return existing }
+        channel = ch
         stateLock.unlock()
         return ch
     }
@@ -1094,7 +1094,7 @@ public final class Link {
 
         stateLock.lock()
         if let rt = requestTime { self.rtt = Date().timeIntervalSince(rt) }
-        self._status = .active
+        self.unsafeStatus = .active
         self.establishedAt = Date()
         // establishment_cost = KEYSIZE/8*2 + SIGLENGTH/8 + ECPUBSIZE/2 + ECPUBSIZE
         // Matches Python's formula: 64*2 + 64 + 32 + 64 = 288 bytes.
@@ -1148,11 +1148,11 @@ public final class Link {
         if let r = self.rtt, r > 0, establishmentCost > 0 {
             self.establishmentRate = Double(establishmentCost) / r
         }
-        self._status = .active
+        self.unsafeStatus = .active
         self.establishedAt = Date()
         // Record the hop count of the RTT packet so the responder also knows the
         // link's hop distance. Python (RNS 1.3.8): self.expected_hops = packet.hops
-        self._expectedHops = Int(packet.hops)
+        self.unsafeExpectedHops = Int(packet.hops)
         stateLock.unlock()
         onEstablished?(self)
     }
@@ -1176,9 +1176,9 @@ public final class Link {
         // build it OUTSIDE the lock so a throw can't leak a held lock.
         let newToken = try Token(key: derived)
         stateLock.lock()
-        _derivedKey = derived
+        unsafeDerivedKey = derived
         token = newToken
-        _status = .handshake
+        unsafeStatus = .handshake
         stateLock.unlock()
     }
 
@@ -1198,12 +1198,12 @@ public final class Link {
         // Snapshot the terminal decision + clear the session key atomically under the
         // lock; run stopWatchdog / markPathUnresponsive / onClosed OUTSIDE it.
         stateLock.lock()
-        let wasTimeout = (_teardownReason == .timeout)
+        let wasTimeout = (unsafeTeardownReason == .timeout)
         // Preserve .failed/.stale status set by the watchdog; only override to .closed
         // for explicit clean closes.
-        if _status != .failed && _status != .stale { _status = .closed }
+        if unsafeStatus != .failed && unsafeStatus != .stale { unsafeStatus = .closed }
         token = nil
-        _derivedKey = nil
+        unsafeDerivedKey = nil
         channelProofWaiters.removeAll()
         stateLock.unlock()
 
@@ -1351,18 +1351,18 @@ public final class Link {
         // BEFORE every callout (markPathUnresponsive / onTimeout / close / teardown /
         // sendKeepalive) so the lock is never held across a callback or Transport call.
         stateLock.lock()
-        guard _status != .closed && _status != .failed else { stateLock.unlock(); return }
+        guard unsafeStatus != .closed && unsafeStatus != .failed else { stateLock.unlock(); return }
         let now = Date()
-        let curStatus = _status
+        let curStatus = unsafeStatus
 
         switch curStatus {
         case .pending, .handshake:
             let requestedAt = requestTime ?? now
-            let deadline = requestedAt.addingTimeInterval(_establishmentTimeout)
+            let deadline = requestedAt.addingTimeInterval(unsafeEstablishmentTimeout)
             if now >= deadline {
-                _teardownReason = .timeout
-                _status = .failed
-                let cb = _onTimeout; _onTimeout = nil
+                unsafeTeardownReason = .timeout
+                unsafeStatus = .failed
+                let cb = unsafeOnTimeout; unsafeOnTimeout = nil
                 stateLock.unlock()
                 stopWatchdog()
                 // Mark path unresponsive on timeout.
@@ -1423,7 +1423,7 @@ public final class Link {
             if shouldSendKeepalive { try? sendKeepalive() }
             if shouldMarkStale {
                 stateLock.lock()
-                if _status == .active { _status = .stale }
+                if unsafeStatus == .active { unsafeStatus = .stale }
                 stateLock.unlock()
             }
             rescheduleWatchdog(after: nextTick)
@@ -1431,7 +1431,7 @@ public final class Link {
         case .stale:
             // Grace expired with no inbound recovery—tear down now.
             // Mirrors Python's STALE watchdog branch (RNS/Link.py:761-765).
-            _teardownReason = .timeout
+            unsafeTeardownReason = .timeout
             stateLock.unlock()
             transport?.markPathUnresponsive(for: destination.hash)
             try? teardown()
@@ -1460,7 +1460,7 @@ public final class Link {
         timer.schedule(deadline: .now() + tick, repeating: .never)
         timer.setEventHandler { [weak self] in self?.watchdogTick() }
         stateLock.lock()
-        guard _status != .closed && _status != .failed else {
+        guard unsafeStatus != .closed && unsafeStatus != .failed else {
             stateLock.unlock()
             // `cancel()` alone would trap: the timer hasn't been resumed yet, so it's still
             // suspended, and releasing a suspended source kills the process (`bugs/032`).
@@ -1542,8 +1542,8 @@ public final class Link {
         // Link.ACTIVE` (RNS/Link.py:931-939). Rejecting stale here would make
         // the watchdog's stale grace period meaningless.
         stateLock.lock()
-        if _status == .stale { _status = .active }
-        let curStatus = _status
+        if unsafeStatus == .stale { unsafeStatus = .active }
+        let curStatus = unsafeStatus
         stateLock.unlock()
         guard curStatus == .active else { throw LinkError.notActive }
         updatePhyStats(from: receivingInterface)
@@ -1602,7 +1602,7 @@ public final class Link {
             // drains and its third send throws linkNotReady (WINDOW = 2). See
             // swift_devel bug 005.
             if let h = try? packet.packetHash() { proveLinkPacket(h) }
-            stateLock.lock(); let ch = _channel; stateLock.unlock()
+            stateLock.lock(); let ch = channel; stateLock.unlock()
             ch?.receive(plaintext)
         case .linkIdentify:
             handleRemoteIdentify(plaintext)
@@ -2022,22 +2022,22 @@ public final class Link {
         // LINKCLOSE packet. Mirrors Python Link.py `if self.status == Link.CLOSED: return`
         // (commit bb289744).
         stateLock.lock()
-        if _status == .closed { stateLock.unlock(); return }
+        if unsafeStatus == .closed { stateLock.unlock(); return }
         let linkIDSnap = linkID
         let transportSnap = transport
         guard let linkIDSnap, let transportSnap else {
-            if _teardownReason == nil { _teardownReason = .initiatorClosed }
+            if unsafeTeardownReason == nil { unsafeTeardownReason = .initiatorClosed }
             stateLock.unlock()
             close()
             return
         }
-        if _teardownReason == nil {
-            _teardownReason = (role == .initiator) ? .initiatorClosed : .destinationClosed
+        if unsafeTeardownReason == nil {
+            unsafeTeardownReason = (role == .initiator) ? .initiatorClosed : .destinationClosed
         }
         // Python emits the LINKCLOSE packet for any status except PENDING and
         // CLOSED—including STALE (RNS/Link.py teardown / STALE watchdog
         // branch __teardown_packet). A stale link's peer must still hear it.
-        let wasActive = (_status == .active || _status == .stale)
+        let wasActive = (unsafeStatus == .active || unsafeStatus == .stale)
         stateLock.unlock()
 
         if wasActive {
@@ -2063,8 +2063,8 @@ public final class Link {
         guard let linkIDSnap else { return }
         guard let plaintext = try? decrypt(packet.data), plaintext == linkIDSnap else { return }
         stateLock.lock()
-        if _teardownReason == nil {
-            _teardownReason = (role == .initiator) ? .destinationClosed : .initiatorClosed
+        if unsafeTeardownReason == nil {
+            unsafeTeardownReason = (role == .initiator) ? .destinationClosed : .initiatorClosed
         }
         stateLock.unlock()
         close()

@@ -361,42 +361,42 @@ public final class Reticulum {
     /// Whether the probe destination is enabled.
     /// Mirrors Python's `Reticulum.probe_destination_enabled()`.
     /// Settable so tests can control the flag without a full config file.
-    public static var allowProbes_: Bool = false
-    public static func probeDestinationEnabled() -> Bool { allowProbes_ }
+    public static var allowProbes: Bool = false
+    public static func probeDestinationEnabled() -> Bool { allowProbes }
 
     /// Whether remote management is enabled. Defaults to false.
     /// Mirrors Python's `Reticulum.remote_management_enabled()`.
     /// Settable so tests can control the flag without a full config file.
-    public static var remoteManagementEnabled_: Bool = false
-    public static func remoteManagementEnabled() -> Bool { remoteManagementEnabled_ }
+    public static var storedRemoteManagementEnabled: Bool = false
+    public static func remoteManagementEnabled() -> Bool { storedRemoteManagementEnabled }
 
     /// Returns the required stamp value for interface discovery validation.
     /// Mirrors Python's `Reticulum.required_discovery_value()`.
-    public private(set) static var requiredDiscoveryValue_: Int = 16
-    public static func requiredDiscoveryValue() -> Int { requiredDiscoveryValue_ }
+    public private(set) static var storedRequiredDiscoveryValue: Int = 16
+    public static func requiredDiscoveryValue() -> Int { storedRequiredDiscoveryValue }
 
     /// Returns whether blackhole list publishing is enabled.
     /// Mirrors Python's `Reticulum.publish_blackhole_enabled()`.
-    public private(set) static var publishBlackholeEnabled_: Bool = false
-    public static func publishBlackholeEnabled() -> Bool { publishBlackholeEnabled_ }
+    public private(set) static var storedPublishBlackholeEnabled: Bool = false
+    public static func publishBlackholeEnabled() -> Bool { storedPublishBlackholeEnabled }
 
     /// Returns the list of transport identity hashes from which blackhole lists are sourced.
     /// Mirrors Python's `Reticulum.blackhole_sources()`.
-    public private(set) static var blackholeSources_: [Data] = []
-    public static func blackholeSources() -> [Data] { blackholeSources_ }
+    public private(set) static var storedBlackholeSources: [Data] = []
+    public static func blackholeSources() -> [Data] { storedBlackholeSources }
 
     /// Interval (seconds) between blackhole list re-fetches from each source.
     /// Default 3600 (1 hour). Minimum 120 seconds. Configurable via the
     /// `blackhole_update_interval` config key (value in minutes).
     /// Mirrors Python's `Reticulum.blackhole_update_interval()` accessor +
     /// `BlackholeUpdater.UPDATE_INTERVAL` default (RNS commit 02924656).
-    public private(set) static var blackholeUpdateInterval_: TimeInterval = 3600
-    public static func blackholeUpdateInterval() -> TimeInterval { blackholeUpdateInterval_ }
+    public private(set) static var storedBlackholeUpdateInterval: TimeInterval = 3600
+    public static func blackholeUpdateInterval() -> TimeInterval { storedBlackholeUpdateInterval }
 
     /// Returns a list of interfaces discovered over the network.
     /// Mirrors Python's `Reticulum.discovered_interfaces()`.
-    public private(set) static var discoveredInterfaces_: [String] = []
-    public static func discoveredInterfaces() -> [String] { discoveredInterfaces_ }
+    public private(set) static var storedDiscoveredInterfaces: [String] = []
+    public static func discoveredInterfaces() -> [String] { storedDiscoveredInterfaces }
 
     /// Whether any configured interface asked to be announced as a discoverable endpoint.
     ///
@@ -405,56 +405,56 @@ public final class Reticulum {
     /// (`:370`). The flag is needed because the interfaces don't exist yet when the block is
     /// read, so there's nothing to inspect at start-up time otherwise.
     ///
-    /// `internal(set)` for the same reason as `interfaceDiscoverySources_`: config loading is
+    /// `internal(set)` for the same reason as `storedInterfaceDiscoverySources`: config loading is
     /// the only production writer and lives in this module.
-    public internal(set) static var discoveryEnabled_: Bool = false
-    public static func discoveryEnabled() -> Bool { discoveryEnabled_ }
+    public internal(set) static var storedDiscoveryEnabled: Bool = false
+    public static func discoveryEnabled() -> Bool { storedDiscoveryEnabled }
 
     /// Returns the list of network identity hashes from which interfaces are discovered.
     /// Mirrors Python's `Reticulum.interface_discovery_sources()`.
     /// `internal(set)`, not `private(set)`: the announce-time allowlist check in
     /// `InterfaceAnnounceHandler` needs to be testable, and config loading (the
     /// only production writer) already lives in this module.
-    public internal(set) static var interfaceDiscoverySources_: [Data] = []
-    public static func interfaceDiscoverySources() -> [Data] { interfaceDiscoverySources_ }
+    public internal(set) static var storedInterfaceDiscoverySources: [Data] = []
+    public static func interfaceDiscoverySources() -> [Data] { storedInterfaceDiscoverySources }
 
     /// Maximum number of discovered interfaces to auto-connect to.
     /// 0 means auto-connect is disabled. Mirrors Python's `Reticulum.__autoconnect_discovered_interfaces`.
-    public static var maxAutoconnectedInterfaces_: Int = 0
+    public static var storedMaxAutoconnectedInterfaces: Int = 0
 
     /// Returns true if discovered interfaces should be automatically connected.
     /// Mirrors Python's `Reticulum.should_autoconnect_discovered_interfaces()`.
-    public static func shouldAutoconnectDiscoveredInterfaces() -> Bool { maxAutoconnectedInterfaces_ > 0 }
+    public static func shouldAutoconnectDiscoveredInterfaces() -> Bool { storedMaxAutoconnectedInterfaces > 0 }
 
     /// Returns the maximum number of auto-connected discovered interfaces.
     /// Mirrors Python's `Reticulum.max_autoconnected_interfaces()`.
-    public static func maxAutoconnectedInterfaces() -> Int { maxAutoconnectedInterfaces_ }
+    public static func maxAutoconnectedInterfaces() -> Int { storedMaxAutoconnectedInterfaces }
 
     // MARK: - RNS 1.4.1 gravity / autoconnect policy
 
     /// Configured `default_gravity`, or `nil` when unset.
-    public static var defaultGravity_: Int? = nil
+    public static var storedDefaultGravity: Int? = nil
 
     /// Gravity for an interface that doesn't configure its own.
     /// Mirrors Python's `Reticulum._default_gravity()`.
     public static func defaultGravity() -> Int {
-        defaultGravity_ ?? InterfaceMode.defaultGravity
+        storedDefaultGravity ?? InterfaceMode.defaultGravity
     }
 
     /// Configured `autoconnect_interface_mode`, or `nil` when unset.
     /// Mirrors Python's `Reticulum.autoconnect_interface_mode()`.
-    public static var autoconnectInterfaceMode_: InterfaceMode? = nil
-    public static func autoconnectInterfaceMode() -> InterfaceMode? { autoconnectInterfaceMode_ }
+    public static var storedAutoconnectInterfaceMode: InterfaceMode? = nil
+    public static func autoconnectInterfaceMode() -> InterfaceMode? { storedAutoconnectInterfaceMode }
 
     /// Configured `autoconnect_interface_gravity`, or `nil` when unset.
     /// Mirrors Python's `Reticulum.autoconnect_interface_gravity()`.
-    public static var autoconnectInterfaceGravity_: Int? = nil
-    public static func autoconnectInterfaceGravity() -> Int? { autoconnectInterfaceGravity_ }
+    public static var storedAutoconnectInterfaceGravity: Int? = nil
+    public static func autoconnectInterfaceGravity() -> Int? { storedAutoconnectInterfaceGravity }
 
     /// Configured `autoconnect_announces_to_internal`, or `nil` when unset.
     /// Mirrors Python's `Reticulum.autoconnect_announces_to_internal()`.
-    public static var autoconnectAnnouncesToInternal_: Bool? = nil
-    public static func autoconnectAnnouncesToInternal() -> Bool? { autoconnectAnnouncesToInternal_ }
+    public static var storedAutoconnectAnnouncesToInternal: Bool? = nil
+    public static func autoconnectAnnouncesToInternal() -> Bool? { storedAutoconnectAnnouncesToInternal }
 
     // MARK: - `[reticulum]` global defaults (`bugs/030`)
     //
@@ -485,18 +485,18 @@ public final class Reticulum {
 
     /// Configured shared-instance RPC key, or `nil` to derive one from the transport identity.
     /// Mirrors Python's `self.rpc_key` (`Reticulum.py:494-499`).
-    public static var rpcKey_: Data? = nil
+    public static var rpcKey: Data? = nil
 
     /// Configured `instance_name`. Mirrors Python's `local_socket_path` (`Reticulum.py:475-478`).
-    public static var instanceName_: String? = nil
-    public static func instanceName() -> String { instanceName_ ?? "default" }
+    public static var storedInstanceName: String? = nil
+    public static func instanceName() -> String { storedInstanceName ?? "default" }
 
     /// Configured `shared_instance_type`—`"tcp"` or `"unix"` (`Reticulum.py:479-484`).
-    public static var sharedInstanceType_: String? = nil
+    public static var sharedInstanceType: String? = nil
 
     /// Configured `force_shared_instance_bitrate` (`Reticulum.py:560-562`), applied to the
     /// shared-instance interface at `:397-399` and `:424-425`.
-    public static var forceSharedInstanceBitrate_: Int? = nil
+    public static var storedForceSharedInstanceBitrate: Int? = nil
 
     /// The configured forced shared-instance bitrate, or nil.
     ///
@@ -505,7 +505,7 @@ public final class Reticulum {
     /// (`Reticulum.py:397-401`/`:424-428` → `LocalInterface.py:234`, propagated to spawned
     /// clients at `:459`/`:475`). This port has neither the flag nor the simulation, so the
     /// value is readable and honest about being reportable-only.
-    public static func forceSharedInstanceBitrate() -> Int? { forceSharedInstanceBitrate_ }
+    public static func forceSharedInstanceBitrate() -> Int? { storedForceSharedInstanceBitrate }
 
     /// Whether this port announces its own interfaces as discoverable endpoints—Python's
     /// `Discovery.InterfaceAnnouncer`. True since 2026-09-04, when the publish side landed
@@ -526,59 +526,59 @@ public final class Reticulum {
 
     /// Announce-rate defaults for interfaces that don't configure their own.
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
-    public static var defaultArTarget_: Int? = nil
-    public static var defaultArPenalty_: Int? = nil
-    public static var defaultArGrace_: Int? = nil
-    public static func defaultArTarget() -> Int? { defaultArTarget_ }
-    public static func defaultArPenalty() -> Int { defaultArPenalty_ ?? 0 }
-    public static func defaultArGrace() -> Int { defaultArGrace_ ?? 0 }
+    public static var storedDefaultArTarget: Int? = nil
+    public static var storedDefaultArPenalty: Int? = nil
+    public static var storedDefaultArGrace: Int? = nil
+    public static func defaultArTarget() -> Int? { storedDefaultArTarget }
+    public static func defaultArPenalty() -> Int { storedDefaultArPenalty ?? 0 }
+    public static func defaultArGrace() -> Int { storedDefaultArGrace ?? 0 }
 
     /// Egress-control defaults every interface starts from.
     /// Mirrors `Reticulum._default_egress_control()` / `_default_ec_pr_freq()` (`:1173-1176`).
-    public static var defaultEgressControl_: Bool? = nil
-    public static var defaultEcPrFreq_: Double? = nil
-    public static func defaultEgressControl() -> Bool { defaultEgressControl_ ?? false }
-    public static func defaultEcPrFreq() -> Double { pythonOr(defaultEcPrFreq_, 5.0) }
+    public static var storedDefaultEgressControl: Bool? = nil
+    public static var storedDefaultEcPrFreq: Double? = nil
+    public static func defaultEgressControl() -> Bool { storedDefaultEgressControl ?? false }
+    public static func defaultEcPrFreq() -> Double { pythonOr(storedDefaultEcPrFreq, 5.0) }
 
     /// Ingress-control defaults every interface starts from.
     /// Mirrors `Reticulum._default_ic_*()` (`:1154-1185`), each falling back to the
     /// `IngressControlState` constant that holds the Python class value.
-    public static var defaultIcMaxHeldAnnounces_: Int? = nil
-    public static var defaultIcBurstHold_: Double? = nil
-    public static var defaultIcBurstFreqNew_: Double? = nil
-    public static var defaultIcBurstFreq_: Double? = nil
-    public static var defaultIcPrBurstFreqNew_: Double? = nil
-    public static var defaultIcPrBurstFreq_: Double? = nil
-    public static var defaultIcNewTime_: Double? = nil
-    public static var defaultIcBurstPenalty_: Double? = nil
-    public static var defaultIcHeldReleaseInterval_: Double? = nil
+    public static var storedDefaultIcMaxHeldAnnounces: Int? = nil
+    public static var storedDefaultIcBurstHold: Double? = nil
+    public static var storedDefaultIcBurstFreqNew: Double? = nil
+    public static var storedDefaultIcBurstFreq: Double? = nil
+    public static var storedDefaultIcPrBurstFreqNew: Double? = nil
+    public static var storedDefaultIcPrBurstFreq: Double? = nil
+    public static var storedDefaultIcNewTime: Double? = nil
+    public static var storedDefaultIcBurstPenalty: Double? = nil
+    public static var storedDefaultIcHeldReleaseInterval: Double? = nil
 
     public static func defaultIcMaxHeldAnnounces() -> Int {
-        pythonOr(defaultIcMaxHeldAnnounces_, IngressControlState.maxHeldAnnounces)
+        pythonOr(storedDefaultIcMaxHeldAnnounces, IngressControlState.maxHeldAnnounces)
     }
     public static func defaultIcBurstHold() -> Double {
-        pythonOr(defaultIcBurstHold_, IngressControlState.icBurstHold)
+        pythonOr(storedDefaultIcBurstHold, IngressControlState.icBurstHold)
     }
     public static func defaultIcBurstFreqNew() -> Double {
-        pythonOr(defaultIcBurstFreqNew_, IngressControlState.icBurstFreqNew)
+        pythonOr(storedDefaultIcBurstFreqNew, IngressControlState.icBurstFreqNew)
     }
     public static func defaultIcBurstFreq() -> Double {
-        pythonOr(defaultIcBurstFreq_, IngressControlState.icBurstFreq)
+        pythonOr(storedDefaultIcBurstFreq, IngressControlState.icBurstFreq)
     }
     public static func defaultIcPrBurstFreqNew() -> Double {
-        pythonOr(defaultIcPrBurstFreqNew_, IngressControlState.icPrBurstFreqNew)
+        pythonOr(storedDefaultIcPrBurstFreqNew, IngressControlState.icPrBurstFreqNew)
     }
     public static func defaultIcPrBurstFreq() -> Double {
-        pythonOr(defaultIcPrBurstFreq_, IngressControlState.icPrBurstFreq)
+        pythonOr(storedDefaultIcPrBurstFreq, IngressControlState.icPrBurstFreq)
     }
     public static func defaultIcNewTime() -> Double {
-        pythonOr(defaultIcNewTime_, IngressControlState.icNewTime)
+        pythonOr(storedDefaultIcNewTime, IngressControlState.icNewTime)
     }
     public static func defaultIcBurstPenalty() -> Double {
-        pythonOr(defaultIcBurstPenalty_, IngressControlState.icBurstPenalty)
+        pythonOr(storedDefaultIcBurstPenalty, IngressControlState.icBurstPenalty)
     }
     public static func defaultIcHeldReleaseInterval() -> Double {
-        pythonOr(defaultIcHeldReleaseInterval_, IngressControlState.icHeldReleaseInterval)
+        pythonOr(storedDefaultIcHeldReleaseInterval, IngressControlState.icHeldReleaseInterval)
     }
 
     /// Copy one parsed `[reticulum]` section onto the global defaults.
@@ -588,29 +588,29 @@ public final class Reticulum {
     /// (`bugs/015`, `bugs/025`). Every value is applied only when the key was present, so an
     /// absent option leaves the built-in default rather than zeroing it.
     public static func applyGlobalDefaults(_ section: ReticulumConfig.ReticulumSection) {
-        if let v = section.rpcKey                    { rpcKey_ = v }
-        if let v = section.instanceName              { instanceName_ = v }
-        if let v = section.sharedInstanceType        { sharedInstanceType_ = v }
+        if let v = section.rpcKey                    { rpcKey = v }
+        if let v = section.instanceName              { storedInstanceName = v }
+        if let v = section.sharedInstanceType        { sharedInstanceType = v }
         if let v = section.useImplicitProof          { useImplicitProof = v }
         if let v = section.linkMtuDiscovery          { linkMtuDiscoveryEnabled = v }
-        if let v = section.forceSharedInstanceBitrate { forceSharedInstanceBitrate_ = v }
+        if let v = section.forceSharedInstanceBitrate { storedForceSharedInstanceBitrate = v }
 
-        if let v = section.defaultArTarget           { defaultArTarget_ = v }
-        if let v = section.defaultArPenalty          { defaultArPenalty_ = v }
-        if let v = section.defaultArGrace            { defaultArGrace_ = v }
+        if let v = section.defaultArTarget           { storedDefaultArTarget = v }
+        if let v = section.defaultArPenalty          { storedDefaultArPenalty = v }
+        if let v = section.defaultArGrace            { storedDefaultArGrace = v }
 
-        if let v = section.egressControl             { defaultEgressControl_ = v }
-        if let v = section.ecPrFreq                  { defaultEcPrFreq_ = v }
+        if let v = section.egressControl             { storedDefaultEgressControl = v }
+        if let v = section.ecPrFreq                  { storedDefaultEcPrFreq = v }
 
-        if let v = section.icMaxHeldAnnounces        { defaultIcMaxHeldAnnounces_ = v }
-        if let v = section.icBurstHold               { defaultIcBurstHold_ = v }
-        if let v = section.icBurstFreqNew            { defaultIcBurstFreqNew_ = v }
-        if let v = section.icBurstFreq               { defaultIcBurstFreq_ = v }
-        if let v = section.icPrBurstFreqNew          { defaultIcPrBurstFreqNew_ = v }
-        if let v = section.icPrBurstFreq             { defaultIcPrBurstFreq_ = v }
-        if let v = section.icNewTime                 { defaultIcNewTime_ = v }
-        if let v = section.icBurstPenalty            { defaultIcBurstPenalty_ = v }
-        if let v = section.icHeldReleaseInterval     { defaultIcHeldReleaseInterval_ = v }
+        if let v = section.icMaxHeldAnnounces        { storedDefaultIcMaxHeldAnnounces = v }
+        if let v = section.icBurstHold               { storedDefaultIcBurstHold = v }
+        if let v = section.icBurstFreqNew            { storedDefaultIcBurstFreqNew = v }
+        if let v = section.icBurstFreq               { storedDefaultIcBurstFreq = v }
+        if let v = section.icPrBurstFreqNew          { storedDefaultIcPrBurstFreqNew = v }
+        if let v = section.icPrBurstFreq             { storedDefaultIcPrBurstFreq = v }
+        if let v = section.icNewTime                 { storedDefaultIcNewTime = v }
+        if let v = section.icBurstPenalty            { storedDefaultIcBurstPenalty = v }
+        if let v = section.icHeldReleaseInterval     { storedDefaultIcHeldReleaseInterval = v }
     }
 
     public let configuration: Configuration
@@ -651,7 +651,7 @@ public final class Reticulum {
     ///
     /// Returns `nil` when no identity is available and no key is configured.
     public func rpcAuthenticationKey() -> Data? {
-        if let configured = Reticulum.rpcKey_ { return configured }
+        if let configured = Reticulum.rpcKey { return configured }
         // Derived from the persistent (internal) identity so it stays stable across runs even
         // when an ephemeral transport identity is in use. Mirrors Python's
         // `rpc_key = full_hash(Transport.internal_identity().get_private_key())`.
@@ -850,7 +850,7 @@ public final class Reticulum {
         // Start blackhole-list updater when sources are configured.
         // Mirrors Python: if Reticulum.__blackhole_sources: RNS.Transport.enable_blackhole_updater()
         if let parsedCfg = config, !parsedCfg.reticulum.blackholeSources.isEmpty {
-            Reticulum.blackholeSources_ = parsedCfg.reticulum.blackholeSources
+            Reticulum.storedBlackholeSources = parsedCfg.reticulum.blackholeSources
             transport.enableBlackholeUpdater()
         }
 
@@ -1144,7 +1144,7 @@ public final class Reticulum {
 
         // Latched for the whole process, as Python does—the announcer starts from this flag
         // after every interface is up (`Reticulum.py:370`).
-        Reticulum.discoveryEnabled_ = true
+        Reticulum.storedDiscoveryEnabled = true
         interface.discoverable = true
 
         // Minutes on the wire of the config file, seconds on the interface, with a five-minute
@@ -1756,32 +1756,32 @@ public final class Reticulum {
 
     private func applyConfig(_ cfg: ReticulumConfig) {
         transport.transportEnabled = cfg.reticulum.enableTransport
-        Reticulum.allowProbes_ = cfg.reticulum.allowProbes
-        Reticulum.remoteManagementEnabled_ = cfg.reticulum.remoteManagementEnabled
+        Reticulum.allowProbes = cfg.reticulum.allowProbes
+        Reticulum.storedRemoteManagementEnabled = cfg.reticulum.remoteManagementEnabled
         for identity in cfg.reticulum.remoteManagementAllowed {
             transport.remoteManagementAllowed.append(identity)
         }
         // Discovery-related static properties.
         // Mirrors Python Reticulum.__init__ config application block.
         if let rdv = cfg.reticulum.requiredDiscoveryValue {
-            Reticulum.requiredDiscoveryValue_ = rdv
+            Reticulum.storedRequiredDiscoveryValue = rdv
         }
-        Reticulum.publishBlackholeEnabled_ = cfg.reticulum.publishBlackholeEnabled
+        Reticulum.storedPublishBlackholeEnabled = cfg.reticulum.publishBlackholeEnabled
         if let bui = cfg.reticulum.blackholeUpdateInterval {
-            Reticulum.blackholeUpdateInterval_ = bui
+            Reticulum.storedBlackholeUpdateInterval = bui
         }
         if !cfg.reticulum.interfaceDiscoverySources.isEmpty {
-            Reticulum.interfaceDiscoverySources_ = cfg.reticulum.interfaceDiscoverySources
+            Reticulum.storedInterfaceDiscoverySources = cfg.reticulum.interfaceDiscoverySources
         }
         if cfg.reticulum.autoconnectDiscoveredInterfaces > 0 {
-            Reticulum.maxAutoconnectedInterfaces_ = cfg.reticulum.autoconnectDiscoveredInterfaces
+            Reticulum.storedMaxAutoconnectedInterfaces = cfg.reticulum.autoconnectDiscoveredInterfaces
         }
         // RNS 1.4.1 gravity / autoconnect policy. Each is assigned only when the
         // key was present, so an absent option keeps the built-in default.
-        if let dg = cfg.reticulum.defaultGravity { Reticulum.defaultGravity_ = dg }
-        if let m  = cfg.reticulum.autoconnectInterfaceMode { Reticulum.autoconnectInterfaceMode_ = m }
-        if let g  = cfg.reticulum.autoconnectInterfaceGravity { Reticulum.autoconnectInterfaceGravity_ = g }
-        if let a  = cfg.reticulum.autoconnectAnnouncesToInternal { Reticulum.autoconnectAnnouncesToInternal_ = a }
+        if let dg = cfg.reticulum.defaultGravity { Reticulum.storedDefaultGravity = dg }
+        if let m  = cfg.reticulum.autoconnectInterfaceMode { Reticulum.storedAutoconnectInterfaceMode = m }
+        if let g  = cfg.reticulum.autoconnectInterfaceGravity { Reticulum.storedAutoconnectInterfaceGravity = g }
+        if let a  = cfg.reticulum.autoconnectAnnouncesToInternal { Reticulum.storedAutoconnectAnnouncesToInternal = a }
 
         // A key in a section this parser owns that no branch matched is a directive the operator
         // wrote and the daemon won't honour. D8's rationale for `bugs/030` is that an absent
