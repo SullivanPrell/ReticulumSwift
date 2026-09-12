@@ -221,3 +221,5 @@ Apple Developer
 LXMF.swift
 url
 Google
+MARK
+SPDX
