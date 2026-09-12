@@ -48,6 +48,8 @@ public protocol DataCompressor {
   func decompress(_ data: Data, maxLength: Int) -> DecompressionResult
 }
 
+// The members below are default implementations of documented protocol requirements.
+// swift-format-ignore: AllPublicDeclarationsHaveDocumentation
 extension DataCompressor {
   public func decompress(_ data: Data, maxLength: Int) -> DecompressionResult {
     guard let out = decompress(data) else { return .error }

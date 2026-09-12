@@ -75,7 +75,7 @@ final class TransportPersistenceTests: XCTestCase {
     try rns1.start()
 
     let ifaces1 = (0..<5).map { LoopbackInterface(name: "iface\($0)") }
-    ifaces1.forEach { rns1.transport.register(interface: $0) }
+    for iface in ifaces1 { rns1.transport.register(interface: iface) }
     let hashes = try (0..<5).map { i in
       try installPersistablePath(
         on: rns1.transport,
@@ -87,7 +87,7 @@ final class TransportPersistenceTests: XCTestCase {
     rns1.stop()
 
     let rns2 = Reticulum(configuration: .init(storagePath: dir))
-    (0..<5).forEach { rns2.transport.register(interface: LoopbackInterface(name: "iface\($0)")) }
+    for i in 0..<5 { rns2.transport.register(interface: LoopbackInterface(name: "iface\(i)")) }
     try rns2.start()
     defer { rns2.stop() }
 

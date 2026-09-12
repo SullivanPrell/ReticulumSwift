@@ -18,6 +18,7 @@ import Foundation
 
 extension NetworkProbe {
 
+  /// The parsed command line, and the parser that produces it.
   public enum Arguments {
 
     /// What the command line asked for.

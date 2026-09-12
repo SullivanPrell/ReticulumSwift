@@ -732,7 +732,8 @@ final class RNodeMultiInterfaceIncomingDispatchTests: XCTestCase {
     // Select sub1 then inject frequency echo for 915_000_000
     transport.inject([
       0xC0, KISS.cmdSelInt, 0x01, 0xC0,
-      0xC0, KISS.cmdFrequency, 0x36, 0x89, 0xCA, 0xC0, 0xC0,  // 915_000_000 but last byte 0xC0 ends frame
+      // 915_000_000 but last byte 0xC0 ends frame
+      0xC0, KISS.cmdFrequency, 0x36, 0x89, 0xCA, 0xC0, 0xC0,
     ])
     // 915_000_000 = 0x3689CAC0 but FEND at 0xC0 position would need escaping. Use a simpler frequency.
     // Inject 868_000_000 = 0x33BCA100 instead for sub1.

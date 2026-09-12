@@ -207,8 +207,7 @@ final class StorageInventoryTests: XCTestCase {
         guard !code.hasPrefix("//"), !code.hasPrefix("///"), !code.hasPrefix("*") else {
           continue
         }
-        for literal in Self.literals(inCallsOn: code) {
-          guard !literal.contains("\\(") else { continue }
+        for literal in Self.literals(inCallsOn: code) where !literal.contains("\\(") {
           sites.append(
             Site(
               file: url.lastPathComponent,

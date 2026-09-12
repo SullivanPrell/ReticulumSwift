@@ -46,7 +46,7 @@ final class BZip2CompressorTests: XCTestCase {
     var data = Data((0..<4096).map { UInt8($0 & 0xFF) })
     // Repeat to make it 64 KB to test buffer expansion in decompress().
     data = Data(repeating: 0, count: 65536)
-    (0..<65536).forEach { data[$0] = UInt8($0 & 0xFF) }
+    for i in 0..<65536 { data[i] = UInt8(i & 0xFF) }
     let compressed = try XCTUnwrap(compressor.compress(data))
     let restored = try XCTUnwrap(compressor.decompress(compressed))
     XCTAssertEqual(restored, data)

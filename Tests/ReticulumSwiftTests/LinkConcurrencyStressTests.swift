@@ -111,7 +111,8 @@ final class LinkConcurrencyStressTests: XCTestCase {
       DispatchQueue.concurrentPerform(iterations: workers) { w in
         for i in 0..<iterations {
           switch (w &+ i) % 8 {
-          case 0: try? aLink.send(Data(repeating: UInt8(i & 0xFF), count: 24))  // encrypt + transport.send + counters
+          // encrypt + transport.send + counters
+          case 0: try? aLink.send(Data(repeating: UInt8(i & 0xFF), count: 24))
           case 1: self.hammerAccessors(aLink)
           case 2: self.hammerAccessors(bLink)
           case 3: aLink.hadOutbound()

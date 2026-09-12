@@ -447,6 +447,8 @@ public enum RNSInterfaceMtu {
   }
 }
 
+// The members below are default implementations of documented protocol requirements.
+// swift-format-ignore: AllPublicDeclarationsHaveDocumentation
 /// Default implementations so existing interfaces don't need to add these.
 extension Interface {
 

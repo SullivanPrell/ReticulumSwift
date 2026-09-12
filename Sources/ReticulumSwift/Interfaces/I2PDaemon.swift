@@ -219,7 +219,7 @@ public final class I2PDaemon: I2PDaemonProtocol {
     let cStrings = args.map { strdup($0) }
     var argv = cStrings.map { UnsafeMutablePointer<CChar>(mutating: $0) }
     C_InitI2P(Int32(argv.count), &argv, "reticulum")
-    cStrings.forEach { free($0) }
+    for pointer in cStrings { free(pointer) }
 
     C_StartI2P()
     C_StartClientServices()

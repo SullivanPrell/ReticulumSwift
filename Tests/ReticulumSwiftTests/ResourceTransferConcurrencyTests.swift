@@ -131,7 +131,8 @@ final class ResourceTransferConcurrencyTests: XCTestCase {
         for i in 0..<iterations {
           switch (w &+ i) % 8 {
           case 0: rt.receiveAdvertisement(advData)  // heavy writer: advertisement + arrays + status
-          case 1: rt.receivePart(Data(repeating: UInt8(i & 0xFF), count: 40))  // parts/hashmap mutation
+          // parts/hashmap mutation
+          case 1: rt.receivePart(Data(repeating: UInt8(i & 0xFF), count: 40))
           case 2: rt.handleHashmapUpdate(hmuData)  // hashmap mutation
           case 3: self.hammerAccessors(rt)  // torn-read surface
           case 4: self.hammerAccessors(rt)
@@ -156,7 +157,8 @@ final class ResourceTransferConcurrencyTests: XCTestCase {
     let rt = ResourceTransfer(link: aLink)
     rt.retryTimeout = 0.02
     rt.testSegmentSizeOverride = 300  // force several parts
-    try? rt.send(payload: Data(repeating: 0xAB, count: 900))  // seed sender state (encryptedSegments/mapHashes/adv)
+    // seed sender state (encryptedSegments/mapHashes/adv)
+    try? rt.send(payload: Data(repeating: 0xAB, count: 900))
 
     // Craft a plausible RESOURCE_REQ: [not-exhausted flag][32-byte resource hash][one 4-byte map-hash]
     let reqBase =
@@ -171,7 +173,8 @@ final class ResourceTransferConcurrencyTests: XCTestCase {
       DispatchQueue.concurrentPerform(iterations: workers) { w in
         for i in 0..<iterations {
           switch (w &+ i) % 8 {
-          case 0: try? rt.send(payload: Data(repeating: UInt8(i & 0xFF), count: 900))  // heavy writer
+          // heavy writer
+          case 0: try? rt.send(payload: Data(repeating: UInt8(i & 0xFF), count: 900))
           case 1: rt.handleRequest(reqBase)  // sends parts / advances status
           case 2: rt.validateProof(proofRandom)  // proof-mismatch → fail path
           case 3: self.hammerAccessors(rt)

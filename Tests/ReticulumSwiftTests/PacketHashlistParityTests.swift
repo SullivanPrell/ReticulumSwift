@@ -47,7 +47,7 @@ final class PacketHashlistParityTests: XCTestCase {
   func testFileIsRawConcatenatedHashes() throws {
     let transport = Transport()
     let hashes = (0..<4).map { Data(repeating: UInt8($0 + 1), count: Constants.fullHashLength) }
-    hashes.forEach { transport.testInsertPacketHash($0) }
+    for hash in hashes { transport.testInsertPacketHash(hash) }
 
     try transport.savePacketHashlist(to: fileURL)
 
@@ -81,7 +81,7 @@ final class PacketHashlistParityTests: XCTestCase {
   func testTrailingPartialRecordIsConsumed() throws {
     let whole = (0..<3).map { Data(repeating: UInt8($0 + 10), count: Constants.fullHashLength) }
     var raw = Data()
-    whole.forEach { raw.append($0) }
+    for chunk in whole { raw.append(chunk) }
     raw.append(Data(repeating: 0xEE, count: 7))  // torn write
     try raw.write(to: fileURL)
 
@@ -112,7 +112,7 @@ final class PacketHashlistParityTests: XCTestCase {
     // `Hashes.randomHash()` is 16 bytes and would be a record the reference's fixed-width
     // read can't even see.
     let hashes = (0..<8).map { _ in Hashes.fullHash(Hashes.randomHash()) }
-    hashes.forEach { transport.testInsertPacketHash($0) }
+    for hash in hashes { transport.testInsertPacketHash(hash) }
     try transport.savePacketHashlist(to: fileURL)
 
     let revived = Transport()

@@ -391,8 +391,13 @@ public struct PathStore {
 // MARK: - Hex helpers
 
 extension Data {
+  /// The bytes as lowercase hexadecimal, two characters per byte.
   public var hexString: String { map { String(format: "%02x", $0) }.joined() }
 
+  /// Creates a value from a hexadecimal string, or `nil` if the length is odd or a character
+  /// is not a hexadecimal digit.
+  ///
+  /// - Parameter hex: An even number of hexadecimal digits, in either case.
   public init?(hex: String) {
     guard hex.count.isMultiple(of: 2) else { return nil }
     var data = Data()

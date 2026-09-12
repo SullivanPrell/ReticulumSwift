@@ -281,7 +281,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     lock.unlock()
 
     stopWatchdog()
-    sockets.forEach { $0.close() }
+    for socket in sockets { socket.close() }
     if wasOnline { onDisconnected?(self) }
   }
 
@@ -452,7 +452,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     controlSocket = nil
     streamSocket = nil
     lock.unlock()
-    sockets.forEach { $0.close() }
+    for socket in sockets { socket.close() }
   }
 
   // MARK: - Data phase
@@ -502,7 +502,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     lock.unlock()
 
     stopWatchdog()
-    sockets.forEach { $0.close() }
+    for socket in sockets { socket.close() }
     Reticulum.log("\(reason), attempting to reconnect...", level: .warning)
     onDisconnected?(self)
     if redial { scheduleDial(after: retryInterval) }

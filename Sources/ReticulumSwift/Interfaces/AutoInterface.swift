@@ -194,7 +194,7 @@ public final class AutoInterface: Interface {
   /// Takes the interface offline and releases its resources.
   public func stop() {
     isOnline = false
-    announceTimers.forEach { $0.cancel() }
+    for timer in announceTimers { timer.cancel() }
     announceTimers.removeAll()
     peerJobTimer?.cancel()
     peerJobTimer = nil

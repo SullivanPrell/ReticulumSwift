@@ -44,6 +44,8 @@ public protocol AnnounceHandler: AnyObject {
     announcePacketHash: Data, isPathResponse: Bool)
 }
 
+// The members below are default implementations of documented protocol requirements.
+// swift-format-ignore: AllPublicDeclarationsHaveDocumentation
 extension AnnounceHandler {
   // Default: don't filter path-response announces (handlers opt in by overriding to true).
   public var receivePathResponses: Bool { false }

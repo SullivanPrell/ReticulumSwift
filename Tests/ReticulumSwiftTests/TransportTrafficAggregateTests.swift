@@ -46,7 +46,7 @@ final class TransportTrafficAggregateTests: XCTestCase {
 
   func testAnnounceByteTotalsSumEveryInterface() {
     let (t, ifaces) = makeTransport(["Agg A", "Agg B"])
-    defer { ifaces.forEach { t.deregister(interface: $0) } }
+    defer { for iface in ifaces { t.deregister(interface: iface) } }
     t.sampleInterfaceSpeeds(now: 1_000)
 
     t.notifyIncomingAnnounce(on: ifaces[0], size: 100)
@@ -66,7 +66,7 @@ final class TransportTrafficAggregateTests: XCTestCase {
 
   func testPathRequestByteTotalsAreSeparateFromAnnounces() {
     let (t, ifaces) = makeTransport(["Agg C"])
-    defer { ifaces.forEach { t.deregister(interface: $0) } }
+    defer { for iface in ifaces { t.deregister(interface: iface) } }
     t.sampleInterfaceSpeeds(now: 2_000)
 
     t.notifyIncomingAnnounce(on: ifaces[0], size: 111)
@@ -83,7 +83,7 @@ final class TransportTrafficAggregateTests: XCTestCase {
 
   func testByteTotalsAccumulateAcrossSamplingPasses() {
     let (t, ifaces) = makeTransport(["Agg D"])
-    defer { ifaces.forEach { t.deregister(interface: $0) } }
+    defer { for iface in ifaces { t.deregister(interface: iface) } }
     t.sampleInterfaceSpeeds(now: 3_000)
 
     t.notifyIncomingAnnounce(on: ifaces[0], size: 60)
@@ -105,7 +105,7 @@ final class TransportTrafficAggregateTests: XCTestCase {
 
   func testAggregateAnnounceSpeedIsTheSumOfThePerInterfaceGauges() {
     let (t, ifaces) = makeTransport(["Agg E", "Agg F"])
-    defer { ifaces.forEach { t.deregister(interface: $0) } }
+    defer { for iface in ifaces { t.deregister(interface: iface) } }
     t.sampleInterfaceSpeeds(now: 4_000)
 
     t.notifyIncomingAnnounce(on: ifaces[0], size: 100)  // 80 bits/s over 10 s
@@ -123,7 +123,7 @@ final class TransportTrafficAggregateTests: XCTestCase {
 
   func testAggregateSpeedsAreReassignedEachPassRatherThanAccumulated() {
     let (t, ifaces) = makeTransport(["Agg G"])
-    defer { ifaces.forEach { t.deregister(interface: $0) } }
+    defer { for iface in ifaces { t.deregister(interface: iface) } }
     t.sampleInterfaceSpeeds(now: 5_000)
     t.notifyIncomingAnnounce(on: ifaces[0], size: 500)
     t.sampleInterfaceSpeeds(now: 5_010)
@@ -144,7 +144,7 @@ final class TransportTrafficAggregateTests: XCTestCase {
 
   func testAggregateFrequenciesSumThePerInterfaceFrequencies() {
     let (t, ifaces) = makeTransport(["Agg H", "Agg I"])
-    defer { ifaces.forEach { t.deregister(interface: $0) } }
+    defer { for iface in ifaces { t.deregister(interface: iface) } }
 
     // `incoming_announce_frequency()` needs more than IC_DEQUE_MIN_SAMPLE samples
     // before it reports anything, so three announces per interface.

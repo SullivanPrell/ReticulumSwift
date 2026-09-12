@@ -348,6 +348,7 @@ extension StorageInventory.Entry {
     authority: .reference("I2PInterface.py:90-91")
   )
 
+  /// Every entry in the inventory, in the order a fresh storage tree is laid out.
   public static let all: [StorageInventory.Entry] = [
     config, storage, interfaceModules,
     identity, transportIdentity, ratchets, identityRatchets,

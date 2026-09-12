@@ -61,7 +61,8 @@ final class TransportConcurrencyStressTests: XCTestCase {
           case 3: _ = transport.getTransportStats()  // metricsLock
           case 4: transport.sampleInterfaceSpeeds(now: now)  // interfaces snapshot + metricsLock
           case 5: transport.notifyIncomingAnnounce(on: iface, at: now)  // trackersLock -> tracker
-          case 6: _ = transport.shouldIngressLimit(on: iface, now: now)  // ingressLock -> trackersLock
+          // ingressLock -> trackersLock
+          case 6: _ = transport.shouldIngressLimit(on: iface, now: now)
           case 7:
             _ = transport.isAnnounceRateBlocked(
               destinationHash: Data(repeating: UInt8(i & 0xFF), count: 16), interface: iface,
@@ -75,7 +76,8 @@ final class TransportConcurrencyStressTests: XCTestCase {
           case 10: transport.sweepExpiredBlackholes(now: now)  // blackholeLock
           case 11: _ = transport.currentRxSpeed(for: iface)  // metricsLock
           case 12:
-            _ = transport.getPacketRssi(packetHash: Data(repeating: UInt8(i & 0xFF), count: 16))  // metricsLock
+            // metricsLock
+            _ = transport.getPacketRssi(packetHash: Data(repeating: UInt8(i & 0xFF), count: 16))
           default: break
           }
         }
