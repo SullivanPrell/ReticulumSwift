@@ -51,35 +51,35 @@ public typealias BLEMeshPeerID = String
 ///                     phones running the app could never find each other,
 ///                     since CoreBluetooth centrals can only see peripherals.
 public protocol BLEMeshTransport: AnyObject {
-    /// Invoked when a peer becomes reachable for sending, in either BLE role.
-    var peerConnected: ((BLEMeshPeerID) -> Void)? { get set }
-    /// Invoked when a previously reachable peer disconnects, drops out of
-    /// range, or is otherwise lost.
-    var peerDisconnected: ((BLEMeshPeerID) -> Void)? { get set }
-    /// Invoked for every chunk of raw bytes received from a peer.
-    ///
-    /// Chunks may be fragments of a larger HDLC-framed message—BLE GATT
-    /// payloads are bound by the negotiated link MTU (typically far smaller
-    /// than a Reticulum packet), so `BLEMeshInterface` performs reassembly.
-    /// The transport's only job is to ferry bytes in the order they arrived,
-    /// per peer.
-    var peerDataHandler: ((BLEMeshPeerID, Data) -> Void)? { get set }
+  /// Invoked when a peer becomes reachable for sending, in either BLE role.
+  var peerConnected: ((BLEMeshPeerID) -> Void)? { get set }
+  /// Invoked when a previously reachable peer disconnects, drops out of
+  /// range, or is otherwise lost.
+  var peerDisconnected: ((BLEMeshPeerID) -> Void)? { get set }
+  /// Invoked for every chunk of raw bytes received from a peer.
+  ///
+  /// Chunks may be fragments of a larger HDLC-framed message—BLE GATT
+  /// payloads are bound by the negotiated link MTU (typically far smaller
+  /// than a Reticulum packet), so `BLEMeshInterface` performs reassembly.
+  /// The transport's only job is to ferry bytes in the order they arrived,
+  /// per peer.
+  var peerDataHandler: ((BLEMeshPeerID, Data) -> Void)? { get set }
 
-    /// Peers reachable for sending.
-    var connectedPeers: [BLEMeshPeerID] { get }
+  /// Peers reachable for sending.
+  var connectedPeers: [BLEMeshPeerID] { get }
 
-    /// Begin advertising the mesh GATT service (peripheral role) and
-    /// scanning for other mesh devices (central role).
-    func start() throws
+  /// Begin advertising the mesh GATT service (peripheral role) and
+  /// scanning for other mesh devices (central role).
+  func start() throws
 
-    /// Stop all radio activity—advertising, scanning, and any open peer
-    /// connections.
-    func stop()
+  /// Stop all radio activity—advertising, scanning, and any open peer
+  /// connections.
+  func stop()
 
-    /// Send raw bytes to one connected peer.
-    ///
-    /// The transport is responsible for chunking to the negotiated link MTU
-    /// (mirroring `BLERNodeTransport.write`); `BLEMeshInterface` only ever
-    /// hands over complete, already-framed messages.
-    func send(_ data: Data, to peer: BLEMeshPeerID) throws
+  /// Send raw bytes to one connected peer.
+  ///
+  /// The transport is responsible for chunking to the negotiated link MTU
+  /// (mirroring `BLERNodeTransport.write`); `BLEMeshInterface` only ever
+  /// hands over complete, already-framed messages.
+  func send(_ data: Data, to peer: BLEMeshPeerID) throws
 }

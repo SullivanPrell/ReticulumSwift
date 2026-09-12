@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// `bugs/025` / `bugs/030`—`Reticulum.linkMtuDiscoveryEnabled` was declared
@@ -20,24 +21,27 @@ import XCTest
 /// been enough.
 final class LinkMtuDiscoverySettableTests: XCTestCase {
 
-    override func tearDown() {
-        Reticulum.linkMtuDiscoveryEnabled = true   // restore the Python default
-        super.tearDown()
-    }
+  override func tearDown() {
+    Reticulum.linkMtuDiscoveryEnabled = true  // restore the Python default
+    super.tearDown()
+  }
 
-    func testDefaultMatchesPython() {
-        XCTAssertTrue(Reticulum.linkMtuDiscoveryEnabled,
-                      "Python's LINK_MTU_DISCOVERY defaults to True")
-        XCTAssertTrue(Reticulum.linkMtuDiscovery())
-    }
+  func testDefaultMatchesPython() {
+    XCTAssertTrue(
+      Reticulum.linkMtuDiscoveryEnabled,
+      "Python's LINK_MTU_DISCOVERY defaults to True")
+    XCTAssertTrue(Reticulum.linkMtuDiscovery())
+  }
 
-    /// The write is the point: a config value of `link_mtu_discovery = no` must be applicable.
-    func testCanBeDisabled() {
-        Reticulum.linkMtuDiscoveryEnabled = false
-        XCTAssertFalse(Reticulum.linkMtuDiscoveryEnabled,
-                       "link_mtu_discovery must be settable — a config key with nowhere to be "
-                       + "written cannot be honoured")
-        XCTAssertFalse(Reticulum.linkMtuDiscovery(),
-                       "the accessor Python calls must reflect the configured value")
-    }
+  /// The write is the point: a config value of `link_mtu_discovery = no` must be applicable.
+  func testCanBeDisabled() {
+    Reticulum.linkMtuDiscoveryEnabled = false
+    XCTAssertFalse(
+      Reticulum.linkMtuDiscoveryEnabled,
+      "link_mtu_discovery must be settable — a config key with nowhere to be "
+        + "written cannot be honoured")
+    XCTAssertFalse(
+      Reticulum.linkMtuDiscovery(),
+      "the accessor Python calls must reflect the configured value")
+  }
 }

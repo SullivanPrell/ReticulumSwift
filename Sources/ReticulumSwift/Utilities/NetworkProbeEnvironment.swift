@@ -21,30 +21,30 @@ import Security
 /// Python: `RNS.PacketReceipt` as `rnprobe` reads it (rnprobe.py:136-186).
 extension PacketReceipt: ProbeReceipt {
 
-    /// Python: `receipt.proof_packet != None` (rnprobe.py:181).
-    public var hasProofPacket: Bool { proofPacket != nil }
+  /// Python: `receipt.proof_packet != None` (rnprobe.py:181).
+  public var hasProofPacket: Bool { proofPacket != nil }
 
-    /// Python: `receipt.proof_packet.rssi` (rnprobe.py:182).
-    ///
-    /// Python's value is an int off
-    /// the receiving RNode interface; Swift stores a `Float` in the same slot.
-    public var proofRssi: Float? { proofPacket?.rssi }
+  /// Python: `receipt.proof_packet.rssi` (rnprobe.py:182).
+  ///
+  /// Python's value is an int off
+  /// the receiving RNode interface; Swift stores a `Float` in the same slot.
+  public var proofRssi: Float? { proofPacket?.rssi }
 
-    /// Python: `receipt.proof_packet.snr` (rnprobe.py:185).
-    public var proofSnr: Float? { proofPacket?.snr }
+  /// Python: `receipt.proof_packet.snr` (rnprobe.py:185).
+  public var proofSnr: Float? { proofPacket?.snr }
 
-    /// Python: `receipt.proof_packet.packet_hash`—the FULL 32-byte SHA-256
-    /// (Packet.py:342-344), which is what rnprobe passes to `get_packet_rssi` and friends.
-    public var proofPacketFullHash: Data? {
-        guard let proofPacket else { return nil }
-        return try? proofPacket.packetHash()
-    }
+  /// Python: `receipt.proof_packet.packet_hash`—the FULL 32-byte SHA-256
+  /// (Packet.py:342-344), which is what rnprobe passes to `get_packet_rssi` and friends.
+  public var proofPacketFullHash: Data? {
+    guard let proofPacket else { return nil }
+    return try? proofPacket.packetHash()
+  }
 
-    /// The 16-byte form of the same hash—the key a Swift daemon's PHY caches use.
-    public var proofPacketTruncatedHash: Data? {
-        guard let proofPacket else { return nil }
-        return try? proofPacket.truncatedPacketHash()
-    }
+  /// The 16-byte form of the same hash—the key a Swift daemon's PHY caches use.
+  public var proofPacketTruncatedHash: Data? {
+    guard let proofPacket else { return nil }
+    return try? proofPacket.truncatedPacketHash()
+  }
 }
 
 // MARK: - Network
@@ -60,183 +60,189 @@ extension PacketReceipt: ProbeReceipt {
 /// them would silently disable the whole RPC half of the probe's reporting.
 public final class TransportProbeNetwork: ProbeNetwork {
 
-    private let transport: Transport
-    private let rpc: RPCClient?
+  private let transport: Transport
+  private let rpc: RPCClient?
 
-    /// - Parameters:
-    ///   - transport: the local stack. Even as a local client this owns a real path table,
-    ///     populated from the shared instance over the `LocalInterface`, so `hasPath` and
-    ///     `hops_to` are answered locally exactly as Python answers them.
-    ///   - rpc: the management channel, non-nil only when attached as a local client.
-    public init(transport: Transport, rpc: RPCClient? = nil) {
-        self.transport = transport
-        self.rpc = rpc
+  /// - Parameters:
+  ///   - transport: the local stack. Even as a local client this owns a real path table,
+  ///     populated from the shared instance over the `LocalInterface`, so `hasPath` and
+  ///     `hops_to` are answered locally exactly as Python answers them.
+  ///   - rpc: the management channel, non-nil only when attached as a local client.
+  public init(transport: Transport, rpc: RPCClient? = nil) {
+    self.transport = transport
+    self.rpc = rpc
+  }
+
+  /// Python: `reticulum.is_connected_to_shared_instance` (rnprobe.py:166).
+  ///
+  /// The instance flag on `Transport`, not `Reticulum.isConnectedToSharedInstance()`,
+  /// which answers "has any stack started in this process" and would make every probe
+  /// take the RPC branch.
+  public var isConnectedToSharedInstance: Bool { transport.isConnectedToSharedInstance }
+
+  // MARK: Paths
+
+  /// Returns whether a path to the destination is known.
+  public func hasPath(to destinationHash: Data) -> Bool {
+    transport.hasPath(to: destinationHash)
+  }
+
+  /// Requests a path to the destination.
+  public func requestPath(for destinationHash: Data) {
+    try? transport.requestPath(for: destinationHash)
+  }
+
+  /// Python: `RNS.Transport.hops_to(dh)` returns `PATHFINDER_M` (128) for an unknown
+  /// destination, where Swift's `hopsTo` returns nil.
+  public func hops(to destinationHash: Data) -> Int {
+    guard let hops = transport.hopsTo(destinationHash) else { return Transport.pathfinderM }
+    return Int(hops)
+  }
+
+  /// Returns the next hop toward the destination, or `nil` when no path is known.
+  public func nextHop(to destinationHash: Data) -> Data? {
+    if isConnectedToSharedInstance, let rpc {
+      return try? rpc.nextHop(destinationHash: destinationHash)
     }
+    return transport.nextHop(to: destinationHash)
+  }
 
-    /// Python: `reticulum.is_connected_to_shared_instance` (rnprobe.py:166).
-    ///
-    /// The instance flag on `Transport`, not `Reticulum.isConnectedToSharedInstance()`,
-    /// which answers "has any stack started in this process" and would make every probe
-    /// take the RPC branch.
-    public var isConnectedToSharedInstance: Bool { transport.isConnectedToSharedInstance }
-
-    // MARK: Paths
-
-    /// Returns whether a path to the destination is known.
-    public func hasPath(to destinationHash: Data) -> Bool {
-        transport.hasPath(to: destinationHash)
+  /// Python: `str(RNS.Transport.next_hop_interface(dh))`—the interface's `__str__`.
+  /// `Transport.nextHopInterfaceName(for:)` returns `Interface.name`, which is a
+  /// different string, so the live object's `displayName` is used instead.
+  public func nextHopInterfaceDisplayName(for destinationHash: Data) -> String? {
+    if isConnectedToSharedInstance, let rpc {
+      return try? rpc.nextHopInterfaceName(destinationHash: destinationHash)
     }
+    return transport.nextHopInterface(for: destinationHash)?.displayName
+  }
 
-    /// Requests a path to the destination.
-    public func requestPath(for destinationHash: Data) {
-        try? transport.requestPath(for: destinationHash)
+  /// Python: `Reticulum.get_first_hop_timeout` wraps the whole RPC call in try/except and
+  /// returns `DEFAULT_PER_HOP_TIMEOUT` on any failure (Reticulum.py:1570-1572).
+  public func firstHopTimeout(for destinationHash: Data) -> TimeInterval {
+    if isConnectedToSharedInstance, let rpc {
+      // `try?` on an optional-returning throwing call flattens, so this covers both
+      // "the RPC threw" and "the daemon answered nil" with Python's 6.0 fallback.
+      guard let value = try? rpc.firstHopTimeout(destinationHash: destinationHash) else {
+        return Constants.defaultPerHopTimeout
+      }
+      return value
     }
+    return transport.firstHopTimeout(for: destinationHash)
+  }
 
-    /// Python: `RNS.Transport.hops_to(dh)` returns `PATHFINDER_M` (128) for an unknown
-    /// destination, where Swift's `hopsTo` returns nil.
-    public func hops(to destinationHash: Data) -> Int {
-        guard let hops = transport.hopsTo(destinationHash) else { return Transport.pathfinderM }
-        return Int(hops)
+  /// Python: `Reticulum.get_medium_path_timeout()` (Reticulum.py:1766-1784).
+  ///
+  /// Shares the
+  /// local-vs-shared routing with every other utility rather than restating it.
+  public func mediumPathTimeout() -> TimeInterval {
+    InstanceConnection.mediumPathTimeout(
+      rpc: isConnectedToSharedInstance ? rpc : nil,
+      transport: transport)
+  }
+
+  // MARK: Identity and ratchets
+
+  /// Python: `RNS.Identity.recall(destination_hash)` (rnprobe.py:97).
+  ///
+  /// Goes through the `Transport` instance rather than the static
+  /// `Identity.recall(destinationHash:)`, which delegates to `Reticulum.shared` and is
+  /// therefore useless before `Reticulum.start()` has assigned it.
+  public func recallIdentity(for destinationHash: Data) -> Identity? {
+    transport.recall(identity: destinationHash)
+  }
+
+  /// Returns the current ratchet key for the destination, or `nil` when none is held.
+  public func currentRatchetKey(for destinationHash: Data) -> Data? {
+    transport.currentRatchetKey(forDestination: destinationHash)
+  }
+
+  // MARK: Send
+
+  /// Python: `RNS.Packet(request_destination, payload)` → `pack()` → `send()`.
+  ///
+  /// The MTU is enforced through `pack()` itself, not `Packet.rawByteCount`—the latter
+  /// omits the one-byte context field and is a byte short of the real packed length.
+  /// Defaults match Python's: DATA / SINGLE / HEADER_1 / BROADCAST / context NONE / hops 0.
+  public func transmit(ciphertext: Data, to destinationHash: Data) throws -> (any ProbeReceipt)? {
+    let packet = Packet(
+      destinationType: .single,
+      packetType: .data,
+      destinationHash: destinationHash,
+      data: ciphertext)
+    do {
+      _ = try packet.pack()
+    } catch Packet.PackError.exceedsMTU(let size) {
+      throw NetworkProbe.SendError.mtuExceeded(size: size)
     }
+    return try transport.send(packet)
+  }
 
-    /// Returns the next hop toward the destination, or `nil` when no path is known.
-    public func nextHop(to destinationHash: Data) -> Data? {
-        if isConnectedToSharedInstance, let rpc {
-            return try? rpc.nextHop(destinationHash: destinationHash)
-        }
-        return transport.nextHop(to: destinationHash)
+  // MARK: PHY stats
+
+  /// Python: `reticulum.get_packet_rssi(packet_hash)` (rnprobe.py:167).
+  ///
+  /// Raw `MsgPack.Value` so the int-vs-float distinction Python's `str()` depends on
+  /// survives; `RPCClient.packetRSSI` coerces through `asDouble` and would flatten it.
+  public func packetRSSI(packetHash: Data) -> MsgPack.Value? {
+    phyStat("packet_rssi", packetHash: packetHash) { transport.getPacketRssi(packetHash: $0) }
+  }
+
+  /// Python: `reticulum.get_packet_snr(packet_hash)` (rnprobe.py:168).
+  public func packetSNR(packetHash: Data) -> MsgPack.Value? {
+    phyStat("packet_snr", packetHash: packetHash) { transport.getPacketSnr(packetHash: $0) }
+  }
+
+  /// Python: `reticulum.get_packet_q(packet_hash)` (rnprobe.py:169).
+  public func packetQ(packetHash: Data) -> MsgPack.Value? {
+    phyStat("packet_q", packetHash: packetHash) { transport.getPacketQ(packetHash: $0) }
+  }
+
+  private func phyStat(
+    _ call: String,
+    packetHash: Data,
+    local: (Data) -> Float?
+  ) -> MsgPack.Value? {
+    if isConnectedToSharedInstance, let rpc {
+      // Python always sends the FULL 32-byte hash. A Python daemon caches under that
+      // key; a Swift daemon caches under the truncated one and narrows the key on
+      // lookup, so the full hash works against both. The truncated retry keeps this
+      // working against an older Swift daemon that doesn't narrow.
+      if let value = try? rpc.get(call, extra: [("packet_hash", .bytes(packetHash))]),
+        !isNil(value)
+      {
+        return value
+      }
+      let truncated = packetHash.prefix(Constants.truncatedHashLength)
+      guard truncated.count != packetHash.count,
+        let value = try? rpc.get(call, extra: [("packet_hash", .bytes(truncated))]),
+        !isNil(value)
+      else { return nil }
+      return value
     }
+    guard let value = local(packetHash) else { return nil }
+    return .double(Double(value))
+  }
 
-    /// Python: `str(RNS.Transport.next_hop_interface(dh))`—the interface's `__str__`.
-    /// `Transport.nextHopInterfaceName(for:)` returns `Interface.name`, which is a
-    /// different string, so the live object's `displayName` is used instead.
-    public func nextHopInterfaceDisplayName(for destinationHash: Data) -> String? {
-        if isConnectedToSharedInstance, let rpc {
-            return try? rpc.nextHopInterfaceName(destinationHash: destinationHash)
-        }
-        return transport.nextHopInterface(for: destinationHash)?.displayName
-    }
-
-    /// Python: `Reticulum.get_first_hop_timeout` wraps the whole RPC call in try/except and
-    /// returns `DEFAULT_PER_HOP_TIMEOUT` on any failure (Reticulum.py:1570-1572).
-    public func firstHopTimeout(for destinationHash: Data) -> TimeInterval {
-        if isConnectedToSharedInstance, let rpc {
-            // `try?` on an optional-returning throwing call flattens, so this covers both
-            // "the RPC threw" and "the daemon answered nil" with Python's 6.0 fallback.
-            guard let value = try? rpc.firstHopTimeout(destinationHash: destinationHash) else {
-                return Constants.defaultPerHopTimeout
-            }
-            return value
-        }
-        return transport.firstHopTimeout(for: destinationHash)
-    }
-
-    /// Python: `Reticulum.get_medium_path_timeout()` (Reticulum.py:1766-1784).
-    ///
-    /// Shares the
-    /// local-vs-shared routing with every other utility rather than restating it.
-    public func mediumPathTimeout() -> TimeInterval {
-        InstanceConnection.mediumPathTimeout(rpc: isConnectedToSharedInstance ? rpc : nil,
-                                             transport: transport)
-    }
-
-    // MARK: Identity and ratchets
-
-    /// Python: `RNS.Identity.recall(destination_hash)` (rnprobe.py:97).
-    ///
-    /// Goes through the `Transport` instance rather than the static
-    /// `Identity.recall(destinationHash:)`, which delegates to `Reticulum.shared` and is
-    /// therefore useless before `Reticulum.start()` has assigned it.
-    public func recallIdentity(for destinationHash: Data) -> Identity? {
-        transport.recall(identity: destinationHash)
-    }
-
-    /// Returns the current ratchet key for the destination, or `nil` when none is held.
-    public func currentRatchetKey(for destinationHash: Data) -> Data? {
-        transport.currentRatchetKey(forDestination: destinationHash)
-    }
-
-    // MARK: Send
-
-    /// Python: `RNS.Packet(request_destination, payload)` → `pack()` → `send()`.
-    ///
-    /// The MTU is enforced through `pack()` itself, not `Packet.rawByteCount`—the latter
-    /// omits the one-byte context field and is a byte short of the real packed length.
-    /// Defaults match Python's: DATA / SINGLE / HEADER_1 / BROADCAST / context NONE / hops 0.
-    public func transmit(ciphertext: Data, to destinationHash: Data) throws -> (any ProbeReceipt)? {
-        let packet = Packet(destinationType: .single,
-                            packetType: .data,
-                            destinationHash: destinationHash,
-                            data: ciphertext)
-        do {
-            _ = try packet.pack()
-        } catch Packet.PackError.exceedsMTU(let size) {
-            throw NetworkProbe.SendError.mtuExceeded(size: size)
-        }
-        return try transport.send(packet)
-    }
-
-    // MARK: PHY stats
-
-    /// Python: `reticulum.get_packet_rssi(packet_hash)` (rnprobe.py:167).
-    ///
-    /// Raw `MsgPack.Value` so the int-vs-float distinction Python's `str()` depends on
-    /// survives; `RPCClient.packetRSSI` coerces through `asDouble` and would flatten it.
-    public func packetRSSI(packetHash: Data) -> MsgPack.Value? {
-        phyStat("packet_rssi", packetHash: packetHash) { transport.getPacketRssi(packetHash: $0) }
-    }
-
-    /// Python: `reticulum.get_packet_snr(packet_hash)` (rnprobe.py:168).
-    public func packetSNR(packetHash: Data) -> MsgPack.Value? {
-        phyStat("packet_snr", packetHash: packetHash) { transport.getPacketSnr(packetHash: $0) }
-    }
-
-    /// Python: `reticulum.get_packet_q(packet_hash)` (rnprobe.py:169).
-    public func packetQ(packetHash: Data) -> MsgPack.Value? {
-        phyStat("packet_q", packetHash: packetHash) { transport.getPacketQ(packetHash: $0) }
-    }
-
-    private func phyStat(_ call: String,
-                         packetHash: Data,
-                         local: (Data) -> Float?) -> MsgPack.Value? {
-        if isConnectedToSharedInstance, let rpc {
-            // Python always sends the FULL 32-byte hash. A Python daemon caches under that
-            // key; a Swift daemon caches under the truncated one and narrows the key on
-            // lookup, so the full hash works against both. The truncated retry keeps this
-            // working against an older Swift daemon that doesn't narrow.
-            if let value = try? rpc.get(call, extra: [("packet_hash", .bytes(packetHash))]),
-               !isNil(value) {
-                return value
-            }
-            let truncated = packetHash.prefix(Constants.truncatedHashLength)
-            guard truncated.count != packetHash.count,
-                  let value = try? rpc.get(call, extra: [("packet_hash", .bytes(truncated))]),
-                  !isNil(value) else { return nil }
-            return value
-        }
-        guard let value = local(packetHash) else { return nil }
-        return .double(Double(value))
-    }
-
-    private func isNil(_ value: MsgPack.Value) -> Bool {
-        if case .nil = value { return true }
-        return false
-    }
+  private func isNil(_ value: MsgPack.Value) -> Bool {
+    if case .nil = value { return true }
+    return false
+  }
 }
 
 // MARK: - Clock
 
 /// Python: `time.time()` and `time.sleep()`.
 public final class SystemProbeClock: ProbeClock {
-    /// Creates a clock reading the system time.
-    public init() {}
-    /// Returns the current time.
-    public func now() -> TimeInterval { Date().timeIntervalSince1970 }
-    /// Blocks the calling thread for `interval` seconds.
-    public func sleep(_ interval: TimeInterval) {
-        guard interval > 0 else { return }
-        Thread.sleep(forTimeInterval: interval)
-    }
+  /// Creates a clock reading the system time.
+  public init() {}
+  /// Returns the current time.
+  public func now() -> TimeInterval { Date().timeIntervalSince1970 }
+  /// Blocks the calling thread for `interval` seconds.
+  public func sleep(_ interval: TimeInterval) {
+    guard interval > 0 else { return }
+    Thread.sleep(forTimeInterval: interval)
+  }
 }
 
 // MARK: - Entropy
@@ -246,12 +252,12 @@ public final class SystemProbeClock: ProbeClock {
 /// Delegates to `SecureRandom`, the package's CSPRNG seam; `UInt8.random(in:)`
 /// isn't cryptographically secure and would make probe payloads predictable.
 public final class SecureProbeEntropy: ProbeEntropy {
-    /// Creates a source drawing from the system random generator.
-    public init() {}
-    /// Returns `count` random bytes.
-    public func randomBytes(_ count: Int) -> Data {
-        SecureRandom.bytes(count)
-    }
+  /// Creates a source drawing from the system random generator.
+  public init() {}
+  /// Returns `count` random bytes.
+  public func randomBytes(_ count: Int) -> Data {
+    SecureRandom.bytes(count)
+  }
 }
 
 // MARK: - Output
@@ -262,12 +268,15 @@ public final class SecureProbeEntropy: ProbeEntropy {
 /// is flushed. Python only flushes at rnprobe.py:82, :90, :139 and :147—flushing
 /// everywhere changes on-screen timing, never the byte stream.
 public final class StandardProbeOutput: ProbeOutput {
-    /// Creates an output writing to the standard streams.
-    public init() {}
-    /// Writes `text` to standard output.
-    public func write(_ text: String) { fputs(text, stdout) }
-    /// Writes `text` to standard error.
-    public func writeError(_ text: String) { fputs(text, stderr) }
-    /// Flushes both standard streams.
-    public func flush() { fflush(stdout); fflush(stderr) }
+  /// Creates an output writing to the standard streams.
+  public init() {}
+  /// Writes `text` to standard output.
+  public func write(_ text: String) { fputs(text, stdout) }
+  /// Writes `text` to standard error.
+  public func writeError(_ text: String) { fputs(text, stderr) }
+  /// Flushes both standard streams.
+  public func flush() {
+    fflush(stdout)
+    fflush(stderr)
+  }
 }

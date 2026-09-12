@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Configure an interface's IFAC the way a config file does, for tests.
@@ -24,18 +25,21 @@ import XCTest
 ///
 /// Keys are spelled as they're in a config block, not as Swift parameters, so the tests also
 /// exercise the spellings Python accepts.
-func configureIfacFromConfigBlock(on interface: any Interface,
-                                  netname: String? = nil,
-                                  netkey: String? = nil,
-                                  sizeBits: Int? = nil) {
-    var parameters: [String: String] = [:]
-    if let netname { parameters["network_name"] = netname }
-    if let netkey { parameters["passphrase"] = netkey }
-    if let sizeBits { parameters["ifac_size"] = String(sizeBits) }
-    Reticulum.applyIfacConfiguration(
-        to: interface,
-        from: ReticulumConfig.InterfaceConfig(name: interface.name,
-                                              type: "UDPInterface",
-                                              enabled: true,
-                                              parameters: parameters))
+func configureIfacFromConfigBlock(
+  on interface: any Interface,
+  netname: String? = nil,
+  netkey: String? = nil,
+  sizeBits: Int? = nil
+) {
+  var parameters: [String: String] = [:]
+  if let netname { parameters["network_name"] = netname }
+  if let netkey { parameters["passphrase"] = netkey }
+  if let sizeBits { parameters["ifac_size"] = String(sizeBits) }
+  Reticulum.applyIfacConfiguration(
+    to: interface,
+    from: ReticulumConfig.InterfaceConfig(
+      name: interface.name,
+      type: "UDPInterface",
+      enabled: true,
+      parameters: parameters))
 }

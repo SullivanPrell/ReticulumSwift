@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Tests for `Reticulum.log()` and log-level constants.
@@ -25,161 +26,164 @@ import XCTest
 ///   RNS.log(msg, level=RNS.LOG_NOTICE)
 final class ReticulumLogTests: XCTestCase {
 
-    override func setUp() {
-        super.setUp()
-        // Reset to defaults before each test.
-        Reticulum.globalLogLevel = .notice
-        Reticulum.logHandler = nil
-    }
+  override func setUp() {
+    super.setUp()
+    // Reset to defaults before each test.
+    Reticulum.globalLogLevel = .notice
+    Reticulum.logHandler = nil
+  }
 
-    override func tearDown() {
-        Reticulum.globalLogLevel = .notice
-        Reticulum.logHandler = nil
-        super.tearDown()
-    }
+  override func tearDown() {
+    Reticulum.globalLogLevel = .notice
+    Reticulum.logHandler = nil
+    super.tearDown()
+  }
 
-    // MARK: - Log-level integer values
+  // MARK: - Log-level integer values
 
-    func testLogCriticalRawValue() {
-        XCTAssertEqual(Reticulum.logCritical.rawValue, 0)
-    }
-    func testLogErrorRawValue() {
-        XCTAssertEqual(Reticulum.logError.rawValue, 1)
-    }
-    func testLogWarningRawValue() {
-        XCTAssertEqual(Reticulum.logWarning.rawValue, 2)
-    }
-    func testLogNoticeRawValue() {
-        XCTAssertEqual(Reticulum.logNotice.rawValue, 3)
-    }
-    func testLogInfoRawValue() {
-        XCTAssertEqual(Reticulum.logInfo.rawValue, 4)
-    }
-    func testLogVerboseRawValue() {
-        XCTAssertEqual(Reticulum.logVerbose.rawValue, 5)
-    }
-    func testLogDebugRawValue() {
-        XCTAssertEqual(Reticulum.logDebug.rawValue, 6)
-    }
-    func testLogPathingRawValue() {
-        // Python: RNS.LOG_PATHING = 7 (inserted between DEBUG and EXTREME)
-        XCTAssertEqual(Reticulum.logPathing.rawValue, 7)
-    }
-    func testLogExtremeRawValue() {
-        // Python: RNS.LOG_EXTREME = 8 (shifted from 7 when LOG_PATHING was added)
-        XCTAssertEqual(Reticulum.logExtreme.rawValue, 8)
-    }
+  func testLogCriticalRawValue() {
+    XCTAssertEqual(Reticulum.logCritical.rawValue, 0)
+  }
+  func testLogErrorRawValue() {
+    XCTAssertEqual(Reticulum.logError.rawValue, 1)
+  }
+  func testLogWarningRawValue() {
+    XCTAssertEqual(Reticulum.logWarning.rawValue, 2)
+  }
+  func testLogNoticeRawValue() {
+    XCTAssertEqual(Reticulum.logNotice.rawValue, 3)
+  }
+  func testLogInfoRawValue() {
+    XCTAssertEqual(Reticulum.logInfo.rawValue, 4)
+  }
+  func testLogVerboseRawValue() {
+    XCTAssertEqual(Reticulum.logVerbose.rawValue, 5)
+  }
+  func testLogDebugRawValue() {
+    XCTAssertEqual(Reticulum.logDebug.rawValue, 6)
+  }
+  func testLogPathingRawValue() {
+    // Python: RNS.LOG_PATHING = 7 (inserted between DEBUG and EXTREME)
+    XCTAssertEqual(Reticulum.logPathing.rawValue, 7)
+  }
+  func testLogExtremeRawValue() {
+    // Python: RNS.LOG_EXTREME = 8 (shifted from 7 when LOG_PATHING was added)
+    XCTAssertEqual(Reticulum.logExtreme.rawValue, 8)
+  }
 
-    // MARK: - Routing through logHandler
+  // MARK: - Routing through logHandler
 
-    func testLogHandlerReceivesMessage() {
-        var received: (String, Reticulum.LogLevel)?
-        Reticulum.globalLogLevel = .extreme   // allow all
-        Reticulum.logHandler = { msg, lvl in received = (msg, lvl) }
+  func testLogHandlerReceivesMessage() {
+    var received: (String, Reticulum.LogLevel)?
+    Reticulum.globalLogLevel = .extreme  // allow all
+    Reticulum.logHandler = { msg, lvl in received = (msg, lvl) }
 
-        Reticulum.log("hello", level: .notice)
+    Reticulum.log("hello", level: .notice)
 
-        XCTAssertEqual(received?.0, "hello")
-        XCTAssertEqual(received?.1, .notice)
-    }
+    XCTAssertEqual(received?.0, "hello")
+    XCTAssertEqual(received?.1, .notice)
+  }
 
-    func testLogHandlerNotCalledWhenLevelBelowThreshold() {
-        var called = false
-        Reticulum.globalLogLevel = .error  // only critical and error pass
-        Reticulum.logHandler = { _, _ in called = true }
+  func testLogHandlerNotCalledWhenLevelBelowThreshold() {
+    var called = false
+    Reticulum.globalLogLevel = .error  // only critical and error pass
+    Reticulum.logHandler = { _, _ in called = true }
 
-        Reticulum.log("suppressed", level: .info)
+    Reticulum.log("suppressed", level: .info)
 
-        XCTAssertFalse(called, "message below threshold must not reach the handler")
-    }
+    XCTAssertFalse(called, "message below threshold must not reach the handler")
+  }
 
-    func testLogHandlerCalledForCritical() {
-        var called = false
-        Reticulum.globalLogLevel = .notice
-        Reticulum.logHandler = { _, _ in called = true }
+  func testLogHandlerCalledForCritical() {
+    var called = false
+    Reticulum.globalLogLevel = .notice
+    Reticulum.logHandler = { _, _ in called = true }
 
-        Reticulum.log("critical!", level: .critical)
+    Reticulum.log("critical!", level: .critical)
 
-        XCTAssertTrue(called, "CRITICAL is always above any notice-or-lower threshold")
-    }
+    XCTAssertTrue(called, "CRITICAL is always above any notice-or-lower threshold")
+  }
 
-    func testDefaultLevelIsNotice() {
-        // The default level used when no level is supplied must be .notice
-        var received: Reticulum.LogLevel?
-        Reticulum.globalLogLevel = .extreme
-        Reticulum.logHandler = { _, lvl in received = lvl }
+  func testDefaultLevelIsNotice() {
+    // The default level used when no level is supplied must be .notice
+    var received: Reticulum.LogLevel?
+    Reticulum.globalLogLevel = .extreme
+    Reticulum.logHandler = { _, lvl in received = lvl }
 
-        Reticulum.log("no level specified")
+    Reticulum.log("no level specified")
 
-        XCTAssertEqual(received, .notice,
-                       "default log level must be .notice (mirrors Python LOG_NOTICE)")
-    }
+    XCTAssertEqual(
+      received, .notice,
+      "default log level must be .notice (mirrors Python LOG_NOTICE)")
+  }
 
-    // MARK: - Ordering
+  // MARK: - Ordering
 
-    func testLogLevelOrdering() {
-        XCTAssertLessThan(Reticulum.logCritical, Reticulum.logError)
-        XCTAssertLessThan(Reticulum.logError, Reticulum.logWarning)
-        XCTAssertLessThan(Reticulum.logWarning, Reticulum.logNotice)
-        XCTAssertLessThan(Reticulum.logNotice, Reticulum.logInfo)
-        XCTAssertLessThan(Reticulum.logInfo, Reticulum.logVerbose)
-        XCTAssertLessThan(Reticulum.logVerbose, Reticulum.logDebug)
-        XCTAssertLessThan(Reticulum.logDebug, Reticulum.logPathing)
-        XCTAssertLessThan(Reticulum.logPathing, Reticulum.logExtreme)
-    }
+  func testLogLevelOrdering() {
+    XCTAssertLessThan(Reticulum.logCritical, Reticulum.logError)
+    XCTAssertLessThan(Reticulum.logError, Reticulum.logWarning)
+    XCTAssertLessThan(Reticulum.logWarning, Reticulum.logNotice)
+    XCTAssertLessThan(Reticulum.logNotice, Reticulum.logInfo)
+    XCTAssertLessThan(Reticulum.logInfo, Reticulum.logVerbose)
+    XCTAssertLessThan(Reticulum.logVerbose, Reticulum.logDebug)
+    XCTAssertLessThan(Reticulum.logDebug, Reticulum.logPathing)
+    XCTAssertLessThan(Reticulum.logPathing, Reticulum.logExtreme)
+  }
 }
 
 // MARK: - logtimestamps
 
 final class ReticulumLogTimestampsTests: XCTestCase {
 
-    override func setUp() {
-        super.setUp()
-        Reticulum.logTimestamps = true
-    }
+  override func setUp() {
+    super.setUp()
+    Reticulum.logTimestamps = true
+  }
 
-    override func tearDown() {
-        Reticulum.logTimestamps = true
-        super.tearDown()
-    }
+  override func tearDown() {
+    Reticulum.logTimestamps = true
+    super.tearDown()
+  }
 
-    func testDefaultLogTimestampsIsTrue() {
-        XCTAssertTrue(Reticulum.logTimestamps,
-                      "Python: RNS.logtimestamps = True by default")
-    }
+  func testDefaultLogTimestampsIsTrue() {
+    XCTAssertTrue(
+      Reticulum.logTimestamps,
+      "Python: RNS.logtimestamps = True by default")
+  }
 
-    func testConfigDefaultLogTimestampsIsTrue() {
-        let cfg = ReticulumConfig.parse("")
-        XCTAssertTrue(cfg.logging.logTimestamps)
-    }
+  func testConfigDefaultLogTimestampsIsTrue() {
+    let cfg = ReticulumConfig.parse("")
+    XCTAssertTrue(cfg.logging.logTimestamps)
+  }
 
-    func testConfigParsesLogTimestampsNo() {
-        let cfg = ReticulumConfig.parse("[logging]\nlogtimestamps = No\n")
-        XCTAssertFalse(cfg.logging.logTimestamps)
-    }
+  func testConfigParsesLogTimestampsNo() {
+    let cfg = ReticulumConfig.parse("[logging]\nlogtimestamps = No\n")
+    XCTAssertFalse(cfg.logging.logTimestamps)
+  }
 
-    func testConfigParsesLogTimestampsFalse() {
-        let cfg = ReticulumConfig.parse("[logging]\nlogtimestamps = False\n")
-        XCTAssertFalse(cfg.logging.logTimestamps)
-    }
+  func testConfigParsesLogTimestampsFalse() {
+    let cfg = ReticulumConfig.parse("[logging]\nlogtimestamps = False\n")
+    XCTAssertFalse(cfg.logging.logTimestamps)
+  }
 
-    func testConfigParsesLogTimestampsYes() {
-        let cfg = ReticulumConfig.parse("[logging]\nlogtimestamps = Yes\n")
-        XCTAssertTrue(cfg.logging.logTimestamps)
-    }
+  func testConfigParsesLogTimestampsYes() {
+    let cfg = ReticulumConfig.parse("[logging]\nlogtimestamps = Yes\n")
+    XCTAssertTrue(cfg.logging.logTimestamps)
+  }
 
-    func testLogTimestampsFlagCanBeSetFalse() {
-        Reticulum.logTimestamps = false
-        XCTAssertFalse(Reticulum.logTimestamps)
-    }
+  func testLogTimestampsFlagCanBeSetFalse() {
+    Reticulum.logTimestamps = false
+    XCTAssertFalse(Reticulum.logTimestamps)
+  }
 
-    func testLogHandlerNotAffectedByTimestampFlag() {
-        Reticulum.logTimestamps = false
-        Reticulum.globalLogLevel = .extreme
-        var received: String?
-        Reticulum.logHandler = { msg, _ in received = msg }
-        Reticulum.log("test message", level: .notice)
-        XCTAssertEqual(received, "test message",
-                       "logHandler receives raw message regardless of logTimestamps")
-    }
+  func testLogHandlerNotAffectedByTimestampFlag() {
+    Reticulum.logTimestamps = false
+    Reticulum.globalLogLevel = .extreme
+    var received: String?
+    Reticulum.logHandler = { msg, _ in received = msg }
+    Reticulum.log("test message", level: .notice)
+    XCTAssertEqual(
+      received, "test message",
+      "logHandler receives raw message regardless of logTimestamps")
+  }
 }

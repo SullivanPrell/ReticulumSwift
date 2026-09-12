@@ -17,342 +17,363 @@ import Network
 /// Wire-compatible with `RNS.Interfaces.TCPInterface` running
 /// in HDLC mode (`kiss_framing=False`, the default).
 public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables).
-    ///
-    /// One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`TCPInterface.py:134`).
-    ///
-    /// The announcer
-    /// still needs `discoverable` set from config before it announces anything.
-    public let supportsDiscovery = true
-    /// Interface name as it appears in configuration and status output.
-    public let name: String
-    /// Host the client connects to.
-    public let host: String
-    /// TCP port the client connects to.
-    public let port: UInt16
-    /// Nominal interface bitrate in bits per second.
-    public var bitrate: Int = 10_000_000
-    private let onlineFlag = LockedFlag(false)
-    /// Whether the interface is up and able to carry traffic.
-    public private(set) var isOnline: Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
+  /// Python marks this type discoverable (`TCPInterface.py:134`).
+  ///
+  /// The announcer
+  /// still needs `discoverable` set from config before it announces anything.
+  public let supportsDiscovery = true
+  /// Interface name as it appears in configuration and status output.
+  public let name: String
+  /// Host the client connects to.
+  public let host: String
+  /// TCP port the client connects to.
+  public let port: UInt16
+  /// Nominal interface bitrate in bits per second.
+  public var bitrate: Int = 10_000_000
+  private let onlineFlag = LockedFlag(false)
+  /// Whether the interface is up and able to carry traffic.
+  public private(set) var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
+
+  // Python TCPClientInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
+  /// Hardware maximum transmission unit in bytes.
+  public var hwMtu: Int? = 262_144
+  /// Whether the link maximum transmission unit is negotiated with the peer.
+  public let autoconfigureMtu: Bool = true
+
+  /// Called with each packet decoded from an inbound frame.
+  public var inboundHandler: ((Packet, any Interface) -> Void)?
+  /// Called with each inbound frame, before packet decoding.
+  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
+  public var ifacIdentity: Identity?
+  /// Derived IFAC key used to sign and verify frames.
+  public var ifacKey: Data?
+  /// IFAC authentication field size in bytes.
+  public var ifacSize: Int = Constants.defaultIfacSize
+  /// Whether the peer only bootstraps a connection and is dropped afterwards.
+  public var bootstrapOnly: Bool = false
+  /// Whether path requests received here are resolved recursively.
+  public var recursivePrs: Bool = false
+  /// Whether announces originating on this instance are sent on this interface.
+  public var announcesFromInternal: Bool = true
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
+
+  /// Seconds between reconnection attempts.
+  ///
+  /// Python: `TCPClientInterface.RECONNECT_WAIT = 5`.
+  public var reconnectWait: TimeInterval = 5
+  /// Maximum reconnect attempts. nil = unlimited, matching Python's
+  /// `RECONNECT_MAX_TRIES = None`.
+  ///
+  /// Config key: `max_reconnect_tries`.
+  public var maxReconnectTries: Int?
+
+  /// Lock-guarded—written from this interface's I/O queue while the UI
+  /// and status reporting read from another thread.
+  ///
+  /// See `InterfaceCounters`.
+  private let counters = InterfaceCounters()
+  /// Total bytes received on this interface.
+  public var rxBytes: Int { counters.rxBytes }
+  /// Total bytes transmitted on this interface.
+  public var txBytes: Int { counters.txBytes }
+
+  private var connection: NWConnection?
+  private let queue: DispatchQueue
+  private let decoder = HDLC.FrameDecoder()
+  private var reconnectTimer: DispatchSourceTimer?
+  private var reconnectCount: Int = 0
+  private var everConnected = false
+  private var stopped = false
+  private var dials = 0
+  /// Guards `connection`, `reconnectTimer`, `reconnectCount`, `stopped` and
+  /// `everConnected`, which are touched both from the caller thread (start/stop/send)
+  /// and from this interface's serial queue (connect/stateUpdate/receive).
+  ///
+  /// Mirrors the
+  /// same lock in ``LocalInterface``; without it a reconnect firing from the timer can
+  /// assign `connection` just after `stop()` nil'd it, leaving a connection that keeps
+  /// redialing after teardown.
+  private let stateLock = NSLock()
+
+  private var isStopped: Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return stopped
+  }
+
+  /// Python `TCPClientInterface.__str__` (`TCPInterface.py:456-462`):
+  /// `"TCPInterface["+str(self.name)+"/"+ip_str+":"+str(self.target_port)+"]"`, where
+  /// `target_ip` is the configured `target_host` verbatim—Python never resolves it for
+  /// display—and an IPv6 literal is bracketed.
+  ///
+  /// The `"Client on …"` form this used to emit belongs to a *server-spawned* client,
+  /// whose `name` Python sets to `"Client on "+servername` (`TCPInterface.py:590`).
+  /// `rnstatus` hides every interface whose name starts with `TCPInterface[Client`
+  /// (`rnstatus.py:397`), so emitting the spawned form here made every interface an
+  /// operator configured invisible in `rnstatus`—see `bugs/013`.
+  public var displayName: String {
+    let ipString = host.contains(":") ? "[\(host)]" : host
+    return "TCPInterface[\(name)/\(ipString):\(port)]"
+  }
+
+  /// The live connection, for tests that need to assert on its state.
+  var currentConnectionForTesting: NWConnection? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return connection
+  }
+  /// How many times a connection has been dialed, initial attempt included.
+  var dialCountForTesting: Int {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return dials
+  }
+
+  /// Creates a client interface connecting to a TCP host and port.
+  public init(name: String, host: String, port: UInt16) {
+    self.name = name
+    self.host = host
+    self.port = port
+    self.queue = DispatchQueue(label: "ReticulumSwift.TCPClientInterface.\(name)")
+  }
+
+  /// Python's `__init__` runs `initial_connect()` inline (`SYNCHRONOUS_START = True`) and,
+  /// if that fails, starts the `reconnect()` thread rather than raising—a configured
+  /// interface whose peer is down comes up unconnected and keeps trying.
+  ///
+  /// This returns as
+  /// soon as the dial is in flight, which reaches the same state without stalling
+  /// interface synthesis for `INITIAL_CONNECT_TIMEOUT` per unreachable peer.
+  public func start() throws {
+    stateLock.lock()
+    stopped = false
+    reconnectCount = 0
+    stateLock.unlock()
+    connect()
+  }
+
+  /// Takes the interface offline and releases its resources.
+  public func stop() {
+    stateLock.lock()
+    stopped = true
+    let timer = reconnectTimer
+    reconnectTimer = nil
+    let conn = connection
+    connection = nil
+    stateLock.unlock()
+    timer?.cancel()
+    conn?.cancel()
+    isOnline = false
+  }
+
+  /// Transmits `packet` on the interface.
+  public func send(_ packet: Packet) throws {
+    stateLock.lock()
+    let conn = connection
+    stateLock.unlock()
+    guard let conn, isOnline else { return }
+    let raw = try packet.pack()
+    let framed = HDLC.frame(wrapIfac(raw))
+    counters.addTx(bytes: raw.count)  // Python counts raw (unframed) bytes
+    conn.send(content: framed, completion: .contentProcessed { _ in })
+  }
+
+  // MARK: - Socket options
+
+  /// The option set every dial carries lives in ``RNSSocketOptions``—the single construction
+  /// site for every socket this package opens. It was declared *here* through 1.7.0 and wired
+  /// into the two dial paths only, so `TCPServerInterface`'s listener, `LocalInterface`'s dial,
+  /// the RPC listener and the SAM socket all kept taking Network.framework's defaults, which
+  /// have keepalive **off**. The 1.7.0 CHANGELOG's "every socket" claim covered two of six
+  /// sites (`bugs/023`); `SocketOptionsTests` now fails if any file but the factory constructs
+  /// them.
+
+  /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
+  /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
+  private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
+
+  // MARK: - Connect / reconnect
+
+  private func connect() {
+    let endpoint = NWEndpoint.hostPort(
+      host: NWEndpoint.Host(host),
+      port: .orAny(port)
+    )
+    // Re-check `stopped` and publish the new connection atomically, so a concurrent
+    // stop() either wins (this path bails) or cancels the connection just assigned.
+    stateLock.lock()
+    guard !stopped else {
+      stateLock.unlock()
+      return
     }
+    let socketOptions = RNSSocketOptions.tcpParameters()
+    handedOverTCPOptionsForTesting = socketOptions.options
+    let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
+    // Cancel whatever is being replaced. A reconnect fires from a timer, not from
+    // stop(), so the predecessor is still live here—and a peer that sent FIN leaves
+    // it in CLOSE_WAIT until something closes this half.
+    let superseded = connection
+    connection = conn
+    dials += 1
+    stateLock.unlock()
+    superseded?.cancel()
+    // Each connection gets a fresh frame decoder; carrying a half-decoded frame
+    // across a reconnect would corrupt the first packet of the new session.
+    decoder.reset()
 
-    // Python TCPClientInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
-    /// Hardware maximum transmission unit in bytes.
-    public var hwMtu: Int? = 262_144
-    /// Whether the link maximum transmission unit is negotiated with the peer.
-    public let autoconfigureMtu: Bool = true
+    conn.stateUpdateHandler = { [weak self] state in
+      guard let self else { return }
+      // After a redial this handler still fires for the superseded connection—its
+      // `.cancelled` arrives once the replacement is already live. Acting on it
+      // would take the healthy connection offline and schedule a redial that
+      // abandons it uncancelled. Python guards the same window with
+      // `if not self.reconnecting`.
+      let isCurrent: Bool = {
+        self.stateLock.lock()
+        defer { self.stateLock.unlock() }
+        return self.connection === conn
+      }()
+      guard isCurrent else { return }
 
-    /// Called with each packet decoded from an inbound frame.
-    public var inboundHandler: ((Packet, any Interface) -> Void)?
-    /// Called with each inbound frame, before packet decoding.
-    public var rawInboundHandler: ((Data, any Interface) -> Void)?
-    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
-    public var ifacIdentity: Identity?
-    /// Derived IFAC key used to sign and verify frames.
-    public var ifacKey: Data?
-    /// IFAC authentication field size in bytes.
-    public var ifacSize: Int = Constants.defaultIfacSize
-    /// Whether the peer only bootstraps a connection and is dropped afterwards.
-    public var bootstrapOnly: Bool = false
-    /// Whether path requests received here are resolved recursively.
-    public var recursivePrs: Bool = false
-    /// Whether announces originating on this instance are sent on this interface.
-    public var announcesFromInternal: Bool = true
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
-
-    /// Seconds between reconnection attempts.
-    ///
-    /// Python: `TCPClientInterface.RECONNECT_WAIT = 5`.
-    public var reconnectWait: TimeInterval = 5
-    /// Maximum reconnect attempts. nil = unlimited, matching Python's
-    /// `RECONNECT_MAX_TRIES = None`.
-    ///
-    /// Config key: `max_reconnect_tries`.
-    public var maxReconnectTries: Int?
-
-    /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread.
-    ///
-    /// See `InterfaceCounters`.
-    private let counters = InterfaceCounters()
-    /// Total bytes received on this interface.
-    public var rxBytes: Int { counters.rxBytes }
-    /// Total bytes transmitted on this interface.
-    public var txBytes: Int { counters.txBytes }
-
-    private var connection: NWConnection?
-    private let queue: DispatchQueue
-    private let decoder = HDLC.FrameDecoder()
-    private var reconnectTimer: DispatchSourceTimer?
-    private var reconnectCount: Int = 0
-    private var everConnected = false
-    private var stopped = false
-    private var dials = 0
-    /// Guards `connection`, `reconnectTimer`, `reconnectCount`, `stopped` and
-    /// `everConnected`, which are touched both from the caller thread (start/stop/send)
-    /// and from this interface's serial queue (connect/stateUpdate/receive).
-    ///
-    /// Mirrors the
-    /// same lock in ``LocalInterface``; without it a reconnect firing from the timer can
-    /// assign `connection` just after `stop()` nil'd it, leaving a connection that keeps
-    /// redialing after teardown.
-    private let stateLock = NSLock()
-
-    private var isStopped: Bool { stateLock.lock(); defer { stateLock.unlock() }; return stopped }
-
-    /// Python `TCPClientInterface.__str__` (`TCPInterface.py:456-462`):
-    /// `"TCPInterface["+str(self.name)+"/"+ip_str+":"+str(self.target_port)+"]"`, where
-    /// `target_ip` is the configured `target_host` verbatim—Python never resolves it for
-    /// display—and an IPv6 literal is bracketed.
-    ///
-    /// The `"Client on …"` form this used to emit belongs to a *server-spawned* client,
-    /// whose `name` Python sets to `"Client on "+servername` (`TCPInterface.py:590`).
-    /// `rnstatus` hides every interface whose name starts with `TCPInterface[Client`
-    /// (`rnstatus.py:397`), so emitting the spawned form here made every interface an
-    /// operator configured invisible in `rnstatus`—see `bugs/013`.
-    public var displayName: String {
-        let ipString = host.contains(":") ? "[\(host)]" : host
-        return "TCPInterface[\(name)/\(ipString):\(port)]"
-    }
-
-    /// The live connection, for tests that need to assert on its state.
-    var currentConnectionForTesting: NWConnection? {
-        stateLock.lock(); defer { stateLock.unlock() }; return connection
-    }
-    /// How many times a connection has been dialed, initial attempt included.
-    var dialCountForTesting: Int {
-        stateLock.lock(); defer { stateLock.unlock() }; return dials
-    }
-
-    /// Creates a client interface connecting to a TCP host and port.
-    public init(name: String, host: String, port: UInt16) {
-        self.name = name
-        self.host = host
-        self.port = port
-        self.queue = DispatchQueue(label: "ReticulumSwift.TCPClientInterface.\(name)")
-    }
-
-    /// Python's `__init__` runs `initial_connect()` inline (`SYNCHRONOUS_START = True`) and,
-    /// if that fails, starts the `reconnect()` thread rather than raising—a configured
-    /// interface whose peer is down comes up unconnected and keeps trying.
-    ///
-    /// This returns as
-    /// soon as the dial is in flight, which reaches the same state without stalling
-    /// interface synthesis for `INITIAL_CONNECT_TIMEOUT` per unreachable peer.
-    public func start() throws {
-        stateLock.lock()
-        stopped = false
-        reconnectCount = 0
-        stateLock.unlock()
-        connect()
-    }
-
-    /// Takes the interface offline and releases its resources.
-    public func stop() {
-        stateLock.lock()
-        stopped = true
-        let timer = reconnectTimer; reconnectTimer = nil
-        let conn = connection; connection = nil
-        stateLock.unlock()
-        timer?.cancel()
-        conn?.cancel()
-        isOnline = false
-    }
-
-    /// Transmits `packet` on the interface.
-    public func send(_ packet: Packet) throws {
-        stateLock.lock()
-        let conn = connection
-        stateLock.unlock()
-        guard let conn, isOnline else { return }
-        let raw = try packet.pack()
-        let framed = HDLC.frame(wrapIfac(raw))
-        counters.addTx(bytes: raw.count)   // Python counts raw (unframed) bytes
-        conn.send(content: framed, completion: .contentProcessed { _ in })
-    }
-
-    // MARK: - Socket options
-
-    /// The option set every dial carries lives in ``RNSSocketOptions``—the single construction
-    /// site for every socket this package opens. It was declared *here* through 1.7.0 and wired
-    /// into the two dial paths only, so `TCPServerInterface`'s listener, `LocalInterface`'s dial,
-    /// the RPC listener and the SAM socket all kept taking Network.framework's defaults, which
-    /// have keepalive **off**. The 1.7.0 CHANGELOG's "every socket" claim covered two of six
-    /// sites (`bugs/023`); `SocketOptionsTests` now fails if any file but the factory constructs
-    /// them.
-
-    /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
-    /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
-    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
-
-    // MARK: - Connect / reconnect
-
-    private func connect() {
-        let endpoint = NWEndpoint.hostPort(
-            host: NWEndpoint.Host(host),
-            port: .orAny(port)
-        )
-        // Re-check `stopped` and publish the new connection atomically, so a concurrent
-        // stop() either wins (this path bails) or cancels the connection just assigned.
-        stateLock.lock()
-        guard !stopped else { stateLock.unlock(); return }
-        let socketOptions = RNSSocketOptions.tcpParameters()
-        handedOverTCPOptionsForTesting = socketOptions.options
-        let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
-        // Cancel whatever is being replaced. A reconnect fires from a timer, not from
-        // stop(), so the predecessor is still live here—and a peer that sent FIN leaves
-        // it in CLOSE_WAIT until something closes this half.
-        let superseded = connection
-        connection = conn
-        dials += 1
-        stateLock.unlock()
-        superseded?.cancel()
-        // Each connection gets a fresh frame decoder; carrying a half-decoded frame
-        // across a reconnect would corrupt the first packet of the new session.
-        decoder.reset()
-
-        conn.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            // After a redial this handler still fires for the superseded connection—its
-            // `.cancelled` arrives once the replacement is already live. Acting on it
-            // would take the healthy connection offline and schedule a redial that
-            // abandons it uncancelled. Python guards the same window with
-            // `if not self.reconnecting`.
-            let isCurrent: Bool = {
-                self.stateLock.lock(); defer { self.stateLock.unlock() }
-                return self.connection === conn
-            }()
-            guard isCurrent else { return }
-
-            switch state {
-            case .ready:
-                self.stateLock.lock()
-                self.reconnectCount = 0
-                let reconnected = self.everConnected
-                self.everConnected = true
-                self.stateLock.unlock()
-                self.isOnline = true
-                self.noteConnected()
-                if reconnected {
-                    // Python: `RNS.log("Reconnected socket for "+str(self)+".", LOG_INFO)`
-                    Reticulum.log("Reconnected socket for \(self.displayName).", level: .info)
-                } else {
-                    Reticulum.log("Interface \(self.name) is up", level: .verbose)
-                }
-                self.beginReceiveLoop()
-
-            case .waiting(let err):
-                // A refused or unreachable peer surfaces as .waiting, not .failed, and
-                // NWConnection keeps retrying underneath on its own schedule. Take it
-                // over: cancel and redial on Python's clock, so the retry is visible in
-                // the log and honours `max_reconnect_tries`.
-                Reticulum.log("Connection attempt for \(self.displayName) failed: \(err)",
-                              level: .debug)
-                self.isOnline = false
-                self.dropAndScheduleReconnect(conn)
-
-            case .failed(let err):
-                Reticulum.log("Connection for \(self.displayName) failed: \(err)", level: .debug)
-                self.isOnline = false
-                self.dropAndScheduleReconnect(conn)
-
-            case .cancelled:
-                self.isOnline = false
-
-            default:
-                break
-            }
+      switch state {
+      case .ready:
+        self.stateLock.lock()
+        self.reconnectCount = 0
+        let reconnected = self.everConnected
+        self.everConnected = true
+        self.stateLock.unlock()
+        self.isOnline = true
+        self.noteConnected()
+        if reconnected {
+          // Python: `RNS.log("Reconnected socket for "+str(self)+".", LOG_INFO)`
+          Reticulum.log("Reconnected socket for \(self.displayName).", level: .info)
+        } else {
+          Reticulum.log("Interface \(self.name) is up", level: .verbose)
         }
-        conn.start(queue: queue)
-    }
+        self.beginReceiveLoop()
 
-    /// Close the dead connection and arm the retry timer.
-    ///
-    /// Cancelling matters as much as retrying: without it the socket sits in `CLOSE_WAIT`
-    /// for the life of the process once the peer has sent FIN.
-    private func dropAndScheduleReconnect(_ conn: NWConnection) {
-        conn.cancel()
-        stateLock.lock()
-        let stopped = self.stopped
-        let count = reconnectCount
-        stateLock.unlock()
-        guard !stopped else { return }
-        if let max = maxReconnectTries, count >= max {
-            // Python: "Max reconnection attempts reached for …" then teardown.
-            Reticulum.log("Max reconnection attempts reached for \(displayName)", level: .error)
-            return
-        }
-        scheduleReconnect()
-    }
+      case .waiting(let err):
+        // A refused or unreachable peer surfaces as .waiting, not .failed, and
+        // NWConnection keeps retrying underneath on its own schedule. Take it
+        // over: cancel and redial on Python's clock, so the retry is visible in
+        // the log and honours `max_reconnect_tries`.
+        Reticulum.log(
+          "Connection attempt for \(self.displayName) failed: \(err)",
+          level: .debug)
+        self.isOnline = false
+        self.dropAndScheduleReconnect(conn)
 
-    private func scheduleReconnect() {
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + reconnectWait)
-        timer.setEventHandler { [weak self] in
-            guard let self, !self.isStopped else { return }
-            self.connect()
-        }
-        // Publish before resuming, and under the same lock that `stop()` takes. Resuming
-        // first leaves a window in which a concurrent `stop()` cancels the *previous*
-        // timer and never observes this one—an interface that keeps dialing after teardown.
-        stateLock.lock()
-        // `cancelUnstarted()`, not `cancel()`: this timer hasn't been resumed, and releasing a
-        // suspended dispatch source traps in libdispatch (`bugs/032`).
-        guard !stopped else { stateLock.unlock(); timer.cancelUnstarted(); return }
-        reconnectCount += 1
-        reconnectTimer?.cancel()
-        reconnectTimer = timer
-        stateLock.unlock()
-        timer.resume()
-    }
+      case .failed(let err):
+        Reticulum.log("Connection for \(self.displayName) failed: \(err)", level: .debug)
+        self.isOnline = false
+        self.dropAndScheduleReconnect(conn)
 
-    private func beginReceiveLoop() {
-        stateLock.lock()
-        let current = connection
-        stateLock.unlock()
-        guard let current else { return }
-        current.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            if let data, !data.isEmpty {
-                let frames = self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize)
-                for frame in frames {
-                    self.counters.addRx(bytes: frame.count)   // Python counts unframed payload bytes
-                    if let h = self.rawInboundHandler {
-                        h(frame, self)
-                    } else if let packet = try? Packet.unpack(frame) {
-                        self.inboundHandler?(packet, self)
-                    }
-                }
-            }
-            if error != nil || isComplete {
-                // A receive that completes on a superseded connection must not touch the
-                // live one: it would take a healthy interface offline and start a second
-                // retry loop.
-                self.stateLock.lock()
-                let isCurrent = self.connection === current
-                self.stateLock.unlock()
-                guard isCurrent else { return }
-                // The peer hung up (or the link broke). Python drops out of `read_loop`
-                // into `teardown()` → `reconnect()`; this used to just return, leaving the
-                // node permanently and silently offline. See `bugs/013`.
-                Reticulum.log("Interface \(self.name) lost its connection to \(self.host):\(self.port)",
-                              level: .verbose)
-                self.isOnline = false
-                self.dropAndScheduleReconnect(current)
-                return
-            }
-            self.beginReceiveLoop()
-        }
+      case .cancelled:
+        self.isOnline = false
+
+      default:
+        break
+      }
     }
+    conn.start(queue: queue)
+  }
+
+  /// Close the dead connection and arm the retry timer.
+  ///
+  /// Cancelling matters as much as retrying: without it the socket sits in `CLOSE_WAIT`
+  /// for the life of the process once the peer has sent FIN.
+  private func dropAndScheduleReconnect(_ conn: NWConnection) {
+    conn.cancel()
+    stateLock.lock()
+    let stopped = self.stopped
+    let count = reconnectCount
+    stateLock.unlock()
+    guard !stopped else { return }
+    if let max = maxReconnectTries, count >= max {
+      // Python: "Max reconnection attempts reached for …" then teardown.
+      Reticulum.log("Max reconnection attempts reached for \(displayName)", level: .error)
+      return
+    }
+    scheduleReconnect()
+  }
+
+  private func scheduleReconnect() {
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + reconnectWait)
+    timer.setEventHandler { [weak self] in
+      guard let self, !self.isStopped else { return }
+      self.connect()
+    }
+    // Publish before resuming, and under the same lock that `stop()` takes. Resuming
+    // first leaves a window in which a concurrent `stop()` cancels the *previous*
+    // timer and never observes this one—an interface that keeps dialing after teardown.
+    stateLock.lock()
+    // `cancelUnstarted()`, not `cancel()`: this timer hasn't been resumed, and releasing a
+    // suspended dispatch source traps in libdispatch (`bugs/032`).
+    guard !stopped else {
+      stateLock.unlock()
+      timer.cancelUnstarted()
+      return
+    }
+    reconnectCount += 1
+    reconnectTimer?.cancel()
+    reconnectTimer = timer
+    stateLock.unlock()
+    timer.resume()
+  }
+
+  private func beginReceiveLoop() {
+    stateLock.lock()
+    let current = connection
+    stateLock.unlock()
+    guard let current else { return }
+    current.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
+      [weak self] data, _, isComplete, error in
+      guard let self else { return }
+      if let data, !data.isEmpty {
+        let frames = self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize)
+        for frame in frames {
+          self.counters.addRx(bytes: frame.count)  // Python counts unframed payload bytes
+          if let h = self.rawInboundHandler {
+            h(frame, self)
+          } else if let packet = try? Packet.unpack(frame) {
+            self.inboundHandler?(packet, self)
+          }
+        }
+      }
+      if error != nil || isComplete {
+        // A receive that completes on a superseded connection must not touch the
+        // live one: it would take a healthy interface offline and start a second
+        // retry loop.
+        self.stateLock.lock()
+        let isCurrent = self.connection === current
+        self.stateLock.unlock()
+        guard isCurrent else { return }
+        // The peer hung up (or the link broke). Python drops out of `read_loop`
+        // into `teardown()` → `reconnect()`; this used to just return, leaving the
+        // node permanently and silently offline. See `bugs/013`.
+        Reticulum.log(
+          "Interface \(self.name) lost its connection to \(self.host):\(self.port)",
+          level: .verbose)
+        self.isOnline = false
+        self.dropAndScheduleReconnect(current)
+        return
+      }
+      self.beginReceiveLoop()
+    }
+  }
 }

@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
+
 @testable import ReticulumSwift
 
 /// Install a path the way the stack actually learns one—with the announce that established it
@@ -31,32 +32,34 @@ import Foundation
 /// not.
 @discardableResult
 func installPersistablePath(
-    on transport: Transport,
-    through interface: any Interface,
-    hops: UInt8 = 1,
-    aspect: String = "path",
-    lastHeard: Date = Date(),
-    expires: Date? = nil,
-    identity: Identity = Identity(),
-    ratchet: Data? = nil
+  on transport: Transport,
+  through interface: any Interface,
+  hops: UInt8 = 1,
+  aspect: String = "path",
+  lastHeard: Date = Date(),
+  expires: Date? = nil,
+  identity: Identity = Identity(),
+  ratchet: Data? = nil
 ) throws -> (destinationHash: Data, identity: Identity, announceHash: Data) {
-    let destination = try Destination(identity: identity, direction: .in, kind: .single,
-                                      appName: "persistfixture", aspects: [aspect])
-    let announce = try Announce.make(for: destination)
-    let announceHash = Hashes.fullHash(try announce.hashablePart())
-    try transport.cacheAnnounce(announce, receivingInterfaceName: interface.name)
+  let destination = try Destination(
+    identity: identity, direction: .in, kind: .single,
+    appName: "persistfixture", aspects: [aspect])
+  let announce = try Announce.make(for: destination)
+  let announceHash = Hashes.fullHash(try announce.hashablePart())
+  try transport.cacheAnnounce(announce, receivingInterfaceName: interface.name)
 
-    transport.restore(path: Transport.PathEntry(
-        destinationHash: destination.hash,
-        nextHopInterface: interface,
-        hops: hops,
-        lastHeard: lastHeard,
-        identityHash: identity.hash,
-        expires: expires,
-        cachedAnnounceHash: announceHash
+  transport.restore(
+    path: Transport.PathEntry(
+      destinationHash: destination.hash,
+      nextHopInterface: interface,
+      hops: hops,
+      lastHeard: lastHeard,
+      identityHash: identity.hash,
+      expires: expires,
+      cachedAnnounceHash: announceHash
     ), forDestination: destination.hash)
-    transport.restore(identity: identity, forDestination: destination.hash)
-    if let ratchet { transport.restore(ratchet: ratchet, forDestination: destination.hash) }
+  transport.restore(identity: identity, forDestination: destination.hash)
+  if let ratchet { transport.restore(ratchet: ratchet, forDestination: destination.hash) }
 
-    return (destination.hash, identity, announceHash)
+  return (destination.hash, identity, announceHash)
 }

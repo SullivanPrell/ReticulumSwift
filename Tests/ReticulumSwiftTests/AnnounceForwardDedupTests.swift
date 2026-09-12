@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// A transport node must forward an announce only when it would update its path
@@ -19,58 +20,63 @@ import XCTest
 /// re-forwarded on every arrival—an announce storm on shared media.
 final class AnnounceForwardDedupTests: XCTestCase {
 
-    final class RecordingInterface: Interface {
-        var name: String; var bitrate: Int = 0; var isOnline: Bool = true
-        var inboundHandler: ((Packet, any Interface) -> Void)?
-        private(set) var sent: [Packet] = []
-        init(name: String) { self.name = name }
-        func start() throws {}; func stop() {}
-        func send(_ packet: Packet) throws { sent.append(packet) }
-    }
+  final class RecordingInterface: Interface {
+    var name: String
+    var bitrate: Int = 0
+    var isOnline: Bool = true
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    private(set) var sent: [Packet] = []
+    init(name: String) { self.name = name }
+    func start() throws {}
+    func stop() {}
+    func send(_ packet: Packet) throws { sent.append(packet) }
+  }
 
-    func testDuplicateAnnounceIsNotReforwarded() throws {
-        let t = Transport()
-        t.transportEnabled = true
-        let inbound = RecordingInterface(name: "in")
-        let outbound = RecordingInterface(name: "out")
-        t.register(interface: inbound)
-        t.register(interface: outbound)
+  func testDuplicateAnnounceIsNotReforwarded() throws {
+    let t = Transport()
+    t.transportEnabled = true
+    let inbound = RecordingInterface(name: "in")
+    let outbound = RecordingInterface(name: "out")
+    t.register(interface: inbound)
+    t.register(interface: outbound)
 
-        let id = Identity()
-        let dest = try Destination(identity: id, direction: .in, kind: .single,
-                                   appName: "test", aspects: ["dedup"])
-        let announce = try Announce.make(for: dest)
+    let id = Identity()
+    let dest = try Destination(
+      identity: id, direction: .in, kind: .single,
+      appName: "test", aspects: ["dedup"])
+    let announce = try Announce.make(for: dest)
 
-        // First arrival → forwarded once.
-        inbound.inboundHandler?(announce, inbound)
-        XCTAssertEqual(outbound.sent.count, 1, "fresh announce should be forwarded once")
+    // First arrival → forwarded once.
+    inbound.inboundHandler?(announce, inbound)
+    XCTAssertEqual(outbound.sent.count, 1, "fresh announce should be forwarded once")
 
-        // Same announce again (same random blob) → must NOT be re-forwarded.
-        inbound.inboundHandler?(announce, inbound)
-        XCTAssertEqual(outbound.sent.count, 1, "duplicate announce must not be re-forwarded")
-    }
+    // Same announce again (same random blob) → must NOT be re-forwarded.
+    inbound.inboundHandler?(announce, inbound)
+    XCTAssertEqual(outbound.sent.count, 1, "duplicate announce must not be re-forwarded")
+  }
 
-    func testFreshReannounceIsForwardedAgain() throws {
-        let t = Transport()
-        t.transportEnabled = true
-        let inbound = RecordingInterface(name: "in")
-        let outbound = RecordingInterface(name: "out")
-        t.register(interface: inbound)
-        t.register(interface: outbound)
+  func testFreshReannounceIsForwardedAgain() throws {
+    let t = Transport()
+    t.transportEnabled = true
+    let inbound = RecordingInterface(name: "in")
+    let outbound = RecordingInterface(name: "out")
+    t.register(interface: inbound)
+    t.register(interface: outbound)
 
-        let id = Identity()
-        let dest = try Destination(identity: id, direction: .in, kind: .single,
-                                   appName: "test", aspects: ["reannounce"])
+    let id = Identity()
+    let dest = try Destination(
+      identity: id, direction: .in, kind: .single,
+      appName: "test", aspects: ["reannounce"])
 
-        let t0 = Date().timeIntervalSince1970
-        inbound.inboundHandler?(try Announce.make(for: dest, timestamp: t0), inbound)
-        XCTAssertEqual(outbound.sent.count, 1)
+    let t0 = Date().timeIntervalSince1970
+    inbound.inboundHandler?(try Announce.make(for: dest, timestamp: t0), inbound)
+    XCTAssertEqual(outbound.sent.count, 1)
 
-        // A genuinely new announce (fresh random blob) is forwarded again. A real
-        // re-announce is emitted later, so it carries a strictly newer timestamp;
-        // the freshness gate ties same-second announces, so an emission bump is
-        // what distinguishes a genuine re-announce from a replayed duplicate.
-        inbound.inboundHandler?(try Announce.make(for: dest, timestamp: t0 + 2), inbound)
-        XCTAssertEqual(outbound.sent.count, 2, "a fresh re-announce should be forwarded again")
-    }
+    // A genuinely new announce (fresh random blob) is forwarded again. A real
+    // re-announce is emitted later, so it carries a strictly newer timestamp;
+    // the freshness gate ties same-second announces, so an emission bump is
+    // what distinguishes a genuine re-announce from a replayed duplicate.
+    inbound.inboundHandler?(try Announce.make(for: dest, timestamp: t0 + 2), inbound)
+    XCTAssertEqual(outbound.sent.count, 2, "a fresh re-announce should be forwarded again")
+  }
 }

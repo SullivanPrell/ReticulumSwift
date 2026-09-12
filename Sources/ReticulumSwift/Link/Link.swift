@@ -8,8 +8,8 @@
 // SPDX-License-Identifier: LicenseRef-Reticulum
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import CryptoKit
+import Foundation
 
 /// A Reticulum Link—an ephemeral, encrypted, end-to-end session between
 /// two destinations.
@@ -35,2263 +35,2460 @@ import CryptoKit
 /// and use it through the same Token construction as `Identity.encrypt`.
 public final class Link {
 
-    /// Lifecycle state of a link.
-    public enum Status: Sendable {
-        case pending    // LRR sent, awaiting proof
-        case handshake  // proof received, awaiting RTT
-        case active     // fully established
-        case stale      // no inbound traffic for stale_time; about to tear down
-        case closed     // cleanly closed
-        case failed     // timed out or error
+  /// Lifecycle state of a link.
+  public enum Status: Sendable {
+    case pending  // LRR sent, awaiting proof
+    case handshake  // proof received, awaiting RTT
+    case active  // fully established
+    case stale  // no inbound traffic for stale_time; about to tear down
+    case closed  // cleanly closed
+    case failed  // timed out or error
+  }
+  /// Which end of the link this instance is.
+  public enum Role: Sendable { case initiator, responder }
+
+  /// Why the link was torn down.
+  ///
+  /// Mirrors Python `Link.TIMEOUT / INITIATOR_CLOSED / DESTINATION_CLOSED`.
+  public enum TeardownReason: Sendable {
+    case timeout  // watchdog: establishment or stale timeout
+    case initiatorClosed  // local (initiator) or remote (responder) called teardown()
+    case destinationClosed  // remote (initiator) received a close packet
+  }
+  /// Set when the link enters `.closed` or `.failed`.
+  ///
+  /// Nil while active.
+  /// Serialized by `stateLock`; internal under-lock code uses `unsafeTeardownReason`.
+  private var unsafeTeardownReason: TeardownReason?
+  /// Why the link was torn down, or `nil` while it is up.
+  public private(set) var teardownReason: TeardownReason? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeTeardownReason
     }
-    /// Which end of the link this instance is.
-    public enum Role: Sendable { case initiator, responder }
-
-    /// Why the link was torn down.
-    ///
-    /// Mirrors Python `Link.TIMEOUT / INITIATOR_CLOSED / DESTINATION_CLOSED`.
-    public enum TeardownReason: Sendable {
-        case timeout            // watchdog: establishment or stale timeout
-        case initiatorClosed    // local (initiator) or remote (responder) called teardown()
-        case destinationClosed  // remote (initiator) received a close packet
+    set {
+      stateLock.lock()
+      unsafeTeardownReason = newValue
+      stateLock.unlock()
     }
-    /// Set when the link enters `.closed` or `.failed`.
-    ///
-    /// Nil while active.
-    /// Serialized by `stateLock`; internal under-lock code uses `unsafeTeardownReason`.
-    private var unsafeTeardownReason: TeardownReason?
-    /// Why the link was torn down, or `nil` while it is up.
-    public private(set) var teardownReason: TeardownReason? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeTeardownReason }
-        set { stateLock.lock(); unsafeTeardownReason = newValue; stateLock.unlock() }
+  }
+
+  /// Bytes exchanged during link establishment (LRR + LRPR).
+  ///
+  /// Mirrors Python's `Link.establishment_cost`.
+  public private(set) var establishmentCost: Int = 0
+  /// Data rate of the link establishment phase (bytes/sec).
+  ///
+  /// Set once link is active.
+  /// Mirrors Python's `Link.establishment_rate`.
+  public private(set) var establishmentRate: Double?
+
+  // MARK: - Watchdog constants (mirrors Python Link class attributes)
+
+  /// Elliptic curve used for key agreement.
+  ///
+  /// Mirrors Python `Link.CURVE = 'Curve25519'`.
+  public static let curve: String = "Curve25519"
+
+  // MARK: - Cipher mode constants (Python Link.MODE_*)
+
+  /// AES-128 in CBC mode.
+  ///
+  /// Python: `Link.MODE_AES128_CBC = 0x00`
+  public static let modeAes128Cbc: UInt8 = 0x00
+  /// AES-256 in CBC mode.
+  ///
+  /// Python: `Link.MODE_AES256_CBC = 0x01`
+  public static let modeAes256Cbc: UInt8 = 0x01
+  /// AES-256 in GCM mode.
+  ///
+  /// Python: `Link.MODE_AES256_GCM = 0x02`
+  public static let modeAes256Gcm: UInt8 = 0x02
+  /// Reserved for a one-time-pad mode.
+  ///
+  /// Python: `Link.MODE_OTP_RESERVED = 0x03`
+  public static let modeOtpReserved: UInt8 = 0x03
+  /// Reserved for a post-quantum mode.
+  ///
+  /// Python: `Link.MODE_PQ_RESERVED_1 = 0x04`
+  public static let modePqReserved1: UInt8 = 0x04
+  /// Reserved for a post-quantum mode.
+  ///
+  /// Python: `Link.MODE_PQ_RESERVED_2 = 0x05`
+  public static let modePqReserved2: UInt8 = 0x05
+  /// Reserved for a post-quantum mode.
+  ///
+  /// Python: `Link.MODE_PQ_RESERVED_3 = 0x06`
+  public static let modePqReserved3: UInt8 = 0x06
+  /// Reserved for a post-quantum mode.
+  ///
+  /// Python: `Link.MODE_PQ_RESERVED_4 = 0x07`
+  public static let modePqReserved4: UInt8 = 0x07
+
+  /// Enabled cipher modes.
+  ///
+  /// Python: `ENABLED_MODES = [MODE_AES256_CBC]`.
+  public static let enabledModes: Set<UInt8> = [modeAes256Cbc]
+
+  /// Human-readable names for each mode.
+  ///
+  /// Python: `Link.MODE_DESCRIPTIONS`.
+  public static let modeDescriptions: [UInt8: String] = [
+    modeAes128Cbc: "AES_128_CBC",
+    modeAes256Cbc: "AES_256_CBC",
+    modeAes256Gcm: "MODE_AES256_GCM",
+    modeOtpReserved: "MODE_OTP_RESERVED",
+    modePqReserved1: "MODE_PQ_RESERVED_1",
+    modePqReserved2: "MODE_PQ_RESERVED_2",
+    modePqReserved3: "MODE_PQ_RESERVED_3",
+    modePqReserved4: "MODE_PQ_RESERVED_4",
+  ]
+
+  /// Default cipher mode.
+  ///
+  /// Python: `MODE_DEFAULT = MODE_AES256_CBC = 0x01`.
+  public static let defaultMode: UInt8 = modeAes256Cbc
+
+  /// Bit mask for 21-bit MTU field in signalling bytes.
+  ///
+  /// Python: `MTU_BYTEMASK = 0x1FFFFF`.
+  public static let mtuByteMask: UInt32 = 0x1FFFFF
+  /// Bit mask for 3-bit mode field in signalling bytes.
+  ///
+  /// Python: `MODE_BYTEMASK = 0xE0`.
+  public static let modeByteMask: UInt8 = 0xE0
+
+  /// Minimum traffic timeout in milliseconds.
+  ///
+  /// Python: `TRAFFIC_TIMEOUT_MIN_MS = 5`.
+  public static let trafficTimeoutMinMs: Int = 5
+  /// Max time watchdog sleeps per iteration in seconds.
+  ///
+  /// Python: `WATCHDOG_MAX_SLEEP = 5`.
+  public static let watchdogMaxSleep: TimeInterval = 5
+
+  /// Encrypted MDU for link packets (session key, no ephemeral pub key overhead).
+  ///
+  /// Mirrors Python `Link.MDU = 431`.
+  /// Formula: floor((500 - 1 - 19 - 48) / 16) * 16 - 1 = 431.
+  public static let encryptedMdu: Int = Constants.linkMdu
+
+  /// Default link plain MDU.
+  ///
+  /// Mirrors Python `RNS.Link.MDU` (= 464 plain, but Python actually
+  /// uses the encrypted version = 431 for payload limits).
+  /// The actual MDU for an established link depends on negotiated MTU.
+  public static let mtu: Int = Constants.mdu
+
+  /// Minimum keepalive interval in seconds.
+  ///
+  /// Mirrors Python `Link.KEEPALIVE_MIN = 5`.
+  public static let keepaliveMin: TimeInterval = 5
+  /// Maximum keepalive interval in seconds.
+  ///
+  /// Mirrors Python `Link.KEEPALIVE_MAX = 360`.
+  public static let keepaliveMax: TimeInterval = 360
+  /// RTT (seconds) at which keepalive equals KEEPALIVE_MAX.
+  ///
+  /// Mirrors Python `Link.KEEPALIVE_MAX_RTT = 1.75`.
+  public static let keepaliveMaxRTT: Double = 1.75
+
+  /// Default keepalive interval before RTT is known.
+  ///
+  /// Matches Python `KEEPALIVE = KEEPALIVE_MAX = 360`.
+  public static let keepaliveInterval: TimeInterval = keepaliveMax
+
+  /// Factor by which to multiply keepalive for stale detection.
+  ///
+  /// Python: `STALE_FACTOR = 2`, so `STALE_TIME = STALE_FACTOR * KEEPALIVE = 720`.
+  public static let staleFactor: Int = 2
+  /// Time after last inbound before the link is considered stale and torn down.
+  ///
+  /// Python: `STALE_TIME = STALE_FACTOR * KEEPALIVE = 2 * 360 = 720`.
+  public static let staleTime: TimeInterval = keepaliveInterval * TimeInterval(staleFactor)
+  /// Grace period in seconds after STALE before actual teardown.
+  ///
+  /// Python: `STALE_GRACE = 5`.
+  public static let staleGrace: TimeInterval = 5
+  /// Maximum time to establish a link per hop.
+  ///
+  /// Python: `ESTABLISHMENT_TIMEOUT_PER_HOP = 6` seconds.
+  public static let establishmentTimeoutPerHop: TimeInterval = 6
+  /// Timeout factor: `rtt * keepaliveTimeoutFactor` used in timeout calculations.
+  ///
+  /// Python: `KEEPALIVE_TIMEOUT_FACTOR = 4`.
+  public static let keepaliveTimeoutFactor: Double = 4.0
+  /// Multiplier for RTT when computing default request timeout.
+  ///
+  /// Mirrors Python `Link.TRAFFIC_TIMEOUT_FACTOR = 6`.
+  public static let trafficTimeoutFactor: Double = 6.0
+  /// Addend for default request timeout (max response grace time × 1.125).
+  ///
+  /// Mirrors Python `Resource.RESPONSE_MAX_GRACE_TIME * 1.125 = 10 * 1.125 = 11.25`.
+  public static let requestTimeoutGrace: TimeInterval = 11.25
+
+  // MARK: - MTU signalling (Python Link.LINK_MTU_SIZE = 3)
+
+  /// 3-byte MTU+mode signalling appended to LRR and LRPR data.
+  ///
+  /// Encodes: bits[23:21] = mode (AES256_CBC=0x01 → 0x20 in top byte),
+  ///          bits[20:0]  = mtu & 0x1FFFFF.
+  /// Mirrors Python: `Link.signalling_bytes(mtu, mode)`.
+  static func mtuSignallingBytes(mtu: Int = Constants.mtu) -> Data {
+    let modeByte: UInt32 = 0x20  // (AES256_CBC=1) << 5 = 0x20
+    let value = (UInt32(mtu) & 0x1FFFFF) | (modeByte << 16)
+    return Data([
+      UInt8((value >> 16) & 0xFF),
+      UInt8((value >> 8) & 0xFF),
+      UInt8(value & 0xFF),
+    ])
+  }
+
+  /// Decode the MTU from 3-byte signalling bytes (inverse of `mtuSignallingBytes`).
+  ///
+  /// Mirrors Python's `Link.mtu_from_lr_packet` / `mtu_from_lp_packet` masking
+  /// (the mode bits in the top byte are discarded via `MTU_BYTEMASK`).
+  /// Returns `nil` if `bytes` isn't exactly 3 bytes.
+  static func mtuFromSignalling(_ bytes: Data) -> Int? {
+    guard bytes.count == 3 else { return nil }
+    let b = Array(bytes)
+    let value = (UInt32(b[0]) << 16) | (UInt32(b[1]) << 8) | UInt32(b[2])
+    return Int(value & mtuByteMask)
+  }
+
+  /// Compute the hashable bytes for link ID derivation from a LINK_REQUEST packet.
+  ///
+  /// Mirrors Python `Link.link_id_from_lr_packet`:
+  ///   ```python
+  ///   hashable_part = packet.get_hashable_part()
+  ///   if len(packet.data) > ECPUBSIZE:
+  ///       hashable_part = hashable_part[:-diff]   # strip signalling bytes
+  ///   ```
+  /// Both Python and Swift must produce the same link_id to route LRPROOF packets.
+  /// Including the 3-byte MTU signalling in the hash, Python computes a
+  /// different ID, and LRPROOF delivery fails (mismatch in link lookup table).
+  static func linkIDHashable(for packet: Packet, dataLength: Int) throws -> Data {
+    var hashable = try packet.hashablePart()
+    let extraBytes = dataLength - Constants.keySize  // keySize = ECPUBSIZE = 64
+    if extraBytes > 0 {
+      hashable = Data(hashable.dropLast(extraBytes))
+    }
+    return hashable
+  }
+
+  /// Which end of the link this instance is.
+  public let role: Role
+  /// Current link status. `stateLock` serializes reads and writes; internal code
+  /// holding the lock uses `unsafeStatus` directly (the lock is non-recursive).
+  private var unsafeStatus: Status = .pending
+  /// Current lifecycle state of the link.
+  public private(set) var status: Status {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeStatus
+    }
+    set {
+      stateLock.lock()
+      unsafeStatus = newValue
+      stateLock.unlock()
+    }
+  }
+
+  /// Initiator: target destination.
+  ///
+  /// Responder: local registered destination
+  /// the request landed on.
+  public let destination: Destination
+
+  /// Initiator's ephemeral X25519 (key agreement) and Ed25519 (signing,
+  /// only used by responder side, where it's the owning identity's key).
+  public let prv: Curve25519.KeyAgreement.PrivateKey
+  /// Signing key this end proves its identity with.
+  public let sigPrv: Curve25519.Signing.PrivateKey
+
+  /// Public key agreement key, as wire bytes.
+  public var pubBytes: Data { prv.publicKey.rawRepresentation }
+  /// Public signing key, as wire bytes.
+  public var sigPubBytes: Data { sigPrv.publicKey.rawRepresentation }
+
+  /// Key agreement key of the far end.
+  public private(set) var peerPub: Curve25519.KeyAgreement.PublicKey?
+  /// Key agreement key of the far end, as wire bytes.
+  public private(set) var peerPubBytes: Data?
+  /// Signing key of the far end.
+  public private(set) var peerSigPub: Curve25519.Signing.PublicKey?
+  /// Signing key of the far end, as wire bytes.
+  public private(set) var peerSigPubBytes: Data?
+
+  /// Link identifier, derived once the handshake completes.
+  public private(set) var linkID: Data?
+  private var unsafeDerivedKey: Data?
+  /// The 64-byte HKDF-derived session key.
+  ///
+  /// Lock-guarded: `close()` nils it on one
+  /// thread while other threads may read it, and a torn read of the `Data` buffer
+  /// could crash. Internal code holding `stateLock` uses `unsafeDerivedKey`.
+  public private(set) var derivedKey: Data? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeDerivedKey
+    }
+    set {
+      stateLock.lock()
+      unsafeDerivedKey = newValue
+      stateLock.unlock()
+    }
+  }
+  /// Measured round-trip time in seconds.
+  public private(set) var rtt: TimeInterval?
+
+  /// Cipher mode used for this link.
+  ///
+  /// Always AES-256-CBC (0x01) since that's the
+  /// only enabled mode. Mirrors Python `Link.mode = Link.MODE_AES256_CBC`.
+  public let mode: UInt8 = 0x01  // MODE_AES256_CBC
+
+  /// Negotiated link MTU in bytes.
+  ///
+  /// Mirrors Python's per-link `Link.mtu`.
+  /// Defaults to `Constants.mtu` (500) and is updated during the handshake:
+  /// the responder adopts the MTU signalled in the LINK_REQUEST and confirms
+  /// it in the proof; the initiator adopts the confirmed value. When neither
+  /// side signals a higher value (for example, interfaces with no HW MTU), it stays
+  /// at 500 and `mdu` equals `Constants.linkMdu`—identical to prior behavior.
+  public internal(set) var establishedMtu: Int = Constants.mtu
+
+  /// Maximum data unit for a single encrypted link packet payload, derived
+  /// from the negotiated `establishedMtu`.
+  ///
+  /// With the default MTU this equals
+  /// `Constants.linkMdu` (= 431). Mirrors Python's
+  /// `mdu = floor((mtu - IFAC_MIN - HEADER_MIN - TOKEN_OVERHEAD)/16)*16 - 1`.
+  public var mdu: Int {
+    (establishedMtu - Constants.ifacMinSize - Constants.headerMinSize - Constants.tokenOverhead)
+      / Constants.aes128BlockSize * Constants.aes128BlockSize - 1
+  }
+
+  /// Time the link request was sent.
+  public var requestTime: Date?
+  /// Time the link reached `.active`.
+  public var establishedAt: Date?
+
+  /// Hop count to the link's far end, available on both initiator and
+  /// responder.
+  ///
+  /// On the initiator it's the path-table hop count to the
+  /// destination; on the responder it's the hop count of the incoming RTT
+  /// packet. Mirrors Python `Link.expected_hops` (RNS 1.3.8 made this
+  /// available on the responder side as well). `nil` until known.
+  ///
+  /// Guarded by `stateLock`. Both writers run off the network: the responder
+  /// sets it from the RTT packet, and `Transport` rewrites it from a
+  /// link-request proof that can arrive on a different interface thread while
+  /// the watchdog is reading it.
+  public var expectedHops: Int? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeExpectedHops
+    }
+    set {
+      stateLock.lock()
+      unsafeExpectedHops = newValue
+      stateLock.unlock()
+    }
+  }
+  /// Backing store for `expectedHops`, for the call sites that already hold
+  /// `stateLock` (it's a plain `NSLock`, so re-entering through the property
+  /// would deadlock).
+  var unsafeExpectedHops: Int?
+
+  /// When this link's path was re-balanced from a link-request proof whose
+  /// hop count disagreed with `expectedHops`, or `nil` if it never was.
+  ///
+  /// Doubles as a once-only latch: Python re-balances a given link at most
+  /// once (`if not link.rebalanced:`), so a flapping route can't keep
+  /// rewriting the path table for the lifetime of the link.
+  /// Mirrors Python's RNS 1.4.1 `Link.rebalanced`.
+  public var rebalanced: Date? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeRebalanced
+  }
+  private var unsafeRebalanced: Date?
+
+  /// Claim the once-only re-balance for this link, recording `hops` as the new
+  /// expectation if the claim succeeds.
+  ///
+  /// - Returns: `true` for the caller that won the latch, `false` if this link
+  ///   has already been re-balanced.
+  ///
+  /// Test-and-set under `stateLock` rather than a read followed by a write, so
+  /// two proofs arriving on different interface threads can't both pass the
+  /// guard. The caller must not hold `Transport.lock`—the established order
+  /// is Transport.lock last, never over a link's own lock.
+  func claimRebalance(toHops hops: Int) -> Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    guard unsafeRebalanced == nil else { return false }
+    unsafeRebalanced = Date()
+    unsafeExpectedHops = hops
+    return true
+  }
+
+  /// Establishment timeout.
+  ///
+  /// Defaults to `establishmentTimeoutPerHop`
+  /// seconds; scaled up by hop count when the path is known.
+  ///
+  /// Guarded by `stateLock`, like `status`: `Link.initiate` starts the
+  /// watchdog before returning, so the watchdog thread is already reading
+  /// this by the time the caller assigns it on the very next line. Internal
+  /// code holding the lock must use `unsafeEstablishmentTimeout`—`stateLock` is
+  /// not recursive.
+  private var unsafeEstablishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
+  /// Seconds to wait for the far end before the link fails.
+  public var establishmentTimeout: TimeInterval {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeEstablishmentTimeout
+    }
+    set {
+      stateLock.lock()
+      unsafeEstablishmentTimeout = newValue
+      stateLock.unlock()
+    }
+  }
+
+  /// Fires when the link transitions to `.active`.
+  ///
+  /// If the link is already active when the callback is set (synchronous loopback), it replays.
+  public var onEstablished: ((Link) -> Void)? {
+    didSet { if status == .active { onEstablished?(self) } }
+  }
+  /// Fires when the link closes, however it was torn down.
+  public var onClosed: ((Link) -> Void)?
+  /// Fires with each data payload received on the link.
+  public var onDataReceived: ((Data, Link) -> Void)?
+  /// Called when the link times out (establishment or stale).
+  ///
+  /// Guarded by `stateLock` for the same reason as `establishmentTimeout`—the
+  /// watchdog takes and clears this callback while the caller that just
+  /// created the link is still installing it.
+  private var unsafeOnTimeout: ((Link) -> Void)?
+  /// Fires when the link times out, during establishment or once stale.
+  public var onTimeout: ((Link) -> Void)? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeOnTimeout
+    }
+    set {
+      stateLock.lock()
+      unsafeOnTimeout = newValue
+      stateLock.unlock()
+    }
+  }
+  /// Called when the remote peer reveals their identity via `identify`.
+  ///
+  /// Mirrors Python's `LinkCallbacks.remote_identified`.
+  public var onRemoteIdentified: ((Link, Identity) -> Void)? {
+    didSet {
+      if let id = remoteIdentity { onRemoteIdentified?(self, id) }
+    }
+  }
+
+  /// The identity the remote peer revealed via `identify()`, if any.
+  ///
+  /// Only populated on the responder side.
+  public private(set) var remoteIdentity: Identity?
+
+  /// Adaptive keepalive interval based on measured RTT.
+  /// Mirrors Python's `Link.__update_keepalive`:
+  ///   keepalive = max(KEEPALIVE_MIN, min(rtt * (KEEPALIVE_MAX / KEEPALIVE_MAX_RTT), KEEPALIVE_MAX))
+  public var effectiveKeepalive: TimeInterval {
+    guard let rtt, rtt > 0 else { return Link.keepaliveInterval }
+    return max(
+      Link.keepaliveMin, min(rtt * (Link.keepaliveMax / Link.keepaliveMaxRTT), Link.keepaliveMax))
+  }
+
+  /// Adaptive stale time based on measured RTT.
+  ///
+  /// Mirrors Python: `stale_time = keepalive * STALE_FACTOR`.
+  public var effectiveStaleTime: TimeInterval {
+    effectiveKeepalive * TimeInterval(Link.staleFactor)
+  }
+
+  /// Timestamp when the link transitioned to `.active`.
+  ///
+  /// Mirrors Python `Link.activated_at`.
+  /// This is the same moment as `establishedAt`; exposed as `activatedAt` for API parity.
+  public var activatedAt: Date? { establishedAt }
+
+  /// Timestamp of the last non-keepalive DATA payload sent or received on
+  /// this link.
+  ///
+  /// Mirrors Python `Link.last_data`.
+  public private(set) var lastData: Date?
+
+  /// Expected in-flight data rate in bits per second, updated after each
+  /// completed Resource transfer.
+  ///
+  /// Mirrors Python `Link.expected_rate`.
+  private var unsafeExpectedRate: Double?
+  /// Expected in-flight data rate in bits per second.
+  public private(set) var expectedRate: Double? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeExpectedRate
+    }
+    set {
+      stateLock.lock()
+      unsafeExpectedRate = newValue
+      stateLock.unlock()
+    }
+  }
+
+  // MARK: - Traffic statistics (mirrors Python Link.tx/rx/txbytes/rxbytes)
+
+  /// Traffic statistics are written from whichever thread drives the link's
+  /// I/O and read from another (the UI shows per-link throughput).
+  ///
+  /// The writes
+  /// below were already inside `stateLock`, but these were plain stored
+  /// properties—so a *reader* on another thread still raced every write.
+  /// Routing them through `InterfaceCounters` guards both sides.
+  private let counters = InterfaceCounters()
+
+  /// Total outbound packet count.
+  ///
+  /// Mirrors Python `Link.tx`.
+  public var tx: Int { counters.txPackets }
+  /// Total inbound packet count.
+  ///
+  /// Mirrors Python `Link.rx`.
+  public var rx: Int { counters.rxPackets }
+  /// Total bytes transmitted (encrypted payload).
+  ///
+  /// Mirrors Python `Link.txbytes`.
+  public var txBytes: Int { counters.txBytes }
+  /// Total bytes received (encrypted payload).
+  ///
+  /// Mirrors Python `Link.rxbytes`.
+  public var rxBytes: Int { counters.rxBytes }
+
+  /// Wall-clock of the most recent inbound encrypted packet (any
+  /// context).
+  ///
+  /// Used by the keepalive watchdog. `nil` until the first
+  /// inbound packet arrives.
+  public private(set) var lastInbound: Date?
+  /// Wall-clock of the most recent outbound encrypted packet.
+  public private(set) var lastOutbound: Date?
+  /// Wall-clock of the most recent keepalive sent (initiator only).
+  public private(set) var lastKeepalive: Date?
+  /// Full SHA-256 hash (32 bytes) of the last received link DATA packet (context == .none).
+  ///
+  /// Set in `receive(_:from:)` just before `onDataReceived` fires so callers can
+  /// compute a `prove_packet` acknowledgment (mirrors Python `Link.prove_packet`).
+  /// Python uses the FULL hash (Identity.full_hash, 32 bytes) for proof matching.
+  public private(set) var lastReceivedDataPacketHash: Data?
+  /// Fires for every decrypted inbound packet, with its packetType and
+  /// context.
+  ///
+  /// Higher-level layers (resources, requests, channels) hook
+  /// here to dispatch on context.
+  public var onPacketReceived: ((Data, Packet.PacketType, Packet.Context, Link) -> Void)?
+
+  // MARK: - PHY stats (mirrors Python Link.track_phy_stats / Link.rssi / Link.snr / Link.q)
+
+  /// Enable PHY stats tracking.
+  ///
+  /// When true, RSSI/SNR/quality are pulled from
+  /// the receiving interface on each inbound packet.
+  public var trackPhyStats: Bool = false
+  /// Last received signal strength indicator (dBm).
+  ///
+  /// Updated from the receiving interface
+  /// when `trackPhyStats` is true. Mirrors Python `Link.rssi`.
+  public private(set) var rssi: Float?
+  /// Last received signal-to-noise ratio (dB).
+  ///
+  /// Mirrors Python `Link.snr`.
+  public private(set) var snr: Float?
+  /// Link quality 0–100 derived from SNR.
+  ///
+  /// Mirrors Python `Link.q`.
+  public private(set) var quality: Float?
+
+  /// Enable or disable physical layer statistics tracking.
+  ///
+  /// Explicit method form of the `trackPhyStats` property, matching Python's
+  /// `Link.track_phy_stats(track: bool)` method signature.
+  public func trackPhyStats(_ track: Bool) {
+    trackPhyStats = track
+  }
+
+  /// Returns the RSSI if PHY stat tracking is enabled, otherwise nil.
+  ///
+  /// Mirrors Python's `Link.get_rssi()`.
+  public func getRssi() -> Float? {
+    guard trackPhyStats else { return nil }
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return rssi
+  }
+  /// Returns the SNR if PHY stat tracking is enabled, otherwise nil.
+  ///
+  /// Mirrors Python's `Link.get_snr()`.
+  public func getSnr() -> Float? {
+    guard trackPhyStats else { return nil }
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return snr
+  }
+  /// Returns the link quality if PHY stat tracking is enabled, otherwise nil.
+  ///
+  /// Mirrors Python's `Link.get_q()`.
+  public func getQ() -> Float? {
+    guard trackPhyStats else { return nil }
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return quality
+  }
+
+  private weak var transport: Transport?
+  private var token: Token?
+  private var watchdogTimer: DispatchSourceTimer?
+
+  /// Serializes ALL mutable Link state (the session state machine, traffic
+  /// counters/timestamps, the resource queues, `pendingRequests` and the lazy
+  /// channel).
+  ///
+  /// Non-recursive, and applied with strict snapshot-under-lock /
+  /// act-outside: it's NEVER held across a `transport.*` call, a user callback,
+  /// a `ResourceTransfer`/`Channel` method, `encrypt`/`decrypt`, or `close`/
+  /// `teardown`/`sendKeepalive`. Because the Transport receive path always drops
+  /// its own lock before calling into a Link (verified in Transport), the safe
+  /// ordering is Transport.lock > Link.stateLock and it's never inverted.
+  let stateLock = NSLock()
+
+  // Request/response dispatch—populated by Link.request. Guarded by `stateLock`.
+  var pendingRequests: [Data: RequestReceipt] = [:]
+
+  /// Channel attached to this link (lazy; created by `getChannel()`).
+  ///
+  /// Guarded by `stateLock`.
+  private var channel: Channel?
+
+  /// Full packet-hash → the `ChannelPacketHandle` awaiting a delivery proof.
+  ///
+  /// Populated by `sendChannelData` (via `trackChannelProof`), matched by an
+  /// inbound explicit link-data PROOF in `handleChannelProof`, and pruned on
+  /// delivery / teardown. This is the Link-layer analog of Python's
+  /// `packet.receipt` for CHANNEL packets: Transport only creates receipts for
+  /// SINGLE-destination packets, so a link/channel packet's proof is matched
+  /// and signature-validated here (against the link peer's signing key)
+  /// instead. Guarded by `stateLock`.
+  private var channelProofWaiters: [Data: ChannelPacketHandle] = [:]
+
+  // MARK: - Resource-queue snapshots (copy-under-lock, iterate the copy)
+
+  /// Copy of the incoming-resource queue taken under `stateLock`.
+  ///
+  /// Callers iterate
+  /// the COPY so a `ResourceTransfer` callback that re-enters
+  /// `register/unregisterIncomingResource` can't mutate the array mid-iteration.
+  private func snapshotIncomingResources() -> [ResourceTransfer] {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return incomingResources
+  }
+  private func snapshotOutgoingResources() -> [ResourceTransfer] {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return outgoingResources
+  }
+  private func incomingResourcesIsEmpty() -> Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return incomingResources.isEmpty
+  }
+
+  /// Remove a concluded/timed-out request receipt from `pendingRequests`.
+  ///
+  /// Wired to
+  /// `RequestReceipt.onConclude` so timed-out and failed receipts are evicted (not
+  /// only successful ones)—bounding the dictionary. Idempotent.
+  func evictPendingRequest(_ requestID: Data) {
+    stateLock.lock()
+    _ = pendingRequests.removeValue(forKey: requestID)
+    stateLock.unlock()
+  }
+
+  // MARK: - Resource strategy (mirrors Python Link.resource_strategy)
+
+  /// How a link treats incoming resources it did not request.
+  public enum ResourceStrategy: UInt8 {
+    case acceptNone = 0
+    case acceptApp = 1
+    case acceptAll = 2
+  }
+
+  /// Controls how incoming (non-request, non-response) resources are handled.
+  public var resourceStrategy: ResourceStrategy = .acceptNone
+
+  /// Called when a resource advertisement arrives and `resourceStrategy == .acceptApp`.
+  ///
+  /// Return `true` to accept (start receiving), `false` to reject.
+  public var onResourceAdvertised: ((ResourceAdvertisement, Link) -> Bool)?
+
+  /// Called when an incoming resource transfer starts (ADV accepted, receiving begins).
+  ///
+  /// Mirrors Python's `Link.set_resource_started_callback`.
+  public var onResourceStarted: ((ResourceTransfer) -> Void)?
+
+  /// Called when an incoming resource transfer completes (whether accepted via
+  /// `acceptAll` or `acceptApp`).
+  ///
+  /// The first argument is the reassembled payload.
+  public var onResourceConcluded: ((Data, ResourceAdvertisement, Link) -> Void)?
+
+  // MARK: - Python-style setter methods (mirrors Python Link.set_*_callback / set_resource_strategy)
+
+  /// Mirrors Python's `Link.set_link_established_callback(callback)`.
+  public func setLinkEstablishedCallback(_ callback: @escaping (Link) -> Void) {
+    onEstablished = callback
+  }
+
+  /// Mirrors Python's `Link.set_link_closed_callback(callback)`.
+  public func setLinkClosedCallback(_ callback: @escaping (Link) -> Void) { onClosed = callback }
+
+  /// Mirrors Python's `Link.set_packet_callback(callback)`.
+  public func setPacketCallback(_ callback: @escaping (Data, Link) -> Void) {
+    onDataReceived = callback
+  }
+
+  /// Mirrors Python's `Link.set_resource_callback(callback)`.
+  public func setResourceCallback(_ callback: @escaping (ResourceAdvertisement, Link) -> Bool) {
+    onResourceAdvertised = callback
+  }
+
+  /// Mirrors Python's `Link.set_resource_started_callback(callback)`.
+  public func setResourceStartedCallback(_ callback: @escaping (ResourceTransfer) -> Void) {
+    onResourceStarted = callback
+  }
+
+  /// Mirrors Python's `Link.set_resource_concluded_callback(callback)`.
+  public func setResourceConcludedCallback(
+    _ callback: @escaping (Data, ResourceAdvertisement, Link) -> Void
+  ) {
+    onResourceConcluded = callback
+  }
+
+  /// Mirrors Python's `Link.set_remote_identified_callback(callback)`.
+  public func setRemoteIdentifiedCallback(_ callback: @escaping (Link, Identity) -> Void) {
+    onRemoteIdentified = callback
+  }
+
+  /// Mirrors Python's `Link.set_resource_strategy(resource_strategy)`.
+  public func setResourceStrategy(_ strategy: ResourceStrategy) { resourceStrategy = strategy }
+
+  // Resource transfer state—managed by ResourceTransfer.
+  var outgoingResources: [ResourceTransfer] = []
+  var incomingResources: [ResourceTransfer] = []
+
+  /// Called by ResourceTransfer when a transfer concludes.
+  ///
+  /// Updates `expectedRate`.
+  /// Mirrors Python `Link.resource_concluded(resource)`.
+  func resourceConcluded(dataSize: Int, duration: TimeInterval) {
+    let elapsed = max(duration, 0.0001)
+    expectedRate = Double(dataSize * 8) / elapsed
+  }
+
+  func registerOutgoingResource(_ rt: ResourceTransfer) {
+    stateLock.lock()
+    outgoingResources.append(rt)
+    stateLock.unlock()
+  }
+  func unregisterOutgoingResource(_ rt: ResourceTransfer) {
+    stateLock.lock()
+    outgoingResources.removeAll { $0 === rt }
+    stateLock.unlock()
+  }
+  func registerIncomingResource(_ rt: ResourceTransfer) {
+    stateLock.lock()
+    incomingResources.append(rt)
+    stateLock.unlock()
+  }
+  func unregisterIncomingResource(_ rt: ResourceTransfer) {
+    stateLock.lock()
+    incomingResources.removeAll { $0 === rt }
+    stateLock.unlock()
+  }
+
+  private var lastResourceWindow: Int? = nil
+  private var lastResourceEifr: Double? = nil
+
+  /// Returns whether the given resource is in the incoming queue.
+  ///
+  /// Mirrors Python `Link.has_incoming_resource()`.
+  public func hasIncomingResource(_ rt: ResourceTransfer) -> Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return incomingResources.contains { $0 === rt }
+  }
+
+  /// Returns the window size of the last completed incoming resource.
+  ///
+  /// Mirrors Python `Link.get_last_resource_window()`.
+  public func getLastResourceWindow() -> Int? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return lastResourceWindow
+  }
+
+  /// Returns the EIFR of the last completed incoming resource.
+  ///
+  /// Mirrors Python `Link.get_last_resource_eifr()`.
+  public func getLastResourceEifr() -> Double? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return lastResourceEifr
+  }
+
+  /// Removes the resource from the outgoing queue.
+  ///
+  /// Mirrors Python `Link.cancel_outgoing_resource()`.
+  public func cancelOutgoingResource(_ rt: ResourceTransfer) {
+    stateLock.lock()
+    outgoingResources.removeAll { $0 === rt }
+    stateLock.unlock()
+  }
+
+  /// Removes the resource from the incoming queue.
+  ///
+  /// Mirrors Python `Link.cancel_incoming_resource()`.
+  public func cancelIncomingResource(_ rt: ResourceTransfer) {
+    stateLock.lock()
+    incomingResources.removeAll { $0 === rt }
+    stateLock.unlock()
+  }
+
+  /// Returns true if there are no outgoing resources pending.
+  ///
+  /// Mirrors Python `Link.ready_for_new_resource()`.
+  public func readyForNewResource() -> Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return outgoingResources.isEmpty
+  }
+
+  /// Called by ResourceTransfer when an incoming resource concludes—records window and EIFR.
+  func recordIncomingResourceConclusion(window: Int, eifr: Double?) {
+    stateLock.lock()
+    lastResourceWindow = window
+    lastResourceEifr = eifr
+    stateLock.unlock()
+  }
+
+  func testSetLastResourceWindow(_ w: Int) {
+    stateLock.lock()
+    lastResourceWindow = w
+    stateLock.unlock()
+  }
+  func testSetLastResourceEifr(_ e: Double) {
+    stateLock.lock()
+    lastResourceEifr = e
+    stateLock.unlock()
+  }
+
+  /// Record outbound-packet bookkeeping (timestamps + counters) under `stateLock`.
+  /// `countPacket` bumps tx/txBytes; `isData` bumps lastData (keepalives skip it).
+  ///
+  /// Called AFTER `transport.send` returns, so the lock is never held across the send.
+  private func recordOutbound(bytes: Int, countPacket: Bool, isData: Bool) {
+    stateLock.lock()
+    let ts = Date()
+    lastOutbound = ts
+    if isData { lastData = ts }
+    stateLock.unlock()
+    // Outside `stateLock`—the counters carry their own lock, and taking
+    // them separately keeps the two locks from ever nesting.
+    if countPacket { counters.addTx(bytes: bytes) }
+  }
+
+  /// Record inbound lastInbound + rx/rxBytes under `stateLock`.
+  private func recordInbound(bytes: Int, at ts: Date = Date()) {
+    stateLock.lock()
+    lastInbound = ts
+    stateLock.unlock()
+    counters.addRx(bytes: bytes)
+  }
+
+  /// Send pre-encrypted resource segment data without applying link-level
+  /// encryption (matches Python: "A resource takes care of encryption by itself").
+  func sendResourcePart(_ encryptedData: Data) throws {
+    guard status == .active else { throw LinkError.notActive }
+    guard let linkID, let transport else { throw LinkError.invalidState }
+    let packet = Packet(
+      destinationType: .link,
+      packetType: .data,
+      destinationHash: linkID,
+      context: .resource,
+      data: encryptedData
+    )
+    try transport.send(packet, generateReceipt: false)
+    recordOutbound(bytes: 0, countPacket: false, isData: false)
+  }
+
+  /// Send resource proof packet (PROOF type, not link-encrypted, matches Python).
+  func sendResourceProof(_ proofData: Data) throws {
+    guard status == .active else { throw LinkError.notActive }
+    guard let linkID, let transport else { throw LinkError.invalidState }
+    let packet = Packet(
+      destinationType: .link,
+      packetType: .proof,
+      destinationHash: linkID,
+      context: .resourceProof,
+      data: proofData
+    )
+    try transport.send(packet, generateReceipt: false)
+    recordOutbound(bytes: 0, countPacket: false, isData: false)
+  }
+
+  /// Returns the Channel for this link, creating one if needed.
+  ///
+  /// Matches Python's `Link.get_channel()`.
+  public func getChannel() -> Channel {
+    stateLock.lock()
+    if let ch = channel {
+      stateLock.unlock()
+      return ch
+    }
+    stateLock.unlock()
+    // Construct OUTSIDE the lock (the Channel initializer may touch the outlet),
+    // then double-check under the lock so a concurrent caller can't install two.
+    let outlet = LinkChannelOutlet(link: self)
+    let ch = Channel(outlet: outlet)
+    stateLock.lock()
+    if let existing = channel {
+      stateLock.unlock()
+      return existing
+    }
+    channel = ch
+    stateLock.unlock()
+    return ch
+  }
+
+  /// Failures raised by link operations.
+  public enum LinkError: Swift.Error, Equatable {
+    case malformedRequest
+    case malformedProof
+    case missingResponderIdentity
+    case invalidSignature
+    case invalidState
+    case notActive
+  }
+
+  // MARK: - Initiator
+
+  /// Create an initiator-side link bound to `destination` and send the
+  /// link request on `transport`.
+  ///
+  /// Caller must `transport.register(link:)`
+  /// before sending if it wants `Transport` to deliver the proof.
+  public static func initiate(
+    destination: Destination,
+    transport: Transport
+  ) throws -> Link {
+    let link = Link(role: .initiator, destination: destination)
+    link.transport = transport
+
+    // Use next-hop HW MTU if available (link MTU discovery).
+    // Mirrors Python: Transport.next_hop_interface_hw_mtu → Link.signalling_bytes.
+    let signaledMtu = transport.nextHopInterfaceHwMtu(for: destination.hash) ?? Constants.mtu
+    let body = link.pubBytes + link.sigPubBytes + mtuSignallingBytes(mtu: signaledMtu)
+    let packet = Packet(
+      destinationType: .single,
+      packetType: .linkRequest,
+      destinationHash: destination.hash,
+      data: body
+    )
+
+    // Python strips any signalling bytes beyond ECPUBSIZE from the hashable part
+    // before computing the link ID. Mirrors `Link.link_id_from_lr_packet`:
+    //   if len(packet.data) > ECPUBSIZE: hashable_part = hashable_part[:-diff]
+    // This ensures Swift and Python agree on the link_id regardless of whether
+    // MTU signalling is present in the LINK_REQUEST payload.
+    link.linkID = Hashes.truncatedHash(try Link.linkIDHashable(for: packet, dataLength: body.count))
+    link.requestTime = Date()
+    // Scale establishment timeout by hop count and add first-hop propagation time.
+    // Mirrors Python Link.__init__ lines 283–284:
+    //   self.establishment_timeout  = RNS.Reticulum.get_instance().get_first_hop_timeout(destination.hash)
+    //   self.establishment_timeout += Link.ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, hops_to(destination.hash))
+    let hops = transport.hopsTo(destination.hash) ?? 1
+    // Record hop distance to the destination on the initiator side.
+    // Python: self.expected_hops = RNS.Transport.hops_to(self.destination.hash)
+    link.expectedHops = transport.hopsTo(destination.hash).map(Int.init)
+    let fht = transport.firstHopTimeout(for: destination.hash)
+    link.establishmentTimeout = fht + Link.establishmentTimeoutPerHop * TimeInterval(max(1, hops))
+    transport.register(link: link)
+
+    try transport.send(packet, generateReceipt: false)
+    link.startWatchdog()
+    return link
+  }
+
+  // MARK: - Responder
+
+  /// Build a responder-side link from a received LRR packet.
+  ///
+  /// Computes
+  /// link id, derives the shared key, sends the proof packet.
+  public static func answer(
+    request packet: Packet,
+    destination: Destination,
+    owner: Identity,
+    transport: Transport
+  ) throws -> Link {
+    // Accept 64-byte (no signalling) or 67-byte (with MTU signalling) requests.
+    guard
+      packet.data.count == Constants.keySize
+        || packet.data.count == Constants.keySize + 3
+    else {
+      throw LinkError.malformedRequest
+    }
+    guard let signingPrivateKey = owner.signingPrivateKey,
+      let _ = owner.encryptionPrivateKey
+    else {
+      throw LinkError.missingResponderIdentity
     }
 
-    /// Bytes exchanged during link establishment (LRR + LRPR).
-    ///
-    /// Mirrors Python's `Link.establishment_cost`.
-    public private(set) var establishmentCost: Int = 0
-    /// Data rate of the link establishment phase (bytes/sec).
-    ///
-    /// Set once link is active.
-    /// Mirrors Python's `Link.establishment_rate`.
-    public private(set) var establishmentRate: Double?
+    let initiatorEncRaw = packet.data.prefix(Constants.halfKeySize)
+    let initiatorSigRaw = packet.data[Constants.halfKeySize..<Constants.keySize]
+    let initiatorEnc = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: initiatorEncRaw)
+    let initiatorSig = try Curve25519.Signing.PublicKey(rawRepresentation: initiatorSigRaw)
 
-    // MARK: - Watchdog constants (mirrors Python Link class attributes)
+    // Responder's ephemeral X25519 is fresh. Its signing key is the
+    // owning identity's Ed25519 key—that's what the initiator already
+    // knows, so the link id is signed with it.
+    let link = Link(
+      role: .responder,
+      destination: destination,
+      prv: Curve25519.KeyAgreement.PrivateKey(),
+      sigPrv: signingPrivateKey
+    )
+    link.transport = transport
+    link.peerPub = initiatorEnc
+    link.peerPubBytes = Data(initiatorEncRaw)
+    link.peerSigPub = initiatorSig
+    link.peerSigPubBytes = Data(initiatorSigRaw)
 
-    /// Elliptic curve used for key agreement.
-    ///
-    /// Mirrors Python `Link.CURVE = 'Curve25519'`.
-    public static let curve: String = "Curve25519"
+    // Mirror Python's link_id_from_lr_packet: strip any signalling bytes (beyond ECPUBSIZE)
+    // from the hashable part so both sides agree on the link_id regardless of signalling.
+    link.linkID = Hashes.truncatedHash(
+      try Link.linkIDHashable(for: packet, dataLength: packet.data.count))
+    try link.deriveSharedKey()
 
-    // MARK: - Cipher mode constants (Python Link.MODE_*)
+    // Mirror Python validate_request (lines 207–208 in Link.py):
+    //   link.establishment_timeout = ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, packet.hops) + KEEPALIVE
+    //   link.request_time = time.time()
+    // The KEEPALIVE constant (360 s) gives the responder ample time to receive the RTT
+    // packet on slow radio links or across many hops.
+    link.requestTime = Date()
+    link.establishmentTimeout =
+      Link.establishmentTimeoutPerHop * TimeInterval(max(1, Int(packet.hops)))
+      + Link.keepaliveInterval
 
-    /// AES-128 in CBC mode.
-    ///
-    /// Python: `Link.MODE_AES128_CBC = 0x00`
-    public static let modeAes128Cbc:  UInt8 = 0x00
-    /// AES-256 in CBC mode.
-    ///
-    /// Python: `Link.MODE_AES256_CBC = 0x01`
-    public static let modeAes256Cbc:  UInt8 = 0x01
-    /// AES-256 in GCM mode.
-    ///
-    /// Python: `Link.MODE_AES256_GCM = 0x02`
-    public static let modeAes256Gcm:  UInt8 = 0x02
-    /// Reserved for a one-time-pad mode.
-    ///
-    /// Python: `Link.MODE_OTP_RESERVED = 0x03`
-    public static let modeOtpReserved: UInt8 = 0x03
-    /// Reserved for a post-quantum mode.
-    ///
-    /// Python: `Link.MODE_PQ_RESERVED_1 = 0x04`
-    public static let modePqReserved1: UInt8 = 0x04
-    /// Reserved for a post-quantum mode.
-    ///
-    /// Python: `Link.MODE_PQ_RESERVED_2 = 0x05`
-    public static let modePqReserved2: UInt8 = 0x05
-    /// Reserved for a post-quantum mode.
-    ///
-    /// Python: `Link.MODE_PQ_RESERVED_3 = 0x06`
-    public static let modePqReserved3: UInt8 = 0x06
-    /// Reserved for a post-quantum mode.
-    ///
-    /// Python: `Link.MODE_PQ_RESERVED_4 = 0x07`
-    public static let modePqReserved4: UInt8 = 0x07
-
-    /// Enabled cipher modes.
-    ///
-    /// Python: `ENABLED_MODES = [MODE_AES256_CBC]`.
-    public static let enabledModes: Set<UInt8> = [modeAes256Cbc]
-
-    /// Human-readable names for each mode.
-    ///
-    /// Python: `Link.MODE_DESCRIPTIONS`.
-    public static let modeDescriptions: [UInt8: String] = [
-        modeAes128Cbc:  "AES_128_CBC",
-        modeAes256Cbc:  "AES_256_CBC",
-        modeAes256Gcm:  "MODE_AES256_GCM",
-        modeOtpReserved: "MODE_OTP_RESERVED",
-        modePqReserved1: "MODE_PQ_RESERVED_1",
-        modePqReserved2: "MODE_PQ_RESERVED_2",
-        modePqReserved3: "MODE_PQ_RESERVED_3",
-        modePqReserved4: "MODE_PQ_RESERVED_4",
-    ]
-
-    /// Default cipher mode.
-    ///
-    /// Python: `MODE_DEFAULT = MODE_AES256_CBC = 0x01`.
-    public static let defaultMode: UInt8 = modeAes256Cbc
-
-    /// Bit mask for 21-bit MTU field in signalling bytes.
-    ///
-    /// Python: `MTU_BYTEMASK = 0x1FFFFF`.
-    public static let mtuByteMask: UInt32 = 0x1FFFFF
-    /// Bit mask for 3-bit mode field in signalling bytes.
-    ///
-    /// Python: `MODE_BYTEMASK = 0xE0`.
-    public static let modeByteMask: UInt8 = 0xE0
-
-    /// Minimum traffic timeout in milliseconds.
-    ///
-    /// Python: `TRAFFIC_TIMEOUT_MIN_MS = 5`.
-    public static let trafficTimeoutMinMs: Int = 5
-    /// Max time watchdog sleeps per iteration in seconds.
-    ///
-    /// Python: `WATCHDOG_MAX_SLEEP = 5`.
-    public static let watchdogMaxSleep: TimeInterval = 5
-
-    /// Encrypted MDU for link packets (session key, no ephemeral pub key overhead).
-    ///
-    /// Mirrors Python `Link.MDU = 431`.
-    /// Formula: floor((500 - 1 - 19 - 48) / 16) * 16 - 1 = 431.
-    public static let encryptedMdu: Int = Constants.linkMdu
-
-    /// Default link plain MDU.
-    ///
-    /// Mirrors Python `RNS.Link.MDU` (= 464 plain, but Python actually
-    /// uses the encrypted version = 431 for payload limits).
-    /// The actual MDU for an established link depends on negotiated MTU.
-    public static let mtu: Int = Constants.mdu
-
-    /// Minimum keepalive interval in seconds.
-    ///
-    /// Mirrors Python `Link.KEEPALIVE_MIN = 5`.
-    public static let keepaliveMin: TimeInterval = 5
-    /// Maximum keepalive interval in seconds.
-    ///
-    /// Mirrors Python `Link.KEEPALIVE_MAX = 360`.
-    public static let keepaliveMax: TimeInterval = 360
-    /// RTT (seconds) at which keepalive equals KEEPALIVE_MAX.
-    ///
-    /// Mirrors Python `Link.KEEPALIVE_MAX_RTT = 1.75`.
-    public static let keepaliveMaxRTT: Double = 1.75
-
-    /// Default keepalive interval before RTT is known.
-    ///
-    /// Matches Python `KEEPALIVE = KEEPALIVE_MAX = 360`.
-    public static let keepaliveInterval: TimeInterval = keepaliveMax
-
-    /// Factor by which to multiply keepalive for stale detection.
-    ///
-    /// Python: `STALE_FACTOR = 2`, so `STALE_TIME = STALE_FACTOR * KEEPALIVE = 720`.
-    public static let staleFactor: Int = 2
-    /// Time after last inbound before the link is considered stale and torn down.
-    ///
-    /// Python: `STALE_TIME = STALE_FACTOR * KEEPALIVE = 2 * 360 = 720`.
-    public static let staleTime: TimeInterval = keepaliveInterval * TimeInterval(staleFactor)
-    /// Grace period in seconds after STALE before actual teardown.
-    ///
-    /// Python: `STALE_GRACE = 5`.
-    public static let staleGrace: TimeInterval = 5
-    /// Maximum time to establish a link per hop.
-    ///
-    /// Python: `ESTABLISHMENT_TIMEOUT_PER_HOP = 6` seconds.
-    public static let establishmentTimeoutPerHop: TimeInterval = 6
-    /// Timeout factor: `rtt * keepaliveTimeoutFactor` used in timeout calculations.
-    ///
-    /// Python: `KEEPALIVE_TIMEOUT_FACTOR = 4`.
-    public static let keepaliveTimeoutFactor: Double = 4.0
-    /// Multiplier for RTT when computing default request timeout.
-    ///
-    /// Mirrors Python `Link.TRAFFIC_TIMEOUT_FACTOR = 6`.
-    public static let trafficTimeoutFactor: Double = 6.0
-    /// Addend for default request timeout (max response grace time × 1.125).
-    ///
-    /// Mirrors Python `Resource.RESPONSE_MAX_GRACE_TIME * 1.125 = 10 * 1.125 = 11.25`.
-    public static let requestTimeoutGrace: TimeInterval = 11.25
-
-    // MARK: - MTU signalling (Python Link.LINK_MTU_SIZE = 3)
-
-    /// 3-byte MTU+mode signalling appended to LRR and LRPR data.
-    ///
-    /// Encodes: bits[23:21] = mode (AES256_CBC=0x01 → 0x20 in top byte),
-    ///          bits[20:0]  = mtu & 0x1FFFFF.
-    /// Mirrors Python: `Link.signalling_bytes(mtu, mode)`.
-    static func mtuSignallingBytes(mtu: Int = Constants.mtu) -> Data {
-        let modeByte: UInt32 = 0x20 // (AES256_CBC=1) << 5 = 0x20
-        let value = (UInt32(mtu) & 0x1FFFFF) | (modeByte << 16)
-        return Data([
-            UInt8((value >> 16) & 0xFF),
-            UInt8((value >>  8) & 0xFF),
-            UInt8( value        & 0xFF)
-        ])
+    // Adopt the MTU signalled in the LINK_REQUEST (RNS link MTU discovery).
+    // Mirrors Python `validate_request`: `link.mtu = mtu_from_lr_packet(packet) or MTU`.
+    // The confirmed value is echoed back in the proof (see sendProof). This side never
+    // shrink below the default 500 even if a peer signals a smaller value.
+    if packet.data.count == Constants.keySize + 3 {
+      let signalling = Data(packet.data[Constants.keySize..<Constants.keySize + 3])
+      if let requestedMtu = Link.mtuFromSignalling(signalling), requestedMtu >= Constants.mtu {
+        link.establishedMtu = requestedMtu
+      }
     }
 
-    /// Decode the MTU from 3-byte signalling bytes (inverse of `mtuSignallingBytes`).
-    ///
-    /// Mirrors Python's `Link.mtu_from_lr_packet` / `mtu_from_lp_packet` masking
-    /// (the mode bits in the top byte are discarded via `MTU_BYTEMASK`).
-    /// Returns `nil` if `bytes` isn't exactly 3 bytes.
-    static func mtuFromSignalling(_ bytes: Data) -> Int? {
-        guard bytes.count == 3 else { return nil }
-        let b = Array(bytes)
-        let value = (UInt32(b[0]) << 16) | (UInt32(b[1]) << 8) | UInt32(b[2])
-        return Int(value & mtuByteMask)
+    transport.register(link: link)
+    return link
+  }
+
+  /// Build and send the LRPR proof packet for a responder-side link that
+  /// has just been registered.
+  ///
+  /// Split from `answer` so the caller can hook
+  /// `onEstablished` before any reply travels (matters under synchronous
+  /// loopback transports).
+  public func sendProof() throws {
+    guard role == .responder, let linkID, let transport else {
+      throw LinkError.invalidState
+    }
+    // Include 3-byte MTU signalling in both the signed data and the proof packet.
+    // Confirm the MTU adopted from the request so the initiator can adopt
+    // the same value (Python `prove`: `signalling_bytes(self.mtu, self.mode)`).
+    let sig = Link.mtuSignallingBytes(mtu: establishedMtu)
+    let signedData = linkID + pubBytes + sigPubBytes + sig
+    let signature = try sigPrv.signature(for: signedData)
+    let proof = Packet(
+      destinationType: .link,
+      packetType: .proof,
+      destinationHash: linkID,
+      context: .lrproof,
+      data: signature + pubBytes + sig
+    )
+    try transport.send(proof, generateReceipt: false)
+  }
+
+  // MARK: - Data-packet proof (mirrors Python Link.prove_packet)
+
+  /// Send an explicit proof for the most-recently received link DATA packet.
+  ///
+  /// Mirrors Python's `link.prove_packet(packet)`:
+  /// ```python
+  /// signature = self.sign(packet.packet_hash)
+  /// proof_data = packet.packet_hash + signature
+  /// proof = RNS.Packet(self, proof_data, RNS.Packet.PROOF)
+  /// proof.send()
+  /// ```
+  /// Must be called immediately after `onDataReceived` fires so that
+  /// `lastReceivedDataPacketHash` holds the correct hash.
+  ///
+  /// Called by LXMRouter.delivery_packet (via link.onDataReceived) to prove
+  /// every inbound LXMF link packet—matching Python LXMF's explicit
+  /// `packet.prove()` at the top of `delivery_packet`.
+  public func proveInboundData() {
+    stateLock.lock()
+    let packetHashSnap = lastReceivedDataPacketHash
+    stateLock.unlock()
+    guard let packetHash = packetHashSnap else { return }
+    proveLinkPacket(packetHash)
+  }
+
+  /// Sign `packetHash` with the link's own signing key and send an explicit
+  /// PROOF (`[full hash][signature]`, unencrypted) back over the link.
+  ///
+  /// Mirrors Python's `Link.prove_packet`. Used both by `proveInboundData`
+  /// (LXMF DIRECT) and by the CHANNEL receive path so the sender's Channel
+  /// can advance its send window.
+  func proveLinkPacket(_ packetHash: Data) {
+    guard status == .active, let linkID, let transport else { return }
+    guard let signature = try? sigPrv.signature(for: packetHash) else { return }
+    let proofData = packetHash + signature
+    let proof = Packet(
+      destinationType: .link,
+      packetType: .proof,
+      destinationHash: linkID,
+      context: .none,
+      data: proofData
+    )
+    try? transport.send(proof, generateReceipt: false)
+    recordOutbound(bytes: 0, countPacket: false, isData: false)
+  }
+
+  // MARK: - Channel packet delivery proofs (sender side)
+
+  /// Encrypt and send a CHANNEL-context data packet, returning the full packet
+  /// hash so the caller (`LinkChannelOutlet`) can match the returning delivery
+  /// proof to its `ChannelPacketHandle`.
+  ///
+  /// Mirrors Python's
+  /// `LinkChannelOutlet.send` → `packet.send()` (which creates a receipt), but
+  /// the delivery proof is matched at the Link layer (see `channelProofWaiters`)
+  /// because Transport receipts are only created for SINGLE-destination packets.
+  func sendChannelData(_ plaintext: Data) -> Data? {
+    guard status == .active, let linkID, let transport else { return nil }
+    guard let ciphertext = try? encrypt(plaintext) else { return nil }
+    let packet = Packet(
+      destinationType: .link,
+      packetType: .data,
+      destinationHash: linkID,
+      context: .channel,
+      data: ciphertext
+    )
+    let hash = try? packet.packetHash()
+    try? transport.send(packet, generateReceipt: false)
+    recordOutbound(bytes: ciphertext.count, countPacket: true, isData: true)
+    return hash
+  }
+
+  /// Register a channel packet's full hash so an inbound explicit PROOF can
+  /// mark its `ChannelPacketHandle` delivered.
+  ///
+  /// Prunes entries whose handle has
+  /// already concluded (bounds stale hashes left by retransmissions, which
+  /// re-encrypt to a fresh hash each time).
+  func trackChannelProof(hash: Data, handle: ChannelPacketHandle) {
+    stateLock.lock()
+    channelProofWaiters = channelProofWaiters.filter { $0.value.state == .sent }
+    channelProofWaiters[hash] = handle
+    stateLock.unlock()
+  }
+
+  /// Match an inbound explicit link-data PROOF (`[full hash][signature]`) to a
+  /// pending channel packet, validating the signature against the link peer's
+  /// signing key (Python `Link.validate`), and mark the handle delivered.
+  ///
+  /// Returns `true` when the proof matched an outstanding channel packet, so the caller knows
+  /// not to try the packet-receipt table as well.
+  @discardableResult
+  private func handleChannelProof(_ proofData: Data) -> Bool {
+    guard proofData.count == Constants.fullHashLength + Constants.signatureLength else {
+      return false
+    }
+    let hash = Data(proofData.prefix(Constants.fullHashLength))
+    let signature = Data(proofData.suffix(Constants.signatureLength))
+    stateLock.lock()
+    let peer = peerSigPub
+    let handle = channelProofWaiters[hash]
+    stateLock.unlock()
+    guard let peer, let handle else { return false }
+    guard peer.isValidSignature(signature, for: hash) else { return false }
+    stateLock.lock()
+    // Drop every hash pointing at this handle (the matched one plus any stale
+    // retransmission hashes) so the map stays tight.
+    for (k, v) in channelProofWaiters where v === handle {
+      channelProofWaiters.removeValue(forKey: k)
+    }
+    stateLock.unlock()
+    handle.markDelivered()
+    return true
+  }
+
+  /// Conclude the packet receipt for an ordinary link data packet the peer has proved.
+  ///
+  /// The other half of `bugs/014`. A link data proof carries `[full hash][signature]` signed
+  /// with the peer's **link** signing key (`proveLinkPacket`), not with its destination
+  /// identity—so `PacketReceipt.validateExplicitProof` can't check it and this is the only
+  /// layer that can: `peerSigPub` exists nowhere else. The signature is verified here and the
+  /// receipt is then concluded directly.
+  private func handleDataProof(_ proofData: Data, packet: Packet) {
+    guard proofData.count == Constants.fullHashLength + Constants.signatureLength else { return }
+    let hash = Data(proofData.prefix(Constants.fullHashLength))
+    let signature = Data(proofData.suffix(Constants.signatureLength))
+    stateLock.lock()
+    let peer = peerSigPub
+    stateLock.unlock()
+    guard let peer, peer.isValidSignature(signature, for: hash) else { return }
+    transport?.concludeLinkReceipt(packetHash: hash, proofPacket: packet)
+  }
+
+  // MARK: - Init
+
+  private init(role: Role, destination: Destination) {
+    self.role = role
+    self.destination = destination
+    self.prv = Curve25519.KeyAgreement.PrivateKey()
+    self.sigPrv = Curve25519.Signing.PrivateKey()
+  }
+
+  private init(
+    role: Role,
+    destination: Destination,
+    prv: Curve25519.KeyAgreement.PrivateKey,
+    sigPrv: Curve25519.Signing.PrivateKey
+  ) {
+    self.role = role
+    self.destination = destination
+    self.prv = prv
+    self.sigPrv = sigPrv
+  }
+
+  // MARK: - Initiator: validate proof
+
+  /// Process an incoming LRPR packet.
+  ///
+  /// On success, the link transitions to
+  /// `.active`, sends the encrypted RTT packet, and fires `onEstablished`.
+  /// Whether `packet` carries a valid link-request-proof signature for this
+  /// link, without adopting any of it.
+  ///
+  /// `validateProof` does the same check as its first step, but it also
+  /// activates the link. Path re-balancing has to establish that the proof is
+  /// genuine *before* it rewrites the path table—otherwise anyone able to
+  /// forge a proof could move a path—and it has to run before the link is
+  /// activated, so an `onEstablished` observer receives the corrected hop count.
+  /// Mirrors the inline signature check Python performs for exactly this
+  /// purpose in `Transport.inbound` (Transport.py:2279-2296).
+  /// Validate a link-request proof against a responder identity supplied by the caller.
+  ///
+  /// The relay form of the check below. A transport node has no `Link` object—it holds a
+  /// routing entry and the responder's identity from an earlier announce—so it can't reach
+  /// the instance version, which reads `destination.identity` and `linkID` off `self`.
+  /// Python has the same split: `Link.validate_proof` at the terminus, and an open-coded
+  /// copy in `Transport.inbound` for the relay (`Transport.py:2646-2657`).
+  ///
+  /// An LRPROOF's destination hash *is* the link ID, which is what makes the packet
+  /// self-describing enough to check without any link state.
+  static func proofSignatureIsValid(_ packet: Packet, responderIdentity: Identity) -> Bool {
+    let baseLen = Constants.signatureLength + Constants.halfKeySize
+    guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }
+    let signature = packet.data.prefix(Constants.signatureLength)
+    let responderPubBytes = packet.data[Constants.signatureLength..<baseLen]
+    // Python recomputes these from `mtu_from_lp_packet`/`mode_from_lp_packet` rather than
+    // slicing. The round-trip is exact—the mask and shift partition the same 24 bits—so
+    // slicing gives identical bytes, and matches how the instance check below reads them.
+    let signallingBytes: Data =
+      packet.data.count == baseLen + 3
+      ? Data(packet.data[baseLen...])
+      : Data()
+    let responderSigPub = responderIdentity.signingPublicKey
+    let signedData =
+      packet.destinationHash + responderPubBytes
+      + responderSigPub.rawRepresentation + signallingBytes
+    return responderSigPub.isValidSignature(signature, for: signedData)
+  }
+
+  func proofSignatureIsValid(_ packet: Packet) -> Bool {
+    let baseLen = Constants.signatureLength + Constants.halfKeySize
+    guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }
+    let signature = packet.data.prefix(Constants.signatureLength)
+    let responderPubBytes = packet.data[Constants.signatureLength..<baseLen]
+    let signallingBytes: Data =
+      packet.data.count == baseLen + 3
+      ? Data(packet.data[baseLen...])
+      : Data()
+    guard let destinationIdentity = destination.identity, let linkID else { return false }
+    let responderSigPub = destinationIdentity.signingPublicKey
+    let signedData =
+      linkID + responderPubBytes
+      + responderSigPub.rawRepresentation + signallingBytes
+    return responderSigPub.isValidSignature(signature, for: signedData)
+  }
+
+  /// Validates a link-request proof and completes the handshake.
+  public func validateProof(_ packet: Packet) throws {
+    guard role == .initiator else { throw LinkError.invalidState }
+    guard status == .pending else { throw LinkError.invalidState }
+    let baseLen = Constants.signatureLength + Constants.halfKeySize
+    // Accept 96-byte (no signalling) or 99-byte (with MTU signalling) proofs.
+    guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else {
+      throw LinkError.malformedProof
     }
 
-    /// Compute the hashable bytes for link ID derivation from a LINK_REQUEST packet.
-    ///
-    /// Mirrors Python `Link.link_id_from_lr_packet`:
-    ///   ```python
-    ///   hashable_part = packet.get_hashable_part()
-    ///   if len(packet.data) > ECPUBSIZE:
-    ///       hashable_part = hashable_part[:-diff]   # strip signalling bytes
-    ///   ```
-    /// Both Python and Swift must produce the same link_id to route LRPROOF packets.
-    /// Including the 3-byte MTU signalling in the hash, Python computes a
-    /// different ID, and LRPROOF delivery fails (mismatch in link lookup table).
-    static func linkIDHashable(for packet: Packet, dataLength: Int) throws -> Data {
-        var hashable = try packet.hashablePart()
-        let extraBytes = dataLength - Constants.keySize   // keySize = ECPUBSIZE = 64
-        if extraBytes > 0 {
-            hashable = Data(hashable.dropLast(extraBytes))
-        }
-        return hashable
+    let signature = packet.data.prefix(Constants.signatureLength)
+    let responderPubBytes = packet.data[Constants.signatureLength..<baseLen]
+    // If present, extract the 3-byte signalling and include it in signature
+    // verification (Python always signs linkID+pub+sigPub+signalling).
+    let signallingBytes: Data =
+      packet.data.count == baseLen + 3
+      ? Data(packet.data[baseLen...])
+      : Data()
+
+    let responderPub = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: responderPubBytes)
+    guard let destinationIdentity = destination.identity else {
+      throw LinkError.missingResponderIdentity
+    }
+    let responderSigPubBytes = destinationIdentity.signingPublicKey.rawRepresentation
+    let responderSigPub = destinationIdentity.signingPublicKey
+
+    guard let linkID else { throw LinkError.invalidState }
+    let signedData = linkID + responderPubBytes + responderSigPubBytes + signallingBytes
+    guard responderSigPub.isValidSignature(signature, for: signedData) else {
+      throw LinkError.invalidSignature
     }
 
-    /// Which end of the link this instance is.
-    public let role: Role
-    /// Current link status. `stateLock` serializes reads and writes; internal code
-    /// holding the lock uses `unsafeStatus` directly (the lock is non-recursive).
-    private var unsafeStatus: Status = .pending
-    /// Current lifecycle state of the link.
-    public private(set) var status: Status {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeStatus }
-        set { stateLock.lock(); unsafeStatus = newValue; stateLock.unlock() }
+    stateLock.lock()
+    self.peerPub = responderPub
+    self.peerPubBytes = Data(responderPubBytes)
+    self.peerSigPub = responderSigPub
+    self.peerSigPubBytes = responderSigPubBytes
+    // Adopt the MTU the responder confirmed in the proof (RNS link MTU
+    // discovery). Mirrors Python `validate_proof`:
+    //   `confirmed_mtu = mtu_from_lp_packet(packet); self.mtu = confirmed_mtu or MTU`.
+    if let confirmedMtu = Link.mtuFromSignalling(signallingBytes), confirmedMtu >= Constants.mtu {
+      self.establishedMtu = confirmedMtu
     }
+    stateLock.unlock()
 
-    /// Initiator: target destination.
-    ///
-    /// Responder: local registered destination
-    /// the request landed on.
-    public let destination: Destination
+    try deriveSharedKey()
 
-    /// Initiator's ephemeral X25519 (key agreement) and Ed25519 (signing,
-    /// only used by responder side, where it's the owning identity's key).
-    public let prv: Curve25519.KeyAgreement.PrivateKey
-    /// Signing key this end proves its identity with.
-    public let sigPrv: Curve25519.Signing.PrivateKey
+    stateLock.lock()
+    if let rt = requestTime { self.rtt = Date().timeIntervalSince(rt) }
+    self.unsafeStatus = .active
+    self.establishedAt = Date()
+    // establishment_cost = KEYSIZE/8*2 + SIGLENGTH/8 + ECPUBSIZE/2 + ECPUBSIZE
+    // Matches Python's formula: 64*2 + 64 + 32 + 64 = 288 bytes.
+    let cost = Constants.keySize * 2 + Constants.keySize + Constants.halfKeySize + Constants.keySize
+    self.establishmentCost = cost
+    if let r = self.rtt, r > 0 { self.establishmentRate = Double(cost) / r }
+    let rttValue = self.rtt ?? 0
+    let transportSnap = transport
+    stateLock.unlock()
 
-    /// Public key agreement key, as wire bytes.
-    public var pubBytes: Data { prv.publicKey.rawRepresentation }
-    /// Public signing key, as wire bytes.
-    public var sigPubBytes: Data { sigPrv.publicKey.rawRepresentation }
+    // Send LRRTT (msgpack float, encrypted) to acknowledge.
+    let rttPlain = MsgPack.encodeDouble(rttValue)
+    let rttCiphertext = try encrypt(rttPlain)
+    let rttPacket = Packet(
+      destinationType: .link,
+      packetType: .data,
+      destinationHash: linkID,
+      context: .lrrtt,
+      data: rttCiphertext
+    )
+    try transportSnap?.send(rttPacket)
 
-    /// Key agreement key of the far end.
-    public private(set) var peerPub: Curve25519.KeyAgreement.PublicKey?
-    /// Key agreement key of the far end, as wire bytes.
-    public private(set) var peerPubBytes: Data?
-    /// Signing key of the far end.
-    public private(set) var peerSigPub: Curve25519.Signing.PublicKey?
-    /// Signing key of the far end, as wire bytes.
-    public private(set) var peerSigPubBytes: Data?
+    // Mark path responsive on successful link establishment.
+    // Mirrors Python: Transport.mark_path_responsive(self.destination.hash)
+    transportSnap?.markPathResponsive(for: destination.hash)
+    onEstablished?(self)
+  }
 
-    /// Link identifier, derived once the handshake completes.
-    public private(set) var linkID: Data?
-    private var unsafeDerivedKey: Data?
-    /// The 64-byte HKDF-derived session key.
-    ///
-    /// Lock-guarded: `close()` nils it on one
-    /// thread while other threads may read it, and a torn read of the `Data` buffer
-    /// could crash. Internal code holding `stateLock` uses `unsafeDerivedKey`.
-    public private(set) var derivedKey: Data? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeDerivedKey }
-        set { stateLock.lock(); unsafeDerivedKey = newValue; stateLock.unlock() }
+  // MARK: - Responder: receive RTT
+
+  /// Process the LRRTT packet on the responder side.
+  ///
+  /// Marks the link
+  /// active and fires `onEstablished`.
+  ///
+  /// Mirrors Python's `Link.rtt_packet` (lines 534–551 in Link.py):
+  ///   measured_rtt = time.time() - self.request_time
+  ///   rtt = umsgpack.unpackb(plaintext)
+  ///   self.rtt = max(measured_rtt, rtt)
+  ///   self.establishment_rate = self.establishment_cost / self.rtt
+  public func receiveRTT(_ packet: Packet) throws {
+    guard role == .responder else { throw LinkError.invalidState }
+    guard status == .handshake else { throw LinkError.invalidState }
+
+    let plaintext = try decrypt(packet.data)
+    let reportedRTT = (try? MsgPack.decodeDouble(plaintext)) ?? 0
+    stateLock.lock()
+    // Take the maximum of the locally measured round-trip time and the initiator's
+    // reported value—whichever is larger is the more conservative estimate.
+    let measuredRTT = requestTime.map { Date().timeIntervalSince($0) } ?? reportedRTT
+    self.rtt = max(measuredRTT, reportedRTT)
+    // Compute establishment rate if cost data exists.
+    if let r = self.rtt, r > 0, establishmentCost > 0 {
+      self.establishmentRate = Double(establishmentCost) / r
     }
-    /// Measured round-trip time in seconds.
-    public private(set) var rtt: TimeInterval?
+    self.unsafeStatus = .active
+    self.establishedAt = Date()
+    // Record the hop count of the RTT packet so the responder also knows the
+    // link's hop distance. Python (RNS 1.3.8): self.expected_hops = packet.hops
+    self.unsafeExpectedHops = Int(packet.hops)
+    stateLock.unlock()
+    onEstablished?(self)
+  }
 
-    /// Cipher mode used for this link.
-    ///
-    /// Always AES-256-CBC (0x01) since that's the
-    /// only enabled mode. Mirrors Python `Link.mode = Link.MODE_AES256_CBC`.
-    public let mode: UInt8 = 0x01  // MODE_AES256_CBC
+  // MARK: - Crypto plumbing
 
-    /// Negotiated link MTU in bytes.
-    ///
-    /// Mirrors Python's per-link `Link.mtu`.
-    /// Defaults to `Constants.mtu` (500) and is updated during the handshake:
-    /// the responder adopts the MTU signalled in the LINK_REQUEST and confirms
-    /// it in the proof; the initiator adopts the confirmed value. When neither
-    /// side signals a higher value (for example, interfaces with no HW MTU), it stays
-    /// at 500 and `mdu` equals `Constants.linkMdu`—identical to prior behavior.
-    public internal(set) var establishedMtu: Int = Constants.mtu
+  private func deriveSharedKey() throws {
+    guard let peerPub, let linkID else { throw LinkError.invalidState }
+    let shared = try prv.sharedSecretFromKeyAgreement(with: peerPub)
+    let sharedData = shared.withUnsafeBytes { Data($0) }
+    // Mirrors RNS.Link.handshake: salt = link_id, no context.
+    // MODE_AES256_CBC (default) → 64-byte derived key → Token AES-256-CBC mode.
+    // Python: HKDF(length=64) when mode == MODE_AES256_CBC.
+    let derived = HKDF.derive(
+      length: Constants.derivedKeyLength,
+      derivedFrom: sharedData,
+      salt: linkID,
+      context: nil
+    )
+    // Token construction is a pure (throwing) initializer with no callout, but
+    // build it OUTSIDE the lock so a throw can't leak a held lock.
+    let newToken = try Token(key: derived)
+    stateLock.lock()
+    unsafeDerivedKey = derived
+    token = newToken
+    unsafeStatus = .handshake
+    stateLock.unlock()
+  }
 
-    /// Maximum data unit for a single encrypted link packet payload, derived
-    /// from the negotiated `establishedMtu`.
-    ///
-    /// With the default MTU this equals
-    /// `Constants.linkMdu` (= 431). Mirrors Python's
-    /// `mdu = floor((mtu - IFAC_MIN - HEADER_MIN - TOKEN_OVERHEAD)/16)*16 - 1`.
-    public var mdu: Int {
-        (establishedMtu - Constants.ifacMinSize - Constants.headerMinSize - Constants.tokenOverhead)
-            / Constants.aes128BlockSize * Constants.aes128BlockSize - 1
+  /// Encrypts `plaintext` with the link session key.
+  public func encrypt(_ plaintext: Data) throws -> Data {
+    stateLock.lock()
+    let t = token
+    stateLock.unlock()
+    guard let t else { throw LinkError.notActive }
+    return try t.encrypt(plaintext)
+  }
+
+  /// Decrypts `ciphertext` with the link session key.
+  public func decrypt(_ ciphertext: Data) throws -> Data {
+    stateLock.lock()
+    let t = token
+    stateLock.unlock()
+    guard let t else { throw LinkError.notActive }
+    return try t.decrypt(ciphertext)
+  }
+
+  /// Closes the link and tells the far end.
+  public func close() {
+    // Snapshot the terminal decision + clear the session key atomically under the
+    // lock; run stopWatchdog / markPathUnresponsive / onClosed OUTSIDE it.
+    stateLock.lock()
+    let wasTimeout = (unsafeTeardownReason == .timeout)
+    // Preserve .failed/.stale status set by the watchdog; only override to .closed
+    // for explicit clean closes.
+    if unsafeStatus != .failed && unsafeStatus != .stale { unsafeStatus = .closed }
+    token = nil
+    unsafeDerivedKey = nil
+    channelProofWaiters.removeAll()
+    stateLock.unlock()
+
+    stopWatchdog()
+    // Mark path unresponsive on timeout teardown.
+    // Mirrors Python: link_closed() → if teardown_reason == TIMEOUT: mark_path_unresponsive
+    if wasTimeout { transport?.markPathUnresponsive(for: destination.hash) }
+    onClosed?(self)
+  }
+
+  // MARK: - Inactivity helpers
+
+  /// Seconds since the last inbound packet (including keepalives).
+  ///
+  /// Mirrors Python's `Link.no_inbound_for()`.
+  /// Time in seconds since the link was established. Returns `nil` if the
+  /// link hasn't yet become active. Mirrors Python `Link.get_age()`.
+  /// Returns the link ID (used as HKDF salt during handshake).
+  /// Mirrors Python's `Link.get_salt()` which returns `self.link_id`.
+  public func getSalt() -> Data? { linkID }
+
+  /// Returns the link context (always nil in current implementation).
+  ///
+  /// Mirrors Python's `Link.get_context()`.
+  public func getContext() -> Data? { nil }
+
+  /// Returns the expected in-flight data rate (bits/second) of an established link.
+  ///
+  /// Nil if the link isn't active or no transfer has concluded.
+  /// Mirrors Python's `Link.get_expected_rate()`.
+  public func getExpectedRate() -> Double? {
+    guard status == .active else { return nil }
+    return expectedRate
+  }
+
+  /// Returns the link MTU for an established link, nil if not active.
+  ///
+  /// Mirrors Python's `Link.get_mtu()`.
+  public func getMtu() -> Int? {
+    guard status == .active else { return nil }
+    return establishedMtu
+  }
+
+  /// Returns the packet MDU for an established link, nil if not active.
+  ///
+  /// Mirrors Python's `Link.get_mdu()`.
+  public func getMdu() -> Int? {
+    guard status == .active else { return nil }
+    return mdu
+  }
+
+  /// Returns the data transfer rate at link establishment in bits/second, or nil.
+  ///
+  /// Mirrors Python's `Link.get_establishment_rate()` which returns
+  /// `self.establishment_rate * 8` (converts bytes/s to bits/s).
+  public func getEstablishmentRate() -> Double? {
+    guard let rate = establishmentRate else { return nil }
+    return rate * 8.0
+  }
+
+  /// Returns the cipher mode byte for this link.
+  ///
+  /// Mirrors Python's `Link.get_mode()`.
+  public func getMode() -> UInt8 { mode }
+
+  /// Returns the current link status.
+  ///
+  /// Mirrors Python's `Link.status` (direct attribute access).
+  public func getStatus() -> Status { status }
+
+  /// Returns the 16-byte link ID (HKDF salt), or nil before establishment.
+  ///
+  /// Mirrors Python's `Link.link_id` (direct attribute access).
+  public func getLinkID() -> Data? { linkID }
+
+  /// Returns the measured round-trip time in seconds, or nil before establishment.
+  ///
+  /// Mirrors Python's `Link.rtt` (direct attribute access).
+  public func getRtt() -> TimeInterval? { rtt }
+
+  /// Returns the identity revealed by the remote peer via `identify()`, or nil.
+  ///
+  /// Mirrors Python's `Link.remote_identity` (direct attribute access).
+  public func getRemoteIdentity() -> Identity? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return remoteIdentity
+  }
+
+  /// Returns the reason the link was torn down, or nil while the link is active.
+  ///
+  /// Mirrors Python's `Link.teardown_reason` (direct attribute access).
+  public func getTeardownReason() -> TeardownReason? { teardownReason }
+
+  /// Returns how long the link has been established, or `nil` before it is.
+  public func getAge() -> TimeInterval? {
+    guard let at = establishedAt else { return nil }
+    return Date().timeIntervalSince(at)
+  }
+
+  /// Time in seconds since the last non-keepalive data traversed the link.
+  ///
+  /// Excludes keepalive packets (mirrors Python `Link.no_data_for()`).
+  /// Returns a large value if no data has been sent or received yet.
+  public func noDataFor() -> TimeInterval {
+    guard let last = lastData else { return Date().timeIntervalSinceReferenceDate }
+    return Date().timeIntervalSince(last)
+  }
+
+  /// Returns the time in seconds since inbound traffic was last seen.
+  public func noInboundFor() -> TimeInterval {
+    // Use establishedAt as the baseline when available (matches Python's
+    // `last_inbound = max(self.last_inbound, activated_at)`). Fall back
+    // to requestTime so the value stays bounded before establishment.
+    let baseline = (establishedAt ?? requestTime ?? Date()).timeIntervalSinceReferenceDate
+    let last = max(lastInbound?.timeIntervalSinceReferenceDate ?? 0, baseline)
+    return Date().timeIntervalSinceReferenceDate - last
+  }
+
+  /// Seconds since the last outbound packet (including keepalives).
+  public func noOutboundFor() -> TimeInterval {
+    guard let last = lastOutbound else { return Date().timeIntervalSince(requestTime ?? Date()) }
+    return Date().timeIntervalSince(last)
+  }
+
+  /// Seconds since any activity on the link (min of inbound/outbound).
+  ///
+  /// Mirrors Python's `Link.inactive_for()`.
+  public func inactiveFor() -> TimeInterval { min(noInboundFor(), noOutboundFor()) }
+
+  /// Update the last-outbound timestamp (and last-data if not a keepalive).
+  ///
+  /// Mirrors Python's `Link.had_outbound(is_keepalive=False)`.
+  public func hadOutbound(isKeepalive: Bool = false) {
+    stateLock.lock()
+    let ts = Date()
+    lastOutbound = ts
+    if isKeepalive { lastKeepalive = ts } else { lastData = ts }
+    stateLock.unlock()
+  }
+
+  // MARK: - Watchdog
+
+  /// Start the background watchdog.
+  ///
+  /// Called automatically after the link
+  /// reaches `.handshake` (initiator) or `.pending` (responder).
+  /// Mirrors Python's `Link.start_watchdog()`.
+  public func startWatchdog() {
+    stopWatchdog()
+    let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+    timer.schedule(deadline: .now() + 0.1, repeating: .never)
+    timer.setEventHandler { [weak self] in self?.watchdogTick() }
+    stateLock.lock()
+    watchdogTimer = timer
+    stateLock.unlock()
+    timer.resume()
+  }
+
+  private func stopWatchdog() {
+    stateLock.lock()
+    let t = watchdogTimer
+    watchdogTimer = nil
+    stateLock.unlock()
+    t?.cancel()
+  }
+
+  private func watchdogTick() {
+    // Snapshot the state machine under the lock and do the one-shot terminal
+    // check-and-set (status + teardownReason together) atomically; then release
+    // BEFORE every callout (markPathUnresponsive / onTimeout / close / teardown /
+    // sendKeepalive) so the lock is never held across a callback or Transport call.
+    stateLock.lock()
+    guard unsafeStatus != .closed && unsafeStatus != .failed else {
+      stateLock.unlock()
+      return
     }
+    let now = Date()
+    let curStatus = unsafeStatus
 
-    /// Time the link request was sent.
-    public var requestTime: Date?
-    /// Time the link reached `.active`.
-    public var establishedAt: Date?
-
-    /// Hop count to the link's far end, available on both initiator and
-    /// responder.
-    ///
-    /// On the initiator it's the path-table hop count to the
-    /// destination; on the responder it's the hop count of the incoming RTT
-    /// packet. Mirrors Python `Link.expected_hops` (RNS 1.3.8 made this
-    /// available on the responder side as well). `nil` until known.
-    ///
-    /// Guarded by `stateLock`. Both writers run off the network: the responder
-    /// sets it from the RTT packet, and `Transport` rewrites it from a
-    /// link-request proof that can arrive on a different interface thread while
-    /// the watchdog is reading it.
-    public var expectedHops: Int? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeExpectedHops }
-        set { stateLock.lock(); unsafeExpectedHops = newValue; stateLock.unlock() }
-    }
-    /// Backing store for `expectedHops`, for the call sites that already hold
-    /// `stateLock` (it's a plain `NSLock`, so re-entering through the property
-    /// would deadlock).
-    var unsafeExpectedHops: Int?
-
-    /// When this link's path was re-balanced from a link-request proof whose
-    /// hop count disagreed with `expectedHops`, or `nil` if it never was.
-    ///
-    /// Doubles as a once-only latch: Python re-balances a given link at most
-    /// once (`if not link.rebalanced:`), so a flapping route can't keep
-    /// rewriting the path table for the lifetime of the link.
-    /// Mirrors Python's RNS 1.4.1 `Link.rebalanced`.
-    public var rebalanced: Date? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeRebalanced }
-    }
-    private var unsafeRebalanced: Date?
-
-    /// Claim the once-only re-balance for this link, recording `hops` as the new
-    /// expectation if the claim succeeds.
-    ///
-    /// - Returns: `true` for the caller that won the latch, `false` if this link
-    ///   has already been re-balanced.
-    ///
-    /// Test-and-set under `stateLock` rather than a read followed by a write, so
-    /// two proofs arriving on different interface threads can't both pass the
-    /// guard. The caller must not hold `Transport.lock`—the established order
-    /// is Transport.lock last, never over a link's own lock.
-    func claimRebalance(toHops hops: Int) -> Bool {
-        stateLock.lock(); defer { stateLock.unlock() }
-        guard unsafeRebalanced == nil else { return false }
-        unsafeRebalanced = Date()
-        unsafeExpectedHops = hops
-        return true
-    }
-
-    /// Establishment timeout.
-    ///
-    /// Defaults to `establishmentTimeoutPerHop`
-    /// seconds; scaled up by hop count when the path is known.
-    ///
-    /// Guarded by `stateLock`, like `status`: `Link.initiate` starts the
-    /// watchdog before returning, so the watchdog thread is already reading
-    /// this by the time the caller assigns it on the very next line. Internal
-    /// code holding the lock must use `unsafeEstablishmentTimeout`—`stateLock` is
-    /// not recursive.
-    private var unsafeEstablishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
-    /// Seconds to wait for the far end before the link fails.
-    public var establishmentTimeout: TimeInterval {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeEstablishmentTimeout }
-        set { stateLock.lock(); unsafeEstablishmentTimeout = newValue; stateLock.unlock() }
-    }
-
-    /// Fires when the link transitions to `.active`.
-    ///
-    /// If the link is already active when the callback is set (synchronous loopback), it replays.
-    public var onEstablished: ((Link) -> Void)? {
-        didSet { if status == .active { onEstablished?(self) } }
-    }
-    /// Fires when the link closes, however it was torn down.
-    public var onClosed: ((Link) -> Void)?
-    /// Fires with each data payload received on the link.
-    public var onDataReceived: ((Data, Link) -> Void)?
-    /// Called when the link times out (establishment or stale).
-    ///
-    /// Guarded by `stateLock` for the same reason as `establishmentTimeout`—the
-    /// watchdog takes and clears this callback while the caller that just
-    /// created the link is still installing it.
-    private var unsafeOnTimeout: ((Link) -> Void)?
-    /// Fires when the link times out, during establishment or once stale.
-    public var onTimeout: ((Link) -> Void)? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnTimeout }
-        set { stateLock.lock(); unsafeOnTimeout = newValue; stateLock.unlock() }
-    }
-    /// Called when the remote peer reveals their identity via `identify`.
-    ///
-    /// Mirrors Python's `LinkCallbacks.remote_identified`.
-    public var onRemoteIdentified: ((Link, Identity) -> Void)? {
-        didSet {
-            if let id = remoteIdentity { onRemoteIdentified?(self, id) }
-        }
-    }
-
-    /// The identity the remote peer revealed via `identify()`, if any.
-    ///
-    /// Only populated on the responder side.
-    public private(set) var remoteIdentity: Identity?
-
-    /// Adaptive keepalive interval based on measured RTT.
-    /// Mirrors Python's `Link.__update_keepalive`:
-    ///   keepalive = max(KEEPALIVE_MIN, min(rtt * (KEEPALIVE_MAX / KEEPALIVE_MAX_RTT), KEEPALIVE_MAX))
-    public var effectiveKeepalive: TimeInterval {
-        guard let rtt, rtt > 0 else { return Link.keepaliveInterval }
-        return max(Link.keepaliveMin, min(rtt * (Link.keepaliveMax / Link.keepaliveMaxRTT), Link.keepaliveMax))
-    }
-
-    /// Adaptive stale time based on measured RTT.
-    ///
-    /// Mirrors Python: `stale_time = keepalive * STALE_FACTOR`.
-    public var effectiveStaleTime: TimeInterval {
-        effectiveKeepalive * TimeInterval(Link.staleFactor)
-    }
-
-    /// Timestamp when the link transitioned to `.active`.
-    ///
-    /// Mirrors Python `Link.activated_at`.
-    /// This is the same moment as `establishedAt`; exposed as `activatedAt` for API parity.
-    public var activatedAt: Date? { establishedAt }
-
-    /// Timestamp of the last non-keepalive DATA payload sent or received on
-    /// this link.
-    ///
-    /// Mirrors Python `Link.last_data`.
-    public private(set) var lastData: Date?
-
-    /// Expected in-flight data rate in bits per second, updated after each
-    /// completed Resource transfer.
-    ///
-    /// Mirrors Python `Link.expected_rate`.
-    private var unsafeExpectedRate: Double?
-    /// Expected in-flight data rate in bits per second.
-    public private(set) var expectedRate: Double? {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeExpectedRate }
-        set { stateLock.lock(); unsafeExpectedRate = newValue; stateLock.unlock() }
-    }
-
-    // MARK: - Traffic statistics (mirrors Python Link.tx/rx/txbytes/rxbytes)
-
-    /// Traffic statistics are written from whichever thread drives the link's
-    /// I/O and read from another (the UI shows per-link throughput).
-    ///
-    /// The writes
-    /// below were already inside `stateLock`, but these were plain stored
-    /// properties—so a *reader* on another thread still raced every write.
-    /// Routing them through `InterfaceCounters` guards both sides.
-    private let counters = InterfaceCounters()
-
-    /// Total outbound packet count.
-    ///
-    /// Mirrors Python `Link.tx`.
-    public var tx: Int { counters.txPackets }
-    /// Total inbound packet count.
-    ///
-    /// Mirrors Python `Link.rx`.
-    public var rx: Int { counters.rxPackets }
-    /// Total bytes transmitted (encrypted payload).
-    ///
-    /// Mirrors Python `Link.txbytes`.
-    public var txBytes: Int { counters.txBytes }
-    /// Total bytes received (encrypted payload).
-    ///
-    /// Mirrors Python `Link.rxbytes`.
-    public var rxBytes: Int { counters.rxBytes }
-
-    /// Wall-clock of the most recent inbound encrypted packet (any
-    /// context).
-    ///
-    /// Used by the keepalive watchdog. `nil` until the first
-    /// inbound packet arrives.
-    public private(set) var lastInbound: Date?
-    /// Wall-clock of the most recent outbound encrypted packet.
-    public private(set) var lastOutbound: Date?
-    /// Wall-clock of the most recent keepalive sent (initiator only).
-    public private(set) var lastKeepalive: Date?
-    /// Full SHA-256 hash (32 bytes) of the last received link DATA packet (context == .none).
-    ///
-    /// Set in `receive(_:from:)` just before `onDataReceived` fires so callers can
-    /// compute a `prove_packet` acknowledgment (mirrors Python `Link.prove_packet`).
-    /// Python uses the FULL hash (Identity.full_hash, 32 bytes) for proof matching.
-    public private(set) var lastReceivedDataPacketHash: Data?
-    /// Fires for every decrypted inbound packet, with its packetType and
-    /// context.
-    ///
-    /// Higher-level layers (resources, requests, channels) hook
-    /// here to dispatch on context.
-    public var onPacketReceived: ((Data, Packet.PacketType, Packet.Context, Link) -> Void)?
-
-    // MARK: - PHY stats (mirrors Python Link.track_phy_stats / Link.rssi / Link.snr / Link.q)
-
-    /// Enable PHY stats tracking.
-    ///
-    /// When true, RSSI/SNR/quality are pulled from
-    /// the receiving interface on each inbound packet.
-    public var trackPhyStats: Bool = false
-    /// Last received signal strength indicator (dBm).
-    ///
-    /// Updated from the receiving interface
-    /// when `trackPhyStats` is true. Mirrors Python `Link.rssi`.
-    public private(set) var rssi: Float?
-    /// Last received signal-to-noise ratio (dB).
-    ///
-    /// Mirrors Python `Link.snr`.
-    public private(set) var snr: Float?
-    /// Link quality 0–100 derived from SNR.
-    ///
-    /// Mirrors Python `Link.q`.
-    public private(set) var quality: Float?
-
-    /// Enable or disable physical layer statistics tracking.
-    ///
-    /// Explicit method form of the `trackPhyStats` property, matching Python's
-    /// `Link.track_phy_stats(track: bool)` method signature.
-    public func trackPhyStats(_ track: Bool) {
-        trackPhyStats = track
-    }
-
-    /// Returns the RSSI if PHY stat tracking is enabled, otherwise nil.
-    ///
-    /// Mirrors Python's `Link.get_rssi()`.
-    public func getRssi() -> Float? {
-        guard trackPhyStats else { return nil }
-        stateLock.lock(); defer { stateLock.unlock() }; return rssi
-    }
-    /// Returns the SNR if PHY stat tracking is enabled, otherwise nil.
-    ///
-    /// Mirrors Python's `Link.get_snr()`.
-    public func getSnr() -> Float? {
-        guard trackPhyStats else { return nil }
-        stateLock.lock(); defer { stateLock.unlock() }; return snr
-    }
-    /// Returns the link quality if PHY stat tracking is enabled, otherwise nil.
-    ///
-    /// Mirrors Python's `Link.get_q()`.
-    public func getQ() -> Float? {
-        guard trackPhyStats else { return nil }
-        stateLock.lock(); defer { stateLock.unlock() }; return quality
-    }
-
-    private weak var transport: Transport?
-    private var token: Token?
-    private var watchdogTimer: DispatchSourceTimer?
-
-    /// Serializes ALL mutable Link state (the session state machine, traffic
-    /// counters/timestamps, the resource queues, `pendingRequests` and the lazy
-    /// channel).
-    ///
-    /// Non-recursive, and applied with strict snapshot-under-lock /
-    /// act-outside: it's NEVER held across a `transport.*` call, a user callback,
-    /// a `ResourceTransfer`/`Channel` method, `encrypt`/`decrypt`, or `close`/
-    /// `teardown`/`sendKeepalive`. Because the Transport receive path always drops
-    /// its own lock before calling into a Link (verified in Transport), the safe
-    /// ordering is Transport.lock > Link.stateLock and it's never inverted.
-    let stateLock = NSLock()
-
-    // Request/response dispatch—populated by Link.request. Guarded by `stateLock`.
-    var pendingRequests: [Data: RequestReceipt] = [:]
-
-    /// Channel attached to this link (lazy; created by `getChannel()`).
-    ///
-    /// Guarded by `stateLock`.
-    private var channel: Channel?
-
-    /// Full packet-hash → the `ChannelPacketHandle` awaiting a delivery proof.
-    ///
-    /// Populated by `sendChannelData` (via `trackChannelProof`), matched by an
-    /// inbound explicit link-data PROOF in `handleChannelProof`, and pruned on
-    /// delivery / teardown. This is the Link-layer analog of Python's
-    /// `packet.receipt` for CHANNEL packets: Transport only creates receipts for
-    /// SINGLE-destination packets, so a link/channel packet's proof is matched
-    /// and signature-validated here (against the link peer's signing key)
-    /// instead. Guarded by `stateLock`.
-    private var channelProofWaiters: [Data: ChannelPacketHandle] = [:]
-
-    // MARK: - Resource-queue snapshots (copy-under-lock, iterate the copy)
-
-    /// Copy of the incoming-resource queue taken under `stateLock`.
-    ///
-    /// Callers iterate
-    /// the COPY so a `ResourceTransfer` callback that re-enters
-    /// `register/unregisterIncomingResource` can't mutate the array mid-iteration.
-    private func snapshotIncomingResources() -> [ResourceTransfer] {
-        stateLock.lock(); defer { stateLock.unlock() }; return incomingResources
-    }
-    private func snapshotOutgoingResources() -> [ResourceTransfer] {
-        stateLock.lock(); defer { stateLock.unlock() }; return outgoingResources
-    }
-    private func incomingResourcesIsEmpty() -> Bool {
-        stateLock.lock(); defer { stateLock.unlock() }; return incomingResources.isEmpty
-    }
-
-    /// Remove a concluded/timed-out request receipt from `pendingRequests`.
-    ///
-    /// Wired to
-    /// `RequestReceipt.onConclude` so timed-out and failed receipts are evicted (not
-    /// only successful ones)—bounding the dictionary. Idempotent.
-    func evictPendingRequest(_ requestID: Data) {
-        stateLock.lock(); _ = pendingRequests.removeValue(forKey: requestID); stateLock.unlock()
-    }
-
-    // MARK: - Resource strategy (mirrors Python Link.resource_strategy)
-
-    /// How a link treats incoming resources it did not request.
-    public enum ResourceStrategy: UInt8 { case acceptNone = 0, acceptApp = 1, acceptAll = 2 }
-
-    /// Controls how incoming (non-request, non-response) resources are handled.
-    public var resourceStrategy: ResourceStrategy = .acceptNone
-
-    /// Called when a resource advertisement arrives and `resourceStrategy == .acceptApp`.
-    ///
-    /// Return `true` to accept (start receiving), `false` to reject.
-    public var onResourceAdvertised: ((ResourceAdvertisement, Link) -> Bool)?
-
-    /// Called when an incoming resource transfer starts (ADV accepted, receiving begins).
-    ///
-    /// Mirrors Python's `Link.set_resource_started_callback`.
-    public var onResourceStarted: ((ResourceTransfer) -> Void)?
-
-    /// Called when an incoming resource transfer completes (whether accepted via
-    /// `acceptAll` or `acceptApp`).
-    ///
-    /// The first argument is the reassembled payload.
-    public var onResourceConcluded: ((Data, ResourceAdvertisement, Link) -> Void)?
-
-    // MARK: - Python-style setter methods (mirrors Python Link.set_*_callback / set_resource_strategy)
-
-    /// Mirrors Python's `Link.set_link_established_callback(callback)`.
-    public func setLinkEstablishedCallback(_ callback: @escaping (Link) -> Void) { onEstablished = callback }
-
-    /// Mirrors Python's `Link.set_link_closed_callback(callback)`.
-    public func setLinkClosedCallback(_ callback: @escaping (Link) -> Void) { onClosed = callback }
-
-    /// Mirrors Python's `Link.set_packet_callback(callback)`.
-    public func setPacketCallback(_ callback: @escaping (Data, Link) -> Void) { onDataReceived = callback }
-
-    /// Mirrors Python's `Link.set_resource_callback(callback)`.
-    public func setResourceCallback(_ callback: @escaping (ResourceAdvertisement, Link) -> Bool) {
-        onResourceAdvertised = callback
-    }
-
-    /// Mirrors Python's `Link.set_resource_started_callback(callback)`.
-    public func setResourceStartedCallback(_ callback: @escaping (ResourceTransfer) -> Void) {
-        onResourceStarted = callback
-    }
-
-    /// Mirrors Python's `Link.set_resource_concluded_callback(callback)`.
-    public func setResourceConcludedCallback(_ callback: @escaping (Data, ResourceAdvertisement, Link) -> Void) {
-        onResourceConcluded = callback
-    }
-
-    /// Mirrors Python's `Link.set_remote_identified_callback(callback)`.
-    public func setRemoteIdentifiedCallback(_ callback: @escaping (Link, Identity) -> Void) {
-        onRemoteIdentified = callback
-    }
-
-    /// Mirrors Python's `Link.set_resource_strategy(resource_strategy)`.
-    public func setResourceStrategy(_ strategy: ResourceStrategy) { resourceStrategy = strategy }
-
-    // Resource transfer state—managed by ResourceTransfer.
-    var outgoingResources: [ResourceTransfer] = []
-    var incomingResources: [ResourceTransfer] = []
-
-    /// Called by ResourceTransfer when a transfer concludes.
-    ///
-    /// Updates `expectedRate`.
-    /// Mirrors Python `Link.resource_concluded(resource)`.
-    func resourceConcluded(dataSize: Int, duration: TimeInterval) {
-        let elapsed = max(duration, 0.0001)
-        expectedRate = Double(dataSize * 8) / elapsed
-    }
-
-    func registerOutgoingResource(_ rt: ResourceTransfer) {
-        stateLock.lock(); outgoingResources.append(rt); stateLock.unlock()
-    }
-    func unregisterOutgoingResource(_ rt: ResourceTransfer) {
-        stateLock.lock(); outgoingResources.removeAll { $0 === rt }; stateLock.unlock()
-    }
-    func registerIncomingResource(_ rt: ResourceTransfer) {
-        stateLock.lock(); incomingResources.append(rt); stateLock.unlock()
-    }
-    func unregisterIncomingResource(_ rt: ResourceTransfer) {
-        stateLock.lock(); incomingResources.removeAll { $0 === rt }; stateLock.unlock()
-    }
-
-    private var lastResourceWindow: Int? = nil
-    private var lastResourceEifr: Double? = nil
-
-    /// Returns whether the given resource is in the incoming queue.
-    ///
-    /// Mirrors Python `Link.has_incoming_resource()`.
-    public func hasIncomingResource(_ rt: ResourceTransfer) -> Bool {
-        stateLock.lock(); defer { stateLock.unlock() }
-        return incomingResources.contains { $0 === rt }
-    }
-
-    /// Returns the window size of the last completed incoming resource.
-    ///
-    /// Mirrors Python `Link.get_last_resource_window()`.
-    public func getLastResourceWindow() -> Int? {
-        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceWindow
-    }
-
-    /// Returns the EIFR of the last completed incoming resource.
-    ///
-    /// Mirrors Python `Link.get_last_resource_eifr()`.
-    public func getLastResourceEifr() -> Double? {
-        stateLock.lock(); defer { stateLock.unlock() }; return lastResourceEifr
-    }
-
-    /// Removes the resource from the outgoing queue.
-    ///
-    /// Mirrors Python `Link.cancel_outgoing_resource()`.
-    public func cancelOutgoingResource(_ rt: ResourceTransfer) {
-        stateLock.lock(); outgoingResources.removeAll { $0 === rt }; stateLock.unlock()
-    }
-
-    /// Removes the resource from the incoming queue.
-    ///
-    /// Mirrors Python `Link.cancel_incoming_resource()`.
-    public func cancelIncomingResource(_ rt: ResourceTransfer) {
-        stateLock.lock(); incomingResources.removeAll { $0 === rt }; stateLock.unlock()
-    }
-
-    /// Returns true if there are no outgoing resources pending.
-    ///
-    /// Mirrors Python `Link.ready_for_new_resource()`.
-    public func readyForNewResource() -> Bool {
-        stateLock.lock(); defer { stateLock.unlock() }; return outgoingResources.isEmpty
-    }
-
-    /// Called by ResourceTransfer when an incoming resource concludes—records window and EIFR.
-    func recordIncomingResourceConclusion(window: Int, eifr: Double?) {
-        stateLock.lock(); lastResourceWindow = window; lastResourceEifr = eifr; stateLock.unlock()
-    }
-
-    func testSetLastResourceWindow(_ w: Int) {
-        stateLock.lock(); lastResourceWindow = w; stateLock.unlock()
-    }
-    func testSetLastResourceEifr(_ e: Double) {
-        stateLock.lock(); lastResourceEifr = e; stateLock.unlock()
-    }
-
-    /// Record outbound-packet bookkeeping (timestamps + counters) under `stateLock`.
-    /// `countPacket` bumps tx/txBytes; `isData` bumps lastData (keepalives skip it).
-    ///
-    /// Called AFTER `transport.send` returns, so the lock is never held across the send.
-    private func recordOutbound(bytes: Int, countPacket: Bool, isData: Bool) {
-        stateLock.lock()
-        let ts = Date()
-        lastOutbound = ts
-        if isData { lastData = ts }
+    switch curStatus {
+    case .pending, .handshake:
+      let requestedAt = requestTime ?? now
+      let deadline = requestedAt.addingTimeInterval(unsafeEstablishmentTimeout)
+      if now >= deadline {
+        unsafeTeardownReason = .timeout
+        unsafeStatus = .failed
+        let cb = unsafeOnTimeout
+        unsafeOnTimeout = nil
         stateLock.unlock()
-        // Outside `stateLock`—the counters carry their own lock, and taking
-        // them separately keeps the two locks from ever nesting.
-        if countPacket { counters.addTx(bytes: bytes) }
-    }
-
-    /// Record inbound lastInbound + rx/rxBytes under `stateLock`.
-    private func recordInbound(bytes: Int, at ts: Date = Date()) {
-        stateLock.lock(); lastInbound = ts; stateLock.unlock()
-        counters.addRx(bytes: bytes)
-    }
-
-    /// Send pre-encrypted resource segment data without applying link-level
-    /// encryption (matches Python: "A resource takes care of encryption by itself").
-    func sendResourcePart(_ encryptedData: Data) throws {
-        guard status == .active else { throw LinkError.notActive }
-        guard let linkID, let transport else { throw LinkError.invalidState }
-        let packet = Packet(
-            destinationType: .link,
-            packetType: .data,
-            destinationHash: linkID,
-            context: .resource,
-            data: encryptedData
-        )
-        try transport.send(packet, generateReceipt: false)
-        recordOutbound(bytes: 0, countPacket: false, isData: false)
-    }
-
-    /// Send resource proof packet (PROOF type, not link-encrypted, matches Python).
-    func sendResourceProof(_ proofData: Data) throws {
-        guard status == .active else { throw LinkError.notActive }
-        guard let linkID, let transport else { throw LinkError.invalidState }
-        let packet = Packet(
-            destinationType: .link,
-            packetType: .proof,
-            destinationHash: linkID,
-            context: .resourceProof,
-            data: proofData
-        )
-        try transport.send(packet, generateReceipt: false)
-        recordOutbound(bytes: 0, countPacket: false, isData: false)
-    }
-
-    /// Returns the Channel for this link, creating one if needed.
-    ///
-    /// Matches Python's `Link.get_channel()`.
-    public func getChannel() -> Channel {
-        stateLock.lock()
-        if let ch = channel { stateLock.unlock(); return ch }
-        stateLock.unlock()
-        // Construct OUTSIDE the lock (the Channel initializer may touch the outlet),
-        // then double-check under the lock so a concurrent caller can't install two.
-        let outlet = LinkChannelOutlet(link: self)
-        let ch = Channel(outlet: outlet)
-        stateLock.lock()
-        if let existing = channel { stateLock.unlock(); return existing }
-        channel = ch
-        stateLock.unlock()
-        return ch
-    }
-
-    /// Failures raised by link operations.
-    public enum LinkError: Swift.Error, Equatable {
-        case malformedRequest
-        case malformedProof
-        case missingResponderIdentity
-        case invalidSignature
-        case invalidState
-        case notActive
-    }
-
-    // MARK: - Initiator
-
-    /// Create an initiator-side link bound to `destination` and send the
-    /// link request on `transport`.
-    ///
-    /// Caller must `transport.register(link:)`
-    /// before sending if it wants `Transport` to deliver the proof.
-    public static func initiate(
-        destination: Destination,
-        transport: Transport
-    ) throws -> Link {
-        let link = Link(role: .initiator, destination: destination)
-        link.transport = transport
-
-        // Use next-hop HW MTU if available (link MTU discovery).
-        // Mirrors Python: Transport.next_hop_interface_hw_mtu → Link.signalling_bytes.
-        let signaledMtu = transport.nextHopInterfaceHwMtu(for: destination.hash) ?? Constants.mtu
-        let body = link.pubBytes + link.sigPubBytes + mtuSignallingBytes(mtu: signaledMtu)
-        let packet = Packet(
-            destinationType: .single,
-            packetType: .linkRequest,
-            destinationHash: destination.hash,
-            data: body
-        )
-
-        // Python strips any signalling bytes beyond ECPUBSIZE from the hashable part
-        // before computing the link ID. Mirrors `Link.link_id_from_lr_packet`:
-        //   if len(packet.data) > ECPUBSIZE: hashable_part = hashable_part[:-diff]
-        // This ensures Swift and Python agree on the link_id regardless of whether
-        // MTU signalling is present in the LINK_REQUEST payload.
-        link.linkID = Hashes.truncatedHash(try Link.linkIDHashable(for: packet, dataLength: body.count))
-        link.requestTime = Date()
-        // Scale establishment timeout by hop count and add first-hop propagation time.
-        // Mirrors Python Link.__init__ lines 283–284:
-        //   self.establishment_timeout  = RNS.Reticulum.get_instance().get_first_hop_timeout(destination.hash)
-        //   self.establishment_timeout += Link.ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, hops_to(destination.hash))
-        let hops = transport.hopsTo(destination.hash) ?? 1
-        // Record hop distance to the destination on the initiator side.
-        // Python: self.expected_hops = RNS.Transport.hops_to(self.destination.hash)
-        link.expectedHops = transport.hopsTo(destination.hash).map(Int.init)
-        let fht  = transport.firstHopTimeout(for: destination.hash)
-        link.establishmentTimeout = fht + Link.establishmentTimeoutPerHop * TimeInterval(max(1, hops))
-        transport.register(link: link)
-
-        try transport.send(packet, generateReceipt: false)
-        link.startWatchdog()
-        return link
-    }
-
-    // MARK: - Responder
-
-    /// Build a responder-side link from a received LRR packet.
-    ///
-    /// Computes
-    /// link id, derives the shared key, sends the proof packet.
-    public static func answer(
-        request packet: Packet,
-        destination: Destination,
-        owner: Identity,
-        transport: Transport
-    ) throws -> Link {
-        // Accept 64-byte (no signalling) or 67-byte (with MTU signalling) requests.
-        guard packet.data.count == Constants.keySize
-                || packet.data.count == Constants.keySize + 3 else {
-            throw LinkError.malformedRequest
-        }
-        guard let signingPrivateKey = owner.signingPrivateKey,
-              let _ = owner.encryptionPrivateKey else {
-            throw LinkError.missingResponderIdentity
-        }
-
-        let initiatorEncRaw = packet.data.prefix(Constants.halfKeySize)
-        let initiatorSigRaw = packet.data[Constants.halfKeySize ..< Constants.keySize]
-        let initiatorEnc = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: initiatorEncRaw)
-        let initiatorSig = try Curve25519.Signing.PublicKey(rawRepresentation: initiatorSigRaw)
-
-        // Responder's ephemeral X25519 is fresh. Its signing key is the
-        // owning identity's Ed25519 key—that's what the initiator already
-        // knows, so the link id is signed with it.
-        let link = Link(
-            role: .responder,
-            destination: destination,
-            prv: Curve25519.KeyAgreement.PrivateKey(),
-            sigPrv: signingPrivateKey
-        )
-        link.transport = transport
-        link.peerPub = initiatorEnc
-        link.peerPubBytes = Data(initiatorEncRaw)
-        link.peerSigPub = initiatorSig
-        link.peerSigPubBytes = Data(initiatorSigRaw)
-
-        // Mirror Python's link_id_from_lr_packet: strip any signalling bytes (beyond ECPUBSIZE)
-        // from the hashable part so both sides agree on the link_id regardless of signalling.
-        link.linkID = Hashes.truncatedHash(try Link.linkIDHashable(for: packet, dataLength: packet.data.count))
-        try link.deriveSharedKey()
-
-        // Mirror Python validate_request (lines 207–208 in Link.py):
-        //   link.establishment_timeout = ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, packet.hops) + KEEPALIVE
-        //   link.request_time = time.time()
-        // The KEEPALIVE constant (360 s) gives the responder ample time to receive the RTT
-        // packet on slow radio links or across many hops.
-        link.requestTime = Date()
-        link.establishmentTimeout =
-            Link.establishmentTimeoutPerHop * TimeInterval(max(1, Int(packet.hops))) + Link.keepaliveInterval
-
-        // Adopt the MTU signalled in the LINK_REQUEST (RNS link MTU discovery).
-        // Mirrors Python `validate_request`: `link.mtu = mtu_from_lr_packet(packet) or MTU`.
-        // The confirmed value is echoed back in the proof (see sendProof). This side never
-        // shrink below the default 500 even if a peer signals a smaller value.
-        if packet.data.count == Constants.keySize + 3 {
-            let signalling = Data(packet.data[Constants.keySize ..< Constants.keySize + 3])
-            if let requestedMtu = Link.mtuFromSignalling(signalling), requestedMtu >= Constants.mtu {
-                link.establishedMtu = requestedMtu
-            }
-        }
-
-        transport.register(link: link)
-        return link
-    }
-
-    /// Build and send the LRPR proof packet for a responder-side link that
-    /// has just been registered.
-    ///
-    /// Split from `answer` so the caller can hook
-    /// `onEstablished` before any reply travels (matters under synchronous
-    /// loopback transports).
-    public func sendProof() throws {
-        guard role == .responder, let linkID, let transport else {
-            throw LinkError.invalidState
-        }
-        // Include 3-byte MTU signalling in both the signed data and the proof packet.
-        // Confirm the MTU adopted from the request so the initiator can adopt
-        // the same value (Python `prove`: `signalling_bytes(self.mtu, self.mode)`).
-        let sig = Link.mtuSignallingBytes(mtu: establishedMtu)
-        let signedData = linkID + pubBytes + sigPubBytes + sig
-        let signature = try sigPrv.signature(for: signedData)
-        let proof = Packet(
-            destinationType: .link,
-            packetType: .proof,
-            destinationHash: linkID,
-            context: .lrproof,
-            data: signature + pubBytes + sig
-        )
-        try transport.send(proof, generateReceipt: false)
-    }
-
-    // MARK: - Data-packet proof (mirrors Python Link.prove_packet)
-
-    /// Send an explicit proof for the most-recently received link DATA packet.
-    ///
-    /// Mirrors Python's `link.prove_packet(packet)`:
-    /// ```python
-    /// signature = self.sign(packet.packet_hash)
-    /// proof_data = packet.packet_hash + signature
-    /// proof = RNS.Packet(self, proof_data, RNS.Packet.PROOF)
-    /// proof.send()
-    /// ```
-    /// Must be called immediately after `onDataReceived` fires so that
-    /// `lastReceivedDataPacketHash` holds the correct hash.
-    ///
-    /// Called by LXMRouter.delivery_packet (via link.onDataReceived) to prove
-    /// every inbound LXMF link packet—matching Python LXMF's explicit
-    /// `packet.prove()` at the top of `delivery_packet`.
-    public func proveInboundData() {
-        stateLock.lock(); let packetHashSnap = lastReceivedDataPacketHash; stateLock.unlock()
-        guard let packetHash = packetHashSnap else { return }
-        proveLinkPacket(packetHash)
-    }
-
-    /// Sign `packetHash` with the link's own signing key and send an explicit
-    /// PROOF (`[full hash][signature]`, unencrypted) back over the link.
-    ///
-    /// Mirrors Python's `Link.prove_packet`. Used both by `proveInboundData`
-    /// (LXMF DIRECT) and by the CHANNEL receive path so the sender's Channel
-    /// can advance its send window.
-    func proveLinkPacket(_ packetHash: Data) {
-        guard status == .active, let linkID, let transport else { return }
-        guard let signature = try? sigPrv.signature(for: packetHash) else { return }
-        let proofData = packetHash + signature
-        let proof = Packet(
-            destinationType: .link,
-            packetType: .proof,
-            destinationHash: linkID,
-            context: .none,
-            data: proofData
-        )
-        try? transport.send(proof, generateReceipt: false)
-        recordOutbound(bytes: 0, countPacket: false, isData: false)
-    }
-
-    // MARK: - Channel packet delivery proofs (sender side)
-
-    /// Encrypt and send a CHANNEL-context data packet, returning the full packet
-    /// hash so the caller (`LinkChannelOutlet`) can match the returning delivery
-    /// proof to its `ChannelPacketHandle`.
-    ///
-    /// Mirrors Python's
-    /// `LinkChannelOutlet.send` → `packet.send()` (which creates a receipt), but
-    /// the delivery proof is matched at the Link layer (see `channelProofWaiters`)
-    /// because Transport receipts are only created for SINGLE-destination packets.
-    func sendChannelData(_ plaintext: Data) -> Data? {
-        guard status == .active, let linkID, let transport else { return nil }
-        guard let ciphertext = try? encrypt(plaintext) else { return nil }
-        let packet = Packet(
-            destinationType: .link,
-            packetType: .data,
-            destinationHash: linkID,
-            context: .channel,
-            data: ciphertext
-        )
-        let hash = try? packet.packetHash()
-        try? transport.send(packet, generateReceipt: false)
-        recordOutbound(bytes: ciphertext.count, countPacket: true, isData: true)
-        return hash
-    }
-
-    /// Register a channel packet's full hash so an inbound explicit PROOF can
-    /// mark its `ChannelPacketHandle` delivered.
-    ///
-    /// Prunes entries whose handle has
-    /// already concluded (bounds stale hashes left by retransmissions, which
-    /// re-encrypt to a fresh hash each time).
-    func trackChannelProof(hash: Data, handle: ChannelPacketHandle) {
-        stateLock.lock()
-        channelProofWaiters = channelProofWaiters.filter { $0.value.state == .sent }
-        channelProofWaiters[hash] = handle
-        stateLock.unlock()
-    }
-
-    /// Match an inbound explicit link-data PROOF (`[full hash][signature]`) to a
-    /// pending channel packet, validating the signature against the link peer's
-    /// signing key (Python `Link.validate`), and mark the handle delivered.
-    ///
-    /// Returns `true` when the proof matched an outstanding channel packet, so the caller knows
-    /// not to try the packet-receipt table as well.
-    @discardableResult
-    private func handleChannelProof(_ proofData: Data) -> Bool {
-        guard proofData.count == Constants.fullHashLength + Constants.signatureLength else { return false }
-        let hash = Data(proofData.prefix(Constants.fullHashLength))
-        let signature = Data(proofData.suffix(Constants.signatureLength))
-        stateLock.lock()
-        let peer = peerSigPub
-        let handle = channelProofWaiters[hash]
-        stateLock.unlock()
-        guard let peer, let handle else { return false }
-        guard peer.isValidSignature(signature, for: hash) else { return false }
-        stateLock.lock()
-        // Drop every hash pointing at this handle (the matched one plus any stale
-        // retransmission hashes) so the map stays tight.
-        for (k, v) in channelProofWaiters where v === handle { channelProofWaiters.removeValue(forKey: k) }
-        stateLock.unlock()
-        handle.markDelivered()
-        return true
-    }
-
-    /// Conclude the packet receipt for an ordinary link data packet the peer has proved.
-    ///
-    /// The other half of `bugs/014`. A link data proof carries `[full hash][signature]` signed
-    /// with the peer's **link** signing key (`proveLinkPacket`), not with its destination
-    /// identity—so `PacketReceipt.validateExplicitProof` can't check it and this is the only
-    /// layer that can: `peerSigPub` exists nowhere else. The signature is verified here and the
-    /// receipt is then concluded directly.
-    private func handleDataProof(_ proofData: Data, packet: Packet) {
-        guard proofData.count == Constants.fullHashLength + Constants.signatureLength else { return }
-        let hash = Data(proofData.prefix(Constants.fullHashLength))
-        let signature = Data(proofData.suffix(Constants.signatureLength))
-        stateLock.lock()
-        let peer = peerSigPub
-        stateLock.unlock()
-        guard let peer, peer.isValidSignature(signature, for: hash) else { return }
-        transport?.concludeLinkReceipt(packetHash: hash, proofPacket: packet)
-    }
-
-    // MARK: - Init
-
-    private init(role: Role, destination: Destination) {
-        self.role = role
-        self.destination = destination
-        self.prv = Curve25519.KeyAgreement.PrivateKey()
-        self.sigPrv = Curve25519.Signing.PrivateKey()
-    }
-
-    private init(
-        role: Role,
-        destination: Destination,
-        prv: Curve25519.KeyAgreement.PrivateKey,
-        sigPrv: Curve25519.Signing.PrivateKey
-    ) {
-        self.role = role
-        self.destination = destination
-        self.prv = prv
-        self.sigPrv = sigPrv
-    }
-
-    // MARK: - Initiator: validate proof
-
-    /// Process an incoming LRPR packet.
-    ///
-    /// On success, the link transitions to
-    /// `.active`, sends the encrypted RTT packet, and fires `onEstablished`.
-    /// Whether `packet` carries a valid link-request-proof signature for this
-    /// link, without adopting any of it.
-    ///
-    /// `validateProof` does the same check as its first step, but it also
-    /// activates the link. Path re-balancing has to establish that the proof is
-    /// genuine *before* it rewrites the path table—otherwise anyone able to
-    /// forge a proof could move a path—and it has to run before the link is
-    /// activated, so an `onEstablished` observer receives the corrected hop count.
-    /// Mirrors the inline signature check Python performs for exactly this
-    /// purpose in `Transport.inbound` (Transport.py:2279-2296).
-    /// Validate a link-request proof against a responder identity supplied by the caller.
-    ///
-    /// The relay form of the check below. A transport node has no `Link` object—it holds a
-    /// routing entry and the responder's identity from an earlier announce—so it can't reach
-    /// the instance version, which reads `destination.identity` and `linkID` off `self`.
-    /// Python has the same split: `Link.validate_proof` at the terminus, and an open-coded
-    /// copy in `Transport.inbound` for the relay (`Transport.py:2646-2657`).
-    ///
-    /// An LRPROOF's destination hash *is* the link ID, which is what makes the packet
-    /// self-describing enough to check without any link state.
-    static func proofSignatureIsValid(_ packet: Packet, responderIdentity: Identity) -> Bool {
-        let baseLen = Constants.signatureLength + Constants.halfKeySize
-        guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }
-        let signature = packet.data.prefix(Constants.signatureLength)
-        let responderPubBytes = packet.data[Constants.signatureLength ..< baseLen]
-        // Python recomputes these from `mtu_from_lp_packet`/`mode_from_lp_packet` rather than
-        // slicing. The round-trip is exact—the mask and shift partition the same 24 bits—so
-        // slicing gives identical bytes, and matches how the instance check below reads them.
-        let signallingBytes: Data = packet.data.count == baseLen + 3
-            ? Data(packet.data[baseLen...])
-            : Data()
-        let responderSigPub = responderIdentity.signingPublicKey
-        let signedData = packet.destinationHash + responderPubBytes
-            + responderSigPub.rawRepresentation + signallingBytes
-        return responderSigPub.isValidSignature(signature, for: signedData)
-    }
-
-    func proofSignatureIsValid(_ packet: Packet) -> Bool {
-        let baseLen = Constants.signatureLength + Constants.halfKeySize
-        guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else { return false }
-        let signature = packet.data.prefix(Constants.signatureLength)
-        let responderPubBytes = packet.data[Constants.signatureLength ..< baseLen]
-        let signallingBytes: Data = packet.data.count == baseLen + 3
-            ? Data(packet.data[baseLen...])
-            : Data()
-        guard let destinationIdentity = destination.identity, let linkID else { return false }
-        let responderSigPub = destinationIdentity.signingPublicKey
-        let signedData = linkID + responderPubBytes
-            + responderSigPub.rawRepresentation + signallingBytes
-        return responderSigPub.isValidSignature(signature, for: signedData)
-    }
-
-    /// Validates a link-request proof and completes the handshake.
-    public func validateProof(_ packet: Packet) throws {
-        guard role == .initiator else { throw LinkError.invalidState }
-        guard status == .pending else { throw LinkError.invalidState }
-        let baseLen = Constants.signatureLength + Constants.halfKeySize
-        // Accept 96-byte (no signalling) or 99-byte (with MTU signalling) proofs.
-        guard packet.data.count == baseLen || packet.data.count == baseLen + 3 else {
-            throw LinkError.malformedProof
-        }
-
-        let signature = packet.data.prefix(Constants.signatureLength)
-        let responderPubBytes = packet.data[Constants.signatureLength ..< baseLen]
-        // If present, extract the 3-byte signalling and include it in signature
-        // verification (Python always signs linkID+pub+sigPub+signalling).
-        let signallingBytes: Data = packet.data.count == baseLen + 3
-            ? Data(packet.data[baseLen...])
-            : Data()
-
-        let responderPub = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: responderPubBytes)
-        guard let destinationIdentity = destination.identity else {
-            throw LinkError.missingResponderIdentity
-        }
-        let responderSigPubBytes = destinationIdentity.signingPublicKey.rawRepresentation
-        let responderSigPub = destinationIdentity.signingPublicKey
-
-        guard let linkID else { throw LinkError.invalidState }
-        let signedData = linkID + responderPubBytes + responderSigPubBytes + signallingBytes
-        guard responderSigPub.isValidSignature(signature, for: signedData) else {
-            throw LinkError.invalidSignature
-        }
-
-        stateLock.lock()
-        self.peerPub = responderPub
-        self.peerPubBytes = Data(responderPubBytes)
-        self.peerSigPub = responderSigPub
-        self.peerSigPubBytes = responderSigPubBytes
-        // Adopt the MTU the responder confirmed in the proof (RNS link MTU
-        // discovery). Mirrors Python `validate_proof`:
-        //   `confirmed_mtu = mtu_from_lp_packet(packet); self.mtu = confirmed_mtu or MTU`.
-        if let confirmedMtu = Link.mtuFromSignalling(signallingBytes), confirmedMtu >= Constants.mtu {
-            self.establishedMtu = confirmedMtu
-        }
-        stateLock.unlock()
-
-        try deriveSharedKey()
-
-        stateLock.lock()
-        if let rt = requestTime { self.rtt = Date().timeIntervalSince(rt) }
-        self.unsafeStatus = .active
-        self.establishedAt = Date()
-        // establishment_cost = KEYSIZE/8*2 + SIGLENGTH/8 + ECPUBSIZE/2 + ECPUBSIZE
-        // Matches Python's formula: 64*2 + 64 + 32 + 64 = 288 bytes.
-        let cost = Constants.keySize * 2 + Constants.keySize + Constants.halfKeySize + Constants.keySize
-        self.establishmentCost = cost
-        if let r = self.rtt, r > 0 { self.establishmentRate = Double(cost) / r }
-        let rttValue = self.rtt ?? 0
-        let transportSnap = transport
-        stateLock.unlock()
-
-        // Send LRRTT (msgpack float, encrypted) to acknowledge.
-        let rttPlain = MsgPack.encodeDouble(rttValue)
-        let rttCiphertext = try encrypt(rttPlain)
-        let rttPacket = Packet(
-            destinationType: .link,
-            packetType: .data,
-            destinationHash: linkID,
-            context: .lrrtt,
-            data: rttCiphertext
-        )
-        try transportSnap?.send(rttPacket)
-
-        // Mark path responsive on successful link establishment.
-        // Mirrors Python: Transport.mark_path_responsive(self.destination.hash)
-        transportSnap?.markPathResponsive(for: destination.hash)
-        onEstablished?(self)
-    }
-
-    // MARK: - Responder: receive RTT
-
-    /// Process the LRRTT packet on the responder side.
-    ///
-    /// Marks the link
-    /// active and fires `onEstablished`.
-    ///
-    /// Mirrors Python's `Link.rtt_packet` (lines 534–551 in Link.py):
-    ///   measured_rtt = time.time() - self.request_time
-    ///   rtt = umsgpack.unpackb(plaintext)
-    ///   self.rtt = max(measured_rtt, rtt)
-    ///   self.establishment_rate = self.establishment_cost / self.rtt
-    public func receiveRTT(_ packet: Packet) throws {
-        guard role == .responder else { throw LinkError.invalidState }
-        guard status == .handshake else { throw LinkError.invalidState }
-
-        let plaintext = try decrypt(packet.data)
-        let reportedRTT = (try? MsgPack.decodeDouble(plaintext)) ?? 0
-        stateLock.lock()
-        // Take the maximum of the locally measured round-trip time and the initiator's
-        // reported value—whichever is larger is the more conservative estimate.
-        let measuredRTT = requestTime.map { Date().timeIntervalSince($0) } ?? reportedRTT
-        self.rtt = max(measuredRTT, reportedRTT)
-        // Compute establishment rate if cost data exists.
-        if let r = self.rtt, r > 0, establishmentCost > 0 {
-            self.establishmentRate = Double(establishmentCost) / r
-        }
-        self.unsafeStatus = .active
-        self.establishedAt = Date()
-        // Record the hop count of the RTT packet so the responder also knows the
-        // link's hop distance. Python (RNS 1.3.8): self.expected_hops = packet.hops
-        self.unsafeExpectedHops = Int(packet.hops)
-        stateLock.unlock()
-        onEstablished?(self)
-    }
-
-    // MARK: - Crypto plumbing
-
-    private func deriveSharedKey() throws {
-        guard let peerPub, let linkID else { throw LinkError.invalidState }
-        let shared = try prv.sharedSecretFromKeyAgreement(with: peerPub)
-        let sharedData = shared.withUnsafeBytes { Data($0) }
-        // Mirrors RNS.Link.handshake: salt = link_id, no context.
-        // MODE_AES256_CBC (default) → 64-byte derived key → Token AES-256-CBC mode.
-        // Python: HKDF(length=64) when mode == MODE_AES256_CBC.
-        let derived = HKDF.derive(
-            length: Constants.derivedKeyLength,
-            derivedFrom: sharedData,
-            salt: linkID,
-            context: nil
-        )
-        // Token construction is a pure (throwing) initializer with no callout, but
-        // build it OUTSIDE the lock so a throw can't leak a held lock.
-        let newToken = try Token(key: derived)
-        stateLock.lock()
-        unsafeDerivedKey = derived
-        token = newToken
-        unsafeStatus = .handshake
-        stateLock.unlock()
-    }
-
-    /// Encrypts `plaintext` with the link session key.
-    public func encrypt(_ plaintext: Data) throws -> Data {
-        stateLock.lock(); let t = token; stateLock.unlock()
-        guard let t else { throw LinkError.notActive }
-        return try t.encrypt(plaintext)
-    }
-
-    /// Decrypts `ciphertext` with the link session key.
-    public func decrypt(_ ciphertext: Data) throws -> Data {
-        stateLock.lock(); let t = token; stateLock.unlock()
-        guard let t else { throw LinkError.notActive }
-        return try t.decrypt(ciphertext)
-    }
-
-    /// Closes the link and tells the far end.
-    public func close() {
-        // Snapshot the terminal decision + clear the session key atomically under the
-        // lock; run stopWatchdog / markPathUnresponsive / onClosed OUTSIDE it.
-        stateLock.lock()
-        let wasTimeout = (unsafeTeardownReason == .timeout)
-        // Preserve .failed/.stale status set by the watchdog; only override to .closed
-        // for explicit clean closes.
-        if unsafeStatus != .failed && unsafeStatus != .stale { unsafeStatus = .closed }
-        token = nil
-        unsafeDerivedKey = nil
-        channelProofWaiters.removeAll()
-        stateLock.unlock()
-
         stopWatchdog()
-        // Mark path unresponsive on timeout teardown.
-        // Mirrors Python: link_closed() → if teardown_reason == TIMEOUT: mark_path_unresponsive
-        if wasTimeout { transport?.markPathUnresponsive(for: destination.hash) }
-        onClosed?(self)
-    }
+        // Mark path unresponsive on timeout.
+        // Mirrors Python: Transport.mark_path_unresponsive(destination.hash)
+        transport?.markPathUnresponsive(for: destination.hash)
+        DispatchQueue.global(qos: .utility).async { cb?(self) }
+        close()
+        return
+      }
+      let nextTick = max(0.5, deadline.timeIntervalSince(now))
+      stateLock.unlock()
+      rescheduleWatchdog(after: nextTick)
 
-    // MARK: - Inactivity helpers
-
-    /// Seconds since the last inbound packet (including keepalives).
-    ///
-    /// Mirrors Python's `Link.no_inbound_for()`.
-    /// Time in seconds since the link was established. Returns `nil` if the
-    /// link hasn't yet become active. Mirrors Python `Link.get_age()`.
-    /// Returns the link ID (used as HKDF salt during handshake).
-    /// Mirrors Python's `Link.get_salt()` which returns `self.link_id`.
-    public func getSalt() -> Data? { linkID }
-
-    /// Returns the link context (always nil in current implementation).
-    ///
-    /// Mirrors Python's `Link.get_context()`.
-    public func getContext() -> Data? { nil }
-
-    /// Returns the expected in-flight data rate (bits/second) of an established link.
-    ///
-    /// Nil if the link isn't active or no transfer has concluded.
-    /// Mirrors Python's `Link.get_expected_rate()`.
-    public func getExpectedRate() -> Double? {
-        guard status == .active else { return nil }
-        return expectedRate
-    }
-
-    /// Returns the link MTU for an established link, nil if not active.
-    ///
-    /// Mirrors Python's `Link.get_mtu()`.
-    public func getMtu() -> Int? {
-        guard status == .active else { return nil }
-        return establishedMtu
-    }
-
-    /// Returns the packet MDU for an established link, nil if not active.
-    ///
-    /// Mirrors Python's `Link.get_mdu()`.
-    public func getMdu() -> Int? {
-        guard status == .active else { return nil }
-        return mdu
-    }
-
-    /// Returns the data transfer rate at link establishment in bits/second, or nil.
-    ///
-    /// Mirrors Python's `Link.get_establishment_rate()` which returns
-    /// `self.establishment_rate * 8` (converts bytes/s to bits/s).
-    public func getEstablishmentRate() -> Double? {
-        guard let rate = establishmentRate else { return nil }
-        return rate * 8.0
-    }
-
-    /// Returns the cipher mode byte for this link.
-    ///
-    /// Mirrors Python's `Link.get_mode()`.
-    public func getMode() -> UInt8 { mode }
-
-    /// Returns the current link status.
-    ///
-    /// Mirrors Python's `Link.status` (direct attribute access).
-    public func getStatus() -> Status { status }
-
-    /// Returns the 16-byte link ID (HKDF salt), or nil before establishment.
-    ///
-    /// Mirrors Python's `Link.link_id` (direct attribute access).
-    public func getLinkID() -> Data? { linkID }
-
-    /// Returns the measured round-trip time in seconds, or nil before establishment.
-    ///
-    /// Mirrors Python's `Link.rtt` (direct attribute access).
-    public func getRtt() -> TimeInterval? { rtt }
-
-    /// Returns the identity revealed by the remote peer via `identify()`, or nil.
-    ///
-    /// Mirrors Python's `Link.remote_identity` (direct attribute access).
-    public func getRemoteIdentity() -> Identity? {
-        stateLock.lock(); defer { stateLock.unlock() }; return remoteIdentity
-    }
-
-    /// Returns the reason the link was torn down, or nil while the link is active.
-    ///
-    /// Mirrors Python's `Link.teardown_reason` (direct attribute access).
-    public func getTeardownReason() -> TeardownReason? { teardownReason }
-
-    /// Returns how long the link has been established, or `nil` before it is.
-    public func getAge() -> TimeInterval? {
-        guard let at = establishedAt else { return nil }
-        return Date().timeIntervalSince(at)
-    }
-
-    /// Time in seconds since the last non-keepalive data traversed the link.
-    ///
-    /// Excludes keepalive packets (mirrors Python `Link.no_data_for()`).
-    /// Returns a large value if no data has been sent or received yet.
-    public func noDataFor() -> TimeInterval {
-        guard let last = lastData else { return Date().timeIntervalSinceReferenceDate }
-        return Date().timeIntervalSince(last)
-    }
-
-    /// Returns the time in seconds since inbound traffic was last seen.
-    public func noInboundFor() -> TimeInterval {
-        // Use establishedAt as the baseline when available (matches Python's
-        // `last_inbound = max(self.last_inbound, activated_at)`). Fall back
-        // to requestTime so the value stays bounded before establishment.
-        let baseline = (establishedAt ?? requestTime ?? Date()).timeIntervalSinceReferenceDate
-        let last = max(lastInbound?.timeIntervalSinceReferenceDate ?? 0, baseline)
-        return Date().timeIntervalSinceReferenceDate - last
-    }
-
-    /// Seconds since the last outbound packet (including keepalives).
-    public func noOutboundFor() -> TimeInterval {
-        guard let last = lastOutbound else { return Date().timeIntervalSince(requestTime ?? Date()) }
-        return Date().timeIntervalSince(last)
-    }
-
-    /// Seconds since any activity on the link (min of inbound/outbound).
-    ///
-    /// Mirrors Python's `Link.inactive_for()`.
-    public func inactiveFor() -> TimeInterval { min(noInboundFor(), noOutboundFor()) }
-
-    /// Update the last-outbound timestamp (and last-data if not a keepalive).
-    ///
-    /// Mirrors Python's `Link.had_outbound(is_keepalive=False)`.
-    public func hadOutbound(isKeepalive: Bool = false) {
+    case .active:
+      // Use adaptive keepalive/stale times based on measured RTT.
+      // Mirrors Python's Link.__update_keepalive(). These helpers read plain
+      // fields (rtt / lastInbound / establishedAt / requestTime) and don't
+      // lock, so calling them while holding stateLock is safe.
+      let inboundAge = noInboundFor()
+      let outboundAge = noOutboundFor()
+      let ka = effectiveKeepalive
+      let st = effectiveStaleTime
+      var shouldSendKeepalive = false
+      var shouldMarkStale = false
+      let nextTick: TimeInterval
+      // Trigger a keepalive when EITHER inbound OR outbound has been idle for
+      // `keepalive`. A receive-only initiator (peer sends continuously) would
+      // otherwise never refresh its own last_outbound, so the destination tears
+      // the link down as stale despite live traffic. Mirrors Python Link.py:746
+      // (`now >= last_inbound + keepalive or now >= last_outbound + keepalive`),
+      // fixed in RNS 1.4.0 (commit e64d8150).
+      if inboundAge >= ka || outboundAge >= ka {
+        // Send a keepalive if this side is the initiator and hasn't sent one recently.
+        // Python sends it BEFORE the stale check (RNS/Link.py:749-751), so a
+        // link crossing stale_time still probes its peer.
+        if role == .initiator,
+          now.timeIntervalSince(lastKeepalive ?? .distantPast) >= ka
+        {
+          shouldSendKeepalive = true
+        }
+        if inboundAge >= st {
+          // No inbound for stale_time: mark stale but don't tear down yet.
+          // The next tick—after rtt*KEEPALIVE_TIMEOUT_FACTOR + STALE_GRACE—tears
+          // down only if no inbound rescued the link in the meantime.
+          // Mirrors Python RNS/Link.py:753-755; recovery is in receive()
+          // (RNS/Link.py:939 `if self.status == Link.STALE: ... ACTIVE`).
+          shouldMarkStale = true
+          nextTick = (rtt ?? 0) * Link.keepaliveTimeoutFactor + Link.staleGrace
+        } else {
+          nextTick = ka
+        }
+      } else {
+        // Next wake is when whichever timer is closest next crosses `ka`.
+        nextTick = max(0.5, ka - max(inboundAge, outboundAge))
+      }
+      stateLock.unlock()
+      // Keepalive goes out while the link is still .active (send() rejects
+      // non-active links); Python's ordering, RNS/Link.py:749-755.
+      if shouldSendKeepalive { try? sendKeepalive() }
+      if shouldMarkStale {
         stateLock.lock()
-        let ts = Date()
-        lastOutbound = ts
-        if isKeepalive { lastKeepalive = ts } else { lastData = ts }
+        if unsafeStatus == .active { unsafeStatus = .stale }
         stateLock.unlock()
+      }
+      rescheduleWatchdog(after: nextTick)
+
+    case .stale:
+      // Grace expired with no inbound recovery—tear down now.
+      // Mirrors Python's STALE watchdog branch (RNS/Link.py:761-765).
+      unsafeTeardownReason = .timeout
+      stateLock.unlock()
+      transport?.markPathUnresponsive(for: destination.hash)
+      try? teardown()
+      return
+
+    default:
+      stateLock.unlock()
+      return
+    }
+  }
+
+  /// Install the next watchdog fire, unless a concurrent close()/teardown() has
+  /// already made the link terminal—in which case the freshly built timer is
+  /// dropped so a stale tick can't resurrect a torn-down link's watchdog.
+  private func rescheduleWatchdog(after nextTick: TimeInterval) {
+    // Every watchdog sleep is clamped to watchdogMaxSleep so a status change
+    // between ticks (pending -> active at establishment) is observed within
+    // 5 s. Python clamps identically for every state: RNS/Link.py:776
+    // `sleep_time = min(sleep_time, Link.WATCHDOG_MAX_SLEEP)`. Without the
+    // clamp, the tick scheduled during .pending sleeps until the
+    // establishment deadline, no keepalive is ever sent on a link that goes
+    // idle right after establishing, and the first .active tick lands past
+    // effectiveStaleTime and kills the healthy link (bugs/034).
+    let tick = min(nextTick, Link.watchdogMaxSleep)
+    let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+    timer.schedule(deadline: .now() + tick, repeating: .never)
+    timer.setEventHandler { [weak self] in self?.watchdogTick() }
+    stateLock.lock()
+    guard unsafeStatus != .closed && unsafeStatus != .failed else {
+      stateLock.unlock()
+      // `cancel()` alone would trap: the timer hasn't been resumed yet, so it's still
+      // suspended, and releasing a suspended source kills the process (`bugs/032`).
+      timer.cancelUnstarted()
+      return
+    }
+    watchdogTimer = timer
+    stateLock.unlock()
+    timer.resume()
+  }
+
+  // MARK: - Data send / receive
+
+  /// Encrypt and send a data packet over the link. `context` defaults to
+  /// `.none` (a plain user-data packet); pass `.request`, `.response`,
+  /// `.channel`, and so on, for higher-level framing.
+  ///
+  /// Returns the delivery receipt for contexts the reference generates one for, so a caller
+  /// can learn whether the peer actually received the packet. This used to hardcode
+  /// `generateReceipt: false`, which is why nothing above the link layer could distinguish
+  /// "sent" from "delivered" and LXMF reported delivery from the return of this call
+  /// (`bugs/014`). `@discardableResult` because most callers—keepalives, link control,
+  /// resource parts—legitimately don't want one.
+  @discardableResult
+  public func send(_ plaintext: Data, context: Packet.Context = .none) throws -> PacketReceipt? {
+    guard status == .active else { throw LinkError.notActive }
+    guard let linkID, let transport else { throw LinkError.invalidState }
+    let ciphertext = try encrypt(plaintext)
+    let packet = Packet(
+      destinationType: .link,
+      packetType: .data,
+      destinationHash: linkID,
+      context: context,
+      data: ciphertext
+    )
+    let receipt = try transport.send(packet)
+    recordOutbound(bytes: ciphertext.count, countPacket: true, isData: context != .keepalive)
+    return receipt
+  }
+
+  // MARK: - Request helpers (called from LinkRequest.swift extension)
+
+  /// Encrypt `body` and build a link REQUEST Packet.
+  ///
+  /// Returns `(packet, requestID)` where `requestID` is the wire-format
+  /// truncated packet hash—mirrors Python's `packet.getTruncatedHash()`.
+  ///
+  /// The caller must store the receipt in `pendingRequests[requestID]`
+  /// **before** calling `sendPrebuiltPacket(_:)` so that a synchronous
+  /// loopback transport can deliver the response without missing the lookup.
+  func buildRequestPacket(_ body: Data) throws -> (Packet, Data) {
+    guard let linkID else { throw LinkError.invalidState }
+    let ciphertext = try encrypt(body)
+    let packet = Packet(
+      destinationType: .link,
+      packetType: .data,
+      destinationHash: linkID,
+      context: .request,
+      data: ciphertext
+    )
+    let requestID = (try? packet.truncatedPacketHash()) ?? Hashes.truncatedHash(body)
+    return (packet, requestID)
+  }
+
+  /// Send a pre-built link DATA packet and update outbound traffic stats.
+  func sendPrebuiltPacket(_ packet: Packet) throws {
+    guard let transport else { throw LinkError.invalidState }
+    try transport.send(packet, generateReceipt: false)
+    // only keepalive packets skip lastData; REQUEST isn't keepalive
+    recordOutbound(bytes: packet.data.count, countPacket: true, isData: true)
+  }
+
+  /// Process an inbound packet.
+  ///
+  /// Routes resource contexts without link-level
+  /// decryption (resource handles its own encryption); decrypts all others.
+  /// The optional `receivingInterface` is used to update PHY stats when `trackPhyStats` is true.
+  public func receive(_ packet: Packet, from receivingInterface: (any Interface)? = nil) throws {
+    // A stale link still processes inbound traffic, and any inbound packet
+    // promotes it back to active—Python accepts every non-CLOSED status
+    // and recovers with `if self.status == Link.STALE: self.status =
+    // Link.ACTIVE` (RNS/Link.py:931-939). Rejecting stale here would make
+    // the watchdog's stale grace period meaningless.
+    stateLock.lock()
+    if unsafeStatus == .stale { unsafeStatus = .active }
+    let curStatus = unsafeStatus
+    stateLock.unlock()
+    guard curStatus == .active else { throw LinkError.notActive }
+    updatePhyStats(from: receivingInterface)
+
+    // RESOURCE data parts—pre-encrypted by the resource layer; pass raw.
+    if packet.context == .resource {
+      recordInbound(bytes: packet.data.count)
+      let data = packet.data
+      for rt in snapshotIncomingResources() { rt.receivePart(data) }
+      return
     }
 
-    // MARK: - Watchdog
-
-    /// Start the background watchdog.
-    ///
-    /// Called automatically after the link
-    /// reaches `.handshake` (initiator) or `.pending` (responder).
-    /// Mirrors Python's `Link.start_watchdog()`.
-    public func startWatchdog() {
-        stopWatchdog()
-        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        timer.schedule(deadline: .now() + 0.1, repeating: .never)
-        timer.setEventHandler { [weak self] in self?.watchdogTick() }
-        stateLock.lock(); watchdogTimer = timer; stateLock.unlock()
-        timer.resume()
+    // RESOURCE_PRF proof—sent unencrypted (Python: "not encrypted").
+    if packet.packetType == .proof, packet.context == .resourceProof {
+      stateLock.lock()
+      lastInbound = Date()
+      stateLock.unlock()
+      let proofData = packet.data
+      guard proofData.count >= Constants.hashLength else { return }
+      let resourceHash = proofData.prefix(Constants.hashLength)
+      for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
+        rt.validateProof(proofData)
+      }
+      return
     }
 
-    private func stopWatchdog() {
-        stateLock.lock(); let t = watchdogTimer; watchdogTimer = nil; stateLock.unlock()
-        t?.cancel()
+    // Explicit link-data PROOF (context .none)—proof_data is
+    // `[full hash][signature]` and isn't link-encrypted (like RESOURCE_PRF).
+    // Sent by a peer's `prove_packet` to acknowledge a CHANNEL packet; match
+    // it to the pending `ChannelPacketHandle` so the sender's Channel window
+    // advances. Mirrors Python's Transport matching a link-DATA proof to the
+    // sending packet's receipt. Must be handled BEFORE the link-decrypt below,
+    // which would otherwise fail on the cleartext proof bytes.
+    if packet.packetType == .proof, packet.context == .none {
+      stateLock.lock()
+      lastInbound = Date()
+      stateLock.unlock()
+      // A context-`.none` proof is ambiguous between a channel proof and a proof for an
+      // ordinary link data packet. Channel waiters keep priority—that's the order the
+      // code already implied, so adding the receipt path is purely additive and can't
+      // regress the `bugs/005` channel-proof fix.
+      if handleChannelProof(packet.data) { return }
+      handleDataProof(packet.data, packet: packet)
+      return
     }
 
-    private func watchdogTick() {
-        // Snapshot the state machine under the lock and do the one-shot terminal
-        // check-and-set (status + teardownReason together) atomically; then release
-        // BEFORE every callout (markPathUnresponsive / onTimeout / close / teardown /
-        // sendKeepalive) so the lock is never held across a callback or Transport call.
-        stateLock.lock()
-        guard unsafeStatus != .closed && unsafeStatus != .failed else { stateLock.unlock(); return }
-        let now = Date()
-        let curStatus = unsafeStatus
+    // All other packets use link-level encryption.
+    let plaintext = try decrypt(packet.data)
+    let now = Date()
+    recordInbound(bytes: packet.data.count, at: now)
 
-        switch curStatus {
-        case .pending, .handshake:
-            let requestedAt = requestTime ?? now
-            let deadline = requestedAt.addingTimeInterval(unsafeEstablishmentTimeout)
-            if now >= deadline {
-                unsafeTeardownReason = .timeout
-                unsafeStatus = .failed
-                let cb = unsafeOnTimeout; unsafeOnTimeout = nil
-                stateLock.unlock()
-                stopWatchdog()
-                // Mark path unresponsive on timeout.
-                // Mirrors Python: Transport.mark_path_unresponsive(destination.hash)
-                transport?.markPathUnresponsive(for: destination.hash)
-                DispatchQueue.global(qos: .utility).async { cb?(self) }
-                close()
-                return
-            }
-            let nextTick = max(0.5, deadline.timeIntervalSince(now))
-            stateLock.unlock()
-            rescheduleWatchdog(after: nextTick)
-
-        case .active:
-            // Use adaptive keepalive/stale times based on measured RTT.
-            // Mirrors Python's Link.__update_keepalive(). These helpers read plain
-            // fields (rtt / lastInbound / establishedAt / requestTime) and don't
-            // lock, so calling them while holding stateLock is safe.
-            let inboundAge = noInboundFor()
-            let outboundAge = noOutboundFor()
-            let ka = effectiveKeepalive
-            let st = effectiveStaleTime
-            var shouldSendKeepalive = false
-            var shouldMarkStale = false
-            let nextTick: TimeInterval
-            // Trigger a keepalive when EITHER inbound OR outbound has been idle for
-            // `keepalive`. A receive-only initiator (peer sends continuously) would
-            // otherwise never refresh its own last_outbound, so the destination tears
-            // the link down as stale despite live traffic. Mirrors Python Link.py:746
-            // (`now >= last_inbound + keepalive or now >= last_outbound + keepalive`),
-            // fixed in RNS 1.4.0 (commit e64d8150).
-            if inboundAge >= ka || outboundAge >= ka {
-                // Send a keepalive if this side is the initiator and hasn't sent one recently.
-                // Python sends it BEFORE the stale check (RNS/Link.py:749-751), so a
-                // link crossing stale_time still probes its peer.
-                if role == .initiator,
-                   now.timeIntervalSince(lastKeepalive ?? .distantPast) >= ka {
-                    shouldSendKeepalive = true
-                }
-                if inboundAge >= st {
-                    // No inbound for stale_time: mark stale but don't tear down yet.
-                    // The next tick—after rtt*KEEPALIVE_TIMEOUT_FACTOR + STALE_GRACE—tears
-                    // down only if no inbound rescued the link in the meantime.
-                    // Mirrors Python RNS/Link.py:753-755; recovery is in receive()
-                    // (RNS/Link.py:939 `if self.status == Link.STALE: ... ACTIVE`).
-                    shouldMarkStale = true
-                    nextTick = (rtt ?? 0) * Link.keepaliveTimeoutFactor + Link.staleGrace
-                } else {
-                    nextTick = ka
-                }
+    switch packet.context {
+    case .keepalive:
+      handleKeepalive(plaintext)
+    // Keepalives don't update lastData (matches Python had_outbound(is_keepalive=True))
+    case .channel:
+      // Prove the channel packet back to the sender so its Channel can
+      // advance the send window (mirrors Python Link.receive CHANNEL branch:
+      // `packet.prove()`). Without this, a remote sender's window never
+      // drains and its third send throws linkNotReady (WINDOW = 2). See
+      // swift_devel bug 005.
+      if let h = try? packet.packetHash() { proveLinkPacket(h) }
+      stateLock.lock()
+      let ch = channel
+      stateLock.unlock()
+      ch?.receive(plaintext)
+    case .linkIdentify:
+      handleRemoteIdentify(plaintext)
+    case .resourceAdvertisement:
+      do {
+        let adv = try ResourceAdvertisement.unpack(plaintext)
+        // Segments 2..N of a split resource carry the SAME isRequest /
+        // isResponse flags and request ID as segment 1 (Python's
+        // `__prepare_next_segment` forwards both, and so does this port), so
+        // without this the request/response branches below would build a
+        // brand-new ResourceTransfer for every segment. Only the last
+        // segment's bytes would then be delivered—as a *successful*
+        // response, because the truncated payload merely fails to decode
+        // as the msgpack envelope and falls back to raw bytes. Route a
+        // continuation to the object already holding the earlier
+        // segments, whatever kind of resource it is.
+        if let continuation = multiSegmentContinuation(for: adv) {
+          continuation.receiveAdvertisement(plaintext)
+        } else if adv.isRequest {
+          // Incoming request via Resource—only accept when the destination
+          // actually has request handlers registered; otherwise the whole
+          // request resource would be downloaded and then dropped with no
+          // handler to dispatch it. Mirrors Python Link.py `if self.destination.request_handlers`
+          // (commit 3a36c367).
+          if !destination.requestHandlers.isEmpty {
+            // RNS 1.4.1: reject an oversized request *at advertisement
+            // time*, before a single part is transferred. `adv.dataSize`
+            // is the advertised plaintext size, matching Python's
+            // `ResourceAdvertisement.read_size(packet)`.
+            // Compare in UInt64: `adv.dataSize` comes straight off the
+            // wire and `ResourceAdvertisement.unpack` only bounds-checks
+            // the transfer size, so a hostile advertisement can carry any
+            // 64-bit `d`. `Int(_: UInt64)` is a *trapping* conversion—any
+            // d >= 2^63 would abort the process instead of rejecting
+            // the advertisement. Python compares arbitrary-precision ints
+            // and simply rejects. (A negative cap is impossible:
+            // setMaxRequestSize rejects it.)
+            if let cap = destination.maxRequestSize, adv.dataSize > UInt64(cap) {
+              Reticulum.log(
+                "Rejected request with excessive size \(adv.dataSize) B on \(self)", level: .debug)
+              try? send(adv.resourceHash, context: .resourceReceiverCancel)
             } else {
-                // Next wake is when whichever timer is closest next crosses `ka`.
-                nextTick = max(0.5, ka - max(inboundAge, outboundAge))
+              handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
             }
-            stateLock.unlock()
-            // Keepalive goes out while the link is still .active (send() rejects
-            // non-active links); Python's ordering, RNS/Link.py:749-755.
-            if shouldSendKeepalive { try? sendKeepalive() }
-            if shouldMarkStale {
-                stateLock.lock()
-                if unsafeStatus == .active { unsafeStatus = .stale }
-                stateLock.unlock()
-            }
-            rescheduleWatchdog(after: nextTick)
-
-        case .stale:
-            // Grace expired with no inbound recovery—tear down now.
-            // Mirrors Python's STALE watchdog branch (RNS/Link.py:761-765).
-            unsafeTeardownReason = .timeout
-            stateLock.unlock()
-            transport?.markPathUnresponsive(for: destination.hash)
-            try? teardown()
-            return
-
-        default:
-            stateLock.unlock()
-            return
-        }
-    }
-
-    /// Install the next watchdog fire, unless a concurrent close()/teardown() has
-    /// already made the link terminal—in which case the freshly built timer is
-    /// dropped so a stale tick can't resurrect a torn-down link's watchdog.
-    private func rescheduleWatchdog(after nextTick: TimeInterval) {
-        // Every watchdog sleep is clamped to watchdogMaxSleep so a status change
-        // between ticks (pending -> active at establishment) is observed within
-        // 5 s. Python clamps identically for every state: RNS/Link.py:776
-        // `sleep_time = min(sleep_time, Link.WATCHDOG_MAX_SLEEP)`. Without the
-        // clamp, the tick scheduled during .pending sleeps until the
-        // establishment deadline, no keepalive is ever sent on a link that goes
-        // idle right after establishing, and the first .active tick lands past
-        // effectiveStaleTime and kills the healthy link (bugs/034).
-        let tick = min(nextTick, Link.watchdogMaxSleep)
-        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        timer.schedule(deadline: .now() + tick, repeating: .never)
-        timer.setEventHandler { [weak self] in self?.watchdogTick() }
-        stateLock.lock()
-        guard unsafeStatus != .closed && unsafeStatus != .failed else {
-            stateLock.unlock()
-            // `cancel()` alone would trap: the timer hasn't been resumed yet, so it's still
-            // suspended, and releasing a suspended source kills the process (`bugs/032`).
-            timer.cancelUnstarted()
-            return
-        }
-        watchdogTimer = timer
-        stateLock.unlock()
-        timer.resume()
-    }
-
-    // MARK: - Data send / receive
-
-    /// Encrypt and send a data packet over the link. `context` defaults to
-    /// `.none` (a plain user-data packet); pass `.request`, `.response`,
-    /// `.channel`, and so on, for higher-level framing.
-    ///
-    /// Returns the delivery receipt for contexts the reference generates one for, so a caller
-    /// can learn whether the peer actually received the packet. This used to hardcode
-    /// `generateReceipt: false`, which is why nothing above the link layer could distinguish
-    /// "sent" from "delivered" and LXMF reported delivery from the return of this call
-    /// (`bugs/014`). `@discardableResult` because most callers—keepalives, link control,
-    /// resource parts—legitimately don't want one.
-    @discardableResult
-    public func send(_ plaintext: Data, context: Packet.Context = .none) throws -> PacketReceipt? {
-        guard status == .active else { throw LinkError.notActive }
-        guard let linkID, let transport else { throw LinkError.invalidState }
-        let ciphertext = try encrypt(plaintext)
-        let packet = Packet(
-            destinationType: .link,
-            packetType: .data,
-            destinationHash: linkID,
-            context: context,
-            data: ciphertext
-        )
-        let receipt = try transport.send(packet)
-        recordOutbound(bytes: ciphertext.count, countPacket: true, isData: context != .keepalive)
-        return receipt
-    }
-
-    // MARK: - Request helpers (called from LinkRequest.swift extension)
-
-    /// Encrypt `body` and build a link REQUEST Packet.
-    ///
-    /// Returns `(packet, requestID)` where `requestID` is the wire-format
-    /// truncated packet hash—mirrors Python's `packet.getTruncatedHash()`.
-    ///
-    /// The caller must store the receipt in `pendingRequests[requestID]`
-    /// **before** calling `sendPrebuiltPacket(_:)` so that a synchronous
-    /// loopback transport can deliver the response without missing the lookup.
-    func buildRequestPacket(_ body: Data) throws -> (Packet, Data) {
-        guard let linkID else { throw LinkError.invalidState }
-        let ciphertext = try encrypt(body)
-        let packet = Packet(
-            destinationType: .link,
-            packetType: .data,
-            destinationHash: linkID,
-            context: .request,
-            data: ciphertext
-        )
-        let requestID = (try? packet.truncatedPacketHash()) ?? Hashes.truncatedHash(body)
-        return (packet, requestID)
-    }
-
-    /// Send a pre-built link DATA packet and update outbound traffic stats.
-    func sendPrebuiltPacket(_ packet: Packet) throws {
-        guard let transport else { throw LinkError.invalidState }
-        try transport.send(packet, generateReceipt: false)
-        // only keepalive packets skip lastData; REQUEST isn't keepalive
-        recordOutbound(bytes: packet.data.count, countPacket: true, isData: true)
-    }
-
-    /// Process an inbound packet.
-    ///
-    /// Routes resource contexts without link-level
-    /// decryption (resource handles its own encryption); decrypts all others.
-    /// The optional `receivingInterface` is used to update PHY stats when `trackPhyStats` is true.
-    public func receive(_ packet: Packet, from receivingInterface: (any Interface)? = nil) throws {
-        // A stale link still processes inbound traffic, and any inbound packet
-        // promotes it back to active—Python accepts every non-CLOSED status
-        // and recovers with `if self.status == Link.STALE: self.status =
-        // Link.ACTIVE` (RNS/Link.py:931-939). Rejecting stale here would make
-        // the watchdog's stale grace period meaningless.
-        stateLock.lock()
-        if unsafeStatus == .stale { unsafeStatus = .active }
-        let curStatus = unsafeStatus
-        stateLock.unlock()
-        guard curStatus == .active else { throw LinkError.notActive }
-        updatePhyStats(from: receivingInterface)
-
-        // RESOURCE data parts—pre-encrypted by the resource layer; pass raw.
-        if packet.context == .resource {
-            recordInbound(bytes: packet.data.count)
-            let data = packet.data
-            for rt in snapshotIncomingResources() { rt.receivePart(data) }
-            return
-        }
-
-        // RESOURCE_PRF proof—sent unencrypted (Python: "not encrypted").
-        if packet.packetType == .proof, packet.context == .resourceProof {
-            stateLock.lock(); lastInbound = Date(); stateLock.unlock()
-            let proofData = packet.data
-            guard proofData.count >= Constants.hashLength else { return }
-            let resourceHash = proofData.prefix(Constants.hashLength)
-            for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
-                rt.validateProof(proofData)
-            }
-            return
-        }
-
-        // Explicit link-data PROOF (context .none)—proof_data is
-        // `[full hash][signature]` and isn't link-encrypted (like RESOURCE_PRF).
-        // Sent by a peer's `prove_packet` to acknowledge a CHANNEL packet; match
-        // it to the pending `ChannelPacketHandle` so the sender's Channel window
-        // advances. Mirrors Python's Transport matching a link-DATA proof to the
-        // sending packet's receipt. Must be handled BEFORE the link-decrypt below,
-        // which would otherwise fail on the cleartext proof bytes.
-        if packet.packetType == .proof, packet.context == .none {
-            stateLock.lock(); lastInbound = Date(); stateLock.unlock()
-            // A context-`.none` proof is ambiguous between a channel proof and a proof for an
-            // ordinary link data packet. Channel waiters keep priority—that's the order the
-            // code already implied, so adding the receipt path is purely additive and can't
-            // regress the `bugs/005` channel-proof fix.
-            if handleChannelProof(packet.data) { return }
-            handleDataProof(packet.data, packet: packet)
-            return
-        }
-
-        // All other packets use link-level encryption.
-        let plaintext = try decrypt(packet.data)
-        let now = Date()
-        recordInbound(bytes: packet.data.count, at: now)
-
-        switch packet.context {
-        case .keepalive:
-            handleKeepalive(plaintext)
-            // Keepalives don't update lastData (matches Python had_outbound(is_keepalive=True))
-        case .channel:
-            // Prove the channel packet back to the sender so its Channel can
-            // advance the send window (mirrors Python Link.receive CHANNEL branch:
-            // `packet.prove()`). Without this, a remote sender's window never
-            // drains and its third send throws linkNotReady (WINDOW = 2). See
-            // swift_devel bug 005.
-            if let h = try? packet.packetHash() { proveLinkPacket(h) }
-            stateLock.lock(); let ch = channel; stateLock.unlock()
-            ch?.receive(plaintext)
-        case .linkIdentify:
-            handleRemoteIdentify(plaintext)
-        case .resourceAdvertisement:
-            do {
-                let adv = try ResourceAdvertisement.unpack(plaintext)
-                // Segments 2..N of a split resource carry the SAME isRequest /
-                // isResponse flags and request ID as segment 1 (Python's
-                // `__prepare_next_segment` forwards both, and so does this port), so
-                // without this the request/response branches below would build a
-                // brand-new ResourceTransfer for every segment. Only the last
-                // segment's bytes would then be delivered—as a *successful*
-                // response, because the truncated payload merely fails to decode
-                // as the msgpack envelope and falls back to raw bytes. Route a
-                // continuation to the object already holding the earlier
-                // segments, whatever kind of resource it is.
-                if let continuation = multiSegmentContinuation(for: adv) {
-                    continuation.receiveAdvertisement(plaintext)
-                } else if adv.isRequest {
-                    // Incoming request via Resource—only accept when the destination
-                    // actually has request handlers registered; otherwise the whole
-                    // request resource would be downloaded and then dropped with no
-                    // handler to dispatch it. Mirrors Python Link.py `if self.destination.request_handlers`
-                    // (commit 3a36c367).
-                    if !destination.requestHandlers.isEmpty {
-                        // RNS 1.4.1: reject an oversized request *at advertisement
-                        // time*, before a single part is transferred. `adv.dataSize`
-                        // is the advertised plaintext size, matching Python's
-                        // `ResourceAdvertisement.read_size(packet)`.
-                        // Compare in UInt64: `adv.dataSize` comes straight off the
-                        // wire and `ResourceAdvertisement.unpack` only bounds-checks
-                        // the transfer size, so a hostile advertisement can carry any
-                        // 64-bit `d`. `Int(_: UInt64)` is a *trapping* conversion—any
-                        // d >= 2^63 would abort the process instead of rejecting
-                        // the advertisement. Python compares arbitrary-precision ints
-                        // and simply rejects. (A negative cap is impossible:
-                        // setMaxRequestSize rejects it.)
-                        if let cap = destination.maxRequestSize, adv.dataSize > UInt64(cap) {
-                            Reticulum.log("Rejected request with excessive size \(adv.dataSize) B on \(self)", level: .debug)
-                            try? send(adv.resourceHash, context: .resourceReceiverCancel)
-                        } else {
-                            handleIncomingRequestResource(adv: adv, rawAdv: plaintext)
-                        }
-                    }
-                } else if adv.isResponse, let reqID = adv.requestID {
-                    // Incoming response via Resource—route to pending request.
-                    handleIncomingResponseResource(adv: adv, rawAdv: plaintext, requestID: reqID)
-                } else if !incomingResourcesIsEmpty() {
-                    // Pre-registered receivers (via bindAsReceiver) take priority.
-                    for rt in snapshotIncomingResources() { rt.receiveAdvertisement(plaintext) }
-                } else {
-                    // No pre-registered receiver—apply resource strategy.
-                    switch resourceStrategy {
-                    case .acceptNone:
-                        try? send(adv.resourceHash, context: .resourceReceiverCancel)
-                    case .acceptAll:
-                        acceptIncomingResource(adv: adv, rawAdv: plaintext)
-                    case .acceptApp:
-                        if onResourceAdvertised?(adv, self) ?? false {
-                            acceptIncomingResource(adv: adv, rawAdv: plaintext)
-                        } else {
-                            try? send(adv.resourceHash, context: .resourceReceiverCancel)
-                        }
-                    }
-                }
-            } catch {
-                // Malformed / invalid resource advertisement on an authenticated link.
-                // Forward to any pre-registered receiver; otherwise tear the link down—garbage
-                // on an authenticated link is treated as a hard error. Mirrors
-                // Python's try/except-teardown around RESOURCE_ADV handling (commit 3a36c367),
-                // paired with the ResourceAdvertisement transfer-size cap.
-                if !incomingResourcesIsEmpty() {
-                    for rt in snapshotIncomingResources() { rt.receiveAdvertisement(plaintext) }
-                } else {
-                    Reticulum.log("Invalid resource advertisement on \(self), tearing down link", level: .debug)
-                    try? teardown()
-                }
-            }
-        case .resourceRequest:
-            let reqData = plaintext
-            let hashStart = reqData.count > 1 && reqData[0] == ResourceTransfer.hashmapIsExhausted
-                ? 1 + ResourceTransfer.mapHashLength
-                : 1
-            guard reqData.count > hashStart + Constants.hashLength else { break }
-            let resourceHash = reqData[hashStart ..< hashStart + Constants.hashLength]
-            for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
-                rt.handleRequest(reqData)
-            }
-        case .resourceHashmapUpdate:
-            guard plaintext.count >= Constants.hashLength else { break }
-            let resourceHash = plaintext.prefix(Constants.hashLength)
-            for rt in snapshotIncomingResources() where rt.resourceHash == Data(resourceHash) {
-                rt.handleHashmapUpdate(plaintext)
-            }
-        case .resourceInitiatorCancel:
-            guard plaintext.count >= Constants.hashLength else { break }
-            let resourceHash = plaintext.prefix(Constants.hashLength)
-            for rt in snapshotIncomingResources() where rt.resourceHash == Data(resourceHash) {
-                rt.cancel(reason: "initiator cancelled")
-            }
-        case .resourceReceiverCancel:
-            guard plaintext.count >= Constants.hashLength else { break }
-            let resourceHash = plaintext.prefix(Constants.hashLength)
-            for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
-                rt.reject()
-            }
-        case .request:
-            // REQUEST packet: dispatch to registered handler using the wire-format
-            // packet hash as request_id—mirrors Python's packet.getTruncatedHash().
-            // The hash is computed from the raw packet bytes (header nibble + dest hash +
-            // context + ciphertext), not from the plaintext, so the id matches what the
-            // initiator stored regardless of implementation language.
-            stateLock.lock(); lastData = now; stateLock.unlock()
-            // RNS 1.4.1 `Destination.max_request_size`: drop an oversized request
-            // before unpacking its msgpack body—the point of the cap is to keep
-            // a hostile peer from forcing an allocation on its say-so. Python logs
-            // and silently ignores it (no rejection is sent on the packet path,
-            // unlike the Resource path below).
-            if let cap = destination.maxRequestSize, plaintext.count > cap {
-                Reticulum.log("Ignored request with excessive size \(plaintext.count) B on \(self)", level: .debug)
-                onPacketReceived?(plaintext, packet.packetType, packet.context, self)
-                break
-            }
-            let reqID = (try? packet.truncatedPacketHash()) ?? Hashes.truncatedHash(plaintext)
-            handleIncomingRequest(plaintext, requestID: reqID)
-            onPacketReceived?(plaintext, packet.packetType, packet.context, self)
-        case .response:
-            // RESPONSE packet: deliver to the pending RequestReceipt that sent the
-            // matching request. request_id is embedded in the msgpack response body.
-            stateLock.lock(); lastData = now; stateLock.unlock()
-            handleIncomingResponse(plaintext)
-            onPacketReceived?(plaintext, packet.packetType, packet.context, self)
-        default:
-            // Non-keepalive DATA: update lastData (mirrors Python last_data = last_inbound)
-            stateLock.lock(); lastData = now; stateLock.unlock()
-            onPacketReceived?(plaintext, packet.packetType, packet.context, self)
-            // Only fire the data callback for actual DATA packets with no special
-            // context—not for PROOF packets that happen to have context .none
-            // (for example, the explicit link data-proof sent by proveInboundData()).
-            if packet.context == .none && packet.packetType == .data {
-                // Capture full SHA-256 hash before callback so callers can prove receipt
-                // (mirrors Python's PacketReceipt.hash = full_hash = 32 bytes).
-                let hash = try? packet.packetHash()
-                stateLock.lock(); lastReceivedDataPacketHash = hash; stateLock.unlock()
-                onDataReceived?(plaintext, self)
-            }
-        }
-    }
-
-    /// The registered receiver, if any, that's parked between segments waiting
-    /// for exactly this advertisement.
-    private func multiSegmentContinuation(for adv: ResourceAdvertisement) -> ResourceTransfer? {
-        guard !incomingResourcesIsEmpty() else { return nil }
-        return snapshotIncomingResources().first { $0.continuesMultiSegmentReceive(adv) }
-    }
-
-    private func acceptIncomingResource(adv: ResourceAdvertisement, rawAdv: Data) {
-        let rt = ResourceTransfer(link: self)
-        rt.onAssembledInternal = { [weak self] payload, transfer in
-            guard let self else { return }
-            // Report the CONCLUDING advertisement, not the first segment's. A
-            // multi-segment resource re-advertises with a fresh resource hash per
-            // segment, and the receiver's `resourceHash` advances to the last one;
-            // a listener recovers a completed transfer (and its metadata—the
-            // filename) by matching that hash. Passing the captured first-segment
-            // `adv` made the match miss for any >1 MB transfer, so the file arrived
-            // intact but was discarded as "Invalid data received". Fall back to the
-            // first advertisement only if the transfer somehow exposes none.
-            self.onResourceConcluded?(payload, transfer.advertisement ?? adv, self)
-        }
-        registerIncomingResource(rt)
-        // The started callback has to fire from *inside* receiveAdvertisement,
-        // between adopting the advertisement and starting the transfer, because
-        // that's the first moment `rt.resourceHash` holds the real hash.
-        // Calling it out here (as this did) handed every observer a transfer
-        // still carrying the empty initial hash—LXMF keys its inbound registry
-        // on exactly that value, so every concurrent transfer collided on
-        // `Data()` and `cancelInbound(resourceHash:)` could never match.
-        // Python has no such gap: `Resource.accept` populates the resource and
-        // only then calls `link.callbacks.resource_started` (Resource.py:224-230).
-        rt.receiveAdvertisement(rawAdv) { [weak self] transfer in
-            self?.onResourceStarted?(transfer)
-        }
-    }
-
-    private func handleIncomingRequestResource(adv: ResourceAdvertisement, rawAdv: Data) {
-        let rt = ResourceTransfer(link: self)
-        rt.onAssembledInternal = { [weak self] payload, _ in
-            guard let self else { return }
-            // Unpack the request and dispatch to the registered handler.
-            guard case .array(let parts) = (try? MsgPack.decode(payload)) ?? .nil,
-                  parts.count >= 3 else { return }
-            let requestedAt: Double = {
-                if case .double(let t) = parts[0] { return t }
-                if case .uint(let n) = parts[0] { return Double(n) }
-                if case .int(let n) = parts[0] { return Double(n) }
-                return 0
-            }()
-            guard case .bytes(let pathHash) = parts[1] else { return }
-            // Re-encode parts[2] exactly as the single-packet path does
-            // (LinkRequest.handleIncomingRequest), and pass the raw value through. Without
-            // `rawValue:` the parameter defaulted to `.nil`, so every NATIVE request
-            // handler received `.nil` for any request whose envelope exceeded the packet
-            // threshold—for example, `rnx <dest> cat --stdin '<400+ bytes>'` arrived empty.
-            let rawValue = parts[2]
-            let reqPayload: Data? = {
-                switch parts[2] {
-                case .nil:          return nil
-                case .bytes(let b):
-                    if let decoded = try? MsgPack.decode(Data(b)),
-                       case .nil = decoded { return nil }
-                    return Data(b)
-                default:            return MsgPack.encode(parts[2])
-                }
-            }()
-            let requestID = adv.requestID ?? Hashes.truncatedHash(payload)
-            self.dispatchRequest(pathHash: pathHash, payload: reqPayload, rawValue: rawValue,
-                                 requestID: requestID, requestedAt: requestedAt)
-        }
-        registerIncomingResource(rt)
-        rt.receiveAdvertisement(rawAdv)
-    }
-
-    private func handleIncomingResponseResource(adv: ResourceAdvertisement, rawAdv: Data, requestID: Data) {
-        stateLock.lock(); let receipt = pendingRequests[requestID]; stateLock.unlock()
-        guard let receipt else { return }
-        // RNS 1.4.1 `max_response_size`, checked against the advertised size so an
-        // oversized response is refused before any part is transferred. Python
-        // rejects the resource AND fails the receipt—do both, in that order.
-        // UInt64 comparison for the same reason as the preceding request path: a
-        // trapping Int conversion here would turn a hostile advertisement into a
-        // remote process abort.
-        if let cap = receipt.maxResponseSize, cap >= 0, adv.dataSize > UInt64(cap) {
-            Reticulum.log("Rejected response with excessive size \(adv.dataSize) B on \(self)", level: .debug)
+          }
+        } else if adv.isResponse, let reqID = adv.requestID {
+          // Incoming response via Resource—route to pending request.
+          handleIncomingResponseResource(adv: adv, rawAdv: plaintext, requestID: reqID)
+        } else if !incomingResourcesIsEmpty() {
+          // Pre-registered receivers (via bindAsReceiver) take priority.
+          for rt in snapshotIncomingResources() { rt.receiveAdvertisement(plaintext) }
+        } else {
+          // No pre-registered receiver—apply resource strategy.
+          switch resourceStrategy {
+          case .acceptNone:
             try? send(adv.resourceHash, context: .resourceReceiverCancel)
-            evictPendingRequest(requestID)
-            receipt.responseRejected()
-            return
-        }
-        // The response is arriving as a Resource. Disarm the fixed request
-        // timeout now—a large / slow page can take far longer to transfer than
-        // the request timeout, and from here the ResourceTransfer's own watchdog
-        // governs the transfer (retries, then eventual failure). Mirrors Python
-        // RequestReceipt entering RECEIVING (Link.py response_resource_progress),
-        // which stops the request-timeout job. Without this, any response Resource
-        // still in flight at the timeout is aborted mid-download.
-        receipt.beginReceivingResponse(advertisedSize: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil)
-        // Python: Link.py:1027-1031—response_size is set once from the advertisement's
-        // data size, response_transfer_size accumulates across segments. Both feed rnx's
-        // The "Receiving result" spinner (<got> of <total>) and its -d transfer summary.
-        receipt.setResponseSizes(size: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil,
-                                 transferSize: adv.transferSize <= UInt64(Int.max) ? Int(adv.transferSize) : nil,
-                                 accumulate: true)
-        let rt = ResourceTransfer(link: self)
-        // Surface transfer progress on the receipt (keeps its status/progress in
-        // sync for any observer; wire-neutral).
-        rt.onProgress = { [weak receipt] p, _ in receipt?.updateProgress(p) }
-        // If the transfer fails (for example, the resource watchdog gives up), conclude
-        // the receipt as failed so the caller's failedCallback fires—otherwise,
-        // with the request timeout now disarmed, the receipt would hang forever.
-        rt.onFailed = { [weak self, weak receipt] _, status in
-            self?.evictPendingRequest(requestID)
-            receipt?.fail("response resource transfer failed (\(status))")
-        }
-        rt.onAssembledInternal = { [weak self, weak receipt] payload, _ in
-            guard let self, let receipt else { return }
-            self.evictPendingRequest(requestID)
-            // The assembled payload is the msgpack envelope [request_id, response]
-            // (same as the single-packet RESPONSE), NOT the bare response. Decode it
-            // and deliver the response value, unwrapping .bytes exactly like
-            // handleIncomingResponse. Mirrors Python response_resource_concluded
-            // (Link.py:890-904): unpackb(packed_response)[1]. A non-envelope payload
-            // (unexpected) is delivered as-is so nothing is silently lost.
-            let responseData: Data
-            if case .array(let parts) = (try? MsgPack.decode(payload)) ?? .nil,
-               parts.count >= 2 {
-                switch parts[1] {
-                case .bytes(let b): responseData = Data(b)
-                default:            responseData = MsgPack.encode(parts[1])
-                }
+          case .acceptAll:
+            acceptIncomingResource(adv: adv, rawAdv: plaintext)
+          case .acceptApp:
+            if onResourceAdvertised?(adv, self) ?? false {
+              acceptIncomingResource(adv: adv, rawAdv: plaintext)
             } else {
-                responseData = payload
+              try? send(adv.resourceHash, context: .resourceReceiverCancel)
             }
-            receipt.deliverReady(responseData)
+          }
         }
-        registerIncomingResource(rt)
-        rt.receiveAdvertisement(rawAdv)
-    }
-
-    private func handleRemoteIdentify(_ plaintext: Data) {
-        // Only the responder processes this; initiators don't receive it.
-        guard role == .responder else { return }
-        let keySize = Constants.keySize
-        let sigLen  = Constants.signatureLength
-        guard plaintext.count == keySize + sigLen else { return }
-        let pubKeyBytes = plaintext.prefix(keySize)
-        let signature   = plaintext.suffix(sigLen)
-        guard let linkID else { return }
-        guard let identity = try? Identity(publicKeyBytes: Data(pubKeyBytes)) else { return }
-        let signedData = linkID + Data(pubKeyBytes)
-        guard identity.validate(signature: signature, for: signedData) else { return }
-        // Terminate the link if the remote identifies as a blackholed identity.
-        // Mirrors Python commit d3fcc2a3: extended blackhole capability
-        // immediately tears down inbound links from blackholed identities.
-        if let transport = Reticulum.shared?.transport,
-           transport.isBlackholed(identity.hash) {
-            try? teardown()
-            return
+      } catch {
+        // Malformed / invalid resource advertisement on an authenticated link.
+        // Forward to any pre-registered receiver; otherwise tear the link down—garbage
+        // on an authenticated link is treated as a hard error. Mirrors
+        // Python's try/except-teardown around RESOURCE_ADV handling (commit 3a36c367),
+        // paired with the ResourceAdvertisement transfer-size cap.
+        if !incomingResourcesIsEmpty() {
+          for rt in snapshotIncomingResources() { rt.receiveAdvertisement(plaintext) }
+        } else {
+          Reticulum.log(
+            "Invalid resource advertisement on \(self), tearing down link", level: .debug)
+          try? teardown()
         }
-        // Link identify is applied at most once: an already-established remote
-        // identity is never overwritten and the callback fires only on the first
-        // valid identify. Mirrors Python Link.py guard `if self.__remote_identity == None`
-        // (commit bb289744), preventing a peer from re-identifying over an active link.
-        // One-shot check-and-set under the lock; fire the callback OUTSIDE it.
+      }
+    case .resourceRequest:
+      let reqData = plaintext
+      let hashStart =
+        reqData.count > 1 && reqData[0] == ResourceTransfer.hashmapIsExhausted
+        ? 1 + ResourceTransfer.mapHashLength
+        : 1
+      guard reqData.count > hashStart + Constants.hashLength else { break }
+      let resourceHash = reqData[hashStart..<hashStart + Constants.hashLength]
+      for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
+        rt.handleRequest(reqData)
+      }
+    case .resourceHashmapUpdate:
+      guard plaintext.count >= Constants.hashLength else { break }
+      let resourceHash = plaintext.prefix(Constants.hashLength)
+      for rt in snapshotIncomingResources() where rt.resourceHash == Data(resourceHash) {
+        rt.handleHashmapUpdate(plaintext)
+      }
+    case .resourceInitiatorCancel:
+      guard plaintext.count >= Constants.hashLength else { break }
+      let resourceHash = plaintext.prefix(Constants.hashLength)
+      for rt in snapshotIncomingResources() where rt.resourceHash == Data(resourceHash) {
+        rt.cancel(reason: "initiator cancelled")
+      }
+    case .resourceReceiverCancel:
+      guard plaintext.count >= Constants.hashLength else { break }
+      let resourceHash = plaintext.prefix(Constants.hashLength)
+      for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
+        rt.reject()
+      }
+    case .request:
+      // REQUEST packet: dispatch to registered handler using the wire-format
+      // packet hash as request_id—mirrors Python's packet.getTruncatedHash().
+      // The hash is computed from the raw packet bytes (header nibble + dest hash +
+      // context + ciphertext), not from the plaintext, so the id matches what the
+      // initiator stored regardless of implementation language.
+      stateLock.lock()
+      lastData = now
+      stateLock.unlock()
+      // RNS 1.4.1 `Destination.max_request_size`: drop an oversized request
+      // before unpacking its msgpack body—the point of the cap is to keep
+      // a hostile peer from forcing an allocation on its say-so. Python logs
+      // and silently ignores it (no rejection is sent on the packet path,
+      // unlike the Resource path below).
+      if let cap = destination.maxRequestSize, plaintext.count > cap {
+        Reticulum.log(
+          "Ignored request with excessive size \(plaintext.count) B on \(self)", level: .debug)
+        onPacketReceived?(plaintext, packet.packetType, packet.context, self)
+        break
+      }
+      let reqID = (try? packet.truncatedPacketHash()) ?? Hashes.truncatedHash(plaintext)
+      handleIncomingRequest(plaintext, requestID: reqID)
+      onPacketReceived?(plaintext, packet.packetType, packet.context, self)
+    case .response:
+      // RESPONSE packet: deliver to the pending RequestReceipt that sent the
+      // matching request. request_id is embedded in the msgpack response body.
+      stateLock.lock()
+      lastData = now
+      stateLock.unlock()
+      handleIncomingResponse(plaintext)
+      onPacketReceived?(plaintext, packet.packetType, packet.context, self)
+    default:
+      // Non-keepalive DATA: update lastData (mirrors Python last_data = last_inbound)
+      stateLock.lock()
+      lastData = now
+      stateLock.unlock()
+      onPacketReceived?(plaintext, packet.packetType, packet.context, self)
+      // Only fire the data callback for actual DATA packets with no special
+      // context—not for PROOF packets that happen to have context .none
+      // (for example, the explicit link data-proof sent by proveInboundData()).
+      if packet.context == .none && packet.packetType == .data {
+        // Capture full SHA-256 hash before callback so callers can prove receipt
+        // (mirrors Python's PacketReceipt.hash = full_hash = 32 bytes).
+        let hash = try? packet.packetHash()
         stateLock.lock()
-        guard remoteIdentity == nil else { stateLock.unlock(); return }
-        remoteIdentity = identity
+        lastReceivedDataPacketHash = hash
         stateLock.unlock()
-        onRemoteIdentified?(self, identity)
+        onDataReceived?(plaintext, self)
+      }
     }
+  }
 
-    // MARK: - Keepalive
+  /// The registered receiver, if any, that's parked between segments waiting
+  /// for exactly this advertisement.
+  private func multiSegmentContinuation(for adv: ResourceAdvertisement) -> ResourceTransfer? {
+    guard !incomingResourcesIsEmpty() else { return nil }
+    return snapshotIncomingResources().first { $0.continuesMultiSegmentReceive(adv) }
+  }
 
-    /// Initiator-side: send a keepalive probe.
-    ///
-    /// Body is the single byte
-    /// `0xFF`, encrypted with the link key. The responder echoes back a
-    /// `0xFE` keepalive on receipt. Matches Python's
-    /// `RNS.Link.send_keepalive`.
-    public func sendKeepalive() throws {
-        guard role == .initiator else { return }
-        try send(Data([0xFF]), context: .keepalive)
-        stateLock.lock(); lastKeepalive = Date(); stateLock.unlock()
+  private func acceptIncomingResource(adv: ResourceAdvertisement, rawAdv: Data) {
+    let rt = ResourceTransfer(link: self)
+    rt.onAssembledInternal = { [weak self] payload, transfer in
+      guard let self else { return }
+      // Report the CONCLUDING advertisement, not the first segment's. A
+      // multi-segment resource re-advertises with a fresh resource hash per
+      // segment, and the receiver's `resourceHash` advances to the last one;
+      // a listener recovers a completed transfer (and its metadata—the
+      // filename) by matching that hash. Passing the captured first-segment
+      // `adv` made the match miss for any >1 MB transfer, so the file arrived
+      // intact but was discarded as "Invalid data received". Fall back to the
+      // first advertisement only if the transfer somehow exposes none.
+      self.onResourceConcluded?(payload, transfer.advertisement ?? adv, self)
     }
-
-    private func updatePhyStats(from interface: (any Interface)?) {
-        guard trackPhyStats, let interface else { return }
-        let r = interface.rssi, s = interface.snr, q = interface.quality
-        stateLock.lock()
-        if let r { rssi = r }
-        if let s { snr = s }
-        if let q { quality = q }
-        stateLock.unlock()
+    registerIncomingResource(rt)
+    // The started callback has to fire from *inside* receiveAdvertisement,
+    // between adopting the advertisement and starting the transfer, because
+    // that's the first moment `rt.resourceHash` holds the real hash.
+    // Calling it out here (as this did) handed every observer a transfer
+    // still carrying the empty initial hash—LXMF keys its inbound registry
+    // on exactly that value, so every concurrent transfer collided on
+    // `Data()` and `cancelInbound(resourceHash:)` could never match.
+    // Python has no such gap: `Resource.accept` populates the resource and
+    // only then calls `link.callbacks.resource_started` (Resource.py:224-230).
+    rt.receiveAdvertisement(rawAdv) { [weak self] transfer in
+      self?.onResourceStarted?(transfer)
     }
+  }
 
-    /// Test helper: directly set the measured RTT so tests can pin the
-    /// RTT-scaled keepalive/stale windows (effectiveKeepalive /
-    /// effectiveStaleTime) deterministically.
-    ///
-    /// Mirrors what a low-RTT local
-    /// link measures naturally (RNS/Link.py:795-797 scales from self.rtt).
-    func testSetRtt(_ value: TimeInterval) {
-        stateLock.lock(); rtt = value; stateLock.unlock()
-    }
-
-    /// Test helper: directly inject PHY stats without a real interface.
-    func testSetPhyStats(rssi: Float, snr: Float, quality: Float) {
-        stateLock.lock()
-        self.rssi    = rssi
-        self.snr     = snr
-        self.quality = quality
-        stateLock.unlock()
-    }
-
-    private func handleKeepalive(_ plaintext: Data) {
-        // Initiator gets `0xFE` from the responder—nothing to do; the
-        // updated `lastInbound` already reset the watchdog.
-        // Responder gets `0xFF` from the initiator and replies `0xFE`—but only if
-        // it hasn't sent anything within the last `keepalive` interval. Suppressing the
-        // echo when traffic is already flowing avoids redundant keepalives. Mirrors
-        // Python Link.py:1099 (RNS 1.4.0, commit e64d8150).
-        if role == .responder, plaintext == Data([0xFF]), noOutboundFor() >= effectiveKeepalive {
-            try? send(Data([0xFE]), context: .keepalive)
+  private func handleIncomingRequestResource(adv: ResourceAdvertisement, rawAdv: Data) {
+    let rt = ResourceTransfer(link: self)
+    rt.onAssembledInternal = { [weak self] payload, _ in
+      guard let self else { return }
+      // Unpack the request and dispatch to the registered handler.
+      guard case .array(let parts) = (try? MsgPack.decode(payload)) ?? .nil,
+        parts.count >= 3
+      else { return }
+      let requestedAt: Double = {
+        if case .double(let t) = parts[0] { return t }
+        if case .uint(let n) = parts[0] { return Double(n) }
+        if case .int(let n) = parts[0] { return Double(n) }
+        return 0
+      }()
+      guard case .bytes(let pathHash) = parts[1] else { return }
+      // Re-encode parts[2] exactly as the single-packet path does
+      // (LinkRequest.handleIncomingRequest), and pass the raw value through. Without
+      // `rawValue:` the parameter defaulted to `.nil`, so every NATIVE request
+      // handler received `.nil` for any request whose envelope exceeded the packet
+      // threshold—for example, `rnx <dest> cat --stdin '<400+ bytes>'` arrived empty.
+      let rawValue = parts[2]
+      let reqPayload: Data? = {
+        switch parts[2] {
+        case .nil: return nil
+        case .bytes(let b):
+          if let decoded = try? MsgPack.decode(Data(b)),
+            case .nil = decoded
+          {
+            return nil
+          }
+          return Data(b)
+        default: return MsgPack.encode(parts[2])
         }
+      }()
+      let requestID = adv.requestID ?? Hashes.truncatedHash(payload)
+      self.dispatchRequest(
+        pathHash: pathHash, payload: reqPayload, rawValue: rawValue,
+        requestID: requestID, requestedAt: requestedAt)
     }
+    registerIncomingResource(rt)
+    rt.receiveAdvertisement(rawAdv)
+  }
 
-    /// Encrypted send with a non-default packet type (for example, `.proof` for
-    /// RESOURCE_PRF).
-    ///
-    /// Used by the Resource transfer layer.
-    public func send(_ plaintext: Data, packetType: Packet.PacketType, context: Packet.Context) throws {
-        guard status == .active else { throw LinkError.notActive }
-        guard let linkID, let transport else { throw LinkError.invalidState }
-        let ciphertext = try encrypt(plaintext)
-        let packet = Packet(
-            destinationType: .link,
-            packetType: packetType,
-            destinationHash: linkID,
-            context: context,
-            data: ciphertext
-        )
-        try transport.send(packet, generateReceipt: false)
-        recordOutbound(bytes: ciphertext.count, countPacket: true, isData: context != .keepalive)
+  private func handleIncomingResponseResource(
+    adv: ResourceAdvertisement, rawAdv: Data, requestID: Data
+  ) {
+    stateLock.lock()
+    let receipt = pendingRequests[requestID]
+    stateLock.unlock()
+    guard let receipt else { return }
+    // RNS 1.4.1 `max_response_size`, checked against the advertised size so an
+    // oversized response is refused before any part is transferred. Python
+    // rejects the resource AND fails the receipt—do both, in that order.
+    // UInt64 comparison for the same reason as the preceding request path: a
+    // trapping Int conversion here would turn a hostile advertisement into a
+    // remote process abort.
+    if let cap = receipt.maxResponseSize, cap >= 0, adv.dataSize > UInt64(cap) {
+      Reticulum.log(
+        "Rejected response with excessive size \(adv.dataSize) B on \(self)", level: .debug)
+      try? send(adv.resourceHash, context: .resourceReceiverCancel)
+      evictPendingRequest(requestID)
+      receipt.responseRejected()
+      return
     }
-
-    // MARK: - Identify
-
-    /// Reveal the initiator's identity to the responder over the encrypted
-    /// link.
-    ///
-    /// Only the initiator may call this, and only once the link is active.
-    ///
-    /// Wire format (encrypted):  `[pubkey 64][ed25519_sig 64]`
-    /// `signed_data = link_id + pubkey`
-    ///
-    /// Mirrors Python's `Link.identify(identity)`.
-    public func identify(as identity: Identity) throws {
-        guard role == .initiator, status == .active else { throw LinkError.notActive }
-        guard identity.hasPrivateKey else { throw LinkError.missingResponderIdentity }
-        guard let linkID else { throw LinkError.invalidState }
-        let pubKey = identity.publicKeyBytes
-        let signedData = linkID + pubKey
-        let signature = try identity.sign(signedData)
-        try send(pubKey + signature, context: .linkIdentify)
+    // The response is arriving as a Resource. Disarm the fixed request
+    // timeout now—a large / slow page can take far longer to transfer than
+    // the request timeout, and from here the ResourceTransfer's own watchdog
+    // governs the transfer (retries, then eventual failure). Mirrors Python
+    // RequestReceipt entering RECEIVING (Link.py response_resource_progress),
+    // which stops the request-timeout job. Without this, any response Resource
+    // still in flight at the timeout is aborted mid-download.
+    receipt.beginReceivingResponse(
+      advertisedSize: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil)
+    // Python: Link.py:1027-1031—response_size is set once from the advertisement's
+    // data size, response_transfer_size accumulates across segments. Both feed rnx's
+    // The "Receiving result" spinner (<got> of <total>) and its -d transfer summary.
+    receipt.setResponseSizes(
+      size: adv.dataSize <= UInt64(Int.max) ? Int(adv.dataSize) : nil,
+      transferSize: adv.transferSize <= UInt64(Int.max) ? Int(adv.transferSize) : nil,
+      accumulate: true)
+    let rt = ResourceTransfer(link: self)
+    // Surface transfer progress on the receipt (keeps its status/progress in
+    // sync for any observer; wire-neutral).
+    rt.onProgress = { [weak receipt] p, _ in receipt?.updateProgress(p) }
+    // If the transfer fails (for example, the resource watchdog gives up), conclude
+    // the receipt as failed so the caller's failedCallback fires—otherwise,
+    // with the request timeout now disarmed, the receipt would hang forever.
+    rt.onFailed = { [weak self, weak receipt] _, status in
+      self?.evictPendingRequest(requestID)
+      receipt?.fail("response resource transfer failed (\(status))")
     }
-
-    // MARK: - Teardown
-
-    /// Send a LINKCLOSE packet to the peer and mark this side closed.
-    ///
-    /// The packet body is `encrypt(link_id)`—the peer verifies the
-    /// plaintext matches its own link id before honoring the close.
-    public func teardown() throws {
-        // Idempotency: a link that's already closed doesn't re-run close()
-        // (which would re-fire onClosed and re-unregister) nor re-emit a
-        // LINKCLOSE packet. Mirrors Python Link.py `if self.status == Link.CLOSED: return`
-        // (commit bb289744).
-        stateLock.lock()
-        if unsafeStatus == .closed { stateLock.unlock(); return }
-        let linkIDSnap = linkID
-        let transportSnap = transport
-        guard let linkIDSnap, let transportSnap else {
-            if unsafeTeardownReason == nil { unsafeTeardownReason = .initiatorClosed }
-            stateLock.unlock()
-            close()
-            return
+    rt.onAssembledInternal = { [weak self, weak receipt] payload, _ in
+      guard let self, let receipt else { return }
+      self.evictPendingRequest(requestID)
+      // The assembled payload is the msgpack envelope [request_id, response]
+      // (same as the single-packet RESPONSE), NOT the bare response. Decode it
+      // and deliver the response value, unwrapping .bytes exactly like
+      // handleIncomingResponse. Mirrors Python response_resource_concluded
+      // (Link.py:890-904): unpackb(packed_response)[1]. A non-envelope payload
+      // (unexpected) is delivered as-is so nothing is silently lost.
+      let responseData: Data
+      if case .array(let parts) = (try? MsgPack.decode(payload)) ?? .nil,
+        parts.count >= 2
+      {
+        switch parts[1] {
+        case .bytes(let b): responseData = Data(b)
+        default: responseData = MsgPack.encode(parts[1])
         }
-        if unsafeTeardownReason == nil {
-            unsafeTeardownReason = (role == .initiator) ? .initiatorClosed : .destinationClosed
-        }
-        // Python emits the LINKCLOSE packet for any status except PENDING and
-        // CLOSED—including STALE (RNS/Link.py teardown / STALE watchdog
-        // branch __teardown_packet). A stale link's peer must still hear it.
-        let wasActive = (unsafeStatus == .active || unsafeStatus == .stale)
-        stateLock.unlock()
-
-        if wasActive {
-            let ciphertext = try encrypt(linkIDSnap)
-            let packet = Packet(
-                destinationType: .link,
-                packetType: .data,
-                destinationHash: linkIDSnap,
-                context: .linkClose,
-                data: ciphertext
-            )
-            try? transportSnap.send(packet, generateReceipt: false)
-        }
-        close()
-        transportSnap.unregister(link: self)
+      } else {
+        responseData = payload
+      }
+      receipt.deliverReady(responseData)
     }
+    registerIncomingResource(rt)
+    rt.receiveAdvertisement(rawAdv)
+  }
 
-    /// Process an inbound LINKCLOSE packet.
-    ///
-    /// Closes the link if the
-    /// decrypted plaintext matches this link id (proof of session
-    /// possession).
-    public func receiveTeardown(_ packet: Packet) {
-        stateLock.lock(); let linkIDSnap = linkID; let transportSnap = transport; stateLock.unlock()
-        guard let linkIDSnap else { return }
-        guard let plaintext = try? decrypt(packet.data), plaintext == linkIDSnap else { return }
-        stateLock.lock()
-        if unsafeTeardownReason == nil {
-            unsafeTeardownReason = (role == .initiator) ? .destinationClosed : .initiatorClosed
-        }
-        stateLock.unlock()
-        close()
-        transportSnap?.unregister(link: self)
+  private func handleRemoteIdentify(_ plaintext: Data) {
+    // Only the responder processes this; initiators don't receive it.
+    guard role == .responder else { return }
+    let keySize = Constants.keySize
+    let sigLen = Constants.signatureLength
+    guard plaintext.count == keySize + sigLen else { return }
+    let pubKeyBytes = plaintext.prefix(keySize)
+    let signature = plaintext.suffix(sigLen)
+    guard let linkID else { return }
+    guard let identity = try? Identity(publicKeyBytes: Data(pubKeyBytes)) else { return }
+    let signedData = linkID + Data(pubKeyBytes)
+    guard identity.validate(signature: signature, for: signedData) else { return }
+    // Terminate the link if the remote identifies as a blackholed identity.
+    // Mirrors Python commit d3fcc2a3: extended blackhole capability
+    // immediately tears down inbound links from blackholed identities.
+    if let transport = Reticulum.shared?.transport,
+      transport.isBlackholed(identity.hash)
+    {
+      try? teardown()
+      return
     }
+    // Link identify is applied at most once: an already-established remote
+    // identity is never overwritten and the callback fires only on the first
+    // valid identify. Mirrors Python Link.py guard `if self.__remote_identity == None`
+    // (commit bb289744), preventing a peer from re-identifying over an active link.
+    // One-shot check-and-set under the lock; fire the callback OUTSIDE it.
+    stateLock.lock()
+    guard remoteIdentity == nil else {
+      stateLock.unlock()
+      return
+    }
+    remoteIdentity = identity
+    stateLock.unlock()
+    onRemoteIdentified?(self, identity)
+  }
+
+  // MARK: - Keepalive
+
+  /// Initiator-side: send a keepalive probe.
+  ///
+  /// Body is the single byte
+  /// `0xFF`, encrypted with the link key. The responder echoes back a
+  /// `0xFE` keepalive on receipt. Matches Python's
+  /// `RNS.Link.send_keepalive`.
+  public func sendKeepalive() throws {
+    guard role == .initiator else { return }
+    try send(Data([0xFF]), context: .keepalive)
+    stateLock.lock()
+    lastKeepalive = Date()
+    stateLock.unlock()
+  }
+
+  private func updatePhyStats(from interface: (any Interface)?) {
+    guard trackPhyStats, let interface else { return }
+    let r = interface.rssi
+    let s = interface.snr
+    let q = interface.quality
+    stateLock.lock()
+    if let r { rssi = r }
+    if let s { snr = s }
+    if let q { quality = q }
+    stateLock.unlock()
+  }
+
+  /// Test helper: directly set the measured RTT so tests can pin the
+  /// RTT-scaled keepalive/stale windows (effectiveKeepalive /
+  /// effectiveStaleTime) deterministically.
+  ///
+  /// Mirrors what a low-RTT local
+  /// link measures naturally (RNS/Link.py:795-797 scales from self.rtt).
+  func testSetRtt(_ value: TimeInterval) {
+    stateLock.lock()
+    rtt = value
+    stateLock.unlock()
+  }
+
+  /// Test helper: directly inject PHY stats without a real interface.
+  func testSetPhyStats(rssi: Float, snr: Float, quality: Float) {
+    stateLock.lock()
+    self.rssi = rssi
+    self.snr = snr
+    self.quality = quality
+    stateLock.unlock()
+  }
+
+  private func handleKeepalive(_ plaintext: Data) {
+    // Initiator gets `0xFE` from the responder—nothing to do; the
+    // updated `lastInbound` already reset the watchdog.
+    // Responder gets `0xFF` from the initiator and replies `0xFE`—but only if
+    // it hasn't sent anything within the last `keepalive` interval. Suppressing the
+    // echo when traffic is already flowing avoids redundant keepalives. Mirrors
+    // Python Link.py:1099 (RNS 1.4.0, commit e64d8150).
+    if role == .responder, plaintext == Data([0xFF]), noOutboundFor() >= effectiveKeepalive {
+      try? send(Data([0xFE]), context: .keepalive)
+    }
+  }
+
+  /// Encrypted send with a non-default packet type (for example, `.proof` for
+  /// RESOURCE_PRF).
+  ///
+  /// Used by the Resource transfer layer.
+  public func send(_ plaintext: Data, packetType: Packet.PacketType, context: Packet.Context) throws
+  {
+    guard status == .active else { throw LinkError.notActive }
+    guard let linkID, let transport else { throw LinkError.invalidState }
+    let ciphertext = try encrypt(plaintext)
+    let packet = Packet(
+      destinationType: .link,
+      packetType: packetType,
+      destinationHash: linkID,
+      context: context,
+      data: ciphertext
+    )
+    try transport.send(packet, generateReceipt: false)
+    recordOutbound(bytes: ciphertext.count, countPacket: true, isData: context != .keepalive)
+  }
+
+  // MARK: - Identify
+
+  /// Reveal the initiator's identity to the responder over the encrypted
+  /// link.
+  ///
+  /// Only the initiator may call this, and only once the link is active.
+  ///
+  /// Wire format (encrypted):  `[pubkey 64][ed25519_sig 64]`
+  /// `signed_data = link_id + pubkey`
+  ///
+  /// Mirrors Python's `Link.identify(identity)`.
+  public func identify(as identity: Identity) throws {
+    guard role == .initiator, status == .active else { throw LinkError.notActive }
+    guard identity.hasPrivateKey else { throw LinkError.missingResponderIdentity }
+    guard let linkID else { throw LinkError.invalidState }
+    let pubKey = identity.publicKeyBytes
+    let signedData = linkID + pubKey
+    let signature = try identity.sign(signedData)
+    try send(pubKey + signature, context: .linkIdentify)
+  }
+
+  // MARK: - Teardown
+
+  /// Send a LINKCLOSE packet to the peer and mark this side closed.
+  ///
+  /// The packet body is `encrypt(link_id)`—the peer verifies the
+  /// plaintext matches its own link id before honoring the close.
+  public func teardown() throws {
+    // Idempotency: a link that's already closed doesn't re-run close()
+    // (which would re-fire onClosed and re-unregister) nor re-emit a
+    // LINKCLOSE packet. Mirrors Python Link.py `if self.status == Link.CLOSED: return`
+    // (commit bb289744).
+    stateLock.lock()
+    if unsafeStatus == .closed {
+      stateLock.unlock()
+      return
+    }
+    let linkIDSnap = linkID
+    let transportSnap = transport
+    guard let linkIDSnap, let transportSnap else {
+      if unsafeTeardownReason == nil { unsafeTeardownReason = .initiatorClosed }
+      stateLock.unlock()
+      close()
+      return
+    }
+    if unsafeTeardownReason == nil {
+      unsafeTeardownReason = (role == .initiator) ? .initiatorClosed : .destinationClosed
+    }
+    // Python emits the LINKCLOSE packet for any status except PENDING and
+    // CLOSED—including STALE (RNS/Link.py teardown / STALE watchdog
+    // branch __teardown_packet). A stale link's peer must still hear it.
+    let wasActive = (unsafeStatus == .active || unsafeStatus == .stale)
+    stateLock.unlock()
+
+    if wasActive {
+      let ciphertext = try encrypt(linkIDSnap)
+      let packet = Packet(
+        destinationType: .link,
+        packetType: .data,
+        destinationHash: linkIDSnap,
+        context: .linkClose,
+        data: ciphertext
+      )
+      try? transportSnap.send(packet, generateReceipt: false)
+    }
+    close()
+    transportSnap.unregister(link: self)
+  }
+
+  /// Process an inbound LINKCLOSE packet.
+  ///
+  /// Closes the link if the
+  /// decrypted plaintext matches this link id (proof of session
+  /// possession).
+  public func receiveTeardown(_ packet: Packet) {
+    stateLock.lock()
+    let linkIDSnap = linkID
+    let transportSnap = transport
+    stateLock.unlock()
+    guard let linkIDSnap else { return }
+    guard let plaintext = try? decrypt(packet.data), plaintext == linkIDSnap else { return }
+    stateLock.lock()
+    if unsafeTeardownReason == nil {
+      unsafeTeardownReason = (role == .initiator) ? .destinationClosed : .initiatorClosed
+    }
+    stateLock.unlock()
+    close()
+    transportSnap?.unregister(link: self)
+  }
 }
-

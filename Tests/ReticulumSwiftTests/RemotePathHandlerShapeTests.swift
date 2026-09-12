@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Pins the exact response shape of the `/path` remote-management handler.
@@ -26,278 +27,291 @@ import XCTest
 /// rather than a graceful degradation.
 final class RemotePathHandlerShapeTests: XCTestCase {
 
-    override func setUp() {
-        super.setUp()
-        Reticulum.storedRemoteManagementEnabled = true
+  override func setUp() {
+    super.setUp()
+    Reticulum.storedRemoteManagementEnabled = true
+  }
+
+  override func tearDown() {
+    Reticulum.storedRemoteManagementEnabled = false
+    super.tearDown()
+  }
+
+  private func makeTransport() throws -> Transport {
+    let transport = Transport()
+    transport.transportIdentity = Identity()
+    try transport.start()
+    return transport
+  }
+
+  private func invokePathHandler(_ transport: Transport, request: [MsgPack.Value]) throws
+    -> [MsgPack.Value]
+  {
+    let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
+    let pathHash = Hashes.truncatedHash(Data("/path".utf8))
+    let entry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
+    let response = try XCTUnwrap(
+      entry.handler(pathHash, MsgPack.encode(.array(request)), Data(), makeMinimalLink(), 0)
+    )
+    return try XCTUnwrap(MsgPack.decode(response).asArray)
+  }
+
+  /// An interface that declares an announce-rate target, so that
+  /// `isAnnounceRateBlocked` seeds a rate-table entry instead of short-circuiting.
+  final class RateTargetInterface: Interface {
+    var name: String
+    var bitrate: Int = 100_000
+    var isOnline: Bool = true
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    var announceRateTarget: TimeInterval?
+
+    init(name: String, rateTarget: TimeInterval) {
+      self.name = name
+      self.announceRateTarget = rateTarget
+    }
+    func start() throws { isOnline = true }
+    func stop() { isOnline = false }
+    func send(_ packet: Packet) throws {}
+  }
+
+  /// The handler signature requires a link object but never inspects it.
+  private func makeMinimalLink() -> Link {
+    let identity = Identity()
+    let destination = try! Destination(
+      identity: identity, direction: .in, kind: .single,
+      appName: "dummy", aspects: ["link"])
+    let transport = Transport()
+    transport.register(interface: LoopbackInterface(name: "PathShapeTest"))
+    return try! Link.initiate(destination: destination, transport: transport)
+  }
+
+  private func addPath(_ transport: Transport, hops: UInt8, interface: String) -> Data {
+    let destination = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+    transport.restore(
+      path: Transport.PathEntry(
+        destinationHash: destination,
+        nextHopInterfaceName: interface,
+        hops: hops,
+        lastHeard: Date(),
+        identityHash: Data(repeating: 0x01, count: 16),
+        nextHopTransportID: Data(repeating: 0x02, count: 16)
+      ), forDestination: destination)
+    return destination
+  }
+
+  // MARK: - table
+
+  func testTableEntryCarriesEveryKeyPythonProduces() throws {
+    // Python get_path_table entry:
+    //   {"hash", "timestamp", "via", "hops", "expires", "interface"}
+    let transport = try makeTransport()
+    _ = addPath(transport, hops: 2, interface: "TCPInterface[example:4242]")
+
+    let entries = try invokePathHandler(transport, request: [.string("table")])
+    let fields = try XCTUnwrap(entries.first?.asDictionary)
+
+    XCTAssertNotNil(fields["hash"])
+    XCTAssertNotNil(fields["timestamp"], "rnpath's JSON mode serialises every key")
+    XCTAssertNotNil(fields["via"])
+    XCTAssertNotNil(fields["hops"])
+    XCTAssertNotNil(fields["expires"])
+    XCTAssertNotNil(fields["interface"], "rnpath prints path[\"interface\"] directly")
+  }
+
+  func testTableEntryInterfaceNameMatchesPath() throws {
+    let transport = try makeTransport()
+    _ = addPath(transport, hops: 1, interface: "TCPInterface[example:4242]")
+
+    let entries = try invokePathHandler(transport, request: [.string("table")])
+    let fields = try XCTUnwrap(entries.first?.asDictionary)
+    XCTAssertEqual(fields["interface"]?.asString, "TCPInterface[example:4242]")
+  }
+
+  func testTableHonoursMaxHops() throws {
+    // Python: data[2] is max_hops, passed to get_path_table(max_hops=max_hops).
+    let transport = try makeTransport()
+    _ = addPath(transport, hops: 1, interface: "A")
+    _ = addPath(transport, hops: 5, interface: "B")
+
+    let unfiltered = try invokePathHandler(transport, request: [.string("table")])
+    XCTAssertEqual(unfiltered.count, 2)
+
+    let limited = try invokePathHandler(transport, request: [.string("table"), .nil, .uint(2)])
+    XCTAssertEqual(limited.count, 1, "max_hops = 2 should exclude the 5-hop path")
+    XCTAssertEqual(limited.first?.asDictionary?["hops"]?.asInt, 1)
+  }
+
+  func testTableFiltersByDestinationHash() throws {
+    let transport = try makeTransport()
+    let wanted = addPath(transport, hops: 1, interface: "A")
+    _ = addPath(transport, hops: 1, interface: "B")
+
+    let entries = try invokePathHandler(transport, request: [.string("table"), .bytes(wanted)])
+    XCTAssertEqual(entries.count, 1)
+    XCTAssertEqual(entries.first?.asDictionary?["hash"]?.asData, wanted)
+  }
+
+  // MARK: - rates
+
+  func testRatesEntryCarriesEveryKeyPythonProduces() throws {
+    // Python get_rate_table entry:
+    //   {"hash", "last", "rate_violations", "blocked_until", "timestamps"}
+    let transport = try makeTransport()
+    let destination = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+    // Seed a rate-table entry the same way an inbound announce would.
+    let iface = RateTargetInterface(name: "RateTest", rateTarget: 3600)
+    transport.register(interface: iface)
+    _ = transport.isAnnounceRateBlocked(destinationHash: destination, interface: iface)
+
+    let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
+    let pathHash = Hashes.truncatedHash(Data("/path".utf8))
+    let entry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
+    let response = try XCTUnwrap(
+      entry.handler(
+        pathHash, MsgPack.encode(.array([.string("rates")])), Data(), makeMinimalLink(), 0)
+    )
+    let entries = try XCTUnwrap(MsgPack.decode(response).asArray)
+    let fields = try XCTUnwrap(entries.first?.asDictionary)
+
+    XCTAssertNotNil(fields["hash"])
+    XCTAssertNotNil(fields["last"])
+    XCTAssertNotNil(fields["rate_violations"])
+    XCTAssertNotNil(fields["blocked_until"])
+    XCTAssertNotNil(fields["timestamps"], "rnpath derives the announce rate from timestamps")
+    XCTAssertNotNil(fields["timestamps"]?.asArray)
+  }
+
+  // MARK: - /status
+
+  /// `/status` is registered as a NATIVE handler, so its response is embedded in the
+  /// envelope as a msgpack value rather than a BIN blob—Python's `rnstatus` does
+  /// `isinstance(request_receipt.response, list)` and rejects the bytes form.
+  private func invokeStatusHandler(_ transport: Transport, includeLinkStats: Bool) throws
+    -> [MsgPack.Value]
+  {
+    let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
+    let statusHash = Hashes.truncatedHash(Data("/status".utf8))
+    let entry = try XCTUnwrap(mgmt.requestHandlers[statusHash])
+    let native = try XCTUnwrap(entry.nativeHandler, "/status must use a native handler")
+    let request = MsgPack.Value.array([.bool(includeLinkStats)])
+    let response = try XCTUnwrap(native(statusHash, request, Data(), makeMinimalLink(), 0))
+    return try XCTUnwrap(response.asArray)
+  }
+
+  func testStatusReturnsTheFullInterfaceStatsPayload() throws {
+    // Python: response.append(Transport.owner.get_interface_stats())—the whole dict,
+    // which rnstatus then indexes by "interfaces", "rxb", "txs" and so on. Returning a
+    // summarised list of per-interface names would leave rnstatus -R with nothing to read.
+    let transport = try makeTransport()
+    let entries = try invokeStatusHandler(transport, includeLinkStats: false)
+    XCTAssertEqual(entries.count, 1, "no link count requested")
+
+    let stats = try XCTUnwrap(entries[0].asDictionary)
+    XCTAssertNotNil(stats["interfaces"]?.asArray)
+    XCTAssertNotNil(stats["rxb"])
+    XCTAssertNotNil(stats["txb"])
+    XCTAssertNotNil(stats["rxs"])
+    XCTAssertNotNil(stats["txs"])
+  }
+
+  func testStatusAppendsLinkCountWhenRequested() throws {
+    // Python: if data[0] == True: response.append(Transport.owner.get_link_count())
+    let transport = try makeTransport()
+    let entries = try invokeStatusHandler(transport, includeLinkStats: true)
+    XCTAssertEqual(entries.count, 2)
+    XCTAssertNotNil(entries[1].asInt)
+  }
+
+  func testStatusInterfaceEntriesCarryPerInterfaceKeys() throws {
+    let transport = try makeTransport()
+    transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
+
+    let entries = try invokeStatusHandler(transport, includeLinkStats: false)
+    let stats = try XCTUnwrap(entries[0].asDictionary)
+    let interfaces = try XCTUnwrap(stats["interfaces"]?.asArray)
+    let iface = try XCTUnwrap(interfaces.first?.asDictionary)
+
+    // A representative sample of the keys rnstatus reads off each interface.
+    for key in [
+      "name", "short_name", "hash", "type", "rxb", "txb", "status",
+      "mode", "bitrate", "rxs", "txs", "clients",
+    ] {
+      XCTAssertNotNil(iface[key], "interface stats should carry \"\(key)\"")
     }
 
-    override func tearDown() {
-        Reticulum.storedRemoteManagementEnabled = false
-        super.tearDown()
+    // `announce_queue` is deliberately NOT in that list. Python creates the attribute
+    // lazily, the first time an announce is queued on an interface (Transport.py:1277),
+    // and `get_interface_stats` emits the key only when `hasattr` succeeds—so on a
+    // freshly registered interface Python omits it, and rnstatus's `if "announce_queue"
+    // in ifstat` guard is what makes that meaningful.
+    XCTAssertNil(
+      iface["announce_queue"],
+      "an interface that has never queued an announce must not claim a queue")
+  }
+
+  func testStatusInterfaceKeyOrderMatchesPython() throws {
+    // `rnstatus -j` serialises this dictionary with json.dumps, which preserves
+    // insertion order, so the order is part of the -j output contract. This is Python's
+    // sequence in get_interface_stats (Reticulum.py:1397-1566) for an interface with no
+    // optional blocks—checked against a live Python daemon's own -j output.
+    //
+    // `InterfaceStatsKeyParityTests` pins the same sequence, but only the unconditional
+    // tail and only through `InterfaceStatsPayload.build`. This one covers the whole
+    // emitted sequence, conditional blocks included, over the RPC path a real `rnstatus`
+    // actually calls—so a handler that reshapes a correctly built payload still fails
+    // here.
+    let transport = try makeTransport()
+    transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
+
+    let entries = try invokeStatusHandler(transport, includeLinkStats: false)
+    let stats = try XCTUnwrap(entries[0].asDictionary)
+    let interfaces = try XCTUnwrap(stats["interfaces"]?.asArray)
+    guard case .map(let pairs)? = interfaces.first else {
+      return XCTFail("interface entry should be a map")
     }
+    let order = pairs.compactMap { $0.0.asString }
 
-    private func makeTransport() throws -> Transport {
-        let transport = Transport()
-        transport.transportIdentity = Identity()
-        try transport.start()
-        return transport
-    }
+    XCTAssertEqual(
+      order,
+      [
+        "clients", "bitrate", "rxs", "txs",
+        // RNS 1.5.0 added the four announce and path-request speed gauges directly
+        // after the two byte-rate ones (Reticulum.py:1482-1502).
+        "arxs", "atxs", "prxs", "ptxs",
+        "ifac_signature", "ifac_size", "ifac_netname", "autoconnect_source",
+        "name", "short_name", "hash", "type",
+        // `mtu` lands between `type` and `rxb`, not at the end.
+        "mtu", "rxb", "txb",
+        // Announce and path-request byte and frame totals, then the transmit-buffer
+        // drop counters `rnstatus` reads without a membership guard.
+        "arxb", "atxb", "arxc", "atxc", "prxb", "ptxb", "prxc", "ptxc",
+        "txdrp", "txdrb", "txstalled", "txbuffered",
+        "incoming_announce_frequency", "outgoing_announce_frequency",
+        "incoming_pr_frequency", "outgoing_pr_frequency",
+        "announce_rate_target", "announce_rate_penalty", "announce_rate_grace",
+        "held_announces",
+        // Each burst pair gained a count, interleaved rather than appended.
+        "burst_active", "burst_activated", "burst_count",
+        "pr_burst_active", "pr_burst_activated", "pr_burst_count",
+        "status", "mode",
+        // RNS 1.4.1 appended both after `mode`, and Python still emits them there
+        // in 1.5.2—so they extend this sequence rather than reordering it.
+        "gravity", "announces_to_internal",
+        "protocol_violations", "ifac_violations", "packet_filter_hits",
+      ])
+  }
 
-    private func invokePathHandler(_ transport: Transport, request: [MsgPack.Value]) throws -> [MsgPack.Value] {
-        let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
-        let pathHash = Hashes.truncatedHash(Data("/path".utf8))
-        let entry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
-        let response = try XCTUnwrap(
-            entry.handler(pathHash, MsgPack.encode(.array(request)), Data(), makeMinimalLink(), 0)
-        )
-        return try XCTUnwrap(MsgPack.decode(response).asArray)
-    }
+  // MARK: - Unknown commands
 
-    /// An interface that declares an announce-rate target, so that
-    /// `isAnnounceRateBlocked` seeds a rate-table entry instead of short-circuiting.
-    final class RateTargetInterface: Interface {
-        var name: String
-        var bitrate: Int = 100_000
-        var isOnline: Bool = true
-        var inboundHandler: ((Packet, any Interface) -> Void)?
-        var announceRateTarget: TimeInterval?
-
-        init(name: String, rateTarget: TimeInterval) {
-            self.name = name
-            self.announceRateTarget = rateTarget
-        }
-        func start() throws { isOnline = true }
-        func stop() { isOnline = false }
-        func send(_ packet: Packet) throws {}
-    }
-
-    /// The handler signature requires a link object but never inspects it.
-    private func makeMinimalLink() -> Link {
-        let identity = Identity()
-        let destination = try! Destination(identity: identity, direction: .in, kind: .single,
-                                           appName: "dummy", aspects: ["link"])
-        let transport = Transport()
-        transport.register(interface: LoopbackInterface(name: "PathShapeTest"))
-        return try! Link.initiate(destination: destination, transport: transport)
-    }
-
-    private func addPath(_ transport: Transport, hops: UInt8, interface: String) -> Data {
-        let destination = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
-        transport.restore(path: Transport.PathEntry(
-            destinationHash: destination,
-            nextHopInterfaceName: interface,
-            hops: hops,
-            lastHeard: Date(),
-            identityHash: Data(repeating: 0x01, count: 16),
-            nextHopTransportID: Data(repeating: 0x02, count: 16)
-        ), forDestination: destination)
-        return destination
-    }
-
-    // MARK: - table
-
-    func testTableEntryCarriesEveryKeyPythonProduces() throws {
-        // Python get_path_table entry:
-        //   {"hash", "timestamp", "via", "hops", "expires", "interface"}
-        let transport = try makeTransport()
-        _ = addPath(transport, hops: 2, interface: "TCPInterface[example:4242]")
-
-        let entries = try invokePathHandler(transport, request: [.string("table")])
-        let fields = try XCTUnwrap(entries.first?.asDictionary)
-
-        XCTAssertNotNil(fields["hash"])
-        XCTAssertNotNil(fields["timestamp"], "rnpath's JSON mode serialises every key")
-        XCTAssertNotNil(fields["via"])
-        XCTAssertNotNil(fields["hops"])
-        XCTAssertNotNil(fields["expires"])
-        XCTAssertNotNil(fields["interface"], "rnpath prints path[\"interface\"] directly")
-    }
-
-    func testTableEntryInterfaceNameMatchesPath() throws {
-        let transport = try makeTransport()
-        _ = addPath(transport, hops: 1, interface: "TCPInterface[example:4242]")
-
-        let entries = try invokePathHandler(transport, request: [.string("table")])
-        let fields = try XCTUnwrap(entries.first?.asDictionary)
-        XCTAssertEqual(fields["interface"]?.asString, "TCPInterface[example:4242]")
-    }
-
-    func testTableHonoursMaxHops() throws {
-        // Python: data[2] is max_hops, passed to get_path_table(max_hops=max_hops).
-        let transport = try makeTransport()
-        _ = addPath(transport, hops: 1, interface: "A")
-        _ = addPath(transport, hops: 5, interface: "B")
-
-        let unfiltered = try invokePathHandler(transport, request: [.string("table")])
-        XCTAssertEqual(unfiltered.count, 2)
-
-        let limited = try invokePathHandler(transport, request: [.string("table"), .nil, .uint(2)])
-        XCTAssertEqual(limited.count, 1, "max_hops = 2 should exclude the 5-hop path")
-        XCTAssertEqual(limited.first?.asDictionary?["hops"]?.asInt, 1)
-    }
-
-    func testTableFiltersByDestinationHash() throws {
-        let transport = try makeTransport()
-        let wanted = addPath(transport, hops: 1, interface: "A")
-        _ = addPath(transport, hops: 1, interface: "B")
-
-        let entries = try invokePathHandler(transport, request: [.string("table"), .bytes(wanted)])
-        XCTAssertEqual(entries.count, 1)
-        XCTAssertEqual(entries.first?.asDictionary?["hash"]?.asData, wanted)
-    }
-
-    // MARK: - rates
-
-    func testRatesEntryCarriesEveryKeyPythonProduces() throws {
-        // Python get_rate_table entry:
-        //   {"hash", "last", "rate_violations", "blocked_until", "timestamps"}
-        let transport = try makeTransport()
-        let destination = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
-        // Seed a rate-table entry the same way an inbound announce would.
-        let iface = RateTargetInterface(name: "RateTest", rateTarget: 3600)
-        transport.register(interface: iface)
-        _ = transport.isAnnounceRateBlocked(destinationHash: destination, interface: iface)
-
-        let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
-        let pathHash = Hashes.truncatedHash(Data("/path".utf8))
-        let entry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
-        let response = try XCTUnwrap(
-            entry.handler(pathHash, MsgPack.encode(.array([.string("rates")])), Data(), makeMinimalLink(), 0)
-        )
-        let entries = try XCTUnwrap(MsgPack.decode(response).asArray)
-        let fields = try XCTUnwrap(entries.first?.asDictionary)
-
-        XCTAssertNotNil(fields["hash"])
-        XCTAssertNotNil(fields["last"])
-        XCTAssertNotNil(fields["rate_violations"])
-        XCTAssertNotNil(fields["blocked_until"])
-        XCTAssertNotNil(fields["timestamps"], "rnpath derives the announce rate from timestamps")
-        XCTAssertNotNil(fields["timestamps"]?.asArray)
-    }
-
-    // MARK: - /status
-
-    /// `/status` is registered as a NATIVE handler, so its response is embedded in the
-    /// envelope as a msgpack value rather than a BIN blob—Python's `rnstatus` does
-    /// `isinstance(request_receipt.response, list)` and rejects the bytes form.
-    private func invokeStatusHandler(_ transport: Transport, includeLinkStats: Bool) throws -> [MsgPack.Value] {
-        let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
-        let statusHash = Hashes.truncatedHash(Data("/status".utf8))
-        let entry = try XCTUnwrap(mgmt.requestHandlers[statusHash])
-        let native = try XCTUnwrap(entry.nativeHandler, "/status must use a native handler")
-        let request = MsgPack.Value.array([.bool(includeLinkStats)])
-        let response = try XCTUnwrap(native(statusHash, request, Data(), makeMinimalLink(), 0))
-        return try XCTUnwrap(response.asArray)
-    }
-
-    func testStatusReturnsTheFullInterfaceStatsPayload() throws {
-        // Python: response.append(Transport.owner.get_interface_stats())—the whole dict,
-        // which rnstatus then indexes by "interfaces", "rxb", "txs" and so on. Returning a
-        // summarised list of per-interface names would leave rnstatus -R with nothing to read.
-        let transport = try makeTransport()
-        let entries = try invokeStatusHandler(transport, includeLinkStats: false)
-        XCTAssertEqual(entries.count, 1, "no link count requested")
-
-        let stats = try XCTUnwrap(entries[0].asDictionary)
-        XCTAssertNotNil(stats["interfaces"]?.asArray)
-        XCTAssertNotNil(stats["rxb"])
-        XCTAssertNotNil(stats["txb"])
-        XCTAssertNotNil(stats["rxs"])
-        XCTAssertNotNil(stats["txs"])
-    }
-
-    func testStatusAppendsLinkCountWhenRequested() throws {
-        // Python: if data[0] == True: response.append(Transport.owner.get_link_count())
-        let transport = try makeTransport()
-        let entries = try invokeStatusHandler(transport, includeLinkStats: true)
-        XCTAssertEqual(entries.count, 2)
-        XCTAssertNotNil(entries[1].asInt)
-    }
-
-    func testStatusInterfaceEntriesCarryPerInterfaceKeys() throws {
-        let transport = try makeTransport()
-        transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
-
-        let entries = try invokeStatusHandler(transport, includeLinkStats: false)
-        let stats = try XCTUnwrap(entries[0].asDictionary)
-        let interfaces = try XCTUnwrap(stats["interfaces"]?.asArray)
-        let iface = try XCTUnwrap(interfaces.first?.asDictionary)
-
-        // A representative sample of the keys rnstatus reads off each interface.
-        for key in ["name", "short_name", "hash", "type", "rxb", "txb", "status",
-                    "mode", "bitrate", "rxs", "txs", "clients"] {
-            XCTAssertNotNil(iface[key], "interface stats should carry \"\(key)\"")
-        }
-
-        // `announce_queue` is deliberately NOT in that list. Python creates the attribute
-        // lazily, the first time an announce is queued on an interface (Transport.py:1277),
-        // and `get_interface_stats` emits the key only when `hasattr` succeeds—so on a
-        // freshly registered interface Python omits it, and rnstatus's `if "announce_queue"
-        // in ifstat` guard is what makes that meaningful.
-        XCTAssertNil(iface["announce_queue"],
-                     "an interface that has never queued an announce must not claim a queue")
-    }
-
-    func testStatusInterfaceKeyOrderMatchesPython() throws {
-        // `rnstatus -j` serialises this dictionary with json.dumps, which preserves
-        // insertion order, so the order is part of the -j output contract. This is Python's
-        // sequence in get_interface_stats (Reticulum.py:1397-1566) for an interface with no
-        // optional blocks—checked against a live Python daemon's own -j output.
-        //
-        // `InterfaceStatsKeyParityTests` pins the same sequence, but only the unconditional
-        // tail and only through `InterfaceStatsPayload.build`. This one covers the whole
-        // emitted sequence, conditional blocks included, over the RPC path a real `rnstatus`
-        // actually calls—so a handler that reshapes a correctly built payload still fails
-        // here.
-        let transport = try makeTransport()
-        transport.register(interface: LoopbackInterface(name: "StatusShapeTest"))
-
-        let entries = try invokeStatusHandler(transport, includeLinkStats: false)
-        let stats = try XCTUnwrap(entries[0].asDictionary)
-        let interfaces = try XCTUnwrap(stats["interfaces"]?.asArray)
-        guard case .map(let pairs)? = interfaces.first else {
-            return XCTFail("interface entry should be a map")
-        }
-        let order = pairs.compactMap { $0.0.asString }
-
-        XCTAssertEqual(order, [
-            "clients", "bitrate", "rxs", "txs",
-            // RNS 1.5.0 added the four announce and path-request speed gauges directly
-            // after the two byte-rate ones (Reticulum.py:1482-1502).
-            "arxs", "atxs", "prxs", "ptxs",
-            "ifac_signature", "ifac_size", "ifac_netname", "autoconnect_source",
-            "name", "short_name", "hash", "type",
-            // `mtu` lands between `type` and `rxb`, not at the end.
-            "mtu", "rxb", "txb",
-            // Announce and path-request byte and frame totals, then the transmit-buffer
-            // drop counters `rnstatus` reads without a membership guard.
-            "arxb", "atxb", "arxc", "atxc", "prxb", "ptxb", "prxc", "ptxc",
-            "txdrp", "txdrb", "txstalled", "txbuffered",
-            "incoming_announce_frequency", "outgoing_announce_frequency",
-            "incoming_pr_frequency", "outgoing_pr_frequency",
-            "announce_rate_target", "announce_rate_penalty", "announce_rate_grace",
-            "held_announces",
-            // Each burst pair gained a count, interleaved rather than appended.
-            "burst_active", "burst_activated", "burst_count",
-            "pr_burst_active", "pr_burst_activated", "pr_burst_count",
-            "status", "mode",
-            // RNS 1.4.1 appended both after `mode`, and Python still emits them there
-            // in 1.5.2—so they extend this sequence rather than reordering it.
-            "gravity", "announces_to_internal",
-            "protocol_violations", "ifac_violations", "packet_filter_hits",
-        ])
-    }
-
-    // MARK: - Unknown commands
-
-    func testUnknownCommandReturnsNil() throws {
-        let transport = try makeTransport()
-        let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
-        let pathHash = Hashes.truncatedHash(Data("/path".utf8))
-        let entry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
-        let response = entry.handler(pathHash,
-                                     MsgPack.encode(.array([.string("nonsense")])),
-                                     Data(), makeMinimalLink(), 0)
-        XCTAssertNil(response)
-    }
+  func testUnknownCommandReturnsNil() throws {
+    let transport = try makeTransport()
+    let mgmt = try XCTUnwrap(transport.remoteManagementDestination)
+    let pathHash = Hashes.truncatedHash(Data("/path".utf8))
+    let entry = try XCTUnwrap(mgmt.requestHandlers[pathHash])
+    let response = entry.handler(
+      pathHash,
+      MsgPack.encode(.array([.string("nonsense")])),
+      Data(), makeMinimalLink(), 0)
+    XCTAssertNil(response)
+  }
 }

@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Tests for RNXApp constants.
@@ -16,8 +17,8 @@ import XCTest
 
 final class RNXAppTests: XCTestCase {
 
-    func testAppName() {
-        // Python: APP_NAME = "rnx"
-        XCTAssertEqual(RNXApp.appName, "rnx")
-    }
+  func testAppName() {
+    // Python: APP_NAME = "rnx"
+    XCTAssertEqual(RNXApp.appName, "rnx")
+  }
 }

@@ -19,351 +19,374 @@ import Network
 ///   - `BITRATE_GUESS = 100_000_000` (100 Mbps)
 ///   - Automatic reconnection after disconnect
 public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables).
-    ///
-    /// One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`BackboneInterface.py:154`).
-    ///
-    /// The announcer
-    /// still needs `discoverable` set from config before it announces anything.
-    public let supportsDiscovery = true
+  /// Python marks this type discoverable (`BackboneInterface.py:154`).
+  ///
+  /// The announcer
+  /// still needs `discoverable` set from config before it announces anything.
+  public let supportsDiscovery = true
 
-    // MARK: - Constants (mirrors Python BackboneClientInterface)
+  // MARK: - Constants (mirrors Python BackboneClientInterface)
 
-    /// Maximum hardware MTU in bytes.
-    ///
-    /// Python: `BackboneClientInterface.HW_MTU = BackboneInterface.HW_MTU = 1_048_576`.
-    public static let hwMtuConstant: Int = 1_048_576
+  /// Maximum hardware MTU in bytes.
+  ///
+  /// Python: `BackboneClientInterface.HW_MTU = BackboneInterface.HW_MTU = 1_048_576`.
+  public static let hwMtuConstant: Int = 1_048_576
 
-    /// Default bitrate estimate in bits per second.
-    ///
-    /// Python: `BackboneClientInterface.BITRATE_GUESS = 100_000_000`.
-    public static let bitrateGuess: Int = 100_000_000
+  /// Default bitrate estimate in bits per second.
+  ///
+  /// Python: `BackboneClientInterface.BITRATE_GUESS = 100_000_000`.
+  public static let bitrateGuess: Int = 100_000_000
 
-    /// Time in seconds to wait between reconnect attempts.
-    ///
-    /// Python: `BackboneClientInterface.RECONNECT_WAIT = 5`.
-    public static let defaultReconnectWait: TimeInterval = 5.0
+  /// Time in seconds to wait between reconnect attempts.
+  ///
+  /// Python: `BackboneClientInterface.RECONNECT_WAIT = 5`.
+  public static let defaultReconnectWait: TimeInterval = 5.0
 
-    /// Maximum number of reconnect attempts (nil = infinite).
-    ///
-    /// Python: `BackboneClientInterface.RECONNECT_MAX_TRIES = None`.
-    public static let defaultMaxReconnectTries: Int? = nil
+  /// Maximum number of reconnect attempts (nil = infinite).
+  ///
+  /// Python: `BackboneClientInterface.RECONNECT_MAX_TRIES = None`.
+  public static let defaultMaxReconnectTries: Int? = nil
 
-    // MARK: - Interface protocol properties
+  // MARK: - Interface protocol properties
 
-    /// Interface name as it appears in configuration and status output.
-    public let name: String
-    /// Host the interface connects to.
-    public let host: String
-    /// TCP port the interface connects to.
-    public let port: UInt16
+  /// Interface name as it appears in configuration and status output.
+  public let name: String
+  /// Host the interface connects to.
+  public let host: String
+  /// TCP port the interface connects to.
+  public let port: UInt16
 
-    /// Python `BackboneClientInterface.__str__` (`BackboneInterface.py:870-873`):
-    /// `"BackboneInterface["+name+"/"+ip_str+":"+str(target_port)+"]"`, with an IPv6 literal
-    /// bracketed.
-    ///
-    /// That connecting form is the one that applies: this class dials a host, and
-    /// Python's listening `BackboneInterface.__str__` (`:561-564`) uses `bind_ip`/`bind_port`,
-    /// which this port has no separate object for.
-    ///
-    /// Overridden rather than left to the protocol's class-qualified default because the peer
-    /// address is part of the reference string—the default would publish
-    /// `BackboneInterface[<name>]` and so a different `Interface.hash` than the Python node
-    /// beside it (`bugs/022`).
-    public var displayName: String {
-        let ipString = host.contains(":") ? "[\(host)]" : host
-        return "BackboneInterface[\(name)/\(ipString):\(port)]"
+  /// Python `BackboneClientInterface.__str__` (`BackboneInterface.py:870-873`):
+  /// `"BackboneInterface["+name+"/"+ip_str+":"+str(target_port)+"]"`, with an IPv6 literal
+  /// bracketed.
+  ///
+  /// That connecting form is the one that applies: this class dials a host, and
+  /// Python's listening `BackboneInterface.__str__` (`:561-564`) uses `bind_ip`/`bind_port`,
+  /// which this port has no separate object for.
+  ///
+  /// Overridden rather than left to the protocol's class-qualified default because the peer
+  /// address is part of the reference string—the default would publish
+  /// `BackboneInterface[<name>]` and so a different `Interface.hash` than the Python node
+  /// beside it (`bugs/022`).
+  public var displayName: String {
+    let ipString = host.contains(":") ? "[\(host)]" : host
+    return "BackboneInterface[\(name)/\(ipString):\(port)]"
+  }
+
+  /// The stats `type` field is `type(interface).__name__` (`Reticulum.py:1472`), and a dialing
+  /// backbone config constructs `BackboneClientInterface` on Python (`Reticulum.py:994-1000`)—the
+  /// class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener.
+  ///
+  /// The Swift
+  /// class name would report the listener's name for a client, so consumers keying on
+  /// `ifstats["type"]` mis-classify it. the preceding `displayName` stays on the client `__str__` form;
+  /// the two are different contracts.
+  public var statsTypeName: String { "BackboneClientInterface" }
+
+  /// Nominal interface bitrate in bits per second.
+  public var bitrate: Int = BackboneInterface.bitrateGuess
+  private let onlineFlag = LockedFlag(false)
+  /// Whether the interface is up and able to carry traffic.
+  public private(set) var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
+
+  /// Python: `HW_MTU = 1_048_576`.
+  public var hwMtu: Int? = BackboneInterface.hwMtuConstant
+
+  /// Python: `AUTOCONFIGURE_MTU = True`.
+  public let autoconfigureMtu: Bool = true
+
+  /// Called with each packet decoded from an inbound frame.
+  public var inboundHandler: ((Packet, any Interface) -> Void)?
+  /// Called with each inbound frame, before packet decoding.
+  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  /// Whether path requests received here are resolved recursively.
+  public var recursivePrs: Bool = false
+  /// Whether announces originating on this instance are sent on this interface.
+  public var announcesFromInternal: Bool = true
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
+
+  // MARK: - IFAC (Interface Access Code)
+  //
+  // Real stored properties—the `Interface` protocol's default
+  // implementations are no-op storage, so without these `configureIfac`
+  // would silently discard the key and every outbound frame would go out
+  // un-masked (dropped by IFAC-protected Python peers).
+  /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
+  public var ifacIdentity: Identity?
+  /// Derived IFAC key used to sign and verify frames.
+  public var ifacKey: Data?
+  /// IFAC authentication field size in bytes.
+  public var ifacSize: Int = Constants.defaultIfacSize
+
+  /// Lock-guarded—written from this interface's I/O queue while the UI
+  /// and status reporting read from another thread.
+  ///
+  /// See `InterfaceCounters`.
+  private let counters = InterfaceCounters()
+  /// Total bytes received on this interface.
+  public var rxBytes: Int { counters.rxBytes }
+  /// Total bytes transmitted on this interface.
+  public var txBytes: Int { counters.txBytes }
+
+  // MARK: - Reconnect configuration
+
+  /// Seconds to wait between reconnect attempts.
+  ///
+  /// Python: `RECONNECT_WAIT = 5`.
+  public let reconnectWait: TimeInterval
+
+  /// Maximum reconnect attempts (nil = infinite).
+  ///
+  /// Python: `RECONNECT_MAX_TRIES = None`.
+  public let maxReconnectTries: Int?
+
+  // MARK: - Private state
+
+  private var connection: NWConnection?
+  private let queue: DispatchQueue
+  private let decoder = HDLC.FrameDecoder()
+  private var reconnectAttempts: Int = 0
+  /// True between scheduling a reconnect and it firing, so overlapping failure
+  /// signals collapse to a single reconnect loop.
+  ///
+  /// Guarded by `stateLock`.
+  private var reconnectPending: Bool = false
+
+  /// Guards `unsafeIsStopped`, `connection`, `reconnectAttempts`, and `reconnectPending`, which are
+  /// touched from the caller thread (start/stop/send) and the interface's
+  /// serial queue (openConnection/stateUpdate/scheduleReconnect/receive).
+  ///
+  /// See
+  /// the LocalInterface note: without it a queued reconnect can assign
+  /// `connection` right after stop() cleared it, leaking a live socket.
+  private let stateLock = NSLock()
+  private var unsafeIsStopped: Bool = false
+  private var isStopped: Bool {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeIsStopped
+    }
+    set {
+      stateLock.lock()
+      unsafeIsStopped = newValue
+      stateLock.unlock()
+    }
+  }
+
+  // MARK: - Init
+
+  /// Creates a backbone interface connecting to a TCP host and port.
+  public init(
+    name: String,
+    host: String,
+    port: UInt16,
+    reconnectWait: TimeInterval = BackboneInterface.defaultReconnectWait,
+    maxReconnectTries: Int? = BackboneInterface.defaultMaxReconnectTries
+  ) {
+    self.name = name
+    self.host = host
+    self.port = port
+    self.reconnectWait = reconnectWait
+    self.maxReconnectTries = maxReconnectTries
+    self.queue = DispatchQueue(label: "ReticulumSwift.BackboneInterface.\(name)")
+  }
+
+  // MARK: - Interface lifecycle
+
+  /// Brings the interface online.
+  public func start() throws {
+    stateLock.lock()
+    unsafeIsStopped = false
+    reconnectAttempts = 0
+    stateLock.unlock()
+    openConnection()
+  }
+
+  /// Takes the interface offline and releases its resources.
+  public func stop() {
+    stateLock.lock()
+    unsafeIsStopped = true
+    let conn = connection
+    connection = nil
+    stateLock.unlock()
+    isOnline = false
+    conn?.cancel()
+  }
+
+  // MARK: - Packet send
+
+  /// Transmits `packet` on the interface.
+  public func send(_ packet: Packet) throws {
+    stateLock.lock()
+    let conn = connection
+    stateLock.unlock()
+    guard let conn, isOnline else { return }
+    let raw = try packet.pack()
+    let framed = framePacketBytes(raw)
+    counters.addTx(bytes: raw.count)
+    conn.send(content: framed, completion: .contentProcessed { _ in })
+  }
+
+  /// Produce the on-wire bytes for an outbound packet: apply the IFAC mask
+  /// (when configured) then HDLC-frame.
+  ///
+  /// Mirrors the central IFAC application
+  /// in Python `Transport.transmit`, matching how `TCPClientInterface.send`
+  /// frames its bytes. Factored out of `send(_:)` so the IFAC/framing path is
+  /// unit-testable without a live `NWConnection`.
+  func framePacketBytes(_ raw: Data) -> Data {
+    HDLC.frame(wrapIfac(raw))
+  }
+
+  // MARK: - Connection management
+
+  /// The same socket options the TCP client dials with—Python configures both identically
+  /// (`BackboneInterface.py:655-660`), and both take them from ``RNSSocketOptions``.
+
+  /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
+  /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
+  private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
+
+  private func openConnection() {
+    let endpoint = NWEndpoint.hostPort(
+      host: NWEndpoint.Host(host),
+      port: .orAny(port)
+    )
+    // Python: `set_timeouts_linux()` + `TCP_NODELAY` on every backbone socket
+    // (BackboneInterface.py:626-627, :655-660)—the same options the TCP client uses,
+    // for the same reason: without keepalive a peer that vanished without sending FIN
+    // leaves this connection `.ready` forever and the reconnect below never fires.
+    let socketOptions = RNSSocketOptions.tcpParameters()
+    handedOverTCPOptionsForTesting = socketOptions.options
+    let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
+    // Re-check stopped and publish the connection atomically (see LocalInterface).
+    stateLock.lock()
+    guard !unsafeIsStopped else {
+      stateLock.unlock()
+      return
+    }
+    connection = conn
+    stateLock.unlock()
+
+    conn.stateUpdateHandler = { [weak self] state in
+      guard let self, !self.isStopped else { return }
+      switch state {
+      case .ready:
+        self.isOnline = true
+        self.noteConnected()
+        self.stateLock.lock()
+        self.reconnectAttempts = 0
+        self.stateLock.unlock()
+        self.beginReceiveLoop()
+        Reticulum.log(
+          "BackboneInterface \(self.name) connected to \(self.host):\(self.port)",
+          level: .debug)
+
+      case .failed(let error):
+        Reticulum.log(
+          "BackboneInterface \(self.name) connection failed: \(error)",
+          level: .warning)
+        self.isOnline = false
+        self.scheduleReconnect()
+
+      case .cancelled:
+        self.isOnline = false
+
+      default:
+        break
+      }
     }
 
-    /// The stats `type` field is `type(interface).__name__` (`Reticulum.py:1472`), and a dialing
-    /// backbone config constructs `BackboneClientInterface` on Python (`Reticulum.py:994-1000`)—the
-    /// class named `BackboneInterface` (`BackboneInterface.py:51`) is the listener.
-    ///
-    /// The Swift
-    /// class name would report the listener's name for a client, so consumers keying on
-    /// `ifstats["type"]` mis-classify it. the preceding `displayName` stays on the client `__str__` form;
-    /// the two are different contracts.
-    public var statsTypeName: String { "BackboneClientInterface" }
+    conn.start(queue: queue)
+  }
 
-    /// Nominal interface bitrate in bits per second.
-    public var bitrate: Int = BackboneInterface.bitrateGuess
-    private let onlineFlag = LockedFlag(false)
-    /// Whether the interface is up and able to carry traffic.
-    public private(set) var isOnline: Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
+  private func scheduleReconnect() {
+    stateLock.lock()
+    // A single disconnect can trigger both the .failed state handler and the
+    // receive-error callback; `reconnectPending` collapses them so only ONE
+    // reconnect loop is scheduled (was: two concurrent overlapping loops).
+    if unsafeIsStopped || reconnectPending {
+      stateLock.unlock()
+      return
     }
-
-    /// Python: `HW_MTU = 1_048_576`.
-    public var hwMtu: Int? = BackboneInterface.hwMtuConstant
-
-    /// Python: `AUTOCONFIGURE_MTU = True`.
-    public let autoconfigureMtu: Bool = true
-
-    /// Called with each packet decoded from an inbound frame.
-    public var inboundHandler: ((Packet, any Interface) -> Void)?
-    /// Called with each inbound frame, before packet decoding.
-    public var rawInboundHandler: ((Data, any Interface) -> Void)?
-    /// Whether path requests received here are resolved recursively.
-    public var recursivePrs: Bool = false
-    /// Whether announces originating on this instance are sent on this interface.
-    public var announcesFromInternal: Bool = true
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
-
-    // MARK: - IFAC (Interface Access Code)
-    //
-    // Real stored properties—the `Interface` protocol's default
-    // implementations are no-op storage, so without these `configureIfac`
-    // would silently discard the key and every outbound frame would go out
-    // un-masked (dropped by IFAC-protected Python peers).
-    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
-    public var ifacIdentity: Identity?
-    /// Derived IFAC key used to sign and verify frames.
-    public var ifacKey: Data?
-    /// IFAC authentication field size in bytes.
-    public var ifacSize: Int = Constants.defaultIfacSize
-
-    /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread.
-    ///
-    /// See `InterfaceCounters`.
-    private let counters = InterfaceCounters()
-    /// Total bytes received on this interface.
-    public var rxBytes: Int { counters.rxBytes }
-    /// Total bytes transmitted on this interface.
-    public var txBytes: Int { counters.txBytes }
-
-    // MARK: - Reconnect configuration
-
-    /// Seconds to wait between reconnect attempts.
-    ///
-    /// Python: `RECONNECT_WAIT = 5`.
-    public let reconnectWait: TimeInterval
-
-    /// Maximum reconnect attempts (nil = infinite).
-    ///
-    /// Python: `RECONNECT_MAX_TRIES = None`.
-    public let maxReconnectTries: Int?
-
-    // MARK: - Private state
-
-    private var connection: NWConnection?
-    private let queue: DispatchQueue
-    private let decoder = HDLC.FrameDecoder()
-    private var reconnectAttempts: Int = 0
-    /// True between scheduling a reconnect and it firing, so overlapping failure
-    /// signals collapse to a single reconnect loop.
-    ///
-    /// Guarded by `stateLock`.
-    private var reconnectPending: Bool = false
-
-    /// Guards `unsafeIsStopped`, `connection`, `reconnectAttempts`, and `reconnectPending`, which are
-    /// touched from the caller thread (start/stop/send) and the interface's
-    /// serial queue (openConnection/stateUpdate/scheduleReconnect/receive).
-    ///
-    /// See
-    /// the LocalInterface note: without it a queued reconnect can assign
-    /// `connection` right after stop() cleared it, leaking a live socket.
-    private let stateLock = NSLock()
-    private var unsafeIsStopped: Bool = false
-    private var isStopped: Bool {
-        get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeIsStopped }
-        set { stateLock.lock(); unsafeIsStopped = newValue; stateLock.unlock() }
+    let attempts = reconnectAttempts
+    if let maxTries = maxReconnectTries, attempts >= maxTries {
+      stateLock.unlock()
+      Reticulum.log(
+        "BackboneInterface \(name) reached max reconnect tries (\(maxTries)), giving up.",
+        level: .error)
+      return
     }
+    reconnectAttempts = attempts + 1
+    reconnectPending = true
+    let attempt = reconnectAttempts
+    stateLock.unlock()
+    Reticulum.log(
+      "BackboneInterface \(name) scheduling reconnect in \(reconnectWait)s (attempt \(attempt))",
+      level: .verbose)
 
-    // MARK: - Init
-
-    /// Creates a backbone interface connecting to a TCP host and port.
-    public init(
-        name: String,
-        host: String,
-        port: UInt16,
-        reconnectWait: TimeInterval = BackboneInterface.defaultReconnectWait,
-        maxReconnectTries: Int? = BackboneInterface.defaultMaxReconnectTries
-    ) {
-        self.name = name
-        self.host = host
-        self.port = port
-        self.reconnectWait = reconnectWait
-        self.maxReconnectTries = maxReconnectTries
-        self.queue = DispatchQueue(label: "ReticulumSwift.BackboneInterface.\(name)")
+    queue.asyncAfter(deadline: .now() + reconnectWait) { [weak self] in
+      guard let self else { return }
+      self.stateLock.lock()
+      self.reconnectPending = false
+      let stopped = self.unsafeIsStopped
+      self.stateLock.unlock()
+      guard !stopped else { return }
+      self.openConnection()
     }
+  }
 
-    // MARK: - Interface lifecycle
+  private func beginReceiveLoop() {
+    stateLock.lock()
+    let conn = connection
+    stateLock.unlock()
+    conn?.receive(minimumIncompleteLength: 1, maximumLength: 65536) {
+      [weak self] data, _, isComplete, error in
+      guard let self, !self.isStopped else { return }
 
-    /// Brings the interface online.
-    public func start() throws {
-        stateLock.lock()
-        unsafeIsStopped = false
-        reconnectAttempts = 0
-        stateLock.unlock()
-        openConnection()
-    }
-
-    /// Takes the interface offline and releases its resources.
-    public func stop() {
-        stateLock.lock()
-        unsafeIsStopped = true
-        let conn = connection; connection = nil
-        stateLock.unlock()
-        isOnline = false
-        conn?.cancel()
-    }
-
-    // MARK: - Packet send
-
-    /// Transmits `packet` on the interface.
-    public func send(_ packet: Packet) throws {
-        stateLock.lock()
-        let conn = connection
-        stateLock.unlock()
-        guard let conn, isOnline else { return }
-        let raw = try packet.pack()
-        let framed = framePacketBytes(raw)
-        counters.addTx(bytes: raw.count)
-        conn.send(content: framed, completion: .contentProcessed { _ in })
-    }
-
-    /// Produce the on-wire bytes for an outbound packet: apply the IFAC mask
-    /// (when configured) then HDLC-frame.
-    ///
-    /// Mirrors the central IFAC application
-    /// in Python `Transport.transmit`, matching how `TCPClientInterface.send`
-    /// frames its bytes. Factored out of `send(_:)` so the IFAC/framing path is
-    /// unit-testable without a live `NWConnection`.
-    func framePacketBytes(_ raw: Data) -> Data {
-        HDLC.frame(wrapIfac(raw))
-    }
-
-    // MARK: - Connection management
-
-    /// The same socket options the TCP client dials with—Python configures both identically
-    /// (`BackboneInterface.py:655-660`), and both take them from ``RNSSocketOptions``.
-
-    /// The exact `NWProtocolTCP.Options` instance the last dial handed to Network.framework,
-    /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
-    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
-
-    private func openConnection() {
-        let endpoint = NWEndpoint.hostPort(
-            host: NWEndpoint.Host(host),
-            port: .orAny(port)
-        )
-        // Python: `set_timeouts_linux()` + `TCP_NODELAY` on every backbone socket
-        // (BackboneInterface.py:626-627, :655-660)—the same options the TCP client uses,
-        // for the same reason: without keepalive a peer that vanished without sending FIN
-        // leaves this connection `.ready` forever and the reconnect below never fires.
-        let socketOptions = RNSSocketOptions.tcpParameters()
-        handedOverTCPOptionsForTesting = socketOptions.options
-        let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
-        // Re-check stopped and publish the connection atomically (see LocalInterface).
-        stateLock.lock()
-        guard !unsafeIsStopped else { stateLock.unlock(); return }
-        connection = conn
-        stateLock.unlock()
-
-        conn.stateUpdateHandler = { [weak self] state in
-            guard let self, !self.isStopped else { return }
-            switch state {
-            case .ready:
-                self.isOnline = true
-                self.noteConnected()
-                self.stateLock.lock(); self.reconnectAttempts = 0; self.stateLock.unlock()
-                self.beginReceiveLoop()
-                Reticulum.log("BackboneInterface \(self.name) connected to \(self.host):\(self.port)",
-                              level: .debug)
-
-            case .failed(let error):
-                Reticulum.log("BackboneInterface \(self.name) connection failed: \(error)",
-                              level: .warning)
-                self.isOnline = false
-                self.scheduleReconnect()
-
-            case .cancelled:
-                self.isOnline = false
-
-            default:
-                break
-            }
+      if let data, !data.isEmpty {
+        let frames = self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize)
+        for frame in frames {
+          self.counters.addRx(bytes: frame.count)
+          if let h = self.rawInboundHandler {
+            h(frame, self)
+          } else if let packet = try? Packet.unpack(frame) {
+            self.inboundHandler?(packet, self)
+          }
         }
+      }
 
-        conn.start(queue: queue)
+      if let error = error {
+        Reticulum.log("BackboneInterface \(self.name) receive error: \(error)", level: .warning)
+        self.isOnline = false
+        self.scheduleReconnect()
+        return
+      }
+
+      if isComplete {
+        Reticulum.log(
+          "BackboneInterface \(self.name) connection closed by remote, reconnecting…",
+          level: .warning)
+        self.isOnline = false
+        self.scheduleReconnect()
+        return
+      }
+
+      self.beginReceiveLoop()
     }
-
-    private func scheduleReconnect() {
-        stateLock.lock()
-        // A single disconnect can trigger both the .failed state handler and the
-        // receive-error callback; `reconnectPending` collapses them so only ONE
-        // reconnect loop is scheduled (was: two concurrent overlapping loops).
-        if unsafeIsStopped || reconnectPending { stateLock.unlock(); return }
-        let attempts = reconnectAttempts
-        if let maxTries = maxReconnectTries, attempts >= maxTries {
-            stateLock.unlock()
-            Reticulum.log("BackboneInterface \(name) reached max reconnect tries (\(maxTries)), giving up.",
-                          level: .error)
-            return
-        }
-        reconnectAttempts = attempts + 1
-        reconnectPending = true
-        let attempt = reconnectAttempts
-        stateLock.unlock()
-        Reticulum.log("BackboneInterface \(name) scheduling reconnect in \(reconnectWait)s (attempt \(attempt))",
-                      level: .verbose)
-
-        queue.asyncAfter(deadline: .now() + reconnectWait) { [weak self] in
-            guard let self else { return }
-            self.stateLock.lock()
-            self.reconnectPending = false
-            let stopped = self.unsafeIsStopped
-            self.stateLock.unlock()
-            guard !stopped else { return }
-            self.openConnection()
-        }
-    }
-
-    private func beginReceiveLoop() {
-        stateLock.lock()
-        let conn = connection
-        stateLock.unlock()
-        conn?.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
-            guard let self, !self.isStopped else { return }
-
-            if let data, !data.isEmpty {
-                let frames = self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize)
-                for frame in frames {
-                    self.counters.addRx(bytes: frame.count)
-                    if let h = self.rawInboundHandler {
-                        h(frame, self)
-                    } else if let packet = try? Packet.unpack(frame) {
-                        self.inboundHandler?(packet, self)
-                    }
-                }
-            }
-
-            if let error = error {
-                Reticulum.log("BackboneInterface \(self.name) receive error: \(error)", level: .warning)
-                self.isOnline = false
-                self.scheduleReconnect()
-                return
-            }
-
-            if isComplete {
-                Reticulum.log("BackboneInterface \(self.name) connection closed by remote, reconnecting…",
-                              level: .warning)
-                self.isOnline = false
-                self.scheduleReconnect()
-                return
-            }
-
-            self.beginReceiveLoop()
-        }
-    }
+  }
 }

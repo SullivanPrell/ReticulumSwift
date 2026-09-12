@@ -23,47 +23,47 @@ import Foundation
 /// Python: request_data = [command, timeout, stdoutl, stderrl, stdin]
 public struct RNXRequest {
 
-    /// Shell command string to run on the remote host.
-    public var command: String
+  /// Shell command string to run on the remote host.
+  public var command: String
 
-    /// Optional execution timeout in seconds.
-    public var timeout: TimeInterval? = nil
+  /// Optional execution timeout in seconds.
+  public var timeout: TimeInterval? = nil
 
-    /// Maximum bytes captured from stdout (nil = unlimited).
-    public var stdoutLimit: Int? = nil
+  /// Maximum bytes captured from stdout (nil = unlimited).
+  public var stdoutLimit: Int? = nil
 
-    /// Maximum bytes captured from stderr (nil = unlimited).
-    public var stderrLimit: Int? = nil
+  /// Maximum bytes captured from stderr (nil = unlimited).
+  public var stderrLimit: Int? = nil
 
-    /// Optional data fed to the command's stdin.
-    public var stdin: Data? = nil
+  /// Optional data fed to the command's stdin.
+  public var stdin: Data? = nil
 
-    /// Encode element `[1]` as a msgpack integer rather than float64.
-    ///
-    /// Python emits positive fixint 15 whenever `-w` is defaulted—`Transport.
-    /// PATH_REQUEST_TIMEOUT` is an `int` and argparse doesn't coerce non-string defaults
-    /// through `type=float`—and float64 only when `-w` is passed explicitly. Both are
-    /// accepted by every listener; the flag exists so the client can be byte-exact.
-    public var timeoutPacksAsInteger: Bool = false
+  /// Encode element `[1]` as a msgpack integer rather than float64.
+  ///
+  /// Python emits positive fixint 15 whenever `-w` is defaulted—`Transport.
+  /// PATH_REQUEST_TIMEOUT` is an `int` and argparse doesn't coerce non-string defaults
+  /// through `type=float`—and float64 only when `-w` is passed explicitly. Both are
+  /// accepted by every listener; the flag exists so the client can be byte-exact.
+  public var timeoutPacksAsInteger: Bool = false
 
-    /// Creates a request carrying `command`.
-    public init(command: String) {
-        self.command = command
-    }
+  /// Creates a request carrying `command`.
+  public init(command: String) {
+    self.command = command
+  }
 
-    /// Pack to msgpack for transmission via `link.request(data:)`.
-    ///
-    /// Python: request_data[0] = command.encode("utf-8")—bytes, not a string.
-    public func pack() throws -> Data {
-        let arr: [MsgPack.Value] = [
-            .bytes(Data(command.utf8)),                         // [0] command as bytes
-            timeout.map { .double($0) } ?? .nil,               // [1] timeout
-            stdoutLimit.map { .int(Int64($0)) } ?? .nil,       // [2] stdout size limit
-            stderrLimit.map { .int(Int64($0)) } ?? .nil,       // [3] stderr size limit
-            stdin.map { .bytes($0) } ?? .nil,                  // [4] stdin data
-        ]
-        return MsgPack.encode(.array(arr))
-    }
+  /// Pack to msgpack for transmission via `link.request(data:)`.
+  ///
+  /// Python: request_data[0] = command.encode("utf-8")—bytes, not a string.
+  public func pack() throws -> Data {
+    let arr: [MsgPack.Value] = [
+      .bytes(Data(command.utf8)),  // [0] command as bytes
+      timeout.map { .double($0) } ?? .nil,  // [1] timeout
+      stdoutLimit.map { .int(Int64($0)) } ?? .nil,  // [2] stdout size limit
+      stderrLimit.map { .int(Int64($0)) } ?? .nil,  // [3] stderr size limit
+      stdin.map { .bytes($0) } ?? .nil,  // [4] stdin data
+    ]
+    return MsgPack.encode(.array(arr))
+  }
 }
 
 // MARK: - RNXResult
@@ -80,73 +80,73 @@ public struct RNXRequest {
 ///   [7] concluded_at (float or None)
 public struct RNXResult {
 
-    /// True if the command was actually started on the remote end.
-    public var executed: Bool
+  /// True if the command was actually started on the remote end.
+  public var executed: Bool
 
-    /// Process exit code (nil if not executed or not yet available).
-    public var returnCode: Int?
+  /// Process exit code (nil if not executed or not yet available).
+  public var returnCode: Int?
 
-    /// Captured stdout bytes (stdoutLimit may truncate them).
-    public var stdout: Data?
+  /// Captured stdout bytes (stdoutLimit may truncate them).
+  public var stdout: Data?
 
-    /// Captured stderr bytes (stderrLimit may truncate them).
-    public var stderr: Data?
+  /// Captured stderr bytes (stderrLimit may truncate them).
+  public var stderr: Data?
 
-    /// Total length of stdout produced (before any truncation).
-    public var totalStdoutLength: Int?
+  /// Total length of stdout produced (before any truncation).
+  public var totalStdoutLength: Int?
 
-    /// Total length of stderr produced (before any truncation).
-    public var totalStderrLength: Int?
+  /// Total length of stderr produced (before any truncation).
+  public var totalStderrLength: Int?
 
-    /// Unix timestamp when the command started (seconds since epoch).
-    public var startedAt: TimeInterval?
+  /// Unix timestamp when the command started (seconds since epoch).
+  public var startedAt: TimeInterval?
 
-    /// Unix timestamp when the command concluded (nil if still running).
-    public var concludedAt: TimeInterval?
+  /// Unix timestamp when the command concluded (nil if still running).
+  public var concludedAt: TimeInterval?
 
-    /// Decode an RNXResult from a packed msgpack 8-element array.
-    public init(unpackFrom data: Data) throws {
-        guard case .array(let arr) = try MsgPack.decode(data), arr.count == 8 else {
-            throw RNXError.malformedResponse
-        }
-
-        // [0] executed
-        guard case .bool(let exec) = arr[0] else { throw RNXError.malformedResponse }
-        executed = exec
-
-        // [1] return_code
-        returnCode = arr[1].asInt
-
-        // [2] stdout
-        if case .bytes(let b) = arr[2] { stdout = b } else { stdout = nil }
-
-        // [3] stderr
-        if case .bytes(let b) = arr[3] { stderr = b } else { stderr = nil }
-
-        // [4] total stdout length
-        totalStdoutLength = arr[4].asInt
-
-        // [5] total stderr length
-        totalStderrLength = arr[5].asInt
-
-        // [6] started_at
-        if case .double(let t) = arr[6] { startedAt = t } else { startedAt = nil }
-
-        // [7] concluded_at
-        if case .double(let t) = arr[7] { concludedAt = t } else { concludedAt = nil }
+  /// Decode an RNXResult from a packed msgpack 8-element array.
+  public init(unpackFrom data: Data) throws {
+    guard case .array(let arr) = try MsgPack.decode(data), arr.count == 8 else {
+      throw RNXError.malformedResponse
     }
+
+    // [0] executed
+    guard case .bool(let exec) = arr[0] else { throw RNXError.malformedResponse }
+    executed = exec
+
+    // [1] return_code
+    returnCode = arr[1].asInt
+
+    // [2] stdout
+    if case .bytes(let b) = arr[2] { stdout = b } else { stdout = nil }
+
+    // [3] stderr
+    if case .bytes(let b) = arr[3] { stderr = b } else { stderr = nil }
+
+    // [4] total stdout length
+    totalStdoutLength = arr[4].asInt
+
+    // [5] total stderr length
+    totalStderrLength = arr[5].asInt
+
+    // [6] started_at
+    if case .double(let t) = arr[6] { startedAt = t } else { startedAt = nil }
+
+    // [7] concluded_at
+    if case .double(let t) = arr[7] { concludedAt = t } else { concludedAt = nil }
+  }
 }
 
 // MARK: - RNXError
 
 /// A failure raised while decoding a listener's response.
 public enum RNXError: Error, Equatable {
-    /// The 8-element result array was the wrong length or carried the wrong types.
-    /// Python: the `except` around the destructuring at rnx.py:452.
-    case malformedResponse
-    /// Declared for source compatibility; nothing in the package throws it.
-    case executionDenied
-    /// The 5-element request array was the wrong length or carried the wrong types.
-    /// Python: `data[0].decode("utf-8")` raising inside the response generator (rnx.py:156).
-    case malformedRequest
+  /// The 8-element result array was the wrong length or carried the wrong types.
+  /// Python: the `except` around the destructuring at rnx.py:452.
+  case malformedResponse
+  /// Declared for source compatibility; nothing in the package throws it.
+  case executionDenied
+  /// The 5-element request array was the wrong length or carried the wrong types.
+  /// Python: `data[0].decode("utf-8")` raising inside the response generator (rnx.py:156).
+  case malformedRequest
 }

@@ -20,294 +20,297 @@ import Network
 /// per-connection `TCPServerInterfaceClient` model. The server itself isn't a
 /// routing endpoint (`isRoutingEndpoint == false`); only the spawned clients are.
 public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables).
-    ///
-    /// One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`TCPInterface.py:528`).
-    ///
-    /// The announcer
-    /// still needs `discoverable` set from config before it announces anything.
-    public let supportsDiscovery = true
+  /// Python marks this type discoverable (`TCPInterface.py:528`).
+  ///
+  /// The announcer
+  /// still needs `discoverable` set from config before it announces anything.
+  public let supportsDiscovery = true
 
-    /// Python: `interface.bind_port`, published as `PORT` (`Discovery.py:183`).
-    public var discoveryListenPort: Int? { Int(port) }
-    /// Configured interface name.
-    public let name: String
-    /// TCP port the server listens on.
-    public let port: UInt16
-    /// The address reported as the listener's bind address.
-    ///
-    /// Python resolves `listen_ip`
-    /// into `self.bind_ip` and prints it in `__str__` (`TCPInterface.py:518`, `:552`);
-    /// `NWListener` always binds every address, so this is a reporting-only value that
-    /// defaults to Python's `0.0.0.0`.
-    public let bindIP: String
-    /// Interface bitrate in bits per second.
-    public var bitrate: Int = 10_000_000
-    private let onlineFlag = LockedFlag(false)
-    /// Whether the listening socket is open.
-    public private(set) var isOnline: Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
+  /// Python: `interface.bind_port`, published as `PORT` (`Discovery.py:183`).
+  public var discoveryListenPort: Int? { Int(port) }
+  /// Configured interface name.
+  public let name: String
+  /// TCP port the server listens on.
+  public let port: UInt16
+  /// The address reported as the listener's bind address.
+  ///
+  /// Python resolves `listen_ip`
+  /// into `self.bind_ip` and prints it in `__str__` (`TCPInterface.py:518`, `:552`);
+  /// `NWListener` always binds every address, so this is a reporting-only value that
+  /// defaults to Python's `0.0.0.0`.
+  public let bindIP: String
+  /// Interface bitrate in bits per second.
+  public var bitrate: Int = 10_000_000
+  private let onlineFlag = LockedFlag(false)
+  /// Whether the listening socket is open.
+  public private(set) var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
+
+  // Python TCPServerInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
+  /// Hardware MTU in bytes.
+  public var hwMtu: Int? = 262_144
+  /// Whether the MTU is negotiated with each peer.
+  public let autoconfigureMtu: Bool = true
+
+  // Not a routing endpoint—spawned clients are registered separately.
+  /// Whether traffic may be routed to this interface directly.
+  public var isRoutingEndpoint: Bool { false }
+
+  // IFAC settings inherited by spawned clients.
+  /// Identity deriving the IFAC key, when IFAC is configured.
+  public var ifacIdentity: Identity?
+  /// IFAC key, when a network name or passphrase is configured.
+  public var ifacKey: Data?
+  /// IFAC token size in bytes.
+  public var ifacSize: Int = Constants.defaultIfacSize
+
+  // Unused for the server itself (clients use their own handlers).
+  /// Called with each packet decoded from a connected client.
+  public var inboundHandler: ((Packet, any Interface) -> Void)?
+  /// Called with each frame received before packet decoding.
+  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  /// Whether path requests arriving here are forwarded recursively.
+  public var recursivePrs: Bool = false
+  /// Whether announces from internal interfaces are sent to clients.
+  public var announcesFromInternal: Bool = true
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
+
+  /// Called by Transport when a new client connects.
+  ///
+  /// Transport registers the sub-interface.
+  public var onClientConnected: ((any Interface) -> Void)?
+  /// Called by Transport when a client disconnects.
+  ///
+  /// Transport deregisters the sub-interface.
+  public var onClientDisconnected: ((any Interface) -> Void)?
+
+  /// Lock-guarded—written from this interface's I/O queue while the UI
+  /// and status reporting read from another thread.
+  ///
+  /// See `InterfaceCounters`.
+  private let counters = InterfaceCounters()
+  /// Bytes received since the interface came up.
+  public var rxBytes: Int { counters.rxBytes }
+  /// Bytes sent since the interface came up.
+  public var txBytes: Int { counters.txBytes }
+
+  /// Python `TCPServerInterface.__str__` (`TCPInterface.py:680-686`):
+  /// `"TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"`, with an
+  /// IPv6 literal bracketed.
+  ///
+  /// The old `"TCPInterface[Server on …]"` form matched no
+  /// Python string at all, which put a different `Interface.hash`—it's
+  /// `fullHash(displayName)`—on the wire than the Python listener beside it.
+  public var displayName: String {
+    let ipString = bindIP.contains(":") ? "[\(bindIP)]" : bindIP
+    return "TCPServerInterface[\(name)/\(ipString):\(port)]"
+  }
+
+  /// Number of connected clients.
+  ///
+  /// Used by buildInterfaceStats for rnstatus.
+  public var clientCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return spawned.count
+  }
+
+  private var listener: NWListener?
+
+  /// What `start()` handed to `NWListener`, and what the framework handed back on accept.
+  ///
+  /// Recorded because there is no authoritative readback for TCP options—see
+  /// ``RNSSocketOptions``. `SocketOptionsTests` asserts that the accepted connection's
+  /// parameters *are* the listener's object, which is what makes configuring the listener
+  /// sufficient to cover every accepted socket rather than merely assumed to be.
+  private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
+  private(set) var handedOverParametersForTesting: NWParameters?
+  private(set) var lastAcceptedParametersForTesting: NWParameters?
+  var acceptedConnectionParametersForTesting: ((NWParameters) -> Void)?
+  private let queue: DispatchQueue
+  /// Serial queue that all spawned clients' inbound deliveries funnel through,
+  /// so multiple client connections never invoke the (non-thread-safe) inbound
+  /// handler / Transport concurrently.
+  private let deliveryQueue = DispatchQueue(label: "ReticulumSwift.TCPServerInterface.delivery")
+  private let lock = NSLock()
+  private var spawned: [SpawnedClient] = []
+  private var clientCounter = 0
+
+  /// Creates a server listening on `port` of `bindIP`.
+  public init(name: String, port: UInt16, bindIP: String = "0.0.0.0") {
+    self.name = name
+    self.port = port
+    self.bindIP = bindIP
+    self.queue = DispatchQueue(
+      label: "ReticulumSwift.TCPServerInterface.\(name)", attributes: .concurrent)
+  }
+
+  /// Opens the listening socket and starts accepting clients.
+  public func start() throws {
+    guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+      throw InterfaceError.invalidConfiguration("invalid port \(port)")
     }
+    // Python configures the socket it *accepts* exactly as the one it dials
+    // (`TCPInterface.py:241`, `:259-261`, reached from `:591`), so direction must not decide
+    // whether the options apply. Network.framework derives an accepted connection from the
+    // listener's parameters, so taking them from the shared factory here is what carries them
+    // onto every client—this line passed `.tcp` through 1.7.0, meaning framework defaults
+    // with keepalive **off**, and an accepted connection whose peer vanished without sending
+    // FIN stayed `.ready` forever while the interface reported Up (`bugs/023`).
+    let socketOptions = RNSSocketOptions.tcpParameters()
+    handedOverTCPOptionsForTesting = socketOptions.options
+    handedOverParametersForTesting = socketOptions.parameters
+    let listener = try NWListener(using: socketOptions.parameters, on: nwPort)
+    self.listener = listener
 
-    // Python TCPServerInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
-    /// Hardware MTU in bytes.
-    public var hwMtu: Int? = 262_144
-    /// Whether the MTU is negotiated with each peer.
-    public let autoconfigureMtu: Bool = true
-
-    // Not a routing endpoint—spawned clients are registered separately.
-    /// Whether traffic may be routed to this interface directly.
-    public var isRoutingEndpoint: Bool { false }
-
-    // IFAC settings inherited by spawned clients.
-    /// Identity deriving the IFAC key, when IFAC is configured.
-    public var ifacIdentity: Identity?
-    /// IFAC key, when a network name or passphrase is configured.
-    public var ifacKey: Data?
-    /// IFAC token size in bytes.
-    public var ifacSize: Int = Constants.defaultIfacSize
-
-    // Unused for the server itself (clients use their own handlers).
-    /// Called with each packet decoded from a connected client.
-    public var inboundHandler: ((Packet, any Interface) -> Void)?
-    /// Called with each frame received before packet decoding.
-    public var rawInboundHandler: ((Data, any Interface) -> Void)?
-    /// Whether path requests arriving here are forwarded recursively.
-    public var recursivePrs: Bool = false
-    /// Whether announces from internal interfaces are sent to clients.
-    public var announcesFromInternal: Bool = true
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
-
-    /// Called by Transport when a new client connects.
-    ///
-    /// Transport registers the sub-interface.
-    public var onClientConnected: ((any Interface) -> Void)?
-    /// Called by Transport when a client disconnects.
-    ///
-    /// Transport deregisters the sub-interface.
-    public var onClientDisconnected: ((any Interface) -> Void)?
-
-    /// Lock-guarded—written from this interface's I/O queue while the UI
-    /// and status reporting read from another thread.
-    ///
-    /// See `InterfaceCounters`.
-    private let counters = InterfaceCounters()
-    /// Bytes received since the interface came up.
-    public var rxBytes: Int { counters.rxBytes }
-    /// Bytes sent since the interface came up.
-    public var txBytes: Int { counters.txBytes }
-
-    /// Python `TCPServerInterface.__str__` (`TCPInterface.py:680-686`):
-    /// `"TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"`, with an
-    /// IPv6 literal bracketed.
-    ///
-    /// The old `"TCPInterface[Server on …]"` form matched no
-    /// Python string at all, which put a different `Interface.hash`—it's
-    /// `fullHash(displayName)`—on the wire than the Python listener beside it.
-    public var displayName: String {
-        let ipString = bindIP.contains(":") ? "[\(bindIP)]" : bindIP
-        return "TCPServerInterface[\(name)/\(ipString):\(port)]"
+    listener.newConnectionHandler = { [weak self] conn in
+      self?.lastAcceptedParametersForTesting = conn.parameters
+      self?.acceptedConnectionParametersForTesting?(conn.parameters)
+      self?.accept(conn)
     }
-
-    /// Number of connected clients.
-    ///
-    /// Used by buildInterfaceStats for rnstatus.
-    public var clientCount: Int {
-        lock.lock(); defer { lock.unlock() }
-        return spawned.count
+    listener.stateUpdateHandler = { [weak self] state in
+      guard let self else { return }
+      switch state {
+      case .ready:
+        self.isOnline = true
+        Reticulum.log("Interface \(self.name) listening on port \(self.port)", level: .verbose)
+      case .failed(let err):
+        self.isOnline = false
+        Reticulum.log("Interface \(self.name) listener failed: \(err)", level: .error)
+      case .cancelled:
+        self.isOnline = false
+      default:
+        break
+      }
     }
+    listener.start(queue: queue)
+  }
 
-    private var listener: NWListener?
+  /// Closes the listening socket and every accepted client.
+  public func stop() {
+    listener?.cancel()
+    listener = nil
+    lock.lock()
+    let all = spawned
+    spawned.removeAll()
+    lock.unlock()
+    for c in all { c.cancel() }
+    isOnline = false
+  }
 
-    /// What `start()` handed to `NWListener`, and what the framework handed back on accept.
-    ///
-    /// Recorded because there is no authoritative readback for TCP options—see
-    /// ``RNSSocketOptions``. `SocketOptionsTests` asserts that the accepted connection's
-    /// parameters *are* the listener's object, which is what makes configuring the listener
-    /// sufficient to cover every accepted socket rather than merely assumed to be.
-    private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
-    private(set) var handedOverParametersForTesting: NWParameters?
-    private(set) var lastAcceptedParametersForTesting: NWParameters?
-    var acceptedConnectionParametersForTesting: ((NWParameters) -> Void)?
-    private let queue: DispatchQueue
-    /// Serial queue that all spawned clients' inbound deliveries funnel through,
-    /// so multiple client connections never invoke the (non-thread-safe) inbound
-    /// handler / Transport concurrently.
-    private let deliveryQueue = DispatchQueue(label: "ReticulumSwift.TCPServerInterface.delivery")
-    private let lock = NSLock()
-    private var spawned: [SpawnedClient] = []
-    private var clientCounter = 0
+  /// Broadcast to ALL connected clients.
+  ///
+  /// Used only when a send must reach every peer
+  /// (for example, the PosixTCPServer shared-instance model). Transport routing uses the
+  /// per-client `TCPServerClientInterface.send()` instead.
+  public func send(_ packet: Packet) throws {
+    let raw = try packet.pack()
+    let framed = HDLC.frame(wrapIfac(raw))
+    if !raw.isEmpty { counters.addTx(bytes: raw.count) }
+    lock.lock()
+    let clients = spawned
+    lock.unlock()
+    for c in clients { c.send(framed) }
+  }
 
-    /// Creates a server listening on `port` of `bindIP`.
-    public init(name: String, port: UInt16, bindIP: String = "0.0.0.0") {
-        self.name = name
-        self.port = port
-        self.bindIP = bindIP
-        self.queue = DispatchQueue(label: "ReticulumSwift.TCPServerInterface.\(name)", attributes: .concurrent)
-    }
+  // MARK: - Connection acceptance
 
-    /// Opens the listening socket and starts accepting clients.
-    public func start() throws {
-        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            throw InterfaceError.invalidConfiguration("invalid port \(port)")
+  private func accept(_ conn: NWConnection) {
+    lock.lock()
+    clientCounter += 1
+    let clientIndex = clientCounter
+    lock.unlock()
+
+    // Python: `{"name": "Client on "+self.name, …}` (TCPInterface.py:590). Every
+    // spawned client on one server shares this name; they're told apart by the peer
+    // address in `displayName`, exactly as in Python.
+    let clientName = "Client on \(name)"
+    Reticulum.log("Accepted TCP connection \(clientIndex) on \(name)", level: .verbose)
+
+    let peer = TCPServerInterface.peerAddress(of: conn)
+
+    // Create a client interface before starting the connection so the
+    // onFrame callback can reference it.
+    let clientIface = TCPServerClientInterface(
+      name: clientName,
+      parentServer: self,
+      peerHost: peer.host,
+      peerPort: peer.port
+    )
+
+    let spawned = SpawnedClient(
+      conn: conn,
+      queue: DispatchQueue(
+        label: "ReticulumSwift.TCPServerInterface.\(name).\(clientIndex)", target: queue),
+      hwMtu: hwMtu, ifacSize: ifacSize,
+      onFrame: { [weak self, weak clientIface] frame in
+        guard let self, clientIface != nil else { return }
+        // Serialize cross-client delivery so Transport is never entered
+        // concurrently by two connections (order preserved per client).
+        self.deliveryQueue.async { [weak clientIface] in
+          guard let ci = clientIface else { return }
+          ci.noteRx(bytes: frame.count)
+          if let h = ci.rawInboundHandler {
+            h(frame, ci)
+          } else if let packet = try? Packet.unpack(frame) {
+            ci.inboundHandler?(packet, ci)
+          }
         }
-        // Python configures the socket it *accepts* exactly as the one it dials
-        // (`TCPInterface.py:241`, `:259-261`, reached from `:591`), so direction must not decide
-        // whether the options apply. Network.framework derives an accepted connection from the
-        // listener's parameters, so taking them from the shared factory here is what carries them
-        // onto every client—this line passed `.tcp` through 1.7.0, meaning framework defaults
-        // with keepalive **off**, and an accepted connection whose peer vanished without sending
-        // FIN stayed `.ready` forever while the interface reported Up (`bugs/023`).
-        let socketOptions = RNSSocketOptions.tcpParameters()
-        handedOverTCPOptionsForTesting = socketOptions.options
-        handedOverParametersForTesting = socketOptions.parameters
-        let listener = try NWListener(using: socketOptions.parameters, on: nwPort)
-        self.listener = listener
+      },
+      onClose: { [weak self, weak clientIface] client in
+        guard let self, let ci = clientIface else { return }
+        Reticulum.log("TCP connection closed on \(self.name)", level: .verbose)
+        ci.isOnline = false
+        self.lock.lock()
+        self.spawned.removeAll { $0 === client }
+        self.lock.unlock()
+        self.onClientDisconnected?(ci)
+      }
+    )
 
-        listener.newConnectionHandler = { [weak self] conn in
-            self?.lastAcceptedParametersForTesting = conn.parameters
-            self?.acceptedConnectionParametersForTesting?(conn.parameters)
-            self?.accept(conn)
-        }
-        listener.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.isOnline = true
-                Reticulum.log("Interface \(self.name) listening on port \(self.port)", level: .verbose)
-            case .failed(let err):
-                self.isOnline = false
-                Reticulum.log("Interface \(self.name) listener failed: \(err)", level: .error)
-            case .cancelled:
-                self.isOnline = false
-            default:
-                break
-            }
-        }
-        listener.start(queue: queue)
+    clientIface.spawnedClient = spawned
+
+    lock.lock()
+    self.spawned.append(spawned)
+    lock.unlock()
+
+    spawned.start()
+
+    // Register the sub-interface with Transport.
+    onClientConnected?(clientIface)
+  }
+
+  /// The remote address of an accepted connection, for the spawned interface's name.
+  ///
+  /// Python reads it straight off `handler.client_address`; `NWConnection` exposes it as
+  /// the endpoint it was created from.
+  static func peerAddress(of conn: NWConnection) -> (host: String, port: UInt16) {
+    guard case .hostPort(let host, let port) = conn.endpoint else { return ("0.0.0.0", 0) }
+    switch host {
+    case .ipv4(let address):
+      // `debugDescription` on an IPv4Address is the dotted quad.
+      return ("\(address)", port.rawValue)
+    case .ipv6(let address):
+      // Strip the scope suffix ("fe80::1%en0") Python's client_address doesn't carry.
+      return ("\(address)".components(separatedBy: "%")[0], port.rawValue)
+    case .name(let name, _):
+      return (name, port.rawValue)
+    @unknown default:
+      return ("0.0.0.0", port.rawValue)
     }
-
-    /// Closes the listening socket and every accepted client.
-    public func stop() {
-        listener?.cancel()
-        listener = nil
-        lock.lock()
-        let all = spawned
-        spawned.removeAll()
-        lock.unlock()
-        for c in all { c.cancel() }
-        isOnline = false
-    }
-
-    /// Broadcast to ALL connected clients.
-    ///
-    /// Used only when a send must reach every peer
-    /// (for example, the PosixTCPServer shared-instance model). Transport routing uses the
-    /// per-client `TCPServerClientInterface.send()` instead.
-    public func send(_ packet: Packet) throws {
-        let raw = try packet.pack()
-        let framed = HDLC.frame(wrapIfac(raw))
-        if !raw.isEmpty { counters.addTx(bytes: raw.count) }
-        lock.lock()
-        let clients = spawned
-        lock.unlock()
-        for c in clients { c.send(framed) }
-    }
-
-    // MARK: - Connection acceptance
-
-    private func accept(_ conn: NWConnection) {
-        lock.lock()
-        clientCounter += 1
-        let clientIndex = clientCounter
-        lock.unlock()
-
-        // Python: `{"name": "Client on "+self.name, …}` (TCPInterface.py:590). Every
-        // spawned client on one server shares this name; they're told apart by the peer
-        // address in `displayName`, exactly as in Python.
-        let clientName = "Client on \(name)"
-        Reticulum.log("Accepted TCP connection \(clientIndex) on \(name)", level: .verbose)
-
-        let peer = TCPServerInterface.peerAddress(of: conn)
-
-        // Create a client interface before starting the connection so the
-        // onFrame callback can reference it.
-        let clientIface = TCPServerClientInterface(
-            name: clientName,
-            parentServer: self,
-            peerHost: peer.host,
-            peerPort: peer.port
-        )
-
-        let spawned = SpawnedClient(
-            conn: conn,
-            queue: DispatchQueue(label: "ReticulumSwift.TCPServerInterface.\(name).\(clientIndex)", target: queue),
-            hwMtu: hwMtu, ifacSize: ifacSize,
-            onFrame: { [weak self, weak clientIface] frame in
-                guard let self, clientIface != nil else { return }
-                // Serialize cross-client delivery so Transport is never entered
-                // concurrently by two connections (order preserved per client).
-                self.deliveryQueue.async { [weak clientIface] in
-                    guard let ci = clientIface else { return }
-                    ci.noteRx(bytes: frame.count)
-                    if let h = ci.rawInboundHandler {
-                        h(frame, ci)
-                    } else if let packet = try? Packet.unpack(frame) {
-                        ci.inboundHandler?(packet, ci)
-                    }
-                }
-            },
-            onClose: { [weak self, weak clientIface] client in
-                guard let self, let ci = clientIface else { return }
-                Reticulum.log("TCP connection closed on \(self.name)", level: .verbose)
-                ci.isOnline = false
-                self.lock.lock()
-                self.spawned.removeAll { $0 === client }
-                self.lock.unlock()
-                self.onClientDisconnected?(ci)
-            }
-        )
-
-        clientIface.spawnedClient = spawned
-
-        lock.lock()
-        self.spawned.append(spawned)
-        lock.unlock()
-
-        spawned.start()
-
-        // Register the sub-interface with Transport.
-        onClientConnected?(clientIface)
-    }
-
-    /// The remote address of an accepted connection, for the spawned interface's name.
-    ///
-    /// Python reads it straight off `handler.client_address`; `NWConnection` exposes it as
-    /// the endpoint it was created from.
-    static func peerAddress(of conn: NWConnection) -> (host: String, port: UInt16) {
-        guard case let .hostPort(host, port) = conn.endpoint else { return ("0.0.0.0", 0) }
-        switch host {
-        case .ipv4(let address):
-            // `debugDescription` on an IPv4Address is the dotted quad.
-            return ("\(address)", port.rawValue)
-        case .ipv6(let address):
-            // Strip the scope suffix ("fe80::1%en0") Python's client_address doesn't carry.
-            return ("\(address)".components(separatedBy: "%")[0], port.rawValue)
-        case .name(let name, _):
-            return (name, port.rawValue)
-        @unknown default:
-            return ("0.0.0.0", port.rawValue)
-        }
-    }
+  }
 }
 
 // MARK: - TCPServerClientInterface
@@ -317,223 +320,227 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 /// Mirrors Python's per-connection `TCPServerInterfaceClient` which is registered
 /// with Transport as an independent Interface.
 public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterface,
-                                              SpawnedInterface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables).
-    ///
-    /// One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+  SpawnedInterface
+{
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Python marks this type discoverable (`TCPInterface.py:134, the class a listener spawns per accepted connection`).
-    ///
-    /// The announcer
-    /// still needs `discoverable` set from config before it announces anything.
-    public let supportsDiscovery = true
+  /// Python marks this type discoverable (`TCPInterface.py:134, the class a listener spawns per accepted connection`).
+  ///
+  /// The announcer
+  /// still needs `discoverable` set from config before it announces anything.
+  public let supportsDiscovery = true
 
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
-    /// Name identifying this accepted client.
-    public let name: String
-    /// Interface bitrate in bits per second.
-    public var bitrate: Int = 10_000_000
-    private let onlineFlag = LockedFlag(true)
-    /// Whether the client socket is still connected.
-    public internal(set) var isOnline: Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
-    }
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
+  /// Name identifying this accepted client.
+  public let name: String
+  /// Interface bitrate in bits per second.
+  public var bitrate: Int = 10_000_000
+  private let onlineFlag = LockedFlag(true)
+  /// Whether the client socket is still connected.
+  public internal(set) var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
 
-    /// Hardware MTU in bytes.
-    public var hwMtu: Int? = 262_144
-    /// Whether the MTU is negotiated with the peer.
-    public let autoconfigureMtu: Bool = true
+  /// Hardware MTU in bytes.
+  public var hwMtu: Int? = 262_144
+  /// Whether the MTU is negotiated with the peer.
+  public let autoconfigureMtu: Bool = true
 
-    // Fully a routing endpoint.
-    /// Whether traffic may be routed to this interface directly.
-    public var isRoutingEndpoint: Bool { true }
+  // Fully a routing endpoint.
+  /// Whether traffic may be routed to this interface directly.
+  public var isRoutingEndpoint: Bool { true }
 
-    /// Called with each packet decoded from the client.
-    public var inboundHandler: ((Packet, any Interface) -> Void)?
-    /// Called with each frame received before packet decoding.
-    public var rawInboundHandler: ((Data, any Interface) -> Void)?
-    /// Identity deriving the IFAC key, inherited from the server.
-    public var ifacIdentity: Identity?
-    /// IFAC key, inherited from the server.
-    public var ifacKey: Data?
-    /// IFAC token size in bytes.
-    public var ifacSize: Int
+  /// Called with each packet decoded from the client.
+  public var inboundHandler: ((Packet, any Interface) -> Void)?
+  /// Called with each frame received before packet decoding.
+  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  /// Identity deriving the IFAC key, inherited from the server.
+  public var ifacIdentity: Identity?
+  /// IFAC key, inherited from the server.
+  public var ifacKey: Data?
+  /// IFAC token size in bytes.
+  public var ifacSize: Int
 
-    /// Lock-guarded—inbound frames are counted from the parent server's
-    /// delivery queue while `send` runs on the caller's thread and the UI
-    /// reads from a third.
-    ///
-    /// See `InterfaceCounters`.
-    private let counters = InterfaceCounters()
-    /// Bytes received since the client connected.
-    public var rxBytes: Int { counters.rxBytes }
-    /// Bytes sent since the client connected.
-    public var txBytes: Int { counters.txBytes }
+  /// Lock-guarded—inbound frames are counted from the parent server's
+  /// delivery queue while `send` runs on the caller's thread and the UI
+  /// reads from a third.
+  ///
+  /// See `InterfaceCounters`.
+  private let counters = InterfaceCounters()
+  /// Bytes received since the client connected.
+  public var rxBytes: Int { counters.rxBytes }
+  /// Bytes sent since the client connected.
+  public var txBytes: Int { counters.txBytes }
 
-    /// Counts an inbound frame on behalf of the parent server, which owns the
-    /// receive path for every spawned client.
-    fileprivate func noteRx(bytes: Int) { counters.addRx(bytes: bytes) }
+  /// Counts an inbound frame on behalf of the parent server, which owns the
+  /// receive path for every spawned client.
+  fileprivate func noteRx(bytes: Int) { counters.addRx(bytes: bytes) }
 
-    /// The connecting peer's address, as Python records it on the spawned interface
-    /// (`spawned_interface.target_ip = handler.client_address[0]`, `TCPInterface.py:609`).
-    public let peerHost: String
-    /// TCP port the client connected from.
-    public let peerPort: UInt16
+  /// The connecting peer's address, as Python records it on the spawned interface
+  /// (`spawned_interface.target_ip = handler.client_address[0]`, `TCPInterface.py:609`).
+  public let peerHost: String
+  /// TCP port the client connected from.
+  public let peerPort: UInt16
 
-    /// A spawned client shares the `TCPClientInterface.__str__` format, but its `name` is
-    /// `"Client on "+servername` (`TCPInterface.py:590`)—which is exactly the prefix
-    /// `rnstatus` hides (`rnstatus.py:397`), because these are per-connection
-    /// sub-interfaces rather than anything an operator configured.
-    ///
-    /// Python distinguishes
-    /// concurrent clients by the peer address in the tail, not by the name.
-    public var displayName: String {
-        let ipString = peerHost.contains(":") ? "[\(peerHost)]" : peerHost
-        return "TCPInterface[\(name)/\(ipString):\(peerPort)]"
-    }
+  /// A spawned client shares the `TCPClientInterface.__str__` format, but its `name` is
+  /// `"Client on "+servername` (`TCPInterface.py:590`)—which is exactly the prefix
+  /// `rnstatus` hides (`rnstatus.py:397`), because these are per-connection
+  /// sub-interfaces rather than anything an operator configured.
+  ///
+  /// Python distinguishes
+  /// concurrent clients by the peer address in the tail, not by the name.
+  public var displayName: String {
+    let ipString = peerHost.contains(":") ? "[\(peerHost)]" : peerHost
+    return "TCPInterface[\(name)/\(ipString):\(peerPort)]"
+  }
 
-    /// Python has no separate class for a spawned client: `TCPServerInterface` constructs a
-    /// plain `TCPClientInterface` from the accepted socket (`TCPInterface.py:591`), so that
-    /// is the class name `rnstatus` expects to see in the `type` field. `TCPServerClientInterface`
-    /// is a Swift implementation detail and isn't an RNS interface class.
-    public var statsTypeName: String { "TCPClientInterface" }
+  /// Python has no separate class for a spawned client: `TCPServerInterface` constructs a
+  /// plain `TCPClientInterface` from the accepted socket (`TCPInterface.py:591`), so that
+  /// is the class name `rnstatus` expects to see in the `type` field. `TCPServerClientInterface`
+  /// is a Swift implementation detail and isn't an RNS interface class.
+  public var statsTypeName: String { "TCPClientInterface" }
 
-    // Back-reference to parent server (for IFAC inheritance).
-    private weak var parentServer: TCPServerInterface?
-    /// Server interface that accepted this client.
-    public var spawningInterface: (any Interface)? { parentServer }
-    // The underlying TCP connection.
-    fileprivate weak var spawnedClient: SpawnedClient?
+  // Back-reference to parent server (for IFAC inheritance).
+  private weak var parentServer: TCPServerInterface?
+  /// Server interface that accepted this client.
+  public var spawningInterface: (any Interface)? { parentServer }
+  // The underlying TCP connection.
+  fileprivate weak var spawnedClient: SpawnedClient?
 
-    init(name: String, parentServer: TCPServerInterface, peerHost: String, peerPort: UInt16) {
-        self.name = name
-        self.peerHost = peerHost
-        self.peerPort = peerPort
-        self.parentServer = parentServer
+  init(name: String, parentServer: TCPServerInterface, peerHost: String, peerPort: UInt16) {
+    self.name = name
+    self.peerHost = peerHost
+    self.peerPort = peerPort
+    self.parentServer = parentServer
 
-        // Inherit the parent's configuration. Python copies nineteen attributes onto each accepted
-        // client (`TCPInterface.py:594-641`); a spawned client is the real routing endpoint on a
-        // server-side interface, so anything that doesn't reach it's inert for every peer that
-        // dials in. See `swift_devel/bugs/025-*.md`.
-        //
-        // `inherit(from:)` covers everything held in `InterfaceState`—mode, announce cap and
-        // rate control, ingress/egress control and all nine `ic_*` tunables—and it's a copy, so
-        // reconfiguring the parent later doesn't retune already-connected clients.
-        self.interfaceState.inherit(from: parentServer.interfaceState)
+    // Inherit the parent's configuration. Python copies nineteen attributes onto each accepted
+    // client (`TCPInterface.py:594-641`); a spawned client is the real routing endpoint on a
+    // server-side interface, so anything that doesn't reach it's inert for every peer that
+    // dials in. See `swift_devel/bugs/025-*.md`.
+    //
+    // `inherit(from:)` covers everything held in `InterfaceState`—mode, announce cap and
+    // rate control, ingress/egress control and all nine `ic_*` tunables—and it's a copy, so
+    // reconfiguring the parent later doesn't retune already-connected clients.
+    self.interfaceState.inherit(from: parentServer.interfaceState)
 
-        // Attributes stored on the conformer rather than in the state box need their own copy.
-        // `bitrate` because interfaces that derive one (RNode, from spreading factor/bandwidth/
-        // coding rate) must keep that derivation as their starting value—Python copies it
-        // explicitly too (`TCPInterface.py:611`). Previously this was a fresh hardcoded
-        // 10_000_000, so a configured server bitrate never reached any client.
-        self.bitrate = parentServer.bitrate
+    // Attributes stored on the conformer rather than in the state box need their own copy.
+    // `bitrate` because interfaces that derive one (RNode, from spreading factor/bandwidth/
+    // coding rate) must keep that derivation as their starting value—Python copies it
+    // explicitly too (`TCPInterface.py:611`). Previously this was a fresh hardcoded
+    // 10_000_000, so a configured server bitrate never reached any client.
+    self.bitrate = parentServer.bitrate
 
-        // Python: `spawned_interface.gravity = self.gravity` (RNS 1.4.1, commit 3ca71527).
-        self.gravity = parentServer.gravity
+    // Python: `spawned_interface.gravity = self.gravity` (RNS 1.4.1, commit 3ca71527).
+    self.gravity = parentServer.gravity
 
-        // IFAC (`TCPInterface.py:615-617`).
-        self.ifacIdentity = parentServer.ifacIdentity
-        self.ifacKey      = parentServer.ifacKey
-        self.ifacSize     = parentServer.ifacSize
+    // IFAC (`TCPInterface.py:615-617`).
+    self.ifacIdentity = parentServer.ifacIdentity
+    self.ifacKey = parentServer.ifacKey
+    self.ifacSize = parentServer.ifacSize
 
-        // After the bitrate copy, as Python does for every accepted client
-        // (`TCPInterface.py:612-613`): the spawned interface is the routing endpoint, so its
-        // MTU must follow the bitrate it inherited, not the 262144 class constant.
-        optimiseMtu()
-    }
+    // After the bitrate copy, as Python does for every accepted client
+    // (`TCPInterface.py:612-613`): the spawned interface is the routing endpoint, so its
+    // MTU must follow the bitrate it inherited, not the 262144 class constant.
+    optimiseMtu()
+  }
 
-    /// No-op: the parent server owns the socket.
-    public func start() throws { }  // started by the parent server
+  /// No-op: the parent server owns the socket.
+  public func start() throws {}  // started by the parent server
 
-    /// Closes the client socket.
-    public func stop() {
-        spawnedClient?.cancel()
-        isOnline = false
-    }
+  /// Closes the client socket.
+  public func stop() {
+    spawnedClient?.cancel()
+    isOnline = false
+  }
 
-    /// Sends `packet` to the connected client.
-    public func send(_ packet: Packet) throws {
-        guard isOnline, let client = spawnedClient else { return }
-        let raw = try packet.pack()
-        let framed = HDLC.frame(wrapIfac(raw))
-        if !raw.isEmpty { counters.addTx(bytes: raw.count) }
-        client.send(framed)
-    }
+  /// Sends `packet` to the connected client.
+  public func send(_ packet: Packet) throws {
+    guard isOnline, let client = spawnedClient else { return }
+    let raw = try packet.pack()
+    let framed = HDLC.frame(wrapIfac(raw))
+    if !raw.isEmpty { counters.addTx(bytes: raw.count) }
+    client.send(framed)
+  }
 }
 
 // MARK: - Error
 
 private enum InterfaceError: Error {
-    case invalidConfiguration(String)
+  case invalidConfiguration(String)
 }
 
 // MARK: - SpawnedClient (shared between server and client interface)
 
 final class SpawnedClient {
-    private let conn: NWConnection
-    private let queue: DispatchQueue
-    private let onFrame: (Data) -> Void
-    private let onClose: (SpawnedClient) -> Void
-    private let decoder = HDLC.FrameDecoder()
-    /// Received-frame length bounds (Python TCPInterface HW_MTU + ifac_size).
-    private let hwMtu: Int?
-    private let ifacSize: Int
+  private let conn: NWConnection
+  private let queue: DispatchQueue
+  private let onFrame: (Data) -> Void
+  private let onClose: (SpawnedClient) -> Void
+  private let decoder = HDLC.FrameDecoder()
+  /// Received-frame length bounds (Python TCPInterface HW_MTU + ifac_size).
+  private let hwMtu: Int?
+  private let ifacSize: Int
 
-    init(conn: NWConnection, queue: DispatchQueue,
-         hwMtu: Int? = 262_144, ifacSize: Int = 0,
-         onFrame: @escaping (Data) -> Void,
-         onClose: @escaping (SpawnedClient) -> Void) {
-        self.conn = conn
-        self.queue = queue
-        self.hwMtu = hwMtu
-        self.ifacSize = ifacSize
-        self.onFrame = onFrame
-        self.onClose = onClose
+  init(
+    conn: NWConnection, queue: DispatchQueue,
+    hwMtu: Int? = 262_144, ifacSize: Int = 0,
+    onFrame: @escaping (Data) -> Void,
+    onClose: @escaping (SpawnedClient) -> Void
+  ) {
+    self.conn = conn
+    self.queue = queue
+    self.hwMtu = hwMtu
+    self.ifacSize = ifacSize
+    self.onFrame = onFrame
+    self.onClose = onClose
+  }
+
+  func start() {
+    conn.stateUpdateHandler = { [weak self] state in
+      guard let self else { return }
+      switch state {
+      case .ready:
+        self.receive()
+      case .failed, .cancelled:
+        self.onClose(self)
+      default:
+        break
+      }
     }
+    conn.start(queue: queue)
+  }
 
-    func start() {
-        conn.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.receive()
-            case .failed, .cancelled:
-                self.onClose(self)
-            default:
-                break
-            }
+  func cancel() {
+    conn.cancel()
+  }
+
+  func send(_ framed: Data) {
+    conn.send(content: framed, completion: .contentProcessed { _ in })
+  }
+
+  private func receive() {
+    conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
+      [weak self] data, _, isComplete, error in
+      guard let self else { return }
+      if let data, !data.isEmpty {
+        for frame in self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize) {
+          self.onFrame(frame)
         }
-        conn.start(queue: queue)
+      }
+      if error != nil || isComplete {
+        self.onClose(self)
+        return
+      }
+      self.receive()
     }
-
-    func cancel() {
-        conn.cancel()
-    }
-
-    func send(_ framed: Data) {
-        conn.send(content: framed, completion: .contentProcessed { _ in })
-    }
-
-    private func receive() {
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            if let data, !data.isEmpty {
-                for frame in self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize) {
-                    self.onFrame(frame)
-                }
-            }
-            if error != nil || isComplete {
-                self.onClose(self)
-                return
-            }
-            self.receive()
-        }
-    }
+  }
 }

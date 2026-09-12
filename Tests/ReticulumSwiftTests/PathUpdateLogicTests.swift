@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Covers the hop-count rules deciding when a path table entry is replaced.
@@ -19,87 +20,96 @@ import XCTest
 /// - New announce with same hops should update (newer info)
 final class PathUpdateLogicTests: XCTestCase {
 
-    final class LoopbackInterface: Interface {
-        var name: String; var bitrate: Int = 0; var isOnline: Bool = true
-        weak var paired: LoopbackInterface?
-        var inboundHandler: ((Packet, any Interface) -> Void)?
-        init(name: String) { self.name = name }
-        func start() throws { isOnline = true }
-        func stop() { isOnline = false }
-        func send(_ packet: Packet) throws {
-            let raw = try packet.pack(); let copy = try Packet.unpack(raw)
-            paired?.inboundHandler?(copy, paired!)
-        }
+  final class LoopbackInterface: Interface {
+    var name: String
+    var bitrate: Int = 0
+    var isOnline: Bool = true
+    weak var paired: LoopbackInterface?
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    init(name: String) { self.name = name }
+    func start() throws { isOnline = true }
+    func stop() { isOnline = false }
+    func send(_ packet: Packet) throws {
+      let raw = try packet.pack()
+      let copy = try Packet.unpack(raw)
+      paired?.inboundHandler?(copy, paired!)
     }
+  }
 
-    private func makeTransport(named name: String = "A") -> (Transport, LoopbackInterface) {
-        let t = Transport()
-        let iface = LoopbackInterface(name: name)
-        t.register(interface: iface)
-        return (t, iface)
-    }
+  private func makeTransport(named name: String = "A") -> (Transport, LoopbackInterface) {
+    let t = Transport()
+    let iface = LoopbackInterface(name: name)
+    t.register(interface: iface)
+    return (t, iface)
+  }
 
-    /// Delivers an announce at a chosen hop count straight to the interface handler.
-    ///
-    /// Deliver an announce with a specific hop count directly to transport's interface handler
-    private func deliverAnnounce(packet: Packet, hops: UInt8, to transport: Transport, on iface: LoopbackInterface) {
-        var p = packet; p.hops = hops
-        iface.inboundHandler?(p, iface)
-    }
+  /// Delivers an announce at a chosen hop count straight to the interface handler.
+  ///
+  /// Deliver an announce with a specific hop count directly to transport's interface handler
+  private func deliverAnnounce(
+    packet: Packet, hops: UInt8, to transport: Transport, on iface: LoopbackInterface
+  ) {
+    var p = packet
+    p.hops = hops
+    iface.inboundHandler?(p, iface)
+  }
 
-    // MARK: - Fewer hops always wins
+  // MARK: - Fewer hops always wins
 
-    func testLowerHopAnnounceShouldUpdatePath() throws {
-        let (t, iface) = makeTransport()
-        let id = Identity()
-        let dest = try Destination(identity: id, direction: .in, kind: .single,
-                                   appName: "test", aspects: ["prio"])
+  func testLowerHopAnnounceShouldUpdatePath() throws {
+    let (t, iface) = makeTransport()
+    let id = Identity()
+    let dest = try Destination(
+      identity: id, direction: .in, kind: .single,
+      appName: "test", aspects: ["prio"])
 
-        let t0 = Date().timeIntervalSince1970
-        let packet = try Announce.make(for: dest, timestamp: t0)
+    let t0 = Date().timeIntervalSince1970
+    let packet = try Announce.make(for: dest, timestamp: t0)
 
-        // First: 3-hop announce
-        deliverAnnounce(packet: packet, hops: 3, to: t, on: iface)
-        XCTAssertEqual(t.hopsTo(dest.hash), 3, "initial path should be 3 hops")
+    // First: 3-hop announce
+    deliverAnnounce(packet: packet, hops: 3, to: t, on: iface)
+    XCTAssertEqual(t.hopsTo(dest.hash), 3, "initial path should be 3 hops")
 
-        // Second: 1-hop announce (better path)—must be a different, later announce
-        // (different random hash + strictly newer emission second; a same-second
-        // fewer-hop announce ties under the freshness gate and doesn't replace).
-        let packet2 = try Announce.make(for: dest, timestamp: t0 + 2)
-        deliverAnnounce(packet: packet2, hops: 1, to: t, on: iface)
-        XCTAssertEqual(t.hopsTo(dest.hash), 1, "1-hop path should replace 3-hop path")
-    }
+    // Second: 1-hop announce (better path)—must be a different, later announce
+    // (different random hash + strictly newer emission second; a same-second
+    // fewer-hop announce ties under the freshness gate and doesn't replace).
+    let packet2 = try Announce.make(for: dest, timestamp: t0 + 2)
+    deliverAnnounce(packet: packet2, hops: 1, to: t, on: iface)
+    XCTAssertEqual(t.hopsTo(dest.hash), 1, "1-hop path should replace 3-hop path")
+  }
 
-    func testHigherHopAnnounceShould_NOT_UpdatePath() throws {
-        let (t, iface) = makeTransport()
-        let id = Identity()
-        let dest = try Destination(identity: id, direction: .in, kind: .single,
-                                   appName: "test", aspects: ["noupdate"])
+  func testHigherHopAnnounceShould_NOT_UpdatePath() throws {
+    let (t, iface) = makeTransport()
+    let id = Identity()
+    let dest = try Destination(
+      identity: id, direction: .in, kind: .single,
+      appName: "test", aspects: ["noupdate"])
 
-        // First: 1-hop announce (good path)
-        let packet1 = try Announce.make(for: dest)
-        deliverAnnounce(packet: packet1, hops: 1, to: t, on: iface)
-        XCTAssertEqual(t.hopsTo(dest.hash), 1)
+    // First: 1-hop announce (good path)
+    let packet1 = try Announce.make(for: dest)
+    deliverAnnounce(packet: packet1, hops: 1, to: t, on: iface)
+    XCTAssertEqual(t.hopsTo(dest.hash), 1)
 
-        // Second: 5-hop announce (worse path)—shouldn't update
-        let packet2 = try Announce.make(for: dest)
-        deliverAnnounce(packet: packet2, hops: 5, to: t, on: iface)
-        XCTAssertEqual(t.hopsTo(dest.hash), 1, "better path should NOT be replaced by worse one")
-    }
+    // Second: 5-hop announce (worse path)—shouldn't update
+    let packet2 = try Announce.make(for: dest)
+    deliverAnnounce(packet: packet2, hops: 5, to: t, on: iface)
+    XCTAssertEqual(t.hopsTo(dest.hash), 1, "better path should NOT be replaced by worse one")
+  }
 
-    func testSameHopAnnounceUpdatesPath() throws {
-        let (t, iface) = makeTransport()
-        let id = Identity()
-        let dest = try Destination(identity: id, direction: .in, kind: .single,
-                                   appName: "test", aspects: ["same"])
+  func testSameHopAnnounceUpdatesPath() throws {
+    let (t, iface) = makeTransport()
+    let id = Identity()
+    let dest = try Destination(
+      identity: id, direction: .in, kind: .single,
+      appName: "test", aspects: ["same"])
 
-        let packet1 = try Announce.make(for: dest)
-        deliverAnnounce(packet: packet1, hops: 2, to: t, on: iface)
-        XCTAssertEqual(t.hopsTo(dest.hash), 2)
+    let packet1 = try Announce.make(for: dest)
+    deliverAnnounce(packet: packet1, hops: 2, to: t, on: iface)
+    XCTAssertEqual(t.hopsTo(dest.hash), 2)
 
-        // Same hop count—should update (newer announce has fresh timestamp)
-        let packet2 = try Announce.make(for: dest)
-        deliverAnnounce(packet: packet2, hops: 2, to: t, on: iface)
-        XCTAssertEqual(t.hopsTo(dest.hash), 2, "same-hop path should still be stored")
-    }
+    // Same hop count—should update (newer announce has fresh timestamp)
+    let packet2 = try Announce.make(for: dest)
+    deliverAnnounce(packet: packet2, hops: 2, to: t, on: iface)
+    XCTAssertEqual(t.hopsTo(dest.hash), 2, "same-hop path should still be stored")
+  }
 }

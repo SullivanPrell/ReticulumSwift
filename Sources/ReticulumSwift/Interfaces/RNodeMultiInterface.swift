@@ -20,217 +20,219 @@ import Foundation
 /// and be passed directly as `any Interface` to inbound handlers, enabling callers to downcast
 /// back to `RNodeSubInterface` for channel identification.
 public final class RNodeSubInterface: Interface, SpawnedInterface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables).
-    ///
-    /// One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
 
-    // MARK:–Identity
+  // MARK:–Identity
 
-    /// Configured name of this sub-interface.
-    public let name:          String
-    /// Zero-based vport index the device addresses this radio by.
-    public let index:         Int           // vport index (0-based)
-    /// Radio chipset this sub-interface drives.
-    public let interfaceType: String        // "SX127X", "SX126X", or "SX128X"
+  /// Configured name of this sub-interface.
+  public let name: String
+  /// Zero-based vport index the device addresses this radio by.
+  public let index: Int  // vport index (0-based)
+  /// Radio chipset this sub-interface drives.
+  public let interfaceType: String  // "SX127X", "SX126X", or "SX128X"
 
-    /// The `RNodeMultiInterface` this sub-channel belongs to.
-    ///
-    /// Python's
-    /// `RNodeSubInterface.__init__` takes `parent_interface` as an argument
-    /// (`RNodeMultiInterface.py:939`, stored at `:997`); Swift builds the subs before the
-    /// parent exists, so `RNodeMultiInterface.init` assigns this after adopting them. Weak: the
-    /// parent owns the subs.
-    public weak var parentInterface: RNodeMultiInterface?
-    /// Multi-interface that spawned this sub-interface.
-    public var spawningInterface: (any Interface)? { parentInterface }
+  /// The `RNodeMultiInterface` this sub-channel belongs to.
+  ///
+  /// Python's
+  /// `RNodeSubInterface.__init__` takes `parent_interface` as an argument
+  /// (`RNodeMultiInterface.py:939`, stored at `:997`); Swift builds the subs before the
+  /// parent exists, so `RNodeMultiInterface.init` assigns this after adopting them. Weak: the
+  /// parent owns the subs.
+  public weak var parentInterface: RNodeMultiInterface?
+  /// Multi-interface that spawned this sub-interface.
+  public var spawningInterface: (any Interface)? { parentInterface }
 
-    /// Python `RNodeSubInterface.__str__` (`RNodeMultiInterface.py:1152-1153`):
-    /// `self.parent_interface.name+"["+self.name+"]"`—the **parent's** name, not this class's.
-    /// The protocol's class-qualified default would publish `RNodeSubInterface[<name>]`, which is
-    /// also what the dormant `description` below says and what `bugs/022`'s design note warns
-    /// against copying: neither matches Python, so both give a different `Interface.hash` than
-    /// the Python sub-interface beside it.
-    ///
-    /// An unparented sub falls back to the class-qualified form. Python would raise on
-    /// `None.name`; there is nothing truer to publish, and a crash in a status call is worse
-    /// than a name no Python peer can be holding, since an unparented sub carries no traffic.
-    public var displayName: String {
-        guard let parentName = parentInterface?.name else { return "RNodeSubInterface[\(name)]" }
-        return "\(parentName)[\(name)]"
+  /// Python `RNodeSubInterface.__str__` (`RNodeMultiInterface.py:1152-1153`):
+  /// `self.parent_interface.name+"["+self.name+"]"`—the **parent's** name, not this class's.
+  /// The protocol's class-qualified default would publish `RNodeSubInterface[<name>]`, which is
+  /// also what the dormant `description` below says and what `bugs/022`'s design note warns
+  /// against copying: neither matches Python, so both give a different `Interface.hash` than
+  /// the Python sub-interface beside it.
+  ///
+  /// An unparented sub falls back to the class-qualified form. Python would raise on
+  /// `None.name`; there is nothing truer to publish, and a crash in a status call is worse
+  /// than a name no Python peer can be holding, since an unparented sub carries no traffic.
+  public var displayName: String {
+    guard let parentName = parentInterface?.name else { return "RNodeSubInterface[\(name)]" }
+    return "\(parentName)[\(name)]"
+  }
+
+  // MARK:–Desired radio parameters (the requested values)
+
+  /// Requested center frequency in Hz.
+  public let frequency: UInt32
+  /// Requested bandwidth in Hz.
+  public let bandwidth: UInt32
+  /// Requested transmit power in dBm.
+  public let txPower: Int
+  /// Requested spreading factor.
+  public let sf: Int
+  /// Requested coding rate.
+  public let cr: Int
+  /// Whether the device has asked the host to pause transmission on this radio.
+  public var flowControl: Bool = false
+  /// Requested short-term airtime limit, as a fraction.
+  public var stAlock: Double? = nil
+  /// Requested long-term airtime limit, as a fraction.
+  public var ltAlock: Double? = nil
+
+  // MARK:–Reported (echoed) parameters (what the hardware says it set)
+
+  /// Center frequency in Hz the device reports.
+  public var rFrequency: UInt32? = nil
+  /// Bandwidth in Hz the device reports.
+  public var rBandwidth: UInt32? = nil
+  /// Transmit power in dBm the device reports.
+  public var rTxPower: Int? = nil
+  /// Spreading factor the device reports.
+  public var rSf: Int? = nil
+  /// Coding rate the device reports.
+  public var rCr: Int? = nil
+  /// Radio state the device reports.
+  public var rState: UInt8? = nil
+  /// Airtime lock state the device reports.
+  public var rLock: UInt8? = nil
+  /// Short-term airtime limit the device reports.
+  public var rStAlock: Double? = nil
+  /// Long-term airtime limit the device reports.
+  public var rLtAlock: Double? = nil
+
+  // MARK:–State
+
+  /// Requested radio state.
+  public var state: UInt8 = KISS.radioStateOff
+
+  // MARK:–Telemetry
+
+  /// RSSI in dBm for the last packet received on this radio.
+  public var rStatRssi: Int? = nil
+  /// SNR in dB for the last packet received on this radio.
+  public var rStatSnr: Float? = nil
+  /// Link quality for the last packet received on this radio, as a percentage.
+  public var rStatQ: Double? = nil
+  /// Random byte the device last supplied for this radio.
+  public var rRandom: UInt8? = nil
+
+  /// Symbol time in milliseconds for the current radio parameters.
+  public var rSymbolTimeMs: Double? = nil
+  /// Symbol rate in symbols per second.
+  public var rSymbolRate: Int? = nil
+  /// Preamble length in symbols.
+  public var rPreambleSymbols: Int? = nil
+  /// Preamble duration in milliseconds.
+  public var rPreambleTimeMs: Int? = nil
+  /// CSMA slot time in milliseconds.
+  public var rCsmaSlotTimeMs: Int? = nil
+
+  // MARK:–Statistics (override Interface default extensions that return 0)
+
+  /// Lock-guarded—the parent counts traffic on this sub-channel from the
+  /// RNode read thread while the UI reads it.
+  ///
+  /// See `InterfaceCounters`.
+  private let counters = InterfaceCounters()
+  /// Total bytes received on this sub-channel.
+  public var rxBytes: Int { counters.rxBytes }
+  /// Total bytes transmitted on this sub-channel.
+  public var txBytes: Int { counters.txBytes }
+
+  /// Counted by the parent `RNodeMultiInterface`, which owns the shared
+  /// serial link that every sub-channel multiplexes over.
+  internal func noteRx(bytes: Int) { counters.addRx(bytes: bytes) }
+  internal func noteTx(bytes: Int) { counters.addTx(bytes: bytes) }
+
+  // MARK:–Interface protocol requirements
+
+  /// Always online once added to a multi-interface (online management is the parent's job).
+  private let onlineFlag = LockedFlag(true)
+  /// Whether this sub-interface is up and carrying traffic.
+  public var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
+  /// Sub-interface bitrate in bits per second.
+  public var bitrate: Int = 0
+
+  /// Called with each packet decoded from this radio.
+  public var inboundHandler: ((Packet, any Interface) -> Void)? = nil
+  /// Raw inbound handler—not used on sub-interfaces (parent multi handles raw delivery).
+  public var rawInboundHandler: ((Data, any Interface) -> Void)? = nil
+  /// Identity deriving the IFAC key, when IFAC is configured.
+  public var ifacIdentity: Identity? = nil
+  /// IFAC key, when a network name or passphrase is configured.
+  public var ifacKey: Data? = nil
+  /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
+  /// `ifac_size` is given.
+  ///
+  /// Python declares 8 for the RNode family—`RNodeInterface.py:110`,
+  /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
+  /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
+  /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
+  public static let defaultIfacSize: Int = 8
+
+  /// IFAC token size in bytes.
+  public var ifacSize: Int = RNodeSubInterface.defaultIfacSize
+
+  /// Sends are routed through the parent `RNodeMultiInterface`, which owns the single
+  /// physical transport all sub-interfaces share.
+  ///
+  /// A sub with no parent—which only a
+  /// hand-built test object can be—has nowhere to send, and says so rather than
+  /// silently discarding the packet.
+  public func send(_ packet: Packet) throws {
+    guard let parent = parentInterface else {
+      throw RNodeMultiInterface.MultiInterfaceError.noParentInterface
     }
+    try parent.processOutgoing(parent.wrapIfac(try packet.pack()), subInterface: self)
+  }
+  /// No-op: the parent multi-interface owns the device connection.
+  public func start() throws {}
+  /// No-op: the parent multi-interface owns the device connection.
+  public func stop() {}
 
-    // MARK:–Desired radio parameters (the requested values)
+  // MARK:–Init
 
-    /// Requested center frequency in Hz.
-    public let frequency: UInt32
-    /// Requested bandwidth in Hz.
-    public let bandwidth: UInt32
-    /// Requested transmit power in dBm.
-    public let txPower:   Int
-    /// Requested spreading factor.
-    public let sf:        Int
-    /// Requested coding rate.
-    public let cr:        Int
-    /// Whether the device has asked the host to pause transmission on this radio.
-    public var flowControl: Bool   = false
-    /// Requested short-term airtime limit, as a fraction.
-    public var stAlock:   Double?  = nil
-    /// Requested long-term airtime limit, as a fraction.
-    public var ltAlock:   Double?  = nil
+  /// Creates a sub-interface for one vport of a multi-radio RNode.
+  public init(
+    name: String,
+    index: Int,
+    interfaceType: String,
+    frequency: UInt32,
+    bandwidth: UInt32,
+    txPower: Int,
+    sf: Int,
+    cr: Int,
+    flowControl: Bool = false,
+    stAlock: Double? = nil,
+    ltAlock: Double? = nil
+  ) {
+    self.name = name
+    self.index = index
+    self.interfaceType = interfaceType
+    self.frequency = frequency
+    self.bandwidth = bandwidth
+    self.txPower = txPower
+    self.sf = sf
+    self.cr = cr
+    self.flowControl = flowControl
+    self.stAlock = stAlock
+    self.ltAlock = ltAlock
+  }
 
-    // MARK:–Reported (echoed) parameters (what the hardware says it set)
+  // MARK:–Description (Python: __str__)
 
-    /// Center frequency in Hz the device reports.
-    public var rFrequency: UInt32? = nil
-    /// Bandwidth in Hz the device reports.
-    public var rBandwidth: UInt32? = nil
-    /// Transmit power in dBm the device reports.
-    public var rTxPower:   Int?    = nil
-    /// Spreading factor the device reports.
-    public var rSf:        Int?    = nil
-    /// Coding rate the device reports.
-    public var rCr:        Int?    = nil
-    /// Radio state the device reports.
-    public var rState:     UInt8?  = nil
-    /// Airtime lock state the device reports.
-    public var rLock:      UInt8?  = nil
-    /// Short-term airtime limit the device reports.
-    public var rStAlock:   Double? = nil
-    /// Long-term airtime limit the device reports.
-    public var rLtAlock:   Double? = nil
-
-    // MARK:–State
-
-    /// Requested radio state.
-    public var state: UInt8 = KISS.radioStateOff
-
-    // MARK:–Telemetry
-
-    /// RSSI in dBm for the last packet received on this radio.
-    public var rStatRssi:  Int?   = nil
-    /// SNR in dB for the last packet received on this radio.
-    public var rStatSnr:   Float? = nil
-    /// Link quality for the last packet received on this radio, as a percentage.
-    public var rStatQ:     Double? = nil
-    /// Random byte the device last supplied for this radio.
-    public var rRandom:    UInt8?  = nil
-
-    /// Symbol time in milliseconds for the current radio parameters.
-    public var rSymbolTimeMs:    Double? = nil
-    /// Symbol rate in symbols per second.
-    public var rSymbolRate:      Int?    = nil
-    /// Preamble length in symbols.
-    public var rPreambleSymbols: Int?    = nil
-    /// Preamble duration in milliseconds.
-    public var rPreambleTimeMs:  Int?    = nil
-    /// CSMA slot time in milliseconds.
-    public var rCsmaSlotTimeMs:  Int?    = nil
-
-    // MARK:–Statistics (override Interface default extensions that return 0)
-
-    /// Lock-guarded—the parent counts traffic on this sub-channel from the
-    /// RNode read thread while the UI reads it.
-    ///
-    /// See `InterfaceCounters`.
-    private let counters = InterfaceCounters()
-    /// Total bytes received on this sub-channel.
-    public var rxBytes: Int { counters.rxBytes }
-    /// Total bytes transmitted on this sub-channel.
-    public var txBytes: Int { counters.txBytes }
-
-    /// Counted by the parent `RNodeMultiInterface`, which owns the shared
-    /// serial link that every sub-channel multiplexes over.
-    internal func noteRx(bytes: Int) { counters.addRx(bytes: bytes) }
-    internal func noteTx(bytes: Int) { counters.addTx(bytes: bytes) }
-
-    // MARK:–Interface protocol requirements
-
-    /// Always online once added to a multi-interface (online management is the parent's job).
-    private let onlineFlag = LockedFlag(true)
-    /// Whether this sub-interface is up and carrying traffic.
-    public var isOnline:  Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
-    }
-    /// Sub-interface bitrate in bits per second.
-    public var bitrate:   Int    = 0
-
-    /// Called with each packet decoded from this radio.
-    public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
-    /// Raw inbound handler—not used on sub-interfaces (parent multi handles raw delivery).
-    public var rawInboundHandler: ((Data,   any Interface) -> Void)? = nil
-    /// Identity deriving the IFAC key, when IFAC is configured.
-    public var ifacIdentity: Identity? = nil
-    /// IFAC key, when a network name or passphrase is configured.
-    public var ifacKey:      Data?     = nil
-    /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
-    /// `ifac_size` is given.
-    ///
-    /// Python declares 8 for the RNode family—`RNodeInterface.py:110`,
-    /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
-    /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
-    /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
-    public static let defaultIfacSize: Int = 8
-
-    /// IFAC token size in bytes.
-    public var ifacSize:     Int       = RNodeSubInterface.defaultIfacSize
-
-    /// Sends are routed through the parent `RNodeMultiInterface`, which owns the single
-    /// physical transport all sub-interfaces share.
-    ///
-    /// A sub with no parent—which only a
-    /// hand-built test object can be—has nowhere to send, and says so rather than
-    /// silently discarding the packet.
-    public func send(_ packet: Packet) throws {
-        guard let parent = parentInterface else { throw RNodeMultiInterface.MultiInterfaceError.noParentInterface }
-        try parent.processOutgoing(parent.wrapIfac(try packet.pack()), subInterface: self)
-    }
-    /// No-op: the parent multi-interface owns the device connection.
-    public func start() throws { }
-    /// No-op: the parent multi-interface owns the device connection.
-    public func stop() { }
-
-    // MARK:–Init
-
-    /// Creates a sub-interface for one vport of a multi-radio RNode.
-    public init(
-        name:          String,
-        index:         Int,
-        interfaceType: String,
-        frequency:     UInt32,
-        bandwidth:     UInt32,
-        txPower:       Int,
-        sf:            Int,
-        cr:            Int,
-        flowControl:   Bool    = false,
-        stAlock:       Double? = nil,
-        ltAlock:       Double? = nil
-    ) {
-        self.name          = name
-        self.index         = index
-        self.interfaceType = interfaceType
-        self.frequency     = frequency
-        self.bandwidth     = bandwidth
-        self.txPower       = txPower
-        self.sf            = sf
-        self.cr            = cr
-        self.flowControl   = flowControl
-        self.stAlock       = stAlock
-        self.ltAlock       = ltAlock
-    }
-
-    // MARK:–Description (Python: __str__)
-
-    /// Interface name as shown in status output.
-    public var description: String { "RNodeSubInterface[\(name)]" }
+  /// Interface name as shown in status output.
+  public var description: String { "RNodeSubInterface[\(name)]" }
 }
 
 // MARK: - RNodeMultiInterface
@@ -249,615 +251,616 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
 /// - **Incoming telemetry**: `CMD_SEL_INT` updates `selectedIndex`; subsequent telemetry frames
 ///   (frequency, bandwidth, RSSI, SNR, and so on) are attributed to `subInterfaces[selectedIndex]`.
 public final class RNodeMultiInterface: Interface {
-    /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
-    /// control, the `ic_*` tunables).
-    ///
-    /// One stored property satisfies the whole settable set;
-    /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
-    public let interfaceState = InterfaceState()
+  /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
+  /// control, the `ic_*` tunables).
+  ///
+  /// One stored property satisfies the whole settable set;
+  /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
+  public let interfaceState = InterfaceState()
 
-    /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-    public var announcesToInternal: Bool? = nil
-    /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-    public var gravity: Int = InterfaceMode.defaultGravity
+  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
+  public var announcesToInternal: Bool? = nil
+  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
+  public var gravity: Int = InterfaceMode.defaultGravity
 
-    // MARK:–Class constants (Python: RNodeMultiInterface.XXXX)
+  // MARK:–Class constants (Python: RNodeMultiInterface.XXXX)
 
-    /// Largest number of sub-interfaces one device can expose.
-    public static let maxSubInterfaces:   Int    = 11
-    /// Hardware MTU in bytes for an RNode radio frame.
-    public static let hwMtuValue:         Int    = 508
-    /// Major firmware version this interface requires.
-    public static let requiredFwVerMaj:   UInt8  = 1
-    /// Minor firmware version this interface requires.
-    public static let requiredFwVerMin:   UInt8  = 74
-    /// Seconds to wait before reattempting a dropped device connection.
-    public static let reconnectWait:      Int    = 5
-    /// Maximum station identification callsign length in bytes.
-    public static let callsignMaxLen:     Int    = 32
-    /// Offset added to the raw RSSI byte to recover dBm.
-    public static let rssiOffset:         Int    = 157
-    /// Lowest SNR in dB used when scaling link quality.
-    public static let qSnrMinBase:        Int    = -9
-    /// Highest SNR in dB used when scaling link quality.
-    public static let qSnrMax:            Int    = 6
-    /// SNR step in dB between link-quality levels.
-    public static let qSnrStep:           Int    = 2
+  /// Largest number of sub-interfaces one device can expose.
+  public static let maxSubInterfaces: Int = 11
+  /// Hardware MTU in bytes for an RNode radio frame.
+  public static let hwMtuValue: Int = 508
+  /// Major firmware version this interface requires.
+  public static let requiredFwVerMaj: UInt8 = 1
+  /// Minor firmware version this interface requires.
+  public static let requiredFwVerMin: UInt8 = 74
+  /// Seconds to wait before reattempting a dropped device connection.
+  public static let reconnectWait: Int = 5
+  /// Maximum station identification callsign length in bytes.
+  public static let callsignMaxLen: Int = 32
+  /// Offset added to the raw RSSI byte to recover dBm.
+  public static let rssiOffset: Int = 157
+  /// Lowest SNR in dB used when scaling link quality.
+  public static let qSnrMinBase: Int = -9
+  /// Highest SNR in dB used when scaling link quality.
+  public static let qSnrMax: Int = 6
+  /// SNR step in dB between link-quality levels.
+  public static let qSnrStep: Int = 2
 
-    // MARK:–Interface protocol
+  // MARK:–Interface protocol
 
-    /// Configured interface name.
-    public let name: String
-    /// Hardware MTU in bytes.
-    public var hwMtu: Int? { Self.hwMtuValue }
-    /// Combined bitrate in bits per second across the sub-interfaces.
-    public var bitrate: Int = 0
+  /// Configured interface name.
+  public let name: String
+  /// Hardware MTU in bytes.
+  public var hwMtu: Int? { Self.hwMtuValue }
+  /// Combined bitrate in bits per second across the sub-interfaces.
+  public var bitrate: Int = 0
 
-    private let onlineFlag = LockedFlag(false)
-    /// Whether the device connection is up.
-    public var isOnline: Bool {
-        get { onlineFlag.value }
-        set { onlineFlag.value = newValue }
+  private let onlineFlag = LockedFlag(false)
+  /// Whether the device connection is up.
+  public var isOnline: Bool {
+    get { onlineFlag.value }
+    set { onlineFlag.value = newValue }
+  }
+
+  /// Called with each packet decoded from any sub-interface.
+  public var inboundHandler: ((Packet, any Interface) -> Void)?
+  /// Called with each KISS payload before packet decoding.
+  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  /// Identity deriving the IFAC key, when IFAC is configured.
+  public var ifacIdentity: Identity?
+  /// IFAC key, when a network name or passphrase is configured.
+  public var ifacKey: Data?
+  /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
+  /// `ifac_size` is given.
+  ///
+  /// Python declares 8 for the RNode family—`RNodeInterface.py:110`,
+  /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
+  /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
+  /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
+  public static let defaultIfacSize: Int = 8
+
+  /// IFAC token size in bytes.
+  public var ifacSize: Int = RNodeMultiInterface.defaultIfacSize
+
+  // MARK:–Sub-interfaces
+
+  /// All configured sub-interfaces, in order of their vport index.
+  public private(set) var subInterfaces: [RNodeSubInterface]
+
+  /// Selected sub-interface index (updated by CMD_SEL_INT frames from hardware).
+  public private(set) var selectedIndex: Int = 0
+
+  // MARK:–Transport & decoder
+
+  /// Byte transport carrying KISS frames to the device.
+  public weak var transport: RNodeTransport?
+
+  /// Keeps a factory-created transport alive: `transport` is deliberately `weak` (an
+  /// application owning its BLE/USB stack the interface must not retain it), so when the
+  /// *config path* creates the transport, the interface is the only candidate owner.
+  ///
+  /// Same
+  /// pattern as `RNodeInterface.ownedTransport`.
+  internal var ownedTransport: AnyObject? = nil
+  private let decoder = KISS.FrameDecoder()
+
+  // MARK:–Hardware / firmware state (shared across all sub-interfaces)
+
+  /// Major firmware version the device reports.
+  public var majVersion: UInt8 = 0
+  /// Minor firmware version the device reports.
+  public var minVersion: UInt8 = 0
+  /// Whether the reported firmware meets the required version.
+  public var firmwareOk: Bool = false
+  /// Whether the device answered the detect command.
+  public var detected: Bool = false
+  /// Hardware platform byte the device reports.
+  public var platform: UInt8? = nil
+  /// Microcontroller byte the device reports.
+  public var mcu: UInt8? = nil
+
+  /// Interface types reported by CMD_INTERFACES (from device detect response).
+  public private(set) var subInterfaceTypes: [String] = []
+
+  // MARK:–Errors
+
+  /// Errors raised while configuring or driving a multi-radio RNode.
+  public enum MultiInterfaceError: Error {
+    case noSubInterfaces
+    case tooManySubInterfaces(Int)
+    /// A sub-interface asked to transmit with no parent to transmit through.
+    case noParentInterface
+  }
+
+  // MARK:–Init
+
+  /// Creates a multi-interface driving `subInterfaces` over one device connection.
+  public init(
+    name: String,
+    transport: RNodeTransport,
+    subInterfaces: [RNodeSubInterface]
+  ) throws {
+    guard !subInterfaces.isEmpty else { throw MultiInterfaceError.noSubInterfaces }
+    guard subInterfaces.count <= Self.maxSubInterfaces else {
+      throw MultiInterfaceError.tooManySubInterfaces(subInterfaces.count)
+    }
+    self.name = name
+    self.transport = transport
+    self.subInterfaces = subInterfaces
+    // Python passes `parent_interface` into `RNodeSubInterface.__init__`
+    // (`RNodeMultiInterface.py:939`, stored at `:997`). Swift constructs the subs first and
+    // hands them in, so the link is closed here instead. It's what `RNodeSubInterface`'s
+    // published name is built from (`__str__` at `:1152-1153`), so without it the sub
+    // publishes a bare name—`bugs/022`.
+    for sub in subInterfaces { sub.parentInterface = self }
+    transport.byteHandler = { [weak self] data in self?.handleIncoming(data) }
+  }
+
+  // MARK:–Interface lifecycle
+
+  /// Bound on the wait for the device's detect response—same gate as
+  /// `RNodeInterface.detectTimeout`.
+  public var detectTimeout: TimeInterval = 5.0
+
+  /// Seconds between redial attempts after device loss; the class `reconnectWait` constant
+  /// records the reference value, this carries the live one.
+  public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeMultiInterface.reconnectWait)
+  private let reconnector = TransportReconnector()
+
+  /// Where the bring-up's bounded wait runs—never the caller's thread, for the reason
+  /// spelled out on `RNodeInterface.bringUpQueue`: a transport may deliver its bytes on the
+  /// very thread that called `start()`.
+  private let bringUpQueue = DispatchQueue(label: "ReticulumSwift.RNodeMultiInterface.bringUp")
+  private let bringUpSettled = DispatchSemaphore(value: 0)
+
+  /// Opens the device, detects it and brings every sub-interface radio up.
+  public func start() throws {
+    // The same gate as `RNodeInterface.start()`: Python's multi bring-up goes detect →
+    // CMD_INTERFACES → per-sub radio init before anything reports online; `open();
+    // online = true` with `detect`/`initAllRadios` production-dead left every configured
+    // radio silent behind an Up interface.
+    transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
+    try transport?.open()
+    try detect()
+    bringUpQueue.async { [weak self] in self?.completeBringUp() }
+  }
+
+  /// Block until the bring-up finishes, returning whether the interface came online.
+  ///
+  /// Must not
+  /// be called from the transport's byte-delivery thread.
+  @discardableResult
+  public func waitUntilOnline(timeout: TimeInterval) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !isOnline && Date() < deadline {
+      if bringUpSettled.wait(timeout: .now() + 0.05) == .success { break }
+    }
+    return isOnline
+  }
+
+  private func completeBringUp() {
+    defer { bringUpSettled.signal() }
+
+    let detectDeadline = Date().addingTimeInterval(detectTimeout)
+    while !detected && Date() < detectDeadline {
+      Thread.sleep(forTimeInterval: 0.01)
+    }
+    guard detected else {
+      Reticulum.log("Could not detect device for \(displayName)", level: .error)
+      transport?.close()
+      return
     }
 
-    /// Called with each packet decoded from any sub-interface.
-    public var inboundHandler:    ((Packet, any Interface) -> Void)?
-    /// Called with each KISS payload before packet decoding.
-    public var rawInboundHandler: ((Data,   any Interface) -> Void)?
-    /// Identity deriving the IFAC key, when IFAC is configured.
-    public var ifacIdentity: Identity?
-    /// IFAC key, when a network name or passphrase is configured.
-    public var ifacKey:      Data?
-    /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
-    /// `ifac_size` is given.
-    ///
-    /// Python declares 8 for the RNode family—`RNodeInterface.py:110`,
-    /// `RNodeMultiInterface.py:137`—where TCP/UDP/Auto/Backbone/I2P/Weave declare 16. Using the
-    /// global 16 here would drop 100%% of traffic on an IFAC-protected LoRa link to a Python peer
-    /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
-    public static let defaultIfacSize: Int = 8
-
-    /// IFAC token size in bytes.
-    public var ifacSize:     Int = RNodeMultiInterface.defaultIfacSize
-
-    // MARK:–Sub-interfaces
-
-    /// All configured sub-interfaces, in order of their vport index.
-    public private(set) var subInterfaces: [RNodeSubInterface]
-
-    /// Selected sub-interface index (updated by CMD_SEL_INT frames from hardware).
-    public private(set) var selectedIndex: Int = 0
-
-    // MARK:–Transport & decoder
-
-    /// Byte transport carrying KISS frames to the device.
-    public weak var transport: RNodeTransport?
-
-    /// Keeps a factory-created transport alive: `transport` is deliberately `weak` (an
-    /// application owning its BLE/USB stack the interface must not retain it), so when the
-    /// *config path* creates the transport, the interface is the only candidate owner.
-    ///
-    /// Same
-    /// pattern as `RNodeInterface.ownedTransport`.
-    internal var ownedTransport: AnyObject? = nil
-    private let decoder = KISS.FrameDecoder()
-
-    // MARK:–Hardware / firmware state (shared across all sub-interfaces)
-
-    /// Major firmware version the device reports.
-    public var majVersion:  UInt8 = 0
-    /// Minor firmware version the device reports.
-    public var minVersion:  UInt8 = 0
-    /// Whether the reported firmware meets the required version.
-    public var firmwareOk:  Bool  = false
-    /// Whether the device answered the detect command.
-    public var detected:    Bool  = false
-    /// Hardware platform byte the device reports.
-    public var platform:    UInt8? = nil
-    /// Microcontroller byte the device reports.
-    public var mcu:         UInt8? = nil
-
-    /// Interface types reported by CMD_INTERFACES (from device detect response).
-    public private(set) var subInterfaceTypes: [String] = []
-
-
-    // MARK:–Errors
-
-    /// Errors raised while configuring or driving a multi-radio RNode.
-    public enum MultiInterfaceError: Error {
-        case noSubInterfaces
-        case tooManySubInterfaces(Int)
-        /// A sub-interface asked to transmit with no parent to transmit through.
-        case noParentInterface
+    do { try initAllRadios() } catch {
+      Reticulum.log("Could not configure radios for \(displayName): \(error)", level: .error)
+      transport?.close()
+      return
     }
+    isOnline = true
+    Reticulum.log("\(displayName) is configured and powered up", level: .info)
+  }
 
-    // MARK:–Init
+  /// Turns each radio off and closes the device.
+  public func stop() {
+    reconnector.cancel()
+    transport?.onTransportError = nil
+    transport?.close()
+    isOnline = false
+  }
 
-    /// Creates a multi-interface driving `subInterfaces` over one device connection.
-    public init(
-        name:          String,
-        transport:     RNodeTransport,
-        subInterfaces: [RNodeSubInterface]
-    ) throws {
-        guard !subInterfaces.isEmpty else { throw MultiInterfaceError.noSubInterfaces }
-        guard subInterfaces.count <= Self.maxSubInterfaces else {
-            throw MultiInterfaceError.tooManySubInterfaces(subInterfaces.count)
-        }
-        self.name          = name
-        self.transport     = transport
-        self.subInterfaces = subInterfaces
-        // Python passes `parent_interface` into `RNodeSubInterface.__init__`
-        // (`RNodeMultiInterface.py:939`, stored at `:997`). Swift constructs the subs first and
-        // hands them in, so the link is closed here instead. It's what `RNodeSubInterface`'s
-        // published name is built from (`__str__` at `:1152-1153`), so without it the sub
-        // publishes a bare name—`bugs/022`.
-        for sub in subInterfaces { sub.parentInterface = self }
-        transport.byteHandler = { [weak self] data in self?.handleIncoming(data) }
+  /// Device loss → offline → redial, re-running the whole `start()` gate so every
+  /// sub-interface radio is reconfigured on the re-powered device.
+  private func handleTransportLoss(_ error: Error) {
+    Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
+    isOnline = false
+    reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
+      guard let self else { return true }
+      // See `RNodeInterface.handleTransportLoss`: `start()` is asynchronous, so the
+      // outcome has to be waited for rather than read off the next line.
+      do { try self.start() } catch { return false }
+      return self.waitUntilOnline(timeout: self.detectTimeout + 1)
     }
+  }
 
-    // MARK:–Interface lifecycle
-
-    /// Bound on the wait for the device's detect response—same gate as
-    /// `RNodeInterface.detectTimeout`.
-    public var detectTimeout: TimeInterval = 5.0
-
-    /// Seconds between redial attempts after device loss; the class `reconnectWait` constant
-    /// records the reference value, this carries the live one.
-    public var reconnectWaitOverride: TimeInterval = TimeInterval(RNodeMultiInterface.reconnectWait)
-    private let reconnector = TransportReconnector()
-
-    /// Where the bring-up's bounded wait runs—never the caller's thread, for the reason
-    /// spelled out on `RNodeInterface.bringUpQueue`: a transport may deliver its bytes on the
-    /// very thread that called `start()`.
-    private let bringUpQueue = DispatchQueue(label: "ReticulumSwift.RNodeMultiInterface.bringUp")
-    private let bringUpSettled = DispatchSemaphore(value: 0)
-
-    /// Opens the device, detects it and brings every sub-interface radio up.
-    public func start() throws {
-        // The same gate as `RNodeInterface.start()`: Python's multi bring-up goes detect →
-        // CMD_INTERFACES → per-sub radio init before anything reports online; `open();
-        // online = true` with `detect`/`initAllRadios` production-dead left every configured
-        // radio silent behind an Up interface.
-        transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
-        try transport?.open()
-        try detect()
-        bringUpQueue.async { [weak self] in self?.completeBringUp() }
-    }
-
-    /// Block until the bring-up finishes, returning whether the interface came online.
-    ///
-    /// Must not
-    /// be called from the transport's byte-delivery thread.
-    @discardableResult
-    public func waitUntilOnline(timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !isOnline && Date() < deadline {
-            if bringUpSettled.wait(timeout: .now() + 0.05) == .success { break }
-        }
-        return isOnline
-    }
-
-    private func completeBringUp() {
-        defer { bringUpSettled.signal() }
-
-        let detectDeadline = Date().addingTimeInterval(detectTimeout)
-        while !detected && Date() < detectDeadline {
-            Thread.sleep(forTimeInterval: 0.01)
-        }
-        guard detected else {
-            Reticulum.log("Could not detect device for \(displayName)", level: .error)
-            transport?.close()
-            return
-        }
-
-        do { try initAllRadios() } catch {
-            Reticulum.log("Could not configure radios for \(displayName): \(error)", level: .error)
-            transport?.close()
-            return
-        }
-        isOnline = true
-        Reticulum.log("\(displayName) is configured and powered up", level: .info)
-    }
-
-    /// Turns each radio off and closes the device.
-    public func stop() {
-        reconnector.cancel()
-        transport?.onTransportError = nil
-        transport?.close()
-        isOnline = false
-    }
-
-    /// Device loss → offline → redial, re-running the whole `start()` gate so every
-    /// sub-interface radio is reconfigured on the re-powered device.
-    private func handleTransportLoss(_ error: Error) {
-        Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
-        isOnline = false
-        reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
-            guard let self else { return true }
-            // See `RNodeInterface.handleTransportLoss`: `start()` is asynchronous, so the
-            // outcome has to be waited for rather than read off the next line.
-            do { try self.start() } catch { return false }
-            return self.waitUntilOnline(timeout: self.detectTimeout + 1)
-        }
-    }
-
-    /// Transmits `packet` on the sub-interface the packet is bound to.
-    public func send(_ packet: Packet) throws {
-        // Transport routes outbound through `iface.send(packet)` on whatever it has registered,
-        // and the config path registers *this parent object*—so an empty body here was a
-        // silent 100% transmit loss for a config-constructed multi-radio node, the `bugs/013`
-        // shape inside the change that closed `bugs/031`.
-        //
-        // Python's multi-interface never faces this: it registers each spawned sub-interface
-        // with Transport and the parent is only ever a demultiplexer. Until this port does the
-        // same, the parent transmits on its first enabled sub-interface, which is the one a
-        // single-radio config would have produced anyway.
-        guard let sub = subInterfaces.first else { return }
-        try processOutgoing(wrapIfac(try packet.pack()), subInterface: sub)
-    }
-
-    // MARK:–Radio configuration commands (Python: setFrequency/setBandwidth/and so on)
+  /// Transmits `packet` on the sub-interface the packet is bound to.
+  public func send(_ packet: Packet) throws {
+    // Transport routes outbound through `iface.send(packet)` on whatever it has registered,
+    // and the config path registers *this parent object*—so an empty body here was a
+    // silent 100% transmit loss for a config-constructed multi-radio node, the `bugs/013`
+    // shape inside the change that closed `bugs/031`.
     //
-    // A CMD_SEL_INT frame precedes every command frame and selects the target sub-interface.
-    // Python: kiss_command = [FEND CMD_SEL_INT interface.index FEND FEND CMD_xxx data FEND]
+    // Python's multi-interface never faces this: it registers each spawned sub-interface
+    // with Transport and the parent is only ever a demultiplexer. Until this port does the
+    // same, the parent transmits on its first enabled sub-interface, which is the one a
+    // single-radio config would have produced anyway.
+    guard let sub = subInterfaces.first else { return }
+    try processOutgoing(wrapIfac(try packet.pack()), subInterface: sub)
+  }
 
-    /// Sends the center frequency configured for `sub` to the device.
-    ///
-    /// Python: setFrequency(frequency, interface)
-    public func setFrequency(for sub: RNodeSubInterface) throws {
-        let data = uint32ToData(sub.frequency)
-        try sendConfigCommand(KISS.cmdFrequency, data: data, subInterface: sub)
+  // MARK:–Radio configuration commands (Python: setFrequency/setBandwidth/and so on)
+  //
+  // A CMD_SEL_INT frame precedes every command frame and selects the target sub-interface.
+  // Python: kiss_command = [FEND CMD_SEL_INT interface.index FEND FEND CMD_xxx data FEND]
+
+  /// Sends the center frequency configured for `sub` to the device.
+  ///
+  /// Python: setFrequency(frequency, interface)
+  public func setFrequency(for sub: RNodeSubInterface) throws {
+    let data = uint32ToData(sub.frequency)
+    try sendConfigCommand(KISS.cmdFrequency, data: data, subInterface: sub)
+  }
+
+  /// Sends the bandwidth configured for `sub` to the device.
+  ///
+  /// Python: setBandwidth(bandwidth, interface)
+  public func setBandwidth(for sub: RNodeSubInterface) throws {
+    let data = uint32ToData(sub.bandwidth)
+    try sendConfigCommand(KISS.cmdBandwidth, data: data, subInterface: sub)
+  }
+
+  /// Sends the transmit power configured for `sub` to the device.
+  ///
+  /// Python: setTXPower(txpower, interface)
+  public func setTxPower(for sub: RNodeSubInterface) throws {
+    try sendConfigCommand(
+      KISS.cmdTxpower, data: Data([UInt8(clamping: sub.txPower)]), subInterface: sub)
+  }
+
+  /// Sends the spreading factor configured for `sub` to the device.
+  ///
+  /// Python: setSpreadingFactor(sf, interface)
+  public func setSpreadingFactor(for sub: RNodeSubInterface) throws {
+    try sendConfigCommand(KISS.cmdSf, data: Data([UInt8(clamping: sub.sf)]), subInterface: sub)
+  }
+
+  /// Sends the coding rate configured for `sub` to the device.
+  ///
+  /// Python: setCodingRate(cr, interface)
+  public func setCodingRate(for sub: RNodeSubInterface) throws {
+    try sendConfigCommand(KISS.cmdCr, data: Data([UInt8(clamping: sub.cr)]), subInterface: sub)
+  }
+
+  /// Sends the short-term airtime limit configured for `sub` to the device.
+  ///
+  /// Python: setSTALock(st_alock, interface)
+  public func setStAlock(for sub: RNodeSubInterface) throws {
+    guard let at = sub.stAlock else { return }
+    let v = Int(at * 100)
+    let data = Data([UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)])
+    try sendConfigCommand(KISS.cmdStAlock, data: data, subInterface: sub)
+  }
+
+  /// Sends the long-term airtime limit configured for `sub` to the device.
+  ///
+  /// Python: setLTALock(lt_alock, interface)
+  public func setLtAlock(for sub: RNodeSubInterface) throws {
+    guard let at = sub.ltAlock else { return }
+    let v = Int(at * 100)
+    let data = Data([UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)])
+    try sendConfigCommand(KISS.cmdLtAlock, data: data, subInterface: sub)
+  }
+
+  /// Sets the radio behind `sub` to `state`.
+  ///
+  /// Python: setRadioState(state, interface)
+  public func setRadioState(_ state: UInt8, for sub: RNodeSubInterface) throws {
+    try sendConfigCommand(KISS.cmdRadioState, data: Data([state]), subInterface: sub)
+  }
+
+  // MARK:–initRadio per sub-interface (Python: RNodeSubInterface.initRadio)
+
+  /// Configure one sub-interface: sends all parameters in order then turns radio ON.
+  ///
+  /// Mutates `sub.state` to `radioStateOn`.
+  public func initRadio(for sub: inout RNodeSubInterface) throws {
+    try setFrequency(for: sub)
+    try setBandwidth(for: sub)
+    try setTxPower(for: sub)
+    try setSpreadingFactor(for: sub)
+    try setCodingRate(for: sub)
+    try setStAlock(for: sub)
+    try setLtAlock(for: sub)
+    try setRadioState(KISS.radioStateOn, for: sub)
+    sub.state = KISS.radioStateOn
+  }
+
+  /// Configure all sub-interfaces.
+  public func initAllRadios() throws {
+    for i in subInterfaces.indices {
+      try initRadio(for: &subInterfaces[i])
+    }
+  }
+
+  // MARK:–Outgoing data (Python: process_outgoing(data, interface))
+
+  /// Send `data` on the specified sub-interface's channel.
+  ///
+  /// Format: `[FEND CMD_SEL_INT index FEND FEND CMD_DATA escaped_data FEND]`
+  /// If `subInterface` is nil, does nothing (matches Python behaviour for direct calls on parent).
+  public func processOutgoing(_ data: Data, subInterface: RNodeSubInterface?) throws {
+    guard let sub = subInterface else { return }
+    let escaped = KISS.escape(data)
+    var frame = Data()
+    frame.append(KISS.fend)
+    frame.append(KISS.cmdSelInt)
+    frame.append(UInt8(sub.index))
+    frame.append(KISS.fend)
+    frame.append(KISS.fend)
+    frame.append(KISS.cmdData)
+    frame.append(escaped)
+    frame.append(KISS.fend)
+    try transport?.write(frame)
+    // Track TX bytes (unescaped original length)
+    subInterfaces[sub.index].noteTx(bytes: data.count)
+  }
+
+  // MARK:–detect() (Python: detect())
+
+  /// Asks the device for its detect, firmware, platform, MCU and interface responses.
+  ///
+  /// Python: detect()—sends 5 KISS frames asking for detect / fw / platform / mcu / interfaces
+  public func detect() throws {
+    let cmd = Data([
+      KISS.fend, KISS.cmdDetect, KISS.detectReq,
+      KISS.fend, KISS.cmdFwVersion, 0x00,
+      KISS.fend, KISS.cmdPlatform, 0x00,
+      KISS.fend, KISS.cmdMcu, 0x00,
+      KISS.fend, KISS.cmdInterfaces, 0x00,
+      KISS.fend,
+    ])
+    try transport?.write(cmd)
+  }
+
+  // MARK:–Firmware validation (Python: validate_firmware)
+
+  /// Checks the reported firmware against the required version.
+  public func validateFirmware() {
+    if majVersion > Self.requiredFwVerMaj {
+      firmwareOk = true
+      return
+    }
+    if majVersion == Self.requiredFwVerMaj && minVersion >= Self.requiredFwVerMin {
+      firmwareOk = true
+      return
+    }
+    firmwareOk = false
+  }
+
+  // MARK:–Description (Python: __str__)
+
+  /// Interface name as shown in status output.
+  public var description: String { "RNodeMultiInterface[\(name)]" }
+
+  // MARK:–Incoming byte handler
+
+  private func handleIncoming(_ data: Data) {
+    let frames = decoder.feed(data)
+    for (cmd, payload) in frames {
+      processFrame(cmd: cmd, payload: payload)
+    }
+  }
+
+  // MARK:–Frame dispatcher (Python: readLoop)
+
+  private func processFrame(cmd: UInt8, payload: Data) {
+    // ── CMD_SEL_INT: update selected sub-interface ──────────────────────────
+    if cmd == KISS.cmdSelInt {
+      if let b = payload.first {
+        let idx = Int(b)
+        if idx < subInterfaces.count { selectedIndex = idx }
+      }
+      return
     }
 
-    /// Sends the bandwidth configured for `sub` to the device.
-    ///
-    /// Python: setBandwidth(bandwidth, interface)
-    public func setBandwidth(for sub: RNodeSubInterface) throws {
-        let data = uint32ToData(sub.bandwidth)
-        try sendConfigCommand(KISS.cmdBandwidth, data: data, subInterface: sub)
+    // ── CMD_DATA (0x00 = CMD_INT0_DATA): route to selectedIndex ─────────────
+    // Python: `if in_frame and byte == KISS.FEND and command == KISS.CMD_DATA:
+    //              self.subinterfaces[self.selected_index].process_incoming(data_buffer)`
+    // The CMD_SEL_INT frame preceding this one determined selectedIndex.
+    if cmd == KISS.cmdData {
+      guard selectedIndex < subInterfaces.count else { return }
+      dispatchInboundData(payload, channelIndex: selectedIndex)
+      return
     }
 
-    /// Sends the transmit power configured for `sub` to the device.
-    ///
-    /// Python: setTXPower(txpower, interface)
-    public func setTxPower(for sub: RNodeSubInterface) throws {
-        try sendConfigCommand(KISS.cmdTxpower, data: Data([UInt8(clamping: sub.txPower)]), subInterface: sub)
+    // ── CMD_INTn_DATA (n > 0): index is encoded directly in the command byte ─
+    // KISS.intDataCommands = [0x00, 0x10, 0x20, 0x70, 0x75, 0x90, 0xA0, 0xB0,
+    //                         0xC0, 0xD0, 0xE0, 0xF0]
+    // The position of cmd in that array IS the sub-interface index.
+    // 0x10 → index 1, 0x20 → index 2, and so on
+    if let idx = KISS.intDataCommands.firstIndex(of: cmd), idx > 0 {
+      dispatchInboundData(payload, channelIndex: idx)
+      return
     }
 
-    /// Sends the spreading factor configured for `sub` to the device.
-    ///
-    /// Python: setSpreadingFactor(sf, interface)
-    public func setSpreadingFactor(for sub: RNodeSubInterface) throws {
-        try sendConfigCommand(KISS.cmdSf, data: Data([UInt8(clamping: sub.sf)]), subInterface: sub)
+    // ── All other commands are telemetry/status for selectedIndex ───────────
+    processCommandFrame(cmd: cmd, payload: payload)
+  }
+
+  private func dispatchInboundData(_ payload: Data, channelIndex: Int) {
+    guard channelIndex < subInterfaces.count else { return }
+    let sub = subInterfaces[channelIndex]
+    sub.noteRx(bytes: payload.count)
+    // Pass the RNodeSubInterface instance directly—it now conforms to Interface,
+    // so callers can downcast `any Interface → RNodeSubInterface` for channel ID.
+    if let h = rawInboundHandler {
+      h(payload, sub)
+    } else if let packet = try? Packet.unpack(payload) {
+      inboundHandler?(packet, sub)
     }
+  }
 
-    /// Sends the coding rate configured for `sub` to the device.
-    ///
-    /// Python: setCodingRate(cr, interface)
-    public func setCodingRate(for sub: RNodeSubInterface) throws {
-        try sendConfigCommand(KISS.cmdCr, data: Data([UInt8(clamping: sub.cr)]), subInterface: sub)
+  // MARK:–Telemetry command dispatcher
+
+  private func processCommandFrame(cmd: UInt8, payload: Data) {
+    switch cmd {
+
+    case KISS.cmdFrequency:
+      if payload.count >= 4 {
+        subInterfaces[selectedIndex].rFrequency = uint32BigEndian(payload)
+      }
+
+    case KISS.cmdBandwidth:
+      if payload.count >= 4 {
+        subInterfaces[selectedIndex].rBandwidth = uint32BigEndian(payload)
+      }
+
+    case KISS.cmdTxpower:
+      if let b = payload.first { subInterfaces[selectedIndex].rTxPower = Int(b) }
+
+    case KISS.cmdSf:
+      if let b = payload.first { subInterfaces[selectedIndex].rSf = Int(b) }
+
+    case KISS.cmdCr:
+      if let b = payload.first { subInterfaces[selectedIndex].rCr = Int(b) }
+
+    case KISS.cmdRadioState:
+      if let b = payload.first { subInterfaces[selectedIndex].rState = b }
+
+    case KISS.cmdRadioLock:
+      if let b = payload.first { subInterfaces[selectedIndex].rLock = b }
+
+    case KISS.cmdStatRssi:
+      if let b = payload.first {
+        subInterfaces[selectedIndex].rStatRssi = Int(b) - Self.rssiOffset
+      }
+
+    case KISS.cmdStatSnr:
+      if let b = payload.first {
+        let signed = Int8(bitPattern: b)
+        let snr = Float(signed) * 0.25
+        subInterfaces[selectedIndex].rStatSnr = snr
+        computeSnrQuality(snr: snr, index: selectedIndex)
+      }
+
+    case KISS.cmdStAlock:
+      if payload.count >= 2 {
+        let at = (Int(payload[payload.startIndex]) << 8) | Int(payload[payload.startIndex + 1])
+        subInterfaces[selectedIndex].rStAlock = Double(at) / 100.0
+      }
+
+    case KISS.cmdLtAlock:
+      if payload.count >= 2 {
+        let at = (Int(payload[payload.startIndex]) << 8) | Int(payload[payload.startIndex + 1])
+        subInterfaces[selectedIndex].rLtAlock = Double(at) / 100.0
+      }
+
+    // ── Multi-interface global state ──────────────────────────────────────
+    case KISS.cmdDetect:
+      if let b = payload.first { detected = (b == KISS.detectResp) }
+
+    case KISS.cmdPlatform:
+      if let b = payload.first { platform = b }
+
+    case KISS.cmdMcu:
+      if let b = payload.first { mcu = b }
+
+    case KISS.cmdFwVersion:
+      if payload.count >= 2 {
+        majVersion = payload[payload.startIndex]
+        minVersion = payload[payload.startIndex + 1]
+        validateFirmware()
+      }
+
+    case KISS.cmdInterfaces:
+      // Python: 2 bytes per interface [vport, type]; accumulate by pairs
+      // Bytes arrive two at a time between FENDs.
+      // Each complete 2-byte buffer means one interface type entry.
+      // payload contains all bytes after the command byte.
+      processInterfacesPayload(payload)
+
+    case KISS.cmdRandom:
+      if let b = payload.first { subInterfaces[selectedIndex].rRandom = b }
+
+    default:
+      break
     }
+  }
 
-    /// Sends the short-term airtime limit configured for `sub` to the device.
-    ///
-    /// Python: setSTALock(st_alock, interface)
-    public func setStAlock(for sub: RNodeSubInterface) throws {
-        guard let at = sub.stAlock else { return }
-        let v = Int(at * 100)
-        let data = Data([UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)])
-        try sendConfigCommand(KISS.cmdStAlock, data: data, subInterface: sub)
+  /// Records the vport-to-chipset mapping the device reports.
+  ///
+  /// Python: CMD_INTERFACES—each pair of bytes is [vport, interface_type]
+  private func processInterfacesPayload(_ payload: Data) {
+    // Rebuild from scratch each CMD_INTERFACES frame—otherwise repeated
+    // detect()/reconnect cycles accumulate stale entries without bound.
+    subInterfaceTypes.removeAll(keepingCapacity: true)
+    var i = payload.startIndex
+    while i + 1 < payload.endIndex {
+      // Python: command_buffer[0] is vport (ignored), command_buffer[1] is type
+      let typeCode = payload[i + 1]
+      subInterfaceTypes.append(KISS.interfaceTypeToString(typeCode))
+      i = i.advanced(by: 2)
     }
+  }
 
-    /// Sends the long-term airtime limit configured for `sub` to the device.
-    ///
-    /// Python: setLTALock(lt_alock, interface)
-    public func setLtAlock(for sub: RNodeSubInterface) throws {
-        guard let at = sub.ltAlock else { return }
-        let v = Int(at * 100)
-        let data = Data([UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)])
-        try sendConfigCommand(KISS.cmdLtAlock, data: data, subInterface: sub)
+  // MARK:–SNR quality (per sub-interface)
+
+  private func computeSnrQuality(snr: Float, index: Int) {
+    guard let sf = subInterfaces[index].rSf else { return }
+    let sfs = sf - 7
+    let qSnrMin = Self.qSnrMinBase - sfs * Self.qSnrStep
+    let qSnrMax = Self.qSnrMax
+    let span = qSnrMax - qSnrMin
+    guard span > 0 else {
+      subInterfaces[index].rStatQ = 0.0
+      return
     }
+    var quality = (Double(snr) - Double(qSnrMin)) / Double(span) * 100.0
+    quality = max(0.0, min(100.0, quality))
+    subInterfaces[index].rStatQ = round(quality * 10.0) / 10.0
+  }
 
-    /// Sets the radio behind `sub` to `state`.
-    ///
-    /// Python: setRadioState(state, interface)
-    public func setRadioState(_ state: UInt8, for sub: RNodeSubInterface) throws {
-        try sendConfigCommand(KISS.cmdRadioState, data: Data([state]), subInterface: sub)
-    }
+  // MARK:–Private helpers
 
-    // MARK:–initRadio per sub-interface (Python: RNodeSubInterface.initRadio)
+  /// Send a config command prefixed with CMD_SEL_INT for the given sub-interface.
+  /// Python wire format: [FEND CMD_SEL_INT index FEND FEND cmd escaped_data FEND]
+  private func sendConfigCommand(_ cmd: UInt8, data: Data, subInterface: RNodeSubInterface) throws {
+    let escaped = KISS.escape(data)
+    var frame = Data()
+    frame.append(KISS.fend)
+    frame.append(KISS.cmdSelInt)
+    frame.append(UInt8(subInterface.index))
+    frame.append(KISS.fend)
+    frame.append(KISS.fend)
+    frame.append(cmd)
+    frame.append(escaped)
+    frame.append(KISS.fend)
+    try transport?.write(frame)
+  }
 
-    /// Configure one sub-interface: sends all parameters in order then turns radio ON.
-    ///
-    /// Mutates `sub.state` to `radioStateOn`.
-    public func initRadio(for sub: inout RNodeSubInterface) throws {
-        try setFrequency(for: sub)
-        try setBandwidth(for: sub)
-        try setTxPower(for: sub)
-        try setSpreadingFactor(for: sub)
-        try setCodingRate(for: sub)
-        try setStAlock(for: sub)
-        try setLtAlock(for: sub)
-        try setRadioState(KISS.radioStateOn, for: sub)
-        sub.state = KISS.radioStateOn
-    }
+  private func uint32ToData(_ value: UInt32) -> Data {
+    Data([
+      UInt8((value >> 24) & 0xFF),
+      UInt8((value >> 16) & 0xFF),
+      UInt8((value >> 8) & 0xFF),
+      UInt8(value & 0xFF),
+    ])
+  }
 
-    /// Configure all sub-interfaces.
-    public func initAllRadios() throws {
-        for i in subInterfaces.indices {
-            try initRadio(for: &subInterfaces[i])
-        }
-    }
-
-    // MARK:–Outgoing data (Python: process_outgoing(data, interface))
-
-    /// Send `data` on the specified sub-interface's channel.
-    ///
-    /// Format: `[FEND CMD_SEL_INT index FEND FEND CMD_DATA escaped_data FEND]`
-    /// If `subInterface` is nil, does nothing (matches Python behaviour for direct calls on parent).
-    public func processOutgoing(_ data: Data, subInterface: RNodeSubInterface?) throws {
-        guard let sub = subInterface else { return }
-        let escaped = KISS.escape(data)
-        var frame = Data()
-        frame.append(KISS.fend)
-        frame.append(KISS.cmdSelInt)
-        frame.append(UInt8(sub.index))
-        frame.append(KISS.fend)
-        frame.append(KISS.fend)
-        frame.append(KISS.cmdData)
-        frame.append(escaped)
-        frame.append(KISS.fend)
-        try transport?.write(frame)
-        // Track TX bytes (unescaped original length)
-        subInterfaces[sub.index].noteTx(bytes: data.count)
-    }
-
-    // MARK:–detect() (Python: detect())
-
-    /// Asks the device for its detect, firmware, platform, MCU and interface responses.
-    ///
-    /// Python: detect()—sends 5 KISS frames asking for detect / fw / platform / mcu / interfaces
-    public func detect() throws {
-        let cmd = Data([
-            KISS.fend, KISS.cmdDetect,     KISS.detectReq,
-            KISS.fend, KISS.cmdFwVersion,  0x00,
-            KISS.fend, KISS.cmdPlatform,   0x00,
-            KISS.fend, KISS.cmdMcu,        0x00,
-            KISS.fend, KISS.cmdInterfaces, 0x00,
-            KISS.fend
-        ])
-        try transport?.write(cmd)
-    }
-
-    // MARK:–Firmware validation (Python: validate_firmware)
-
-    /// Checks the reported firmware against the required version.
-    public func validateFirmware() {
-        if majVersion > Self.requiredFwVerMaj {
-            firmwareOk = true
-            return
-        }
-        if majVersion == Self.requiredFwVerMaj && minVersion >= Self.requiredFwVerMin {
-            firmwareOk = true
-            return
-        }
-        firmwareOk = false
-    }
-
-    // MARK:–Description (Python: __str__)
-
-    /// Interface name as shown in status output.
-    public var description: String { "RNodeMultiInterface[\(name)]" }
-
-    // MARK:–Incoming byte handler
-
-    private func handleIncoming(_ data: Data) {
-        let frames = decoder.feed(data)
-        for (cmd, payload) in frames {
-            processFrame(cmd: cmd, payload: payload)
-        }
-    }
-
-    // MARK:–Frame dispatcher (Python: readLoop)
-
-    private func processFrame(cmd: UInt8, payload: Data) {
-        // ── CMD_SEL_INT: update selected sub-interface ──────────────────────────
-        if cmd == KISS.cmdSelInt {
-            if let b = payload.first {
-                let idx = Int(b)
-                if idx < subInterfaces.count { selectedIndex = idx }
-            }
-            return
-        }
-
-        // ── CMD_DATA (0x00 = CMD_INT0_DATA): route to selectedIndex ─────────────
-        // Python: `if in_frame and byte == KISS.FEND and command == KISS.CMD_DATA:
-        //              self.subinterfaces[self.selected_index].process_incoming(data_buffer)`
-        // The CMD_SEL_INT frame preceding this one determined selectedIndex.
-        if cmd == KISS.cmdData {
-            guard selectedIndex < subInterfaces.count else { return }
-            dispatchInboundData(payload, channelIndex: selectedIndex)
-            return
-        }
-
-        // ── CMD_INTn_DATA (n > 0): index is encoded directly in the command byte ─
-        // KISS.intDataCommands = [0x00, 0x10, 0x20, 0x70, 0x75, 0x90, 0xA0, 0xB0,
-        //                         0xC0, 0xD0, 0xE0, 0xF0]
-        // The position of cmd in that array IS the sub-interface index.
-        // 0x10 → index 1, 0x20 → index 2, and so on
-        if let idx = KISS.intDataCommands.firstIndex(of: cmd), idx > 0 {
-            dispatchInboundData(payload, channelIndex: idx)
-            return
-        }
-
-        // ── All other commands are telemetry/status for selectedIndex ───────────
-        processCommandFrame(cmd: cmd, payload: payload)
-    }
-
-    private func dispatchInboundData(_ payload: Data, channelIndex: Int) {
-        guard channelIndex < subInterfaces.count else { return }
-        let sub = subInterfaces[channelIndex]
-        sub.noteRx(bytes: payload.count)
-        // Pass the RNodeSubInterface instance directly—it now conforms to Interface,
-        // so callers can downcast `any Interface → RNodeSubInterface` for channel ID.
-        if let h = rawInboundHandler {
-            h(payload, sub)
-        } else if let packet = try? Packet.unpack(payload) {
-            inboundHandler?(packet, sub)
-        }
-    }
-
-    // MARK:–Telemetry command dispatcher
-
-    private func processCommandFrame(cmd: UInt8, payload: Data) {
-        switch cmd {
-
-        case KISS.cmdFrequency:
-            if payload.count >= 4 {
-                subInterfaces[selectedIndex].rFrequency = uint32BigEndian(payload)
-            }
-
-        case KISS.cmdBandwidth:
-            if payload.count >= 4 {
-                subInterfaces[selectedIndex].rBandwidth = uint32BigEndian(payload)
-            }
-
-        case KISS.cmdTxpower:
-            if let b = payload.first { subInterfaces[selectedIndex].rTxPower = Int(b) }
-
-        case KISS.cmdSf:
-            if let b = payload.first { subInterfaces[selectedIndex].rSf = Int(b) }
-
-        case KISS.cmdCr:
-            if let b = payload.first { subInterfaces[selectedIndex].rCr = Int(b) }
-
-        case KISS.cmdRadioState:
-            if let b = payload.first { subInterfaces[selectedIndex].rState = b }
-
-        case KISS.cmdRadioLock:
-            if let b = payload.first { subInterfaces[selectedIndex].rLock = b }
-
-        case KISS.cmdStatRssi:
-            if let b = payload.first {
-                subInterfaces[selectedIndex].rStatRssi = Int(b) - Self.rssiOffset
-            }
-
-        case KISS.cmdStatSnr:
-            if let b = payload.first {
-                let signed = Int8(bitPattern: b)
-                let snr = Float(signed) * 0.25
-                subInterfaces[selectedIndex].rStatSnr = snr
-                computeSnrQuality(snr: snr, index: selectedIndex)
-            }
-
-        case KISS.cmdStAlock:
-            if payload.count >= 2 {
-                let at = (Int(payload[payload.startIndex]) << 8) | Int(payload[payload.startIndex + 1])
-                subInterfaces[selectedIndex].rStAlock = Double(at) / 100.0
-            }
-
-        case KISS.cmdLtAlock:
-            if payload.count >= 2 {
-                let at = (Int(payload[payload.startIndex]) << 8) | Int(payload[payload.startIndex + 1])
-                subInterfaces[selectedIndex].rLtAlock = Double(at) / 100.0
-            }
-
-        // ── Multi-interface global state ──────────────────────────────────────
-        case KISS.cmdDetect:
-            if let b = payload.first { detected = (b == KISS.detectResp) }
-
-        case KISS.cmdPlatform:
-            if let b = payload.first { platform = b }
-
-        case KISS.cmdMcu:
-            if let b = payload.first { mcu = b }
-
-        case KISS.cmdFwVersion:
-            if payload.count >= 2 {
-                majVersion = payload[payload.startIndex]
-                minVersion = payload[payload.startIndex + 1]
-                validateFirmware()
-            }
-
-        case KISS.cmdInterfaces:
-            // Python: 2 bytes per interface [vport, type]; accumulate by pairs
-            // Bytes arrive two at a time between FENDs.
-            // Each complete 2-byte buffer means one interface type entry.
-            // payload contains all bytes after the command byte.
-            processInterfacesPayload(payload)
-
-        case KISS.cmdRandom:
-            if let b = payload.first { subInterfaces[selectedIndex].rRandom = b }
-
-        default:
-            break
-        }
-    }
-
-    /// Records the vport-to-chipset mapping the device reports.
-    ///
-    /// Python: CMD_INTERFACES—each pair of bytes is [vport, interface_type]
-    private func processInterfacesPayload(_ payload: Data) {
-        // Rebuild from scratch each CMD_INTERFACES frame—otherwise repeated
-        // detect()/reconnect cycles accumulate stale entries without bound.
-        subInterfaceTypes.removeAll(keepingCapacity: true)
-        var i = payload.startIndex
-        while i + 1 < payload.endIndex {
-            // Python: command_buffer[0] is vport (ignored), command_buffer[1] is type
-            let typeCode = payload[i + 1]
-            subInterfaceTypes.append(KISS.interfaceTypeToString(typeCode))
-            i = i.advanced(by: 2)
-        }
-    }
-
-    // MARK:–SNR quality (per sub-interface)
-
-    private func computeSnrQuality(snr: Float, index: Int) {
-        guard let sf = subInterfaces[index].rSf else { return }
-        let sfs = sf - 7
-        let qSnrMin = Self.qSnrMinBase - sfs * Self.qSnrStep
-        let qSnrMax = Self.qSnrMax
-        let span = qSnrMax - qSnrMin
-        guard span > 0 else { subInterfaces[index].rStatQ = 0.0; return }
-        var quality = (Double(snr) - Double(qSnrMin)) / Double(span) * 100.0
-        quality = max(0.0, min(100.0, quality))
-        subInterfaces[index].rStatQ = round(quality * 10.0) / 10.0
-    }
-
-    // MARK:–Private helpers
-
-    /// Send a config command prefixed with CMD_SEL_INT for the given sub-interface.
-    /// Python wire format: [FEND CMD_SEL_INT index FEND FEND cmd escaped_data FEND]
-    private func sendConfigCommand(_ cmd: UInt8, data: Data, subInterface: RNodeSubInterface) throws {
-        let escaped = KISS.escape(data)
-        var frame = Data()
-        frame.append(KISS.fend)
-        frame.append(KISS.cmdSelInt)
-        frame.append(UInt8(subInterface.index))
-        frame.append(KISS.fend)
-        frame.append(KISS.fend)
-        frame.append(cmd)
-        frame.append(escaped)
-        frame.append(KISS.fend)
-        try transport?.write(frame)
-    }
-
-    private func uint32ToData(_ value: UInt32) -> Data {
-        Data([
-            UInt8((value >> 24) & 0xFF),
-            UInt8((value >> 16) & 0xFF),
-            UInt8((value >>  8) & 0xFF),
-            UInt8( value        & 0xFF)
-        ])
-    }
-
-    private func uint32BigEndian(_ data: Data) -> UInt32 {
-        let i = data.startIndex
-        return (UInt32(data[i]) << 24) |
-               (UInt32(data[i+1]) << 16) |
-               (UInt32(data[i+2]) << 8)  |
-                UInt32(data[i+3])
-    }
+  private func uint32BigEndian(_ data: Data) -> UInt32 {
+    let i = data.startIndex
+    return (UInt32(data[i]) << 24) | (UInt32(data[i + 1]) << 16) | (UInt32(data[i + 2]) << 8)
+      | UInt32(data[i + 3])
+  }
 }
 
 // RNodeSubInterfaceProxy was removed: RNodeSubInterface now conforms to Interface directly,

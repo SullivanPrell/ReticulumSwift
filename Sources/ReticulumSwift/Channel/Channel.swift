@@ -14,27 +14,27 @@ import Foundation
 
 /// Message type identifiers reserved for the protocol itself.
 public enum SystemMessageTypes {
-    /// Type identifier carrying `Buffer` stream data.
-    public static let streamData: UInt16 = 0xFF00
+  /// Type identifier carrying `Buffer` stream data.
+  public static let streamData: UInt16 = 0xFF00
 }
 
 // MARK: - Message state
 
 /// Lifecycle state of one outbound message.
 public enum MessageState: Equatable {
-    case new, sent, delivered, failed
+  case new, sent, delivered, failed
 }
 
 // MARK: - Channel errors
 
 /// Failures raised by channel operations.
 public enum ChannelError: Error, Equatable {
-    case noMsgType
-    case invalidMsgType
-    case notRegistered(UInt16)
-    case linkNotReady
-    case alreadySent
-    case tooBig
+  case noMsgType
+  case invalidMsgType
+  case notRegistered(UInt16)
+  case linkNotReady
+  case alreadySent
+  case tooBig
 }
 
 // MARK: - MessageBase
@@ -44,174 +44,181 @@ public enum ChannelError: Error, Equatable {
 /// Subclasses must override `typeID` with a
 /// non-zero value (< 0xF000 for user types). Values ≥ 0xF000 are system-reserved.
 open class MessageBase {
-    /// Creates an empty message for the factory to unpack into.
-    public required init() {}
+  /// Creates an empty message for the factory to unpack into.
+  public required init() {}
 
-    open class var typeID: UInt16 { 0 }
+  open class var typeID: UInt16 { 0 }
 
-    open func pack() throws -> Data { Data() }
-    open func unpack(_ data: Data) throws {}
+  open func pack() throws -> Data { Data() }
+  open func unpack(_ data: Data) throws {}
 }
 
 // MARK: - Message handler token (opaque cancellation handle)
 
 /// Opaque handle for removing a registered message handler.
 public final class MessageHandlerToken {
-    let callback: (MessageBase) -> Bool
-    init(callback: @escaping (MessageBase) -> Bool) {
-        self.callback = callback
-    }
+  let callback: (MessageBase) -> Bool
+  init(callback: @escaping (MessageBase) -> Bool) {
+    self.callback = callback
+  }
 }
 
 // MARK: - Channel packet handle
 
 /// Tracks the lifecycle of one sent Channel envelope.
 public final class ChannelPacketHandle {
-    /// Delivery state of one sent envelope.
-    public enum State { case sent, delivered, failed }
+  /// Delivery state of one sent envelope.
+  public enum State { case sent, delivered, failed }
 
-    /// Written from whichever thread the outlet confirms delivery on (a link
-    /// proof callback, a timeout work item) and read from another—`Channel`
-    /// polls it via `ChannelOutlet.getPacketState`, and `Link` filters its
-    /// proof waiters on it.
-    ///
-    /// The writes below were already under `lock`, but
-    /// while this was a stored property every *read* still raced them.
-    ///
-    /// `lock` is a plain `NSLock` and is therefore NOT recursive: the mutators
-    /// below must go through `unsafeState` directly, never this accessor, or they
-    /// would deadlock against the lock they already hold.
-    public var state: State {
-        lock.lock(); defer { lock.unlock() }
-        return unsafeState
+  /// Written from whichever thread the outlet confirms delivery on (a link
+  /// proof callback, a timeout work item) and read from another—`Channel`
+  /// polls it via `ChannelOutlet.getPacketState`, and `Link` filters its
+  /// proof waiters on it.
+  ///
+  /// The writes below were already under `lock`, but
+  /// while this was a stored property every *read* still raced them.
+  ///
+  /// `lock` is a plain `NSLock` and is therefore NOT recursive: the mutators
+  /// below must go through `unsafeState` directly, never this accessor, or they
+  /// would deadlock against the lock they already hold.
+  public var state: State {
+    lock.lock()
+    defer { lock.unlock() }
+    return unsafeState
+  }
+  private var unsafeState: State = .sent
+
+  let raw: Data
+  private var deliveredCallback: ((ChannelPacketHandle) -> Void)?
+  private var timeoutWork: DispatchWorkItem?
+  private let lock = NSLock()
+
+  init(raw: Data) { self.raw = raw }
+
+  /// Replaces the pending timeout work item, cancelling any previous one.
+  ///
+  /// Outlets used to reach in and assign `handle.timeoutWork` directly, which
+  /// raced `markDelivered`/`markFailed` clearing the same field under `lock`
+  /// from the delivery thread. Going through the handle keeps every access on
+  /// one side of the lock.
+  func setTimeoutWork(_ work: DispatchWorkItem?) {
+    lock.lock()
+    timeoutWork?.cancel()
+    timeoutWork = work
+    lock.unlock()
+  }
+
+  /// See `setTimeoutWork`—same reasoning.
+  func setDeliveredCallback(_ callback: ((ChannelPacketHandle) -> Void)?) {
+    lock.lock()
+    deliveredCallback = callback
+    lock.unlock()
+  }
+
+  func markDelivered() {
+    lock.lock()
+    guard unsafeState == .sent else {
+      lock.unlock()
+      return
     }
-    private var unsafeState: State = .sent
+    unsafeState = .delivered
+    timeoutWork?.cancel()
+    timeoutWork = nil
+    let cb = deliveredCallback
+    deliveredCallback = nil
+    lock.unlock()
+    cb?(self)
+  }
 
-    let raw: Data
-    private var deliveredCallback: ((ChannelPacketHandle) -> Void)?
-    private var timeoutWork: DispatchWorkItem?
-    private let lock = NSLock()
-
-    init(raw: Data) { self.raw = raw }
-
-    /// Replaces the pending timeout work item, cancelling any previous one.
-    ///
-    /// Outlets used to reach in and assign `handle.timeoutWork` directly, which
-    /// raced `markDelivered`/`markFailed` clearing the same field under `lock`
-    /// from the delivery thread. Going through the handle keeps every access on
-    /// one side of the lock.
-    func setTimeoutWork(_ work: DispatchWorkItem?) {
-        lock.lock()
-        timeoutWork?.cancel()
-        timeoutWork = work
-        lock.unlock()
-    }
-
-    /// See `setTimeoutWork`—same reasoning.
-    func setDeliveredCallback(_ callback: ((ChannelPacketHandle) -> Void)?) {
-        lock.lock()
-        deliveredCallback = callback
-        lock.unlock()
-    }
-
-    func markDelivered() {
-        lock.lock()
-        guard unsafeState == .sent else { lock.unlock(); return }
-        unsafeState = .delivered
-        timeoutWork?.cancel()
-        timeoutWork = nil
-        let cb = deliveredCallback
-        deliveredCallback = nil
-        lock.unlock()
-        cb?(self)
-    }
-
-    func markFailed() {
-        lock.lock()
-        unsafeState = .failed
-        timeoutWork?.cancel()
-        timeoutWork = nil
-        deliveredCallback = nil
-        lock.unlock()
-    }
+  func markFailed() {
+    lock.lock()
+    unsafeState = .failed
+    timeoutWork?.cancel()
+    timeoutWork = nil
+    deliveredCallback = nil
+    lock.unlock()
+  }
 }
 
 // MARK: - ChannelOutlet protocol
 
 /// Transport a channel sends and resends its envelopes over.
 public protocol ChannelOutlet: AnyObject {
-    func send(_ raw: Data) -> ChannelPacketHandle
-    func resend(_ handle: ChannelPacketHandle)
-    var mdu: Int { get }
-    var rtt: TimeInterval { get }
-    var isUsable: Bool { get }
-    func getPacketState(_ handle: ChannelPacketHandle) -> MessageState
-    func timedOut()
-    func setPacketTimeoutCallback(
-        _ handle: ChannelPacketHandle,
-        timeout: TimeInterval?,
-        callback: ((ChannelPacketHandle) -> Void)?
-    )
-    func setPacketDeliveredCallback(
-        _ handle: ChannelPacketHandle,
-        callback: ((ChannelPacketHandle) -> Void)?
-    )
-    func getPacketID(_ handle: ChannelPacketHandle) -> ObjectIdentifier?
+  func send(_ raw: Data) -> ChannelPacketHandle
+  func resend(_ handle: ChannelPacketHandle)
+  var mdu: Int { get }
+  var rtt: TimeInterval { get }
+  var isUsable: Bool { get }
+  func getPacketState(_ handle: ChannelPacketHandle) -> MessageState
+  func timedOut()
+  func setPacketTimeoutCallback(
+    _ handle: ChannelPacketHandle,
+    timeout: TimeInterval?,
+    callback: ((ChannelPacketHandle) -> Void)?
+  )
+  func setPacketDeliveredCallback(
+    _ handle: ChannelPacketHandle,
+    callback: ((ChannelPacketHandle) -> Void)?
+  )
+  func getPacketID(_ handle: ChannelPacketHandle) -> ObjectIdentifier?
 }
 
 // MARK: - Envelope (internal wire wrapper)
 
 final class Envelope {
-    let outlet: ChannelOutlet
-    var message: MessageBase?
-    var raw: Data?
-    var packet: ChannelPacketHandle?
-    var sequence: UInt16
-    var tries: Int = 0
-    var tracked: Bool = false
-    var unpacked: Bool = false
+  let outlet: ChannelOutlet
+  var message: MessageBase?
+  var raw: Data?
+  var packet: ChannelPacketHandle?
+  var sequence: UInt16
+  var tries: Int = 0
+  var tracked: Bool = false
+  var unpacked: Bool = false
 
-    init(outlet: ChannelOutlet, message: MessageBase? = nil, raw: Data? = nil, sequence: UInt16 = 0) {
-        self.outlet = outlet
-        self.message = message
-        self.raw = raw
-        self.sequence = sequence
-    }
+  init(outlet: ChannelOutlet, message: MessageBase? = nil, raw: Data? = nil, sequence: UInt16 = 0) {
+    self.outlet = outlet
+    self.message = message
+    self.raw = raw
+    self.sequence = sequence
+  }
 
-    /// Encode to wire bytes: [MSGTYPE:2][seq:2][len:2][body:N] (big-endian).
-    func pack(messageFactories: [UInt16: () -> MessageBase]) throws -> Data {
-        guard let message else { throw ChannelError.noMsgType }
-        let tid = type(of: message).typeID
-        guard tid != 0 else { throw ChannelError.noMsgType }
-        let body = try message.pack()
-        var out = Data(capacity: 6 + body.count)
-        out.append(UInt8(tid >> 8));    out.append(UInt8(tid & 0xFF))
-        out.append(UInt8(sequence >> 8)); out.append(UInt8(sequence & 0xFF))
-        let len = UInt16(body.count)
-        out.append(UInt8(len >> 8));    out.append(UInt8(len & 0xFF))
-        out.append(body)
-        raw = out
-        return out
-    }
+  /// Encode to wire bytes: [MSGTYPE:2][seq:2][len:2][body:N] (big-endian).
+  func pack(messageFactories: [UInt16: () -> MessageBase]) throws -> Data {
+    guard let message else { throw ChannelError.noMsgType }
+    let tid = type(of: message).typeID
+    guard tid != 0 else { throw ChannelError.noMsgType }
+    let body = try message.pack()
+    var out = Data(capacity: 6 + body.count)
+    out.append(UInt8(tid >> 8))
+    out.append(UInt8(tid & 0xFF))
+    out.append(UInt8(sequence >> 8))
+    out.append(UInt8(sequence & 0xFF))
+    let len = UInt16(body.count)
+    out.append(UInt8(len >> 8))
+    out.append(UInt8(len & 0xFF))
+    out.append(body)
+    raw = out
+    return out
+  }
 
-    /// Decode from wire bytes.
-    ///
-    /// Populates `sequence` and `message`.
-    func unpack(messageFactories: [UInt16: () -> MessageBase]) throws -> MessageBase {
-        guard let raw, raw.count >= 6 else { throw ChannelError.invalidMsgType }
-        let msgtype = UInt16(raw[0]) << 8 | UInt16(raw[1])
-        sequence    = UInt16(raw[2]) << 8 | UInt16(raw[3])
-        // bytes 4-5 are length (unused—body is remainder)
-        let body    = raw.dropFirst(6)
-        guard let ctor = messageFactories[msgtype] else {
-            throw ChannelError.notRegistered(msgtype)
-        }
-        let msg = ctor()
-        try msg.unpack(Data(body))
-        message  = msg
-        unpacked = true
-        return msg
+  /// Decode from wire bytes.
+  ///
+  /// Populates `sequence` and `message`.
+  func unpack(messageFactories: [UInt16: () -> MessageBase]) throws -> MessageBase {
+    guard let raw, raw.count >= 6 else { throw ChannelError.invalidMsgType }
+    let msgtype = UInt16(raw[0]) << 8 | UInt16(raw[1])
+    sequence = UInt16(raw[2]) << 8 | UInt16(raw[3])
+    // bytes 4-5 are length (unused—body is remainder)
+    let body = raw.dropFirst(6)
+    guard let ctor = messageFactories[msgtype] else {
+      throw ChannelError.notRegistered(msgtype)
     }
+    let msg = ctor()
+    try msg.unpack(Data(body))
+    message = msg
+    unpacked = true
+    return msg
+  }
 }
 
 // MARK: - Channel
@@ -220,516 +227,545 @@ final class Envelope {
 /// Wire-compatible with Python's RNS.Channel.
 public final class Channel {
 
-    // Window constants (mirror Python Channel.py). The three that seed an instance's
-    // adaptive window carry a `default` prefix, because Python's class attribute and
-    // its per-instance counterpart differ only in case (`WINDOW` / `window`) and that
-    // distinction does not survive the move to lowerCamelCase.
+  // Window constants (mirror Python Channel.py). The three that seed an instance's
+  // adaptive window carry a `default` prefix, because Python's class attribute and
+  // its per-instance counterpart differ only in case (`WINDOW` / `window`) and that
+  // distinction does not survive the move to lowerCamelCase.
 
-    /// Initial send window.
-    ///
-    /// Python: `Channel.WINDOW`.
-    public static let defaultWindow:            Int          = 2
-    /// Initial lower bound on the send window.
-    ///
-    /// Python: `Channel.WINDOW_MIN`.
-    public static let defaultWindowMin:         Int          = 2
-    /// Window floor once the link is classed slow.
-    ///
-    /// Python: `Channel.WINDOW_MIN_LIMIT_SLOW`.
-    public static let windowMinLimitSlow:       Int          = 2
-    /// Window floor once the link is classed medium.
-    ///
-    /// Python: `Channel.WINDOW_MIN_LIMIT_MEDIUM`.
-    public static let windowMinLimitMedium:     Int          = 5
-    /// Window floor once the link is classed fast.
-    ///
-    /// Python: `Channel.WINDOW_MIN_LIMIT_FAST`.
-    public static let windowMinLimitFast:       Int          = 16
-    /// Window ceiling for a slow link.
-    ///
-    /// Python: `Channel.WINDOW_MAX_SLOW`.
-    public static let windowMaxSlow:            Int          = 5
-    /// Window ceiling for a medium link.
-    ///
-    /// Python: `Channel.WINDOW_MAX_MEDIUM`.
-    public static let windowMaxMedium:          Int          = 12
-    /// Window ceiling for a fast link.
-    ///
-    /// Python: `Channel.WINDOW_MAX_FAST`.
-    public static let windowMaxFast:            Int          = 48
-    /// Ceiling over every rate class, and the bound the RX stale-sequence gate uses.
-    ///
-    /// Python: `Channel.WINDOW_MAX`.
-    public static let windowMaxLimit:           Int          = windowMaxFast
-    /// Consecutive rounds at a rate before the window is widened to that rate's ceiling.
-    ///
-    /// Python: `Channel.FAST_RATE_THRESHOLD`.
-    public static let fastRateThreshold:        Int          = 10
-    /// RTT at or below which a link is classed fast.
-    ///
-    /// Python: `Channel.RTT_FAST`.
-    public static let rttFast:                  TimeInterval = 0.18
-    /// RTT at or below which a link is classed medium.
-    ///
-    /// Python: `Channel.RTT_MEDIUM`.
-    public static let rttMedium:                TimeInterval = 0.75
-    /// RTT above which a link starts with a window of 1.
-    ///
-    /// Python: `Channel.RTT_SLOW`.
-    public static let rttSlow:                  TimeInterval = 1.45
-    /// Initial slack between the window and its ceiling.
-    ///
-    /// Python: `Channel.WINDOW_FLEXIBILITY`.
-    public static let defaultWindowFlexibility: Int          = 4
-    /// Highest representable sequence number.
-    ///
-    /// Python: `Channel.SEQ_MAX`.
-    public static let seqMax:                   UInt32       = 0xFFFF
-    /// Modulus the sequence counter wraps on.
-    ///
-    /// Python: `Channel.SEQ_MODULUS`.
-    public static let seqModulus:               UInt32       = 0x10000
-    /// Bytes consumed by the channel envelope header (msgtype + sequence + length).
-    ///
-    /// Python: `Channel.MDU_OVERHEAD = 4 + 2` (actually 6).
-    public static let mduOverhead:              Int          = 6
+  /// Initial send window.
+  ///
+  /// Python: `Channel.WINDOW`.
+  public static let defaultWindow: Int = 2
+  /// Initial lower bound on the send window.
+  ///
+  /// Python: `Channel.WINDOW_MIN`.
+  public static let defaultWindowMin: Int = 2
+  /// Window floor once the link is classed slow.
+  ///
+  /// Python: `Channel.WINDOW_MIN_LIMIT_SLOW`.
+  public static let windowMinLimitSlow: Int = 2
+  /// Window floor once the link is classed medium.
+  ///
+  /// Python: `Channel.WINDOW_MIN_LIMIT_MEDIUM`.
+  public static let windowMinLimitMedium: Int = 5
+  /// Window floor once the link is classed fast.
+  ///
+  /// Python: `Channel.WINDOW_MIN_LIMIT_FAST`.
+  public static let windowMinLimitFast: Int = 16
+  /// Window ceiling for a slow link.
+  ///
+  /// Python: `Channel.WINDOW_MAX_SLOW`.
+  public static let windowMaxSlow: Int = 5
+  /// Window ceiling for a medium link.
+  ///
+  /// Python: `Channel.WINDOW_MAX_MEDIUM`.
+  public static let windowMaxMedium: Int = 12
+  /// Window ceiling for a fast link.
+  ///
+  /// Python: `Channel.WINDOW_MAX_FAST`.
+  public static let windowMaxFast: Int = 48
+  /// Ceiling over every rate class, and the bound the RX stale-sequence gate uses.
+  ///
+  /// Python: `Channel.WINDOW_MAX`.
+  public static let windowMaxLimit: Int = windowMaxFast
+  /// Consecutive rounds at a rate before the window is widened to that rate's ceiling.
+  ///
+  /// Python: `Channel.FAST_RATE_THRESHOLD`.
+  public static let fastRateThreshold: Int = 10
+  /// RTT at or below which a link is classed fast.
+  ///
+  /// Python: `Channel.RTT_FAST`.
+  public static let rttFast: TimeInterval = 0.18
+  /// RTT at or below which a link is classed medium.
+  ///
+  /// Python: `Channel.RTT_MEDIUM`.
+  public static let rttMedium: TimeInterval = 0.75
+  /// RTT above which a link starts with a window of 1.
+  ///
+  /// Python: `Channel.RTT_SLOW`.
+  public static let rttSlow: TimeInterval = 1.45
+  /// Initial slack between the window and its ceiling.
+  ///
+  /// Python: `Channel.WINDOW_FLEXIBILITY`.
+  public static let defaultWindowFlexibility: Int = 4
+  /// Highest representable sequence number.
+  ///
+  /// Python: `Channel.SEQ_MAX`.
+  public static let seqMax: UInt32 = 0xFFFF
+  /// Modulus the sequence counter wraps on.
+  ///
+  /// Python: `Channel.SEQ_MODULUS`.
+  public static let seqModulus: UInt32 = 0x10000
+  /// Bytes consumed by the channel envelope header (msgtype + sequence + length).
+  ///
+  /// Python: `Channel.MDU_OVERHEAD = 4 + 2` (actually 6).
+  public static let mduOverhead: Int = 6
 
-    private let outlet: ChannelOutlet
-    private let lock     = NSLock()
-    /// Serialises the sequence-reservation + outlet.send() pair so that _tx_ring
-    /// never holds an envelope without a valid packet handle.
-    ///
-    /// Mirrors Python's
-    /// Channel._send_lock added in the 1.3.0 race-condition fix.
-    private let sendLock = NSLock()
+  private let outlet: ChannelOutlet
+  private let lock = NSLock()
+  /// Serialises the sequence-reservation + outlet.send() pair so that _tx_ring
+  /// never holds an envelope without a valid packet handle.
+  ///
+  /// Mirrors Python's
+  /// Channel._send_lock added in the 1.3.0 race-condition fix.
+  private let sendLock = NSLock()
 
-    private var txRing:           [Envelope] = []
-    private var rxRing:           [Envelope] = []
-    private var messageHandlers:  [MessageHandlerToken] = []
-    private var messageFactories: [UInt16: () -> MessageBase] = [:]
+  private var txRing: [Envelope] = []
+  private var rxRing: [Envelope] = []
+  private var messageHandlers: [MessageHandlerToken] = []
+  private var messageFactories: [UInt16: () -> MessageBase] = [:]
 
-    private var nextSequence:   UInt16 = 0
-    private var nextRxSequence: UInt16 = 0
-    private let maxTries:       Int    = 5
+  private var nextSequence: UInt16 = 0
+  private var nextRxSequence: UInt16 = 0
+  private let maxTries: Int = 5
 
-    /// Current send window in envelopes.
-    public private(set) var window:          Int
-    /// Largest send window the channel grows to.
-    public private(set) var windowMax:       Int
-    /// Smallest send window the channel shrinks to.
-    public private(set) var windowMin:       Int
-    /// Envelopes the window may exceed `windowMax` by while probing.
-    public private(set) var windowFlexibility: Int
-    /// Consecutive rounds that met the fast-rate threshold.
-    public private(set) var fastRateRounds:    Int = 0
-    /// Consecutive rounds that met the medium-rate threshold.
-    public private(set) var mediumRateRounds:  Int = 0
+  /// Current send window in envelopes.
+  public private(set) var window: Int
+  /// Largest send window the channel grows to.
+  public private(set) var windowMax: Int
+  /// Smallest send window the channel shrinks to.
+  public private(set) var windowMin: Int
+  /// Envelopes the window may exceed `windowMax` by while probing.
+  public private(set) var windowFlexibility: Int
+  /// Consecutive rounds that met the fast-rate threshold.
+  public private(set) var fastRateRounds: Int = 0
+  /// Consecutive rounds that met the medium-rate threshold.
+  public private(set) var mediumRateRounds: Int = 0
 
-    /// Creates a channel sending over `outlet`.
-    public init(outlet: ChannelOutlet) {
-        self.outlet = outlet
-        if outlet.rtt > Channel.rttSlow {
-            window            = 1
-            windowMax         = 1
-            windowMin         = 1
-            windowFlexibility = 1
-        } else {
-            window            = Channel.defaultWindow
-            windowMax         = Channel.windowMaxSlow
-            windowMin         = Channel.defaultWindowMin
-            windowFlexibility = Channel.defaultWindowFlexibility
-        }
+  /// Creates a channel sending over `outlet`.
+  public init(outlet: ChannelOutlet) {
+    self.outlet = outlet
+    if outlet.rtt > Channel.rttSlow {
+      window = 1
+      windowMax = 1
+      windowMin = 1
+      windowFlexibility = 1
+    } else {
+      window = Channel.defaultWindow
+      windowMax = Channel.windowMaxSlow
+      windowMin = Channel.defaultWindowMin
+      windowFlexibility = Channel.defaultWindowFlexibility
+    }
+  }
+
+  // MARK: - Type registry
+
+  /// Registers `type` so received envelopes of its identifier can be decoded.
+  public func registerMessageType(_ type: MessageBase.Type) throws {
+    try registerMessageType(type, isSystemType: false)
+  }
+
+  /// Registers `type` with no cap on its `typeID`, for the system message types.
+  ///
+  /// The default the public overload passes is spelled at that call site rather than
+  /// here: with a default value this signature would also match a bare
+  /// `registerMessageType(type)` and make every such call ambiguous.
+  func registerMessageType(_ type: MessageBase.Type, isSystemType: Bool) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    guard type.typeID != 0 else { throw ChannelError.invalidMsgType }
+    if type.typeID >= 0xF000 && !isSystemType { throw ChannelError.invalidMsgType }
+    let tid = type.typeID
+    messageFactories[tid] = { type.init() }
+  }
+
+  // MARK: - Message handlers
+
+  /// Adds `callback` to the handler chain and returns a token for removing it.
+  @discardableResult
+  public func addMessageHandler(_ callback: @escaping (MessageBase) -> Bool) -> MessageHandlerToken
+  {
+    let token = MessageHandlerToken(callback: callback)
+    lock.lock()
+    defer { lock.unlock() }
+    messageHandlers.append(token)
+    return token
+  }
+
+  /// Removes the handler `token` identifies.
+  public func removeMessageHandler(_ token: MessageHandlerToken) {
+    lock.lock()
+    defer { lock.unlock() }
+    messageHandlers.removeAll { $0 === token }
+  }
+
+  // MARK: - MDU
+
+  /// Largest message payload in bytes this channel can carry.
+  public var mdu: Int {
+    let m = outlet.mdu - Channel.mduOverhead
+    return min(m, Int(UInt16.max))
+  }
+
+  // MARK: - Ready check
+
+  /// Reports whether the window has room and the outlet is usable.
+  public func isReadyToSend() -> Bool {
+    guard outlet.isUsable else { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    return isReadyToSendLocked()
+  }
+
+  /// Lock must already be held.
+  private func isReadyToSendLocked() -> Bool {
+    let outstanding = txRing.filter { env in
+      guard let pkt = env.packet else { return true }
+      return outlet.getPacketState(pkt) != .delivered
+    }.count
+    return outstanding < window
+  }
+
+  // MARK: - Send
+
+  /// Send a message over the channel.
+  ///
+  /// Mirrors the Python 1.3.0 race-condition fix: sequence reservation and
+  /// `sendLock` serialises `outlet.send()` calls so that `_tx_ring` never
+  /// holds an envelope whose `packet` is nil. After registering callbacks, `send()` also checks whether the packet was
+  /// already delivered (proof arrived before
+  /// the callback was installed) and synthesise the delivery call if so.
+  public func send(_ message: MessageBase) throws {
+    guard outlet.isUsable else { throw ChannelError.linkNotReady }
+
+    sendLock.lock()
+    defer { sendLock.unlock() }
+
+    // --- Phase 1: reserve sequence, pack, and size-check (under main lock) ---
+    let reservedSequence: UInt16
+    let envelope: Envelope
+    let raw: Data
+
+    lock.lock()
+    guard isReadyToSendLocked() else {
+      lock.unlock()
+      throw ChannelError.linkNotReady
+    }
+    reservedSequence = nextSequence
+    envelope = Envelope(outlet: outlet, message: message, sequence: reservedSequence)
+    do {
+      raw = try envelope.pack(messageFactories: messageFactories)
+    } catch {
+      lock.unlock()
+      throw error
+    }
+    guard raw.count <= outlet.mdu else {
+      lock.unlock()
+      throw ChannelError.tooBig
+    }
+    nextSequence = UInt16((UInt32(reservedSequence) + 1) % Channel.seqModulus)
+    lock.unlock()
+
+    // --- Phase 2: transmit (outside main lock to avoid re-entrancy) ---
+    let pkt = outlet.send(raw)
+
+    // If the outlet couldn't transmit (link dropped), rewind sequence.
+    // In this Swift outlet, send() always returns a handle, but the code guards
+    // defensively to mirror Python's check for packet.raw == None.
+    guard pkt.raw.count > 0 else {
+      lock.lock()
+      nextSequence = reservedSequence
+      lock.unlock()
+      throw ChannelError.linkNotReady
     }
 
-    // MARK: - Type registry
+    // --- Phase 3: register envelope and callbacks (back under main lock) ---
+    var alreadyDelivered = false
+    lock.lock()
+    envelope.packet = pkt
+    emplaceEnvelope(envelope, in: &txRing)
+    envelope.tries += 1
+    outlet.setPacketDeliveredCallback(
+      pkt,
+      callback: { [weak self] p in
+        self?.packetDelivered(p)
+      })
+    outlet.setPacketTimeoutCallback(
+      pkt, timeout: getPacketTimeout(tries: envelope.tries),
+      callback: { [weak self] p in
+        self?.packetTimeout(p)
+      })
+    updatePacketTimeouts()
+    // Proof may have arrived between outlet.send() and installing the callback.
+    alreadyDelivered = (outlet.getPacketState(pkt) == .delivered)
+    lock.unlock()
 
-    /// Registers `type` so received envelopes of its identifier can be decoded.
-    public func registerMessageType(_ type: MessageBase.Type) throws {
-        try registerMessageType(type, isSystemType: false)
-    }
+    // Synthesise delivery outside the lock (mirrors Python's already_delivered path).
+    if alreadyDelivered { packetDelivered(pkt) }
+  }
 
-    /// Registers `type` with no cap on its `typeID`, for the system message types.
-    ///
-    /// The default the public overload passes is spelled at that call site rather than
-    /// here: with a default value this signature would also match a bare
-    /// `registerMessageType(type)` and make every such call ambiguous.
-    func registerMessageType(_ type: MessageBase.Type, isSystemType: Bool) throws {
-        lock.lock(); defer { lock.unlock() }
-        guard type.typeID != 0 else { throw ChannelError.invalidMsgType }
-        if type.typeID >= 0xF000 && !isSystemType { throw ChannelError.invalidMsgType }
-        let tid = type.typeID
-        messageFactories[tid] = { type.init() }
-    }
+  // MARK: - Receive (called by Link when a CHANNEL-context packet arrives)
 
-    // MARK: - Message handlers
+  /// Decodes `raw` as an envelope and dispatches it to the handler chain.
+  public func receive(_ raw: Data) {
+    do {
+      let envelope = Envelope(outlet: outlet, raw: raw)
 
-    /// Adds `callback` to the handler chain and returns a token for removing it.
-    @discardableResult
-    public func addMessageHandler(_ callback: @escaping (MessageBase) -> Bool) -> MessageHandlerToken {
-        let token = MessageHandlerToken(callback: callback)
-        lock.lock(); defer { lock.unlock() }
-        messageHandlers.append(token)
-        return token
-    }
+      // Unpack BEFORE taking the lock. `unpack` is fallible (unknown msgtype,
+      // short frame, decompression failure—all remotely triggerable) and
+      // only reads the registry-stable `messageFactories` while mutating the
+      // envelope's own local state. Decoding outside the lock guarantees a
+      // malformed or unknown frame can NEVER unwind to the catch with the
+      // Channel's non-recursive lock still held—previously that leaked the
+      // lock permanently, deadlocking every subsequent send/receive/shutdown
+      // (a single unknown-msgtype packet from a peer was enough).
+      _ = try envelope.unpack(messageFactories: messageFactories)
 
-    /// Removes the handler `token` identifies.
-    public func removeMessageHandler(_ token: MessageHandlerToken) {
-        lock.lock(); defer { lock.unlock() }
-        messageHandlers.removeAll { $0 === token }
-    }
-
-    // MARK: - MDU
-
-    /// Largest message payload in bytes this channel can carry.
-    public var mdu: Int {
-        let m = outlet.mdu - Channel.mduOverhead
-        return min(m, Int(UInt16.max))
-    }
-
-    // MARK: - Ready check
-
-    /// Reports whether the window has room and the outlet is usable.
-    public func isReadyToSend() -> Bool {
-        guard outlet.isUsable else { return false }
-        lock.lock(); defer { lock.unlock() }
-        return isReadyToSendLocked()
-    }
-
-    /// Lock must already be held.
-    private func isReadyToSendLocked() -> Bool {
-        let outstanding = txRing.filter { env in
-            guard let pkt = env.packet else { return true }
-            return outlet.getPacketState(pkt) != .delivered
-        }.count
-        return outstanding < window
-    }
-
-    // MARK: - Send
-
-    /// Send a message over the channel.
-    ///
-    /// Mirrors the Python 1.3.0 race-condition fix: sequence reservation and
-    /// `sendLock` serialises `outlet.send()` calls so that `_tx_ring` never
-    /// holds an envelope whose `packet` is nil. After registering callbacks, `send()` also checks whether the packet was
-    /// already delivered (proof arrived before
-    /// the callback was installed) and synthesise the delivery call if so.
-    public func send(_ message: MessageBase) throws {
-        guard outlet.isUsable else { throw ChannelError.linkNotReady }
-
-        sendLock.lock()
-        defer { sendLock.unlock() }
-
-        // --- Phase 1: reserve sequence, pack, and size-check (under main lock) ---
-        let reservedSequence: UInt16
-        let envelope: Envelope
-        let raw: Data
-
-        lock.lock()
-        guard isReadyToSendLocked() else {
-            lock.unlock()
-            throw ChannelError.linkNotReady
-        }
-        reservedSequence = nextSequence
-        envelope = Envelope(outlet: outlet, message: message, sequence: reservedSequence)
-        do {
-            raw = try envelope.pack(messageFactories: messageFactories)
-        } catch {
-            lock.unlock()
-            throw error
-        }
-        guard raw.count <= outlet.mdu else {
-            lock.unlock()
-            throw ChannelError.tooBig
-        }
-        nextSequence = UInt16((UInt32(reservedSequence) + 1) % Channel.seqModulus)
+      lock.lock()
+      // Drop stale sequences (before the current RX window).
+      if isStaleSequence(envelope.sequence) {
         lock.unlock()
+        return
+      }
+      let isNew = emplaceEnvelope(envelope, in: &rxRing)
+      lock.unlock()
 
-        // --- Phase 2: transmit (outside main lock to avoid re-entrancy) ---
-        let pkt = outlet.send(raw)
+      guard isNew else { return }
 
-        // If the outlet couldn't transmit (link dropped), rewind sequence.
-        // In this Swift outlet, send() always returns a handle, but the code guards
-        // defensively to mirror Python's check for packet.raw == None.
-        guard pkt.raw.count > 0 else {
-            lock.lock()
-            nextSequence = reservedSequence
-            lock.unlock()
-            throw ChannelError.linkNotReady
+      // Deliver all contiguous envelopes from nextRxSequence onward. A `defer`
+      // releases the lock even if an envelope's lazy unpack throws (defensive:
+      // envelopes are already unpacked before emplacement, so the else
+      // branch is effectively unreachable, but the lock must never leak).
+      var toDeliver: [MessageBase] = []
+      lock.lock()
+      do {
+        defer { lock.unlock() }
+        while true {
+          guard let idx = rxRing.firstIndex(where: { $0.sequence == nextRxSequence }) else { break }
+          let e = rxRing.remove(at: idx)
+          let m: MessageBase
+          if e.unpacked, let em = e.message {
+            m = em
+          } else {
+            m = try e.unpack(messageFactories: messageFactories)
+          }
+          nextRxSequence = UInt16((UInt32(nextRxSequence) + 1) % Channel.seqModulus)
+          toDeliver.append(m)
         }
+      }
 
-        // --- Phase 3: register envelope and callbacks (back under main lock) ---
-        var alreadyDelivered = false
-        lock.lock()
-        envelope.packet = pkt
-        emplaceEnvelope(envelope, in: &txRing)
-        envelope.tries += 1
-        outlet.setPacketDeliveredCallback(pkt, callback: { [weak self] p in
-            self?.packetDelivered(p)
-        })
-        outlet.setPacketTimeoutCallback(pkt, timeout: getPacketTimeout(tries: envelope.tries), callback: { [weak self] p in
-            self?.packetTimeout(p)
-        })
-        updatePacketTimeouts()
-        // Proof may have arrived between outlet.send() and installing the callback.
-        alreadyDelivered = (outlet.getPacketState(pkt) == .delivered)
-        lock.unlock()
+      for m in toDeliver { runCallbacks(m) }
 
-        // Synthesise delivery outside the lock (mirrors Python's already_delivered path).
-        if alreadyDelivered { packetDelivered(pkt) }
+    } catch {
+      // Unknown message type or decode failure—drop silently.
     }
+  }
 
-    // MARK: - Receive (called by Link when a CHANNEL-context packet arrives)
+  // MARK: - Shutdown
 
-    /// Decodes `raw` as an envelope and dispatches it to the handler chain.
-    public func receive(_ raw: Data) {
-        do {
-            let envelope = Envelope(outlet: outlet, raw: raw)
-
-            // Unpack BEFORE taking the lock. `unpack` is fallible (unknown msgtype,
-            // short frame, decompression failure—all remotely triggerable) and
-            // only reads the registry-stable `messageFactories` while mutating the
-            // envelope's own local state. Decoding outside the lock guarantees a
-            // malformed or unknown frame can NEVER unwind to the catch with the
-            // Channel's non-recursive lock still held—previously that leaked the
-            // lock permanently, deadlocking every subsequent send/receive/shutdown
-            // (a single unknown-msgtype packet from a peer was enough).
-            _ = try envelope.unpack(messageFactories: messageFactories)
-
-            lock.lock()
-            // Drop stale sequences (before the current RX window).
-            if isStaleSequence(envelope.sequence) {
-                lock.unlock()
-                return
-            }
-            let isNew = emplaceEnvelope(envelope, in: &rxRing)
-            lock.unlock()
-
-            guard isNew else { return }
-
-            // Deliver all contiguous envelopes from nextRxSequence onward. A `defer`
-            // releases the lock even if an envelope's lazy unpack throws (defensive:
-            // envelopes are already unpacked before emplacement, so the else
-            // branch is effectively unreachable, but the lock must never leak).
-            var toDeliver: [MessageBase] = []
-            lock.lock()
-            do {
-                defer { lock.unlock() }
-                while true {
-                    guard let idx = rxRing.firstIndex(where: { $0.sequence == nextRxSequence }) else { break }
-                    let e = rxRing.remove(at: idx)
-                    let m: MessageBase
-                    if e.unpacked, let em = e.message { m = em } else { m = try e.unpack(messageFactories: messageFactories) }
-                    nextRxSequence = UInt16((UInt32(nextRxSequence) + 1) % Channel.seqModulus)
-                    toDeliver.append(m)
-                }
-            }
-
-            for m in toDeliver { runCallbacks(m) }
-
-        } catch {
-            // Unknown message type or decode failure—drop silently.
-        }
+  /// Cancels every outstanding envelope and stops the channel.
+  public func shutdown() {
+    lock.lock()
+    messageHandlers.removeAll()
+    for env in txRing {
+      env.tracked = false
+      if let pkt = env.packet {
+        outlet.setPacketTimeoutCallback(pkt, timeout: nil, callback: nil)
+        outlet.setPacketDeliveredCallback(pkt, callback: nil)
+      }
     }
+    for env in rxRing { env.tracked = false }
+    txRing.removeAll()
+    rxRing.removeAll()
+    lock.unlock()
+  }
 
-    // MARK: - Shutdown
+  // MARK: - Private helpers
 
-    /// Cancels every outstanding envelope and stops the channel.
-    public func shutdown() {
-        lock.lock()
-        messageHandlers.removeAll()
-        for env in txRing {
-            env.tracked = false
-            if let pkt = env.packet {
-                outlet.setPacketTimeoutCallback(pkt, timeout: nil, callback: nil)
-                outlet.setPacketDeliveredCallback(pkt, callback: nil)
-            }
-        }
-        for env in rxRing { env.tracked = false }
-        txRing.removeAll()
-        rxRing.removeAll()
-        lock.unlock()
+  /// Whether an inbound envelope's sequence falls outside the acceptable RX
+  /// window and must be dropped.
+  ///
+  /// Faithful port of the gate at the top of
+  /// Python's `Channel._receive` (RNS/Channel.py:357-369).
+  ///
+  /// Two cases:
+  ///
+  /// * **Below `nextRxSequence`**—normally stale (already delivered), and
+  ///   dropped. The exception is a sequence that has *wrapped*: when
+  ///   `nextRxSequence + windowMaxLimit` overflows the 16-bit sequence space,
+  ///   sequence numbers from 0 up to that overflow point are legitimately
+  ///   **future** frames and must be accepted, not dropped.
+  /// * **Above `nextRxSequence + windowMaxLimit`**—too far in the future to be
+  ///   real, so dropped (RNS 1.4.1, commit a29a0871). This bounds how much a
+  ///   peer can force buffering by sending a wild sequence number.
+  ///
+  /// Both the window bound and the future guard use the class-level
+  /// `windowMaxLimit` (48), not the adaptive per-instance `windowMax`—Python
+  /// reads `self.WINDOW_MAX`, which resolves to the class attribute because
+  /// the adaptive value lives under the distinct lowercase name `window_max`.
+  /// The future comparison is deliberately non-modular, matching Python: near
+  /// the top of the sequence space `nextRxSequence + windowMaxLimit` exceeds any
+  /// representable sequence, so the guard simply stops firing there rather
+  /// than wrapping around and rejecting valid frames.
+  private func isStaleSequence(_ seq: UInt16) -> Bool {
+    let nrx = UInt32(nextRxSequence)
+    let s = UInt32(seq)
+    if s < nrx {
+      let windowOverflow = (nrx + UInt32(Channel.windowMaxLimit)) % Channel.seqModulus
+      if windowOverflow < nrx {
+        // The window wrapped: (windowOverflow, nrx) is stale, but
+        // [0, windowOverflow] is wrapped-future and must be kept.
+        return s > windowOverflow
+      }
+      return true
     }
+    if s > nrx + UInt32(Channel.windowMaxLimit) { return true }
+    return false
+  }
 
-    // MARK: - Private helpers
-
-    /// Whether an inbound envelope's sequence falls outside the acceptable RX
-    /// window and must be dropped.
-    ///
-    /// Faithful port of the gate at the top of
-    /// Python's `Channel._receive` (RNS/Channel.py:357-369).
-    ///
-    /// Two cases:
-    ///
-    /// * **Below `nextRxSequence`**—normally stale (already delivered), and
-    ///   dropped. The exception is a sequence that has *wrapped*: when
-    ///   `nextRxSequence + windowMaxLimit` overflows the 16-bit sequence space,
-    ///   sequence numbers from 0 up to that overflow point are legitimately
-    ///   **future** frames and must be accepted, not dropped.
-    /// * **Above `nextRxSequence + windowMaxLimit`**—too far in the future to be
-    ///   real, so dropped (RNS 1.4.1, commit a29a0871). This bounds how much a
-    ///   peer can force buffering by sending a wild sequence number.
-    ///
-    /// Both the window bound and the future guard use the class-level
-    /// `windowMaxLimit` (48), not the adaptive per-instance `windowMax`—Python
-    /// reads `self.WINDOW_MAX`, which resolves to the class attribute because
-    /// the adaptive value lives under the distinct lowercase name `window_max`.
-    /// The future comparison is deliberately non-modular, matching Python: near
-    /// the top of the sequence space `nextRxSequence + windowMaxLimit` exceeds any
-    /// representable sequence, so the guard simply stops firing there rather
-    /// than wrapping around and rejecting valid frames.
-    private func isStaleSequence(_ seq: UInt16) -> Bool {
-        let nrx = UInt32(nextRxSequence)
-        let s   = UInt32(seq)
-        if s < nrx {
-            let windowOverflow = (nrx + UInt32(Channel.windowMaxLimit)) % Channel.seqModulus
-            if windowOverflow < nrx {
-                // The window wrapped: (windowOverflow, nrx) is stale, but
-                // [0, windowOverflow] is wrapped-future and must be kept.
-                return s > windowOverflow
-            }
-            return true
-        }
-        if s > nrx + UInt32(Channel.windowMaxLimit) { return true }
-        return false
-    }
-
-    /// Insert `envelope` into `ring` in ascending sequence order.
-    ///
-    /// Returns false if a duplicate sequence is already present.
-    @discardableResult
-    private func emplaceEnvelope(_ envelope: Envelope, in ring: inout [Envelope]) -> Bool {
-        for (i, existing) in ring.enumerated() {
-            if envelope.sequence == existing.sequence { return false }
-            if envelope.sequence < existing.sequence &&
-               !(isWraparound(envelope.sequence, reference: nextRxSequence)) {
-                ring.insert(envelope, at: i)
-                envelope.tracked = true
-                return true
-            }
-        }
+  /// Insert `envelope` into `ring` in ascending sequence order.
+  ///
+  /// Returns false if a duplicate sequence is already present.
+  @discardableResult
+  private func emplaceEnvelope(_ envelope: Envelope, in ring: inout [Envelope]) -> Bool {
+    for (i, existing) in ring.enumerated() {
+      if envelope.sequence == existing.sequence { return false }
+      if envelope.sequence < existing.sequence
+        && !(isWraparound(envelope.sequence, reference: nextRxSequence))
+      {
+        ring.insert(envelope, at: i)
         envelope.tracked = true
-        ring.append(envelope)
         return true
+      }
     }
+    envelope.tracked = true
+    ring.append(envelope)
+    return true
+  }
 
-    /// Mirrors Python's `(next_rx_sequence - envelope.sequence) > SEQ_MAX//2`,
-    /// which is computed in *signed* integer arithmetic.
-    ///
-    /// Returns true when
-    /// `seq` is wrapped-around-future relative to `reference`.
-    private func isWraparound(_ seq: UInt16, reference: UInt16) -> Bool {
-        let diff = Int(reference) - Int(seq)
-        return diff > Int(Channel.seqMax) / 2
+  /// Mirrors Python's `(next_rx_sequence - envelope.sequence) > SEQ_MAX//2`,
+  /// which is computed in *signed* integer arithmetic.
+  ///
+  /// Returns true when
+  /// `seq` is wrapped-around-future relative to `reference`.
+  private func isWraparound(_ seq: UInt16, reference: UInt16) -> Bool {
+    let diff = Int(reference) - Int(seq)
+    return diff > Int(Channel.seqMax) / 2
+  }
+
+  private func runCallbacks(_ message: MessageBase) {
+    lock.lock()
+    let handlers = messageHandlers
+    lock.unlock()
+    for token in handlers where token.callback(message) {
+      return
     }
+  }
 
-    private func runCallbacks(_ message: MessageBase) {
-        lock.lock()
-        let handlers = messageHandlers
-        lock.unlock()
-        for token in handlers {
-            if token.callback(message) { return }
-        }
+  private func getPacketTimeout(tries: Int) -> TimeInterval {
+    let t = max(tries, 1)
+    return pow(1.5, Double(t - 1)) * max(outlet.rtt * 2.5, 0.025) * Double(txRing.count + 1)
+  }
+
+  private func updatePacketTimeouts() {
+    for env in txRing {
+      guard let pkt = env.packet else { continue }
+      let updated = getPacketTimeout(tries: env.tries)
+      outlet.setPacketTimeoutCallback(
+        pkt, timeout: updated,
+        callback: { [weak self] p in
+          self?.packetTimeout(p)
+        })
     }
+  }
 
-    private func getPacketTimeout(tries: Int) -> TimeInterval {
-        let t = max(tries, 1)
-        return pow(1.5, Double(t - 1)) * max(outlet.rtt * 2.5, 0.025) * Double(txRing.count + 1)
+  private func packetDelivered(_ packet: ChannelPacketHandle) {
+    lock.lock()
+    guard
+      let idx = txRing.firstIndex(where: {
+        guard let p = $0.packet else { return false }
+        return outlet.getPacketID(p) == outlet.getPacketID(packet)
+      })
+    else {
+      lock.unlock()
+      return
     }
-
-    private func updatePacketTimeouts() {
-        for env in txRing {
-            guard let pkt = env.packet else { continue }
-            let updated = getPacketTimeout(tries: env.tries)
-            outlet.setPacketTimeoutCallback(pkt, timeout: updated, callback: { [weak self] p in
-                self?.packetTimeout(p)
-            })
-        }
-    }
-
-    private func packetDelivered(_ packet: ChannelPacketHandle) {
-        lock.lock()
-        guard let idx = txRing.firstIndex(where: {
-            guard let p = $0.packet else { return false }
-            return outlet.getPacketID(p) == outlet.getPacketID(packet)
-        }) else { lock.unlock(); return }
-        let env = txRing.remove(at: idx)
-        env.tracked = false
-        // Advance window on successful delivery.
-        if window < windowMax { window += 1 }
-        // Update window tier based on RTT.
-        let rtt = outlet.rtt
-        if rtt != 0 {
-            if rtt > Channel.rttFast {
-                fastRateRounds = 0
-                if rtt > Channel.rttMedium {
-                    mediumRateRounds = 0
-                } else {
-                    mediumRateRounds += 1
-                    if windowMax < Channel.windowMaxMedium && mediumRateRounds == Channel.fastRateThreshold {
-                        windowMax = Channel.windowMaxMedium
-                        windowMin = Channel.windowMinLimitMedium
-                    }
-                }
-            } else {
-                fastRateRounds += 1
-                if windowMax < Channel.windowMaxFast && fastRateRounds == Channel.fastRateThreshold {
-                    windowMax = Channel.windowMaxFast
-                    windowMin = Channel.windowMinLimitFast
-                }
-            }
-        }
-        lock.unlock()
-    }
-
-    private func packetTimeout(_ packet: ChannelPacketHandle) {
-        // Bail early if proof already arrived (avoids spurious retransmits).
-        guard outlet.getPacketState(packet) != .delivered else { return }
-
-        let targetID = outlet.getPacketID(packet)
-
-        var shouldTeardown   = false
-        var envelopeToResend: Envelope? = nil
-
-        lock.lock()
-        // Guard: skip envelopes whose packet is nil (not yet assigned or already torn down).
-        guard let idx = txRing.firstIndex(where: {
-            guard let p = $0.packet else { return false }
-            return outlet.getPacketID(p) == targetID
-        }) else { lock.unlock(); return }
-        let env = txRing[idx]
-
-        if env.tries >= maxTries {
-            shouldTeardown = true
+    let env = txRing.remove(at: idx)
+    env.tracked = false
+    // Advance window on successful delivery.
+    if window < windowMax { window += 1 }
+    // Update window tier based on RTT.
+    let rtt = outlet.rtt
+    if rtt != 0 {
+      if rtt > Channel.rttFast {
+        fastRateRounds = 0
+        if rtt > Channel.rttMedium {
+          mediumRateRounds = 0
         } else {
-            env.tries += 1
-            envelopeToResend = env
-            if window > windowMin {
-                window -= 1
-                if windowMax > windowMin + windowFlexibility { windowMax -= 1 }
-            }
+          mediumRateRounds += 1
+          if windowMax < Channel.windowMaxMedium && mediumRateRounds == Channel.fastRateThreshold {
+            windowMax = Channel.windowMaxMedium
+            windowMin = Channel.windowMinLimitMedium
+          }
         }
-        lock.unlock()
-
-        if shouldTeardown {
-            shutdown()
-            outlet.timedOut()
-            return
+      } else {
+        fastRateRounds += 1
+        if windowMax < Channel.windowMaxFast && fastRateRounds == Channel.fastRateThreshold {
+          windowMax = Channel.windowMaxFast
+          windowMin = Channel.windowMinLimitFast
         }
-
-        if let env = envelopeToResend, let pkt = env.packet {
-            outlet.resend(pkt)
-
-            var alreadyDelivered = false
-            lock.lock()
-            outlet.setPacketDeliveredCallback(pkt, callback: { [weak self] p in self?.packetDelivered(p) })
-            outlet.setPacketTimeoutCallback(pkt, timeout: getPacketTimeout(tries: env.tries), callback: { [weak self] p in self?.packetTimeout(p) })
-            updatePacketTimeouts()
-            alreadyDelivered = (outlet.getPacketState(pkt) == .delivered)
-            lock.unlock()
-
-            if alreadyDelivered { packetDelivered(pkt) }
-        }
+      }
     }
+    lock.unlock()
+  }
+
+  private func packetTimeout(_ packet: ChannelPacketHandle) {
+    // Bail early if proof already arrived (avoids spurious retransmits).
+    guard outlet.getPacketState(packet) != .delivered else { return }
+
+    let targetID = outlet.getPacketID(packet)
+
+    var shouldTeardown = false
+    var envelopeToResend: Envelope? = nil
+
+    lock.lock()
+    // Guard: skip envelopes whose packet is nil (not yet assigned or already torn down).
+    guard
+      let idx = txRing.firstIndex(where: {
+        guard let p = $0.packet else { return false }
+        return outlet.getPacketID(p) == targetID
+      })
+    else {
+      lock.unlock()
+      return
+    }
+    let env = txRing[idx]
+
+    if env.tries >= maxTries {
+      shouldTeardown = true
+    } else {
+      env.tries += 1
+      envelopeToResend = env
+      if window > windowMin {
+        window -= 1
+        if windowMax > windowMin + windowFlexibility { windowMax -= 1 }
+      }
+    }
+    lock.unlock()
+
+    if shouldTeardown {
+      shutdown()
+      outlet.timedOut()
+      return
+    }
+
+    if let env = envelopeToResend, let pkt = env.packet {
+      outlet.resend(pkt)
+
+      var alreadyDelivered = false
+      lock.lock()
+      outlet.setPacketDeliveredCallback(
+        pkt, callback: { [weak self] p in self?.packetDelivered(p) })
+      outlet.setPacketTimeoutCallback(
+        pkt, timeout: getPacketTimeout(tries: env.tries),
+        callback: { [weak self] p in self?.packetTimeout(p) })
+      updatePacketTimeouts()
+      alreadyDelivered = (outlet.getPacketState(pkt) == .delivered)
+      lock.unlock()
+
+      if alreadyDelivered { packetDelivered(pkt) }
+    }
+  }
 }
 
 // MARK: - LinkChannelOutlet
@@ -739,92 +775,95 @@ public final class Channel {
 /// Wire-compatible with Python's
 /// RNS.Channel.LinkChannelOutlet.
 public final class LinkChannelOutlet: ChannelOutlet {
-    // Weak: the Link strongly owns its Channel, which strongly owns this outlet.
-    // A strong back-reference here would form Link -> Channel -> outlet -> Link
-    // and leak every Link that ever created a channel (plus its Token, watchdog
-    // timer, and pending state). When the Link is gone the outlet is inert.
-    /// Link this outlet sends over.
-    public weak var link: Link?
-    private var queue = DispatchQueue(label: "rns.channel.outlet", attributes: .concurrent)
+  // Weak: the Link strongly owns its Channel, which strongly owns this outlet.
+  // A strong back-reference here would form Link -> Channel -> outlet -> Link
+  // and leak every Link that ever created a channel (plus its Token, watchdog
+  // timer, and pending state). When the Link is gone the outlet is inert.
+  /// Link this outlet sends over.
+  public weak var link: Link?
+  private var queue = DispatchQueue(label: "rns.channel.outlet", attributes: .concurrent)
 
-    /// Creates an outlet sending over `link`.
-    public init(link: Link) { self.link = link }
+  /// Creates an outlet sending over `link`.
+  public init(link: Link) { self.link = link }
 
-    /// Sends `raw` as a single link packet.
-    public func send(_ raw: Data) -> ChannelPacketHandle {
-        let handle = ChannelPacketHandle(raw: raw)
-        // Send via the Link's channel path so the sent packet's hash is learned and
-        // can match the returning delivery proof (see Link.channelProofWaiters).
-        // Without this the handle would never transition to .delivered, the
-        // Channel send window (defaultWindow = 2) would never drain, and the third
-        // send would throw linkNotReady. See swift_devel bug 005.
-        if let hash = link?.sendChannelData(raw) {
-            link?.trackChannelProof(hash: hash, handle: handle)
-        }
-        return handle
+  /// Sends `raw` as a single link packet.
+  public func send(_ raw: Data) -> ChannelPacketHandle {
+    let handle = ChannelPacketHandle(raw: raw)
+    // Send via the Link's channel path so the sent packet's hash is learned and
+    // can match the returning delivery proof (see Link.channelProofWaiters).
+    // Without this the handle would never transition to .delivered, the
+    // Channel send window (defaultWindow = 2) would never drain, and the third
+    // send would throw linkNotReady. See swift_devel bug 005.
+    if let hash = link?.sendChannelData(raw) {
+      link?.trackChannelProof(hash: hash, handle: handle)
     }
+    return handle
+  }
 
-    /// Resends the packet `handle` tracks.
-    public func resend(_ handle: ChannelPacketHandle) {
-        // Retransmission re-encrypts to a fresh ciphertext (random IV) and hence a
-        // fresh packet hash, so re-register the new hash for proof matching.
-        if let hash = link?.sendChannelData(handle.raw) {
-            link?.trackChannelProof(hash: hash, handle: handle)
-        }
+  /// Resends the packet `handle` tracks.
+  public func resend(_ handle: ChannelPacketHandle) {
+    // Retransmission re-encrypts to a fresh ciphertext (random IV) and hence a
+    // fresh packet hash, so re-register the new hash for proof matching.
+    if let hash = link?.sendChannelData(handle.raw) {
+      link?.trackChannelProof(hash: hash, handle: handle)
     }
+  }
 
-    /// The link's negotiated MDU, not the base constant.
-    ///
-    /// Python reads `self.link.mdu` here (`Link.py:569`), which tracks the negotiated MTU. Part
-    /// of the same seam as `bugs/016`: fixing only the Resource splitter would leave channel and
-    /// buffer chunking sized for a 500-byte link on a link that negotiated far more—the
-    /// "corrected at the call sites the failing test touched" mistake that brought three of
-    /// `bugs/013`'s sub-defects back.
-    public var mdu: Int { link?.mdu ?? Constants.linkMdu }
+  /// The link's negotiated MDU, not the base constant.
+  ///
+  /// Python reads `self.link.mdu` here (`Link.py:569`), which tracks the negotiated MTU. Part
+  /// of the same seam as `bugs/016`: fixing only the Resource splitter would leave channel and
+  /// buffer chunking sized for a 500-byte link on a link that negotiated far more—the
+  /// "corrected at the call sites the failing test touched" mistake that brought three of
+  /// `bugs/013`'s sub-defects back.
+  public var mdu: Int { link?.mdu ?? Constants.linkMdu }
 
-    /// Round-trip time of the underlying link in seconds.
-    public var rtt: TimeInterval { link?.rtt ?? 0 }
+  /// Round-trip time of the underlying link in seconds.
+  public var rtt: TimeInterval { link?.rtt ?? 0 }
 
-    /// Whether the underlying link is active.
-    public var isUsable: Bool { link?.status == .active }
+  /// Whether the underlying link is active.
+  public var isUsable: Bool { link?.status == .active }
 
-    /// Returns the delivery state of the packet `handle` tracks.
-    public func getPacketState(_ handle: ChannelPacketHandle) -> MessageState {
-        switch handle.state {
-        case .sent:      return .sent
-        case .delivered: return .delivered
-        case .failed:    return .failed
-        }
+  /// Returns the delivery state of the packet `handle` tracks.
+  public func getPacketState(_ handle: ChannelPacketHandle) -> MessageState {
+    switch handle.state {
+    case .sent: return .sent
+    case .delivered: return .delivered
+    case .failed: return .failed
     }
+  }
 
-    /// Tears the underlying link down after a channel timeout.
-    public func timedOut() { try? link?.teardown() }
+  /// Tears the underlying link down after a channel timeout.
+  public func timedOut() { try? link?.teardown() }
 
-    /// Schedules `callback` to run if the packet is unacknowledged after `timeout`.
-    public func setPacketTimeoutCallback(
-        _ handle: ChannelPacketHandle,
-        timeout: TimeInterval?,
-        callback: ((ChannelPacketHandle) -> Void)?
-    ) {
-        guard let timeout, let callback else { handle.setTimeoutWork(nil); return }
-        let work = DispatchWorkItem { [weak handle] in
-            guard let handle else { return }
-            callback(handle)
-        }
-        handle.setTimeoutWork(work)
-        queue.asyncAfter(deadline: .now() + timeout, execute: work)
+  /// Schedules `callback` to run if the packet is unacknowledged after `timeout`.
+  public func setPacketTimeoutCallback(
+    _ handle: ChannelPacketHandle,
+    timeout: TimeInterval?,
+    callback: ((ChannelPacketHandle) -> Void)?
+  ) {
+    guard let timeout, let callback else {
+      handle.setTimeoutWork(nil)
+      return
     }
-
-    /// Schedules `callback` to run when the packet is acknowledged.
-    public func setPacketDeliveredCallback(
-        _ handle: ChannelPacketHandle,
-        callback: ((ChannelPacketHandle) -> Void)?
-    ) {
-        handle.setDeliveredCallback(callback)
+    let work = DispatchWorkItem { [weak handle] in
+      guard let handle else { return }
+      callback(handle)
     }
+    handle.setTimeoutWork(work)
+    queue.asyncAfter(deadline: .now() + timeout, execute: work)
+  }
 
-    /// Returns an identifier for the packet `handle` tracks.
-    public func getPacketID(_ handle: ChannelPacketHandle) -> ObjectIdentifier? {
-        ObjectIdentifier(handle)
-    }
+  /// Schedules `callback` to run when the packet is acknowledged.
+  public func setPacketDeliveredCallback(
+    _ handle: ChannelPacketHandle,
+    callback: ((ChannelPacketHandle) -> Void)?
+  ) {
+    handle.setDeliveredCallback(callback)
+  }
+
+  /// Returns an identifier for the packet `handle` tracks.
+  public func getPacketID(_ handle: ChannelPacketHandle) -> ObjectIdentifier? {
+    ObjectIdentifier(handle)
+  }
 }

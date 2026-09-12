@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 import XCTest
+
 @testable import ReticulumSwift
 
 /// Validating an `.rsm` whose embedded message isn't valid UTF-8.
@@ -31,60 +32,65 @@ import XCTest
 /// worth pinning.
 final class RNIDNonUTF8MessageTests: XCTestCase {
 
-    /// Bytes that can't be decoded as UTF-8, wrapped around text that can.
-    private let badMessage = Data([0xFF, 0xFE, 0xFD]) + Data(" invalid utf8 ".utf8) + Data([0x80])
+  /// Bytes that can't be decoded as UTF-8, wrapped around text that can.
+  private let badMessage = Data([0xFF, 0xFE, 0xFD]) + Data(" invalid utf8 ".utf8) + Data([0x80])
 
-    private func makeSignedMessage(_ identity: Identity, message: Data) throws -> Data {
-        let signedData = RSG.SignedData(hashType: "sha256",
-                                        hash: Hashes.fullHash(message),
-                                        meta: [("signer", .bytes(identity.hash)),
-                                               ("pubkey", .bytes(identity.getPublicKey()))],
-                                        message: message)
-        let envelope = signedData.envelope()
-        return try identity.sign(envelope) + envelope
-    }
+  private func makeSignedMessage(_ identity: Identity, message: Data) throws -> Data {
+    let signedData = RSG.SignedData(
+      hashType: "sha256",
+      hash: Hashes.fullHash(message),
+      meta: [
+        ("signer", .bytes(identity.hash)),
+        ("pubkey", .bytes(identity.getPublicKey())),
+      ],
+      message: message)
+    let envelope = signedData.envelope()
+    return try identity.sign(envelope) + envelope
+  }
 
-    private func validate(_ rsm: Data, with identity: Identity)
-    -> (result: RNIDApp.Result, lines: [String]) {
-        let output = RNIDCapturingOutput()
-        let fileSystem = RNIDMemoryFileSystem(files: ["message.rsm": rsm])
-        let operations = RNIDOperations(identity: identity, identityArgument: nil,
-                                        options: RNIDApp.Options(), output: output,
-                                        fileSystem: fileSystem, transport: nil, editor: nil)
-        return (operations.validate(paths: ["message.rsm"]), output.lines)
-    }
+  private func validate(_ rsm: Data, with identity: Identity)
+    -> (result: RNIDApp.Result, lines: [String])
+  {
+    let output = RNIDCapturingOutput()
+    let fileSystem = RNIDMemoryFileSystem(files: ["message.rsm": rsm])
+    let operations = RNIDOperations(
+      identity: identity, identityArgument: nil,
+      options: RNIDApp.Options(), output: output,
+      fileSystem: fileSystem, transport: nil, editor: nil)
+    return (operations.validate(paths: ["message.rsm"]), output.lines)
+  }
 
-    func testNonUTF8MessageStillValidatesSuccessfully() throws {
-        // The signature covers the raw bytes, so decodability has no bearing on validity.
-        let identity = Identity()
-        let rsm = try makeSignedMessage(identity, message: badMessage)
+  func testNonUTF8MessageStillValidatesSuccessfully() throws {
+    // The signature covers the raw bytes, so decodability has no bearing on validity.
+    let identity = Identity()
+    let rsm = try makeSignedMessage(identity, message: badMessage)
 
-        let (result, _) = validate(rsm, with: identity)
-        XCTAssertEqual(result, .ok, "a validly-signed message must verify regardless of encoding")
-    }
+    let (result, _) = validate(rsm, with: identity)
+    XCTAssertEqual(result, .ok, "a validly-signed message must verify regardless of encoding")
+  }
 
-    func testNonUTF8MessageIsRenderedLossilyRatherThanCrashing() throws {
-        let identity = Identity()
-        let rsm = try makeSignedMessage(identity, message: badMessage)
+  func testNonUTF8MessageIsRenderedLossilyRatherThanCrashing() throws {
+    let identity = Identity()
+    let rsm = try makeSignedMessage(identity, message: badMessage)
 
-        let (_, lines) = validate(rsm, with: identity)
-        let rendered = try XCTUnwrap(lines.last)
+    let (_, lines) = validate(rsm, with: identity)
+    let rendered = try XCTUnwrap(lines.last)
 
-        // The decodable middle survives intact...
-        XCTAssertTrue(rendered.contains("invalid utf8"), rendered)
-        // ...and each undecodable byte becomes the replacement character, rather than
-        // taking the process down the way Python's strict decode does.
-        XCTAssertTrue(rendered.contains("\u{FFFD}"), rendered)
-    }
+    // The decodable middle survives intact...
+    XCTAssertTrue(rendered.contains("invalid utf8"), rendered)
+    // ...and each undecodable byte becomes the replacement character, rather than
+    // taking the process down the way Python's strict decode does.
+    XCTAssertTrue(rendered.contains("\u{FFFD}"), rendered)
+  }
 
-    func testValidUTF8MessageIsUnaffected() throws {
-        // Guards against "fix" by simply dropping the message: normal text must round-trip.
-        let identity = Identity()
-        let text = "a perfectly ordinary message"
-        let rsm = try makeSignedMessage(identity, message: Data(text.utf8))
+  func testValidUTF8MessageIsUnaffected() throws {
+    // Guards against "fix" by simply dropping the message: normal text must round-trip.
+    let identity = Identity()
+    let text = "a perfectly ordinary message"
+    let rsm = try makeSignedMessage(identity, message: Data(text.utf8))
 
-        let (result, lines) = validate(rsm, with: identity)
-        XCTAssertEqual(result, .ok)
-        XCTAssertEqual(lines.last, text)
-    }
+    let (result, lines) = validate(rsm, with: identity)
+    XCTAssertEqual(result, .ok)
+    XCTAssertEqual(lines.last, text)
+  }
 }
