@@ -627,9 +627,8 @@ extension Link {
     // Link.handle_request (Link.py:848-852) which resources `packed_response =
     // umsgpack.packb([request_id, response])`, and its initiator-side
     // response_resource_concluded (Link.py:890-904) which unpacks exactly that.
-    // (An earlier version resourced the bare response value here, so the receiver
-    // got a msgpack-wrapped / un-enveloped payload—Swift↔Swift delivered the
-    // wrong bytes and a Python fetcher's unpackb([id, resp]) threw → timeout.)
+    // Resourcing the bare response value instead sends an un-enveloped payload: a Python
+    // fetcher's `unpackb([request_id, response])` throws on it, which surfaces as a timeout.
     if let native = entry.nativeHandler {
       // Native (Python-compatible) handler: response embedded directly in envelope.
       guard let responseValue = native(pathHash, rawValue, requestID, self, requestedAt) else {

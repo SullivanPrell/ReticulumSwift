@@ -80,9 +80,7 @@ public final class I2PInterface: Interface {
   /// Hardware maximum transmission unit in bytes, or `nil` when unconstrained.
   public var hwMtu: Int? { I2PInterface.hwMtu }
 
-  // Mode is held in `interfaceState` like every other interface. This type used to be the only
-  // one with a settable `mode`, which is what made `bugs/025` look like a config-parser gap
-  // rather than a protocol-shape gap.
+  // Mode is held in `interfaceState` like every other interface.
   /// Whether path requests received here are resolved recursively.
   public var recursivePrs: Bool = false
   /// Whether announces originating on this instance are sent on this interface.
