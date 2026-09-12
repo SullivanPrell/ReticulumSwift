@@ -132,9 +132,11 @@ public struct PickleEncoder {
                 bytes.append(UInt8(bitPattern: Int8(truncatingIfNeeded: val)))
                 val >>= 8
             } while val != 0 && val != -1
-            // Ensure sign bit is correct
-            if i > 0 && (bytes.last! & 0x80) != 0 { bytes.append(0x00) }
-            if i < 0 && (bytes.last! & 0x80) == 0 { bytes.append(0xff) }
+            // Ensure sign bit is correct. `bytes` always holds at least the one byte the
+            // repeat loop appended, so the default never applies.
+            let signByte = bytes.last ?? 0
+            if i > 0 && (signByte & 0x80) != 0 { bytes.append(0x00) }
+            if i < 0 && (signByte & 0x80) == 0 { bytes.append(0xff) }
             out.append(0x8a)                                             // LONG1
             out.append(UInt8(bytes.count))
             out.append(contentsOf: bytes)

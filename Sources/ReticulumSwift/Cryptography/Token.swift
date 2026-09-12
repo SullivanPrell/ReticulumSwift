@@ -54,11 +54,7 @@ public struct Token {
     /// Generate a fresh random 64-byte symmetric key suitable for use with `Token`.
     /// Mirrors Python's `Token.generate_key()`.
     public static func generateKey() -> Data {
-        var key = Data(count: 64)
-        _ = key.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, 64, $0.baseAddress!)
-        }
-        return key
+        return SecureRandom.bytes(64)
     }
 
     public func decrypt(_ token: Data) throws -> Data {

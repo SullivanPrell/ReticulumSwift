@@ -40,13 +40,16 @@ private struct BigUInt: Comparable, Equatable {
         trim()
     }
     /// From big-endian hex string (for example, "7fff…ed").
+    ///
+    /// A non-hex digit contributes a zero byte rather than trapping; every caller in the
+    /// package passes a literal constant, so no input reaches here that could do so.
     init(hex h: String) {
         let s = h.count % 2 == 0 ? h : "0" + h
         var bytes: [UInt8] = []
         var idx = s.startIndex
         while idx < s.endIndex {
             let next = s.index(idx, offsetBy: 2)
-            bytes.append(UInt8(s[idx..<next], radix: 16)!)
+            bytes.append(UInt8(s[idx..<next], radix: 16) ?? 0)
             idx = next
         }
         self.init(le: bytes.reversed())   // hex is big-endian; stored little-endian

@@ -167,3 +167,19 @@ enum RNSSocketOptions {
                    &one, socklen_t(MemoryLayout<Int32>.size))
     }
 }
+
+// MARK: - Endpoint ports
+
+extension NWEndpoint.Port {
+
+  /// The port `rawValue` names, or ``NWEndpoint/Port/any`` when it is zero.
+  ///
+  /// `NWEndpoint.Port(rawValue:)` is failable, so each of the three dial sites
+  /// (`TCPClientInterface`, `LocalInterface`, `BackboneInterface`) had to decide what a
+  /// rejected value means. They all mean the same thing — a port the interface was
+  /// configured with is not one Network.framework will accept — so the decision is made
+  /// once, here.
+  static func orAny(_ rawValue: UInt16) -> NWEndpoint.Port {
+    NWEndpoint.Port(rawValue: rawValue) ?? .any
+  }
+}

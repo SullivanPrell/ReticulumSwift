@@ -19,7 +19,7 @@ public enum HKDF {
     ) -> Data {
         precondition(length > 0, "HKDF length must be positive")
 
-        let usedSalt: Data = (salt?.isEmpty == false) ? salt! : Data(repeating: 0, count: 32)
+        let usedSalt: Data = salt.flatMap { $0.isEmpty ? nil : $0 } ?? Data(repeating: 0, count: 32)
         let info: Data = context ?? Data()
 
         let prk = HMACSHA256.authenticate(ikm, key: usedSalt)

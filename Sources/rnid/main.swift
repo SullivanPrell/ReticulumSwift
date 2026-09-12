@@ -200,11 +200,12 @@ func runRNID() -> Int32 {
     defer { bringUp.stop() }
 
     // Python's ensure_reticulum only runs from the hex-recall branch and from announce().
+    let identityArgument = invocation.nonEmpty(invocation.identity)
     let needsStack = invocation.truthy(invocation.announce)
-        || (invocation.truthy(invocation.identity)
-            && invocation.identity!.count == RNIDIdentityResolver.hashStringLength
-            && !FileManager.default.fileExists(
-                atPath: DaemonBootstrap.expandTilde(invocation.identity!)))
+        || (identityArgument.map {
+                $0.count == RNIDIdentityResolver.hashStringLength
+                    && !FileManager.default.fileExists(atPath: DaemonBootstrap.expandTilde($0))
+            } ?? false)
     if needsStack { bringUp.ensure() }
 
     let resolver = RNIDIdentityResolver(transport: bringUp.transport,
@@ -256,38 +257,38 @@ func runRNID() -> Int32 {
         didOperation = true
         if code != .ok { return Int32(code.rawValue) }
     }
-    if invocation.truthy(invocation.hash) {
-        let code = operations.printHashInformation(aspects: invocation.hash!)
+    if let aspects = invocation.nonEmpty(invocation.hash) {
+        let code = operations.printHashInformation(aspects: aspects)
         didOperation = true
         if code != .ok { return Int32(code.rawValue) }
     }
-    if invocation.truthy(invocation.announce) {
+    if let aspects = invocation.nonEmpty(invocation.announce) {
         // Python calls ensure_reticulum() inside announce(); `needsStack` earlier already
         // brought it up, and ensure() is idempotent.
         bringUp.ensure()
-        let code = operations.announce(aspects: invocation.announce!)
+        let code = operations.announce(aspects: aspects)
         didOperation = true
         if code != .ok { return Int32(code.rawValue) }
         // Python: `destination.announce(); time.sleep(0.25)`.
         Thread.sleep(forTimeInterval: 0.25)
     }
-    if invocation.truthy(invocation.validate) {
-        return Int32(operations.validate(paths: invocation.validate!).rawValue)
+    if let paths = invocation.nonEmpty(invocation.validate) {
+        return Int32(operations.validate(paths: paths).rawValue)
     }
-    if invocation.truthy(invocation.sign) {
-        return Int32(operations.sign(paths: invocation.sign!).rawValue)
+    if let paths = invocation.nonEmpty(invocation.sign) {
+        return Int32(operations.sign(paths: paths).rawValue)
     }
     if invocation.signMessageTruthy {
         return Int32(operations.signMessage(invocation.signMessage).rawValue)
     }
-    if invocation.truthy(invocation.encrypt) {
-        return Int32(operations.encrypt(paths: invocation.encrypt!).rawValue)
+    if let paths = invocation.nonEmpty(invocation.encrypt) {
+        return Int32(operations.encrypt(paths: paths).rawValue)
     }
-    if invocation.truthy(invocation.decrypt) {
-        return Int32(operations.decrypt(paths: invocation.decrypt!).rawValue)
+    if let paths = invocation.nonEmpty(invocation.decrypt) {
+        return Int32(operations.decrypt(paths: paths).rawValue)
     }
-    if invocation.truthy(invocation.write) {
-        let code = operations.writeIdentity(path: invocation.write!,
+    if let path = invocation.nonEmpty(invocation.write) {
+        let code = operations.writeIdentity(path: path,
                                             exportPrivate: invocation.exportPrivate)
         didOperation = true
         if code != .ok { return Int32(code.rawValue) }

@@ -378,11 +378,10 @@ public final class AutoInterface: Interface {
     private func addPeer(addr: String, ifname: String) {
         peersLock.lock()
         defer { peersLock.unlock() }
-        if peers[addr] == nil {
-            peers[addr] = (ifname: ifname, lastHeard: Date(), lastOutbound: Date())
-        } else {
-            let existing = peers[addr]!
+        if let existing = peers[addr] {
             peers[addr] = (ifname: existing.ifname, lastHeard: Date(), lastOutbound: existing.lastOutbound)
+        } else {
+            peers[addr] = (ifname: ifname, lastHeard: Date(), lastOutbound: Date())
         }
     }
 

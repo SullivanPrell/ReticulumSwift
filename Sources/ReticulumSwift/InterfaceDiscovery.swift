@@ -200,7 +200,8 @@ public enum InterfaceDiscoveryHelpers {
         // TLD must not be all digits
         if tld.allSatisfy({ $0.isNumber }) { return false }
         // Each label: 1-63 chars, alphanumeric and hyphen, not start/end with hyphen
-        let labelPattern = try! NSRegularExpression(pattern: "^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)$")
+        guard let labelPattern = try? NSRegularExpression(
+            pattern: "^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)$") else { return false }
         for label in components {
             let s = String(label)
             let range = NSRange(s.startIndex..., in: s)

@@ -150,9 +150,9 @@ extension Transport {
             }
         let data = MsgPack.encode(.map(pairs))
         let localFile = directory.appendingPathComponent(
-            StorageInventory.Entry.blackholeLocal.components.last!)
+            StorageInventory.Entry.blackholeLocal.fileName)
         let tmpFile = directory.appendingPathComponent(
-            StorageInventory.Entry.blackholeLocalTemp.components.last!)
+            StorageInventory.Entry.blackholeLocalTemp.fileName)
         try data.write(to: tmpFile, options: .atomic)
         _ = try? FileManager.default.replaceItemAt(localFile, withItemAt: tmpFile)
         // Fallback: rename if replaceItemAt fails (for example, localFile didn't exist).

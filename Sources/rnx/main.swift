@@ -93,7 +93,7 @@ func spin(until: () -> Bool, msg: String, timeout: TimeInterval?) -> Bool {
     let deadline = timeout.map { Date().timeIntervalSince1970 + $0 }
 
     writeOut(msg + "   ")   // Python: print(msg+"  ", end=" ")—msg plus three spaces.
-    while (deadline == nil || Date().timeIntervalSince1970 < deadline!) && !until() {
+    while Date().timeIntervalSince1970 < (deadline ?? .infinity) && !until() {
         if rnxInterrupted != 0 { break }
         Thread.sleep(forTimeInterval: 0.1)
         writeOut("\u{8}\u{8}" + String(symbols[index]) + " ")
@@ -117,7 +117,7 @@ func spinStat(until: () -> Bool, timeout: TimeInterval?) -> Bool {
     let deadline = timeout.map { Date().timeIntervalSince1970 + $0 }
     let blank = String(repeating: " ", count: RNXApp.statClearWidth)
 
-    while (deadline == nil || Date().timeIntervalSince1970 < deadline!) && !until() {
+    while Date().timeIntervalSince1970 < (deadline ?? .infinity) && !until() {
         if rnxInterrupted != 0 { break }
         Thread.sleep(forTimeInterval: 0.1)
         writeOut("\r" + blank + "\rReceiving result " + String(symbols[index]) + " "
@@ -627,7 +627,7 @@ func runClient(_ options: Options, command: String, stdin: String?, interactive:
 func runREPL(_ options: Options) -> Never {
     var code: Int?
     while true {
-        let prefix = (code != nil && code != 0) ? String(code!) : ""
+        let prefix = code.flatMap { $0 == 0 ? nil : String($0) } ?? ""
         writeOut(prefix + "> ")
         // Python relies on input() flushing stdout; readLine() doesn't, so flush here.
         fflush(stdout)

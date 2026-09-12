@@ -93,22 +93,15 @@ public extension RNXResult {
          totalStderrLength: Int? = nil,
          startedAt: TimeInterval? = nil,
          concludedAt: TimeInterval? = nil) {
-        // Round-trip through the wire encoder: `init(unpackFrom:)` suppressed the
-        // synthesised memberwise init, and adding a second designated initializer to the
-        // struct itself would mean editing the shared declaration.
-        let value = MsgPack.Value.array([
-            .bool(executed),
-            returnCode.map { .int(Int64($0)) } ?? .nil,
-            stdout.map { .bytes($0) } ?? .nil,
-            stderr.map { .bytes($0) } ?? .nil,
-            totalStdoutLength.map { .int(Int64($0)) } ?? .nil,
-            totalStderrLength.map { .int(Int64($0)) } ?? .nil,
-            startedAt.map { .double($0) } ?? .nil,
-            concludedAt.map { .double($0) } ?? .nil,
-        ])
-        // Can't fail: the preceding array is exactly the shape the decoder requires.
-        // swiftlint:disable:next force_try
-        try! self.init(unpackFrom: MsgPack.encode(value))
+        // Stands in for the memberwise initializer, which `init(unpackFrom:)` suppressed.
+        self.executed = executed
+        self.returnCode = returnCode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.totalStdoutLength = totalStdoutLength
+        self.totalStderrLength = totalStderrLength
+        self.startedAt = startedAt
+        self.concludedAt = concludedAt
     }
 
     /// The 8-element msgpack array a `NativeRequestHandler` returns.

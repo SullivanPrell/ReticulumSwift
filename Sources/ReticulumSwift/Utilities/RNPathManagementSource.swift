@@ -234,15 +234,15 @@ extension RNPathApp {
 
     /// Build the right source for an attached connection.
     public static func makeManagementSource(for connection: InstanceConnection) -> RNPathManagementSource {
-        switch managementSourceKind(role: connection.role, hasRPC: connection.rpc != nil) {
-        case .rpc:
-            // `rpc` is non-nil here by construction of managementSourceKind.
+        let kind = managementSourceKind(role: connection.role, hasRPC: connection.rpc != nil)
+        // `managementSourceKind` answers `.rpc` only when it was told `hasRPC`, so the
+        // binding always succeeds there.
+        if case .rpc = kind, let rpc = connection.rpc {
             return RPCManagementSource(
-                client: connection.rpc!,
+                client: rpc,
                 localTransportIdentityHash: connection.reticulum.transport.transportIdentity?.hash
             )
-        case .local:
-            return LocalManagementSource(reticulum: connection.reticulum)
         }
+        return LocalManagementSource(reticulum: connection.reticulum)
     }
 }

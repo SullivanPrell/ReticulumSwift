@@ -91,10 +91,7 @@ public final class Resource {
         }
 
         // Generate 4-byte random hash prefix.
-        var rh = Data(count: Resource.randomHashSize)
-        _ = rh.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, Resource.randomHashSize, $0.baseAddress!)
-        }
+        let rh = SecureRandom.bytes(Resource.randomHashSize)
         self.randomHash = rh
 
         // Build the plaintext: optional [3-byte size][metadata] + payload.

@@ -222,20 +222,12 @@ public final class SystemProbeClock: ProbeClock {
 
 /// Python: `os.urandom(size)`.
 ///
-/// `SecRandomCopyBytes` is the package's existing CSPRNG of choice; `UInt8.random(in:)`
+/// Delegates to `SecureRandom`, the package's CSPRNG seam; `UInt8.random(in:)`
 /// isn't cryptographically secure and would make probe payloads predictable.
 public final class SecureProbeEntropy: ProbeEntropy {
     public init() {}
     public func randomBytes(_ count: Int) -> Data {
-        guard count > 0 else { return Data() }
-        var bytes = Data(count: count)
-        let status = bytes.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!)
-        }
-        guard status == errSecSuccess else {
-            return Data((0..<count).map { _ in UInt8.random(in: 0...255) })
-        }
-        return bytes
+        SecureRandom.bytes(count)
     }
 }
 

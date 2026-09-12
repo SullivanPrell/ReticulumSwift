@@ -203,7 +203,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     private func openConnection() {
         let endpoint = NWEndpoint.hostPort(
             host: NWEndpoint.Host(host),
-            port: NWEndpoint.Port(rawValue: port)!
+            port: .orAny(port)
         )
         // Python: `set_timeouts_linux()` + `TCP_NODELAY` on every backbone socket
         // (BackboneInterface.py:626-627, :655-660)—the same options the TCP client uses,

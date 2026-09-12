@@ -20,7 +20,7 @@ extension Transport {
     private var announcesDirectory: URL? {
         guard let base = cacheDirectory else { return nil }
         return base.appendingPathComponent(
-            StorageInventory.Entry.announceCache.components.last!)
+            StorageInventory.Entry.announceCache.fileName)
     }
 
     // MARK: - Write

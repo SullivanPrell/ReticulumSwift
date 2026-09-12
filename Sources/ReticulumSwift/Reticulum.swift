@@ -293,8 +293,7 @@ public final class Reticulum {
     /// Returns a cryptographically random `Double` in `[0, 1)`.
     /// Mirrors Python's `RNS.rand()`.
     public static func rand() -> Double {
-        var bytes = [UInt8](repeating: 0, count: 8)
-        _ = SecRandomCopyBytes(kSecRandomDefault, 8, &bytes)
+        let bytes = SecureRandom.bytes(8)
         // Construct a value in [0, 1) by filling the mantissa of a 64-bit float.
         let bits = bytes.withUnsafeBytes { $0.load(as: UInt64.self) }
         // IEEE-754: exponent = 1023 (value 1.0..2.0), then subtract 1.0 → [0, 1)

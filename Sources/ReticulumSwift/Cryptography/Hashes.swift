@@ -15,8 +15,7 @@ public enum Hashes {
     }
 
     public static func randomHash() -> Data {
-        var bytes = Data(count: Constants.truncatedHashLength)
-        bytes.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, Constants.truncatedHashLength, $0.baseAddress!) }
+        let bytes = SecureRandom.bytes(Constants.truncatedHashLength)
         return Data(SHA256.hash(data: bytes).prefix(Constants.truncatedHashLength))
     }
 }

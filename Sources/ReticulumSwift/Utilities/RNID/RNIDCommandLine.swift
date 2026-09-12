@@ -186,17 +186,27 @@ public enum RNIDCommandLine {
         /// Python truthiness for a string: `""` is falsy.
         public func truthy(_ text: String?) -> Bool { !(text ?? "").isEmpty }
 
+        /// The argument, or nil where Python reads it as falsy — absent or empty.
+        public func nonEmpty(_ text: String?) -> String? {
+            (text?.isEmpty ?? true) ? nil : text
+        }
+
+        /// The `nargs="*"` list, or nil where Python reads it as falsy — absent or `[]`.
+        public func nonEmpty(_ list: [String]?) -> [String]? {
+            (list?.isEmpty ?? true) ? nil : list
+        }
+
         /// `-S` stores either the int `NO_MESSAGE` (always truthy) or the supplied text.
         public var signMessageTruthy: Bool {
-            signMessageProvided && (signMessage == nil || !(signMessage!.isEmpty))
+            signMessageProvided && (signMessage.map { !$0.isEmpty } ?? true)
         }
 
         /// Python: the identity source `get_operating_identity` selects.
         public var identitySource: RNIDIdentitySource {
-            if truthy(generate) { return .generate(path: generate!, force: force) }
-            if truthy(identity) { return .identityArgument(identity!) }
-            if truthy(importPublic) { return .importPublic(importPublic!) }
-            if truthy(importPrivate) { return .importPrivate(importPrivate!) }
+            if let path = nonEmpty(generate) { return .generate(path: path, force: force) }
+            if let identity = nonEmpty(identity) { return .identityArgument(identity) }
+            if let path = nonEmpty(importPublic) { return .importPublic(path) }
+            if let path = nonEmpty(importPrivate) { return .importPrivate(path) }
             return .none
         }
 

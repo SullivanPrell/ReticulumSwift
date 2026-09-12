@@ -225,9 +225,9 @@ public final class WDCLTransport {
 
     /// Sign `data` with this switch identity.
     /// Python: `self.switch_identity.sign(data)`
-    public func sign(_ data: Data) -> Data {
-        let sig = try! signingKey.signature(for: data)
-        return Data(sig)
+    /// - Throws: whatever CryptoKit raises if the key cannot produce a signature.
+    public func sign(_ data: Data) throws -> Data {
+        Data(try signingKey.signature(for: data))
     }
 
     // MARK: - WDCL frame helpers
@@ -365,8 +365,8 @@ public final class WeaveDevice {
     /// Send a WDCL CONNECT unicast to `switchID` carrying this pub-key + signature.
     /// Python: `WeaveDevice.handshake()`
     public func handshake() {
-        guard let conn = connection, let remoteID = switchID else { return }
-        let signature = conn.sign(remoteID)
+        guard let conn = connection, let remoteID = switchID,
+              let signature = try? conn.sign(remoteID) else { return }
         var payload   = conn.switchPubBytes
         payload.append(signature)
         try? conn.send(to: remoteID, packetType: WDCL.tConnect, data: payload)

@@ -184,7 +184,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
 
         let endpoint = NWEndpoint.hostPort(
             host: NWEndpoint.Host(host),
-            port: NWEndpoint.Port(rawValue: port)!
+            port: .orAny(port)
         )
         // Re-check `stopped` and publish the new connection atomically so a
         // concurrent stop() either wins (this path bails) or cancels the connection

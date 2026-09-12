@@ -181,7 +181,7 @@ public extension RNIDApp {
         func truthy(_ list: [String]?) -> Bool { !(list ?? []).isEmpty }
         func truthy(_ text: String?) -> Bool { !(text ?? "").isEmpty }
         // `-S` stores either the int NO_MESSAGE (always truthy) or the supplied text.
-        let signMessageTruthy = signMessageProvided && (signMessage == nil || !(signMessage!.isEmpty))
+        let signMessageTruthy = signMessageProvided && (signMessage.map { !$0.isEmpty } ?? true)
 
         var ops = 0
         for present in [truthy(encrypt), truthy(decrypt), truthy(validate), truthy(sign), signMessageTruthy]

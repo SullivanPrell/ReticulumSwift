@@ -93,7 +93,7 @@ public enum DaemonBootstrap {
                                         fileManager: FileManager = .default) -> URL {
         // Python: `if args.config: configarg = args.config else: configarg = None`—an
         // empty string is falsy, so `--config ''` falls back to the search order.
-        let explicitURL = (explicit?.isEmpty == false) ? URL(fileURLWithPath: explicit!) : nil
+        let explicitURL = explicit.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
         return InstanceConnection.resolveConfigDirectory(explicitURL,
                                                          home: home,
                                                          systemConfigDir: systemConfigDir,

@@ -480,11 +480,7 @@ public final class Transport {
     /// overridden before `start()` to restore a persisted identity across
     /// restarts. Matches `Transport.identity.hash` semantics in Python.
     public var transportInstanceID: Data = {
-        var bytes = Data(count: Constants.truncatedHashLength)
-        _ = bytes.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, Constants.truncatedHashLength, $0.baseAddress!)
-        }
-        return bytes
+        return SecureRandom.bytes(Constants.truncatedHashLength)
     }()
 
     /// Most-recent validated announce packet keyed by destination hash.
@@ -1327,15 +1323,13 @@ public final class Transport {
         guard let target = interface.announceRateTarget else { return false }
         metricsLock.lock(); defer { metricsLock.unlock() }
 
-        if announceRateTable[destinationHash] == nil {
+        guard var entry = announceRateTable[destinationHash] else {
             // First announce—seed the entry, never blocked.
             announceRateTable[destinationHash] = AnnounceRateEntry(
                 last: now, violations: 0, blockedUntil: 0, timestamps: [now]
             )
             return false
         }
-
-        var entry = announceRateTable[destinationHash]!
         entry.timestamps.append(now)
         while entry.timestamps.count > Transport.maxRateTimestamps {
             entry.timestamps.removeFirst()
@@ -1984,7 +1978,7 @@ public final class Transport {
         let displayNames = Dictionary(interfaces.map { ($0.name, $0.displayName) },
                                       uniquingKeysWith: { first, _ in first })
         return paths.values
-            .filter { maxHops == nil || $0.hops <= maxHops! }
+            .filter { $0.hops <= (maxHops ?? .max) }
             .map { PathTableEntry(
                 destinationHash: $0.destinationHash,
                 // `nextHopTransportID` is nil exactly when the announce carried no
@@ -2799,20 +2793,19 @@ public final class Transport {
         for destHash in snapshot.keys {
             lock.lock()
             let isRetained = retainedDestinations.contains(destHash)
-            let hasPath = paths[destHash] != nil && !(paths[destHash]!.isExpired)
+            let hasPath = paths[destHash].map { !$0.isExpired } ?? false
             let announcedAt = knownDestinationAnnouncedAt[destHash] ?? now
             let lastUsed = knownDestinationLastUsed[destHash]
             lock.unlock()
 
             guard !isRetained, !hasPath else { continue }
 
-            let wasUsed = lastUsed != nil
-            if !wasUsed {
+            if let lastUsed {
+                let unusedFor = now.timeIntervalSince(lastUsed)
+                if unusedFor > Transport.destinationTimeout * 1.25 { toRemove.append(destHash) }
+            } else {
                 let lingerExpiry = announcedAt.addingTimeInterval(Transport.unusedDestinationLinger)
                 if now >= lingerExpiry { toRemove.append(destHash) }
-            } else {
-                let unusedFor = now.timeIntervalSince(lastUsed!)
-                if unusedFor > Transport.destinationTimeout * 1.25 { toRemove.append(destHash) }
             }
         }
 
@@ -3123,8 +3116,8 @@ public final class Transport {
                 nextHopAnnouncesToInternal: entry.receivingInterfaceAnnouncesToInternal
             ) else { continue }
             queueLock.lock()
-            if announceQueues[iface.name] == nil { announceQueues[iface.name] = AnnounceQueue() }
-            let queue = announceQueues[iface.name]!
+            let queue = announceQueues[iface.name, default: AnnounceQueue()]
+            announceQueues[iface.name] = queue
             queueLock.unlock()
             let canSend = queue.shouldTransmit(
                 packet: forwarded, now: now, bitrate: iface.bitrate,
@@ -3932,9 +3925,9 @@ public final class Transport {
     private func forwardLinkTraffic(_ packet: Packet, from sourceInterface: Interface) {
         guard packet.hops < propagationLimit else { return }
         lock.lock()
-        var route = linkRoutes[packet.destinationHash]
+        let stored = linkRoutes[packet.destinationHash]
         lock.unlock()
-        guard route != nil else { return }
+        guard var route = stored else { return }
         // `if not link_entry[IDX_LT_VALIDATED]: ... protocol_violation("Link packet received
         // before link validation")` (`Transport.py:2124-2128`). A link-table entry appears when
         // a transport node relays a link request, and turns valid only once that node verifies the
@@ -3947,12 +3940,12 @@ public final class Transport {
         // arrives with the flag already up, so the exemption changes nothing on that path—but
         // it's upstream's condition, and it keeps a proof arriving by any other route (a
         // duplicate, or one for a torn-down link) from charging the sender.
-        if packet.context != .lrproof, !route!.validated {
+        if packet.context != .lrproof, !route.validated {
             notifyProtocolViolation(on: sourceInterface)
             return
         }
-        let initIface = route!.initiatorSideInterface
-        let respIface = route!.responderSideInterface
+        let initIface = route.initiatorSideInterface
+        let respIface = route.responderSideInterface
         // A non-transport shared instance still relays link traffic when either
         // side of the link is a directly connected local client (Python's
         // for_local_client_link, Transport.py:1573).
@@ -3964,10 +3957,10 @@ public final class Transport {
         // two equal strings, matches the first branch, and sends the packet back out the
         // interface it arrived on (`bugs/027`).
         let outboundCandidate: (any Interface)?
-        if sourceInterface === route!.initiatorSideInterface {
-            outboundCandidate = route!.responderSideInterface
-        } else if sourceInterface === route!.responderSideInterface {
-            outboundCandidate = route!.initiatorSideInterface
+        if sourceInterface === route.initiatorSideInterface {
+            outboundCandidate = route.responderSideInterface
+        } else if sourceInterface === route.responderSideInterface {
+            outboundCandidate = route.initiatorSideInterface
         } else {
             return
         }
@@ -3980,7 +3973,7 @@ public final class Transport {
                              && (respIface.map(isLocalClientInterface) ?? false)
         forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: instanceLocalLink)
         try? transmit(forwarded, on: outbound)
-        route!.lastHeard = Date()
+        route.lastHeard = Date()
         lock.lock(); linkRoutes[packet.destinationHash] = route; lock.unlock()
     }
 
@@ -4393,8 +4386,8 @@ public final class Transport {
             // the tunnel entry so it can be restored if the tunnel reappears.
             // Mirrors Python's `Transport.announce_handler` tunnel path recording.
             if let tunnelID = interface.tunnelID, tunnels[tunnelID] != nil {
-                tunnels[tunnelID]!.paths[decoded.destinationHash] = entry
-                tunnels[tunnelID]!.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
+                tunnels[tunnelID]?.paths[decoded.destinationHash] = entry
+                tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
             }
             lock.unlock()
 
@@ -4450,10 +4443,8 @@ public final class Transport {
                         nextHopAnnouncesToInternal: interface.announcesToInternal
                     ) else { continue }
                     queueLock.lock()
-                    if announceQueues[iface.name] == nil {
-                        announceQueues[iface.name] = AnnounceQueue()
-                    }
-                    let queue = announceQueues[iface.name]!
+                    let queue = announceQueues[iface.name, default: AnnounceQueue()]
+                    announceQueues[iface.name] = queue
                     queueLock.unlock()
                     let canSend = queue.shouldTransmit(
                         packet: forwarded,
@@ -4632,13 +4623,7 @@ public final class Transport {
         recursive: Bool = false
     ) throws {
         guard destinationHash.count == Constants.truncatedHashLength else { return }
-        var tag = tag ?? {
-            var t = Data(count: Constants.truncatedHashLength)
-            _ = t.withUnsafeMutableBytes {
-                SecRandomCopyBytes(kSecRandomDefault, Constants.truncatedHashLength, $0.baseAddress!)
-            }
-            return t
-        }()
+        let tag = tag ?? SecureRandom.bytes(Constants.truncatedHashLength)
         _ = recursive // the receiving transport node handles forwarded recursion
         // Mirrors Python: if transport_enabled: body = destHash + transport_id + tag
         //                 else:                  body = destHash + tag
@@ -4841,10 +4826,7 @@ public final class Transport {
         // resolve it. Runs regardless of transportEnabled: carrying its clients'
         // path requests onto the network is the whole point of a shared instance.
         if fromLocal {
-            var requestTag = Data(count: Constants.truncatedHashLength)
-            _ = requestTag.withUnsafeMutableBytes {
-                SecRandomCopyBytes(kSecRandomDefault, Constants.truncatedHashLength, $0.baseAddress!)
-            }
+            let requestTag = SecureRandom.bytes(Constants.truncatedHashLength)
             for iface in interfaces where iface !== interface && iface.isOnline {
                 try? requestPath(for: target, onInterface: iface, tag: requestTag)
             }
@@ -5479,8 +5461,8 @@ public final class Transport {
                 expires: expires
             )
         } else {
-            tunnels[tunnelID]!.iface = interface
-            tunnels[tunnelID]!.expires = expires
+            tunnels[tunnelID]?.iface = interface
+            tunnels[tunnelID]?.expires = expires
         }
         interface.tunnelID = tunnelID
     }

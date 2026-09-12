@@ -292,8 +292,9 @@ public struct ReticulumConfig {
         }
 
         for rawLine in text.components(separatedBy: .newlines) {
-            let line = rawLine
-                .components(separatedBy: "#").first!   // strip inline comments
+            // Strip inline comments. `components(separatedBy:)` always yields at least one
+            // element, so the fallback is unreachable.
+            let line = (rawLine.components(separatedBy: "#").first ?? rawLine)
                 .trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
 

@@ -77,10 +77,7 @@ public enum Announce {
             }
         }
 
-        var randomHash = Data(count: 5)
-        _ = randomHash.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, 5, $0.baseAddress!)
-        }
+        var randomHash = SecureRandom.bytes(5)
         let ts = UInt64(timestamp)
         var tsBytes = Data(count: 5)
         for i in 0..<5 { tsBytes[i] = UInt8((ts >> (8 * (4 - i))) & 0xFF) }

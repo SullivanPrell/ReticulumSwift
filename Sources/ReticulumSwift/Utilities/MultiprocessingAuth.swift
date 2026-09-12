@@ -184,10 +184,7 @@ public enum MultiprocessingAuth {
     ///
     /// Python `deliver_challenge`: `b'{%s}%s' % (digest_name, os.urandom(MESSAGE_LENGTH))`.
     public static func makeChallengeMessage(digest: Digest = .sha256) -> Data {
-        var payload = Data(count: messageLength)
-        _ = payload.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, messageLength, $0.baseAddress!)
-        }
+        let payload = SecureRandom.bytes(messageLength)
         return Data("{\(digest.rawValue)}".utf8) + payload
     }
 

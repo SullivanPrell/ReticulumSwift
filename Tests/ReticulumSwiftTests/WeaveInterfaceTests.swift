@@ -192,10 +192,10 @@ final class WeaveInterfaceTests: XCTestCase {
         XCTAssertEqual(t.switchID, Data(t.switchPubBytes.suffix(4)))
     }
 
-    func testWDCLTransportSign() {
+    func testWDCLTransportSign() throws {
         let t    = WDCLTransport(transport: MockWeaveTransport())
         let data = Data([0x01, 0x02, 0x03])
-        let sig  = t.sign(data)
+        let sig  = try t.sign(data)
         XCTAssertEqual(sig.count, 64)  // Ed25519 signature is 64 bytes
     }
 

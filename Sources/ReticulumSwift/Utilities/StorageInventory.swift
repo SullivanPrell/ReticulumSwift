@@ -59,7 +59,15 @@ public enum StorageInventory {
 
         public var relativePath: String { components.joined(separator: "/") }
 
+        /// The entry's own name — the last path component.
+        ///
+        /// Callers that build a URL from a parent directory they already hold need this
+        /// rather than ``relativePath``; the initializer rejects an empty `components`, so
+        /// the fallback is unreachable.
+        public var fileName: String { components.last ?? "" }
+
         public init(_ components: [String], _ kind: Kind, authority: Authority) {
+            precondition(!components.isEmpty, "a storage entry needs at least one path component")
             self.components = components
             self.kind = kind
             self.authority = authority
