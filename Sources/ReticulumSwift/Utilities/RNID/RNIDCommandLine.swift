@@ -237,12 +237,12 @@ public enum RNIDCommandLine {
         /// Python truthiness for a string: `""` is falsy.
         public func truthy(_ text: String?) -> Bool { !(text ?? "").isEmpty }
 
-        /// The argument, or nil where Python reads it as falsy — absent or empty.
+        /// The argument, or nil where Python reads it as falsy—absent or empty.
         public func nonEmpty(_ text: String?) -> String? {
             (text?.isEmpty ?? true) ? nil : text
         }
 
-        /// The `nargs="*"` list, or nil where Python reads it as falsy — absent or `[]`.
+        /// The `nargs="*"` list, or nil where Python reads it as falsy—absent or `[]`.
         public func nonEmpty(_ list: [String]?) -> [String]? {
             (list?.isEmpty ?? true) ? nil : list
         }

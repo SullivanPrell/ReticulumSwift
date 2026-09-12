@@ -23,8 +23,8 @@ import XCTest
 /// Python exempts them rather than relying on them differing.
 final class PacketFilterContextExemptionTests: XCTestCase {
 
-    /// `KEEPALIVE`, `RESOURCE_REQ`, `RESOURCE_PRF`, `RESOURCE`, `CACHE_REQUEST`, `CHANNEL`—
-    /// the six and only six that `Transport.py:1635-1640` lets through.
+    /// `KEEPALIVE`, `RESOURCE_REQ`, `RESOURCE_PRF`, `RESOURCE`, `CACHE_REQUEST`, `CHANNEL`—the
+    /// six and only six that `Transport.py:1635-1640` lets through.
     private static let exemptContexts: [Packet.Context] = [
         .keepalive, .resourceRequest, .resourceProof, .resource, .cacheRequest, .channel,
     ]

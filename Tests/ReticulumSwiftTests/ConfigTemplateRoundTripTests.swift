@@ -92,7 +92,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
 
     // MARK: - The primary gate: nothing emitted is discarded
 
-    /// Every top-level key either template emits must be one the parser recognises.
+    /// Every top-level key either template emits must be one the parser recognizes.
     ///
     /// This is the assertion with no coverage hole in it: the parser reports what it discarded,
     /// so a key nobody thought to probe still fails here.
@@ -134,7 +134,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
 
     // MARK: - Reading isn't applying
 
-    /// A key the parser recognises must also *land* somewhere: parsing a config that sets it
+    /// A key the parser recognizes must also *land* somewhere: parsing a config that sets it
     /// must produce a different result from parsing one that doesn't.
     ///
     /// The preceding gate proves a branch matched the key. It can't prove the branch did anything,

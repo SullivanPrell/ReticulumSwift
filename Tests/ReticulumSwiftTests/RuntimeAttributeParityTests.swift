@@ -95,7 +95,7 @@ final class RuntimeAttributeParityTests: XCTestCase {
     /// recorded in `swift_devel/bugs/`—this is the index, not the analysis.
     func testTheKnownGapsAreStillTheKnownGaps() {
         // Interface discovery, publish side: landed 2026-09-04. The inventory entry it used to
-        // hold is now real assertions — see `DiscoveryPublishAttributeTests` for the attributes
+        // hold is now real assertions—see `DiscoveryPublishAttributeTests` for the attributes
         // and `InterfaceAnnouncerTests` for the announce itself.
         XCTAssertTrue(Reticulum.publishesInterfaceDiscovery)
 

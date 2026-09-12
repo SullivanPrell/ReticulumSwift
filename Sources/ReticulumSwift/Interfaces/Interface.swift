@@ -77,7 +77,7 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
 ///
 /// Mirrors the four values Python reads off an `RNodeInterface` at `Discovery.py:188-192`.
 public struct DiscoveryRadioParameters: Equatable, Sendable {
-    /// Centre frequency in hertz.
+    /// Center frequency in hertz.
     public let frequency: Int
     /// Channel bandwidth in hertz.
     public let bandwidth: Int

@@ -300,7 +300,7 @@ final class RNPathPathLineTests: XCTestCase {
     }
 
     func testFullLineShape() {
-        // Python: RNS.timestamp_str(0) → "1969-12-31 18:00:00" in US/Central; pinned to UTC
+        // Python: RNS.timestamp_str(0) → "1969-12-31 18:00:00" in America/Chicago; pinned to UTC
         // here so the assertion is machine-independent.
         let line = RNPathFormatter.pathTableLine(entry(hops: 3), timeZone: utc)
         XCTAssertEqual(line,

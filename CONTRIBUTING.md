@@ -34,7 +34,9 @@ If you see `SwiftShims` module-cache errors: `rm -rf .build && swift test`.
 - **Errors:** `throw` for protocol errors; return `nil` / `false` for soft
   failures.
 - **Bytes:** prefer `Data`; use `[UInt8]` only on performance-critical paths.
-- **Tests:** file `Tests/.../<Feature>Tests.swift`, class `<Feature>Tests`.
+- **Tests:** XCTest, not swift-testing. File `Tests/.../<Feature>Tests.swift`,
+  class `<Feature>Tests`.
+- **Style:** [Google Swift Style Guide](https://google.github.io/swift/).
 
 ## Running a single suite
 

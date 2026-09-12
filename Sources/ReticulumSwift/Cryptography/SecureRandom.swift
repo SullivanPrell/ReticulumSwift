@@ -12,7 +12,7 @@ import Foundation
 
 /// Cryptographically secure random bytes.
 ///
-/// Every caller in the port needs the same thing — `n` unpredictable bytes — and each one
+/// Every caller in the port needs the same thing—`n` unpredictable bytes—and each one
 /// used to reach for `SecRandomCopyBytes` through an unsafe mutable buffer, force-unwrapping
 /// `baseAddress` and discarding the `OSStatus`. That shape had two defects beyond the banned
 /// `!`: a failure filled the buffer with zeroes and reported nothing, and the check would

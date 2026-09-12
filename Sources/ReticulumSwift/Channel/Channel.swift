@@ -314,9 +314,9 @@ public final class Channel {
 
     /// Current send window in envelopes.
     public private(set) var window:          Int
-    /// Largest send window the channel will grow to.
+    /// Largest send window the channel grows to.
     public private(set) var windowMax:       Int
-    /// Smallest send window the channel will shrink to.
+    /// Smallest send window the channel shrinks to.
     public private(set) var windowMin:       Int
     /// Envelopes the window may exceed `windowMax` by while probing.
     public private(set) var windowFlexibility: Int

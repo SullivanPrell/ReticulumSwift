@@ -355,7 +355,7 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Configured radio parameters (the requested values)
 
-    /// Requested centre frequency in Hz.
+    /// Requested center frequency in Hz.
     public var frequency:  UInt32 = 0
     /// Requested bandwidth in Hz.
     public var bandwidth:  UInt32 = 0
@@ -374,7 +374,7 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Reported (echoed) radio parameters (what the device says it has)
 
-    /// Centre frequency in Hz the device reports.
+    /// Center frequency in Hz the device reports.
     public var rFrequency: UInt32? = nil
     /// Bandwidth in Hz the device reports.
     public var rBandwidth: UInt32? = nil
@@ -961,7 +961,7 @@ public final class RNodeInterface: Interface {
         try transport?.write(Data([KISS.fend, KISS.cmdReset, 0xF8, KISS.fend]))
     }
 
-    /// Sends the configured centre frequency to the device.
+    /// Sends the configured center frequency to the device.
     ///
     /// Python: setFrequency()—4-byte big-endian uint32, KISS-escaped
     public func setFrequency() throws {

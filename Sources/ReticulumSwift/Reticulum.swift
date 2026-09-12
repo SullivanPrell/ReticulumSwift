@@ -178,7 +178,7 @@ public final class Reticulum {
     public struct Configuration {
         /// Directory holding the identity, ratchets, path table and other persisted state.
         public var storagePath: URL
-        /// Config filepath.
+        /// Config path.
         ///
         /// If nil and a file exists at the standard location
         /// (`storagePath/../config`), it's loaded automatically by `start()`.
@@ -968,7 +968,7 @@ public final class Reticulum {
 
         try transport.start()
 
-        // Start announcing our own discoverable interfaces when any of them asked to be.
+        // Start announcing this instance's discoverable interfaces when any of them asked to be.
         // Mirrors Python: if Reticulum.__discovery_enabled: RNS.Transport.enable_discovery()
         // (`Reticulum.py:370`). The latch is set while parsing interface blocks, because no
         // interface exists yet when the reticulum block is read.

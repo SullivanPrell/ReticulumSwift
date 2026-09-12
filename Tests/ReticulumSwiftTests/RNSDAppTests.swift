@@ -174,7 +174,7 @@ final class RNSDAppTests: XCTestCase {
     func testHelpAndVersionFlags() throws {
         XCTAssertTrue(try RNSDApp.parse(["-h"], variant: .rnsd).help)
         XCTAssertTrue(try RNSDApp.parse(["--help"], variant: .rnsd).help)
-        // argparse recognises -h anywhere in argv.
+        // argparse recognizes -h anywhere in argv.
         XCTAssertTrue(try RNSDApp.parse(["-v", "--help"], variant: .rnsd).help)
         XCTAssertTrue(try RNSDApp.parse(["--version"], variant: .rnsd).version)
     }

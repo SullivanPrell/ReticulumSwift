@@ -70,7 +70,7 @@ final class RNIDIdentityResolverTests: XCTestCase {
         XCTAssertEqual(fileSystem.files["x.rid"], identity.privateKeyBytes)
     }
 
-    // MARK: - -i as a filepath
+    // MARK: - -i as a path
 
     func testIdentityFileLoads() throws {
         let source = Identity()

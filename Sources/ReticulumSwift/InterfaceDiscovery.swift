@@ -133,7 +133,7 @@ public struct DiscoveredInterfaceInfo {
     public var reachableOn: String?
     /// TCP port the interface listens on, when published.
     public var port: Int?
-    /// Announced centre frequency in Hz, for radio interfaces.
+    /// Announced center frequency in Hz, for radio interfaces.
     public var frequency: Double?
     /// Announced bandwidth in Hz, for radio interfaces.
     public var bandwidth: Double?
@@ -656,7 +656,7 @@ public final class InterfaceDiscovery {
     /// stay down before it's torn down and its slot freed.
     public static let detachThreshold: TimeInterval = 12
 
-    /// The two types autoconnect will dial, matched against the announced type.
+    /// The two types autoconnect dials, matched against the announced type.
     ///
     /// Python: `InterfaceDiscovery.AUTOCONNECT_TYPES` (`Discovery.py:449`). Both are dialled as
     /// a Backbone client, because both describe a listening TCP endpoint.

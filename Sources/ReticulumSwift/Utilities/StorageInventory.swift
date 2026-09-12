@@ -76,7 +76,7 @@ public enum StorageInventory {
         /// The path of the entry relative to the configuration directory.
         public var relativePath: String { components.joined(separator: "/") }
 
-        /// The entry's own name — the last path component.
+        /// The entry's own name—the last path component.
         ///
         /// Callers that build a URL from a parent directory they already hold need this
         /// rather than ``relativePath``; the initializer rejects an empty `components`, so

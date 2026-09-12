@@ -624,7 +624,7 @@ public enum ArgumentError: Error, CustomStringConvertible, Equatable {
     case missingPositional(String)
     /// Every token `argparse` couldn't consume, in argv order. Python's `parse_args`
     /// reports all leftovers in one message: "unrecognized arguments: --bogus extra".
-    /// Distinct from ``unrecognisedOption(_:)``, which names a single option and is what
+    /// Distinct from ``unrecognizedOption(_:)``, which names a single option and is what
     /// ``ArgumentParser/parse(_:)`` throws as soon as it hits one.
     case unrecognisedArguments([String])
     /// An abbreviated long option matching more than one declaration.

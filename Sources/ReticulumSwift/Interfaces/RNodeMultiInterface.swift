@@ -69,7 +69,7 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
 
     // MARK:–Desired radio parameters (the requested values)
 
-    /// Requested centre frequency in Hz.
+    /// Requested center frequency in Hz.
     public let frequency: UInt32
     /// Requested bandwidth in Hz.
     public let bandwidth: UInt32
@@ -88,7 +88,7 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
 
     // MARK:–Reported (echoed) parameters (what the hardware says it set)
 
-    /// Centre frequency in Hz the device reports.
+    /// Center frequency in Hz the device reports.
     public var rFrequency: UInt32? = nil
     /// Bandwidth in Hz the device reports.
     public var rBandwidth: UInt32? = nil
@@ -501,7 +501,7 @@ public final class RNodeMultiInterface: Interface {
     // A CMD_SEL_INT frame precedes every command frame and selects the target sub-interface.
     // Python: kiss_command = [FEND CMD_SEL_INT interface.index FEND FEND CMD_xxx data FEND]
 
-    /// Sends the centre frequency configured for `sub` to the device.
+    /// Sends the center frequency configured for `sub` to the device.
     ///
     /// Python: setFrequency(frequency, interface)
     public func setFrequency(for sub: RNodeSubInterface) throws {

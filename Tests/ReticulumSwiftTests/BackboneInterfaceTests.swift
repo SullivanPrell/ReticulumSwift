@@ -162,7 +162,7 @@ final class BackboneInterfaceTests: XCTestCase {
             return
         }
 
-        // Verify the config parser recognises BackboneInterface
+        // Verify the config parser recognizes BackboneInterface
         XCTAssertFalse(cfg.interfaces.isEmpty, "config must parse at least one interface")
         let backbone = cfg.interfaces.first
         XCTAssertEqual(backbone?.type, "BackboneInterface",

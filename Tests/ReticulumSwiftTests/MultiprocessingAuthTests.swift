@@ -206,7 +206,7 @@ final class MultiprocessingAuthTests: XCTestCase {
     }
 
     func testVerifyChallenge_clientMayUpgradeDigestOnLegacyChallenge() throws {
-        // Python: "If our message didn't include a digest_name prefix, the client
+        // Python: "If the message didn't include a digest_name prefix, the client
         // is allowed to select a stronger digest_name from _ALLOWED_DIGESTS."
         // The MAC is still taken over the (unprefixed) challenge message.
         let msg = Data((0..<20).map { UInt8($0) })
