@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity callback setters on `Link`.
+///
 /// Tests for Link callback setter API mirroring Python's:
 ///   - `Link.set_link_closed_callback()`
 ///   - `Link.set_packet_callback()`

@@ -113,6 +113,7 @@ public final class InterfaceAnnouncer {
 
     // MARK: - Lifecycle
 
+    /// Starts the periodic announce loop.
     public func start() {
         lock.lock()
         guard !isRunning else { lock.unlock(); return }
@@ -126,6 +127,7 @@ public final class InterfaceAnnouncer {
         }
     }
 
+    /// Stops the periodic announce loop.
     public func stop() {
         lock.lock(); isRunning = false; lock.unlock()
     }

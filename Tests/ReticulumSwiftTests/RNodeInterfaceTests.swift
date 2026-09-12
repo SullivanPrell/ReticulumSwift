@@ -119,6 +119,8 @@ final class RNodeInterfaceConstantsTests: XCTestCase {
 // MARK: - detect() wire format
 
 final class RNodeDetectCommandTests: XCTestCase {
+    /// Asserts `detect()` writes the thirteen-byte probe sequence.
+    ///
     /// Python: detect() sends exactly these 13 bytes:
     /// [FEND, CMD_DETECT, DETECT_REQ, FEND, CMD_FW_VERSION, 0x00,
     ///  FEND, CMD_PLATFORM, 0x00, FEND, CMD_MCU, 0x00, FEND]
@@ -142,6 +144,8 @@ final class RNodeDetectCommandTests: XCTestCase {
 // MARK: - leave() wire format
 
 final class RNodeLeaveCommandTests: XCTestCase {
+    /// Asserts `leave()` writes the four-byte leave frame.
+    ///
     /// Python: leave() sends [FEND, CMD_LEAVE, 0xFF, FEND]
     func testLeaveSendsCorrectBytes() throws {
         let mock = MockRNodeTransport()
@@ -170,6 +174,8 @@ final class RNodeFrequencyPackingTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x01, 0x33, 0xBC, 0xA1, 0x00, 0xC0])
     }
 
+    /// Asserts a 915 MHz frequency is framed with its FEND byte escaped.
+    ///
     /// 915_000_000 Hz = 0x3689CAC0
     /// c1=0x36, c2=0x89, c3=0xCA, c4=0xC0
     /// c4=0xC0 is FEND—must be escaped to FESC(0xDB) TFEND(0xDC)
@@ -183,6 +189,8 @@ final class RNodeFrequencyPackingTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x01, 0x36, 0x89, 0xCA, 0xDB, 0xDC, 0xC0])
     }
 
+    /// Asserts a frequency byte equal to FEND is escaped.
+    ///
     /// Test KISS escaping: if any frequency byte == 0xC0 (FEND), it must be escaped.
     /// 0x00C0_0000 = 12582912 Hz (contrived)
     /// Bytes: 0x00, 0xC0, 0x00, 0x00 → escaped: 0x00, 0xDB, 0xDC, 0x00, 0x00
@@ -196,6 +204,8 @@ final class RNodeFrequencyPackingTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x01, 0x00, 0xDB, 0xDC, 0x00, 0x00, 0xC0])
     }
 
+    /// Asserts a frequency byte equal to FESC is escaped.
+    ///
     /// Test KISS escaping: frequency byte == 0xDB (FESC) must be escaped.
     /// 0x00DB_0000 = 14_352_384 Hz
     func testSetFrequencyEscapesFESC() throws {
@@ -210,6 +220,8 @@ final class RNodeFrequencyPackingTests: XCTestCase {
 }
 
 final class RNodeBandwidthPackingTests: XCTestCase {
+    /// Asserts a 125 kHz bandwidth is framed big-endian.
+    ///
     /// 125_000 Hz bandwidth = 0x0001_E848
     /// c1=0x00, c2=0x01, c3=0xE8, c4=0x48
     func testSetBandwidth125k() throws {
@@ -221,6 +233,8 @@ final class RNodeBandwidthPackingTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x02, 0x00, 0x01, 0xE8, 0x48, 0xC0])
     }
 
+    /// Asserts a 500 kHz bandwidth is framed big-endian.
+    ///
     /// 500_000 Hz bandwidth = 0x0007_A120
     func testSetBandwidth500k() throws {
         let mock = MockRNodeTransport()
@@ -233,6 +247,8 @@ final class RNodeBandwidthPackingTests: XCTestCase {
 }
 
 final class RNodeTxPowerPackingTests: XCTestCase {
+    /// Asserts a 14 dBm transmit power is framed as one byte.
+    ///
     /// TXPower 14 dBm → single byte 0x0E
     /// Frame: [FEND, CMD_TXPOWER, 0x0E, FEND]
     func testSetTxPower14() throws {
@@ -244,6 +260,8 @@ final class RNodeTxPowerPackingTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x03, 0x0E, 0xC0])
     }
 
+    /// Asserts a zero transmit power is framed as one byte.
+    ///
     /// TXPower 0 → [FEND, CMD_TXPOWER, 0x00, FEND]
     func testSetTxPower0() throws {
         let mock = MockRNodeTransport()
@@ -256,6 +274,8 @@ final class RNodeTxPowerPackingTests: XCTestCase {
 }
 
 final class RNodeSpreadingFactorPackingTests: XCTestCase {
+    /// Asserts spreading factor 7 is framed as one byte.
+    ///
     /// SF7 → [FEND, CMD_SF, 0x07, FEND]
     func testSetSf7() throws {
         let mock = MockRNodeTransport()
@@ -266,6 +286,8 @@ final class RNodeSpreadingFactorPackingTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x04, 0x07, 0xC0])
     }
 
+    /// Asserts spreading factor 12 is framed as one byte.
+    ///
     /// SF12 → [FEND, CMD_SF, 0x0C, FEND]
     func testSetSf12() throws {
         let mock = MockRNodeTransport()
@@ -278,6 +300,8 @@ final class RNodeSpreadingFactorPackingTests: XCTestCase {
 }
 
 final class RNodeCodingRatePackingTests: XCTestCase {
+    /// Asserts coding rate 5 is framed as one byte.
+    ///
     /// CR5 → [FEND, CMD_CR, 0x05, FEND]
     func testSetCr5() throws {
         let mock = MockRNodeTransport()
@@ -288,6 +312,8 @@ final class RNodeCodingRatePackingTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x05, 0x05, 0xC0])
     }
 
+    /// Asserts coding rate 8 is framed as one byte.
+    ///
     /// CR8 → [FEND, CMD_CR, 0x08, FEND]
     func testSetCr8() throws {
         let mock = MockRNodeTransport()
@@ -302,6 +328,8 @@ final class RNodeCodingRatePackingTests: XCTestCase {
 // MARK: - Radio state command
 
 final class RNodeRadioStateTests: XCTestCase {
+    /// Asserts the radio-on command is framed as one byte.
+    ///
     /// setRadioState(on) → [FEND, CMD_RADIO_STATE, 0x01, FEND]
     func testSetRadioStateOn() throws {
         let mock = MockRNodeTransport()
@@ -311,6 +339,8 @@ final class RNodeRadioStateTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x06, 0x01, 0xC0])
     }
 
+    /// Asserts the radio-off command is framed as one byte.
+    ///
     /// setRadioState(off) → [FEND, CMD_RADIO_STATE, 0x00, FEND]
     func testSetRadioStateOff() throws {
         let mock = MockRNodeTransport()
@@ -324,6 +354,8 @@ final class RNodeRadioStateTests: XCTestCase {
 // MARK: - initRadio() sequence
 
 final class RNodeInitRadioSequenceTests: XCTestCase {
+    /// Asserts `initRadio()` writes its frames in the expected order.
+    ///
     /// initRadio() must send exactly 7 frames in this order:
     /// frequency, bandwidth, txpower, sf, cr, setRadioState(on)
     /// (st_alock and lt_alock skipped when nil)
@@ -366,6 +398,8 @@ final class RNodeInitRadioSequenceTests: XCTestCase {
         XCTAssertEqual(stateBytes[2], KISS.radioStateOn)
     }
 
+    /// Asserts a configured short-term airtime limit is sent during bring-up.
+    ///
     /// When stAlock is set, CMD_ST_ALOCK frame appears before CMD_LT_ALOCK and radio state
     func testInitRadioSendsStAlockWhenSet() throws {
         let mock = MockRNodeTransport()
@@ -381,6 +415,8 @@ final class RNodeInitRadioSequenceTests: XCTestCase {
         XCTAssertTrue(commands.contains(KISS.cmdStAlock))
     }
 
+    /// Asserts a configured long-term airtime limit is sent during bring-up.
+    ///
     /// When ltAlock is set, CMD_LT_ALOCK frame appears
     func testInitRadioSendsLtAlockWhenSet() throws {
         let mock = MockRNodeTransport()
@@ -400,6 +436,8 @@ final class RNodeInitRadioSequenceTests: XCTestCase {
 // MARK: - Airtime lock byte packing
 
 final class RNodeAirtimeLockTests: XCTestCase {
+    /// Asserts a 5% short-term airtime limit is framed as hundredths.
+    ///
     /// stAlock 5.0% → int(5.0*100)=500=0x01F4
     /// Frame: [FEND, CMD_ST_ALOCK, 0x01, 0xF4, FEND]
     func testSetStAlock5Percent() throws {
@@ -411,6 +449,8 @@ final class RNodeAirtimeLockTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x0B, 0x01, 0xF4, 0xC0])
     }
 
+    /// Asserts a 10% long-term airtime limit is framed as hundredths.
+    ///
     /// ltAlock 10.0% → int(10.0*100)=1000=0x03E8
     func testSetLtAlock10Percent() throws {
         let mock = MockRNodeTransport()
@@ -421,6 +461,8 @@ final class RNodeAirtimeLockTests: XCTestCase {
         XCTAssertEqual(bytes, [0xC0, 0x0C, 0x03, 0xE8, 0xC0])
     }
 
+    /// Asserts an unset short-term airtime limit writes nothing.
+    ///
     /// When stAlock is nil, setStAlock() sends nothing
     func testSetStAlockNilSendsNothing() throws {
         let mock = MockRNodeTransport()
@@ -434,6 +476,8 @@ final class RNodeAirtimeLockTests: XCTestCase {
 // MARK: - processIncoming: CMD_DETECT response
 
 final class RNodeProcessIncomingDetectTests: XCTestCase {
+    /// Asserts a detect response marks the device detected.
+    ///
     /// Inject FEND CMD_DETECT DETECT_RESP FEND → detected becomes true
     func testDetectResponseSetsDetected() {
         let mock = MockRNodeTransport()
@@ -481,6 +525,8 @@ final class RNodeProcessIncomingPlatformTests: XCTestCase {
 // MARK: - processIncoming: CMD_FW_VERSION
 
 final class RNodeProcessIncomingFwVersionTests: XCTestCase {
+    /// Asserts a firmware version frame sets the major and minor version.
+    ///
     /// [FEND, CMD_FW_VERSION, maj, min, FEND] → majVersion=maj, minVersion=min
     func testFwVersionParsed() {
         let mock = MockRNodeTransport()
@@ -515,6 +561,8 @@ final class RNodeProcessIncomingFwVersionTests: XCTestCase {
 // MARK: - processIncoming: CMD_FREQUENCY echo
 
 final class RNodeProcessIncomingFrequencyTests: XCTestCase {
+    /// Asserts the frequency the device echoes back is decoded big-endian.
+    ///
     /// Device echoes back frequency as 4-byte big-endian
     func testFrequencyEchoDecoded() {
         let mock = MockRNodeTransport()
@@ -592,10 +640,10 @@ final class RNodeProcessIncomingRadioStateTests: XCTestCase {
 // MARK: - processIncoming: RSSI
 
 final class RNodeProcessIncomingRssiTests: XCTestCase {
-    /// RSSI byte = rawValue; rStatRssi = rawValue - RSSI_OFFSET (157)
-    /// rawValue 214 → rssi = 214 - 157 = 57 ... wait Python: byte - offset
-    /// Actually python: self.r_stat_rssi = byte-RNodeInterface.RSSI_OFFSET
-    /// So byte=214 → 57, byte=100 → -57
+    /// Asserts a reported RSSI byte is decoded against the RSSI offset.
+    ///
+    /// Python: `self.r_stat_rssi = byte - RNodeInterface.RSSI_OFFSET`, where the offset is
+    /// 157, so byte 214 decodes to 57 and byte 100 to -57.
     func testRssiDecodedWithOffset() {
         let mock = MockRNodeTransport()
         let iface = RNodeInterface(name: "test", transport: mock)
@@ -614,6 +662,8 @@ final class RNodeProcessIncomingRssiTests: XCTestCase {
 // MARK: - processIncoming: SNR
 
 final class RNodeProcessIncomingSNRTests: XCTestCase {
+    /// Asserts a positive SNR byte is decoded as signed quarter-decibels.
+    ///
     /// Python: r_stat_snr = int.from_bytes([byte], byteorder="big", signed=True) * 0.25
     /// byte 0x08 (8 signed) → snr = 8 * 0.25 = 2.0
     func testSnrPositiveDecoded() {
@@ -624,6 +674,8 @@ final class RNodeProcessIncomingSNRTests: XCTestCase {
         XCTAssertEqual(iface.rStatSnr!, Float(2.0), accuracy: Float(0.001))
     }
 
+    /// Asserts a negative SNR byte is decoded as signed quarter-decibels.
+    ///
     /// byte 0xFF (-1 signed) → snr = -1 * 0.25 = -0.25
     func testSnrNegativeDecoded() {
         let mock = MockRNodeTransport()
@@ -633,6 +685,8 @@ final class RNodeProcessIncomingSNRTests: XCTestCase {
         XCTAssertEqual(iface.rStatSnr!, Float(-0.25), accuracy: Float(0.001))
     }
 
+    /// Asserts a large negative SNR byte is decoded as signed quarter-decibels.
+    ///
     /// byte 0xE8 (-24 signed) → snr = -24 * 0.25 = -6.0
     func testSnrNegativeLargeDecoded() {
         let mock = MockRNodeTransport()
@@ -646,6 +700,8 @@ final class RNodeProcessIncomingSNRTests: XCTestCase {
 // MARK: - processIncoming: CMD_STAT_BAT
 
 final class RNodeProcessIncomingBatteryTests: XCTestCase {
+    /// Asserts a battery frame sets the charging state and the percentage.
+    ///
     /// CMD_STAT_BAT sends 2 bytes: [state, percent]
     /// state=BATTERY_STATE_CHARGING(0x02), percent=75
     func testBatteryChargingParsed() {
@@ -672,6 +728,8 @@ final class RNodeProcessIncomingBatteryTests: XCTestCase {
         XCTAssertEqual(iface.rBatteryPercent, 100)
     }
 
+    /// Asserts a battery percentage above 100 is clamped.
+    ///
     /// Python clamps percent to 100 if > 100
     func testBatteryPercentClamped() {
         let mock = MockRNodeTransport()
@@ -716,6 +774,8 @@ final class RNodeBatteryStateStringTests: XCTestCase {
 // MARK: - processIncoming: CMD_STAT_RX and CMD_STAT_TX
 
 final class RNodeProcessIncomingStatCountersTests: XCTestCase {
+    /// Asserts the received-packet counter is decoded big-endian.
+    ///
     /// CMD_STAT_RX sends 4 bytes big-endian uint32
     func testStatRxDecoded() {
         let mock = MockRNodeTransport()
@@ -784,6 +844,8 @@ final class RNodeProcessIncomingRandomTests: XCTestCase {
 // MARK: - updateBitrate
 
 final class RNodeUpdateBitrateTests: XCTestCase {
+    /// Asserts the bitrate computed for SF7 at 125 kHz and CR5.
+    ///
     /// Python formula: sf * (4/cr / (2^sf / (bw/1000))) * 1000
     /// SF=7, BW=125000, CR=5:
     ///   4/5 = 0.8
@@ -800,6 +862,8 @@ final class RNodeUpdateBitrateTests: XCTestCase {
         XCTAssertEqual(iface.bitrate, 5468, accuracy: 10)
     }
 
+    /// Asserts SF12 yields a far lower bitrate than SF7.
+    ///
     /// SF=12, BW=125000, CR=5 should be much lower
     func testBitrateForSF12BW125CR5() {
         let mock = MockRNodeTransport()
@@ -812,6 +876,8 @@ final class RNodeUpdateBitrateTests: XCTestCase {
         XCTAssertLessThan(iface.bitrate, 500)
     }
 
+    /// Asserts a zero radio parameter leaves the bitrate at zero.
+    ///
     /// If any parameter is 0, bitrate should remain 0 (not crash)
     func testBitrateWithZeroBandwidthDoesNotCrash() {
         let mock = MockRNodeTransport()
@@ -827,6 +893,8 @@ final class RNodeUpdateBitrateTests: XCTestCase {
 // MARK: - validateRadioState
 
 final class RNodeValidateRadioStateTests: XCTestCase {
+    /// Asserts validation passes when every reported parameter matches.
+    ///
     /// All reported params match configured → validateRadioState returns true
     func testValidatesOkWhenParamsMatch() {
         let mock = MockRNodeTransport()
@@ -846,6 +914,8 @@ final class RNodeValidateRadioStateTests: XCTestCase {
         XCTAssertTrue(iface.validateRadioState())
     }
 
+    /// Asserts validation passes within the frequency tolerance.
+    ///
     /// Frequency within 100 Hz tolerance is accepted
     func testValidatesOkWithinFrequencyTolerance() {
         let mock = MockRNodeTransport()
@@ -865,6 +935,8 @@ final class RNodeValidateRadioStateTests: XCTestCase {
         XCTAssertTrue(iface.validateRadioState())
     }
 
+    /// Asserts validation fails outside the frequency tolerance.
+    ///
     /// Frequency > 100 Hz off fails validation
     func testValidatesFailsOnFrequencyMismatch() {
         let mock = MockRNodeTransport()
@@ -884,6 +956,8 @@ final class RNodeValidateRadioStateTests: XCTestCase {
         XCTAssertFalse(iface.validateRadioState())
     }
 
+    /// Asserts validation fails on a bandwidth mismatch.
+    ///
     /// Bandwidth mismatch fails
     func testValidatesFailsOnBandwidthMismatch() {
         let mock = MockRNodeTransport()
@@ -903,6 +977,8 @@ final class RNodeValidateRadioStateTests: XCTestCase {
         XCTAssertFalse(iface.validateRadioState())
     }
 
+    /// Asserts validation fails on a radio state mismatch.
+    ///
     /// Radio state mismatch fails
     func testValidatesFailsOnStateMismatch() {
         let mock = MockRNodeTransport()
@@ -926,6 +1002,8 @@ final class RNodeValidateRadioStateTests: XCTestCase {
 // MARK: - SNR quality calculation
 
 final class RNodeSnrQualityTests: XCTestCase {
+    /// Asserts the top of the SNR quality span for SF7 reports 100.
+    ///
     /// Python: sfs=sf-7; q_snr_min=Q_SNR_MIN_BASE - sfs*Q_SNR_STEP = -9 - sfs*2
     /// For SF7: sfs=0, q_snr_min=-9, q_snr_max=6, span=15
     /// snr=6.0 → quality=(6-(-9))/15 * 100 = 100.0
@@ -938,6 +1016,8 @@ final class RNodeSnrQualityTests: XCTestCase {
         XCTAssertEqual(iface.rStatQ!, 100.0, accuracy: 0.1)
     }
 
+    /// Asserts the bottom of the SNR quality span for SF7 reports zero.
+    ///
     /// snr = -9.0 for SF7 → quality = 0.0
     func testSnrQualityAtMinForSF7() {
         let mock = MockRNodeTransport()
@@ -948,6 +1028,8 @@ final class RNodeSnrQualityTests: XCTestCase {
         XCTAssertEqual(iface.rStatQ!, 0.0, accuracy: 0.1)
     }
 
+    /// Asserts an SNR below the span is clamped to zero.
+    ///
     /// snr below min is clamped to 0.0
     func testSnrQualityClampedBelowZero() {
         let mock = MockRNodeTransport()
@@ -962,6 +1044,8 @@ final class RNodeSnrQualityTests: XCTestCase {
 // MARK: - processIncoming: CMD_STAT_CHTM (channel timing)
 
 final class RNodeProcessIncomingChtmTests: XCTestCase {
+    /// Asserts the channel-utilisation frame is decoded field by field.
+    ///
     /// CMD_STAT_CHTM: 11 bytes
     /// ats(2) + atl(2) + cus(2) + cul(2) + crs(1) + nfl(1) + ntf(1)
     func testChtmDecoded() {
@@ -1011,6 +1095,8 @@ final class RNodeProcessIncomingChtmTests: XCTestCase {
 // MARK: - processIncoming: CMD_STAT_PHYPRM
 
 final class RNodeProcessIncomingPhyprmTests: XCTestCase {
+    /// Asserts the physical-parameter frame is decoded field by field.
+    ///
     /// CMD_STAT_PHYPRM: 12 bytes
     /// lst(2)/1000 + lsr(2) + prs(2) + prt(2) + cst(2) + dft(2)
     func testPhyprmDecoded() {
@@ -1040,6 +1126,8 @@ final class RNodeProcessIncomingPhyprmTests: XCTestCase {
 // MARK: - processIncoming: CMD_STAT_CSMA
 
 final class RNodeProcessIncomingCsmaTests: XCTestCase {
+    /// Asserts the CSMA frame is decoded field by field.
+    ///
     /// CMD_STAT_CSMA: 3 bytes [cw_band, cw_min, cw_max]
     func testCsmaDecoded() {
         let mock = MockRNodeTransport()
@@ -1054,6 +1142,8 @@ final class RNodeProcessIncomingCsmaTests: XCTestCase {
 // MARK: - processIncoming: CMD_STAT_TEMP
 
 final class RNodeProcessIncomingTempTests: XCTestCase {
+    /// Asserts a temperature byte is decoded against its offset.
+    ///
     /// CMD_STAT_TEMP: 1 byte: temp = byte - 120
     /// byte=145 → temp=25 (valid: -30..90)
     func testTempDecoded() {
@@ -1063,6 +1153,8 @@ final class RNodeProcessIncomingTempTests: XCTestCase {
         XCTAssertEqual(iface.rTemperature!, 25)
     }
 
+    /// Asserts a temperature outside the valid range decodes to `nil`.
+    ///
     /// temp outside valid range → nil
     func testTempOutOfRangeIsNil() {
         let mock = MockRNodeTransport()
@@ -1093,6 +1185,8 @@ final class RNodeProcessIncomingErrorTests: XCTestCase {
 // MARK: - processIncoming: CMD_ST_ALOCK / CMD_LT_ALOCK echoes
 
 final class RNodeProcessIncomingAlockTests: XCTestCase {
+    /// Asserts the short-term airtime limit the device echoes back is decoded.
+    ///
     /// CMD_ST_ALOCK echo: 2 bytes big-endian uint16 /100.0
     /// 500 → 5.00%
     func testStAlockEchoDecoded() {
@@ -1113,6 +1207,8 @@ final class RNodeProcessIncomingAlockTests: XCTestCase {
 // MARK: - processIncoming: KISS escape decoding inside data frames
 
 final class RNodeKissEscapeDecodingTests: XCTestCase {
+    /// Asserts an escaped FEND inside a data frame decodes back to FEND.
+    ///
     /// Data frame with FESC-TFEND sequence decodes back to FEND
     func testEscapedFendInDataDecoded() {
         let mock = MockRNodeTransport()
@@ -1124,6 +1220,8 @@ final class RNodeKissEscapeDecodingTests: XCTestCase {
         XCTAssertEqual(received, Data([0xC0]))
     }
 
+    /// Asserts an escaped FESC inside a data frame decodes back to FESC.
+    ///
     /// Data frame with FESC-TFESC sequence decodes back to FESC
     func testEscapedFescInDataDecoded() {
         let mock = MockRNodeTransport()
@@ -1172,6 +1270,8 @@ final class RNodeTxQueueTests: XCTestCase {
 // MARK: - hard_reset wire format
 
 final class RNodeHardResetTests: XCTestCase {
+    /// Asserts a hard reset writes the four-byte reset frame.
+    ///
     /// Python: hard_reset sends [FEND, CMD_RESET, 0xF8, FEND]
     func testHardResetSendsCorrectBytes() throws {
         let mock = MockRNodeTransport()
@@ -1251,6 +1351,8 @@ final class RNodeValidateFirmwareTests: XCTestCase {
 // MARK: - processIncoming: multi-frame in one data blob
 
 final class RNodeMultiFrameTests: XCTestCase {
+    /// Asserts two frames arriving in one blob are both handled.
+    ///
     /// Two KISS frames concatenated in one blob are both handled
     func testTwoFramesInOneBlobBothHandled() {
         let mock = MockRNodeTransport()

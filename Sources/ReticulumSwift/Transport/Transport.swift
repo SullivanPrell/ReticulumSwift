@@ -135,11 +135,16 @@ public final class Transport {
     public static let unusedDestinationLinger: TimeInterval = 6 * 60
 
     // Path responsiveness state values.
+    /// Responsiveness of a path that has not been probed yet.
     public static let stateUnknown: UInt8 = 0x00
+    /// Responsiveness of a path whose probes went unanswered.
     public static let stateUnresponsive: UInt8 = 0x01
+    /// Responsiveness of a path that answered its last probe.
     public static let stateResponsive: UInt8 = 0x02
 
+    /// One route to a destination: next hop, hop count and the announce it was learned from.
     public struct PathEntry: Equatable {
+        /// Destination this route leads to.
         public let destinationHash: Data
 
         /// The interface this route leads through—the value routing resolves.
@@ -163,8 +168,11 @@ public final class Transport {
         /// listing (`Reticulum.py:1532`) and for nothing else. Never resolve a route from this
         ///—that's the preceding defect.
         public let nextHopInterfaceName: String
+        /// Hop count from this node to the destination.
         public var hops: UInt8
+        /// Wall-clock time the announce backing this route was last heard.
         public var lastHeard: Date
+        /// Hash of the identity that signed the announce backing this route.
         public let identityHash: Data
         /// Wall-clock time this path expires.
         ///
@@ -293,6 +301,7 @@ public final class Transport {
             self.randomBlobs = randomBlobs
         }
 
+        /// Whether the path has passed its expiry time.
         public var isExpired: Bool { Date() >= expires }
 
         /// Hand-written because `nextHopInterface` is an existential, which the compiler can't synthesise.
@@ -321,6 +330,7 @@ public final class Transport {
     /// forwarded the LRR onto (responder side); subsequent traffic for the
     /// link is forwarded through whichever interface didn't deliver it.
     public struct LinkRoute: Equatable {
+        /// Link this route carries traffic for.
         public let linkID: Data
 
         /// The two interfaces this relayed link runs between—the values routing resolves.
@@ -340,10 +350,12 @@ public final class Transport {
         /// deregistered interface alive, and a vanished peer must stop resolving rather than
         /// falling back to a same-named sibling.
         public weak var initiatorSideInterface: (any Interface)?
+        /// Interface the relay forwarded the link request onto.
         public weak var responderSideInterface: (any Interface)?
 
         /// Display only, never used to resolve a route.
         public let initiatorSideInterfaceName: String
+        /// Name of the responder-side interface, for display only.
         public let responderSideInterfaceName: String
         /// Original destination hash from the LINKREQUEST packet.
         ///
@@ -351,6 +363,7 @@ public final class Transport {
         /// Used by `handleLinkRequestProof` to call `markDestinationUsed`
         /// after a relay node successfully forwards the LRPROOF.
         public let destinationHash: Data
+        /// Wall-clock time traffic for this link was last seen.
         public var lastHeard: Date
 
         /// Whether a link-request proof for this route has passed signature validation.
@@ -384,9 +397,13 @@ public final class Transport {
     ///
     /// Mirrors Python's `Transport.tunnels` table entries.
     public struct TunnelEntry {
+        /// Tunnel identifier, the hash of the peer's public key and interface hash.
         public let tunnelID: Data
+        /// Interface synthesized as the tunnel endpoint.
         public weak var iface: (any Interface)?
+        /// Paths learned through this tunnel, keyed by destination hash.
         public var paths: [Data: PathEntry]
+        /// Wall-clock time this tunnel entry expires.
         public var expires: Date
     }
 
@@ -427,12 +444,17 @@ public final class Transport {
     /// The four announce and path-request rates `rnstatus` reads as `arxs`, `atxs`, `prxs`
     /// and `ptxs`, in bits per second.
     public struct AnnounceSpeeds: Sendable, Equatable {
+        /// Incoming announce rate in bits per second.
         public var announceRx: Double = 0
+        /// Outgoing announce rate in bits per second.
         public var announceTx: Double = 0
+        /// Incoming path-request rate in bits per second.
         public var pathRequestRx: Double = 0
+        /// Outgoing path-request rate in bits per second.
         public var pathRequestTx: Double = 0
     }
 
+    /// Interfaces registered with this transport, in registration order.
     public private(set) var interfaces: [Interface] = []
 
     /// Lowest bitrate (bits/s) among online interfaces, or `nil` before the first successful
@@ -442,8 +464,11 @@ public final class Transport {
     /// Recorded unclamped; ``mediumPathTimeout()`` applies ``minimumBitrate`` at the point of
     /// use, as Python does.
     public private(set) var lowestInterfaceBitrate: Int?
+    /// Destinations registered on this node, keyed by destination hash.
     public private(set) var registeredDestinations: [Data: Destination] = [:]
+    /// Known routes, keyed by destination hash.
     public internal(set) var paths: [Data: PathEntry] = [:]
+    /// Identities recalled for known destinations, keyed by destination hash.
     public private(set) var knownIdentities: [Data: Identity] = [:] // by destination hash
     /// When each known identity was last announced.
     ///
@@ -495,12 +520,15 @@ public final class Transport {
     ///
     /// Set by `Reticulum.start`.
     public var ratchetsDirectory: URL?
+    /// Established links this node owns, keyed by link ID.
     public private(set) var links: [Data: Link] = [:]               // by link id
+    /// Relayed link routes this node forwards, keyed by link ID.
     public private(set) var linkRoutes: [Data: LinkRoute] = [:]     // by link id
     /// Active tunnel entries keyed by tunnel ID (SHA-256 of pubkey+ifaceHash).
     ///
     /// Mirrors Python's `Transport.tunnels` dict.
     public var tunnels: [Data: TunnelEntry] = [:]
+    /// Whether `start()` has run and `stop()` has not.
     public private(set) var isRunning: Bool = false
 
     /// Unix timestamp of the `start()` call.
@@ -606,10 +634,12 @@ public final class Transport {
     private var reverseTable: [Data: (receiveIface: any Interface, outboundIface: any Interface)] = [:]
     private let reverseTableLock = NSLock()
 
-    /// Dedup keys for path requests already processed—`destinationHash
-    /// + tag`. FIFO bounded.
+    /// Bounded FIFO of dedup keys for path requests already processed.
+    ///
+    /// Each key is a destination hash followed by the request tag.
     private var pathRequestTags: [Data] = []
     private var pathRequestTagSet: Set<Data> = []
+    /// Maximum number of path-request dedup keys retained.
     public var pathRequestCacheCap: Int = 4096
 
     /// A destination this node searches for on a peer's behalf, and the peers waiting on that
@@ -644,6 +674,7 @@ public final class Transport {
     /// Bounded to `announceCacheCap` entries (FIFO).
     private var announceCache: [Data] = []
     private var announceCacheSet: Set<Data> = []
+    /// Maximum number of announce dedup keys retained.
     public var announceCacheCap: Int = 4096
 
     /// A forwarded announce pending a single retransmission.
@@ -770,6 +801,7 @@ public final class Transport {
     private var ifaceCurrentTxSpeed: [ObjectIdentifier: Double] = [:]
 
     /// Per-interface announce and path-request rates, filled by ``sampleInterfaceSpeeds(now:)``.
+    ///
     /// Guarded by `metricsLock`, like the two tables above.
     private var ifaceAnnounceSpeeds: [ObjectIdentifier: AnnounceSpeeds] = [:]
     /// Aggregate RX speed across all interfaces (bits/sec).
@@ -869,6 +901,7 @@ public final class Transport {
     // MARK: - Packet PHY stats cache
     // Mirrors Python's Transport.local_client_rssi_cache / snr_cache / q_cache.
     // Capped at LOCAL_CLIENT_CACHE_MAXSIZE = 512 entries.
+    /// Maximum number of entries in each per-packet PHY statistics cache.
     public static let localClientCacheMaxSize: Int = 512
     private var packetRssiCache: [(hash: Data, rssi: Float)] = []
     private var packetSnrCache:  [(hash: Data, snr: Float)] = []
@@ -906,6 +939,7 @@ public final class Transport {
     // `Transport.identity`. For a non-transport node (unless
     // `static_transport_identity` is set) this is a fresh ephemeral identity
     // generated at startup—see `internalIdentity` for the persistent one.
+    /// Identity this transport signs and announces as.
     public var transportIdentity: Identity?
 
     // The persistent on-disk transport identity. Equals `transportIdentity`
@@ -913,15 +947,22 @@ public final class Transport {
     // retains the stable identity (used for example, to derive the RPC auth key so it
     // stays constant across runs). Mirrors Python's `Transport._identity` /
     // `Transport.internal_identity()`.
+    /// Persistent on-disk transport identity, which survives an ephemeral one.
     public var internalIdentity: Identity?
 
     // MARK: - Management destinations
+    /// Probe destination, present only while probes are enabled.
     public private(set) var probeDestination: Destination?
+    /// Remote management destination, present only while remote management is enabled.
     public private(set) var remoteManagementDestination: Destination?
+    /// Identities permitted to reach the remote management destination.
     public var remoteManagementAllowed: [Identity] = []
 
+    /// Called for every valid announce this node receives.
     public var onAnnounceReceived: ((Announce.Decoded, any Interface) -> Void)?
+    /// Called when a packet is delivered to a locally registered destination.
     public var onPacketDelivered: ((Packet, Destination, any Interface) -> Void)?
+    /// Called when a link to a local destination reaches the established state.
     public var onLinkEstablished: ((Link) -> Void)?
 
     /// Fires when a path request lands on a locally registered
@@ -974,6 +1015,7 @@ public final class Transport {
     /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
     private var lastKnownDestinationsClean: Date = .distantPast
 
+    /// Creates an unstarted transport with no interfaces or destinations.
     public init() {}
 
     // MARK: - Announce handlers
@@ -1225,8 +1267,9 @@ public final class Transport {
         }
     }
 
-    /// Mark `destinationHash` as under active search on `interface`'s behalf, and report whether
-    /// some earlier search already holds that claim.
+    /// Claims an active search for `destinationHash` on behalf of `interface`.
+    ///
+    /// Reports whether some earlier search already holds that claim.
     ///
     /// `Transport.py:3533-3572`. Returning `true` is Python's "There is already a waiting path
     /// request … on behalf of path request" branch: the caller logs and returns rather than
@@ -1271,6 +1314,7 @@ public final class Transport {
         discoveryPathRequests = discoveryPathRequests.filter { now <= $0.value.timeout }
     }
 
+    /// Discards every queued announce without sending it.
     public func dropAnnounceQueues() {
         lock.lock()
         announceQueues.removeAll()
@@ -1431,13 +1475,21 @@ public final class Transport {
     /// Mirrors the structure returned by
     /// Python's `Reticulum.get_interface_stats()`.
     public struct InterfaceStats {
+        /// Interface's configured name.
         public let name: String
+        /// Whether the interface is currently online.
         public let isOnline: Bool
+        /// Interface bitrate in bits per second.
         public let bitrate: Int
+        /// Bytes received since the interface came up.
         public let rxBytes: Int
+        /// Bytes sent since the interface came up.
         public let txBytes: Int
+        /// Packets received since the interface came up.
         public let rxPackets: Int
+        /// Packets sent since the interface came up.
         public let txPackets: Int
+        /// Hardware MTU in bytes, or `nil` for interfaces that don't report one.
         public let hwMtu: Int?
         /// Incoming announce frequency in Hz. Mirrors Python `Interface.incoming_announce_frequency()`.
         public let incomingAnnounceFrequency: Double
@@ -1461,7 +1513,9 @@ public final class Transport {
     ///
     /// Mirrors the top-level `rxb`/`txb`/`rxs`/`txs` fields in Python's `Reticulum.get_interface_stats()`.
     public struct TransportStats {
+        /// Total bytes received across all interfaces.
         public let trafficRxBytes: Int
+        /// Total bytes sent across all interfaces.
         public let trafficTxBytes: Int
         /// Aggregate RX speed (bits/sec).
         ///
@@ -1474,20 +1528,31 @@ public final class Transport {
         /// Announce byte, speed and frequency totals: Python's `arxb`, `atxb`, `arxs`,
         /// `atxs`, `arxf` and `atxf` (`Reticulum.py:1583-1588`).
         public let announceRxBytes: Int
+        /// Announce bytes sent.
         public let announceTxBytes: Int
+        /// Incoming announce rate in bits per second.
         public let announceSpeedRx: Double
+        /// Outgoing announce rate in bits per second.
         public let announceSpeedTx: Double
+        /// Incoming announce frequency in Hz.
         public let announceFreqRx: Double
+        /// Outgoing announce frequency in Hz.
         public let announceFreqTx: Double
         /// Path-request totals: `prxb`, `ptxb`, `prxs`, `ptxs`, `prxf`, `ptxf`.
         public let prRxBytes: Int
+        /// Path-request bytes sent.
         public let prTxBytes: Int
+        /// Incoming path-request rate in bits per second.
         public let prSpeedRx: Double
+        /// Outgoing path-request rate in bits per second.
         public let prSpeedTx: Double
+        /// Incoming path-request frequency in Hz.
         public let prFreqRx: Double
+        /// Outgoing path-request frequency in Hz.
         public let prFreqTx: Double
         /// Packets per second over the last sampling interval: `rxpps` and `txpps`.
         public let rxPPS: Int
+        /// Packets sent per second over the last sampling interval.
         public let txPPS: Int
     }
 
@@ -1608,10 +1673,15 @@ public final class Transport {
     ///
     /// Mirrors the dict fields returned by Python's `Reticulum.get_rate_table()`.
     public struct RateTableEntry {
+        /// Destination the rate entry tracks.
         public var destinationHash: Data
+        /// Timestamp of the most recent announce from the destination.
         public var last: TimeInterval
+        /// Number of times the destination has exceeded its announce rate.
         public var rateViolations: Int
+        /// Timestamp until which announces from the destination are dropped.
         public var blockedUntil: TimeInterval
+        /// Timestamps retained for the rate window.
         public var timestamps: [TimeInterval]
     }
 
@@ -1637,11 +1707,13 @@ public final class Transport {
         receipts.append(receipt)
     }
 
+    /// Test helper: number of packet receipts currently tracked.
     public func testReceiptCount() -> Int {
         receiptsLock.lock(); defer { receiptsLock.unlock() }
         return receipts.count
     }
 
+    /// Test helper: seeds the rate table with a single announce at `last`.
     public func testInjectRateEntry(for destinationHash: Data, last: TimeInterval) {
         metricsLock.lock(); defer { metricsLock.unlock() }
         announceRateTable[destinationHash] = AnnounceRateEntry(
@@ -2122,6 +2194,7 @@ public final class Transport {
         tracker(for: interface)?.recordOutgoingAnnounce(size: size)
     }
 
+    /// Notifies that `interface` sent an announce at `t`.
     public func notifyOutgoingAnnounce(on interface: any Interface, at t: TimeInterval,
                                        size: Int = 0) {
         tracker(for: interface)?.recordOutgoingAnnounce(size: size, at: t)
@@ -2134,6 +2207,7 @@ public final class Transport {
         tracker(for: interface)?.recordIncomingPathRequest(size: size)
     }
 
+    /// Notifies that `interface` received a path request at `t`.
     public func notifyIncomingPathRequest(on interface: any Interface, at t: TimeInterval,
                                           size: Int = 0) {
         tracker(for: interface)?.recordIncomingPathRequest(size: size, at: t)
@@ -2146,6 +2220,7 @@ public final class Transport {
         tracker(for: interface)?.recordOutgoingPathRequest(size: size)
     }
 
+    /// Notifies that `interface` sent a path request at `t`.
     public func notifyOutgoingPathRequest(on interface: any Interface, at t: TimeInterval,
                                           size: Int = 0) {
         tracker(for: interface)?.recordOutgoingPathRequest(size: size, at: t)
@@ -2226,6 +2301,7 @@ public final class Transport {
     ///
     /// Mirrors Python's `Reticulum.get_path_table(max_hops:)`.
     public struct PathTableEntry {
+        /// Destination this path leads to.
         public let destinationHash: Data
         /// Python's `path_table[dst][1]` (`received_from`), which is **never None**:
         /// Transport.py:1772-1796 stores `packet.transport_id` when the announce carried
@@ -2233,12 +2309,17 @@ public final class Transport {
         /// `prettyhexrep(path["via"])` unguarded, so a null here is a TypeError in the
         /// Python client, not an empty column—hence non-optional.
         public let via: Data
+        /// Hop count from this node to the destination.
         public let hops: UInt8
+        /// Name of the interface the path was learned on.
         public let interfaceName: String
+        /// Wall-clock time the path was last heard.
         public let lastHeard: Date
+        /// Wall-clock time the path expires.
         public let expires: Date
     }
 
+    /// Returns the path table, optionally limited to routes within `maxHops`.
     public func getPathTable(maxHops: UInt8? = nil) -> [PathTableEntry] {
         lock.lock(); defer { lock.unlock() }
         // Python publishes `str(receiving_interface)`—the display name, "LocalInterface
@@ -2532,6 +2613,7 @@ public final class Transport {
 
     // MARK: - Lifecycle
 
+    /// Adds `interface` to the transport and starts carrying traffic over it.
     public func register(interface: Interface) {
         // register()/deregister() run on network-callback threads (TCP-server
         // accept, I2P peer up/down) and—under stress—can target the SAME
@@ -2781,6 +2863,7 @@ public final class Transport {
         interface.ifacIdentity = try? Identity(privateKeyBytes: key)
     }
 
+    /// Makes `destination` reachable on this node.
     public func register(destination: Destination) {
         lock.lock(); defer { lock.unlock() }
         registeredDestinations[destination.hash] = destination
@@ -2794,6 +2877,7 @@ public final class Transport {
         registeredDestinations.removeValue(forKey: destination.hash)
     }
 
+    /// Tracks `link` so inbound traffic for it is delivered.
     public func register(link: Link) {
         guard let id = link.linkID else { return }
         lock.lock(); defer { lock.unlock() }
@@ -2852,6 +2936,7 @@ public final class Transport {
         restore(path: entry, forDestination: destinationHash)
     }
 
+    /// Recalls `identity` for `destinationHash` as if an announce had carried it.
     public func restore(identity: Identity, forDestination destinationHash: Data, announcedAt: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
         knownIdentities[destinationHash] = identity
@@ -2860,10 +2945,12 @@ public final class Transport {
         }
     }
 
+    /// Restores a persisted ratchet for `destinationHash`.
     public func restore(ratchet: Data, forDestination destinationHash: Data) {
         restore(ratchet: ratchet, forDestination: destinationHash, receivedAt: Date())
     }
 
+    /// Restores a persisted ratchet for `destinationHash`, received at `receivedAt`.
     public func restore(ratchet: Data, forDestination destinationHash: Data, receivedAt: Date) {
         lock.lock(); defer { lock.unlock() }
         knownRatchets[destinationHash] = ratchet
@@ -2974,6 +3061,7 @@ public final class Transport {
         return try identity.encrypt(plaintext, ratchetPublicKey: ratchet)
     }
 
+    /// Errors thrown by transport operations.
     public enum TransportError: Swift.Error { case unknownDestination }
 
     // MARK: - Known destinations persistence
@@ -3177,12 +3265,14 @@ public final class Transport {
         return !matching.isEmpty
     }
 
+    /// Stops tracking `link` and releases its routing state.
     public func unregister(link: Link) {
         guard let id = link.linkID else { return }
         lock.lock(); defer { lock.unlock() }
         links.removeValue(forKey: id)
     }
 
+    /// Starts the transport: interfaces, jobs loop and management destinations.
     public func start() throws {
         startTime = Date().timeIntervalSince1970
         for interface in interfaces { try interface.start() }
@@ -3313,6 +3403,7 @@ public final class Transport {
         }
     }
 
+    /// Stops the jobs loop and every registered interface.
     public func stop() {
         jobsTimer?.cancel()
         jobsTimer = nil
@@ -4947,6 +5038,7 @@ public final class Transport {
     ///     Mirrors Python's `Transport.request_path(recursive=False)`.
     ///     Reserved for future use (Python's recursive handling is
     ///     performed by the receiving transport, not the sender).
+    /// - Throws: An error raised by the interface the request is sent on.
     public func requestPath(
         for destinationHash: Data,
         onInterface: (any Interface)? = nil,
@@ -5737,6 +5829,7 @@ public final class Transport {
         }
     }
 
+    /// Synthesizes a tunnel endpoint for `interface` and re-announces its paths.
     public func synthesizeTunnel(_ interface: any Interface) {
         guard let identity = ownerIdentity else { return }
 

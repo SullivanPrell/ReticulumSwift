@@ -42,6 +42,7 @@ public final class RNPathRemoteClient {
 
     // MARK: - Errors
 
+    /// A failure raised while talking to a remote transport node.
     public enum RemoteError: Error, Equatable, CustomStringConvertible {
         /// rnpath.py:56—the `-W` deadline elapsed waiting for a path to the remote.
         case pathRequestTimedOut
@@ -60,6 +61,7 @@ public final class RNPathRemoteClient {
         /// `-i` was missing, or the file didn't contain an identity.
         case identityUnavailable(String)
 
+        /// The message printed for this failure.
         public var message: String {
             switch self {
             case .pathRequestTimedOut:    return "Path request timed out"
@@ -72,6 +74,7 @@ public final class RNPathRemoteClient {
             }
         }
 
+        /// The message printed for this failure.
         public var description: String { message }
 
         /// Python's exit code for this failure.
@@ -169,9 +172,13 @@ public final class RNPathRemoteClient {
     private let transport: Transport
     private let pathRequestTimeout: TimeInterval
 
-    /// - Parameter pathRequestTimeout: the `-W` value, bounding only the wait for a *path*
-    ///   to the remote. Python leaves both the link-establishment spin and the request spin
-    ///   unbounded (the Link watchdog is what eventually breaks them).
+    /// Creates a client dialling remote transport nodes over `transport`.
+    ///
+    /// - Parameters:
+    ///   - transport: the local transport the link is established from.
+    ///   - pathRequestTimeout: the `-W` value, bounding only the wait for a *path*
+    ///     to the remote. Python leaves both the link-establishment spin and the request spin
+    ///     unbounded (the Link watchdog is what eventually breaks them).
     public init(transport: Transport, pathRequestTimeout: TimeInterval = RNPathApp.defaultTimeout) {
         self.transport = transport
         self.pathRequestTimeout = pathRequestTimeout
@@ -179,8 +186,14 @@ public final class RNPathRemoteClient {
 
     /// `connect_remote` plus the caller's spin-wait, collapsed into one blocking call.
     ///
-    /// - Parameter progress: receives Python's unterminated progress strings, already
-    ///   carrying the trailing space `end=" "` would have added.
+    /// - Parameters:
+    ///   - destinationHash: the remote's management destination.
+    ///   - authIdentity: the identity the link identifies as, or `nil` to stay anonymous.
+    ///   - purpose: which remote request the link is opened for.
+    ///   - progress: receives Python's unterminated progress strings, already
+    ///     carrying the trailing space `end=" "` would have added.
+    /// - Returns: The established link.
+    /// - Throws: `RemoteError` when no path appears, or the link never comes up.
     public func connect(destinationHash: Data,
                         authIdentity: Identity?,
                         purpose: Purpose,

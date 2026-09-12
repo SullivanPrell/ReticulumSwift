@@ -75,6 +75,7 @@ public struct PathStore {
         /// `storage/cache/announces/` holds it.
         public var announceHash: Data
 
+        /// Creates a path table entry.
         public init(destinationHash: Data,
                     timestamp: TimeInterval,
                     receivedFrom: Data,
@@ -195,12 +196,15 @@ public struct PathStore {
         }
     }
 
+    /// The stored path table entries.
     public var entries: [Entry]
 
+    /// Creates a store holding `entries`.
     public init(entries: [Entry] = []) { self.entries = entries }
 
     // MARK: - Snapshot
 
+    /// Captures the routing table of `transport`.
     public static func snapshot(of transport: Transport) -> PathStore {
         // Copy the routing table under Transport's lock, then build entries from the local
         // snapshot (the table is mutated on inbound/jobs threads).
@@ -352,10 +356,12 @@ public struct PathStore {
 
     // MARK: - File I/O
 
+    /// Writes the store to `url`.
     public func write(to url: URL) throws {
         try encoded().write(to: url, options: .atomic)
     }
 
+    /// Reads a store from `url`.
     public static func read(from url: URL) throws -> PathStore {
         try decode(Data(contentsOf: url))
     }

@@ -195,7 +195,9 @@ final class RNStatus152SurfaceTests: XCTestCase {
     }
 
     /// The `-s` help string appears twice—once for the option table, once wrapped
-    /// inside ``RNStatusApp/helpText``. Re-join the wrapped rows and the two must agree,
+    /// inside ``RNStatusApp/helpText``.
+    ///
+    /// Re-join the wrapped rows and the two must agree,
     /// so adding a key to one and not the other fails here rather than shipping.
     func testWrappedSortHelpRejoinsToTheOptionTableSpelling() throws {
         let lines = RNStatusApp.helpText.components(separatedBy: "\n")

@@ -122,6 +122,8 @@ if parsed.flag("--version") {
 
 // MARK: - Options
 
+/// Converts `raw` with `convert`, reporting a parse error when it fails.
+///
 /// argparse's `type=int` / `type=float` conversion failures are parse errors → exit 2,
 /// with the message argparse itself prints: "argument -m/--max: invalid int value: 'x'".
 func requireNumber<T>(_ raw: String?, flag: String, typeName: String,

@@ -119,9 +119,10 @@ final class DeferredRestoreTests: XCTestCase {
                      + "drops such an entry permanently (Transport.py:334,348)")
     }
 
-    /// An entry that failed for a reason an interface can't fix is *not* parked. Otherwise the
-    /// pending set fills with entries that can never install, and the sweep's log line reports a
-    /// problem that isn't one.
+    /// An entry that failed for a reason an interface can't fix is *not* parked.
+    ///
+    /// Otherwise the pending set fills with entries that can never install, and the sweep's
+    /// log line reports a problem that isn't one.
     func testAnEntryWithNoCachedAnnounceIsNotParked() throws {
         let live = makeTransport()
         let iface = LoopbackInterface(name: "eth0")

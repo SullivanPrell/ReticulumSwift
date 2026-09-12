@@ -59,6 +59,7 @@ public enum InterfaceTransportFactories {
     public enum FactoryError: Error, LocalizedError, Equatable {
         case unavailable(family: String, device: String, hint: String)
 
+        /// Human-readable description of the factory failure.
         public var errorDescription: String? {
             switch self {
             case .unavailable(let family, let device, let hint):
@@ -153,6 +154,7 @@ public enum InterfaceConstructionError: Error, LocalizedError, Equatable {
     case missingKey(interface: String, key: String)
     case invalidValue(interface: String, key: String, value: String)
 
+    /// Human-readable description of the construction failure.
     public var errorDescription: String? {
         switch self {
         case .missingKey(let interface, let key):
@@ -171,11 +173,13 @@ public enum InterfaceConstructionError: Error, LocalizedError, Equatable {
 /// only moves bytes, matching what the reference's `self.serial` does for its
 /// `RNodeInterface`.
 public final class SerialRNodeTransport: RNodeTransport {
+    /// Serial device path the RNode is attached to.
     public let device: String
     private let serial: SerialPortTransport
     /// RNode serial runs at 115200 8N1 (`RNodeInterface.py:139`: `speed = 115200`).
     public var baudRate: Int = 115_200
 
+    /// Called with each batch of bytes read from the device.
     public var byteHandler: ((Data) -> Void)?
 
     /// Forwarded straight to the serial port—this adapter adds no failure modes of its own,
@@ -185,18 +189,22 @@ public final class SerialRNodeTransport: RNodeTransport {
         set { serial.onTransportError = newValue }
     }
 
+    /// Creates a transport driving an RNode over a serial port.
     public init(device: String, serial: SerialPortTransport) {
         self.device = device
         self.serial = serial
     }
 
+    /// Opens the serial port.
     public func open() throws {
         try serial.open(port: device, baudRate: baudRate, dataBits: 8, parity: .none, stopBits: 1)
         serial.setReadCallback { [weak self] data in self?.byteHandler?(data) }
     }
 
+    /// Closes the serial port.
     public func close() { serial.close() }
 
+    /// Writes `data` to the serial port.
     public func write(_ data: Data) throws { try serial.write(data) }
 }
 
@@ -212,6 +220,7 @@ public final class SerialRNodeTransport: RNodeTransport {
 /// config *could* construct.
 public final class POSIXSerialPort: SerialPortTransport {
 
+    /// Errors raised by the POSIX serial port.
     public enum SerialError: Error, LocalizedError {
         case openFailed(port: String, errno: Int32)
         case configurationFailed(port: String, errno: Int32)
@@ -221,6 +230,7 @@ public final class POSIXSerialPort: SerialPortTransport {
         case readFailed(errno: Int32)
         case writeFailed(errno: Int32)
 
+        /// Human-readable description of the serial failure.
         public var errorDescription: String? {
             switch self {
             case .openFailed(let port, let err):
@@ -248,18 +258,22 @@ public final class POSIXSerialPort: SerialPortTransport {
     private let lock = NSLock()
     private var errorCallback: ((Error) -> Void)?
 
+    /// Called when the port fails outside a read or write call.
     public var onTransportError: ((Error) -> Void)? {
         get { lock.lock(); defer { lock.unlock() }; return errorCallback }
         set { lock.lock(); errorCallback = newValue; lock.unlock() }
     }
 
+    /// Creates a closed serial port.
     public init() {}
 
+    /// Whether the port is currently open.
     public var isOpen: Bool {
         lock.lock(); defer { lock.unlock() }
         return fd >= 0
     }
 
+    /// Opens `port` with the given line settings.
     public func open(port: String, baudRate: Int, dataBits: Int,
                      parity: SerialParity, stopBits: Int) throws {
         lock.lock(); defer { lock.unlock() }
@@ -346,6 +360,7 @@ public final class POSIXSerialPort: SerialPortTransport {
         if wasOpen { callback?(cause) }
     }
 
+    /// Closes the port and stops the read loop.
     public func close() {
         lock.lock(); defer { lock.unlock() }
         readSource?.cancel()
@@ -353,6 +368,7 @@ public final class POSIXSerialPort: SerialPortTransport {
         if fd >= 0 { Darwin.close(fd); fd = -1 }
     }
 
+    /// Writes `data` to the port and returns the number of bytes written.
     @discardableResult
     public func write(_ data: Data) throws -> Int {
         lock.lock(); let descriptor = fd; lock.unlock()
@@ -372,6 +388,7 @@ public final class POSIXSerialPort: SerialPortTransport {
         return written
     }
 
+    /// Sets the callback invoked with each batch of bytes read.
     public func setReadCallback(_ callback: @escaping (Data) -> Void) {
         lock.lock(); readCallback = callback; lock.unlock()
     }

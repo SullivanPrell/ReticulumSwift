@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the hop-count rules deciding when a path table entry is replaced.
+///
 /// Tests for path table update logic matching Python's behavior:
 /// - New announce with fewer hops should update the path
 /// - New announce with more hops shouldn't update the path
@@ -37,6 +39,8 @@ final class PathUpdateLogicTests: XCTestCase {
         return (t, iface)
     }
 
+    /// Delivers an announce at a chosen hop count straight to the interface handler.
+    ///
     /// Deliver an announce with a specific hop count directly to transport's interface handler
     private func deliverAnnounce(packet: Packet, hops: UInt8, to transport: Transport, on iface: LoopbackInterface) {
         var p = packet; p.hops = hops

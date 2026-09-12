@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the transport-instance branch of the inbound packet filter.
+///
 /// Mirrors Python `Transport.packet_filter`'s transport-instance filter:
 ///
 ///   if packet.transport_id != None and packet.packet_type != ANNOUNCE:

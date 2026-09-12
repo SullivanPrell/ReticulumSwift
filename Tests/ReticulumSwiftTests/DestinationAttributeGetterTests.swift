@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity attribute getters on `Destination`.
+///
 /// Tests for the Python-parity attribute getter methods added to `Destination`:
 ///   destination.hash        → Destination.getHash()
 ///   destination.name        → Destination.getName()

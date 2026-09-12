@@ -26,6 +26,7 @@ public final class RemoteStatusQuery {
 
     // MARK: - Errors
 
+    /// A failure raised while querying a remote instance for status.
     public enum QueryError: Error, Equatable {
         /// No path to the management destination within the timeout. Python: exit 12.
         case noPath
@@ -68,6 +69,7 @@ public final class RemoteStatusQuery {
 
     private let lock = NSLock()
 
+    /// Creates a query against the management destination at `destinationHash`.
     public init(transport: Transport,
                 destinationHash: Data,
                 managementIdentity: Identity,

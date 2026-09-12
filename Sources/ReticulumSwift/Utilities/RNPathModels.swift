@@ -48,6 +48,7 @@ public struct RNPathTableEntry: Equatable {
     /// Python key `"interface"`—`str(receiving_interface)`, that is, `Interface.displayName`.
     public var interfaceName: String
 
+    /// Creates a path table entry.
     public init(destinationHash: Data,
                 timestamp: TimeInterval,
                 via: Data?,
@@ -64,9 +65,11 @@ public struct RNPathTableEntry: Equatable {
 
     /// Bridge from the library's own path table.
     ///
-    /// - Parameter transport: used to resolve `entry.interfaceName` (an `Interface.name`) to
-    ///   the interface's `displayName`, matching Python's `str(receiving_interface)`.
-    ///   When no registered interface matches, the stored short name is kept.
+    /// - Parameters:
+    ///   - entry: The path table entry to bridge.
+    ///   - transport: Used to resolve `entry.interfaceName` to the display name of the
+    ///     interface, matching Python's `str(receiving_interface)`. When no registered
+    ///     interface matches, the stored short name is kept.
     public init(_ entry: Transport.PathTableEntry, resolvingNamesWith transport: Transport?) {
         let resolved = transport?.interfaces.first { $0.name == entry.interfaceName }?.displayName
         self.init(destinationHash: entry.destinationHash,
@@ -148,12 +151,18 @@ public struct RNPathTableEntry: Equatable {
 /// observable insertion order because `-r -j` dumps it directly.
 public struct RNPathRateEntry: Equatable {
 
+    /// Destination the rate is tracked for.
     public var destinationHash: Data
+    /// Time of the most recent announce.
     public var last: TimeInterval
+    /// Number of times the announce rate was exceeded.
     public var rateViolations: Int
+    /// Time until which announces from the destination are blocked.
     public var blockedUntil: TimeInterval
+    /// Times of the announces inside the rate window.
     public var timestamps: [TimeInterval]
 
+    /// Creates a rate table entry.
     public init(destinationHash: Data,
                 last: TimeInterval,
                 rateViolations: Int,
@@ -166,6 +175,8 @@ public struct RNPathRateEntry: Equatable {
         self.timestamps = timestamps
     }
 
+    /// Creates a rate table entry from the library's own.
+    ///
     /// Bridge from ``Transport/RateTableEntry``. Unlike the path table, every field is
     /// already a `TimeInterval` or `Int`, so no `Date` conversion is needed.
     public init(_ entry: Transport.RateTableEntry) {
@@ -176,6 +187,7 @@ public struct RNPathRateEntry: Equatable {
                   timestamps: entry.timestamps)
     }
 
+    /// Returns the entry in its packed representation.
     public func msgpackValue() -> MsgPack.Value {
         .map([
             (.string("hash"),            .bytes(destinationHash)),
@@ -186,6 +198,7 @@ public struct RNPathRateEntry: Equatable {
         ])
     }
 
+    /// Decodes one rate entry, or returns `nil` when the value is malformed.
     public static func decode(_ value: MsgPack.Value) -> RNPathRateEntry? {
         guard let fields = value.asDictionary,
               let hash = fields["hash"]?.asData else { return nil }
@@ -199,6 +212,7 @@ public struct RNPathRateEntry: Equatable {
         )
     }
 
+    /// Decodes a whole rate table, or returns `nil` when the value is malformed.
     public static func decodeTable(_ value: MsgPack.Value) -> [RNPathRateEntry]? {
         guard let elements = value.asArray else { return nil }
         return elements.compactMap { decode($0) }
@@ -226,6 +240,7 @@ public struct RNPathRateEntry: Equatable {
 /// (Transport.py:3578-3584, and `Reticulum.get_blackholed_identities()`).
 public struct RNPathBlackholeEntry: Equatable {
 
+    /// Identity the entry blackholes.
     public var identityHash: Data
     /// Identity hash of whoever issued the blackhole, or nil.
     public var source: Data?
@@ -234,8 +249,10 @@ public struct RNPathBlackholeEntry: Equatable {
     /// Nil **or zero** both render as "indefinitely",
     /// because Python tests `if until:` rather than `if until is not None:`.
     public var until: TimeInterval?
+    /// Reason recorded with the entry, or `nil` when none was given.
     public var reason: String?
 
+    /// Creates a blackhole entry.
     public init(identityHash: Data, source: Data?, until: TimeInterval?, reason: String?) {
         self.identityHash = identityHash
         self.source = source
@@ -243,6 +260,7 @@ public struct RNPathBlackholeEntry: Equatable {
         self.reason = reason
     }
 
+    /// Creates a blackhole entry from the library's own.
     public init(identityHash: Data, entry: Transport.BlackholeEntry) {
         self.init(identityHash: identityHash,
                   source: entry.source,

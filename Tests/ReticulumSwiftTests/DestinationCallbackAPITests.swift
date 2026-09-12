@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity callback setters on `Destination`.
+///
 /// Tests for Destination callback/setter API methods mirroring Python's:
 ///   - `Destination.set_link_established_callback(callback)`
 ///   - `Destination.set_packet_callback(callback)`

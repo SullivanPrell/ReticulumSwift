@@ -10,6 +10,8 @@
 
 import Foundation
 
+/// Formats `--help` output the way Python's `argparse` does.
+///
 /// Byte-faithful reproduction of Python `argparse.HelpFormatter`'s layout.
 ///
 /// The `rn*` utilities are all argparse programs, and their `--help` output is part of
@@ -43,6 +45,7 @@ public enum ArgparseHelp {
         /// prints the invocation alone, which is why `-v, --verbose` has a bare line).
         public let help: String
 
+        /// Creates a help entry for one option or positional.
         public init(invocation: String, help: String = "") {
             self.invocation = invocation
             self.help = help
@@ -68,6 +71,8 @@ public enum ArgparseHelp {
     ///   - program: `parser.prog`.
     ///   - optionals: usage fragments for the flags, in declaration order, for example, `"[-h]"`.
     ///   - positionals: usage fragments for the positionals, for example, `"[full_name]"`.
+    ///   - width: the column the single-line form must fit within before it wraps.
+    /// - Returns: The rendered block, including its trailing blank line.
     public static func usage(program: String,
                              optionals: [String],
                              positionals: [String],

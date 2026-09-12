@@ -35,12 +35,14 @@ import Foundation
 /// accepted.
 public enum RNIDMeta {
 
+    /// A failure raised while validating metadata against a spec.
     public enum MetaError: Error, Equatable, CustomStringConvertible {
         /// Python: `ValueError("Metadata did not pass spec validation")`.
         case specValidationFailed
         /// No Python equivalent—Python's Validator supports far more checks than this port.
         case unsupportedCheck(String)
 
+        /// The message printed for this failure.
         public var description: String {
             switch self {
             case .specValidationFailed:      return "Metadata did not pass spec validation"

@@ -46,11 +46,13 @@ public final class RNIDDataReader: RNIDByteReader {
     private let data: Data
     private var offset: Int
 
+    /// Creates a reader over `data`.
     public init(_ data: Data) {
         self.data = data
         self.offset = 0
     }
 
+    /// Reads up to `count` bytes from the current offset.
     public func read(upTo count: Int) throws -> Data {
         guard count > 0, offset < data.count else { return Data() }
         let end = min(offset + count, data.count)
@@ -61,10 +63,13 @@ public final class RNIDDataReader: RNIDByteReader {
 
 /// An in-memory ``RNIDByteWriter``.
 public final class RNIDDataWriter: RNIDByteWriter {
+    /// Bytes written so far.
     public private(set) var data: Data = Data()
 
+    /// Creates an empty writer.
     public init() {}
 
+    /// Appends `data` and returns the number of bytes written.
     @discardableResult
     public func write(_ data: Data) throws -> Int {
         self.data.append(data)
@@ -76,10 +81,12 @@ public final class RNIDDataWriter: RNIDByteWriter {
 public final class RNIDFileReader: RNIDByteReader {
     private let handle: FileHandle
 
+    /// Opens `url` for reading.
     public init(url: URL) throws {
         handle = try FileHandle(forReadingFrom: url)
     }
 
+    /// Reads up to `count` bytes from the current offset.
     public func read(upTo count: Int) throws -> Data {
         // `FileHandle.read(upToCount:)` may legitimately return a short read; loop so the
         // caller always receives a full chunk until EOF.
@@ -91,6 +98,7 @@ public final class RNIDFileReader: RNIDByteReader {
         return buffer
     }
 
+    /// Closes the underlying file handle.
     public func close() { try? handle.close() }
     deinit { try? handle.close() }
 }
@@ -99,6 +107,7 @@ public final class RNIDFileReader: RNIDByteReader {
 public final class RNIDFileWriter: RNIDByteWriter {
     private let handle: FileHandle
 
+    /// Creates `url` if needed and truncates it for writing.
     public init(url: URL) throws {
         if !FileManager.default.fileExists(atPath: url.path) {
             guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
@@ -109,12 +118,14 @@ public final class RNIDFileWriter: RNIDByteWriter {
         try handle.truncate(atOffset: 0)
     }
 
+    /// Writes `data` and returns the number of bytes written.
     @discardableResult
     public func write(_ data: Data) throws -> Int {
         try handle.write(contentsOf: data)
         return data.count
     }
 
+    /// Closes the underlying file handle.
     public func close() { try? handle.close() }
     deinit { try? handle.close() }
 }
@@ -138,12 +149,15 @@ public protocol RNIDFileSystem: AnyObject {
 
 /// The real file system.
 public final class RNIDRealFileSystem: RNIDFileSystem {
+    /// Creates a file system rooted at the real one.
     public init() {}
 
+    /// Rewrites a leading tilde to the user's home directory.
     public func expandTilde(_ path: String) -> String {
         DaemonBootstrap.expandTilde(path)
     }
 
+    /// Reports whether a regular file exists at `path`.
     public func fileExists(atPath path: String) -> Bool {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
@@ -151,10 +165,12 @@ public final class RNIDRealFileSystem: RNIDFileSystem {
         return exists && !isDirectory.boolValue
     }
 
+    /// Reads the file at `path` as bytes.
     public func readData(atPath path: String) throws -> Data {
         try Data(contentsOf: URL(fileURLWithPath: path))
     }
 
+    /// Reads the file at `path` as UTF-8 text.
     public func readText(atPath path: String) throws -> String {
         let data = try readData(atPath: path)
         guard let text = String(data: data, encoding: .utf8) else {
@@ -163,14 +179,17 @@ public final class RNIDRealFileSystem: RNIDFileSystem {
         return text
     }
 
+    /// Writes `data` to `path`, replacing any existing file.
     public func writeData(_ data: Data, atPath path: String) throws {
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
+    /// Opens `path` for streaming reads.
     public func makeReader(atPath path: String) throws -> RNIDByteReader {
         try RNIDFileReader(url: URL(fileURLWithPath: path))
     }
 
+    /// Opens `path` for streaming writes.
     public func makeWriter(atPath path: String) throws -> RNIDByteWriter {
         try RNIDFileWriter(url: URL(fileURLWithPath: path))
     }
@@ -181,29 +200,35 @@ public final class RNIDRealFileSystem: RNIDFileSystem {
 /// `expandTilde` rewrites a leading `~` to `/home/test` so path-expansion asymmetries
 /// (`-g` and `-e`'s `-w` are *not* expanded; `-d`'s `-w` is) are directly assertable.
 public final class RNIDMemoryFileSystem: RNIDFileSystem {
+    /// Files this file system holds, keyed by path.
     public private(set) var files: [String: Data]
     /// Substituted for a leading `~`.
     ///
     /// Python: the user's home directory.
     public var homeDirectory: String
 
+    /// Creates a file system preloaded with `files`.
     public init(files: [String: Data] = [:], homeDirectory: String = "/home/test") {
         self.files = files
         self.homeDirectory = homeDirectory
     }
 
+    /// Rewrites a leading tilde to `homeDirectory`.
     public func expandTilde(_ path: String) -> String {
         guard path == "~" || path.hasPrefix("~/") else { return path }
         return homeDirectory + path.dropFirst(1)
     }
 
+    /// Reports whether a file exists at `path`.
     public func fileExists(atPath path: String) -> Bool { files[path] != nil }
 
+    /// Reads the file at `path` as bytes.
     public func readData(atPath path: String) throws -> Data {
         guard let data = files[path] else { throw RNIDFileSystemError.notFound(path) }
         return data
     }
 
+    /// Reads the file at `path` as UTF-8 text.
     public func readText(atPath path: String) throws -> String {
         let data = try readData(atPath: path)
         guard let text = String(data: data, encoding: .utf8) else {
@@ -212,12 +237,15 @@ public final class RNIDMemoryFileSystem: RNIDFileSystem {
         return text
     }
 
+    /// Writes `data` to `path`, replacing any existing file.
     public func writeData(_ data: Data, atPath path: String) throws { files[path] = data }
 
+    /// Opens `path` for streaming reads.
     public func makeReader(atPath path: String) throws -> RNIDByteReader {
         RNIDDataReader(try readData(atPath: path))
     }
 
+    /// Opens `path` for streaming writes.
     public func makeWriter(atPath path: String) throws -> RNIDByteWriter {
         let writer = MemoryWriter(path: path, fileSystem: self)
         files[path] = Data()
@@ -245,10 +273,12 @@ public final class RNIDMemoryFileSystem: RNIDFileSystem {
     }
 }
 
+/// File system failures, worded as the Python tool reports them.
 public enum RNIDFileSystemError: Error, CustomStringConvertible, Equatable {
     case notFound(String)
     case notUTF8(String)
 
+    /// Message matching the one Python prints for this failure.
     public var description: String {
         switch self {
         case .notFound(let path): return "[Errno 2] No such file or directory: '\(path)'"
@@ -271,17 +301,23 @@ public protocol RNIDOutput: AnyObject {
 
 /// Captures output for assertions.
 public final class RNIDCapturingOutput: RNIDOutput {
+    /// Whole lines captured so far.
     public private(set) var lines: [String] = []
+    /// Partial writes captured so far.
     public private(set) var partials: [String] = []
 
+    /// Creates an empty capture.
     public init() {}
 
+    /// Captures a whole line.
     public func line(_ text: String) { lines.append(text) }
+    /// Captures a partial write.
     public func partial(_ text: String) { partials.append(text) }
 
     /// All ``line(_:)`` output joined with newlines, as it would appear on a terminal.
     public var text: String { lines.joined(separator: "\n") }
 
+    /// Discards everything captured so far.
     public func reset() { lines.removeAll(); partials.removeAll() }
 }
 

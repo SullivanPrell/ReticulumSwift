@@ -58,6 +58,9 @@ public enum WeaveCmd {
 
 // MARK: - Weave Event Codes
 
+// The members below are a code table named after the reference's own constants;
+// a per-constant summary would only restate the name.
+// swift-format-ignore: AllPublicDeclarationsHaveDocumentation
 /// 16-bit event codes carried inside `WDCL_T_LOG` frames.
 /// Python: `Evt.*`
 public enum WeaveEvt {
@@ -112,11 +115,16 @@ public enum WeaveEvt {
 /// A structured log / event frame received from a Weave device.
 /// Python: `LogFrame`
 public struct WeaveLogFrame {
+    /// Time the device stamped the log entry, in seconds.
     public let timestamp: TimeInterval   // seconds (raw value / 1000)
+    /// Severity level of the log entry.
     public let level:     UInt8
+    /// Event code identifying what the device logged.
     public let event:     UInt16
+    /// Payload the event carried.
     public let data:      Data
 
+    /// Creates a log frame from its decoded fields.
     public init(timestamp: TimeInterval, level: UInt8, event: UInt16, data: Data) {
         self.timestamp = timestamp; self.level = level
         self.event = event; self.data = data
@@ -131,10 +139,14 @@ public final class WeaveEndpoint {
     /// Maximum number of packets held in the receive queue. Python: `QUEUE_LEN = 1024`
     public static let queueLen: Int = 1024
 
+    /// Weave address of the endpoint.
     public let endpointAddr: Data
+    /// Time an advertisement for this endpoint was last seen.
     public var lastSeen:     Date
+    /// Switch the endpoint was last reachable through.
     public var viaSwitchID:  Data?
 
+    /// Creates an endpoint first seen now.
     public init(endpointAddr: Data) {
         self.endpointAddr = endpointAddr
         self.lastSeen     = Date()
@@ -186,6 +198,7 @@ public final class WDCLTransport {
     private let transport: SerialPortTransport
     private let decoder:   HDLC.FrameDecoder
     private let onlineFlag = LockedFlag(false)
+    /// Whether the serial port is open.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -204,6 +217,7 @@ public final class WDCLTransport {
 
     // MARK: - Init
 
+    /// Creates a transport driving `transport`.
     public init(transport: SerialPortTransport) {
         let key             = Curve25519.Signing.PrivateKey()
         self.signingKey     = key
@@ -218,6 +232,7 @@ public final class WDCLTransport {
 
     // MARK: - Port management
 
+    /// Opens `port` and starts reading WDCL frames.
     public func open(port: String) throws {
         try transport.open(port: port, baudRate: WDCLTransport.speed,
                            dataBits: 8, parity: .none, stopBits: 1)
@@ -225,6 +240,7 @@ public final class WDCLTransport {
         isOnline = true
     }
 
+    /// Stops reading and closes the port.
     public func close() {
         isOnline = false
         transport.close()
@@ -348,9 +364,13 @@ public final class WeaveDevice {
 
     // MARK: - Stats
 
+    /// Processor load the device reports, as a fraction.
     public private(set) var cpuLoad:  Double = 0.0
+    /// Total memory in bytes the device reports.
     public private(set) var memTotal: Int    = 0
+    /// Free memory in bytes the device reports.
     public private(set) var memFree:  Int    = 0
+    /// Memory in bytes currently in use on the device.
     public var memUsed: Int { max(0, memTotal - memFree) }
 
     /// Used memory as a percentage of total, rounded to two decimals.
@@ -368,9 +388,12 @@ public final class WeaveDevice {
 
     // MARK: - Back-references (weak to break cycles)
 
+    /// Serial connection this device is reached over.
     public weak var connection:    WDCLTransport?
+    /// Interface presenting this device to Transport.
     public weak var rnsInterface:  WeaveInterface?
 
+    /// Creates a device with no connection yet.
     public init() {}
 
     // MARK: - Discovery / Handshake
@@ -620,10 +643,13 @@ public final class WeaveInterface: Interface {
 
     // MARK: - Interface protocol
 
+    /// Configured interface name.
     public let  name:    String
+    /// Interface bitrate in bits per second.
     public var  bitrate: Int = WeaveInterface.bitrateGuess
 
     private let onlineFlag = LockedFlag(false)
+    /// Whether the device connection is up.
     public private(set) var isOnline:  Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -634,24 +660,37 @@ public final class WeaveInterface: Interface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Bytes received since the interface came up.
     public var rxBytes:   Int { counters.rxBytes }
+    /// Bytes sent since the interface came up.
     public var txBytes:   Int { counters.txBytes }
+    /// Packets received since the interface came up.
     public var rxPackets: Int { counters.rxPackets }
+    /// Packets sent since the interface came up.
     public var txPackets: Int { counters.txPackets }
 
+    /// Hardware MTU in bytes.
     public var hwMtu:           Int? { WeaveInterface.hwMtuValue }
+    /// Called with each packet decoded from the device.
     public var inboundHandler:  ((Packet, any Interface) -> Void)? = nil
+    /// Called with each frame received before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)? = nil
 
+    /// Identity deriving the IFAC key, when IFAC is configured.
     public var ifacIdentity: Identity? = nil
+    /// IFAC key, when a network name or passphrase is configured.
     public var ifacKey:      Data?     = nil
+    /// IFAC token size in bytes.
     public var ifacSize:     Int       = WeaveInterface.defaultIfacSize
 
+    /// Whether this interface asks Transport to synthesize a tunnel.
     public var wantsTunnel: Bool  = false
+    /// Tunnel this interface is an endpoint of, once one is synthesized.
     public var tunnelID:    Data? = nil
 
     // MARK: - Weave state
 
+    /// Serial device path the Weave switch is reached on.
     public let port: String
 
     /// WDCL serial transport (HDLC framing + signing key).
@@ -719,6 +758,7 @@ public final class WeaveInterface: Interface {
 
     // MARK: - Init
 
+    /// Creates an interface driving the Weave switch on `port`.
     public init(name: String, port: String, transport: SerialPortTransport) {
         self.name          = name
         self.port          = port
@@ -794,6 +834,7 @@ public final class WeaveInterface: Interface {
 
     /// Not used on the parent interface—peers handle outgoing traffic.
     public func send(_ packet: Packet) throws {}
+    /// No-op: outgoing traffic is framed by the per-peer interfaces.
     public func processOutgoing(_ data: Data) {}
 
     // MARK: - Peer count
@@ -871,10 +912,13 @@ public final class WeaveInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - Interface protocol
 
+    /// Name identifying this peer.
     public let  name:    String
+    /// Interface bitrate in bits per second.
     public var  bitrate: Int = WeaveInterface.bitrateGuess
 
     private let onlineFlag = LockedFlag(true)
+    /// Whether the owning interface is up and the peer is still advertised.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -885,20 +929,32 @@ public final class WeaveInterfacePeer: Interface, SpawnedInterface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Bytes received from this peer.
     public var rxBytes:   Int { counters.rxBytes }
+    /// Bytes sent to this peer.
     public var txBytes:   Int { counters.txBytes }
+    /// Packets received from this peer.
     public var rxPackets: Int { counters.rxPackets }
+    /// Packets sent to this peer.
     public var txPackets: Int { counters.txPackets }
 
+    /// Hardware MTU in bytes, inherited from the owning interface.
     public var hwMtu:             Int? { owner?.hwMtu }
+    /// Called with each packet decoded from this peer.
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
+    /// Called with each frame received before packet decoding.
     public var rawInboundHandler: ((Data,   any Interface) -> Void)? = nil
 
+    /// Identity deriving the IFAC key, inherited from the owning interface.
     public var ifacIdentity: Identity? = nil
+    /// IFAC key, inherited from the owning interface.
     public var ifacKey:      Data?     = nil
+    /// IFAC token size in bytes.
     public var ifacSize:     Int       = WeaveInterface.defaultIfacSize
 
+    /// Whether this interface asks Transport to synthesize a tunnel.
     public var wantsTunnel: Bool  = false
+    /// Tunnel this interface is an endpoint of, once one is synthesized.
     public var tunnelID:    Data? = nil
 
     // MARK: - Peer metadata
@@ -930,7 +986,9 @@ public final class WeaveInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - Back-reference
 
+    /// Weave interface that spawned this peer.
     public weak var owner: WeaveInterface?
+    /// Interface that spawned this peer.
     public var spawningInterface: (any Interface)? { owner }
 
     private let lock = NSLock()

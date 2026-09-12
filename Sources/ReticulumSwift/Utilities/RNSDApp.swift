@@ -30,7 +30,9 @@ public enum RNSDApp {
 
     /// Python: `rnsd.py` `parser = argparse.ArgumentParser(description=…)`, prog inferred from argv[0].
     public static let appName: String = "rnsd"
+    /// Program name reported by `rnir`.
     public static let rnirAppName: String = "rnir"
+    /// Program name reported by `rnpkg`.
     public static let rnpkgAppName: String = "rnpkg"
 
     /// Python: `rnsd.py:64`.
@@ -133,6 +135,8 @@ public enum RNSDApp {
         public var exampleConfig: Bool
         /// Python: `--version` (an `action='version'` that prints and exits).
         public var version: Bool
+        /// Whether help was requested.
+        ///
         /// `argparse`'s implicit `-h/--help`.
         public var help: Bool
 
@@ -145,6 +149,7 @@ public enum RNSDApp {
         /// delta entirely so the config file's `loglevel` is used verbatim.
         public var effectiveVerbosity: Int? { service ? nil : verbosityDelta }
 
+        /// Creates a set of parsed options.
         public init(configDir: String? = nil,
                     verbose: Int = 0,
                     quiet: Int = 0,
@@ -182,6 +187,8 @@ public enum RNSDApp {
 
         var takesValue: Bool { if case .value = kind { return true }; return false }
 
+        /// Option strings as `argparse` renders them in the option list.
+        ///
         /// `argparse`'s `_format_action_invocation`: option strings joined with ", ",
         /// each followed by the metavar when the option takes a value.
         var invocation: String {
@@ -193,6 +200,8 @@ public enum RNSDApp {
             }
         }
 
+        /// Option as `argparse` renders it in the usage line.
+        ///
         /// `argparse`'s `_format_actions_usage`: `[<first option string>]`, plus the metavar.
         var usagePart: String {
             switch kind {
@@ -215,6 +224,8 @@ public enum RNSDApp {
     /// pre-parity Swift `-c` meant a config *file*, so it's deliberately not carried over.
     static let configDirectoryAliases: [String] = ["--config-dir", "-d"]
 
+    /// Returns the options a tool variant declares.
+    ///
     /// The declaration list, in `argparse` order. `-h/--help` is `argparse`'s implicit one and
     /// is always listed first.
     static func optionSpecs(_ variant: Variant) -> [OptionSpec] {
@@ -264,11 +275,14 @@ public enum RNSDApp {
 
     // MARK: - Parsing
 
-    /// Parse argv (**without** the executable name) into ``Options``.
+    /// Parses `argv`, without the executable name, into ``Options``.
     ///
-    /// - Parameter variant: which tool this parse serves. An option that tool doesn't
-    ///   declare draws an unrecognized-argument error (exit 2), the way `argparse` answers
-    ///   one.
+    /// - Parameters:
+    ///   - argv: Arguments to parse, without the executable name.
+    ///   - variant: Which tool this parse serves. An option that tool does not declare draws
+    ///     an unrecognized-argument error, the way `argparse` answers one.
+    /// - Returns: The parsed options.
+    /// - Throws: `ArgumentParser.Error` when an argument is unrecognized or malformed.
     public static func parse(_ argv: [String], variant: Variant) throws -> Options {
         let specs = optionSpecs(variant)
         let normalised = try normalise(argv, specs: specs)
@@ -315,7 +329,11 @@ public enum RNSDApp {
     /// rewriting them up front is what keeps them out of `usage:` and out of the
     /// abbreviation candidate pool.
     ///
-    /// - Parameter specs: unused, retained so the signature stays stable for callers.
+    /// - Parameters:
+    ///   - argv: Arguments to rewrite.
+    ///   - specs: The declared options. Unused, and kept so the signature stays stable.
+    /// - Returns: `argv` with the aliases rewritten.
+    /// - Throws: `ArgumentParser.Error` when an alias is given without its value.
     static func normalise(_ argv: [String], specs: [OptionSpec]) throws -> [String] {
         var result: [String] = []
         var optionsTerminated = false
@@ -394,6 +412,8 @@ public enum RNSDApp {
 
     // MARK: - argparse text rendering
 
+    /// Column width help output is wrapped to.
+    ///
     /// `argparse`'s default output width: `shutil.get_terminal_size().columns - 2` with the
     /// usual 80-column fallback.
     static let helpWidth: Int = 78
@@ -476,6 +496,8 @@ public enum RNSDApp {
         return lines.joined(separator: "\n")
     }
 
+    /// Returns the version line a tool variant prints.
+    ///
     /// `argparse`'s `action='version'` output, without a trailing newline.
     ///
     /// Python emits `RNS.__version__` (1.4.0). The Swift port emits ``Reticulum/version``—the
@@ -485,6 +507,7 @@ public enum RNSDApp {
         versionText(program: variant.appName, version: version)
     }
 
+    /// Returns the version line a named program prints.
     public static func versionText(program: String, version: String = Reticulum.version) -> String {
         "\(program) \(version)"
     }

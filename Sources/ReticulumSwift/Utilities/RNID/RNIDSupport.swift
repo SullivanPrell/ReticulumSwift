@@ -26,6 +26,8 @@ extension RNIDApp.Result: Error {}
 
 public extension RNIDApp {
 
+    /// The encodings a key can be written in.
+    ///
     /// The five values `create_rsg`'s `output` parameter accepts.
     /// Python: `if not output in ["bin", "hex", "base32", "base256", "base64"]` (rnid.py:489).
     enum OutputFormat: String, Equatable, CaseIterable {
@@ -156,6 +158,7 @@ public extension RNIDApp {
         /// Python: `-t <seconds>`, defaulting to `RNS.Transport.PATH_REQUEST_TIMEOUT`.
         public var timeout: TimeInterval = Transport.pathRequestTimeout
 
+        /// Creates an option set holding the reference defaults.
         public init() {}
     }
 }

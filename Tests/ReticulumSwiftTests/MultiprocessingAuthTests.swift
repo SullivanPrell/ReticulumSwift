@@ -31,6 +31,8 @@ import XCTest
 /// CPython 3.14.5 produced the golden vectors below.
 final class MultiprocessingAuthTests: XCTestCase {
 
+    /// The fixed key every case in this file authenticates with.
+    ///
     /// authkey = bytes(range(32))
     private let authkey = Data((0..<32).map { UInt8($0) })
 

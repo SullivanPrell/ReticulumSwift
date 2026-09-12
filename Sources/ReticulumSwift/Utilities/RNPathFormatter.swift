@@ -158,6 +158,8 @@ public enum RNPathFormatter {
 
     // MARK: - Blackhole list (-b / -p)
 
+    /// Renders how long a path stays blocked.
+    ///
     /// Python: rnpath.py:189—`f"for {prettytime(max(0, until-now))}"` when `until` is
     /// *truthy*, else `"indefinitely"`. An `until` of exactly 0 is falsy in Python and so
     /// renders "indefinitely", not "for 0s".
@@ -275,6 +277,8 @@ public enum RNPathFormatter {
         return "[" + objects.map { "{\($0)}" }.joined(separator: ", ") + "]"
     }
 
+    /// Renders the announce rate table as JSON.
+    ///
     /// Python: `json.dumps(table)` for the rate table (rnpath.py:327-333), applied *after*
     /// the sort. Key order: hash, last, rate_violations, blocked_until, timestamps.
     public static func rateTableJSON(_ entries: [RNPathRateEntry]) -> String {

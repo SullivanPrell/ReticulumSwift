@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Transport tunnel system.
+///
 /// Tests for the Transport tunnel system:
 ///   * synthesizeTunnel()—sends a PLAIN DATA packet to rnstransport.tunnel.synthesize
 ///   * tunnel_synthesize_handler—validates the packet, creates a TunnelEntry

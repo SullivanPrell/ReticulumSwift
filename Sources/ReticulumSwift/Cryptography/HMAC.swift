@@ -11,13 +11,16 @@
 import Foundation
 import CryptoKit
 
+/// HMAC-SHA256 authentication and constant-time verification.
 public enum HMACSHA256 {
+    /// Returns the HMAC-SHA256 of `data` under `key`.
     public static func authenticate(_ data: Data, key: Data) -> Data {
         let symmetric = SymmetricKey(data: key)
         let mac = CryptoKit.HMAC<SHA256>.authenticationCode(for: data, using: symmetric)
         return Data(mac)
     }
 
+    /// Returns whether `expected` is the HMAC-SHA256 of `data` under `key`.
     public static func verify(_ data: Data, key: Data, expected: Data) -> Bool {
         let computed = authenticate(data, key: key)
         return constantTimeEquals(computed, expected)

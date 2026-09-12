@@ -24,10 +24,10 @@ public struct RNXExecution: Equatable {
     /// `IndexError`), which is what an empty interactive line produces.
     public var spawned: Bool
 
-    /// `process.
+    /// Exit status of the command, from `process.returncode`.
     ///
-    /// returncode`. After `terminate()` + `wait()` this is a negative signal
-    /// number on Unix (-15 for SIGTERM); Python passes it straight through.
+    /// After `terminate()` + `wait()` this is a negative signal number on Unix (-15 for
+    /// SIGTERM); Python passes it straight through.
     public var returnCode: Int?
 
     /// Captured stdout, or nil for Python's terminate-but-still-running branch
@@ -45,6 +45,7 @@ public struct RNXExecution: Equatable {
     /// concluded-timestamp rule testable without a clock.
     public var timedOut: Bool
 
+    /// Creates an execution result.
     public init(spawned: Bool,
                 returnCode: Int? = nil,
                 stdout: Data? = nil,

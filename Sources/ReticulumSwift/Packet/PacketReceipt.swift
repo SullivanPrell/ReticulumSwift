@@ -18,6 +18,7 @@ import Foundation
 /// `RNS.PacketReceipt`.
 public final class PacketReceipt {
 
+    /// Delivery state of a sent packet.
     public enum Status: Sendable { case sent, delivered, failed, culled }
 
     // MARK: - Wire sizes
@@ -40,9 +41,13 @@ public final class PacketReceipt {
     /// Truncated 16-byte hash used as the packet's identity on wire.
     public let truncatedHash: Data
 
+    /// Time the packet was sent.
     public let sentAt: Date
+    /// Time delivery concluded, or `nil` while it is outstanding.
     public private(set) var concludedAt: Date?
+    /// Current delivery state.
     public private(set) var status: Status = .sent
+    /// Whether a proof for the packet has arrived.
     public private(set) var proved: Bool = false
 
     /// The inbound proof `Packet` that concluded this receipt, when the proof arrived as
@@ -83,6 +88,7 @@ public final class PacketReceipt {
     /// arrived before this callback was set (synchronous loopback), it
     /// is replayed immediately on assignment.
     private var unsafeOnDelivery: ((PacketReceipt) -> Void)?
+    /// Called when the packet is proved delivered.
     public var onDelivery: ((PacketReceipt) -> Void)? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnDelivery }
         set {
@@ -98,6 +104,7 @@ public final class PacketReceipt {
         }
     }
     private var unsafeOnTimeout: ((PacketReceipt) -> Void)?
+    /// Called when no proof arrives before the timeout.
     public var onTimeout: ((PacketReceipt) -> Void)? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnTimeout }
         set { stateLock.lock(); unsafeOnTimeout = newValue; stateLock.unlock() }
@@ -124,6 +131,7 @@ public final class PacketReceipt {
 
     // MARK: - Timeout
 
+    /// Whether the delivery timeout has elapsed.
     public var isTimedOut: Bool { sentAt.addingTimeInterval(timeout) < Date() }
 
     /// Check whether the receipt has timed out.
@@ -156,9 +164,12 @@ public final class PacketReceipt {
     /// destination's identity, marks the receipt delivered.
     /// Mirrors Python's `PacketReceipt.validate_proof` (EXPL_LENGTH branch).
     ///
-    /// - Parameter packet: the inbound proof packet, when one is available. Recorded on
-    ///   ``proofPacket`` so callers can read its PHY metadata, matching Python's
-    ///   `validate_proof(proof, proof_packet)`.
+    /// - Parameters:
+    ///   - proof: The proof payload, a packet hash followed by a signature.
+    ///   - packet: The inbound proof packet, when one is available. Recorded on
+    ///     ``proofPacket`` so callers can read its physical-layer metadata, matching
+    ///     `validate_proof(proof, proof_packet)`.
+    /// - Returns: Whether the proof verified.
     @discardableResult
     func validateExplicitProof(_ proof: Data, packet: Packet? = nil) -> Bool {
         guard status == .sent else { return false }

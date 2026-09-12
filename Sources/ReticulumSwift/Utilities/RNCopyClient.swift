@@ -46,6 +46,7 @@ public struct RNCopyProgress: Equatable {
     /// the one line that inserts " in <prettytime>" (rncp.py:590).
     public let elapsed: TimeInterval?
 
+    /// Creates a progress report for a transfer.
     public init(fraction: Double, transferredBytes: Int, totalBytes: Int,
                 speed: Double, phySpeed: Double, done: Bool, elapsed: TimeInterval? = nil) {
         self.fraction = fraction
@@ -69,6 +70,8 @@ public struct RNCopyProgress: Equatable {
 /// Python ordinals: NONE 0, QUEUED 1, ADVERTISED 2, TRANSFERRING 3, AWAITING_PROOF 4,
 /// ASSEMBLING 5, COMPLETE 6, FAILED 7, CORRUPT 8.
 enum RNCopyResourceStatus {
+    /// Returns whether `status` is earlier than transferring.
+    ///
     /// `status < RNS.Resource.TRANSFERRING`
     static func isBelowTransferring(_ status: ResourceTransfer.Status) -> Bool {
         switch status {
@@ -85,6 +88,8 @@ enum RNCopyResourceStatus {
         }
     }
 
+    /// Returns whether `status` is complete or later.
+    ///
     /// `status >= RNS.Resource.COMPLETE`
     static func isAtLeastComplete(_ status: ResourceTransfer.Status) -> Bool {
         switch status {
@@ -181,11 +186,16 @@ final class RNCopyLinkOpener {
 /// closures.
 public final class RNCopySender {
 
+    /// Stage of the send reported to `onStage`.
     public typealias Stage = RNCopyStage
+    /// Progress report passed to `onProgress`.
     public typealias Progress = RNCopyProgress
 
+    /// Settings for one send.
     public struct Configuration {
+        /// Identity used for the transfer.
         public var identity: Identity
+        /// Address of the remote destination.
         public var destinationHash: Data
         /// The local path, exactly as typed.
         ///
@@ -197,6 +207,7 @@ public final class RNCopySender {
         /// `not -C/--no-compress`.
         public var autoCompress: Bool
 
+        /// Creates a send configuration.
         public init(identity: Identity,
                     destinationHash: Data,
                     filePath: String,
@@ -210,6 +221,7 @@ public final class RNCopySender {
         }
     }
 
+    /// Result of a completed send.
     public enum Outcome: Equatable {
         case completed(bytes: Int, duration: TimeInterval)
         /// "File not found", exit 1. Python: rncp.py:636-638—checked before Reticulum starts.
@@ -230,7 +242,9 @@ public final class RNCopySender {
         case startFailed(String)
     }
 
+    /// Called as the transfer moves between stages.
     public var onStage: ((Stage) -> Void)?
+    /// Called with progress updates while the file transfers.
     public var onProgress: ((Progress) -> Void)?
     /// Fires once per 0.1 s poll during a wait that has nothing else to show, so the CLI can
     /// advance the Braille spinner (`print("\b\b"+syms[i]+" ")`, rncp.py:663,692,727).
@@ -251,6 +265,7 @@ public final class RNCopySender {
     private var link: Link?
     private var transfer: ResourceTransfer?
 
+    /// Creates a sender for one file transfer.
     public init(transport: Transport,
                 fileSystem: RNCopyFileSystem = RNCopyDiskFileSystem(),
                 configuration: Configuration,
@@ -279,6 +294,7 @@ public final class RNCopySender {
         try? l?.teardown()
     }
 
+    /// Runs the send to completion and returns its outcome.
     public func run() -> Outcome {
         // Python: file_path = os.path.expanduser(file)—no abspath.
         let filePath = RNCopyApp.expandUser(configuration.filePath, home: fileSystem.homeDirectoryPath)
@@ -386,23 +402,30 @@ public final class RNCopySender {
 /// The fetching half of `rncp`—Python's `fetch()` (rncp.py:359-614).
 public final class RNCopyFetcher {
 
+    /// Stage of the fetch reported to `onStage`.
     public typealias Stage = RNCopyStage
+    /// Progress report passed to `onProgress`.
     public typealias Progress = RNCopyProgress
 
+    /// Settings for one fetch.
     public struct Configuration {
+        /// Identity used for the transfer.
         public var identity: Identity
+        /// Address of the remote destination.
         public var destinationHash: Data
         /// The path to ask the listener for.
         ///
         /// Travels as a msgpack **str**—Python's
         /// handler calls `str.startswith` on it, so a msgpack bin would raise remotely.
         public var remotePath: String
+        /// Seconds to wait for a path and a link.
         public var timeout: TimeInterval
         /// `-s/--save`, already absolutised and validated.
         public var savePath: String?
         /// `-O/--overwrite`.
         public var allowOverwrite: Bool
 
+        /// Creates a fetch configuration.
         public init(identity: Identity,
                     destinationHash: Data,
                     remotePath: String,
@@ -418,6 +441,7 @@ public final class RNCopyFetcher {
         }
     }
 
+    /// Result of a completed fetch.
     public enum Outcome: Equatable {
         case completed(savedTo: String, bytes: Int, duration: TimeInterval)
         /// "Path not found", exit 1.
@@ -436,7 +460,9 @@ public final class RNCopyFetcher {
         case saveFailed(RNCopyError)
     }
 
+    /// Called as the transfer moves between stages.
     public var onStage: ((Stage) -> Void)?
+    /// Called with progress updates while the file transfers.
     public var onProgress: ((Progress) -> Void)?
     /// Fires with the plain-`print` diagnostics Python emits from inside
     /// `fetch_resource_concluded` (rncp.py:491,501,511,520,524).
@@ -463,6 +489,7 @@ public final class RNCopyFetcher {
     private var savedPath: String?
     private var saveError: RNCopyError?
 
+    /// Creates a fetcher for one file transfer.
     public init(transport: Transport,
                 fileSystem: RNCopyFileSystem = RNCopyDiskFileSystem(),
                 configuration: Configuration,
@@ -473,6 +500,7 @@ public final class RNCopyFetcher {
         self.tick = tick
     }
 
+    /// Cancels the fetch.
     public func cancel() {
         stateLock.lock(); let t = transfer; let l = link; stateLock.unlock()
         t?.cancel()
@@ -486,6 +514,7 @@ public final class RNCopyFetcher {
         try? l?.teardown()
     }
 
+    /// Runs the fetch to completion and returns its outcome.
     public func run() -> Outcome {
         let opener = RNCopyLinkOpener(transport: transport,
                                       destinationHash: configuration.destinationHash,

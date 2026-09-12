@@ -77,11 +77,16 @@ public enum InterfaceMode: UInt8, Sendable, Equatable {
 ///
 /// Mirrors the four values Python reads off an `RNodeInterface` at `Discovery.py:188-192`.
 public struct DiscoveryRadioParameters: Equatable, Sendable {
+    /// Centre frequency in hertz.
     public let frequency: Int
+    /// Channel bandwidth in hertz.
     public let bandwidth: Int
+    /// LoRa spreading factor.
     public let spreadingFactor: Int
+    /// LoRa coding-rate denominator.
     public let codingRate: Int
 
+    /// Creates a radio parameter set from its four values.
     public init(frequency: Int, bandwidth: Int, spreadingFactor: Int, codingRate: Int) {
         self.frequency = frequency
         self.bandwidth = bandwidth
@@ -90,6 +95,7 @@ public struct DiscoveryRadioParameters: Equatable, Sendable {
     }
 }
 
+/// The behaviour every Reticulum interface offers to Transport.
 public protocol Interface: AnyObject {
     var name: String { get }
 
@@ -411,6 +417,7 @@ public protocol MtuAutoconfiguringInterface: Interface {
 /// directly connected peer in the 3-byte LINKREQUEST MTU signalling, so the stale `>` was a
 /// live disagreement about link MTU with any 1.5.x peer, not a cosmetic difference.
 public enum RNSInterfaceMtu {
+    /// Returns the MTU tier `bitrate` qualifies for, or `nil` when it qualifies for none.
     public static func optimised(forBitrate bitrate: Int) -> Int? {
         if bitrate >= 1_000_000_000 { return 524_288 }
         else if bitrate >= 750_000_000 { return 262_144 }

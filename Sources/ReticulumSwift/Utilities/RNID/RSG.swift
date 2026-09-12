@@ -108,10 +108,12 @@ public enum RSG {
         /// Python: `signed_data["meta"]["pubkey"]`—the signer's 64-byte public blob.
         public var pubkey: Data? { metaValue("pubkey")?.asData }
 
+        /// Returns the metadata value stored under `key`, or `nil` when it is absent.
         public func metaValue(_ key: String) -> MsgPack.Value? {
             meta.first { $0.0 == key }?.1
         }
 
+        /// Returns whether the metadata carries `key`.
         public func hasMetaKey(_ key: String) -> Bool { meta.contains { $0.0 == key } }
 
         // MARK: Codec
@@ -134,6 +136,7 @@ public enum RSG {
             return SignedData(entries: entries)
         }
 
+        /// Returns whether two signed payloads are equal.
         public static func == (lhs: SignedData, rhs: SignedData) -> Bool {
             guard lhs.entries.count == rhs.entries.count else { return false }
             for index in 0..<lhs.entries.count {
@@ -156,6 +159,8 @@ public enum RSG {
         /// Python: an open file handle, hashed with `hashlib.file_digest`.
         case file(RNIDByteReader)
 
+        /// Whether the message counts as present under Python's truthiness rules.
+        ///
         /// Python truthiness of the `message` argument: an open file handle is always
         /// truthy, but `b""` and `""` are falsy and trip `validate_rsg`'s guard.
         var isTruthy: Bool {
@@ -204,6 +209,8 @@ public enum RSG {
         }
     }
 
+    /// Encoded form of a generated signature.
+    ///
     /// `create_rsg`'s return value. Python yields `bytes` for bin/hex/base32/base64 and a
     /// `str` for base256; the text forms are byte-identical either way, so the port models
     /// the four encoded formats as text.
@@ -222,10 +229,14 @@ public enum RSG {
 
     /// Python: `validate_rsg` returns the 3-tuple `(valid, signed_data, signing_identity)`.
     public struct ValidationResult {
+        /// Whether the signature verified.
         public let isValid: Bool
+        /// The signed payload, or `nil` when it could not be parsed.
         public let signedData: SignedData?
+        /// Identity that signed the payload, or `nil` when it could not be recovered.
         public let signingIdentity: Identity?
 
+        /// Creates a validation result.
         public init(isValid: Bool, signedData: SignedData?, signingIdentity: Identity?) {
             self.isValid = isValid
             self.signedData = signedData
@@ -236,6 +247,7 @@ public enum RSG {
         static let rejected = ValidationResult(isValid: false, signedData: nil, signingIdentity: nil)
     }
 
+    /// Errors raised while generating or validating a signature.
     public enum RSGError: Error, Equatable {
         /// Python: `TypeError("Invalid output format for rsg creation")`.
         case invalidOutputFormat

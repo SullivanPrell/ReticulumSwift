@@ -33,6 +33,7 @@ import Foundation
 ///    including the silent drop (no response at all) for an unidentified peer.
 public final class RNXListener {
 
+    /// A failure raised while starting the listener.
     public enum ListenerError: Error, Equatable {
         /// Python: "Allowed destination length is invalid, must be 32 hexadecimal
         /// characters (16 bytes)."—rnx.py:85. Carries the length actually seen.
@@ -75,6 +76,7 @@ public final class RNXListener {
     /// Injected clock, so result timestamps are assertable.
     var now: () -> TimeInterval = { Date().timeIntervalSince1970 }
 
+    /// Creates a listener serving commands over `transport`.
     public init(identity: Identity,
                 transport: Transport,
                 executor: any RNXCommandExecutor,

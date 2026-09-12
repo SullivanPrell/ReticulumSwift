@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity accessors on `ResourceTransfer`.
+///
 /// Tests for ResourceTransfer accessor properties mirroring Python's
 /// Resource.get_progress(), get_transfer_size(), get_data_size(), and so on
 final class ResourceAccessorTests: XCTestCase {

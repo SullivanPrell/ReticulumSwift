@@ -18,6 +18,7 @@ import Foundation
 
 // MARK: - Protocol constants
 
+/// Message types carried over an `rnsh` channel.
 public enum RNSHProtocol {
     /// RNS application name used to build rnsh destinations.
     /// Python: APP_NAME = "rnsh"
@@ -99,9 +100,13 @@ public final class RNSHNoopMessage: MessageBase {
 public final class RNSHWindowSizeMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(2) }
 
+    /// Terminal height in rows.
     public var rows: Int? = nil
+    /// Terminal width in columns.
     public var cols: Int? = nil
+    /// Terminal width in pixels.
     public var hpix: Int? = nil
+    /// Terminal height in pixels.
     public var vpix: Int? = nil
 
     public override func pack() throws -> Data {
@@ -147,8 +152,11 @@ public final class RNSHExecuteCommandMessage: MessageBase {
     public var term: String? = nil
     /// Terminal size: rows, cols, horizontal pixels, vertical pixels.
     public var rows: Int? = nil
+    /// Terminal width in columns.
     public var cols: Int? = nil
+    /// Terminal width in pixels.
     public var hpix: Int? = nil
+    /// Terminal height in pixels.
     public var vpix: Int? = nil
 
     public override func pack() throws -> Data {
@@ -215,10 +223,14 @@ public final class RNSHExecuteCommandMessage: MessageBase {
 public final class RNSHStreamDataMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(4) }
 
+    /// Largest stream identifier that fits in the stream header.
     public static let streamIDMax: UInt16 = 0x3FFF
 
+    /// Stream this chunk belongs to.
     public var streamID: UInt16 = 0
+    /// Chunk payload.
     public var data: Data = Data()
+    /// Whether this chunk ends the stream.
     public var eof: Bool = false
 
     public override func pack() throws -> Data {
@@ -246,6 +258,7 @@ public final class RNSHStreamDataMessage: MessageBase {
 public final class RNSHVersionInfoMessage: MessageBase {
     public override class var typeID: UInt16 { RNSHProtocol.makeMessageType(5) }
 
+    /// Software version reported by the peer.
     public var swVersion: String = ""
     /// Defaults to the current protocol version constant.
     public var protocolVersion: Int = RNSHProtocol.protocolVersion

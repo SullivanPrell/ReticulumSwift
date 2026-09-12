@@ -76,42 +76,52 @@ public final class LocalManagementSource: RNPathManagementSource {
 
     private let reticulum: Reticulum
 
+    /// Creates a source reading from an in-process Reticulum instance.
     public init(reticulum: Reticulum) {
         self.reticulum = reticulum
     }
 
+    /// Hash of this instance's transport identity, or `nil` when it has none.
     public var localTransportIdentityHash: Data? { reticulum.transport.transportIdentity?.hash }
 
+    /// Returns the path timeout used for a medium-bitrate interface.
     public func mediumPathTimeout() -> TimeInterval { reticulum.getMediumPathTimeout() }
 
+    /// Returns the known paths, limited to `maxHops` when one is given.
     public func pathTable(maxHops: UInt8?) throws -> [RNPathTableEntry] {
         reticulum.getPathTable(maxHops: maxHops).map {
             RNPathTableEntry($0, resolvingNamesWith: reticulum.transport)
         }
     }
 
+    /// Returns the announce rate table.
     public func rateTable() throws -> [RNPathRateEntry] {
         reticulum.getRateTable().map(RNPathRateEntry.init)
     }
 
+    /// Returns the blackholed identities.
     public func blackholedIdentities() throws -> [RNPathBlackholeEntry] {
         RNPathBlackholeEntry.list(from: reticulum.getBlackholedIdentities())
     }
 
+    /// Drops the known path to a destination.
     @discardableResult
     public func dropPath(_ destinationHash: Data) throws -> Bool {
         reticulum.dropPath(for: destinationHash)
     }
 
+    /// Drops every path routed through a transport node.
     @discardableResult
     public func dropAllVia(_ transportHash: Data) throws -> Int {
         reticulum.dropAllVia(transportHash: transportHash)
     }
 
+    /// Drops every queued announce.
     public func dropAnnounceQueues() throws {
         reticulum.dropAnnounceQueues()
     }
 
+    /// Blackholes an identity, until a deadline when one is given.
     public func blackholeIdentity(_ identityHash: Data, until: TimeInterval?, reason: String?) throws -> Bool? {
         // Reticulum.blackholeIdentity takes a `Date?`, not a `TimeInterval?`.
         reticulum.blackholeIdentity(identityHash,
@@ -119,14 +129,17 @@ public final class LocalManagementSource: RNPathManagementSource {
                                     reason: reason)
     }
 
+    /// Removes an identity from the blackhole list.
     public func unblackholeIdentity(_ identityHash: Data) throws -> Bool? {
         reticulum.unblackholeIdentity(identityHash)
     }
 
+    /// Returns the next hop toward a destination, or `nil` when no path is known.
     public func nextHop(for destinationHash: Data) throws -> Data? {
         reticulum.getNextHop(for: destinationHash)
     }
 
+    /// Returns the interface the next hop toward a destination is reached on.
     public func nextHopInterfaceName(for destinationHash: Data) throws -> String? {
         reticulum.getNextHopIfName(for: destinationHash)
     }
@@ -145,43 +158,53 @@ public final class LocalManagementSource: RNPathManagementSource {
 public final class RPCManagementSource: RNPathManagementSource {
 
     private let client: RPCClient
+    /// Hash of the local transport identity, or `nil` when it has none.
     public let localTransportIdentityHash: Data?
 
+    /// Creates a source reading from a remote instance over RPC.
     public init(client: RPCClient, localTransportIdentityHash: Data?) {
         self.client = client
         self.localTransportIdentityHash = localTransportIdentityHash
     }
 
+    /// Returns the path timeout used for a medium-bitrate interface.
     public func mediumPathTimeout() -> TimeInterval {
         InstanceConnection.mediumPathTimeout(rpc: client, transport: nil)
     }
 
+    /// Returns the known paths, limited to `maxHops` when one is given.
     public func pathTable(maxHops: UInt8?) throws -> [RNPathTableEntry] {
         RNPathTableEntry.decodeTable(try client.pathTable(maxHops: maxHops)) ?? []
     }
 
+    /// Returns the announce rate table.
     public func rateTable() throws -> [RNPathRateEntry] {
         RNPathRateEntry.decodeTable(try client.rateTable()) ?? []
     }
 
+    /// Returns the blackholed identities.
     public func blackholedIdentities() throws -> [RNPathBlackholeEntry] {
         RNPathBlackholeEntry.list(from: try client.blackholedIdentities())
     }
 
+    /// Drops the known path to a destination.
     @discardableResult
     public func dropPath(_ destinationHash: Data) throws -> Bool {
         try client.dropPath(destinationHash: destinationHash)
     }
 
+    /// Drops every path routed through a transport node.
     @discardableResult
     public func dropAllVia(_ transportHash: Data) throws -> Int {
         try client.dropAllVia(transportHash: transportHash)
     }
 
+    /// Drops every queued announce.
     public func dropAnnounceQueues() throws {
         try client.dropAnnounceQueues()
     }
 
+    /// Blackholes an identity, until a deadline when one is given.
     public func blackholeIdentity(_ identityHash: Data, until: TimeInterval?, reason: String?) throws -> Bool? {
         // Python: {"blackhole_identity": bin16, "until": float|nil, "reason": str|nil}
         //         → true | nil | false, returned verbatim by the daemon's rpc_loop.
@@ -193,6 +216,7 @@ public final class RPCManagementSource: RNPathManagementSource {
         return RPCManagementSource.triState(reply)
     }
 
+    /// Removes an identity from the blackhole list.
     public func unblackholeIdentity(_ identityHash: Data) throws -> Bool? {
         let reply = try client.call(.map([
             (.string("unblackhole_identity"), .bytes(identityHash)),
@@ -200,10 +224,12 @@ public final class RPCManagementSource: RNPathManagementSource {
         return RPCManagementSource.triState(reply)
     }
 
+    /// Returns the next hop toward a destination, or `nil` when no path is known.
     public func nextHop(for destinationHash: Data) throws -> Data? {
         try client.nextHop(destinationHash: destinationHash)
     }
 
+    /// Returns the interface the next hop toward a destination is reached on.
     public func nextHopInterfaceName(for destinationHash: Data) throws -> String? {
         try client.nextHopInterfaceName(destinationHash: destinationHash)
     }

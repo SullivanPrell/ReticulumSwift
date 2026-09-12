@@ -48,6 +48,7 @@ public final class FileLogSink {
     ///   - precise: Python's `pt=True`—millisecond timestamps, and the timestamp is emitted
     ///     even when `timestamps` is false.
     ///   - date: the instant to format. Python always uses "now"; injectable here for tests.
+    /// - Returns: The formatted line, without a trailing newline.
     public static func formatLogLine(_ message: String,
                                      level: Reticulum.LogLevel,
                                      timestamps: Bool = Reticulum.logTimestamps,
@@ -125,6 +126,7 @@ public final class FileLogSink {
     /// `log()` three times—recursive is mandatory, not an optimisation.
     private let lock = NSRecursiveLock()
 
+    /// Creates a sink writing to `fileURL` and rotating it at `maxSize`.
     public init(fileURL: URL,
                 maxSize: Int = RNSDApp.logMaxSize,
                 fileManager: FileManager = .default,
@@ -227,9 +229,11 @@ public final class FileLogSink {
         try fileManager.moveItem(at: fileURL, to: rotatedFileURL)
     }
 
+    /// A failure raised when the log file cannot be opened.
     public enum SinkError: Error, CustomStringConvertible {
         case couldNotOpen(String)
 
+        /// The message printed for this failure.
         public var description: String {
             switch self {
             case .couldNotOpen(let path): return "could not open log file at \(path)"

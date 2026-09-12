@@ -12,6 +12,7 @@ import Foundation
 
 // MARK: - Errors
 
+/// Errors raised by the serial interface.
 public enum SerialInterfaceError: Error {
     case portNotFound(String)
     case portOpenFailed(String)
@@ -42,20 +43,29 @@ public final class SerialInterface: Interface {
 
     // MARK: - Class constants
 
+    /// Maximum bytes written to the serial port in one call.
+    ///
     /// Python: `MAX_CHUNK = 32768`
     public static let maxChunk: Int = 32_768
 
+    /// Default IFAC authentication field size in bytes.
+    ///
     /// Python: `DEFAULT_IFAC_SIZE = 8`
     public static let defaultIfacSize: Int = 8
 
+    /// Hardware maximum transmission unit in bytes.
+    ///
     /// Python: `self.HW_MTU = 564`
     public static let hwMtuConstant: Int = 564
 
     // MARK: - Interface protocol properties
 
+    /// Interface name as it appears in configuration and status output.
     public let  name:    String
+    /// Nominal interface bitrate in bits per second.
     public var  bitrate: Int
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -66,21 +76,33 @@ public final class SerialInterface: Interface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes:   Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes:   Int { counters.txBytes }
+    /// Total packets received on this interface.
     public var rxPackets: Int { counters.rxPackets }
+    /// Total packets transmitted on this interface.
     public var txPackets: Int { counters.txPackets }
 
+    /// Hardware maximum transmission unit in bytes, or `nil` when unconstrained.
     public var hwMtu: Int? { SerialInterface.hwMtuConstant }
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data,   any Interface) -> Void)? = nil
 
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity? = nil
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey:      Data?     = nil
+    /// IFAC authentication field size in bytes.
     public var ifacSize:     Int       = SerialInterface.defaultIfacSize
 
+    /// Whether the interface asks Transport to establish a tunnel over it.
     public var wantsTunnel: Bool  = false
+    /// Identifier of the transport tunnel established over this interface.
     public var tunnelID:    Data? = nil
 
     // MARK: - Serial configuration

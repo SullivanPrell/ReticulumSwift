@@ -35,6 +35,7 @@ import CryptoKit
 /// and use it through the same Token construction as `Identity.encrypt`.
 public final class Link {
 
+    /// Lifecycle state of a link.
     public enum Status: Sendable {
         case pending    // LRR sent, awaiting proof
         case handshake  // proof received, awaiting RTT
@@ -43,6 +44,7 @@ public final class Link {
         case closed     // cleanly closed
         case failed     // timed out or error
     }
+    /// Which end of the link this instance is.
     public enum Role: Sendable { case initiator, responder }
 
     /// Why the link was torn down.
@@ -58,6 +60,7 @@ public final class Link {
     /// Nil while active.
     /// Serialized by `stateLock`; internal under-lock code uses `unsafeTeardownReason`.
     private var unsafeTeardownReason: TeardownReason?
+    /// Why the link was torn down, or `nil` while it is up.
     public private(set) var teardownReason: TeardownReason? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeTeardownReason }
         set { stateLock.lock(); unsafeTeardownReason = newValue; stateLock.unlock() }
@@ -82,20 +85,36 @@ public final class Link {
 
     // MARK: - Cipher mode constants (Python Link.MODE_*)
 
+    /// AES-128 in CBC mode.
+    ///
     /// Python: `Link.MODE_AES128_CBC = 0x00`
     public static let modeAes128Cbc:  UInt8 = 0x00
+    /// AES-256 in CBC mode.
+    ///
     /// Python: `Link.MODE_AES256_CBC = 0x01`
     public static let modeAes256Cbc:  UInt8 = 0x01
+    /// AES-256 in GCM mode.
+    ///
     /// Python: `Link.MODE_AES256_GCM = 0x02`
     public static let modeAes256Gcm:  UInt8 = 0x02
+    /// Reserved for a one-time-pad mode.
+    ///
     /// Python: `Link.MODE_OTP_RESERVED = 0x03`
     public static let modeOtpReserved: UInt8 = 0x03
+    /// Reserved for a post-quantum mode.
+    ///
     /// Python: `Link.MODE_PQ_RESERVED_1 = 0x04`
     public static let modePqReserved1: UInt8 = 0x04
+    /// Reserved for a post-quantum mode.
+    ///
     /// Python: `Link.MODE_PQ_RESERVED_2 = 0x05`
     public static let modePqReserved2: UInt8 = 0x05
+    /// Reserved for a post-quantum mode.
+    ///
     /// Python: `Link.MODE_PQ_RESERVED_3 = 0x06`
     public static let modePqReserved3: UInt8 = 0x06
+    /// Reserved for a post-quantum mode.
+    ///
     /// Python: `Link.MODE_PQ_RESERVED_4 = 0x07`
     public static let modePqReserved4: UInt8 = 0x07
 
@@ -250,10 +269,12 @@ public final class Link {
         return hashable
     }
 
+    /// Which end of the link this instance is.
     public let role: Role
     /// Current link status. `stateLock` serializes reads and writes; internal code
     /// holding the lock uses `unsafeStatus` directly (the lock is non-recursive).
     private var unsafeStatus: Status = .pending
+    /// Current lifecycle state of the link.
     public private(set) var status: Status {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeStatus }
         set { stateLock.lock(); unsafeStatus = newValue; stateLock.unlock() }
@@ -268,16 +289,24 @@ public final class Link {
     /// Initiator's ephemeral X25519 (key agreement) and Ed25519 (signing,
     /// only used by responder side, where it's the owning identity's key).
     public let prv: Curve25519.KeyAgreement.PrivateKey
+    /// Signing key this end proves its identity with.
     public let sigPrv: Curve25519.Signing.PrivateKey
 
+    /// Public key agreement key, as wire bytes.
     public var pubBytes: Data { prv.publicKey.rawRepresentation }
+    /// Public signing key, as wire bytes.
     public var sigPubBytes: Data { sigPrv.publicKey.rawRepresentation }
 
+    /// Key agreement key of the far end.
     public private(set) var peerPub: Curve25519.KeyAgreement.PublicKey?
+    /// Key agreement key of the far end, as wire bytes.
     public private(set) var peerPubBytes: Data?
+    /// Signing key of the far end.
     public private(set) var peerSigPub: Curve25519.Signing.PublicKey?
+    /// Signing key of the far end, as wire bytes.
     public private(set) var peerSigPubBytes: Data?
 
+    /// Link identifier, derived once the handshake completes.
     public private(set) var linkID: Data?
     private var unsafeDerivedKey: Data?
     /// The 64-byte HKDF-derived session key.
@@ -289,6 +318,7 @@ public final class Link {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeDerivedKey }
         set { stateLock.lock(); unsafeDerivedKey = newValue; stateLock.unlock() }
     }
+    /// Measured round-trip time in seconds.
     public private(set) var rtt: TimeInterval?
 
     /// Cipher mode used for this link.
@@ -318,7 +348,9 @@ public final class Link {
             / Constants.aes128BlockSize * Constants.aes128BlockSize - 1
     }
 
+    /// Time the link request was sent.
     public var requestTime: Date?
+    /// Time the link reached `.active`.
     public var establishedAt: Date?
 
     /// Hop count to the link's far end, available on both initiator and
@@ -383,19 +415,21 @@ public final class Link {
     /// code holding the lock must use `unsafeEstablishmentTimeout`—`stateLock` is
     /// not recursive.
     private var unsafeEstablishmentTimeout: TimeInterval = Link.establishmentTimeoutPerHop
+    /// Seconds to wait for the far end before the link fails.
     public var establishmentTimeout: TimeInterval {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeEstablishmentTimeout }
         set { stateLock.lock(); unsafeEstablishmentTimeout = newValue; stateLock.unlock() }
     }
 
-    /// Fires when the link transitions to `.
+    /// Fires when the link transitions to `.active`.
     ///
-    /// active`. If the link is already
-    /// active when the callback is set (synchronous loopback), it replays.
+    /// If the link is already active when the callback is set (synchronous loopback), it replays.
     public var onEstablished: ((Link) -> Void)? {
         didSet { if status == .active { onEstablished?(self) } }
     }
+    /// Fires when the link closes, however it was torn down.
     public var onClosed: ((Link) -> Void)?
+    /// Fires with each data payload received on the link.
     public var onDataReceived: ((Data, Link) -> Void)?
     /// Called when the link times out (establishment or stale).
     ///
@@ -403,6 +437,7 @@ public final class Link {
     /// watchdog takes and clears this callback while the caller that just
     /// created the link is still installing it.
     private var unsafeOnTimeout: ((Link) -> Void)?
+    /// Fires when the link times out, during establishment or once stale.
     public var onTimeout: ((Link) -> Void)? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnTimeout }
         set { stateLock.lock(); unsafeOnTimeout = newValue; stateLock.unlock() }
@@ -436,9 +471,9 @@ public final class Link {
         effectiveKeepalive * TimeInterval(Link.staleFactor)
     }
 
-    /// Timestamp when the link transitioned to `.
+    /// Timestamp when the link transitioned to `.active`.
     ///
-    /// active`. Mirrors Python `Link.activated_at`.
+    /// Mirrors Python `Link.activated_at`.
     /// This is the same moment as `establishedAt`; exposed as `activatedAt` for API parity.
     public var activatedAt: Date? { establishedAt }
 
@@ -453,6 +488,7 @@ public final class Link {
     ///
     /// Mirrors Python `Link.expected_rate`.
     private var unsafeExpectedRate: Double?
+    /// Expected in-flight data rate in bits per second.
     public private(set) var expectedRate: Double? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeExpectedRate }
         set { stateLock.lock(); unsafeExpectedRate = newValue; stateLock.unlock() }
@@ -623,6 +659,7 @@ public final class Link {
 
     // MARK: - Resource strategy (mirrors Python Link.resource_strategy)
 
+    /// How a link treats incoming resources it did not request.
     public enum ResourceStrategy: UInt8 { case acceptNone = 0, acceptApp = 1, acceptAll = 2 }
 
     /// Controls how incoming (non-request, non-response) resources are handled.
@@ -832,6 +869,7 @@ public final class Link {
         return ch
     }
 
+    /// Failures raised by link operations.
     public enum LinkError: Swift.Error, Equatable {
         case malformedRequest
         case malformedProof
@@ -1193,6 +1231,7 @@ public final class Link {
         return responderSigPub.isValidSignature(signature, for: signedData)
     }
 
+    /// Validates a link-request proof and completes the handshake.
     public func validateProof(_ packet: Packet) throws {
         guard role == .initiator else { throw LinkError.invalidState }
         guard status == .pending else { throw LinkError.invalidState }
@@ -1330,18 +1369,21 @@ public final class Link {
         stateLock.unlock()
     }
 
+    /// Encrypts `plaintext` with the link session key.
     public func encrypt(_ plaintext: Data) throws -> Data {
         stateLock.lock(); let t = token; stateLock.unlock()
         guard let t else { throw LinkError.notActive }
         return try t.encrypt(plaintext)
     }
 
+    /// Decrypts `ciphertext` with the link session key.
     public func decrypt(_ ciphertext: Data) throws -> Data {
         stateLock.lock(); let t = token; stateLock.unlock()
         guard let t else { throw LinkError.notActive }
         return try t.decrypt(ciphertext)
     }
 
+    /// Closes the link and tells the far end.
     public func close() {
         // Snapshot the terminal decision + clear the session key atomically under the
         // lock; run stopWatchdog / markPathUnresponsive / onClosed OUTSIDE it.
@@ -1444,6 +1486,7 @@ public final class Link {
     /// Mirrors Python's `Link.teardown_reason` (direct attribute access).
     public func getTeardownReason() -> TeardownReason? { teardownReason }
 
+    /// Returns how long the link has been established, or `nil` before it is.
     public func getAge() -> TimeInterval? {
         guard let at = establishedAt else { return nil }
         return Date().timeIntervalSince(at)
@@ -1458,6 +1501,7 @@ public final class Link {
         return Date().timeIntervalSince(last)
     }
 
+    /// Returns the time in seconds since inbound traffic was last seen.
     public func noInboundFor() -> TimeInterval {
         // Use establishedAt as the baseline when available (matches Python's
         // `last_inbound = max(self.last_inbound, activated_at)`). Fall back

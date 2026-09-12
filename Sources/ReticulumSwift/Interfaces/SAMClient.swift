@@ -12,21 +12,25 @@ import Foundation
 
 // MARK: - SAM reply types
 
+/// Outcome of a SAM handshake.
 public enum SAMHelloResult: Equatable {
     case ok(String)         // associated: SAM version string
     case failure(String)    // associated: RESULT= value
 }
 
+/// Outcome of a SAM session request.
 public enum SAMSessionResult: Equatable {
     case ok(String)         // associated: base64-encoded I2P destination
     case failure(String)
 }
 
+/// Outcome of a SAM stream request.
 public enum SAMStreamResult: Equatable {
     case ok
     case failure(String)
 }
 
+/// Outcome of a SAM naming lookup.
 public enum SAMNamingResult: Equatable {
     case ok(String)         // associated: base64-encoded I2P destination (VALUE=)
     case failure(String)
@@ -62,6 +66,8 @@ public enum SAMClient {
         "SESSION CREATE STYLE=STREAM ID=\(sessionID) DESTINATION=TRANSIENT\n"
     }
 
+    /// Returns the SAM command that opens an outbound stream.
+    ///
     /// Outbound (client) tunnel connect request.
     /// i2plib: `STREAM CONNECT ID={} DESTINATION={} SILENT={}\n`
     public static func streamConnectLine(sessionID: String,
@@ -69,12 +75,16 @@ public enum SAMClient {
         "STREAM CONNECT ID=\(sessionID) DESTINATION=\(destination) SILENT=false\n"
     }
 
+    /// Returns the SAM command that accepts an inbound stream.
+    ///
     /// Inbound (server) accept request.
     /// i2plib: `STREAM ACCEPT ID={} SILENT={}\n`
     public static func streamAcceptLine(sessionID: String) -> String {
         "STREAM ACCEPT ID=\(sessionID) SILENT=false\n"
     }
 
+    /// Returns the SAM command that resolves a name to a destination.
+    ///
     /// Resolve a `.i2p` / `.b32.i2p` name to a full base64 destination.
     /// i2plib: `NAMING LOOKUP NAME={}\n`
     public static func namingLookupLine(name: String) -> String {
@@ -91,6 +101,8 @@ public enum SAMClient {
 
     // MARK: - Response parsers
 
+    /// Parses a handshake reply line.
+    ///
     /// Parse `HELLO REPLY …`
     public static func parseHelloReply(_ line: String) -> SAMHelloResult {
         guard let result = extractValue(for: "RESULT", in: line) else {
@@ -103,6 +115,8 @@ public enum SAMClient {
         return .ok(version)
     }
 
+    /// Parses a session status line.
+    ///
     /// Parse `SESSION STATUS …`
     public static func parseSessionStatus(_ line: String) -> SAMSessionResult {
         guard let result = extractValue(for: "RESULT", in: line) else {
@@ -115,6 +129,8 @@ public enum SAMClient {
         return .ok(dest)
     }
 
+    /// Parses a stream status line.
+    ///
     /// Parse `STREAM STATUS …`
     public static func parseStreamStatus(_ line: String) -> SAMStreamResult {
         guard let result = extractValue(for: "RESULT", in: line) else {

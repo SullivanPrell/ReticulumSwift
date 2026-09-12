@@ -39,6 +39,7 @@ public extension RNXApp {
     static let allowedIdentitiesFileName: String = "allowed_identities"
 
     /// Directories searched, in order, for ``allowedIdentitiesFileName``.
+    ///
     /// Python: rnx.py:97-102—each goes through `os.path.expanduser`, first hit wins.
     static let allowedIdentitiesSearchPaths: [String] = ["/etc/rnx", "~/.config/rnx", "~/.rnx"]
 

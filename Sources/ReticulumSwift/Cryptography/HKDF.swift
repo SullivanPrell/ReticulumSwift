@@ -11,6 +11,8 @@
 import Foundation
 import CryptoKit
 
+/// Extract-and-expand key derivation over SHA-256.
+///
 /// HKDF-SHA256 in the exact byte-for-byte form used by `RNS.Cryptography.hkdf`:
 ///
 ///   PRK   = HMAC-SHA256(salt, IKM)
@@ -21,6 +23,7 @@ import CryptoKit
 /// This matches RFC 5869 for any output length up to 8192 bytes (256 blocks);
 /// Reticulum never asks for more.
 public enum HKDF {
+    /// Derives `length` bytes of key material from `ikm`.
     public static func derive(
         length: Int,
         derivedFrom ikm: Data,

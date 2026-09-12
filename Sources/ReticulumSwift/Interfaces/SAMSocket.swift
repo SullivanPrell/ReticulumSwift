@@ -13,6 +13,7 @@ import Network
 
 // MARK: - SAMSocket errors
 
+/// A failure raised by a SAM bridge socket.
 public enum SAMSocketError: Error, Equatable {
     case connectFailed(String)
     case timeout
@@ -86,12 +87,14 @@ public final class NWSAMSocket: SAMSocket {
     /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
     private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
+    /// Creates a socket addressed at the SAM bridge.
     public init(host: String = "127.0.0.1", port: UInt16) {
         self.host = host
         self.port = port
         self.queue = DispatchQueue(label: "ReticulumSwift.NWSAMSocket.\(port)")
     }
 
+    /// Connects to the bridge, waiting up to `timeout`.
     public func connect(timeout: TimeInterval) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw SAMSocketError.connectFailed("invalid SAM port \(port)")
@@ -139,12 +142,14 @@ public final class NWSAMSocket: SAMSocket {
         }
     }
 
+    /// Sends `data` to the bridge.
     public func write(_ data: Data) {
         conn?.send(content: data, completion: .contentProcessed { [weak self] error in
             if error != nil { self?.markClosed() }
         })
     }
 
+    /// Reads one newline-terminated reply, waiting up to `timeout`.
     public func readLine(timeout: TimeInterval) throws -> String {
         let deadline = Date().addingTimeInterval(timeout)
         cond.lock()
@@ -161,6 +166,7 @@ public final class NWSAMSocket: SAMSocket {
         }
     }
 
+    /// Switches the socket to streaming mode, delivering every inbound chunk to `handler`.
     public func startStreaming(_ handler: @escaping (Data) -> Void,
                                onClose: @escaping () -> Void) {
         cond.lock()
@@ -177,6 +183,7 @@ public final class NWSAMSocket: SAMSocket {
         if alreadyClosed { onClose() }
     }
 
+    /// Closes the socket.
     public func close() {
         cond.lock()
         locallyClosed = true

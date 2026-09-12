@@ -12,6 +12,7 @@ import Foundation
 
 // MARK: - I2PDaemon error
 
+/// A failure raised while starting the embedded i2pd daemon.
 public enum I2PDaemonError: Error {
     case startFailed(String)
 }
@@ -186,6 +187,7 @@ public final class I2PDaemon: I2PDaemonProtocol {
 
     // MARK: - Lifecycle
 
+    /// Starts the daemon against the given data directory.
     public func start(dataDirectory: URL) throws {
         guard !isRunning else { return }
 
@@ -221,6 +223,7 @@ public final class I2PDaemon: I2PDaemonProtocol {
         C_StartClientServices()
     }
 
+    /// Stops the daemon and releases its client services.
     public func stop() {
         Self.globalLock.lock()
         defer { Self.globalLock.unlock() }

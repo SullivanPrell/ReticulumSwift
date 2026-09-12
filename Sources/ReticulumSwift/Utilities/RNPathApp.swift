@@ -159,6 +159,7 @@ public enum RNPathApp {
         case invalidDestinationLength
         case invalidDestination
 
+        /// The message printed for this failure.
         public var message: String {
             switch self {
             case .invalidHashLength:
@@ -176,6 +177,7 @@ public enum RNPathApp {
             }
         }
 
+        /// The message printed for this failure.
         public var description: String { message }
     }
 

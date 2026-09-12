@@ -152,6 +152,7 @@ public final class InterfaceState {
 
     private let lock: UnsafeMutablePointer<os_unfair_lock>
 
+    /// Creates a state block holding the default values.
     public init() {
         lock = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         lock.initialize(to: os_unfair_lock())
@@ -549,6 +550,7 @@ public final class InterfaceState {
         }
     }
 
+    /// Adopts the inheritable fields of `parent`.
     public func inherit(from parent: InterfaceState) {
         os_unfair_lock_lock(parent.lock)
         var incoming = parent.storage

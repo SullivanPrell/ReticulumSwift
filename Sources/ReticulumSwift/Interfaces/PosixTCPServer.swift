@@ -34,16 +34,22 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     public var announcesToInternal: Bool? = nil
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// TCP port the server listens on.
     public let port: UInt16
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int = 1_000_000_000
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
+    /// Hardware maximum transmission unit in bytes.
     public var hwMtu: Int? = 262_144
+    /// Whether the link maximum transmission unit is negotiated with the peer.
     public let autoconfigureMtu: Bool = true
 
     // Not a mesh routing endpoint: `send()` already fans out to every attached
@@ -52,12 +58,18 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     // (independent of transportEnabled). Excluding it here mirrors
     // TCPServerInterface's listener/spawned-client split and prevents
     // double-delivery to local clients when transportEnabled is also true.
+    /// Whether Transport routes packets and forwards announces through this interface.
     public var isRoutingEndpoint: Bool { false }
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey: Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
@@ -65,7 +77,9 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
 
     private var listenFD: Int32 = -1
@@ -126,12 +140,14 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
         return clients.count
     }
 
+    /// Creates a server interface listening on a TCP port.
     public init(name: String, port: UInt16) {
         self.name = name
         self.port = port
         self.queue = DispatchQueue(label: "ReticulumSwift.PosixTCPServer.\(name)", attributes: .concurrent)
     }
 
+    /// Brings the interface online.
     public func start() throws {
         let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else {
@@ -179,6 +195,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
         acceptSource = src
     }
 
+    /// Takes the interface offline and releases its resources.
     public func stop() {
         acceptSource?.cancel()
         acceptSource = nil
@@ -190,6 +207,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
         for c in all { c.close() }
     }
 
+    /// Transmits `packet` on the interface.
     public func send(_ packet: Packet) throws {
         let raw = try packet.pack()
         let framed = HDLC.frame(wrapIfac(raw))
@@ -252,6 +270,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface, MtuAu
         client.start()
     }
 
+    /// Errors raised by the POSIX socket server.
     public enum PosixError: Error {
         case errno(Int32, String)
         var localizedDescription: String {

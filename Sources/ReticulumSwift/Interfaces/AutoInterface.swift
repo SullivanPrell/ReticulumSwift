@@ -36,11 +36,17 @@ public final class AutoInterface: Interface {
 
     // MARK: - Protocol constants
 
+    /// Default peering group identifier.
     public static let defaultGroupID        = Data("reticulum".utf8)
+    /// Default UDP port peers announce themselves on.
     public static let defaultDiscoveryPort  = UInt16(29716)
+    /// Default UDP port carrying packet data.
     public static let defaultDataPort       = UInt16(42671)
+    /// Seconds between peer announces.
     public static let announceInterval      = TimeInterval(1.6)
+    /// Seconds of silence after which a peer is dropped.
     public static let peeringTimeout        = TimeInterval(22.0)
+    /// Seconds between runs of the peer maintenance job.
     public static let peerJobInterval       = TimeInterval(4.0)
 
     /// Interfaces ignored on macOS (matching Python DARWIN_IGNORE_IFS).
@@ -48,21 +54,30 @@ public final class AutoInterface: Interface {
 
     // MARK: - Public interface conformance
 
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
     // Python AutoInterface: HW_MTU = 1196, FIXED_MTU = True
+    /// Hardware maximum transmission unit in bytes, or `nil` when unconstrained.
     public let hwMtu: Int? = 1_196
+    /// Whether the hardware maximum transmission unit is fixed and cannot be negotiated.
     public let fixedMtu: Bool = true
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Whether path requests received here are resolved recursively.
     public var recursivePrs: Bool = false
+    /// Whether announces originating on this instance are sent on this interface.
     public var announcesFromInternal: Bool = true
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -74,16 +89,24 @@ public final class AutoInterface: Interface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey: Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize: Int = Constants.defaultIfacSize
 
     // MARK: - Configuration
 
+    /// Peering group this interface joins.
     public let groupID: Data
+    /// UDP port peers announce themselves on.
     public let discoveryPort: UInt16
+    /// UDP port carrying packet data.
     public let dataPort: UInt16
     private let allowedInterfaces: Set<String>
     private let ignoredInterfaces: Set<String>
@@ -125,6 +148,7 @@ public final class AutoInterface: Interface {
     // (`AutoInterface.py:609`) is exactly the protocol's class-qualified default, and one
     // shared composition is the point of `bugs/022`—see `Interface.displayName`.
 
+    /// Creates an interface that discovers peers on the local network.
     public init(
         name: String,
         groupID: Data = AutoInterface.defaultGroupID,
@@ -152,6 +176,7 @@ public final class AutoInterface: Interface {
 
     // MARK: - Lifecycle
 
+    /// Brings the interface online.
     public func start() throws {
         discoverInterfaces()
         guard !adoptedInterfaces.isEmpty else {
@@ -165,6 +190,7 @@ public final class AutoInterface: Interface {
         isOnline = true
     }
 
+    /// Takes the interface offline and releases its resources.
     public func stop() {
         isOnline = false
         announceTimers.forEach { $0.cancel() }
@@ -175,6 +201,7 @@ public final class AutoInterface: Interface {
         if dataSocket >= 0 { Darwin.close(dataSocket); dataSocket = -1 }
     }
 
+    /// Transmits `packet` on the interface.
     public func send(_ packet: Packet) throws {
         guard isOnline else { return }
         let raw = wrapIfac(try packet.pack())
@@ -443,6 +470,7 @@ public final class AutoInterface: Interface {
 
 // MARK: - Error
 
+/// Errors raised by the auto-discovery interface.
 public enum AutoInterfaceError: Error {
     case socketError(String)
 }

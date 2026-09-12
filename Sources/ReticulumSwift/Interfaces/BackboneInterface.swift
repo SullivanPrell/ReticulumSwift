@@ -56,8 +56,11 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     // MARK: - Interface protocol properties
 
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// Host the interface connects to.
     public let host: String
+    /// TCP port the interface connects to.
     public let port: UInt16
 
     /// Python `BackboneClientInterface.__str__` (`BackboneInterface.py:870-873`):
@@ -87,8 +90,10 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// the two are different contracts.
     public var statsTypeName: String { "BackboneClientInterface" }
 
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int = BackboneInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -100,9 +105,13 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     /// Python: `AUTOCONFIGURE_MTU = True`.
     public let autoconfigureMtu: Bool = true
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Whether path requests received here are resolved recursively.
     public var recursivePrs: Bool = false
+    /// Whether announces originating on this instance are sent on this interface.
     public var announcesFromInternal: Bool = true
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -115,8 +124,11 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     // implementations are no-op storage, so without these `configureIfac`
     // would silently discard the key and every outbound frame would go out
     // un-masked (dropped by IFAC-protected Python peers).
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey: Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
@@ -124,7 +136,9 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
 
     // MARK: - Reconnect configuration
@@ -167,6 +181,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     // MARK: - Init
 
+    /// Creates a backbone interface connecting to a TCP host and port.
     public init(
         name: String,
         host: String,
@@ -184,6 +199,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     // MARK: - Interface lifecycle
 
+    /// Brings the interface online.
     public func start() throws {
         stateLock.lock()
         unsafeIsStopped = false
@@ -192,6 +208,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
         openConnection()
     }
 
+    /// Takes the interface offline and releases its resources.
     public func stop() {
         stateLock.lock()
         unsafeIsStopped = true
@@ -203,6 +220,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
     // MARK: - Packet send
 
+    /// Transmits `packet` on the interface.
     public func send(_ packet: Packet) throws {
         stateLock.lock()
         let conn = connection

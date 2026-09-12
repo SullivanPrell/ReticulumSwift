@@ -37,6 +37,8 @@ final class ResourceMTUSegmentationTests: XCTestCase {
 
     // MARK: - The sender
 
+    /// Asserts resource part size derives from the negotiated link MTU.
+    ///
     /// Spec: "Resource segmentation SHALL derive from the negotiated link MTU."
     func testPartSizeFollowsTheNegotiatedMTURatherThanTheBaseConstant() throws {
         // A link that negotiated well above the base MTU, as MTU discovery produces on any

@@ -225,6 +225,8 @@ final class KISSConfigCommandTests: XCTestCase {
         return (i, t)
     }
 
+    /// Asserts `start()` sends the five configuration commands.
+    ///
     /// All writes during start: setPreamble + setTxTail + setPersistence + setSlotTime + setFlowControl
     func testStartSendsFiveConfigCommands() throws {
         let (_, t) = try startedInterface()

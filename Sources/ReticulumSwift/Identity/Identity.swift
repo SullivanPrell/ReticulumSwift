@@ -21,10 +21,14 @@ import CryptoKit
 ///   * Private key bytes: [32 X25519 priv] [32 Ed25519 priv]    (64 bytes)
 ///   * Identity hash:     SHA256(pub bytes)[:16]                (16 bytes)
 public final class Identity: Equatable, Hashable, @unchecked Sendable {
+    /// Ed25519 private key used for signing, or `nil` for a public-only identity.
     public let signingPrivateKey: Curve25519.Signing.PrivateKey?
+    /// X25519 private key used for key agreement, or `nil` for a public-only identity.
     public let encryptionPrivateKey: Curve25519.KeyAgreement.PrivateKey?
 
+    /// Ed25519 public key used to verify signatures from this identity.
     public let signingPublicKey: Curve25519.Signing.PublicKey
+    /// X25519 public key used to derive shared secrets with this identity.
     public let encryptionPublicKey: Curve25519.KeyAgreement.PublicKey
 
     /// Application-supplied bytes attached to the most recent announce, if any.
@@ -48,6 +52,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// `rotateRatchet()`; the public part is what the
     /// next announce carries so peers encrypt to it (forward secrecy).
     private var unsafeActiveRatchetPrivateKey: Data?
+    /// Private key of the ratchet currently offered in announces.
     public private(set) var activeRatchetPrivateKey: Data? {
         get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return unsafeActiveRatchetPrivateKey }
         set { ratchetLock.lock(); unsafeActiveRatchetPrivateKey = newValue; ratchetLock.unlock() }
@@ -60,6 +65,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// packets stay addressed to a retired ratchet for as long as the peer stays quiet—days,
     /// not seconds. Bounded by `ratchetHistoryDepth` and aged out per `ratchetExpiry`.
     private var unsafePreviousRatchets: [HistoricalRatchet] = []
+    /// Retired ratchets still accepted for decrypting in-flight packets.
     public private(set) var previousRatchets: [HistoricalRatchet] {
         get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return unsafePreviousRatchets }
         set { ratchetLock.lock(); unsafePreviousRatchets = newValue; ratchetLock.unlock() }
@@ -94,13 +100,17 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// Nil until the
     /// first rotation.
     private var unsafeActiveRatchetTime: Date?
+    /// Time the active ratchet was generated.
     public private(set) var activeRatchetTime: Date? {
         get { ratchetLock.lock(); defer { ratchetLock.unlock() }; return unsafeActiveRatchetTime }
         set { ratchetLock.lock(); unsafeActiveRatchetTime = newValue; ratchetLock.unlock() }
     }
 
+    /// A retired ratchet key and the time it was retired.
     public struct HistoricalRatchet: Equatable {
+        /// Private key of the retired ratchet.
         public let privateKey: Data
+        /// Time the ratchet was retired.
         public let retiredAt: Date
     }
 
@@ -211,18 +221,23 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         return pool
     }
 
+    /// Whether this identity holds the private keys needed to sign and decrypt.
     public var hasPrivateKey: Bool { signingPrivateKey != nil && encryptionPrivateKey != nil }
 
+    /// Concatenated X25519 and Ed25519 public keys, 64 bytes.
     public var publicKeyBytes: Data {
         encryptionPublicKey.rawRepresentation + signingPublicKey.rawRepresentation
     }
 
+    /// Concatenated X25519 and Ed25519 private keys, or `nil` for a public-only identity.
     public var privateKeyBytes: Data? {
         guard let enc = encryptionPrivateKey, let sig = signingPrivateKey else { return nil }
         return enc.rawRepresentation + sig.rawRepresentation
     }
 
+    /// Truncated SHA-256 of the public keys, 16 bytes.
     public var hash: Data { Hashes.truncatedHash(publicKeyBytes) }
+    /// Hexadecimal rendering of the identity hash.
     public var hexHash: String { hash.map { String(format: "%02x", $0) }.joined() }
 
     /// Create a fresh identity with both key pairs randomly generated.
@@ -376,6 +391,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     ///     list. Python reads the global `RNS.Transport.blackholed_identities`
     ///     here; this port has a per-instance transport, so the caller supplies
     ///     the test.
+    /// - Returns: Whether the announce is admitted, and why it was rejected if not.
     public static func validateAnnounce(
         _ packet: Packet,
         onlyValidateSignature: Bool = false,
@@ -465,6 +481,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         Reticulum.shared?.transport.recallAppData(forDestination: destinationHash)
     }
 
+    /// Errors raised by identity key handling and cryptography.
     public enum IdentityError: Error {
         case invalidKeyLength
         case missingPrivateKey
@@ -474,11 +491,13 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     // MARK: - Sign / verify
 
+    /// Signs `message` with the Ed25519 private key.
     public func sign(_ message: Data) throws -> Data {
         guard let signingPrivateKey else { throw IdentityError.missingPrivateKey }
         return try signingPrivateKey.signature(for: message)
     }
 
+    /// Returns whether `signature` is valid over `message`.
     public func validate(signature: Data, for message: Data) -> Bool {
         signingPublicKey.isValidSignature(signature, for: message)
     }
@@ -495,6 +514,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     //
     // The token therefore is: [32-byte ephemeral pub] [Token bytes]
 
+    /// Encrypts `plaintext` to this identity, optionally using a ratchet public key.
     public func encrypt(_ plaintext: Data, ratchetPublicKey: Data? = nil) throws -> Data {
         let ephemeral = Curve25519.KeyAgreement.PrivateKey()
         let targetPub: Curve25519.KeyAgreement.PublicKey
@@ -518,6 +538,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         return ephemeral.publicKey.rawRepresentation + ciphertext
     }
 
+    /// Decrypts `token` addressed to this identity.
     public func decrypt(_ token: Data, ratchetPrivateKeys: [Data] = []) throws -> Data {
         try decrypt(token, ratchetPrivateKeys: ratchetPrivateKeys, enforceRatchets: false).plaintext
     }
@@ -529,17 +550,17 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// Nil if the
     /// destination's static identity key did the work.
     public struct DecryptResult: Equatable {
+        /// Decrypted payload.
         public var plaintext: Data
+        /// Ratchet that decrypted the token, or `nil` when the static key was used.
         public var ratchetID: Data?
     }
 
-    /// Full Python-parity decrypt:
-    ///   * Tries each provided ratchet private in order.
-    ///   * If `enforceRatchets` is set and no ratchet matched, fails
-    ///     rather than falling back to the static identity key
-    ///     (matches `Destination.enforce_ratchets`).
-    ///   * On success via a ratchet, populates `ratchetID` with
-    ///     `ratchetID(forPublicKey:)` of the matching ratchet's pub.
+    /// Decrypts `token`, trying each supplied ratchet key in order before the static key.
+    ///
+    /// When `enforceRatchets` is set and no ratchet matches, decryption fails rather than
+    /// falling back to the static identity key, matching `Destination.enforce_ratchets`.
+    /// A token decrypted through a ratchet carries that ratchet's identifier in `ratchetID`.
     public func decrypt(
         _ token: Data,
         ratchetPrivateKeys: [Data],
@@ -675,11 +696,13 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     // MARK: - Persistence
 
+    /// Writes the identity's private keys to `url`.
     public func write(toFile url: URL) throws {
         guard let bytes = privateKeyBytes else { throw IdentityError.missingPrivateKey }
         try bytes.write(to: url, options: .atomic)
     }
 
+    /// Reads an identity's private keys from `url`.
     public static func read(fromFile url: URL) throws -> Identity {
         try Identity(privateKeyBytes: try Data(contentsOf: url))
     }
@@ -730,6 +753,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         }
     }
 
+    /// Writes the active and retired ratchets to `url`.
     public func writeRatchets(toFile url: URL) throws {
         let entries = previousRatchets.map {
             RatchetSidecar.HistoryEntry(
@@ -748,6 +772,7 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         try encoder.encode(sidecar).write(to: url, options: .atomic)
     }
 
+    /// Loads the active and retired ratchets from `url`.
     public func loadRatchets(fromFile url: URL) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -773,10 +798,12 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
 
     // MARK: - Equatable / Hashable
 
+    /// Returns whether two identities carry the same public keys.
     public static func == (lhs: Identity, rhs: Identity) -> Bool {
         lhs.publicKeyBytes == rhs.publicKeyBytes
     }
 
+    /// Hashes the identity's public keys into `hasher`.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(publicKeyBytes)
     }

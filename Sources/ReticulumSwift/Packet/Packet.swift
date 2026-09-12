@@ -28,10 +28,15 @@ import Foundation
 ///   1 byte  : context
 ///   N bytes : data (ciphertext or plaintext per packet rules)
 public struct Packet: Equatable {
+    /// Whether the header carries one destination hash or two.
     public enum HeaderType: UInt8 { case type1 = 0, type2 = 1 }
+    /// Whether the packet is broadcast or routed through a transport node.
     public enum TransportType: UInt8 { case broadcast = 0, transport = 1 }
+    /// What the packet carries.
     public enum PacketType: UInt8 { case data = 0, announce = 1, linkRequest = 2, proof = 3 }
+    /// Type of the destination the packet is addressed to.
     public enum DestinationType: UInt8 { case single = 0, group = 1, plain = 2, link = 3 }
+    /// Header flag bit whose meaning depends on the packet context.
     public enum ContextFlag: UInt8 { case unset = 0, set = 1 }
 
     /// Context byte values (the ones from Python `Packet.NONE`/`RESOURCE`/...).
@@ -59,15 +64,25 @@ public struct Packet: Equatable {
         case lrproof = 0xFF
     }
 
+    /// Whether the header carries one destination hash or two.
     public var headerType: HeaderType
+    /// Header flag bit whose meaning depends on the packet context.
     public var contextFlag: ContextFlag
+    /// Whether the packet is broadcast or routed through a transport node.
     public var transportType: TransportType
+    /// Type of the destination the packet is addressed to.
     public var destinationType: DestinationType
+    /// What the packet carries.
     public var packetType: PacketType
+    /// Number of transport nodes the packet has crossed.
     public var hops: UInt8
+    /// Transport node the packet is routed through, carried only by a type 2 header.
     public var transportID: Data?           // present only when headerType == .type2
+    /// Address the packet is bound for.
     public var destinationHash: Data        // 16 bytes
+    /// Context byte qualifying the payload.
     public var context: Context
+    /// Payload, encrypted or plaintext according to the destination type.
     public var data: Data                   // payload (encrypted or plaintext per rules)
 
     // MARK: - Class-level MDU constants (mirrors Python Packet.ENCRYPTED_MDU / PLAIN_MDU)
@@ -110,6 +125,7 @@ public struct Packet: Equatable {
     /// Mirrors Python's `Packet.is_outbound_pr` slot (RNS commit 60c440a3).
     public var isOutboundPR: Bool = false
 
+    /// Creates a packet from header fields and a payload.
     public init(
         headerType: HeaderType = .type1,
         contextFlag: ContextFlag = .unset,
@@ -134,6 +150,7 @@ public struct Packet: Equatable {
         self.data = data
     }
 
+    /// Header flags byte assembled from the individual header fields.
     public var packedFlagsByte: UInt8 {
         (headerType.rawValue << 6)
             | (contextFlag.rawValue << 5)
@@ -155,6 +172,7 @@ public struct Packet: Equatable {
 
     // MARK: - Encode
 
+    /// Errors raised while packing a packet.
     public enum PackError: Error { case missingTransportID, exceedsMTU(size: Int) }
 
     /// The transmit cap `pack()` enforces for **this** packet.
@@ -217,6 +235,7 @@ public struct Packet: Equatable {
         return raw
     }
 
+    /// Encodes the packet into its wire representation.
     public func pack() throws -> Data {
         let raw = try packedBytes()
         if raw.count > mtu { throw PackError.exceedsMTU(size: raw.count) }
@@ -225,8 +244,10 @@ public struct Packet: Equatable {
 
     // MARK: - Decode
 
+    /// Errors raised while unpacking a packet.
     public enum UnpackError: Error { case malformed }
 
+    /// Decodes a packet from its wire representation.
     public static func unpack(_ raw: Data) throws -> Packet {
         guard raw.count >= 2 + Constants.truncatedHashLength + 1 else {
             throw UnpackError.malformed
@@ -328,6 +349,7 @@ public struct Packet: Equatable {
         return part
     }
 
+    /// Returns the hash identifying this packet on the network.
     public func packetHash() throws -> Data {
         Hashes.fullHash(try hashablePart())
     }

@@ -29,27 +29,42 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     /// The announcer
     /// still needs `discoverable` set from config before it announces anything.
     public let supportsDiscovery = true
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// Host the client connects to.
     public let host: String
+    /// TCP port the client connects to.
     public let port: UInt16
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
     // Python TCPClientInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
+    /// Hardware maximum transmission unit in bytes.
     public var hwMtu: Int? = 262_144
+    /// Whether the link maximum transmission unit is negotiated with the peer.
     public let autoconfigureMtu: Bool = true
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey: Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize: Int = Constants.defaultIfacSize
+    /// Whether the peer only bootstraps a connection and is dropped afterwards.
     public var bootstrapOnly: Bool = false
+    /// Whether path requests received here are resolved recursively.
     public var recursivePrs: Bool = false
+    /// Whether announces originating on this instance are sent on this interface.
     public var announcesFromInternal: Bool = true
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -71,7 +86,9 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
 
     private var connection: NWConnection?
@@ -118,6 +135,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
         stateLock.lock(); defer { stateLock.unlock() }; return dials
     }
 
+    /// Creates a client interface connecting to a TCP host and port.
     public init(name: String, host: String, port: UInt16) {
         self.name = name
         self.host = host
@@ -140,6 +158,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
         connect()
     }
 
+    /// Takes the interface offline and releases its resources.
     public func stop() {
         stateLock.lock()
         stopped = true
@@ -151,6 +170,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
         isOnline = false
     }
 
+    /// Transmits `packet` on the interface.
     public func send(_ packet: Packet) throws {
         stateLock.lock()
         let conn = connection

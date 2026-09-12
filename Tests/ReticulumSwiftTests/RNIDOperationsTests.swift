@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers every operation `rnid` dispatches to.
+///
 /// Tests for every operation `rnid`'s `main()` dispatches to.
 ///
 /// Python reference: RNS/Utilities/rnid.py. Everything runs through
@@ -533,6 +535,8 @@ final class RNIDOperationsTests: XCTestCase {
         XCTAssertEqual(output.lines, ["Metadata file meta.cfg does not exist"])
     }
 
+    /// Asserts the signed-message suffix check is case-sensitive.
+    ///
     /// `-S`'s `.rsm` suffix test is CASE-SENSITIVE, unlike `-V`'s.
     func testSignMessageAppendsRSMEvenToAnUppercaseSuffix() {
         let identity = Identity()
@@ -686,6 +690,8 @@ final class RNIDOperationsTests: XCTestCase {
 
     // MARK: - Path-expansion asymmetry
 
+    /// Asserts the encrypt write path stays unexpanded while the decrypt one is expanded.
+    ///
     /// `-e`'s `-w` output path is used RAW (rnid.py:862) while `-d`'s IS expanded (:907).
     func testEncryptWriteIsUnexpandedButDecryptWriteIsExpanded() throws {
         let identity = Identity()

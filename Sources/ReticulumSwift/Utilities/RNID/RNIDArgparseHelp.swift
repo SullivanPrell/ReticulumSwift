@@ -10,6 +10,8 @@
 
 import Foundation
 
+/// Formats the `rnid` help output the way Python's `argparse` does.
+///
 /// Reproduces Python `argparse.HelpFormatter`'s `--help` layout for an ``ArgumentParser``.
 ///
 /// The utilities' help text is part of their user-facing contract, and `argparse`'s layout

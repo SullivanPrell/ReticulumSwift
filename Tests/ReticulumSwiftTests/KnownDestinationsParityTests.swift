@@ -127,6 +127,8 @@ final class KnownDestinationsParityTests: XCTestCase {
                        """)
     }
 
+    /// Asserts an announce carrying no app data is stored with `nil`.
+    ///
     /// `app_data = None` is a legitimate value the reference writes (`Identity.py:107` with
     /// `remember`'s default), and `identity.app_data = identity_data[3]` assigns it back.
     func testAbsentAppDataIsStoredAsNil() throws {

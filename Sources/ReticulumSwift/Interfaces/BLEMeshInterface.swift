@@ -90,9 +90,12 @@ public final class BLEMeshInterface: Interface {
 
     // MARK: - Interface conformance
 
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -103,9 +106,12 @@ public final class BLEMeshInterface: Interface {
     /// `AutoInterface`, this interface declares a fixed hardware MTU at the
     /// standard Reticulum packet ceiling rather than auto-negotiating.
     public let hwMtu: Int? = Constants.mtu
+    /// Whether the hardware maximum transmission unit is fixed and cannot be negotiated.
     public let fixedMtu: Bool = true
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
 
     /// Lock-guarded: `send` runs on the caller's thread while `handlePeerData`
@@ -114,13 +120,20 @@ public final class BLEMeshInterface: Interface {
     /// See
     /// `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
+    /// Total packets received on this interface.
     public var rxPackets: Int { counters.rxPackets }
+    /// Total packets transmitted on this interface.
     public var txPackets: Int { counters.txPackets }
 
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey: Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize: Int = BLEMeshInterface.defaultIfacSize
 
     // `displayName` isn't declared here: BLEMesh has no Python counterpart, and the
@@ -170,6 +183,7 @@ public final class BLEMeshInterface: Interface {
 
     // MARK: - Lifecycle
 
+    /// Brings the interface online.
     public func start() throws {
         transport.peerConnected = { [weak self] peer in self?.handlePeerConnected(peer) }
         transport.peerDisconnected = { [weak self] peer in self?.handlePeerDisconnected(peer) }
@@ -178,6 +192,7 @@ public final class BLEMeshInterface: Interface {
         isOnline = true
     }
 
+    /// Takes the interface offline and releases its resources.
     public func stop() {
         isOnline = false
         transport.stop()
@@ -188,6 +203,8 @@ public final class BLEMeshInterface: Interface {
 
     // MARK: - Outbound
 
+    /// Transmits `packet` on the interface.
+    ///
     /// IFAC-wraps and HDLC-frames the packet (mirrors
     /// `TCPClientInterface.send`'s `HDLC.frame(wrapIfac(raw))`), then
     /// broadcasts the framed bytes to every meshed peer.
@@ -229,9 +246,9 @@ public final class BLEMeshInterface: Interface {
 
     // MARK: - Inbound
 
-    /// Feeds raw bytes from one peer's link into that peer's frame decoder
-    /// and delivers every completed frame upward—mirrors
-    /// `TCPClientInterface.beginReceiveLoop`'s `decoder.feed` → dispatch.
+    /// Feeds raw bytes from a peer into its frame decoder and delivers every completed frame.
+    ///
+    /// Mirrors the `decoder.feed` to dispatch path in `TCPClientInterface.beginReceiveLoop`.
     private func handlePeerData(_ peer: BLEMeshPeerID, _ data: Data) {
         peersLock.lock()
         // Tolerate bytes arriving before/racing the connection callback—create

@@ -27,30 +27,44 @@ public final class UDPInterface: Interface {
     /// One stored property satisfies the whole settable set;
     /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
     public let interfaceState = InterfaceState()
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// UDP port bound for inbound traffic, or `nil` when the interface only sends.
     public let listenPort: UInt16?
+    /// Host outbound packets are sent to, or `nil` when the interface only listens.
     public let forwardHost: String?
+    /// UDP port outbound packets are sent to, or `nil` when the interface only listens.
     public let forwardPort: UInt16?
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
     // Python UDPInterface: HW_MTU = 1064
+    /// Hardware maximum transmission unit in bytes, or `nil` when unconstrained.
     public let hwMtu: Int? = 1_064
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Whether path requests received here are resolved recursively.
     public var recursivePrs: Bool = false
+    /// Whether announces originating on this instance are sent on this interface.
     public var announcesFromInternal: Bool = true
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey: Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
@@ -58,7 +72,9 @@ public final class UDPInterface: Interface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
 
     private var listener: NWListener?
@@ -92,6 +108,7 @@ public final class UDPInterface: Interface {
     /// `NWListener` binds every address.
     public let bindIP: String
 
+    /// Creates a UDP interface that listens, forwards, or both.
     public init(
         name: String,
         listenPort: UInt16? = nil,
@@ -107,6 +124,7 @@ public final class UDPInterface: Interface {
         self.queue = DispatchQueue(label: "ReticulumSwift.UDPInterface.\(name)")
     }
 
+    /// Brings the interface online.
     public func start() throws {
         if let listenPort, let port = NWEndpoint.Port(rawValue: listenPort) {
             let listener = try NWListener(using: .udp, on: port)
@@ -134,6 +152,7 @@ public final class UDPInterface: Interface {
         isOnline = true
     }
 
+    /// Takes the interface offline and releases its resources.
     public func stop() {
         listener?.cancel(); listener = nil
         connection?.cancel(); connection = nil
@@ -145,6 +164,7 @@ public final class UDPInterface: Interface {
         isOnline = false
     }
 
+    /// Transmits `packet` on the interface.
     public func send(_ packet: Packet) throws {
         guard let connection else { return }
         let raw = try packet.pack()

@@ -21,6 +21,7 @@ import Foundation
 /// `Transport.awaitPath` or `Destination.awaitPath`, both of which `Thread.sleep`-poll.
 public final class RNXClient {
 
+    /// A failure raised while running a remote command.
     public enum ClientError: Error, Equatable {
         /// Python: "Allowed destination length is invalid, must be 32 hexadecimal
         /// characters (16 bytes)." → exit 241 (rnx.py:332).
@@ -53,6 +54,7 @@ public final class RNXClient {
     private let transport: Transport
     private let identity: Identity
 
+    /// Creates a client addressing the listener at `destinationHash`.
     public init(transport: Transport, identity: Identity, destinationHash: Data) {
         self.transport = transport
         self.identity = identity
@@ -117,6 +119,7 @@ public final class RNXClient {
         }
     }
 
+    /// The link's status, or `nil` before one is established.
     public var linkStatus: Link.Status? { link?.status }
 
     /// Python: rnx.py:372-374—skipped entirely under `-N/--noid`.
@@ -170,21 +173,25 @@ public final class RNXClient {
     // RECEIVING` is a scalar compare; ReticulumSwift's carry associated values, so each
     // spin predicate has to pattern-match.
 
+    /// Returns whether `status` is `sent`.
     public static func isSent(_ status: RequestReceipt.Status) -> Bool {
         if case .sent = status { return true }
         return false
     }
 
+    /// Returns whether `status` is `delivered`.
     public static func isDelivered(_ status: RequestReceipt.Status) -> Bool {
         if case .delivered = status { return true }
         return false
     }
 
+    /// Returns whether `status` is `receiving`.
     public static func isReceiving(_ status: RequestReceipt.Status) -> Bool {
         if case .receiving = status { return true }
         return false
     }
 
+    /// Returns whether `status` is `failed`.
     public static func isFailed(_ status: RequestReceipt.Status) -> Bool {
         if case .failed = status { return true }
         return false

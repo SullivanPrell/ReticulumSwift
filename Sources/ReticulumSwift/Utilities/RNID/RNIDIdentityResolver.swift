@@ -48,6 +48,7 @@ public final class RNIDIdentityResolver {
     /// Python: `prvsize = pubsize = RNS.Identity.KEYSIZE//8` = 64.
     public static let keyBlobSize: Int = Constants.keySize
 
+    /// Creates a resolver over the given output and file system.
     public init(transport: Transport?,
                 reticulum: Reticulum? = nil,
                 output: RNIDOutput,

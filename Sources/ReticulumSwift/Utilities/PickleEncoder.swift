@@ -27,6 +27,7 @@ public indirect enum PickleValue {
     case dict([(PickleValue, PickleValue)])  // ordered key-value pairs
 
     // Convenience constructor for string-keyed dicts
+    /// Builds a dictionary value from string-keyed `pairs`.
     public static func stringDict(_ pairs: [(String, PickleValue)]) -> PickleValue {
         .dict(pairs.map { (.string($0.0), $0.1) })
     }
@@ -191,6 +192,7 @@ public struct PickleEncoder {
 public struct PickleDecoder {
     let data: Data
 
+    /// Creates a decoder over `data`.
     public init(_ data: Data) {
         self.data = data
     }

@@ -35,7 +35,9 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 
     /// Python: `interface.bind_port`, published as `PORT` (`Discovery.py:183`).
     public var discoveryListenPort: Int? { Int(port) }
+    /// Configured interface name.
     public let name: String
+    /// TCP port the server listens on.
     public let port: UInt16
     /// The address reported as the listener's bind address.
     ///
@@ -44,29 +46,41 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     /// `NWListener` always binds every address, so this is a reporting-only value that
     /// defaults to Python's `0.0.0.0`.
     public let bindIP: String
+    /// Interface bitrate in bits per second.
     public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(false)
+    /// Whether the listening socket is open.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
     // Python TCPServerInterface: HW_MTU = 262144, AUTOCONFIGURE_MTU = True
+    /// Hardware MTU in bytes.
     public var hwMtu: Int? = 262_144
+    /// Whether the MTU is negotiated with each peer.
     public let autoconfigureMtu: Bool = true
 
     // Not a routing endpoint—spawned clients are registered separately.
+    /// Whether traffic may be routed to this interface directly.
     public var isRoutingEndpoint: Bool { false }
 
     // IFAC settings inherited by spawned clients.
+    /// Identity deriving the IFAC key, when IFAC is configured.
     public var ifacIdentity: Identity?
+    /// IFAC key, when a network name or passphrase is configured.
     public var ifacKey: Data?
+    /// IFAC token size in bytes.
     public var ifacSize: Int = Constants.defaultIfacSize
 
     // Unused for the server itself (clients use their own handlers).
+    /// Called with each packet decoded from a connected client.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each frame received before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Whether path requests arriving here are forwarded recursively.
     public var recursivePrs: Bool = false
+    /// Whether announces from internal interfaces are sent to clients.
     public var announcesFromInternal: Bool = true
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -87,7 +101,9 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Bytes received since the interface came up.
     public var rxBytes: Int { counters.rxBytes }
+    /// Bytes sent since the interface came up.
     public var txBytes: Int { counters.txBytes }
 
     /// Python `TCPServerInterface.__str__` (`TCPInterface.py:680-686`):
@@ -131,6 +147,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     private var spawned: [SpawnedClient] = []
     private var clientCounter = 0
 
+    /// Creates a server listening on `port` of `bindIP`.
     public init(name: String, port: UInt16, bindIP: String = "0.0.0.0") {
         self.name = name
         self.port = port
@@ -138,6 +155,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
         self.queue = DispatchQueue(label: "ReticulumSwift.TCPServerInterface.\(name)", attributes: .concurrent)
     }
 
+    /// Opens the listening socket and starts accepting clients.
     public func start() throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw InterfaceError.invalidConfiguration("invalid port \(port)")
@@ -178,6 +196,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
         listener.start(queue: queue)
     }
 
+    /// Closes the listening socket and every accepted client.
     public func stop() {
         listener?.cancel()
         listener = nil
@@ -316,24 +335,35 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     public var announcesToInternal: Bool? = nil
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
+    /// Name identifying this accepted client.
     public let name: String
+    /// Interface bitrate in bits per second.
     public var bitrate: Int = 10_000_000
     private let onlineFlag = LockedFlag(true)
+    /// Whether the client socket is still connected.
     public internal(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
+    /// Hardware MTU in bytes.
     public var hwMtu: Int? = 262_144
+    /// Whether the MTU is negotiated with the peer.
     public let autoconfigureMtu: Bool = true
 
     // Fully a routing endpoint.
+    /// Whether traffic may be routed to this interface directly.
     public var isRoutingEndpoint: Bool { true }
 
+    /// Called with each packet decoded from the client.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each frame received before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Identity deriving the IFAC key, inherited from the server.
     public var ifacIdentity: Identity?
+    /// IFAC key, inherited from the server.
     public var ifacKey: Data?
+    /// IFAC token size in bytes.
     public var ifacSize: Int
 
     /// Lock-guarded—inbound frames are counted from the parent server's
@@ -342,7 +372,9 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Bytes received since the client connected.
     public var rxBytes: Int { counters.rxBytes }
+    /// Bytes sent since the client connected.
     public var txBytes: Int { counters.txBytes }
 
     /// Counts an inbound frame on behalf of the parent server, which owns the
@@ -352,6 +384,7 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     /// The connecting peer's address, as Python records it on the spawned interface
     /// (`spawned_interface.target_ip = handler.client_address[0]`, `TCPInterface.py:609`).
     public let peerHost: String
+    /// TCP port the client connected from.
     public let peerPort: UInt16
 
     /// A spawned client shares the `TCPClientInterface.__str__` format, but its `name` is
@@ -374,6 +407,7 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
 
     // Back-reference to parent server (for IFAC inheritance).
     private weak var parentServer: TCPServerInterface?
+    /// Server interface that accepted this client.
     public var spawningInterface: (any Interface)? { parentServer }
     // The underlying TCP connection.
     fileprivate weak var spawnedClient: SpawnedClient?
@@ -415,13 +449,16 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
         optimiseMtu()
     }
 
+    /// No-op: the parent server owns the socket.
     public func start() throws { }  // started by the parent server
 
+    /// Closes the client socket.
     public func stop() {
         spawnedClient?.cancel()
         isOnline = false
     }
 
+    /// Sends `packet` to the connected client.
     public func send(_ packet: Packet) throws {
         guard isOnline, let client = spawnedClient else { return }
         let raw = try packet.pack()

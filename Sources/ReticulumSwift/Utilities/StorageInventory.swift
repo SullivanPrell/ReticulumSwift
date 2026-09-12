@@ -48,6 +48,7 @@ public enum StorageInventory {
         /// A path the reference has no counterpart for, and why it exists anyway.
         case portOnly(reason: String)
 
+        /// The reference citation, or the stated reason the path is port-only.
         public var citation: String {
             switch self {
             case .reference(let cite): return cite
@@ -55,20 +56,24 @@ public enum StorageInventory {
             }
         }
 
+        /// Returns whether the path has no reference counterpart.
         public var isPortOnly: Bool {
             if case .portOnly = self { return true }
             return false
         }
     }
 
+    /// One file or directory the stack persists.
     public struct Entry {
         /// Path components relative to the configuration directory.
         public let components: [String]
+        /// Whether the entry is a file or a directory.
         public let kind: Kind
         /// Why this name is correct: the Python `file:line` it mirrors, or an explicit statement
         /// that it's port-only and the reason.
         public let authority: Authority
 
+        /// The path of the entry relative to the configuration directory.
         public var relativePath: String { components.joined(separator: "/") }
 
         /// The entry's own name — the last path component.
@@ -78,6 +83,7 @@ public enum StorageInventory {
         /// the fallback is unreachable.
         public var fileName: String { components.last ?? "" }
 
+        /// Creates an inventory entry.
         public init(_ components: [String], _ kind: Kind, authority: Authority) {
             precondition(!components.isEmpty, "a storage entry needs at least one path component")
             self.components = components

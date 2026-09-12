@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity factory methods on `Identity`.
+///
 /// Tests for Identity factory methods mirroring Python's:
 ///   - `Identity.from_bytes(prv_bytes)`
 ///   - `Identity.from_file(path)`

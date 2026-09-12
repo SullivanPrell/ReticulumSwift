@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Parity coverage for the RNS 1.3.8 changes.
+///
 /// Parity tests for the RNS 1.3.8 changes:
 ///  - Packet.unpack rejects hop counts >= PATHFINDER_M (hop-count serialization
 ///    hardening, commit a0f0f318).

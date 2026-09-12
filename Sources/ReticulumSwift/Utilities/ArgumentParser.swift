@@ -54,6 +54,8 @@ public struct ArgumentParser {
         var hidden: Bool = false
     }
 
+    /// A declared command-line option.
+    ///
     /// A declared option, exposed so an external formatter can reproduce `argparse`'s own
     /// help layout. Python: the fields of an `argparse.Action`.
     public struct OptionSpec {
@@ -65,10 +67,12 @@ public struct ArgumentParser {
         public let metavar: String?
         /// Python: `action.nargs`.
         public let nargs: Nargs
+        /// Help text shown for the option.
         public let help: String
         /// Python: `help == argparse.SUPPRESS`.
         public let hidden: Bool
 
+        /// How many values the option takes.
         public enum Nargs: Equatable {
             case none       // store_true / count
             case one        // store
@@ -90,6 +94,7 @@ public struct ArgumentParser {
     private var declarations: [Declaration] = []
     private var positionalNames: [(name: String, help: String, required: Bool)] = []
 
+    /// Creates a parser for a program.
     public init(program: String, overview: String) {
         self.program = program
         self.overview = overview
@@ -171,8 +176,10 @@ public struct ArgumentParser {
 
     /// Parse an argument vector.
     ///
-    /// - Parameter arguments: argv *without* the executable name. Pass
+    /// - Parameter arguments: The argument vector without the executable name. Pass
     ///   `Array(CommandLine.arguments.dropFirst())`.
+    /// - Returns: The parsed arguments.
+    /// - Throws: `ArgumentError` when an argument is unrecognized, malformed or missing.
     public func parse(_ arguments: [String]) throws -> ParsedArguments {
         var flags: Set<String> = []
         var counts: [String: Int] = [:]
@@ -491,6 +498,8 @@ public struct ArgumentParser {
         }
     }
 
+    /// Returns every spelling of an option, joined the way `argparse` joins them.
+    ///
     /// An option named the way `argparse` names it: all its spellings joined with "/".
     ///
     /// Public because a `type=`/`choices=` conversion failure comes from the caller, not
@@ -603,6 +612,7 @@ public struct ParsedArguments {
 
 // MARK: - Errors
 
+/// Errors raised while parsing arguments.
 public enum ArgumentError: Error, CustomStringConvertible, Equatable {
     /// An option that wasn't declared. Python: "unrecognized arguments".
     case unrecognisedOption(String)
@@ -621,6 +631,7 @@ public enum ArgumentError: Error, CustomStringConvertible, Equatable {
     /// Python: `allow_abbrev=True` → "ambiguous option: --ver could match --verbose, --version".
     case ambiguousOption(String, [String])
 
+    /// Message describing the parse failure.
     public var description: String {
         switch self {
         // argparse always uses the plural, even when only one token was rejected.

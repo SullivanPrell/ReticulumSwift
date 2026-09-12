@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the `rnid` command-line surface.
+///
 /// Tests for `rnid`'s command-line surface: flag spellings, `nargs` semantics,
 /// `validate_args` and the generated help text.
 ///
@@ -20,6 +22,8 @@ final class RNIDCommandLineTests: XCTestCase {
 
     // MARK: - nargs="*"
 
+    /// Asserts a bare variadic flag yields an empty list.
+    ///
     /// The empty-list quirk: Python's bare `-e` yields `[]`, which is *falsy*, so the
     /// operation is skipped entirely AND contributes nothing to `validate_args`' tally.
     func testBareVariadicFlagYieldsAnEmptyList() throws {

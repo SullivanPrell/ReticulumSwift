@@ -45,19 +45,33 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - Python class constants
 
+    /// Seconds to wait between reconnect attempts.
+    ///
     /// Python: `RECONNECT_WAIT = 15`
     public static let reconnectWait:     Int  = 15
+    /// Maximum reconnect attempts, or `nil` for unlimited.
+    ///
     /// Python: `RECONNECT_MAX_TRIES = None` (unlimited)
     public static let reconnectMaxTries: Int? = nil
 
+    /// Seconds of silence after which the peer is considered unreachable.
+    ///
     /// Python: `I2P_USER_TIMEOUT = 45`
     public static let i2pUserTimeout:   Int = 45
+    /// Seconds of silence after which probing starts.
+    ///
     /// Python: `I2P_PROBE_AFTER = 10`
     public static let i2pProbeAfter:    Int = 10
+    /// Seconds between probes.
+    ///
     /// Python: `I2P_PROBE_INTERVAL = 9`
     public static let i2pProbeInterval: Int = 9
+    /// Probes sent before the peer is torn down.
+    ///
     /// Python: `I2P_PROBES = 5`
     public static let i2pProbes:        Int = 5
+    /// Socket read timeout in seconds.
+    ///
     /// Python: `I2P_READ_TIMEOUT = (I2P_PROBE_INTERVAL * I2P_PROBES + I2P_PROBE_AFTER) * 2`
     public static let i2pReadTimeout: Int = (i2pProbeInterval * i2pProbes + i2pProbeAfter) * 2
 
@@ -72,30 +86,44 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - Interface protocol properties
 
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int = I2PInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
+    /// Whether the peer is up and able to carry traffic.
+    ///
     /// Python alias: `self.online`
     public var online: Bool { isOnline }
 
+    /// Hardware maximum transmission unit in bytes, or `nil` when unconstrained.
+    ///
     /// Python: `self.HW_MTU = 1064`
     public let hwMtu: Int? = I2PInterface.hwMtu
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler:    ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
 
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey:      Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize:     Int = I2PInterface.defaultIfacSize
 
     /// Python wait_job: `self.wants_tunnel = True` before connecting, so
     /// Transport synthesizes a tunnel when the peer is registered.
     public var wantsTunnel: Bool = false
+    /// Identifier of the transport tunnel established over this interface.
     public var tunnelID:    Data?
+    /// Whether the peer only bootstraps a connection and is dropped afterwards.
     public var bootstrapOnly: Bool = false
 
     /// Lock-guarded—the existing `lock` serialized writers only, leaving a
@@ -103,12 +131,16 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
     // Each preceding add() corresponds to exactly one reassembled frame, so the
     // packet counts are already tracked—surfacing them lets the parent
     // `I2PInterface` report a meaningful total instead of a hardcoded 0.
+    /// Total packets received on this interface.
     public var rxPackets: Int { counters.rxPackets }
+    /// Total packets transmitted on this interface.
     public var txPackets: Int { counters.txPackets }
 
     // `displayName` isn't declared here: Python's `I2PInterfacePeer[<name>]`
@@ -117,9 +149,13 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - I2P-specific properties
 
+    /// Whether this side opened the connection.
     public let initiator:   Bool
+    /// Whether frames are delimited with KISS framing rather than HDLC.
     public var kissFraming: Bool = false
+    /// Whether traffic is carried inside an I2P tunnel.
     public var i2pTunneled: Bool = true
+    /// Current state of the I2P tunnel.
     public private(set) var tunnelState: TunnelState = .initializing
 
     /// Optional back-reference to parent interface.
@@ -127,6 +163,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     /// Python: outbound config peers have `parent_count = False`, so traffic
     /// is *not* rolled up into the parent's counters.
     public weak var parentInterface: I2PInterface?
+    /// Interface that spawned this one, or `nil` for a top-level interface.
     public var spawningInterface: (any Interface)? { parentInterface }
 
     // MARK: - Dial configuration (overridable; defaults mirror Python)
@@ -189,6 +226,8 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - Init (outbound peer—targets a remote I2P destination)
 
+    /// Creates a peer connected to an I2P destination.
+    ///
     /// Python: `I2PInterfacePeer.__init__(..., target_i2p_dest=…)`
     public init(name: String,
                 targetI2PDestination: String,
@@ -244,6 +283,7 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     // MARK: - Outbound send
 
+    /// Transmits `packet` on the interface.
     public func send(_ packet: Packet) throws {
         let raw = try packet.pack()
         processOutgoing(wrapIfac(raw))

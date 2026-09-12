@@ -56,6 +56,8 @@ final class DiscoveryPublishAttributeTests: XCTestCase {
 
     // MARK: - Settability
 
+    /// Asserts every discovery attribute the config path writes is settable through `any Interface`.
+    ///
     /// Each attribute the config path writes has to be writable through `any Interface`, which
     /// is the type `Reticulum`'s parser holds. A `{ get }`-only port of these would compile and
     /// then have nowhere to put a parsed value.
@@ -103,7 +105,9 @@ final class DiscoveryPublishAttributeTests: XCTestCase {
     // MARK: - Spawned clients
 
     /// Python's spawn block copies nineteen attributes onto each accepted client
-    /// (`TCPInterface.py:594-641`) and **none of them is a discovery attribute**. A spawned
+    /// (`TCPInterface.py:594-641`) and **none of them is a discovery attribute**.
+    ///
+    /// A spawned
     /// client that inherited `discoverable` would announce itself as a separately reachable
     /// endpoint for every peer that dialled in, advertising the *parent's* `reachable_on` once
     /// per connection.

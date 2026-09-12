@@ -44,6 +44,7 @@ public final class RPCClient {
     public static let defaultControlPort: UInt16 = 37429
 
     /// Default shared-instance data port, used by ``isSharedInstanceRunning(host:port:)``.
+    ///
     /// Python: `Reticulum.shared_instance_port = 37428`.
     public static let defaultSharedInstancePort: UInt16 = 37428
 
@@ -77,6 +78,7 @@ public final class RPCClient {
     ///
     /// - Parameter storagePath: the instance's storage directory (`~/.reticulum/storage`).
     /// - Throws: ``RPCClientError/noInstanceIdentity`` if the identity file is absent or unreadable.
+    /// - Returns: The full hash of the instance's transport identity private key.
     public static func authkey(storagePath: URL) throws -> Data {
         let identityURL = StorageInventory.url(.transportIdentity, storage: storagePath)
         guard let identity = try? Identity.read(fromFile: identityURL),
@@ -114,6 +116,8 @@ public final class RPCClient {
     /// Perform one RPC call and return the decoded response.
     ///
     /// - Parameter request: the request dict, for example, `.map([(.string("get"), .string("path_table"))])`.
+    /// - Returns: The decoded response.
+    /// - Throws: `RPCClientError` when the socket, handshake or response decoding fails.
     public func call(_ request: MsgPack.Value) throws -> MsgPack.Value {
         let fd = try RPCClient.openSocket(host: host, port: port, timeout: timeout)
         defer { close(fd) }
@@ -390,6 +394,7 @@ public final class RPCClient {
 
 // MARK: - Errors
 
+/// A failure raised while calling a Reticulum instance over RPC.
 public enum RPCClientError: Error, CustomStringConvertible {
     /// No `transport_identity` in the given storage directory, so no auth key can be derived.
     case noInstanceIdentity(URL)
@@ -404,6 +409,7 @@ public enum RPCClientError: Error, CustomStringConvertible {
     /// The response wasn't decodable.
     case malformedResponse(String)
 
+    /// The message printed for this failure.
     public var description: String {
         switch self {
         case .noInstanceIdentity(let url):

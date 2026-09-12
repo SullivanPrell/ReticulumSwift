@@ -66,6 +66,8 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
 
     // MARK: - Two clients on one listening interface route independently
 
+    /// Asserts a path learned through the second client leaves through the second client.
+    ///
     /// Spec: "Two clients on one listening interface route independently."
     func testAPathLearnedViaTheSecondClientLeavesThroughTheSecondClient() throws {
         let transport = Transport()
@@ -110,6 +112,8 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
         XCTAssertEqual(clientB.dataSent.count, 0, "the packet must not leave through clientB")
     }
 
+    /// Asserts a route survives a change to its interface's display name.
+    ///
     /// Spec: "Route resolution does not depend on the display string."
     ///
     /// `Interface.hash` is `fullHash(displayName)`, so anything keyed on the display string moves

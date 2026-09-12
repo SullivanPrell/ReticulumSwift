@@ -20,8 +20,11 @@ extension Transport {
 
     /// Per-identity blackhole entry.
     public struct BlackholeEntry: Codable {
-        public var source: Data?           // identity hash of who issued the blackhole
-        public var until: TimeInterval?    // expiry timestamp (nil = permanent)
+        /// Identity hash of whoever issued the blackhole.
+        public var source: Data?
+        /// Expiry timestamp, or `nil` when the entry is permanent.
+        public var until: TimeInterval?
+        /// Why the identity was blackholed.
         public var reason: String?
     }
 

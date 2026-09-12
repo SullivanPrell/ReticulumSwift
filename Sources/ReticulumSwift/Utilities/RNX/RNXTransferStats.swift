@@ -40,6 +40,7 @@ public struct RNXTransferStats {
 
     private var samples: [(at: TimeInterval, got: Double)] = []
 
+    /// Creates a tracker holding no samples.
     public init() {}
 
     /// Python: rnx.py:307-321.

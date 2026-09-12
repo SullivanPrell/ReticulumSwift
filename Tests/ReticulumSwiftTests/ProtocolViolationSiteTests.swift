@@ -78,11 +78,11 @@ final class ProtocolViolationSiteTests: XCTestCase {
 
     // MARK: - Path requests
 
-    /// `Transport.
+    /// Nothing can deduplicate a path request with no tag at all.
     ///
-    /// py:1838-1840`. Nothing can deduplicate a path request with no tag at all, so
-    /// upstream refuses to act on it and charges the sender a violation. The tag is what makes
-    /// one request distinguishable from a replay of itself.
+    /// Upstream refuses to act on one and charges the sender a violation
+    /// (`Transport.py:1838-1840`). The tag is what makes one request distinguishable from a
+    /// replay of itself.
     func testATaglessPathRequestCountsAProtocolViolation() throws {
         let t = Transport()
         let hop = RecordingHop(name: "pr-tagless")
@@ -94,11 +94,10 @@ final class ProtocolViolationSiteTests: XCTestCase {
         XCTAssertEqual(try violations(t, on: hop), 1)
     }
 
-    /// `Transport.
+    /// A body too short to even hold a destination hash returns before the tag logic.
     ///
-    /// py:1830`. A body too short to even hold a destination hash returns before the
-    /// tag logic, with no violation. The two lengths are one byte apart and upstream treats them
-    /// differently, so the boundary is worth pinning.
+    /// No violation is counted (`Transport.py:1830`). The two lengths are one byte apart and
+    /// upstream treats them differently, so the boundary is worth pinning.
     func testAPathRequestTooShortForADestinationHashIsSilent() throws {
         let t = Transport()
         let hop = RecordingHop(name: "pr-short")
@@ -109,10 +108,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
         XCTAssertEqual(try violations(t, on: hop), 0)
     }
 
-    /// `Transport.
+    /// Upstream truncates an oversized tag to the hash length and counts a violation.
     ///
-    /// py:1843-1845`. Upstream truncates an oversized tag to the hash length and
-    /// counts a violation, then carries on with the request. The truncation matters on its own
+    /// It then carries on with the request (`Transport.py:1843-1845`). The truncation matters on its own
     /// (an untruncated tag in the dedup key lets a sender defeat deduplication by varying a
     /// tail nothing reads), and the counter is the only trace it leaves for the operator.
     func testAnExcessivePathRequestTagCountsAProtocolViolation() throws {
@@ -229,11 +227,11 @@ final class ProtocolViolationSiteTests: XCTestCase {
                data: Data(repeating: 0xC3, count: 32))
     }
 
-    /// `Transport.
+    /// A link-table entry starts unvalidated.
     ///
-    /// py:2124-2128`. A link-table entry starts unvalidated and becomes validated
-    /// only when the relay verifies the responder's link-request proof. Until then, upstream
-    /// refuses to carry traffic on that route and counts a violation.
+    /// It becomes validated only when the relay verifies the link-request proof of the
+    /// responder (`Transport.py:2124-2128`). Until then, upstream refuses to carry traffic on
+    /// that route and counts a violation.
     ///
     /// Relaying early is worth something to an attacker: anyone can push a link request through
     /// a transport node, and a node that carries traffic on the resulting half-open route

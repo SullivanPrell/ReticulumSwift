@@ -46,6 +46,7 @@ public struct RNXRequest {
     /// accepted by every listener; the flag exists so the client can be byte-exact.
     public var timeoutPacksAsInteger: Bool = false
 
+    /// Creates a request carrying `command`.
     public init(command: String) {
         self.command = command
     }
@@ -138,6 +139,7 @@ public struct RNXResult {
 
 // MARK: - RNXError
 
+/// A failure raised while decoding a listener's response.
 public enum RNXError: Error, Equatable {
     /// The 8-element result array was the wrong length or carried the wrong types.
     /// Python: the `except` around the destructuring at rnx.py:452.

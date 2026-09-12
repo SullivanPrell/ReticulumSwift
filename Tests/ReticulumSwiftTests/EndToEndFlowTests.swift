@@ -32,6 +32,8 @@ final class EndToEndFlowTests: XCTestCase {
 
     // MARK: - Announce propagation and path caching
 
+    /// Asserts an announce reaches a second client through a transport node.
+    ///
     /// Topology: A <-> R (transport node) <-> B
     /// B announces → R caches → A gets path → A can encrypt to B
     func testAnnouncePropagatesToTransportNode() throws {

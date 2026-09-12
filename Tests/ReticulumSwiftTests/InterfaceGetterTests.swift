@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity getter methods on the `Interface` protocol.
+///
 /// Tests for Python-parity getter methods on the `Interface` protocol:
 ///   Interface.get_hash()   → Interface.getHash()
 ///   Interface.bitrate      → Interface.getBitrate()

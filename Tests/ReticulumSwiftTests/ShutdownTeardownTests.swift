@@ -168,6 +168,8 @@ final class ShutdownTeardownTests: XCTestCase {
 
     // MARK: - The guard: every stop path reaches teardown
 
+    /// Asserts stopping the stack reaches interface teardown before Transport stops.
+    ///
     /// Spec: "Every stop path reaches interface teardown", falsifiability note: "a test that calls
     /// interface teardown directly and asserts it works already passes. The missing assertion is
     /// that stopping the stack reaches it."

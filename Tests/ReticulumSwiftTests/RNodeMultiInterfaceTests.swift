@@ -18,6 +18,8 @@ private final class MockMultiTransport: RNodeTransport {
     var byteHandler: ((Data) -> Void)?
     var writtenData: [Data] = []
     var isOpen = false
+    /// Whether a detect write is answered, so `start()` can reach online.
+    ///
     /// When true, a detect write is answered with a detect response, so `start()`'s
     /// bring-up gate (detect → initAllRadios → online) can complete against this mock.
     var answerDetect = false

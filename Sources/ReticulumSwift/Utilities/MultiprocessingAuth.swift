@@ -98,6 +98,7 @@ public enum MultiprocessingAuth {
 
     // MARK: - Errors
 
+    /// A failure raised while authenticating a connection.
     public enum AuthError: Error, Equatable {
         /// The message was neither a legacy-length payload nor a validly prefixed one.
         /// Python raises `AuthenticationError` with the same meaning.
@@ -119,6 +120,7 @@ public enum MultiprocessingAuth {
     ///
     /// - Parameter message: the message *without* the `#CHALLENGE#` prefix.
     /// - Returns: the pinned digest (or `nil` for legacy) and the payload bytes.
+    /// - Throws: `AuthError` when the message is malformed or names an uncomputable digest.
     public static func digestNameAndPayload(_ message: Data) throws -> (Digest?, Data) {
         // Python: if len(message) in _LEGACY_LENGTHS: return '', message
         if legacyLengths.contains(message.count) { return (nil, message) }
@@ -160,6 +162,7 @@ public enum MultiprocessingAuth {
     ///   - authkey: the shared secret (RNS uses `full_hash(internal_identity_private_key)`).
     ///   - message: the challenge message *without* the `#CHALLENGE#` prefix.
     /// - Returns: a bare MD5 MAC in legacy mode, or `{digest}` + MAC in modern mode.
+    /// - Throws: `AuthError` when the challenge is malformed or names an uncomputable digest.
     public static func createResponse(authkey: Data, message: Data) throws -> Data {
         let (digest, _) = try digestNameAndPayload(message)
         guard let digest else {
@@ -180,6 +183,7 @@ public enum MultiprocessingAuth {
     ///   - authkey: the shared secret.
     ///   - message: the challenge message this side sent, *without* the `#CHALLENGE#` prefix.
     ///   - response: the peer's reply.
+    /// - Returns: whether the reply carries a valid MAC over the issued challenge.
     public static func verifyChallenge(authkey: Data, message: Data, response: Data) -> Bool {
         // Python reads the digest from the RESPONSE, not from the issued challenge, so that a
         // peer answering an unprefixed challenge may upgrade to a stronger digest.

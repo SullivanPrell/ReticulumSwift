@@ -10,6 +10,8 @@
 
 import Foundation
 
+/// The operations `rnid` dispatches to.
+///
 /// Every operation `rnid`'s `main()` dispatches to, each returning an ``RNIDApp/Result``
 /// instead of calling `exit()`.
 ///
@@ -54,6 +56,7 @@ public final class RNIDOperations {
     private let transport: Transport?
     private let editor: RNIDEditor?
 
+    /// Creates the operation set with its output and file system.
     public init(identity: Identity?,
                 identityArgument: String? = nil,
                 options: RNIDApp.Options = RNIDApp.Options(),
@@ -628,10 +631,13 @@ public final class RNIDOperations {
 
     // MARK: - -S / --sign-message
 
+    /// Sign a message with the loaded identity and write the signature out.
+    ///
     /// Python: `sign_message` (rnid.py:788-840).
     ///
     /// - Parameter message: the inline text, or `nil` for a bare `-S` (Python's `NO_MESSAGE`
     ///   sentinel), which means "open `$EDITOR`".
+    /// - Returns: The exit status `rnid` concludes with.
     @discardableResult
     public func signMessage(_ message: String?) -> RNIDApp.Result {
         let format = options.outputFormat

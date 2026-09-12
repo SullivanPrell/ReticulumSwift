@@ -19,8 +19,12 @@ import Foundation
 //                    transparently handled on receive if compressor is set)
 //   bits 0-13 (0x3FFF): stream_id
 
+/// Channel message carrying one chunk of a byte stream.
 public final class StreamDataMessage: MessageBase {
+    /// Largest stream identifier that fits in the stream header.
     public static let streamIDMax: UInt16 = 0x3FFF
+    /// Bytes of channel and stream header carried by every envelope.
+    ///
     /// Channel overhead per envelope: 6-byte channel header + 2-byte stream header
     public static let overhead: Int = 6 + 2
 
@@ -36,12 +40,16 @@ public final class StreamDataMessage: MessageBase {
 
     public override class var typeID: UInt16 { SystemMessageTypes.streamData }
 
+    /// Stream this chunk belongs to.
     public var streamID: UInt16 = 0
+    /// Chunk payload.
     public var data: Data = Data()
+    /// Whether this chunk ends the stream.
     public var eof: Bool = false
     /// True when this message carries bz2-compressed payload.
     public private(set) var isCompressed: Bool = false
 
+    /// Creates a chunk for a stream.
     public convenience init(streamID: UInt16, data: Data = Data(), eof: Bool = false,
                             compress: Bool = false) {
         self.init()
@@ -98,14 +106,17 @@ public final class StreamDataMessage: MessageBase {
 /// Call `read(count:)` to consume bytes or subscribe via `onDataAvailable`.
 /// Wire-compatible with Python's RNS.Buffer.RawChannelReader.
 public final class RawChannelReader {
+    /// Stream this reader consumes.
     public let streamID: UInt16
     private let channel: Channel
     private var buffer = Data()
     private var isEOF = false
     private let lock = NSLock()
     private var handlerToken: MessageHandlerToken?
+    /// Called with the number of readable bytes whenever more data arrives.
     public var onDataAvailable: ((Int) -> Void)?
 
+    /// Creates a reader consuming a stream on `channel`.
     public init(streamID: UInt16, channel: Channel) {
         self.streamID = streamID
         self.channel  = channel
@@ -144,6 +155,7 @@ public final class RawChannelReader {
         return buffer.count
     }
 
+    /// Whether the stream has ended and its buffer is drained.
     public var atEOF: Bool {
         lock.lock(); defer { lock.unlock() }
         return isEOF && buffer.isEmpty
@@ -189,6 +201,7 @@ public final class RawChannelReader {
         return take
     }
 
+    /// Stops consuming the stream and releases its buffer.
     public func close() {
         if let token = handlerToken {
             channel.removeMessageHandler(token)
@@ -209,10 +222,13 @@ public final class RawChannelReader {
 ///
 /// Wire-compatible with Python's RNS.Buffer.RawChannelWriter.
 public final class RawChannelWriter {
+    /// Stream this writer produces.
     public let streamID: UInt16
     private let channel: Channel
+    /// Largest chunk written in one envelope, in bytes.
     public static let maxChunkLen: Int = 1024 * 16
 
+    /// Creates a writer producing a stream on `channel`.
     public init(streamID: UInt16, channel: Channel) {
         self.streamID = streamID
         self.channel  = channel
@@ -268,6 +284,7 @@ public final class RawChannelWriter {
 ///
 /// Wire-compatible with Python's RNS.Buffer.
 public enum Buffer {
+    /// Creates a reader for a stream on `channel`.
     public static func createReader(
         streamID: UInt16,
         channel: Channel,
@@ -278,6 +295,7 @@ public enum Buffer {
         return reader
     }
 
+    /// Creates a writer for a stream on `channel`.
     public static func createWriter(streamID: UInt16, channel: Channel) -> RawChannelWriter {
         RawChannelWriter(streamID: streamID, channel: channel)
     }

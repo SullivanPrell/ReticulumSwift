@@ -37,6 +37,7 @@ public enum UtilityFormatting {
     ///   - value: the quantity to format.
     ///   - suffix: `"B"` for bytes (default). Passing `"b"` multiplies by 8 first, so a
     ///     byte count can be rendered as bits—exactly what the Python helper does.
+    /// - Returns: The formatted quantity, with its unit prefix and suffix.
     public static func sizeStr(_ value: Double, suffix: String = "B") -> String {
         let units = ["", "K", "M", "G", "T", "P", "E", "Z"]
         var number = value
@@ -68,6 +69,7 @@ public enum UtilityFormatting {
     ///   - value: rate in bits per second.
     ///   - suffix: `"bps"` (default) keeps bits and uses a lowercase `k` prefix.
     ///     `"Bps"` divides by 8 and uses an uppercase `K`.
+    /// - Returns: The formatted rate, with its unit prefix and suffix.
     public static func speedStr(_ value: Double, suffix: String = "bps") -> String {
         // Python: bits use lowercase 'k', bytes use uppercase 'K'. Everything above
         // kilo is uppercase in both cases.
@@ -100,6 +102,7 @@ public enum UtilityFormatting {
     /// - Parameters:
     ///   - timestamp: a Unix timestamp in the past.
     ///   - now: the reference time, injectable so tests need no clock.
+    /// - Returns: The bare quantity, with no "ago" suffix.
     public static func prettyDate(_ timestamp: TimeInterval,
                                   now: TimeInterval = Date().timeIntervalSince1970) -> String {
         let difference = now - timestamp

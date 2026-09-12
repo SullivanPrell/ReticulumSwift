@@ -170,12 +170,12 @@ final class TCPInterfaceNamingTests: XCTestCase {
                                "TCPInterface[Backbone B/10.0.0.1:4242]"])
     }
 
-    /// `UDPInterface` had the same hardcoded bind address, found by the cross-implementation
-    /// name comparison in `tri-test` once it started comparing names by value: Python
-    /// reported `UDPInterface[Isolated UDP/127.0.0.1:*]` for a loopback-bound interface and
-    /// Swift reported `.
+    /// `UDPInterface` had the same hardcoded bind address.
     ///
-    /// ../0.0.0.0:*`. Python: `UDPInterface.py:63`, `:131-132`.
+    /// Found by the cross-implementation name comparison in `tri-test` once it started comparing
+    /// names by value: Python reported `UDPInterface[Isolated UDP/127.0.0.1:*]` for a
+    /// loopback-bound interface and Swift reported `.../0.0.0.0:*`.
+    /// Python: `UDPInterface.py:63`, `:131-132`.
     func testUDPInterfaceReportsItsConfiguredBindAddress() {
         let iface = UDPInterface(name: "Isolated UDP", listenPort: 4242, bindIP: "127.0.0.1")
         XCTAssertEqual(iface.displayName, "UDPInterface[Isolated UDP/127.0.0.1:4242]")

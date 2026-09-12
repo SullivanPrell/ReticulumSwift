@@ -16,10 +16,14 @@ import Foundation
 /// delimited by `FLAG`. `ESC` and `FLAG` bytes inside a frame are stuffed by
 /// emitting `ESC` followed by `byte ^ ESC_MASK`.
 public enum HDLC {
+    /// The byte that delimits a frame.
     public static let flag: UInt8 = 0x7E
+    /// The byte that escapes the one following it.
     public static let esc: UInt8 = 0x7D
+    /// The mask an escaped byte is XORed with.
     public static let escMask: UInt8 = 0x20
 
+    /// Returns `data` with its flag and escape bytes stuffed.
     public static func escape(_ data: Data) -> Data {
         var out = Data()
         out.reserveCapacity(data.count)
@@ -35,6 +39,7 @@ public enum HDLC {
         return out
     }
 
+    /// Returns `data` with its byte stuffing removed.
     public static func unescape(_ data: Data) -> Data {
         var out = Data()
         out.reserveCapacity(data.count)
@@ -70,6 +75,7 @@ public enum HDLC {
         private var buffer = Data()
         private var inFrame = false
 
+        /// Creates a decoder holding no partial frame.
         public init() {}
 
         /// Discard any partially received frame.

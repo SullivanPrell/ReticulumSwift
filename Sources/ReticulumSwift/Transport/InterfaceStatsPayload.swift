@@ -25,6 +25,7 @@ import Foundation
 /// `rnstatus` branches on `if "key" in ifstat` for eighteen different fields, so which keys
 /// are *present* is as much a part of the contract as their values.
 public enum InterfaceStatsPayload {
+    /// The payload served when no stack is running.
     public static var empty: MsgPack.Value {
         var pairs: [(MsgPack.Value, MsgPack.Value)] = [
             (.string("interfaces"), .array([])),
@@ -50,6 +51,7 @@ public enum InterfaceStatsPayload {
         return .map(pairs)
     }
 
+    /// Builds the `ifstats` payload from a live transport.
     public static func build(_ t: Transport) -> MsgPack.Value {
         let now = Date().timeIntervalSince1970
 

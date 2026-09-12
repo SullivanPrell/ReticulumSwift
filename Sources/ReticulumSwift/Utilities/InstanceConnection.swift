@@ -235,7 +235,7 @@ public final class InstanceConnection {
     /// Bring up a stack for a command-line utility.
     ///
     /// - Parameters:
-    ///   - configDirectory: explicit config directory, or `nil` to resolve as Python does.
+    ///   - explicitConfigDirectory: explicit config directory, or `nil` to resolve as Python does.
     ///   - requireSharedInstance: when true, fail unless an instance is *already* running.
     ///     Python: `RNS.Reticulum(require_shared_instance=True)`, used by `rnstatus` and
     ///     `rnpath`, which only read state that a running daemon owns.
@@ -243,6 +243,8 @@ public final class InstanceConnection {
     ///   - synthesizeInterfaces: whether to bring up the interfaces named in the config
     ///     file. A utility attaching as a local client must not, since the shared instance
     ///     already owns them—this mirrors Python only adding the `LocalClientInterface`.
+    /// - Returns: A connection owning the stack the utility runs against.
+    /// - Throws: `InstanceError` when no instance is available, or the stack cannot start.
     public static func attach(configDirectory explicitConfigDirectory: URL? = nil,
                               requireSharedInstance: Bool = false,
                               logLevel: Reticulum.LogLevel = .error,
@@ -376,6 +378,7 @@ public final class InstanceConnection {
 
     // MARK: - Errors
 
+    /// A failure raised while attaching to a Reticulum instance.
     public enum InstanceError: Error, CustomStringConvertible {
         /// No instance was already running, and the caller required one.
         /// Python prints "No shared RNS instance available to get status from" and exits 1.
@@ -383,6 +386,7 @@ public final class InstanceConnection {
         /// A shared instance appears to be running but couldn't be connected to.
         case couldNotConnect(Error)
 
+        /// The message printed for this failure.
         public var description: String {
             switch self {
             case .noSharedInstance:

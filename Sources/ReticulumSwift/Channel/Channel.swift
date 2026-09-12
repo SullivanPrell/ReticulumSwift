@@ -12,18 +12,22 @@ import Foundation
 
 // MARK: - System message types (match Python SystemMessageTypes)
 
+/// Message type identifiers reserved for the protocol itself.
 public enum SystemMessageTypes {
+    /// Type identifier carrying `Buffer` stream data.
     public static let streamData: UInt16 = 0xFF00
 }
 
 // MARK: - Message state
 
+/// Lifecycle state of one outbound message.
 public enum MessageState: Equatable {
     case new, sent, delivered, failed
 }
 
 // MARK: - Channel errors
 
+/// Failures raised by channel operations.
 public enum ChannelError: Error, Equatable {
     case noMsgType
     case invalidMsgType
@@ -40,6 +44,7 @@ public enum ChannelError: Error, Equatable {
 /// Subclasses must override `typeID` with a
 /// non-zero value (< 0xF000 for user types). Values ≥ 0xF000 are system-reserved.
 open class MessageBase {
+    /// Creates an empty message for the factory to unpack into.
     public required init() {}
 
     open class var typeID: UInt16 { 0 }
@@ -50,6 +55,7 @@ open class MessageBase {
 
 // MARK: - Message handler token (opaque cancellation handle)
 
+/// Opaque handle for removing a registered message handler.
 public final class MessageHandlerToken {
     let callback: (MessageBase) -> Bool
     init(callback: @escaping (MessageBase) -> Bool) {
@@ -61,6 +67,7 @@ public final class MessageHandlerToken {
 
 /// Tracks the lifecycle of one sent Channel envelope.
 public final class ChannelPacketHandle {
+    /// Delivery state of one sent envelope.
     public enum State { case sent, delivered, failed }
 
     /// Written from whichever thread the outlet confirms delivery on (a link
@@ -131,6 +138,7 @@ public final class ChannelPacketHandle {
 
 // MARK: - ChannelOutlet protocol
 
+/// Transport a channel sends and resends its envelopes over.
 public protocol ChannelOutlet: AnyObject {
     func send(_ raw: Data) -> ChannelPacketHandle
     func resend(_ handle: ChannelPacketHandle)
@@ -170,7 +178,7 @@ final class Envelope {
         self.sequence = sequence
     }
 
-    /// Encode to wire bytes: [MSGTYPE:2][seq:2][len:2][body:N] (big-endian)
+    /// Encode to wire bytes: [MSGTYPE:2][seq:2][len:2][body:N] (big-endian).
     func pack(messageFactories: [UInt16: () -> MessageBase]) throws -> Data {
         guard let message else { throw ChannelError.noMsgType }
         let tid = type(of: message).typeID
@@ -304,13 +312,20 @@ public final class Channel {
     private var nextRxSequence: UInt16 = 0
     private let maxTries:       Int    = 5
 
+    /// Current send window in envelopes.
     public private(set) var window:          Int
+    /// Largest send window the channel will grow to.
     public private(set) var windowMax:       Int
+    /// Smallest send window the channel will shrink to.
     public private(set) var windowMin:       Int
+    /// Envelopes the window may exceed `windowMax` by while probing.
     public private(set) var windowFlexibility: Int
+    /// Consecutive rounds that met the fast-rate threshold.
     public private(set) var fastRateRounds:    Int = 0
+    /// Consecutive rounds that met the medium-rate threshold.
     public private(set) var mediumRateRounds:  Int = 0
 
+    /// Creates a channel sending over `outlet`.
     public init(outlet: ChannelOutlet) {
         self.outlet = outlet
         if outlet.rtt > Channel.rttSlow {
@@ -328,6 +343,7 @@ public final class Channel {
 
     // MARK: - Type registry
 
+    /// Registers `type` so received envelopes of its identifier can be decoded.
     public func registerMessageType(_ type: MessageBase.Type) throws {
         try registerMessageType(type, isSystemType: false)
     }
@@ -347,6 +363,7 @@ public final class Channel {
 
     // MARK: - Message handlers
 
+    /// Adds `callback` to the handler chain and returns a token for removing it.
     @discardableResult
     public func addMessageHandler(_ callback: @escaping (MessageBase) -> Bool) -> MessageHandlerToken {
         let token = MessageHandlerToken(callback: callback)
@@ -355,6 +372,7 @@ public final class Channel {
         return token
     }
 
+    /// Removes the handler `token` identifies.
     public func removeMessageHandler(_ token: MessageHandlerToken) {
         lock.lock(); defer { lock.unlock() }
         messageHandlers.removeAll { $0 === token }
@@ -362,6 +380,7 @@ public final class Channel {
 
     // MARK: - MDU
 
+    /// Largest message payload in bytes this channel can carry.
     public var mdu: Int {
         let m = outlet.mdu - Channel.mduOverhead
         return min(m, Int(UInt16.max))
@@ -369,6 +388,7 @@ public final class Channel {
 
     // MARK: - Ready check
 
+    /// Reports whether the window has room and the outlet is usable.
     public func isReadyToSend() -> Bool {
         guard outlet.isUsable else { return false }
         lock.lock(); defer { lock.unlock() }
@@ -460,6 +480,7 @@ public final class Channel {
 
     // MARK: - Receive (called by Link when a CHANNEL-context packet arrives)
 
+    /// Decodes `raw` as an envelope and dispatches it to the handler chain.
     public func receive(_ raw: Data) {
         do {
             let envelope = Envelope(outlet: outlet, raw: raw)
@@ -512,6 +533,7 @@ public final class Channel {
 
     // MARK: - Shutdown
 
+    /// Cancels every outstanding envelope and stops the channel.
     public func shutdown() {
         lock.lock()
         messageHandlers.removeAll()
@@ -721,11 +743,14 @@ public final class LinkChannelOutlet: ChannelOutlet {
     // A strong back-reference here would form Link -> Channel -> outlet -> Link
     // and leak every Link that ever created a channel (plus its Token, watchdog
     // timer, and pending state). When the Link is gone the outlet is inert.
+    /// Link this outlet sends over.
     public weak var link: Link?
     private var queue = DispatchQueue(label: "rns.channel.outlet", attributes: .concurrent)
 
+    /// Creates an outlet sending over `link`.
     public init(link: Link) { self.link = link }
 
+    /// Sends `raw` as a single link packet.
     public func send(_ raw: Data) -> ChannelPacketHandle {
         let handle = ChannelPacketHandle(raw: raw)
         // Send via the Link's channel path so the sent packet's hash is learned and
@@ -739,6 +764,7 @@ public final class LinkChannelOutlet: ChannelOutlet {
         return handle
     }
 
+    /// Resends the packet `handle` tracks.
     public func resend(_ handle: ChannelPacketHandle) {
         // Retransmission re-encrypts to a fresh ciphertext (random IV) and hence a
         // fresh packet hash, so re-register the new hash for proof matching.
@@ -756,10 +782,13 @@ public final class LinkChannelOutlet: ChannelOutlet {
     /// `bugs/013`'s sub-defects back.
     public var mdu: Int { link?.mdu ?? Constants.linkMdu }
 
+    /// Round-trip time of the underlying link in seconds.
     public var rtt: TimeInterval { link?.rtt ?? 0 }
 
+    /// Whether the underlying link is active.
     public var isUsable: Bool { link?.status == .active }
 
+    /// Returns the delivery state of the packet `handle` tracks.
     public func getPacketState(_ handle: ChannelPacketHandle) -> MessageState {
         switch handle.state {
         case .sent:      return .sent
@@ -768,8 +797,10 @@ public final class LinkChannelOutlet: ChannelOutlet {
         }
     }
 
+    /// Tears the underlying link down after a channel timeout.
     public func timedOut() { try? link?.teardown() }
 
+    /// Schedules `callback` to run if the packet is unacknowledged after `timeout`.
     public func setPacketTimeoutCallback(
         _ handle: ChannelPacketHandle,
         timeout: TimeInterval?,
@@ -784,6 +815,7 @@ public final class LinkChannelOutlet: ChannelOutlet {
         queue.asyncAfter(deadline: .now() + timeout, execute: work)
     }
 
+    /// Schedules `callback` to run when the packet is acknowledged.
     public func setPacketDeliveredCallback(
         _ handle: ChannelPacketHandle,
         callback: ((ChannelPacketHandle) -> Void)?
@@ -791,6 +823,7 @@ public final class LinkChannelOutlet: ChannelOutlet {
         handle.setDeliveredCallback(callback)
     }
 
+    /// Returns an identifier for the packet `handle` tracks.
     public func getPacketID(_ handle: ChannelPacketHandle) -> ObjectIdentifier? {
         ObjectIdentifier(handle)
     }

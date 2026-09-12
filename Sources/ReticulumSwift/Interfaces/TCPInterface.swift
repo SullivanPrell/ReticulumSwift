@@ -12,5 +12,6 @@
 // TCPClientInterface, which is wire-compatible with `RNS.Interfaces.TCPInterface`.
 import Foundation
 
+/// Former name of ``TCPClientInterface``.
 @available(*, deprecated, renamed: "TCPClientInterface")
 public typealias TCPInterface = TCPClientInterface

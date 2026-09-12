@@ -39,6 +39,7 @@ public final class RequestReceipt {
         case ready(Data)                // response fully received
         case failed(reason: String)     // failed or timed out
 
+        /// Returns whether two statuses are equal.
         public static func == (lhs: Status, rhs: Status) -> Bool {
             switch (lhs, rhs) {
             case (.sent, .sent): return true
@@ -51,9 +52,13 @@ public final class RequestReceipt {
         }
     }
 
+    /// Identifier of the request this receipt tracks.
     public let requestID: Data
+    /// Request path the request was sent to.
     public let path: String
+    /// Time the request was sent.
     public let sentAt: Date
+    /// Size of the request payload in bytes.
     public let requestSize: Int
 
     /// Maximum accepted response size in bytes, or `nil` for unlimited.
@@ -75,6 +80,7 @@ public final class RequestReceipt {
     private let stateLock = NSLock()
 
     private var unsafeResponseSize: Int?
+    /// Size of the response payload in bytes, or `nil` before it is known.
     public var responseSize: Int? { stateLock.lock(); defer { stateLock.unlock() }; return unsafeResponseSize }
     private var unsafeResponseTransferSize: Int?
     /// Bytes actually moved on the wire to deliver the response (post-compression,
@@ -92,8 +98,11 @@ public final class RequestReceipt {
     /// Mirrors Python Link.py:1027-1031, where `response_size` is
     /// set once and `response_transfer_size` accumulates across a segmented Resource.
     ///
-    /// - Parameter accumulate: when true, `transferSize` is added to any existing value
-    ///   (`pending_request.response_transfer_size += ...`); when false it replaces it.
+    /// - Parameters:
+    ///   - size: Response payload size in bytes, recorded only the first time it is supplied.
+    ///   - transferSize: Bytes transferred so far.
+    ///   - accumulate: When true, `transferSize` is added to any existing value; when false
+    ///     it replaces it.
     func setResponseSizes(size: Int?, transferSize: Int?, accumulate: Bool) {
         stateLock.lock(); defer { stateLock.unlock() }
         if let size, unsafeResponseSize == nil { unsafeResponseSize = size }
@@ -102,17 +111,22 @@ public final class RequestReceipt {
         }
     }
     private var unsafeProgress: Double = 0
+    /// Fraction of the response received so far.
     public var progress: Double { stateLock.lock(); defer { stateLock.unlock() }; return unsafeProgress }
     private var unsafeConcludedAt: Date?
+    /// Time the request concluded, or `nil` while it is outstanding.
     public var concludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return unsafeConcludedAt }
     private var unsafeResponseConcludedAt: Date?
+    /// Time the response finished arriving, or `nil` before then.
     public var responseConcludedAt: Date? { stateLock.lock(); defer { stateLock.unlock() }; return unsafeResponseConcludedAt }
     private var unsafeStatus: Status = .sent
+    /// Current state of the request.
     public var status: Status { stateLock.lock(); defer { stateLock.unlock() }; return unsafeStatus }
 
     private var timeoutItem: DispatchWorkItem?
 
     private var unsafeOnResponse: ((Data, RequestReceipt) -> Void)?
+    /// Called with the response payload when it arrives.
     public var onResponse: ((Data, RequestReceipt) -> Void)? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnResponse }
         set {
@@ -127,6 +141,7 @@ public final class RequestReceipt {
         }
     }
     private var unsafeOnFailed: ((String, RequestReceipt) -> Void)?
+    /// Called with a reason when the request fails.
     public var onFailed: ((String, RequestReceipt) -> Void)? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnFailed }
         set {
@@ -139,6 +154,7 @@ public final class RequestReceipt {
         }
     }
     private var unsafeOnProgress: ((Double, RequestReceipt) -> Void)?
+    /// Called as the response transfer progresses.
     public var onProgress: ((Double, RequestReceipt) -> Void)? {
         get { stateLock.lock(); defer { stateLock.unlock() }; return unsafeOnProgress }
         set { stateLock.lock(); unsafeOnProgress = newValue; stateLock.unlock() }
@@ -155,6 +171,7 @@ public final class RequestReceipt {
         set { stateLock.lock(); unsafeOnConclude = newValue; stateLock.unlock() }
     }
 
+    /// Creates a receipt tracking an outbound request.
     public init(requestID: Data, path: String, requestSize: Int, timeout: TimeInterval? = nil,
                 maxResponseSize: Int? = nil) {
         self.requestID = requestID
@@ -318,24 +335,23 @@ public final class RequestReceipt {
 
 extension Link {
 
-    /// Send a request along `path`.
+    /// Sends a request along `path`.
     ///
-    /// Returns a receipt the caller can attach
-    /// `onResponse`/`onFailed` to.
+    /// A payload that fits the link MDU is sent as a single data packet; anything larger goes
+    /// as a resource, matching `Link.request`. The request identifier is the truncated hash of
+    /// the wire packet for the former and of the packed request for the latter.
     ///
-    /// For small payloads (≤ link MDU) the request is sent as a single
-    /// DATA/REQUEST packet; larger payloads go via Resource (matching Python's
-    /// Link.request behavior).
-    ///
-    /// **request_id derivation:**
-    /// - Small packets: `truncated_hash(hashable_part_of_wire_packet)`—mirrors
-    ///   Python's `request_id = packet.getTruncatedHash()`.
-    /// - Large (Resource): `truncated_hash(packed_request)`—mirrors
-    ///   Python's Resource path.
-    ///
-    /// - Parameter timeout: Optional timeout in seconds. When the deadline
-    ///   elapses without a response the receipt transitions to `.failed`
-    ///   and `onFailed` is called (matching Python's request timeout).
+    /// - Parameters:
+    ///   - path: Request path registered on the remote destination.
+    ///   - data: Request payload, or `nil` for a request that carries none.
+    ///   - responseCallback: Called with the response payload when it arrives.
+    ///   - failedCallback: Called with a reason when the request fails.
+    ///   - progressCallback: Called as the response transfer progresses.
+    ///   - timeout: Seconds to wait for a response. When the deadline elapses the receipt
+    ///     transitions to `.failed` and `failedCallback` is called.
+    ///   - maxResponseSize: Largest response accepted, in bytes.
+    /// - Returns: A receipt tracking the request.
+    /// - Throws: `LinkError` when the link cannot carry the request.
     @discardableResult
     public func request(
         path: String,
@@ -503,14 +519,18 @@ extension Link {
                         requestID: requestID, requestedAt: requestedAt)
     }
 
-    /// Dispatch to registered request handler (checking allow policy) and
-    /// send response (small or Resource).
+    /// Dispatches a received request to its handler and sends the response.
     ///
-    /// Mirrors Python's
-    /// `Link.handle_request()`.
+    /// Mirrors `Link.handle_request()`, including the allow policy check and the choice
+    /// between a single packet and a resource for the response.
     ///
-    /// - Parameter rawValue: The raw `MsgPack.Value` from parts[2] of the incoming
-    ///   request wire frame. Passed directly to native handlers; unused by bytes handlers.
+    /// - Parameters:
+    ///   - pathHash: Truncated hash of the requested path.
+    ///   - payload: Request payload as bytes, or `nil` when the request carried none.
+    ///   - rawValue: The raw value from the incoming request frame. Passed to native
+    ///     handlers and unused by byte handlers.
+    ///   - requestID: Identifier the response is tagged with.
+    ///   - requestedAt: Time the requester recorded for the request.
     func dispatchRequest(pathHash: Data, payload: Data?, rawValue: MsgPack.Value = .nil,
                          requestID: Data, requestedAt: Double) {
         guard let entry = destination.requestHandlers[pathHash] else { return }

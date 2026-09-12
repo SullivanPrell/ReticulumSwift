@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity shared-instance accessors on `Reticulum`.
+///
 /// Tests for Python-parity static methods on `Reticulum`:
 ///   RNS.Reticulum.get_transport_instance()          → Reticulum.getTransportInstance()
 ///   RNS.Reticulum.is_connected_to_shared_instance() → Reticulum.isConnectedToSharedInstance()

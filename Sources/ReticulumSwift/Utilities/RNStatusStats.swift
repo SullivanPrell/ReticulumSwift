@@ -58,10 +58,15 @@ public struct RNStatusInterfaceStats {
     /// The raw value, or nil when the key is absent.
     public func raw(_ key: String) -> MsgPack.Value? { index[key] }
 
+    /// Returns the value stored under `key` as a string.
     public func string(_ key: String) -> String? { index[key]?.asString }
+    /// Returns the value stored under `key` as an integer.
     public func int(_ key: String)    -> Int?    { index[key]?.asInt }
+    /// Returns the value stored under `key` as a double.
     public func double(_ key: String) -> Double? { index[key]?.asDouble }
+    /// Returns the value stored under `key` as a boolean.
     public func bool(_ key: String)   -> Bool?   { index[key]?.asBool }
+    /// Returns the value stored under `key` as bytes.
     public func data(_ key: String)   -> Data?   { index[key]?.asData }
 
     // MARK: - Derived
@@ -106,10 +111,15 @@ public struct RNStatusStats {
 
     private let index: [String: MsgPack.Value]
 
+    /// Total bytes received.
     public var rxb: Int    { index["rxb"]?.asInt ?? 0 }
+    /// Total bytes transmitted.
     public var txb: Int    { index["txb"]?.asInt ?? 0 }
+    /// Receive rate in bits per second.
     public var rxs: Double { index["rxs"]?.asDouble ?? 0 }
+    /// Transmit rate in bits per second.
     public var txs: Double { index["txs"]?.asDouble ?? 0 }
+    /// Received signal strength, or `nil` when the interface reports none.
     public var rss: Int?   { index["rss"]?.asInt }
 
     /// Python: `"transport_id" in stats and stats["transport_id"] != None` (rnstatus.py:663).
@@ -118,9 +128,13 @@ public struct RNStatusStats {
     /// transport is enabled, but a nil value must render identically to an absent key.
     public var hasTransportID: Bool { transportID != nil }
 
+    /// Transport identity hash, or `nil` when the instance is not a transport node.
     public var transportID: Data?     { index["transport_id"]?.asData }
+    /// Network identifier hash, or `nil` when none is configured.
     public var networkID: Data?       { index["network_id"]?.asData }
+    /// Probe responder destination hash, or `nil` when none is configured.
     public var probeResponder: Data?  { index["probe_responder"]?.asData }
+    /// Seconds the transport has been running, or `nil` when it is not reported.
     public var transportUptime: TimeInterval? { index["transport_uptime"]?.asDouble }
 
     /// The raw top-level value, or nil when the key is absent.

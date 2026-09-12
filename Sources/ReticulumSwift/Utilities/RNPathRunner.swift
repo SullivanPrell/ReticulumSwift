@@ -17,16 +17,28 @@ public struct RNPathOptions: Equatable {
 
     /// `--config`—a Reticulum *config directory*, not a config file.
     public var configDirectory: URL?
+    /// Whether to print the path table.
+    ///
     /// `-t` / `--table`
     public var table: Bool = false
+    /// Highest hop count included in the table.
+    ///
     /// `-m` / `--max`
     public var maxHops: UInt8?
+    /// Whether to print the announce rate table.
+    ///
     /// `-r` / `--rates`
     public var rates: Bool = false
+    /// Whether to drop the path to the named destination.
+    ///
     /// `-d` / `--drop`
     public var drop: Bool = false
+    /// Whether to drop every queued announce.
+    ///
     /// `-D` / `--drop-announces`
     public var dropAnnounces: Bool = false
+    /// Whether to drop every path routed through the named transport node.
+    ///
     /// `-x` / `--drop-via`
     public var dropVia: Bool = false
     /// `-w`—spinner deadline in the default mode.
@@ -41,17 +53,29 @@ public struct RNPathOptions: Equatable {
     ///
     /// Default 15.
     public var remoteTimeout: TimeInterval = RNPathApp.defaultTimeout
+    /// Whether to print the blackholed identities.
+    ///
     /// `-b` / `--blackholed`
     public var blackholed: Bool = false
+    /// Whether to blackhole the named identity.
+    ///
     /// `-B` / `--blackhole`
     public var blackhole: Bool = false
+    /// Whether to remove the named identity from the blackhole list.
+    ///
     /// `-U` / `--unblackhole`
     public var unblackhole: Bool = false
+    /// Hours a blackhole entry stays in force.
+    ///
     /// `--duration`, in **hours**. Python treats `0` as falsy, so `--duration 0` means
     /// "indefinite", not "expire immediately".
     public var blackholeDuration: Double?
+    /// Reason recorded with a blackhole entry.
+    ///
     /// `--reason`
     public var blackholeReason: String?
+    /// Whether to print the blackholed identities as a plain list.
+    ///
     /// `-p` / `--blackholed-list`
     public var blackholedList: Bool = false
     /// `-j` / `--json`—read only by `-t` and `-r`.
@@ -74,6 +98,7 @@ public struct RNPathOptions: Equatable {
     /// dozen prints in the original and the runner reproduces that gating.
     public var noOutput: Bool = false
 
+    /// Creates options with every flag unset.
     public init() {}
 
     /// Python: the `main()` guard at rnpath.py:511.
@@ -120,10 +145,14 @@ public protocol RNPathPathResolver: AnyObject {
 public final class TransportPathResolver: RNPathPathResolver {
     private let transport: Transport
 
+    /// Creates a resolver backed by `transport`.
     public init(transport: Transport) { self.transport = transport }
 
+    /// Returns whether a path to the destination is known.
     public func hasPath(to destinationHash: Data) -> Bool { transport.hasPath(to: destinationHash) }
+    /// Requests a path to the destination.
     public func requestPath(for destinationHash: Data) { try? transport.requestPath(for: destinationHash) }
+    /// Returns the hop count to the destination, or `nil` when no path is known.
     public func hopsTo(_ destinationHash: Data) -> UInt8? { transport.hopsTo(destinationHash) }
 }
 
@@ -171,6 +200,7 @@ public final class RNPathRunner {
     private let progressSink: ((String) -> Void)?
     private let spinner: ((String) -> Void)?
 
+    /// Creates a runner for one `rnpath` invocation.
     public init(options: RNPathOptions,
                 management: RNPathManagementSource,
                 resolver: RNPathPathResolver? = nil,

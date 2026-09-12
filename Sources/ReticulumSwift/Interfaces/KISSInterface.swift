@@ -12,6 +12,7 @@ import Foundation
 
 // MARK: - Errors
 
+/// Errors raised by the KISS TNC interface.
 public enum KISSInterfaceError: Error {
     case portNotFound(String)
     case portOpenFailed(String)
@@ -42,20 +43,29 @@ public final class KISSInterface: Interface {
 
     // MARK: - Class constants
 
+    /// Assumed bitrate when the TNC reports none.
+    ///
     /// Python: `BITRATE_GUESS = 1200`
     public static let bitrateGuess: Int = 1_200
 
+    /// Default IFAC authentication field size in bytes.
+    ///
     /// Python: `DEFAULT_IFAC_SIZE = 8`
     public static let defaultIfacSize: Int = 8
 
+    /// Hardware maximum transmission unit in bytes.
+    ///
     /// Python: `self.HW_MTU = 564`
     public static let hwMtuConstant: Int = 564
 
     // MARK: - Interface protocol properties
 
+    /// Interface name as it appears in configuration and status output.
     public let  name:    String
+    /// Nominal interface bitrate in bits per second.
     public var  bitrate: Int = KISSInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -66,29 +76,46 @@ public final class KISSInterface: Interface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes:   Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes:   Int { counters.txBytes }
+    /// Total packets received on this interface.
     public var rxPackets: Int { counters.rxPackets }
+    /// Total packets transmitted on this interface.
     public var txPackets: Int { counters.txPackets }
 
+    /// Hardware maximum transmission unit in bytes, or `nil` when unconstrained.
     public var hwMtu: Int? { KISSInterface.hwMtuConstant }
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data,   any Interface) -> Void)? = nil
 
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity? = nil
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey:      Data?     = nil
+    /// IFAC authentication field size in bytes.
     public var ifacSize:     Int       = KISSInterface.defaultIfacSize
 
+    /// Whether the interface asks Transport to establish a tunnel over it.
     public var wantsTunnel: Bool  = false
+    /// Identifier of the transport tunnel established over this interface.
     public var tunnelID:    Data? = nil
 
     // MARK: - Serial configuration
 
+    /// Serial device path the TNC is attached to.
     public let port:     String
+    /// Serial line speed in baud.
     public let speed:    Int
+    /// Number of data bits per character.
     public let dataBits: Int
+    /// Serial parity setting.
     public let parity:   SerialParity
+    /// Number of stop bits per character.
     public let stopBits: Int
 
     // MARK: - KISS configuration (Python defaults)
@@ -138,6 +165,7 @@ public final class KISSInterface: Interface {
 
     // MARK: - Init
 
+    /// Creates a KISS interface on a serial-attached TNC.
     public init(name:     String,
                 port:     String,
                 speed:    Int          = 9600,
@@ -253,6 +281,8 @@ public final class KISSInterface: Interface {
         setFlowControl(flowControl)
     }
 
+    /// Sets the transmit delay ahead of each frame, in units of 10 ms.
+    ///
     /// Python: `setPreamble(preamble)`—`FEND CMD_TXDELAY value FEND`
     public func setPreamble(_ preamble: Int) {
         var value = preamble / 10
@@ -261,6 +291,8 @@ public final class KISSInterface: Interface {
         try? transport.write(cmd)
     }
 
+    /// Sets the transmit tail after each frame, in units of 10 ms.
+    ///
     /// Python: `setTxTail(txtail)`—`FEND CMD_TXTAIL value FEND`
     public func setTxTail(_ txtail: Int) {
         var value = txtail / 10
@@ -269,6 +301,8 @@ public final class KISSInterface: Interface {
         try? transport.write(cmd)
     }
 
+    /// Sets the CSMA persistence parameter.
+    ///
     /// Python: `setPersistence(persistence)`—`FEND CMD_P value FEND`
     public func setPersistence(_ persistence: Int) {
         let value = UInt8(max(0, min(255, persistence)))
@@ -276,6 +310,8 @@ public final class KISSInterface: Interface {
         try? transport.write(cmd)
     }
 
+    /// Sets the CSMA slot time, in units of 10 ms.
+    ///
     /// Python: `setSlotTime(slottime)`—`FEND CMD_SLOTTIME value FEND`
     public func setSlotTime(_ slottime: Int) {
         var value = slottime / 10
@@ -284,6 +320,8 @@ public final class KISSInterface: Interface {
         try? transport.write(cmd)
     }
 
+    /// Enables or disables hardware flow control on the TNC.
+    ///
     /// Python: `setFlowControl(_)`—`FEND CMD_READY 0x01 FEND`
     public func setFlowControl(_ enabled: Bool) {
         let cmd = Data([KISS.fend, KISS.cmdReady, 0x01, KISS.fend])

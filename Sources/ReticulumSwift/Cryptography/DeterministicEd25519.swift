@@ -111,7 +111,7 @@ private struct BigUInt: Comparable, Equatable {
         return BigUInt(limbs: r)
     }
 
-    /// Precondition: a >= b
+    /// Subtracts `b` from `a`, which must not be the larger of the two.
     static func - (a: Self, b: Self) -> Self {
         var r = [UInt32](repeating: 0, count: a.limbs.count)
         var borrow: Int64 = 0
@@ -242,30 +242,30 @@ private let mask255 = BigUInt(hex: "7fffffffffffffffffffffffffffffffffffffffffff
 
 // MARK: - Field arithmetic mod Q
 
-/// a + b mod Q  (a, b < Q)
+/// Adds two field elements, each already below Q.
 private func qadd(_ a: BigUInt, _ b: BigUInt) -> BigUInt {
     var r = a + b
     if r >= fieldPrime { r = r - fieldPrime }
     return r
 }
 
-/// a - b mod Q  (a, b < Q)
+/// Subtracts two field elements, each already below Q.
 private func qsub(_ a: BigUInt, _ b: BigUInt) -> BigUInt {
     if a >= b { return a - b }
     return (fieldPrime - b) + a   // = Q + a - b; since a < b, result ∈ [1, Q-1]
 }
 
-/// a * b mod Q
+/// Multiplies two field elements, reducing the product mod Q.
 private func qmul(_ a: BigUInt, _ b: BigUInt) -> BigUInt {
     fastReduceQ(a * b)
 }
 
-/// -a mod Q
+/// Negates a field element mod Q.
 private func qneg(_ a: BigUInt) -> BigUInt {
     a.isZero ? BigUInt() : fieldPrime - a
 }
 
-/// a^(Q-2) mod Q  (multiplicative inverse)
+/// Inverts a field element mod Q, by raising it to Q-2.
 private func qinv(_ a: BigUInt) -> BigUInt {
     a.powmod(fieldPrime - BigUInt(2), fieldPrime)
 }

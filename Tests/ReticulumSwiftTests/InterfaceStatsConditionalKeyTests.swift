@@ -55,10 +55,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
 
     // MARK: - peers
 
-    /// `if hasattr(interface, "peers"): ifstats["peers"] = len(interface.
+    /// Mirrors `if hasattr(interface, "peers"): ifstats["peers"] = len(interface.peers)`.
     ///
-    /// peers)`. Upstream
-    /// emits the key for every interface that tracks peers, whether or not it has any, so a
+    /// Upstream emits the key for every interface that tracks peers, whether or not it has any, so a
     /// freshly built one reports zero rather than omitting the line.
     func testAnAutoInterfaceReportsItsPeerCount() throws {
         let stats = try row(for: AutoInterface(name: "auto-peers"))
@@ -336,7 +335,9 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
     }
 
     /// `blocked_ips` / `blocked_ip_list` come from `BackboneInterface.blocked_ip_count`,
-    /// which lives on upstream's *server* side. This port's Backbone support is client-only,
+    /// which lives on upstream's *server* side.
+    ///
+    /// This port's Backbone support is client-only,
     /// so there is no ingress blocking to report. `RNStatusRenderer` already renders both
     /// keys when a Python daemon supplies them, which is the half that matters here.
     func testTheBlockedIPKeysStayUnemitted() throws {

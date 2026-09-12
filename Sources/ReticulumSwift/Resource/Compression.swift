@@ -33,6 +33,7 @@ public enum DecompressionResult: Equatable {
     case exceededMaxLength
 }
 
+/// The compressor a `Resource` passes its payload through.
 public protocol DataCompressor {
     /// Compress `data`. Returns nil if compression fails or would expand the data.
     func compress(_ data: Data) -> Data?
@@ -64,8 +65,11 @@ public extension DataCompressor {
 /// default—`Resource.compressor` defaults to `BZip2Compressor` so compressed
 /// resources from Python peers can be received. Install this only to opt out.
 public struct NoCompressor: DataCompressor {
+    /// Creates the compressor.
     public init() {}
+    /// Returns `nil`, leaving the payload uncompressed.
     public func compress(_ data: Data) -> Data? { nil }
+    /// Returns `nil`, so a compressed payload is rejected.
     public func decompress(_ data: Data) -> Data? { nil }
 }
 

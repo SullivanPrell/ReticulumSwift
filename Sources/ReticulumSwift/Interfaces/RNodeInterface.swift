@@ -13,6 +13,12 @@ import Foundation
 // MARK: - KISS framing + full command set
 // All CMD_* constants match the Python KISS class in RNodeInterface.py exactly.
 
+// The members below are a byte table named after the reference's own constants;
+// a per-constant summary would only restate the name.
+// swift-format-ignore: AllPublicDeclarationsHaveDocumentation
+/// KISS framing bytes and the full RNode command set.
+///
+/// Python: `RNS.Interfaces.RNodeInterface.KISS`.
 public enum KISS {
     // ── Framing ──────────────────────────────────────────────────────────────
     public static let fend:  UInt8 = 0xC0
@@ -21,7 +27,7 @@ public enum KISS {
     public static let tfesc: UInt8 = 0xDD
 
     // ── Data / command bytes ──────────────────────────────────────────────────
-    /// Alias for backward compat with older callers that used `commandData`
+    /// Alias for backward compat with older callers that used `commandData`.
     public static var commandData: UInt8 { cmdData }
 
     public static let cmdData:        UInt8 = 0x00
@@ -72,13 +78,13 @@ public enum KISS {
     public static let cmdReturn:      UInt8 = 0xFF
 
     // ── Multi-interface specific ──────────────────────────────────────────────
-    /// CMD_SEL_INT: selects the active sub-interface for subsequent config commands
+    /// CMD_SEL_INT: selects the active sub-interface for subsequent config commands.
     public static let cmdSelInt:      UInt8 = 0x1F
-    /// CMD_INTERFACES: detect response lists hardware interface types
+    /// CMD_INTERFACES: detect response lists hardware interface types.
     public static let cmdInterfaces:  UInt8 = 0x71
 
     /// Incoming data command bytes—one per sub-interface channel
-    /// (command byte in KISS frame that carries data FROM a specific channel)
+    /// (command byte in KISS frame that carries data FROM a specific channel).
     public static let cmdInt0Data:  UInt8 = 0x00   // same as cmdData—channel 0
     public static let cmdInt1Data:  UInt8 = 0x10
     public static let cmdInt2Data:  UInt8 = 0x20
@@ -92,7 +98,7 @@ public enum KISS {
     public static let cmdInt10Data: UInt8 = 0xE0
     public static let cmdInt11Data: UInt8 = 0xF0
 
-    /// Mapping from cmdIntNData values to sub-interface index (0-based)
+    /// Mapping from cmdIntNData values to sub-interface index (0-based).
     public static let intDataCommands: [UInt8] = [
         0x00, 0x10, 0x20, 0x70, 0x75, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0
     ]
@@ -106,6 +112,8 @@ public enum KISS {
     public static let sx128x: UInt8 = 0x20
     public static let sx1280: UInt8 = 0x21
 
+    /// Returns a human-readable name for an RNode hardware interface type.
+    ///
     /// Python: KISS.interface_type_to_str()
     public static func interfaceTypeToString(_ type: UInt8) -> String {
         switch type {
@@ -271,38 +279,61 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Class constants (Python: RNodeInterface.XXXX)
 
+    /// Hardware MTU in bytes for an RNode radio frame.
     public static let hwMtuValue:       Int    = 508
+    /// Lowest frequency in Hz an RNode accepts.
     public static let freqMin:          UInt32 = 137_000_000
+    /// Highest frequency in Hz an RNode accepts.
     public static let freqMax:          UInt32 = 3_000_000_000
+    /// Offset added to the raw RSSI byte to recover dBm.
     public static let rssiOffset:       Int    = 157
+    /// Maximum station identification callsign length in bytes.
     public static let callsignMaxLen:   Int    = 32
+    /// Major firmware version this interface requires.
     public static let requiredFwVerMaj: UInt8  = 1
+    /// Minor firmware version this interface requires.
     public static let requiredFwVerMin: UInt8  = 52
+    /// Seconds to wait before reattempting a dropped device connection.
     public static let reconnectWait:    Int    = 5
+    /// Lowest SNR in dB used when scaling link quality.
     public static let qSnrMinBase:      Int    = -9
+    /// Highest SNR in dB used when scaling link quality.
     public static let qSnrMax:          Int    = 6
+    /// SNR step in dB between link-quality levels.
     public static let qSnrStep:         Int    = 2
 
+    /// Battery state reported before the device sends one.
     public static let batteryStateUnknown:     UInt8 = 0x00
+    /// Battery state for a device running on battery.
     public static let batteryStateDischarging: UInt8 = 0x01
+    /// Battery state for a device taking charge.
     public static let batteryStateCharging:    UInt8 = 0x02
+    /// Battery state for a fully charged device.
     public static let batteryStateCharged:     UInt8 = 0x03
 
     // MARK:–Interface protocol
 
+    /// Configured interface name.
     public let name:   String
+    /// Hardware MTU in bytes.
     public var hwMtu:  Int?    { Self.hwMtuValue }
+    /// Interface bitrate in bits per second, recomputed from the radio parameters.
     public var bitrate: Int = 0
 
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and carrying traffic.
     public var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
+    /// Called with each packet decoded from the radio.
     public var inboundHandler:    ((Packet, any Interface) -> Void)?
+    /// Called with each KISS payload before packet decoding.
     public var rawInboundHandler: ((Data,   any Interface) -> Void)?
+    /// Identity deriving the IFAC key, when IFAC is configured.
     public var ifacIdentity: Identity?
+    /// IFAC key, when a network name or passphrase is configured.
     public var ifacKey:      Data?
     /// IFAC token size in bytes when a network name / passphrase is configured but no explicit
     /// `ifac_size` is given.
@@ -313,75 +344,126 @@ public final class RNodeInterface: Interface {
     /// while reporting the interface Up. See `swift_devel/bugs/025-*.md`.
     public static let defaultIfacSize: Int = 8
 
+    /// IFAC token size in bytes.
     public var ifacSize:     Int = RNodeInterface.defaultIfacSize
 
     // MARK:–Transport
 
+    /// Byte transport carrying KISS frames to the device.
     public weak var transport: RNodeTransport?
     private let decoder = KISS.FrameDecoder()
 
     // MARK:–Configured radio parameters (the requested values)
 
+    /// Requested centre frequency in Hz.
     public var frequency:  UInt32 = 0
+    /// Requested bandwidth in Hz.
     public var bandwidth:  UInt32 = 0
+    /// Requested transmit power in dBm.
     public var txPower:    Int    = 0
+    /// Requested spreading factor.
     public var sf:         Int    = 0   // spreading factor
+    /// Requested coding rate.
     public var cr:         Int    = 0   // coding rate
+    /// Requested radio state.
     public var state:      UInt8  = KISS.radioStateOff
+    /// Requested short-term airtime limit, as a fraction.
     public var stAlock:    Double? = nil
+    /// Requested long-term airtime limit, as a fraction.
     public var ltAlock:    Double? = nil
 
     // MARK:–Reported (echoed) radio parameters (what the device says it has)
 
+    /// Centre frequency in Hz the device reports.
     public var rFrequency: UInt32? = nil
+    /// Bandwidth in Hz the device reports.
     public var rBandwidth: UInt32? = nil
+    /// Transmit power in dBm the device reports.
     public var rTxPower:   Int?    = nil
+    /// Spreading factor the device reports.
     public var rSf:        Int?    = nil
+    /// Coding rate the device reports.
     public var rCr:        Int?    = nil
+    /// Radio state the device reports.
     public var rState:     UInt8?  = nil
+    /// Airtime lock state the device reports.
     public var rLock:      UInt8?  = nil
+    /// Short-term airtime limit the device reports.
     public var rStAlock:   Double? = nil
+    /// Long-term airtime limit the device reports.
     public var rLtAlock:   Double? = nil
 
     // MARK:–Firmware / hardware info
 
+    /// Major firmware version the device reports.
     public var majVersion:  UInt8 = 0
+    /// Minor firmware version the device reports.
     public var minVersion:  UInt8 = 0
+    /// Whether the reported firmware meets the required version.
     public var firmwareOk:  Bool  = false
+    /// Whether the device answered the detect command.
     public var detected:    Bool  = false
+    /// Hardware platform byte the device reports.
     public var platform:    UInt8? = nil
+    /// Microcontroller byte the device reports.
     public var mcu:         UInt8? = nil
+    /// Hardware error codes the device has reported.
     public var hwErrors:    [UInt8] = []
 
     // MARK:–Telemetry
 
+    /// Received packet count the device reports.
     public var rStatRx:    UInt32? = nil
+    /// Transmitted packet count the device reports.
     public var rStatTx:    UInt32? = nil
+    /// RSSI in dBm for the last received packet.
     public var rStatRssi:  Int?    = nil
+    /// SNR in dB for the last received packet.
     public var rStatSnr:   Float?  = nil
+    /// Link quality for the last received packet, as a percentage.
     public var rStatQ:     Double? = nil
+    /// Random byte the device last supplied.
     public var rRandom:    UInt8?  = nil
 
+    /// Short-window airtime usage, as a fraction.
     public var rAirtimeShort:      Double = 0.0
+    /// Long-window airtime usage, as a fraction.
     public var rAirtimeLong:       Double = 0.0
+    /// Short-window channel load, as a fraction.
     public var rChannelLoadShort:  Double = 0.0
+    /// Long-window channel load, as a fraction.
     public var rChannelLoadLong:   Double = 0.0
+    /// Current channel RSSI in dBm.
     public var rCurrentRssi:       Int?   = nil
+    /// Current noise floor in dBm.
     public var rNoiseFloor:        Int?   = nil
+    /// Current interference level in dBm.
     public var rInterference:      Int?   = nil
 
+    /// Symbol time in milliseconds for the current radio parameters.
     public var rSymbolTimeMs:    Double? = nil
+    /// Symbol rate in symbols per second.
     public var rSymbolRate:      Int?    = nil
+    /// Preamble length in symbols.
     public var rPreambleSymbols: Int?    = nil
+    /// Preamble duration in milliseconds.
     public var rPreambleTimeMs:  Int?    = nil
+    /// CSMA slot time in milliseconds.
     public var rCsmaSlotTimeMs:  Int?    = nil
+    /// CSMA interframe space in milliseconds.
     public var rCsmaDifsMs:      Int?    = nil
+    /// CSMA contention window band.
     public var rCsmaCwBand:      UInt8?  = nil
+    /// Lowest CSMA contention window value.
     public var rCsmaCwMin:       UInt8?  = nil
+    /// Highest CSMA contention window value.
     public var rCsmaCwMax:       UInt8?  = nil
 
+    /// Battery state the device reports.
     public var rBatteryState:   UInt8 = RNodeInterface.batteryStateUnknown
+    /// Battery charge the device reports, as a percentage.
     public var rBatteryPercent: UInt8 = 0
+    /// Temperature in degrees Celsius the device reports.
     public var rTemperature:    Int?  = nil
 
     /// The radio's reported temperature, under the name the stats payload publishes.
@@ -396,7 +478,9 @@ public final class RNodeInterface: Interface {
     /// Python starts this `False` (`RNodeInterface.py:297`) and raises it only after a
     /// validated bring-up (`:459`); defaulting it true was half of the missing online gate.
     public var interfaceReady: Bool  = false
+    /// Whether the device has asked the host to pause transmission.
     public var flowControl:    Bool  = false
+    /// Frames held while flow control is asserted.
     public var packetQueue:    [Data] = []
 
     // MARK:–Station identification (`id_callsign` / `id_interval`)
@@ -426,6 +510,7 @@ public final class RNodeInterface: Interface {
     /// config block has no other owner, so the config path parks it here (`bugs/031`).
     internal var ownedTransport: AnyObject? = nil
 
+    /// Creates an interface driving `transport`.
     public init(name: String, transport: RNodeTransport, bitrate: Int = 0) {
         self.name      = name
         self.transport = transport
@@ -471,6 +556,7 @@ public final class RNodeInterface: Interface {
     /// Signalled when a bring-up reaches a terminal outcome—online, or failed and closed.
     private let bringUpSettled = DispatchSemaphore(value: 0)
 
+    /// Opens the device, detects it and brings the radio up.
     public func start() throws {
         // Python `configure_device` (`RNodeInterface.py:424-467`): reset state, open, detect,
         // wait bounded; no answer closes the port and stays offline. On detect: initRadio,
@@ -554,6 +640,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
+    /// Turns the radio off and closes the device.
     public func stop() {
         reconnector.cancel()
         transport?.onTransportError = nil
@@ -583,6 +670,7 @@ public final class RNodeInterface: Interface {
         }
     }
 
+    /// Transmits `packet` over the radio, queueing it when flow control is on.
     public func send(_ packet: Packet) throws {
         guard let transport, isOnline else { return }
         let raw = try packet.pack()
@@ -827,6 +915,7 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Bitrate computation (Python: updateBitrate)
 
+    /// Recomputes `bitrate` from the current radio parameters.
     public func updateBitrate() {
         guard let sf = rSf, let bw = rBandwidth, let cr = rCr,
               sf > 0, bw > 0, cr > 0 else {
@@ -841,6 +930,8 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Radio configuration commands
 
+    /// Asks the device for its detect, firmware, platform and MCU responses.
+    ///
     /// Python: detect()—sends 4 KISS frames asking for detect / fw / platform / mcu
     public func detect() throws {
         // Exact byte sequence from Python:
@@ -856,43 +947,59 @@ public final class RNodeInterface: Interface {
         try transport?.write(cmd)
     }
 
+    /// Tells the device to leave the current network.
+    ///
     /// Python: leave() → [FEND CMD_LEAVE 0xFF FEND]
     public func leave() throws {
         try transport?.write(Data([KISS.fend, KISS.cmdLeave, 0xFF, KISS.fend]))
     }
 
+    /// Hard-resets the device.
+    ///
     /// Python: hard_reset() → [FEND CMD_RESET 0xF8 FEND]
     public func hardReset() throws {
         try transport?.write(Data([KISS.fend, KISS.cmdReset, 0xF8, KISS.fend]))
     }
 
+    /// Sends the configured centre frequency to the device.
+    ///
     /// Python: setFrequency()—4-byte big-endian uint32, KISS-escaped
     public func setFrequency() throws {
         let data = uint32ToData(frequency)
         try sendCommand(KISS.cmdFrequency, data: data)
     }
 
+    /// Sends the configured bandwidth to the device.
+    ///
     /// Python: setBandwidth()—4-byte big-endian uint32, KISS-escaped
     public func setBandwidth() throws {
         let data = uint32ToData(bandwidth)
         try sendCommand(KISS.cmdBandwidth, data: data)
     }
 
+    /// Sends the configured transmit power to the device.
+    ///
     /// Python: setTXPower()—single byte
     public func setTxPower() throws {
         try sendCommand(KISS.cmdTxpower, data: Data([UInt8(clamping: txPower)]))
     }
 
+    /// Sends the configured spreading factor to the device.
+    ///
     /// Python: setSpreadingFactor()—single byte
     public func setSpreadingFactor() throws {
         try sendCommand(KISS.cmdSf, data: Data([UInt8(clamping: sf)]))
     }
 
+    /// Sends the configured coding rate to the device.
+    ///
     /// Python: setCodingRate()—single byte
     public func setCodingRate() throws {
         try sendCommand(KISS.cmdCr, data: Data([UInt8(clamping: cr)]))
     }
 
+    /// Sends the configured short-term airtime limit to the device.
+    ///
     /// Python: setSTALock—2-byte big-endian (int(alock*100))
     public func setStAlock() throws {
         guard let at = stAlock else { return }
@@ -901,6 +1008,8 @@ public final class RNodeInterface: Interface {
         try sendCommand(KISS.cmdStAlock, data: data)
     }
 
+    /// Sends the configured long-term airtime limit to the device.
+    ///
     /// Python: setLTALock—2-byte big-endian (int(alock*100))
     public func setLtAlock() throws {
         guard let at = ltAlock else { return }
@@ -909,12 +1018,16 @@ public final class RNodeInterface: Interface {
         try sendCommand(KISS.cmdLtAlock, data: data)
     }
 
+    /// Sets the radio to state `s`.
+    ///
     /// Python: setRadioState()
     public func setRadioState(_ s: UInt8) throws {
         state = s
         try sendCommand(KISS.cmdRadioState, data: Data([s]))
     }
 
+    /// Sends the full radio configuration, then turns the radio on.
+    ///
     /// Python: initRadio()—sends all config in order, then radio ON
     public func initRadio() throws {
         try setFrequency()
@@ -929,6 +1042,7 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Firmware validation (Python: validate_firmware)
 
+    /// Checks the reported firmware against the required version.
     public func validateFirmware() {
         if majVersion > RNodeInterface.requiredFwVerMaj {
             firmwareOk = true
@@ -944,6 +1058,7 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Radio state validation (Python: validateRadioState)
 
+    /// Reports whether the device echoed back every requested radio parameter.
     public func validateRadioState() -> Bool {
         // Python None-guards only the frequency comparison (`RNodeInterface.py:671`); the
         // bandwidth, txpower, sf and state comparisons are unconditional (`:674-685`), so a
@@ -960,6 +1075,7 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Radio state reset (Python: reset_radio_state)
 
+    /// Clears every reported radio parameter.
     public func resetRadioState() {
         rFrequency = nil
         rBandwidth = nil
@@ -973,10 +1089,12 @@ public final class RNodeInterface: Interface {
 
     // MARK:–TX queue (Python: queue / process_queue)
 
+    /// Holds `data` until flow control clears.
     public func queue(_ data: Data) {
         packetQueue.append(data)
     }
 
+    /// Sends as much of the queued traffic as flow control allows.
     public func processQueue() throws {
         if packetQueue.isEmpty {
             interfaceReady = true
@@ -990,9 +1108,12 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Battery accessors (Python: get_battery_state / get_battery_percent)
 
+    /// Returns the battery state the device reports.
     public func getBatteryState() -> UInt8 { rBatteryState }
+    /// Returns the battery charge the device reports, as a percentage.
     public func getBatteryPercent() -> UInt8 { rBatteryPercent }
 
+    /// Returns the battery state as a human-readable string.
     public func getBatteryStateString() -> String {
         switch rBatteryState {
         case RNodeInterface.batteryStateCharged:     return "charged"
@@ -1004,7 +1125,7 @@ public final class RNodeInterface: Interface {
 
     // MARK:–Private helpers
 
-    /// Build a KISS command frame: FEND + cmd + escape(data) + FEND
+    /// Build a KISS command frame: FEND + cmd + escape(data) + FEND.
     private func sendCommand(_ cmd: UInt8, data: Data) throws {
         var frame = Data()
         frame.append(KISS.fend)
@@ -1014,7 +1135,7 @@ public final class RNodeInterface: Interface {
         try transport?.write(frame)
     }
 
-    /// Pack a UInt32 as 4-byte big-endian Data
+    /// Pack a UInt32 as 4-byte big-endian Data.
     private func uint32ToData(_ value: UInt32) -> Data {
         Data([
             UInt8((value >> 24) & 0xFF),
@@ -1024,7 +1145,7 @@ public final class RNodeInterface: Interface {
         ])
     }
 
-    /// Read 4 bytes from Data as big-endian UInt32
+    /// Read 4 bytes from Data as big-endian UInt32.
     private func uint32BigEndian(_ data: Data) -> UInt32 {
         let i = data.startIndex
         return (UInt32(data[i]) << 24) |

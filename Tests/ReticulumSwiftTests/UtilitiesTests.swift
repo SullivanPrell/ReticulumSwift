@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the human-readable utility functions.
+///
 /// Tests for RNS utility functions mirroring Python's `RNS.prettyhexrep()`,
 /// `RNS.hexrep()`, `RNS.prettysize()` and so on
 final class UtilitiesTests: XCTestCase {

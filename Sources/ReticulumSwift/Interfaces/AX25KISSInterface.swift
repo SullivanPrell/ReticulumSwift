@@ -58,6 +58,7 @@ public struct AX25 {
 
 // MARK: - Errors
 
+/// Failures raised while configuring or opening an AX.25 KISS port.
 public enum AX25KISSInterfaceError: Error {
     case invalidCallsign(String)
     case invalidSSID(Int)
@@ -85,20 +86,29 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Class constants
 
+    /// Assumed link bitrate in bits per second, since a TNC reports none.
+    ///
     /// Python: `BITRATE_GUESS = 1200`
     public static let bitrateGuess: Int = 1_200
 
+    /// IFAC token size in bytes when none is configured.
+    ///
     /// Python: `DEFAULT_IFAC_SIZE = 8`
     public static let defaultIfacSize: Int = 8
 
+    /// Largest AX.25 UI frame payload in bytes.
+    ///
     /// Python: `self.HW_MTU = 564`
     public static let hwMtuConstant: Int = 564
 
     // MARK: - Interface protocol properties
 
+    /// Configured interface name.
     public let  name:    String
+    /// Interface bitrate in bits per second.
     public var  bitrate: Int = AX25KISSInterface.bitrateGuess
     private let onlineFlag = LockedFlag(false)
+    /// Whether the serial port is open and the TNC is configured.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
@@ -109,21 +119,33 @@ public final class AX25KISSInterface: Interface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Bytes received since the interface came up.
     public var rxBytes:   Int { counters.rxBytes }
+    /// Bytes sent since the interface came up.
     public var txBytes:   Int { counters.txBytes }
+    /// Packets received since the interface came up.
     public var rxPackets: Int { counters.rxPackets }
+    /// Packets sent since the interface came up.
     public var txPackets: Int { counters.txPackets }
 
+    /// Hardware MTU in bytes.
     public var hwMtu: Int? { AX25KISSInterface.hwMtuConstant }
 
+    /// Called with each packet decoded from the port.
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
+    /// Called with each frame received before packet decoding.
     public var rawInboundHandler: ((Data,   any Interface) -> Void)? = nil
 
+    /// Identity deriving the IFAC key, when IFAC is configured.
     public var ifacIdentity: Identity? = nil
+    /// IFAC key, when a network name or passphrase is configured.
     public var ifacKey:      Data?     = nil
+    /// IFAC token size in bytes.
     public var ifacSize:     Int       = AX25KISSInterface.defaultIfacSize
 
+    /// Whether this interface asks Transport to synthesize a tunnel.
     public var wantsTunnel: Bool  = false
+    /// Tunnel this interface is an endpoint of, once one is synthesized.
     public var tunnelID:    Data? = nil
 
     // MARK: - AX.25 configuration
@@ -136,20 +158,31 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Serial / KISS configuration
 
+    /// Serial device path.
     public let port:     String
+    /// Serial line speed in baud.
     public let speed:    Int
+    /// Serial data bits.
     public let dataBits: Int
+    /// Serial parity.
     public let parity:   SerialParity
+    /// Serial stop bits.
     public let stopBits: Int
 
+    /// Transmitter preamble in milliseconds.
     public var preamble:    Int  = 350
+    /// Transmitter tail in milliseconds.
     public var txtail:      Int  = 20
+    /// Persistence parameter for the TNC CSMA algorithm.
     public var persistence: Int  = 64
+    /// Slot time in milliseconds for the TNC CSMA algorithm.
     public var slottime:    Int  = 20
+    /// Whether the TNC asserts flow control.
     public var flowControl: Bool = false
 
     // MARK: - Flow control state
 
+    /// Whether the TNC has been configured and is ready to carry traffic.
     public private(set) var interfaceReady: Bool = false
     private var packetQueue: [Data] = []
     private let lock = NSLock()
@@ -232,6 +265,7 @@ public final class AX25KISSInterface: Interface {
     public var reconnectWait: TimeInterval = 5.0
     private let reconnector = TransportReconnector()
 
+    /// Opens the serial port and configures the TNC.
     public func start() throws {
         transport.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
         try transport.open(port: port, baudRate: speed,
@@ -244,6 +278,7 @@ public final class AX25KISSInterface: Interface {
         lock.lock(); interfaceReady = true; lock.unlock()
     }
 
+    /// Closes the serial port.
     public func stop() {
         reconnector.cancel()
         transport.onTransportError = nil
@@ -277,22 +312,27 @@ public final class AX25KISSInterface: Interface {
         setFlowControl(flowControl)
     }
 
+    /// Sets the transmitter preamble to `p` milliseconds.
     public func setPreamble(_ p: Int) {
         let v = max(0, min(255, p / 10))
         try? transport.write(Data([KISS.fend, KISS.cmdTxDelay, UInt8(v), KISS.fend]))
     }
+    /// Sets the transmitter tail to `t` milliseconds.
     public func setTxTail(_ t: Int) {
         let v = max(0, min(255, t / 10))
         try? transport.write(Data([KISS.fend, KISS.cmdTxTail, UInt8(v), KISS.fend]))
     }
+    /// Sets the CSMA persistence parameter to `p`.
     public func setPersistence(_ p: Int) {
         let v = UInt8(max(0, min(255, p)))
         try? transport.write(Data([KISS.fend, KISS.cmdP, v, KISS.fend]))
     }
+    /// Sets the CSMA slot time to `s` milliseconds.
     public func setSlotTime(_ s: Int) {
         let v = max(0, min(255, s / 10))
         try? transport.write(Data([KISS.fend, KISS.cmdSlotTime, UInt8(v), KISS.fend]))
     }
+    /// Turns TNC flow control on or off.
     public func setFlowControl(_ enabled: Bool) {
         try? transport.write(Data([KISS.fend, KISS.cmdReady, 0x01, KISS.fend]))
     }
@@ -353,6 +393,7 @@ public final class AX25KISSInterface: Interface {
         }
     }
 
+    /// Sends as much of the queued traffic as flow control allows.
     public func processQueue() {
         lock.lock()
         guard !packetQueue.isEmpty else {
@@ -390,6 +431,7 @@ public final class AX25KISSInterface: Interface {
 
     // MARK: - Queue inspection (for tests)
 
+    /// Number of frames waiting to be sent.
     public var queuedPacketCount: Int {
         lock.lock(); defer { lock.unlock() }
         return packetQueue.count

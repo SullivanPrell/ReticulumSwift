@@ -37,6 +37,8 @@ final class WireGoldenBytesTests: XCTestCase {
 
     // MARK: - Identity hash computation
 
+    /// Asserts the identity hash of an all-zero public key.
+    ///
     /// Python: `RNS.Identity.truncated_hash(bytes(64))`
     func testIdentityHashOfZeroPub() {
         let zeroPub = Data(repeating: 0x00, count: 64)
@@ -46,6 +48,8 @@ final class WireGoldenBytesTests: XCTestCase {
             "truncated_hash(zeros64) must match Python golden: \(want.hex)")
     }
 
+    /// Asserts the identity hash of an all-0x42 public key.
+    ///
     /// Python: `RNS.Identity.truncated_hash(bytes([0x42]*64))`
     func testIdentityHashOf42Pub() {
         let pub42 = Data(repeating: 0x42, count: 64)
@@ -55,6 +59,8 @@ final class WireGoldenBytesTests: XCTestCase {
             "truncated_hash(0x42*64) must match Python golden: \(want.hex)")
     }
 
+    /// Asserts the full hash of a fixed string.
+    ///
     /// Python: `RNS.Identity.full_hash(b'reticulum')`
     func testFullHashOfReticulumString() {
         let got = Hashes.fullHash(Data("reticulum".utf8))
@@ -63,6 +69,8 @@ final class WireGoldenBytesTests: XCTestCase {
             "full_hash('reticulum') must match Python golden")
     }
 
+    /// Asserts the truncated hash of a fixed string.
+    ///
     /// Python: `RNS.Identity.truncated_hash(b'reticulum')`
     func testTruncatedHashOfReticulumString() {
         let got = Hashes.truncatedHash(Data("reticulum".utf8))
@@ -73,6 +81,8 @@ final class WireGoldenBytesTests: XCTestCase {
 
     // MARK: - Name hash (10-byte truncation of full SHA-256)
 
+    /// Asserts the name hash of a fixed destination name.
+    ///
     /// Python: `RNS.Identity.full_hash(b'test.node')[: NAME_HASH_LENGTH//8]` (10 bytes)
     func testNameHashOfTestNode() {
         let got = Hashes.fullHash(Data("test.node".utf8)).prefix(Constants.nameHashLength)
@@ -83,6 +93,8 @@ final class WireGoldenBytesTests: XCTestCase {
 
     // MARK: - Destination hash computation
 
+    /// Asserts the destination hash built from a fixed name and identity.
+    ///
     /// Python:
     ///   name_hash = sha256(b'test.node')[:10]
     ///   id_hash   = truncated_hash(zeros_64)
@@ -98,6 +110,8 @@ final class WireGoldenBytesTests: XCTestCase {
             "destination hash for 'test.node' + zero identity must match Python golden")
     }
 
+    /// Asserts the hash of a plain destination, which carries no identity.
+    ///
     /// Python:
     ///   name_hash  = sha256(b'lxmf.propagation')[:10]
     ///   dest_hash  = truncated_hash(name_hash)   # plain destination (no identity)
@@ -109,6 +123,8 @@ final class WireGoldenBytesTests: XCTestCase {
             "plain dest hash for 'lxmf.propagation' must match Python golden")
     }
 
+    /// Asserts the LXMF delivery destination hash for a fixed identity.
+    ///
     /// Python: LXMF delivery destination for a fixed identity (pub=0x42*64)
     func testLxmfDeliveryDestinationHash() {
         let pub42 = Data(repeating: 0x42, count: 64)
@@ -124,6 +140,8 @@ final class WireGoldenBytesTests: XCTestCase {
 
     // MARK: - Packet header byte encoding
 
+    /// Asserts the flags byte of a type-1 data packet.
+    ///
     /// Python: DATA/SINGLE/TYPE1/BROADCAST/UNSET_CONTEXT/HOPS=0 → flags byte 0x00
     func testType1DataPacketFlagsByte() throws {
         let p = Packet(destinationType: .single, packetType: .data,
@@ -134,6 +152,8 @@ final class WireGoldenBytesTests: XCTestCase {
             "TYPE1/SINGLE/DATA packet flags byte must be 0x00")
     }
 
+    /// Asserts the flags byte of a type-1 announce.
+    ///
     /// Python: ANNOUNCE/SINGLE/TYPE1/BROADCAST → flags byte 0x01
     func testType1AnnouncePacketFlagsByte() throws {
         let p = Packet(destinationType: .single, packetType: .announce,
@@ -144,6 +164,8 @@ final class WireGoldenBytesTests: XCTestCase {
             "TYPE1/SINGLE/ANNOUNCE flags byte must be 0x01 (Python ANNOUNCE=0x01)")
     }
 
+    /// Asserts the flags byte of a relayed type-2 announce.
+    ///
     /// Relayed announce (TYPE2, context flag SET, SINGLE, ANNOUNCE) → 0x61
     ///
     /// Python flag byte layout (bit 6 = header, NOT bit 7):
@@ -225,6 +247,8 @@ final class WireGoldenBytesTests: XCTestCase {
 
     // MARK: - Channel envelope format
 
+    /// Asserts the golden bytes of a channel envelope.
+    ///
     /// Python channel envelope: msgtype(2B) + seq(2B) + len(2B) + body
     /// For msgtype=0x0100, seq=0, body=b'hello' → 01 00 00 00 00 05 68 65 6c 6c 6f
     func testChannelEnvelopeGolden() throws {
@@ -242,6 +266,8 @@ final class WireGoldenBytesTests: XCTestCase {
 
     // MARK: - StreamDataMessage (Buffer) header
 
+    /// Asserts the header bytes of a stream data message.
+    ///
     /// Python: streamID=5, eof=False → header = 0x0005 (big-endian UInt16)
     func testStreamDataMessageHeader() throws {
         let msg = StreamDataMessage(streamID: 5, data: Data("test".utf8), eof: false)

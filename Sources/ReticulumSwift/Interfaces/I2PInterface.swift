@@ -30,17 +30,26 @@ public final class I2PInterface: Interface {
 
     // MARK: - Python class constants
 
+    /// Assumed bitrate for an I2P tunnel, in bits per second.
+    ///
     /// Python: `BITRATE_GUESS = 256*1000` (bits/s)
     public static let bitrateGuess:    Int = 256_000
+    /// Default IFAC authentication field size in bytes.
+    ///
     /// Python: `DEFAULT_IFAC_SIZE = 16`
     public static let defaultIfacSize: Int = 16
+    /// Hardware maximum transmission unit in bytes.
+    ///
     /// Python: `self.HW_MTU = 1064`
     public static let hwMtu:           Int = 1064
 
     // MARK: - Interface protocol properties
 
+    /// Interface name as it appears in configuration and status output.
     public let  name:    String
+    /// Nominal interface bitrate in bits per second.
     public var  bitrate: Int  = I2PInterface.bitrateGuess
+    /// Whether the interface is up and able to carry traffic.
     public var  isOnline: Bool = false
 
     // MARK: - Traffic counters
@@ -57,18 +66,25 @@ public final class I2PInterface: Interface {
         return peerInterfaces + spawned
     }
 
+    /// Total bytes received across every peer.
     public var rxBytes:   Int { allPeers.reduce(0) { $0 + $1.rxBytes } }
+    /// Total bytes transmitted across every peer.
     public var txBytes:   Int { allPeers.reduce(0) { $0 + $1.txBytes } }
+    /// Total packets received across every peer.
     public var rxPackets: Int { allPeers.reduce(0) { $0 + $1.rxPackets } }
+    /// Total packets transmitted across every peer.
     public var txPackets: Int { allPeers.reduce(0) { $0 + $1.txPackets } }
 
     // Hardware MTU
+    /// Hardware maximum transmission unit in bytes, or `nil` when unconstrained.
     public var hwMtu: Int? { I2PInterface.hwMtu }
 
     // Mode is held in `interfaceState` like every other interface. This type used to be the only
     // one with a settable `mode`, which is what made `bugs/025` look like a config-parser gap
     // rather than a protocol-shape gap.
+    /// Whether path requests received here are resolved recursively.
     public var recursivePrs: Bool = false
+    /// Whether announces originating on this instance are sent on this interface.
     public var announcesFromInternal: Bool = true
     /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
     public var announcesToInternal: Bool? = nil
@@ -76,16 +92,23 @@ public final class I2PInterface: Interface {
     public var gravity: Int = InterfaceMode.defaultGravity
 
     // Tunnel
+    /// Whether the interface asks Transport to establish a tunnel over it.
     public var wantsTunnel: Bool   = false
+    /// Identifier of the transport tunnel established over this interface.
     public var tunnelID:    Data?  = nil
 
     // IFAC (inherited by spawned peers)
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity? = nil
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey:      Data?     = nil
+    /// IFAC authentication field size in bytes.
     public var ifacSize:     Int       = I2PInterface.defaultIfacSize
 
     // Inbound handlers set by Transport
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler:    ((Packet, any Interface) -> Void)? = nil
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?   = nil
 
     /// The parent interface never routes packets itself—its dialed peers
@@ -98,8 +121,12 @@ public final class I2PInterface: Interface {
     /// Whether this interface accepts incoming I2P connections.
     /// Python: `connectable`
     public var connectable:       Bool = false
+    /// Whether traffic is carried inside an I2P tunnel.
+    ///
     /// Python: `self.i2p_tunneled = True`
     public var i2pTunneled:       Bool = true
+    /// Whether the interface takes part in peer discovery.
+    ///
     /// Python: `self.supports_discovery = True`
     public var supportsDiscovery: Bool = true
 
@@ -131,6 +158,8 @@ public final class I2PInterface: Interface {
     /// only; kept here so stop()/restart and the UI can reach them).
     public private(set) var peerInterfaces: [I2PInterfacePeer] = []
 
+    /// Number of inbound peer connections currently served.
+    ///
     /// Python: `len(spawned_interfaces)` (inbound connections only)
     public var clients: Int {
         lock.lock(); defer { lock.unlock() }
@@ -224,6 +253,7 @@ public final class I2PInterface: Interface {
 
     // MARK: - Spawned interface management (inbound peer registry)
 
+    /// Registers a peer interface spawned by an inbound connection.
     public func addSpawnedInterface(_ peer: I2PInterfacePeer) {
         // Inbound (accepted) peers inherit routing preference from the parent
         // just like the outbound ones spawned in `start()`.
@@ -237,6 +267,7 @@ public final class I2PInterface: Interface {
         lock.lock(); spawned.append(peer); lock.unlock()
     }
 
+    /// Removes a spawned peer interface.
     public func removeSpawnedInterface(_ peer: I2PInterfacePeer) {
         lock.lock(); spawned.removeAll { $0 === peer }; lock.unlock()
     }

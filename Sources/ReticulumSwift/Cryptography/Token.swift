@@ -21,7 +21,9 @@ import Foundation
 ///   * 32 bytes -> 16-byte signing key + 16-byte AES-128 encryption key
 ///   * 64 bytes -> 32-byte signing key + 32-byte AES-256 encryption key
 public struct Token {
+    /// The cipher the key length selects.
     public enum Mode: Equatable { case aes128cbc, aes256cbc }
+    /// A failure raised while building or using a token.
     public enum TokenError: Error {
         case invalidKeyLength
         case invalidTokenLength
@@ -29,10 +31,14 @@ public struct Token {
         case decryptionFailed(underlying: Error)
     }
 
+    /// The cipher this token uses.
     public let mode: Mode
+    /// The HMAC key taken from the first half of the key.
     public let signingKey: Data
+    /// The AES key taken from the second half of the key.
     public let encryptionKey: Data
 
+    /// Splits a 32- or 64-byte key into its signing and encryption halves.
     public init(key: Data) throws {
         switch key.count {
         case 32:
@@ -48,6 +54,7 @@ public struct Token {
         }
     }
 
+    /// Returns `plaintext` encrypted and signed as a token.
     public func encrypt(_ plaintext: Data, iv overrideIV: Data? = nil) throws -> Data {
         let iv = overrideIV ?? Data((0..<16).map { _ in UInt8.random(in: 0...255) })
         let padded = PKCS7.pad(plaintext)
@@ -68,6 +75,7 @@ public struct Token {
         return SecureRandom.bytes(64)
     }
 
+    /// Returns the plaintext of `token` once its HMAC verifies.
     public func decrypt(_ token: Data) throws -> Data {
         guard token.count > 48 else { throw TokenError.invalidTokenLength }
         let mac = token.suffix(32)

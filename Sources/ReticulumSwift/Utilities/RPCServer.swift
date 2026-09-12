@@ -44,11 +44,13 @@ public final class RPCServer {
     private static let welcomeMessage  = MultiprocessingAuth.welcomeMessage
     private static let failureMessage  = MultiprocessingAuth.failureMessage
 
+    /// Creates a server bound to `port` and authenticated with `authkey`.
     public init(port: UInt16, authkey: Data) {
         self.port = port
         self.authkey = authkey
     }
 
+    /// Starts listening for control connections.
     public func start() throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw RPCError.invalidPort
@@ -122,6 +124,7 @@ public final class RPCServer {
     /// loopback bind, so anything approaching it means the framework isn't going to answer.
     private static let bindTimeout: DispatchTimeInterval = .seconds(5)
 
+    /// Stops listening and releases the socket.
     public func stop() {
         listener?.cancel()
         listener = nil
@@ -563,6 +566,7 @@ public final class RPCServer {
         }
     }
 
+    /// A failure raised while starting or serving the control socket.
     public enum RPCError: Error {
         case invalidPort
         case invalidProtocol

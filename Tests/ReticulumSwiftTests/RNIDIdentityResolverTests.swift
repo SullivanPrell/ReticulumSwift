@@ -201,6 +201,8 @@ final class RNIDIdentityResolverTests: XCTestCase {
         XCTAssertTrue(output.lines.isEmpty)
     }
 
+    /// Asserts a request timeout re-tests the predicate rather than trusting the waiter.
+    ///
     /// Python DISCARDS `spin()`'s return value and re-invokes the predicate itself
     /// (rnid.py:259); a waiter that reports success must not be trusted on its own.
     func testRequestTimeoutReTestsThePredicate() {

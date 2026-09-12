@@ -34,9 +34,13 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public var announcesToInternal: Bool? = nil
     /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
     public var gravity: Int = InterfaceMode.defaultGravity
+    /// Interface name as it appears in configuration and status output.
     public let name: String
+    /// Host the shared instance listens on.
     public let host: String
+    /// TCP port the shared instance listens on.
     public let port: UInt16
+    /// Nominal interface bitrate in bits per second.
     public var bitrate: Int = 1_000_000_000  // rnsd local = effectively unlimited
 
     /// `LocalClientInterface.HW_MTU = 262144` (`LocalInterface.py:71`).
@@ -55,15 +59,21 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public let autoconfigureMtu: Bool = true
 
     private let onlineFlag = LockedFlag(false)
+    /// Whether the interface is up and able to carry traffic.
     public private(set) var isOnline: Bool {
         get { onlineFlag.value }
         set { onlineFlag.value = newValue }
     }
 
+    /// Called with each packet decoded from an inbound frame.
     public var inboundHandler: ((Packet, any Interface) -> Void)?
+    /// Called with each inbound frame, before packet decoding.
     public var rawInboundHandler: ((Data, any Interface) -> Void)?
+    /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
     public var ifacIdentity: Identity?
+    /// Derived IFAC key used to sign and verify frames.
     public var ifacKey: Data?
+    /// IFAC authentication field size in bytes.
     public var ifacSize: Int = Constants.defaultIfacSize
 
     /// Lock-guarded—written from this interface's I/O queue while the UI
@@ -71,7 +81,9 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     ///
     /// See `InterfaceCounters`.
     private let counters = InterfaceCounters()
+    /// Total bytes received on this interface.
     public var rxBytes: Int { counters.rxBytes }
+    /// Total bytes transmitted on this interface.
     public var txBytes: Int { counters.txBytes }
 
     /// Seconds between reconnection attempts.
@@ -95,6 +107,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     public enum ConnectionError: Error, CustomStringConvertible {
         case couldNotConnect(host: String, port: UInt16)
 
+        /// Human-readable description of the connection failure.
         public var description: String {
             if case .couldNotConnect(let host, let port) = self {
                 return "could not connect to shared instance at \(host):\(port)"
@@ -135,6 +148,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
     /// class name, so the stats payload would otherwise publish the wrong kind.
     public var statsTypeName: String { "LocalClientInterface" }
 
+    /// Creates an interface connecting to a shared Reticulum instance.
     public init(
         name: String = "LocalInterface",
         host: String = "127.0.0.1",
@@ -175,6 +189,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
         }
     }
 
+    /// Takes the interface offline and releases its resources.
     public func stop() {
         stateLock.lock()
         stopped = true
@@ -186,6 +201,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
         isOnline = false
     }
 
+    /// Transmits `packet` on the interface.
     public func send(_ packet: Packet) throws {
         stateLock.lock()
         let conn = connection
@@ -197,11 +213,13 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
         conn.send(content: framed, completion: .contentProcessed { _ in })
     }
 
-    /// - Parameter signalling: when non-nil, this is the *initial* connect made
-    ///   on behalf of ``start()``. The semaphore is signalled once the outcome is
-    ///   known, and a failure is reported back rather than retried, matching
-    ///   Python—where a first connect that fails raises instead of entering the
-    ///   reconnect loop. Reconnects pass nil and keep the existing retry behaviour.
+    /// Opens the connection to the shared instance.
+    ///
+    /// - Parameter readySignal: Non-`nil` for the initial connect made on behalf of
+    ///   ``start()``. The semaphore is signalled once the outcome is known, and a failure is
+    ///   reported back rather than retried, matching Python, where a first connect that fails
+    ///   raises instead of entering the reconnect loop. Reconnects pass `nil` and keep the
+    ///   retry behaviour.
     private func connect(signalling readySignal: DispatchSemaphore? = nil) {
         // Consumed by whichever state arrives first; cleared so that a later
         // failure on an already-established connection still schedules reconnects.

@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity getter methods on `PacketReceipt`.
+///
 /// Tests for the additional PacketReceipt getter methods that mirror Python's API:
 ///   PacketReceipt.get_hash()        → packetHash bytes
 ///   PacketReceipt.get_proved()      → proved flag

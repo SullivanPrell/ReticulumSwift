@@ -104,6 +104,7 @@ public extension RNCopyApp {
         /// `--save` directory not writable. Python: rncp.py:103.
         case outputDirNotWritable = 4
 
+        /// Process exit code for this result.
         public var code: Int32 { Int32(rawValue) }
     }
 }
@@ -129,6 +130,8 @@ public extension RNCopyApp {
         UtilityFormatting.sizeStr(Double(num), suffix: suffix)
     }
 
+    /// Returns a transfer rate rendered the way `rncp` composes it.
+    ///
     /// A transfer rate, rendered exactly as rncp composes it: the *byte* rate is
     /// converted to bits by `size_str`'s `'b'` branch and the literal `"ps"` is
     /// appended by the f-string. Python: rncp.py:582,589,757.
@@ -178,6 +181,8 @@ public extension RNCopyApp {
         return String(path[path.index(after: slash)...])
     }
 
+    /// Expands a leading tilde in `path` against `home`.
+    ///
     /// `os.path.expanduser` against `rncp`'s injected home.
     ///
     /// Delegates to the one implementation every utility uses, rather than keeping a second copy
@@ -276,6 +281,7 @@ public extension RNCopyApp {
         case invalidLength(String)
         case invalidHex(String)
 
+        /// Message describing the allowed-identity failure.
         public var message: String {
             switch self {
             case .invalidLength:
@@ -285,6 +291,7 @@ public extension RNCopyApp {
             }
         }
 
+        /// Message describing the allowed-identity failure.
         public var description: String { message }
     }
 
@@ -440,10 +447,13 @@ public final class RNCopyDiskFileSystem: RNCopyFileSystem {
 
     private let environment: [String: String]
 
+    /// Creates a file system reading its home directory from the process environment.
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         self.environment = environment
     }
 
+    /// Home directory the identity store and allowed-identity list hang off.
+    ///
     /// `rncp`'s identity store and its `~/.rncp` allow-list hang off this.
     ///
     /// Resolved through the shared `$HOME`-aware resolver, not `NSHomeDirectory()`, which reports
@@ -454,36 +464,43 @@ public final class RNCopyDiskFileSystem: RNCopyFileSystem {
         InstanceConnection.homeDirectory(environment: environment).path
     }
 
+    /// Working directory relative paths resolve against.
     public var currentDirectoryPath: String {
         FileManager.default.currentDirectoryPath
     }
 
+    /// Returns whether a file exists at `path`.
     public func fileExists(atPath path: String) -> Bool {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
         return exists && !isDirectory.boolValue
     }
 
+    /// Returns whether `path` names a directory.
     public func isDirectory(atPath path: String) -> Bool {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
         return exists && isDirectory.boolValue
     }
 
+    /// Returns whether `path` names a directory that can be written to.
     public func isWritableDirectory(atPath path: String) -> Bool {
         FileManager.default.isWritableFile(atPath: path)
     }
 
+    /// Reads the file at `path`.
     public func readFile(atPath path: String) throws -> Data {
         // Memory-mapped where safe: `ResourceTransfer.send` needs the whole payload in
         // memory, so this at least avoids one full copy for large files.
         try Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)
     }
 
+    /// Writes `data` to `path`.
     public func writeFile(_ data: Data, toPath path: String) throws {
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
+    /// Removes the file at `path`.
     public func removeFile(atPath path: String) throws {
         try FileManager.default.removeItem(atPath: path)
     }
@@ -565,8 +582,14 @@ public extension RNCopyApp {
     ///   "…renaming instead" and falls through.
     /// - Unconditionally afterwards, collisions become `name.1`, `name.2`, …
     ///
-    /// - Parameter onOverwriteFailure: invoked with the path when `-O` was requested but
-    ///   the unlink failed, so the caller can emit Python's message.
+    /// - Parameters:
+    ///   - filename: Name the sender gave the file.
+    ///   - savePath: Directory the file is saved under, or `nil` to use the working directory.
+    ///   - allowOverwrite: Whether an existing file is unlinked before saving.
+    ///   - fileSystem: File system the target is resolved against.
+    ///   - onOverwriteFailure: Called with the path when `allowOverwrite` was requested but
+    ///     the unlink failed, so the caller can emit the reference's message.
+    /// - Returns: The resolved target path and how it was reached.
     static func resolveSaveTarget(filename: String,
                                   savePath: String?,
                                   allowOverwrite: Bool,
@@ -649,6 +672,7 @@ public struct RNCopyProgressMeter {
 
     private var samples: [(time: TimeInterval, got: Double, phyGot: Double)] = []
 
+    /// Creates a meter holding no samples.
     public init() {}
 
     /// Record one sample and recompute the rates.
@@ -687,6 +711,7 @@ public extension RNCopyApp {
         /// The file exists but `Identity.fromFile` returned nil. Python: rncp.py:59-63 → exit 2.
         case corruptIdentityFile(String)
 
+        /// Message describing the identity failure.
         public var message: String {
             switch self {
             case .corruptIdentityFile(let path):
@@ -694,6 +719,7 @@ public extension RNCopyApp {
             }
         }
 
+        /// Message describing the identity failure.
         public var description: String { message }
     }
 
@@ -788,6 +814,8 @@ public extension RNCopyApp {
       --version             show program's version number and exit
     """
 
+    /// Returns the argument surface `rncp` declares.
+    ///
     /// The declared argument surface, mirroring `main()`'s parser (rncp.py:796-818).
     ///
     /// `--limit` is deliberately absent: it's commented out upstream in both the parser and

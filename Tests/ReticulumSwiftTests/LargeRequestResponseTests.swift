@@ -51,6 +51,8 @@ final class LargeRequestResponseTests: XCTestCase {
         }
     }
 
+    /// Returns deterministic bytes the compressor cannot shrink.
+    ///
     /// Deterministic incompressible bytes, so the compressor can't defeat a size assertion through
     /// compressor—the mechanism that made `tri-test`'s large-page cell unfalsifiable for the
     /// whole life of `bugs/016`.

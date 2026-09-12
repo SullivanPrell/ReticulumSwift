@@ -66,24 +66,28 @@ public final class InterfaceFreqTracker {
 
     // MARK: - Record events
 
+    /// Records one received announce.
     public func recordIncomingAnnounce(size: Int = 0,
                                        at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
         append(t, to: &ia)
         arxc += 1; arxb += size
     }
+    /// Records one transmitted announce.
     public func recordOutgoingAnnounce(size: Int = 0,
                                        at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
         append(t, to: &oa)
         atxc += 1; atxb += size
     }
+    /// Records one received path request.
     public func recordIncomingPathRequest(size: Int = 0,
                                           at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
         append(t, to: &ip)
         prxc += 1; prxb += size
     }
+    /// Records one transmitted path request.
     public func recordOutgoingPathRequest(size: Int = 0,
                                           at t: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock(); defer { lock.unlock() }
@@ -161,6 +165,7 @@ public final class InterfaceFreqTracker {
         public let protocolViolations: Int, ifacViolations: Int, packetFilterHits: Int
     }
 
+    /// Returns a snapshot of the tracked counters.
     public func counts() -> Counts {
         lock.lock(); defer { lock.unlock() }
         return Counts(announceRxBytes: arxb, announceTxBytes: atxb,

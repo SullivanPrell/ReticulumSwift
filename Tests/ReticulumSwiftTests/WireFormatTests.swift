@@ -19,6 +19,8 @@ final class WireFormatTests: XCTestCase {
 
     // MARK: - Destination naming and hashing
 
+    /// Asserts the name hash matches the bytes the reference produces.
+    ///
     /// Python:
     ///   from RNS import *
     ///   name = "environmentlogger.remotesensor.temperature"

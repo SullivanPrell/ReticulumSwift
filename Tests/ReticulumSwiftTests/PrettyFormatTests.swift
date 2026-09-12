@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the human-readable formatting utilities.
+///
 /// Tests for RNS formatting utilities:
 ///   - RNS.prettysize()—SI prefix (1000-based, matching Python)
 ///   - RNS.prettyspeed()

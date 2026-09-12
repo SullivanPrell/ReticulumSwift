@@ -21,12 +21,15 @@ import Foundation
 /// timer. Every `InterfaceAnnouncer.DEFAULT_STAMP_VALUE`-style citation in this package means
 /// the Python class, so the collision made each of them read as a reference to this type.
 public final class DestinationAnnouncer {
+    /// Destination announced on each emit.
     public let destination: Destination
+    /// Seconds between announces.
     public var interval: TimeInterval
     private weak var transport: Transport?
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "DestinationAnnouncer")
 
+    /// Creates an announcer for a destination.
     public init(destination: Destination, interval: TimeInterval = 1800, transport: Transport? = nil) {
         self.destination = destination
         self.interval = interval
@@ -47,11 +50,13 @@ public final class DestinationAnnouncer {
         timer = t
     }
 
+    /// Stops announcing.
     public func stop() {
         timer?.cancel()
         timer = nil
     }
 
+    /// Sends one announce now.
     public func emit() {
         guard let transport else { return }
         try? transport.announce(destination: destination)
@@ -68,12 +73,17 @@ public final class DestinationAnnouncer {
 public final class BlackholeUpdater {
 
     // MARK: - Constants (mirror Python)
+    /// Seconds to wait before the first update.
     public static let initialWait:    TimeInterval = 20
+    /// Seconds between runs of the update job.
     public static let jobInterval:    TimeInterval = 60
+    /// Seconds between blackhole list updates.
     public static let updateInterval: TimeInterval = 3600
+    /// Seconds to wait for a source to answer.
     public static let sourceTimeout:  TimeInterval = 25
 
     // MARK: - State
+    /// Whether the updater is running.
     public private(set) var isRunning = false
     /// Incremented on every start(); a job loop exits when its captured
     /// generation no longer matches, so a stop()+start() can't leave two loops
@@ -85,12 +95,14 @@ public final class BlackholeUpdater {
     private let lock = NSLock()
     private weak var transport: Transport?
 
+    /// Creates an updater that fetches blackhole lists over `transport`.
     public init(transport: Transport? = nil) {
         self.transport = transport
     }
 
     // MARK: - Lifecycle
 
+    /// Starts the periodic update job.
     public func start() {
         lock.lock()
         guard !isRunning else { lock.unlock(); return }
@@ -103,6 +115,7 @@ public final class BlackholeUpdater {
         }
     }
 
+    /// Stops the periodic update job.
     public func stop() {
         lock.lock(); isRunning = false; lock.unlock()
     }

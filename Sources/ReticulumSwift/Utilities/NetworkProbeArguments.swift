@@ -248,7 +248,7 @@ public extension NetworkProbe {
             }
         }
 
-        /// argparse names an option by every one of its strings, joined with "/".
+        /// Names an option by every one of its option strings, joined with a slash.
         private static func spelling(for name: String) -> String {
             let groups = [["--config"],
                           ["-s", "--size"],

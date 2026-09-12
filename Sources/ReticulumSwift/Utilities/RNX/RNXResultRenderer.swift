@@ -26,10 +26,14 @@ public enum RNXResultRenderer {
         ///
         /// Optional here for parity.
         public var requestSize: Int?
+        /// Response size in bytes, or `nil` when it is not known.
         public var responseSize: Int?
+        /// Time the request was sent.
         public var sentAt: Date
+        /// Time the response finished arriving, or `nil` before then.
         public var responseConcludedAt: Date?
 
+        /// Creates a set of transfer metrics.
         public init(requestSize: Int?, responseSize: Int?, sentAt: Date, responseConcludedAt: Date?) {
             self.requestSize = requestSize
             self.responseSize = responseSize
@@ -38,6 +42,7 @@ public enum RNXResultRenderer {
         }
     }
 
+    /// Rendered output of one remote command.
     public struct Rendered: Equatable {
         /// Raw remote stdout.
         ///
@@ -45,11 +50,13 @@ public enum RNXResultRenderer {
         /// so non-UTF-8 remote output tracebacks the client; writing the raw bytes is
         /// better behaviour but means binary payloads won't match Python.
         public var stdoutBytes: Data
+        /// Bytes the command wrote to standard error.
         public var stderrBytes: Data
         /// Everything printed to stdout *after* the raw output, with no trailing newline.
         /// `""` when there is none.
         public var trailer: String
 
+        /// Creates a rendered result.
         public init(stdoutBytes: Data, stderrBytes: Data, trailer: String) {
             self.stdoutBytes = stdoutBytes
             self.stderrBytes = stderrBytes
@@ -58,9 +65,14 @@ public enum RNXResultRenderer {
     }
 
     /// - Parameters:
-    ///   - stdoutLimitArg: the local `--stdout` value, **not** the one echoed by the
-    ///     remote. Python compares `stdoutl != 0`, and `None != 0` is True—so an
-    ///     unset limit still enables the truncation notice.
+    ///   - result: The result returned by the remote command.
+    ///   - detailed: Whether the trailer carries the full transfer metrics.
+    ///   - metrics: Transfer sizes and timings reported in the trailer.
+    ///   - stdoutLimitArg: The local `--stdout` value, not the one echoed by the remote.
+    ///     Python compares `stdoutl != 0`, and `None != 0` is true, so an unset limit still
+    ///     enables the truncation notice.
+    ///   - stderrLimitArg: The local `--stderr` value, read the same way.
+    /// - Returns: The rendered output streams and trailer.
     public static func render(result: RNXResult,
                               detailed: Bool,
                               metrics: Metrics,

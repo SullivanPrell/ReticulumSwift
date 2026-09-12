@@ -24,6 +24,7 @@ import Foundation
 /// into disagreeing about what a field means.
 public struct TunnelStore {
 
+    /// One persisted tunnel and the paths reached through it.
     public struct Entry {
         /// 0—`IDX_TT_TUNNEL_ID`.
         public var tunnelID: Data
@@ -39,6 +40,7 @@ public struct TunnelStore {
         /// 3—`IDX_TT_EXPIRES`, unix seconds.
         public var expires: TimeInterval
 
+        /// Creates a tunnel table entry.
         public init(tunnelID: Data,
                     interfaceHash: Data?,
                     paths: [PathStore.Entry],
@@ -50,12 +52,15 @@ public struct TunnelStore {
         }
     }
 
+    /// The stored tunnel entries.
     public var entries: [Entry]
 
+    /// Creates a store holding `entries`.
     public init(entries: [Entry] = []) { self.entries = entries }
 
     // MARK: - Snapshot
 
+    /// Captures the tunnel table of `transport`.
     public static func snapshot(of transport: Transport) -> TunnelStore {
         transport.lock.lock()
         let tunnels = transport.tunnels
@@ -170,10 +175,12 @@ public struct TunnelStore {
 
     // MARK: - File I/O
 
+    /// Writes the store to `url`.
     public func write(to url: URL) throws {
         try encoded().write(to: url, options: .atomic)
     }
 
+    /// Reads a store from `url`.
     public static func read(from url: URL) throws -> TunnelStore {
         try decode(Data(contentsOf: url))
     }

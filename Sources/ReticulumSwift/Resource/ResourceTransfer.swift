@@ -39,6 +39,7 @@ import Foundation
 /// callout-under-lock pattern that previously deadlocked `Channel`).
 public final class ResourceTransfer {
 
+    /// Lifecycle state of a resource transfer.
     public enum Status: Equatable {
         case idle
         case advertised       // Sender: ADV sent, waiting for REQ
@@ -56,6 +57,7 @@ public final class ResourceTransfer {
         }
     }
 
+    /// Errors raised while transferring a resource.
     public enum Error: Swift.Error {
         case linkNotActive
         case payloadEmpty
@@ -97,6 +99,7 @@ public final class ResourceTransfer {
 
     // MARK: - Public state
 
+    /// Link the resource is transferred over.
     public let link: Link
 
     /// Serializes ALL mutable transfer state.
@@ -151,7 +154,9 @@ public final class ResourceTransfer {
         set { stateLock.lock(); unsafeResourceHash = newValue; stateLock.unlock() }
     }
 
+    /// Called when the transfer completes.
     public var onComplete: ((ResourceTransfer) -> Void)?
+    /// Called with the failing status when the transfer fails.
     public var onFailed: ((ResourceTransfer, Status) -> Void)?
     /// Receiver-side: fires with the reassembled plaintext once verified.
     public var onPayloadReceived: ((Data, ResourceTransfer) -> Void)?
@@ -258,13 +263,21 @@ public final class ResourceTransfer {
     /// Mirrors Python `Resource.get_link()`.
     public var resourceLink: Link { link }
 
+    /// Returns the fraction of the resource transferred.
+    ///
     /// Python-compatible getter methods (mirrors Python `Resource.get_progress()` and so on)
     public func getProgress() -> Double { progress }
+    /// Returns the fraction of the current segment transferred.
     public func getSegmentProgress() -> Double { segmentProgress }
+    /// Returns the bytes sent over the wire.
     public func getTransferSize() -> Int { transferSize }
+    /// Returns the uncompressed payload size in bytes.
     public func getDataSize() -> Int { dataSize }
+    /// Returns the number of parts the payload is split into.
     public func getParts() -> Int { partCount }
+    /// Returns the number of segments the resource is split into.
     public func getSegments() -> Int { segmentCount }
+    /// Returns the hash identifying the resource.
     public func getHash() -> Data { hash }
 
     /// Called with (progress, resource) as each part is accepted (receiver) or a
@@ -384,6 +397,7 @@ public final class ResourceTransfer {
 
     // MARK: - Init
 
+    /// Creates a transfer bound to `link`.
     public init(link: Link) {
         self.link = link
     }
@@ -821,14 +835,14 @@ public final class ResourceTransfer {
 
     /// Called by Link when a RESOURCE_ADV arrives (decrypted plaintext).
     ///
-    /// - Parameter started: fired once the advertisement has been adopted but
-    ///   before the transfer machinery starts, mirroring where Python invokes
-    ///   `link.callbacks.resource_started` inside `Resource.accept`
-    ///   (Resource.py:224-230—after `resource.hash = adv.h`, before
-    ///   `hashmap_update`/`watchdog_job`). The position matters: an observer
-    ///   called any earlier is handed a transfer whose `resourceHash` is still
-    ///   empty. It isn't fired at all for a rejected advertisement, which is
-    ///   also what Python does (`accept` returns `None` without calling back).
+    /// - Parameters:
+    ///   - data: The decrypted advertisement payload.
+    ///   - started: Fired once the advertisement has been adopted but before the transfer
+    ///     machinery starts, matching where Python calls `link.callbacks.resource_started`
+    ///     inside `Resource.accept` (Resource.py:224-230), after `resource.hash = adv.h` and
+    ///     before `hashmap_update`. An observer called earlier is handed a transfer whose
+    ///     `resourceHash` is still empty. A rejected advertisement fires nothing, which is
+    ///     also what `accept` does.
     internal func receiveAdvertisement(_ data: Data,
                                        started: ((ResourceTransfer) -> Void)? = nil) {
         guard let adv = try? ResourceAdvertisement.unpack(data) else {

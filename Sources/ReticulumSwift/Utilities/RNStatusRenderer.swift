@@ -24,6 +24,8 @@ public struct RNStatusRenderer {
 
     // MARK: - Options
 
+    /// The options that affect how status output is rendered.
+    ///
     /// The subset of `program_setup`'s parameters that affects rendering.
     public struct Options {
         /// `-a, --all`.
@@ -75,12 +77,16 @@ public struct RNStatusRenderer {
         /// Python: `sort_reverse`.
         public var sortReverse: Bool = false
 
+        /// Creates an option set holding the reference defaults.
         public init() {}
     }
 
+    /// The options this renderer was built with.
     public let options: Options
+    /// The clock reading relative times are rendered against.
     public let now: TimeInterval
 
+    /// Creates a renderer for the given options and clock reading.
     public init(options: Options = Options(), now: TimeInterval = Date().timeIntervalSince1970) {
         self.options = options
         self.now = now

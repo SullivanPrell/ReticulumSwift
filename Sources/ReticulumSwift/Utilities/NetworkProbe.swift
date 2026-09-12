@@ -246,6 +246,7 @@ public final class NetworkProbe {
         /// Python `-v` count, default 0.
         public var verbosity: Int
 
+        /// Creates a probe option set.
         public init(fullName: String? = nil,
                     destinationHexhash: String? = nil,
                     configDir: URL? = nil,
@@ -329,6 +330,7 @@ public final class NetworkProbe {
 
     /// One probe's result, for programmatic callers and assertions.
     public struct Outcome: Equatable {
+        /// How a probe concluded.
         public enum Conclusion: Equatable {
             /// Python: `receipt.status == DELIVERED` (rnprobe.py:149).
             case delivered
@@ -337,10 +339,15 @@ public final class NetworkProbe {
             /// Python: the receipt's own timeout fired (rnprobe.py:196)—the 58-space branch.
             case receiptFailed
         }
+        /// The probe's position in the run.
         public let index: Int
+        /// How the probe concluded.
         public let conclusion: Conclusion
+        /// Round-trip time in seconds, or `nil` when no proof arrived.
         public let rtt: TimeInterval?
+        /// Hop count to the destination, or `nil` when it is unknown.
         public let hops: Int?
+        /// The physical-layer statistics line, empty when the interface reported none.
         public let receptionStats: String
         /// Swift-only diagnostic Python lacks: true when the destination built from
         /// `full_name` + the recalled identity doesn't equal the typed
@@ -350,6 +357,7 @@ public final class NetworkProbe {
         /// the silence is what parity requires.
         public let destinationHashMismatch: Bool
 
+        /// Creates a probe outcome.
         public init(index: Int,
                     conclusion: Conclusion,
                     rtt: TimeInterval?,

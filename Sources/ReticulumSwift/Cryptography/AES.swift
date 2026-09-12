@@ -23,11 +23,14 @@ public enum AESCBCError: Error {
     case ccCryptError(status: Int32)
 }
 
+/// AES in CBC mode, without padding.
 public enum AESCBC {
+    /// Encrypts `plaintext` under `key` with the given IV.
     public static func encrypt(plaintext: Data, key: Data, iv: Data) throws -> Data {
         try crypt(operation: CCOperation(kCCEncrypt), input: plaintext, key: key, iv: iv)
     }
 
+    /// Decrypts `ciphertext` under `key` with the given IV.
     public static func decrypt(ciphertext: Data, key: Data, iv: Data) throws -> Data {
         try crypt(operation: CCOperation(kCCDecrypt), input: ciphertext, key: key, iv: iv)
     }

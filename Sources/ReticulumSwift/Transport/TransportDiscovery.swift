@@ -124,13 +124,14 @@ extension Transport {
 
     /// List all persisted discovered interfaces, delegating to `discoveryHandler`.
     ///
-    /// Returns `[]` when `discoverInterfaces` hasn't been called.
     /// Mirrors `Reticulum.list_discovered_interfaces()` which creates a temporary
     /// `InterfaceDiscovery(discover_interfaces=False)` for a one-shot listing.
     ///
     /// - Parameters:
     ///   - onlyAvailable: When `true`, include only recently heard interfaces.
     ///   - onlyTransport: When `true`, include only transport-enabled interfaces.
+    /// - Returns: The persisted discovered interfaces matching the filters, or `[]` when
+    ///   `discoverInterfaces` was never called.
     public func listDiscoveredInterfaces(onlyAvailable: Bool = false,
                                          onlyTransport: Bool = false) -> [DiscoveredInterfaceInfo] {
         discoveryHandler?.listDiscoveredInterfaces(onlyAvailable: onlyAvailable,

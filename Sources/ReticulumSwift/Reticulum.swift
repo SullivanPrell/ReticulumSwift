@@ -78,29 +78,49 @@ public final class Reticulum {
     /// the requestors it batches.
     public static let rnsProtocolVersion = "1.5.2"
 
+    /// Log severity levels, ordered from `none` through `extreme`.
     public enum LogLevel: Int, Comparable, Sendable {
         case none = -1, critical = 0, error, warning, notice, info, verbose, debug, pathing, extreme
+        /// Orders two levels by their raw severity value.
         public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
     // MARK: - Log-level class constants (mirrors Python RNS.LOG_* module attributes)
 
+    /// Class-constant alias for `LogLevel.critical`.
+    ///
     /// Python: `RNS.LOG_CRITICAL = 0`
     public static let logCritical: LogLevel = .critical
+    /// Class-constant alias for `LogLevel.error`.
+    ///
     /// Python: `RNS.LOG_ERROR = 1`
     public static let logError: LogLevel = .error
+    /// Class-constant alias for `LogLevel.warning`.
+    ///
     /// Python: `RNS.LOG_WARNING = 2`
     public static let logWarning: LogLevel = .warning
+    /// Class-constant alias for `LogLevel.notice`.
+    ///
     /// Python: `RNS.LOG_NOTICE = 3`
     public static let logNotice: LogLevel = .notice
+    /// Class-constant alias for `LogLevel.info`.
+    ///
     /// Python: `RNS.LOG_INFO = 4`
     public static let logInfo: LogLevel = .info
+    /// Class-constant alias for `LogLevel.verbose`.
+    ///
     /// Python: `RNS.LOG_VERBOSE = 5`
     public static let logVerbose: LogLevel = .verbose
+    /// Class-constant alias for `LogLevel.debug`.
+    ///
     /// Python: `RNS.LOG_DEBUG = 6`
     public static let logDebug: LogLevel = .debug
+    /// Class-constant alias for `LogLevel.pathing`.
+    ///
     /// Python: `RNS.LOG_PATHING = 7`
     public static let logPathing: LogLevel = .pathing
+    /// Class-constant alias for `LogLevel.extreme`.
+    ///
     /// Python: `RNS.LOG_EXTREME = 8`
     public static let logExtreme: LogLevel = .extreme
 
@@ -154,14 +174,18 @@ public final class Reticulum {
         }
     }
 
+    /// Stack configuration: storage location, config file, shared-instance mode and logging.
     public struct Configuration {
+        /// Directory holding the identity, ratchets, path table and other persisted state.
         public var storagePath: URL
         /// Config filepath.
         ///
         /// If nil and a file exists at the standard location
         /// (`storagePath/../config`), it's loaded automatically by `start()`.
         public var configPath: URL?
+        /// Whether this instance serves or joins a shared instance.
         public var shareInstance: Bool
+        /// Minimum severity a message must have to be logged.
         public var logLevel: LogLevel
         /// Optional stamp validator for interface discovery.
         ///
@@ -178,6 +202,7 @@ public final class Reticulum {
         /// `discoveryStampValidator`, and typically backed by the same `LXStamper`.
         public var discoveryStampGenerator: (any DiscoveryStampGenerator)?
 
+        /// Creates a configuration, leaving both discovery stamp hooks unset.
         public init(storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true, logLevel: LogLevel = .notice) {
             self.storagePath = storagePath
             self.configPath = configPath
@@ -365,6 +390,7 @@ public final class Reticulum {
     /// Mirrors Python's `RNS.sl(level=LOG_NOTICE)`.
     ///
     /// - Parameter level: The threshold level to check. Defaults to `.notice` (matching Python's default of 3).
+    /// - Returns: `true` when the global log level is at or above `level`.
     public static func sl(level: LogLevel = .notice) -> Bool {
         globalLogLevel != .none && globalLogLevel >= level
     }
@@ -415,6 +441,7 @@ public final class Reticulum {
     /// and `bugs/030-*.md`.
     public static var linkMtuDiscoveryEnabled: Bool = true
 
+    /// Returns whether link MTU discovery is enabled.
     public static func linkMtuDiscovery() -> Bool { linkMtuDiscoveryEnabled }
 
     /// Returns whether Transport is enabled for the running shared instance.
@@ -427,6 +454,7 @@ public final class Reticulum {
     /// Mirrors Python's `Reticulum.probe_destination_enabled()`.
     /// Settable so tests can control the flag without a full config file.
     public static var allowProbes: Bool = false
+    /// Returns whether the probe destination is enabled.
     public static func probeDestinationEnabled() -> Bool { allowProbes }
 
     /// Whether remote management is enabled.
@@ -435,24 +463,28 @@ public final class Reticulum {
     /// Mirrors Python's `Reticulum.remote_management_enabled()`.
     /// Settable so tests can control the flag without a full config file.
     public static var storedRemoteManagementEnabled: Bool = false
+    /// Returns whether remote management is enabled.
     public static func remoteManagementEnabled() -> Bool { storedRemoteManagementEnabled }
 
     /// Returns the required stamp value for interface discovery validation.
     ///
     /// Mirrors Python's `Reticulum.required_discovery_value()`.
     public private(set) static var storedRequiredDiscoveryValue: Int = 16
+    /// Returns the required stamp value for interface discovery validation.
     public static func requiredDiscoveryValue() -> Int { storedRequiredDiscoveryValue }
 
     /// Returns whether blackhole list publishing is enabled.
     ///
     /// Mirrors Python's `Reticulum.publish_blackhole_enabled()`.
     public private(set) static var storedPublishBlackholeEnabled: Bool = false
+    /// Returns whether blackhole list publishing is enabled.
     public static func publishBlackholeEnabled() -> Bool { storedPublishBlackholeEnabled }
 
     /// Returns the list of transport identity hashes from which blackhole lists are sourced.
     ///
     /// Mirrors Python's `Reticulum.blackhole_sources()`.
     public private(set) static var storedBlackholeSources: [Data] = []
+    /// Returns the transport identity hashes blackhole lists are sourced from.
     public static func blackholeSources() -> [Data] { storedBlackholeSources }
 
     /// Interval (seconds) between blackhole list re-fetches from each source.
@@ -462,12 +494,14 @@ public final class Reticulum {
     /// Mirrors Python's `Reticulum.blackhole_update_interval()` accessor +
     /// `BlackholeUpdater.UPDATE_INTERVAL` default (RNS commit 02924656).
     public private(set) static var storedBlackholeUpdateInterval: TimeInterval = 3600
+    /// Returns the interval in seconds between blackhole list re-fetches.
     public static func blackholeUpdateInterval() -> TimeInterval { storedBlackholeUpdateInterval }
 
     /// Returns a list of interfaces discovered over the network.
     ///
     /// Mirrors Python's `Reticulum.discovered_interfaces()`.
     public private(set) static var storedDiscoveredInterfaces: [String] = []
+    /// Returns the interfaces discovered over the network.
     public static func discoveredInterfaces() -> [String] { storedDiscoveredInterfaces }
 
     /// Whether any configured interface asked to be announced as a discoverable endpoint.
@@ -480,6 +514,7 @@ public final class Reticulum {
     /// `internal(set)` for the same reason as `storedInterfaceDiscoverySources`: config loading is
     /// the only production writer and lives in this module.
     public internal(set) static var storedDiscoveryEnabled: Bool = false
+    /// Returns whether any configured interface asked to be announced as discoverable.
     public static func discoveryEnabled() -> Bool { storedDiscoveryEnabled }
 
     /// Returns the list of network identity hashes from which interfaces are discovered.
@@ -489,6 +524,7 @@ public final class Reticulum {
     /// `InterfaceAnnounceHandler` needs to be testable, and config loading (the
     /// only production writer) already lives in this module.
     public internal(set) static var storedInterfaceDiscoverySources: [Data] = []
+    /// Returns the network identity hashes interfaces are discovered from.
     public static func interfaceDiscoverySources() -> [Data] { storedInterfaceDiscoverySources }
 
     /// Maximum number of discovered interfaces to auto-connect to.
@@ -523,18 +559,21 @@ public final class Reticulum {
     ///
     /// Mirrors Python's `Reticulum.autoconnect_interface_mode()`.
     public static var storedAutoconnectInterfaceMode: InterfaceMode? = nil
+    /// Returns the configured `autoconnect_interface_mode`, or `nil` when unset.
     public static func autoconnectInterfaceMode() -> InterfaceMode? { storedAutoconnectInterfaceMode }
 
     /// Configured `autoconnect_interface_gravity`, or `nil` when unset.
     ///
     /// Mirrors Python's `Reticulum.autoconnect_interface_gravity()`.
     public static var storedAutoconnectInterfaceGravity: Int? = nil
+    /// Returns the configured `autoconnect_interface_gravity`, or `nil` when unset.
     public static func autoconnectInterfaceGravity() -> Int? { storedAutoconnectInterfaceGravity }
 
     /// Configured `autoconnect_announces_to_internal`, or `nil` when unset.
     ///
     /// Mirrors Python's `Reticulum.autoconnect_announces_to_internal()`.
     public static var storedAutoconnectAnnouncesToInternal: Bool? = nil
+    /// Returns the configured `autoconnect_announces_to_internal`, or `nil` when unset.
     public static func autoconnectAnnouncesToInternal() -> Bool? { storedAutoconnectAnnouncesToInternal }
 
     // MARK: - `[reticulum]` global defaults (`bugs/030`)
@@ -575,6 +614,7 @@ public final class Reticulum {
     ///
     /// Mirrors Python's `local_socket_path` (`Reticulum.py:475-478`).
     public static var storedInstanceName: String? = nil
+    /// Returns the configured instance name, or `default` when unset.
     public static func instanceName() -> String { storedInstanceName ?? "default" }
 
     /// Configured `shared_instance_type`—`"tcp"` or `"unix"` (`Reticulum.py:479-484`).
@@ -618,18 +658,26 @@ public final class Reticulum {
     ///
     /// Mirrors `Reticulum._default_ar_target/penalty/grace()` (`:1146-1152`).
     public static var storedDefaultArTarget: Int? = nil
+    /// Configured `default_ar_penalty`, or `nil` when unset.
     public static var storedDefaultArPenalty: Int? = nil
+    /// Configured `default_ar_grace`, or `nil` when unset.
     public static var storedDefaultArGrace: Int? = nil
+    /// Returns the announce-rate target an interface starts from.
     public static func defaultArTarget() -> Int? { storedDefaultArTarget }
+    /// Returns the announce-rate penalty an interface starts from.
     public static func defaultArPenalty() -> Int { storedDefaultArPenalty ?? 0 }
+    /// Returns the announce-rate grace an interface starts from.
     public static func defaultArGrace() -> Int { storedDefaultArGrace ?? 0 }
 
     /// Egress-control defaults every interface starts from.
     ///
     /// Mirrors `Reticulum._default_egress_control()` / `_default_ec_pr_freq()` (`:1173-1176`).
     public static var storedDefaultEgressControl: Bool? = nil
+    /// Configured `default_ec_pr_freq`, or `nil` when unset.
     public static var storedDefaultEcPrFreq: Double? = nil
+    /// Returns whether egress control is on for an interface that doesn't configure it.
     public static func defaultEgressControl() -> Bool { storedDefaultEgressControl ?? false }
+    /// Returns the egress-control path-request frequency an interface starts from.
     public static func defaultEcPrFreq() -> Double { pythonOr(storedDefaultEcPrFreq, 5.0) }
 
     /// Ingress-control defaults every interface starts from.
@@ -637,39 +685,56 @@ public final class Reticulum {
     /// Mirrors `Reticulum._default_ic_*()` (`:1154-1185`), each falling back to the
     /// `IngressControlState` constant that holds the Python class value.
     public static var storedDefaultIcMaxHeldAnnounces: Int? = nil
+    /// Configured `ic_burst_hold`, or `nil` when unset.
     public static var storedDefaultIcBurstHold: Double? = nil
+    /// Configured `ic_burst_freq_new`, or `nil` when unset.
     public static var storedDefaultIcBurstFreqNew: Double? = nil
+    /// Configured `ic_burst_freq`, or `nil` when unset.
     public static var storedDefaultIcBurstFreq: Double? = nil
+    /// Configured `ic_pr_burst_freq_new`, or `nil` when unset.
     public static var storedDefaultIcPrBurstFreqNew: Double? = nil
+    /// Configured `ic_pr_burst_freq`, or `nil` when unset.
     public static var storedDefaultIcPrBurstFreq: Double? = nil
+    /// Configured `ic_new_time`, or `nil` when unset.
     public static var storedDefaultIcNewTime: Double? = nil
+    /// Configured `ic_burst_penalty`, or `nil` when unset.
     public static var storedDefaultIcBurstPenalty: Double? = nil
+    /// Configured `ic_held_release_interval`, or `nil` when unset.
     public static var storedDefaultIcHeldReleaseInterval: Double? = nil
 
+    /// Returns the held-announce ceiling every interface starts from.
     public static func defaultIcMaxHeldAnnounces() -> Int {
         pythonOr(storedDefaultIcMaxHeldAnnounces, IngressControlState.maxHeldAnnounces)
     }
+    /// Returns the ingress burst hold every interface starts from.
     public static func defaultIcBurstHold() -> Double {
         pythonOr(storedDefaultIcBurstHold, IngressControlState.icBurstHold)
     }
+    /// Returns the new-peer ingress burst frequency every interface starts from.
     public static func defaultIcBurstFreqNew() -> Double {
         pythonOr(storedDefaultIcBurstFreqNew, IngressControlState.icBurstFreqNew)
     }
+    /// Returns the ingress burst frequency every interface starts from.
     public static func defaultIcBurstFreq() -> Double {
         pythonOr(storedDefaultIcBurstFreq, IngressControlState.icBurstFreq)
     }
+    /// Returns the new-peer path-request burst frequency every interface starts from.
     public static func defaultIcPrBurstFreqNew() -> Double {
         pythonOr(storedDefaultIcPrBurstFreqNew, IngressControlState.icPrBurstFreqNew)
     }
+    /// Returns the path-request burst frequency every interface starts from.
     public static func defaultIcPrBurstFreq() -> Double {
         pythonOr(storedDefaultIcPrBurstFreq, IngressControlState.icPrBurstFreq)
     }
+    /// Returns how long a peer counts as new, for interfaces that don't configure it.
     public static func defaultIcNewTime() -> Double {
         pythonOr(storedDefaultIcNewTime, IngressControlState.icNewTime)
     }
+    /// Returns the ingress burst penalty every interface starts from.
     public static func defaultIcBurstPenalty() -> Double {
         pythonOr(storedDefaultIcBurstPenalty, IngressControlState.icBurstPenalty)
     }
+    /// Returns the held-announce release interval every interface starts from.
     public static func defaultIcHeldReleaseInterval() -> Double {
         pythonOr(storedDefaultIcHeldReleaseInterval, IngressControlState.icHeldReleaseInterval)
     }
@@ -706,8 +771,11 @@ public final class Reticulum {
         if let v = section.icHeldReleaseInterval     { storedDefaultIcHeldReleaseInterval = v }
     }
 
+    /// Configuration this stack was created with.
     public let configuration: Configuration
+    /// Transport instance owning routing, paths and the interface list.
     public let transport: Transport
+    /// RPC server serving the shared instance, once `start()` has brought one up.
     public private(set) var rpcServer: RPCServer?
 
     /// Parsed config file, if one was loaded.
@@ -720,6 +788,7 @@ public final class Reticulum {
     /// keeping it alive past the host's own lifetime.
     private weak var trackedIdentity: Identity?
 
+    /// Creates a stack with the given configuration and a fresh `Transport`.
     public init(configuration: Configuration) {
         self.configuration = configuration
         self.transport = Transport()
@@ -767,6 +836,7 @@ public final class Reticulum {
         self.rpcServer = server
     }
 
+    /// Errors thrown by the stack itself.
     public enum ReticulumError: Error {
         case missingIdentity
     }
@@ -786,6 +856,7 @@ public final class Reticulum {
         StorageInventory.url(.knownDestinations, storage: configuration.storagePath)
     }
 
+    /// Brings the stack up: storage, config, identity, interfaces and the shared instance.
     public func start() throws {
         // Create storage directories.
         try FileManager.default.createDirectory(
@@ -952,6 +1023,7 @@ public final class Reticulum {
         Reticulum.shared = self
     }
 
+    /// Tears links down, stops the interfaces and checkpoints persisted state.
     public func stop() {
         // Tear links down first, while the interfaces can still carry the close.
         //

@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the two inbound size checks RNS 1.5.0 added to `preprocess_inbound`.
+///
 /// RNS 1.5.0 added two inbound size checks to `Transport.preprocess_inbound`:
 ///
 ///   `if interface and len(raw) > interface.HW_MTU + (interface.ifac_size or 0):`

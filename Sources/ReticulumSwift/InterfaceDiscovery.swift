@@ -101,29 +101,53 @@ public protocol DiscoveryStampValidator {
 ///
 /// Mirrors the `info` dict Python's `InterfaceAnnounceHandler.received_announce` builds.
 public struct DiscoveredInterfaceInfo {
+    /// Interface type the announcing node published.
     public var type: String
+    /// Whether the announcing node runs as a transport node.
     public var transport: Bool
+    /// Interface name the announcing node published.
     public var name: String
+    /// Timestamp the announce carrying this entry was received.
     public var received: TimeInterval
+    /// Discovery stamp the announce carried.
     public var stamp: Data
+    /// Proof-of-work value of `stamp`.
     public var value: Int
+    /// Announcing transport identity as undelimited hex.
     public var transportID: String     // hex, no delimiters
+    /// Network identity the interface belongs to, as undelimited hex.
     public var networkID: String       // hex, no delimiters
+    /// Hop count to the announcing node.
     public var hops: Int
+    /// Announced latitude in degrees, when published.
     public var latitude: Double?
+    /// Announced longitude in degrees, when published.
     public var longitude: Double?
+    /// Announced height above sea level in metres, when published.
     public var height: Double?
+    /// IFAC network name the interface expects, when published.
     public var ifacNetname: String?
+    /// IFAC passphrase the interface expects, when published.
     public var ifacNetkey: String?
+    /// Hostname or address the interface accepts connections on, when published.
     public var reachableOn: String?
+    /// TCP port the interface listens on, when published.
     public var port: Int?
+    /// Announced centre frequency in Hz, for radio interfaces.
     public var frequency: Double?
+    /// Announced bandwidth in Hz, for radio interfaces.
     public var bandwidth: Double?
+    /// Announced spreading factor, for radio interfaces.
     public var sf: Int?
+    /// Announced coding rate, for radio interfaces.
     public var cr: Int?
+    /// Announced modulation, for radio interfaces.
     public var modulation: String?
+    /// Announced channel number, for radio interfaces.
     public var channel: Int?
+    /// Ready-made config block for connecting to this interface, when published.
     public var configEntry: String?
+    /// Hash this entry is stored and deduplicated under.
     public var discoveryHash: Data?
     /// The announcing operator's LXMF address as undelimited hex, when they published one.
     /// `info["operator_lxmf_address"]` (`Discovery.py:430`), added in RNS 1.5.0—optional, so
@@ -131,10 +155,15 @@ public struct DiscoveredInterfaceInfo {
     public var operatorLxmfAddress: String? = nil
 
     // Persistence fields (written/read by InterfaceDiscovery)
+    /// Timestamp this interface was first heard.
     public var discovered: TimeInterval
+    /// Timestamp this interface was last heard.
     public var lastHeard: TimeInterval
+    /// Number of announces heard from this interface.
     public var heardCount: Int
+    /// Availability status, one of `available`, `unknown` or `stale`.
     public var status: String?
+    /// Numeric form of `status`, used for sorting.
     public var statusCode: Int?
 }
 
@@ -260,17 +289,22 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
 
     // MARK: - AnnounceHandler conformance
 
+    /// Aspect this handler listens for.
     public let aspectFilter: String? = "rnstransport.discovery.interface"
+    /// Whether the handler is also given path responses.
     public let receivePathResponses: Bool = false
 
     // MARK: - State
 
+    /// Minimum stamp value an announce must carry to be accepted.
     public let requiredValue: Int
     private let stampValidator: DiscoveryStampValidator
+    /// Called with each accepted interface announce.
     public var callback: ((DiscoveredInterfaceInfo) -> Void)?
 
     // MARK: - Init
 
+    /// Creates a handler validating stamps with `stampValidator`.
     public init(requiredValue: Int = defaultRequiredValue,
                 stampValidator: DiscoveryStampValidator,
                 callback: ((DiscoveredInterfaceInfo) -> Void)? = nil) {
@@ -281,6 +315,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
 
     // MARK: - AnnounceHandler
 
+    /// Decodes an interface announce and reports it through `callback`.
     public func receivedAnnounce(destinationHash: Data, identity: Identity, appData: Data?,
                                   announcePacketHash: Data, isPathResponse: Bool) {
         // `interface_discovery_sources` is an allowlist of announcing identities.
@@ -607,8 +642,11 @@ public final class InterfaceDiscovery {
 
     // MARK: - Constants
 
+    /// Seconds of silence after which a discovered interface is marked unknown.
     public static let thresholdUnknown: TimeInterval = 24 * 60 * 60       // 1 day
+    /// Seconds of silence after which a discovered interface is marked stale.
     public static let thresholdStale:   TimeInterval = 3 * 24 * 60 * 60   // 3 days
+    /// Seconds of silence after which a discovered interface is dropped.
     public static let thresholdRemove:  TimeInterval = 7 * 24 * 60 * 60   // 7 days
 
     /// Python: `InterfaceDiscovery.MONITOR_INTERVAL`—how often the autoconnect monitor wakes.
@@ -633,12 +671,18 @@ public final class InterfaceDiscovery {
     /// peer never outranks a configured one in path selection.
     public static let acGravity = 0
 
+    /// Status of an interface heard from recently.
     public static let statusAvailable = "available"
+    /// Status of an interface not heard from for `thresholdUnknown`.
     public static let statusUnknown   = "unknown"
+    /// Status of an interface not heard from for `thresholdStale`.
     public static let statusStale     = "stale"
 
+    /// Numeric form of `statusAvailable`.
     public static let statusCodeAvailable = 1000
+    /// Numeric form of `statusUnknown`.
     public static let statusCodeUnknown   = 100
+    /// Numeric form of `statusStale`.
     public static let statusCodeStale     = 0
 
     private static let discoverableTypes: Set<String> = [

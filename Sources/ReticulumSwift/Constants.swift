@@ -10,6 +10,8 @@
 
 import Foundation
 
+// The members below are the reference's own constant names.
+// swift-format-ignore: AllPublicDeclarationsHaveDocumentation
 /// Protocol-level constants.
 ///
 /// Values mirror `RNS.Reticulum` and `RNS.Identity`

@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Parity coverage for the `Link` safeguards RNS 1.3.9 added.
+///
 /// Parity tests for RNS 1.3.9 Link safeguards (commits bb289744 / 3a36c367):
 /// - link-identify applied at most once (Link.py:972)
 /// - teardown() idempotency (Link.py:667)

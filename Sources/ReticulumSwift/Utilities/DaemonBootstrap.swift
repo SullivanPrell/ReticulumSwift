@@ -56,6 +56,7 @@ public enum DaemonBootstrap {
         /// `<configdir>/logfile.1`—the single rotated generation Python keeps.
         public let rotatedLogFile: URL
 
+        /// Derives every daemon path from `configDir`.
         public init(configDir: URL) {
             self.configDir = configDir
             // Every path resolves through `StorageInventory`—the one place that names the
@@ -99,6 +100,7 @@ public enum DaemonBootstrap {
         URL(fileURLWithPath: expandTilde(path))
     }
 
+    /// Resolves the configuration directory the daemon runs against.
     public static func resolveConfigDir(explicit: String?,
                                         home: URL,
                                         systemConfigDir: URL = URL(fileURLWithPath: "/etc/reticulum"),
@@ -158,6 +160,7 @@ public enum DaemonBootstrap {
     ///     `rnpkg` never pass one.
     ///   - verbosity: `verbose - quiet`, or `nil` in service mode (Python sets
     ///     `targetverbosity = None`, `rnsd.py:45`).
+    /// - Returns: The level the three inputs resolve to.
     public static func effectiveLogLevel(configLogLevel: Int?,
                                          requestedLogLevel: Reticulum.LogLevel? = nil,
                                          verbosity: Int?) -> Reticulum.LogLevel {

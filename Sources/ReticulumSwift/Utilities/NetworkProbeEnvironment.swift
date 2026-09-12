@@ -82,10 +82,12 @@ public final class TransportProbeNetwork: ProbeNetwork {
 
     // MARK: Paths
 
+    /// Returns whether a path to the destination is known.
     public func hasPath(to destinationHash: Data) -> Bool {
         transport.hasPath(to: destinationHash)
     }
 
+    /// Requests a path to the destination.
     public func requestPath(for destinationHash: Data) {
         try? transport.requestPath(for: destinationHash)
     }
@@ -97,6 +99,7 @@ public final class TransportProbeNetwork: ProbeNetwork {
         return Int(hops)
     }
 
+    /// Returns the next hop toward the destination, or `nil` when no path is known.
     public func nextHop(to destinationHash: Data) -> Data? {
         if isConnectedToSharedInstance, let rpc {
             return try? rpc.nextHop(destinationHash: destinationHash)
@@ -148,6 +151,7 @@ public final class TransportProbeNetwork: ProbeNetwork {
         transport.recall(identity: destinationHash)
     }
 
+    /// Returns the current ratchet key for the destination, or `nil` when none is held.
     public func currentRatchetKey(for destinationHash: Data) -> Data? {
         transport.currentRatchetKey(forDestination: destinationHash)
     }
@@ -224,8 +228,11 @@ public final class TransportProbeNetwork: ProbeNetwork {
 
 /// Python: `time.time()` and `time.sleep()`.
 public final class SystemProbeClock: ProbeClock {
+    /// Creates a clock reading the system time.
     public init() {}
+    /// Returns the current time.
     public func now() -> TimeInterval { Date().timeIntervalSince1970 }
+    /// Blocks the calling thread for `interval` seconds.
     public func sleep(_ interval: TimeInterval) {
         guard interval > 0 else { return }
         Thread.sleep(forTimeInterval: interval)
@@ -239,7 +246,9 @@ public final class SystemProbeClock: ProbeClock {
 /// Delegates to `SecureRandom`, the package's CSPRNG seam; `UInt8.random(in:)`
 /// isn't cryptographically secure and would make probe payloads predictable.
 public final class SecureProbeEntropy: ProbeEntropy {
+    /// Creates a source drawing from the system random generator.
     public init() {}
+    /// Returns `count` random bytes.
     public func randomBytes(_ count: Int) -> Data {
         SecureRandom.bytes(count)
     }
@@ -253,8 +262,12 @@ public final class SecureProbeEntropy: ProbeEntropy {
 /// is flushed. Python only flushes at rnprobe.py:82, :90, :139 and :147—flushing
 /// everywhere changes on-screen timing, never the byte stream.
 public final class StandardProbeOutput: ProbeOutput {
+    /// Creates an output writing to the standard streams.
     public init() {}
+    /// Writes `text` to standard output.
     public func write(_ text: String) { fputs(text, stdout) }
+    /// Writes `text` to standard error.
     public func writeError(_ text: String) { fputs(text, stderr) }
+    /// Flushes both standard streams.
     public func flush() { fflush(stdout); fflush(stderr) }
 }

@@ -530,6 +530,8 @@ final class RNPathFilterSourceTests: XCTestCase {
 
 final class RNPathRunnerHelpGateTests: XCTestCase {
 
+    /// Asserts an invocation with no options prints the help text.
+    ///
     /// Python: `if not args.drop_announces and not args.table and not args.rates
     ///          and not args.destination and not args.drop_via and not args.blackholed:`
     func testEmptyOptionsPrintHelp() {

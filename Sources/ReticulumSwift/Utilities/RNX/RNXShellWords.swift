@@ -50,6 +50,7 @@ public enum RNXShellWords {
 
     private static let escape: Character = "\\"
 
+    /// A failure raised while splitting a command line.
     public enum ShellWordsError: Error, Equatable {
         /// Python: `ValueError("No closing quotation")`. Carries the quote character that
         /// was left open, which CPython's message doesn't.
@@ -58,6 +59,8 @@ public enum RNXShellWords {
         case noEscapedCharacter
     }
 
+    /// The branch of the tokeniser state machine that is active.
+    ///
     /// Which branch of `read_token`'s state machine is active.
     /// Mirrors CPython's `self.state`, where the state is literally a character.
     private enum State: Equatable {

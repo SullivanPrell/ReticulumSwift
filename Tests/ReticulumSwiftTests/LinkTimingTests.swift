@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity timing accessors on `Link`.
+///
 /// Tests for Link timing API methods that mirror Python's Link:
 ///   - `getAge()` → time since link established
 ///   - `noDataFor()` → time since last DATA payload (excluding keepalives)

@@ -18,7 +18,9 @@ import Foundation
 ///   * Destination hash: `SHA256(name_hash || identity_hash)[:16]` (128 bits)
 ///     For PLAIN destinations, only the name hash is used.
 public final class Destination {
+    /// Destination type, which decides how packets to it are addressed and encrypted.
     public enum Kind: UInt8, Sendable { case single = 0x00, group = 0x01, plain = 0x02, link = 0x03 }
+    /// Whether the destination receives or sends.
     public enum Direction: UInt8, Sendable { case `in` = 0x11, out = 0x12 }
 
     // MARK: - Class-level constants (mirrors Python Destination class attributes)
@@ -40,22 +42,34 @@ public final class Destination {
 
     /// Proof strategy constants (mirrors Python's PROVE_NONE/PROVE_ALL/PROVE_APP).
     public static let proveNone: ProofStrategy = .proveNone
+    /// Proves every packet received on the destination.
     public static let proveAll: ProofStrategy = .proveAll
+    /// Leaves the proof decision to the application.
     public static let proveApp: ProofStrategy = .proveApp
 
     /// Allow policy constants (mirrors Python's ALLOW_NONE/ALLOW_ALL/ALLOW_LIST).
     public static let allowNone: AllowPolicy = .none
+    /// Serves requests from any identity.
     public static let allowAll: AllowPolicy = .all
+    /// Serves requests only from identities on the allowed list.
     public static let allowList: AllowPolicy = .list
 
+    /// Identity the destination belongs to, or `nil` for a plain destination.
     public let identity: Identity?
+    /// Whether the destination receives or sends.
     public let direction: Direction
+    /// Destination type.
     public let kind: Kind
+    /// Application name the destination is registered under.
     public let appName: String
+    /// Aspect names qualifying the destination within its application.
     public let aspects: [String]
 
+    /// Truncated hash of the application name and aspects.
     public let nameHash: Data        // 10 bytes
+    /// Destination address.
     public let hash: Data            // 16 bytes
+    /// Dotted application name, aspects and identity hash.
     public let fullName: String
 
     /// Optional default app data attached to outgoing announces.
@@ -82,6 +96,7 @@ public final class Destination {
     ///
     /// Mirrors Python's `Destination.accepts_links(accepts)`.
     public func getAcceptsLinks() -> Bool { acceptsLinks }
+    /// Sets whether the destination accepts inbound link requests.
     public func setAcceptsLinks(_ accepts: Bool) { acceptsLinks = accepts }
 
     // MARK: - Ratchets (Python-parity API)
@@ -219,6 +234,7 @@ public final class Destination {
 
     // MARK: - Proof strategy
 
+    /// Policy deciding which received packets are proved.
     public enum ProofStrategy { case proveNone, proveAll, proveApp }
 
     /// Proof strategy for inbound DATA packets.
@@ -266,6 +282,7 @@ public final class Destination {
 
     /// A registered request handler together with its allow policy.
     public struct RequestHandlerEntry {
+        /// Request path the handler is registered for.
         public let path: String
         let handler: RequestHandler
         /// Non-nil for Python-compatible native-value handlers registered via
@@ -273,6 +290,7 @@ public final class Destination {
         ///
         /// When set, `handler` is a no-op stub.
         let nativeHandler: NativeRequestHandler?
+        /// Access policy applied to requesters.
         public let allow: AllowPolicy
         /// Identity hashes (16 bytes each) that are explicitly allowed when
         /// `allow == .list`.
@@ -315,10 +333,12 @@ public final class Destination {
     /// Register a handler keyed by `path` (UTF-8 hashed to 16 bytes).
     ///
     /// - Parameters:
-    ///   - allow: Access policy. Defaults to `.none` (matches Python's
-    ///     `ALLOW_NONE` default—you must opt in to serving requests).
+    ///   - path: Request path the handler answers.
+    ///   - allow: Access policy. Defaults to `.none`, matching Python's `ALLOW_NONE`, so
+    ///     serving requests is opt-in.
     ///   - allowedList: Identities permitted when `allow == .list`.
-    ///   - autoCompress: Whether Resource responses should be auto-compressed (default `true`).
+    ///   - autoCompress: Whether resource responses are compressed.
+    ///   - handler: Called with each admitted request.
     public func registerRequestHandler(
         path: String,
         allow: AllowPolicy = .none,
@@ -367,6 +387,7 @@ public final class Destination {
         requestHandlers.removeValue(forKey: key)
     }
 
+    /// Creates a destination for an application name and its aspects.
     public init(
         identity: Identity?,
         direction: Direction,
@@ -402,6 +423,7 @@ public final class Destination {
         self.hash = Destination.computeHash(identity: identity, nameHash: self.nameHash, kind: kind)
     }
 
+    /// Errors raised when constructing or using a destination.
     public enum DestinationError: Error {
         case dotsForbidden
         case outboundRequiresIdentity
@@ -415,6 +437,7 @@ public final class Destination {
 
     // MARK: - Static helpers
 
+    /// Returns the dotted full name for an application, its aspects and an identity.
     public static func expandName(identity: Identity?, appName: String, aspects: [String]) -> String {
         var name = appName
         for aspect in aspects { name += "." + aspect }
@@ -422,6 +445,7 @@ public final class Destination {
         return name
     }
 
+    /// Returns the truncated name hash for an application and its aspects.
     public static func computeNameHash(appName: String, aspects: [String]) -> Data {
         var name = appName
         for aspect in aspects { name += "." + aspect }
@@ -429,6 +453,7 @@ public final class Destination {
         return Hashes.fullHash(bytes).prefix(Constants.nameHashLength)
     }
 
+    /// Returns the destination address for an identity and name hash.
     public static func computeHash(identity: Identity?, nameHash: Data, kind: Kind) -> Data {
         var material = Data()
         material.append(nameHash)
@@ -438,6 +463,7 @@ public final class Destination {
         return Hashes.truncatedHash(material)
     }
 
+    /// Hexadecimal rendering of the destination hash.
     public var hexHash: String { hash.map { String(format: "%02x", $0) }.joined() }
 
     /// Compute destination hash for an identity, app name, and aspects.
@@ -562,6 +588,7 @@ public final class Destination {
     ///     Mirrors Python's `Destination.announce(path_response=True)`.
     /// - Returns: A `PacketReceipt` if the announce was sent via the full
     ///   transport broadcast, or `nil` when sent on a specific interface.
+    /// - Throws: Any error raised while packing or transmitting the announce.
     @discardableResult
     public func announce(
         appData: Data? = nil,
@@ -711,8 +738,10 @@ public final class Destination {
 
     // MARK: - Encryption
 
+    /// Errors raised by group-destination encryption.
     public enum EncryptionError: Error { case missingGroupKey }
 
+    /// Encrypts `plaintext` for this destination.
     public func encrypt(_ plaintext: Data) throws -> Data {
         switch kind {
         case .plain:
@@ -728,6 +757,7 @@ public final class Destination {
         }
     }
 
+    /// Decrypts `ciphertext` addressed to this destination.
     public func decrypt(_ ciphertext: Data) throws -> Data {
         switch kind {
         case .plain:

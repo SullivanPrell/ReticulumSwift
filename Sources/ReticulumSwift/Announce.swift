@@ -24,12 +24,19 @@ import Foundation
 ///                        || random_hash || ratchet || app_data)
 public enum Announce {
 
+    /// Fields recovered from a validated announce.
     public struct Decoded: Equatable {
+        /// Identity that signed the announce.
         public let identity: Identity
+        /// Address of the announced destination.
         public let destinationHash: Data
+        /// Truncated hash of the destination's application name and aspects.
         public let nameHash: Data
+        /// Random and timestamp bytes distinguishing repeated announces.
         public let randomHash: Data
+        /// Ratchet public key offered by the announce, or `nil` when none was carried.
         public let ratchet: Data?
+        /// Application data carried by the announce, or `nil` when none was carried.
         public let appData: Data?
         /// True when this announce was received in response to a path request
         /// (Python: `packet.context == Packet.PATH_RESPONSE`).
@@ -40,6 +47,7 @@ public enum Announce {
         public let packetHash: Data
     }
 
+    /// Errors raised while building or parsing an announce.
     public enum AnnounceError: Error {
         case wrongPacketType
         case malformed
@@ -47,11 +55,18 @@ public enum Announce {
         case destinationHashMismatch
     }
 
-    /// Build an announce packet for an inbound `single` destination.
-    /// - Parameter isPathResponse: If true, the packet context is set to `.pathResponse`,
-    ///   indicating this announce was emitted in response to a path request. Path response
-    ///   announces aren't forwarded to other interfaces.
-    ///   Mirrors Python's `Destination.announce(path_response=True)`.
+    /// Builds an announce packet for an inbound `single` destination.
+    ///
+    /// - Parameters:
+    ///   - destination: The destination being announced.
+    ///   - appData: Application data to attach, or `nil` to attach none.
+    ///   - ratchet: Ratchet public key to offer, or `nil` to offer none.
+    ///   - timestamp: Time recorded in the random hash.
+    ///   - isPathResponse: When true the packet context is set to `.pathResponse`, marking
+    ///     the announce as answering a path request. Path responses are not forwarded to
+    ///     other interfaces. Mirrors `Destination.announce(path_response=True)`.
+    /// - Returns: The packed announce packet.
+    /// - Throws: `AnnounceError` when the destination cannot be announced.
     public static func make(
         for destination: Destination,
         appData: Data? = nil,
@@ -145,11 +160,17 @@ public enum Announce {
         /// verification, which is the order Python uses
         /// (`Identity.py:551-556`).
         public let identity: Identity
+        /// Concatenated X25519 and Ed25519 public keys of the announced identity.
         public let publicKey: Data
+        /// Truncated hash of the destination's application name and aspects.
         public let nameHash: Data
+        /// Random and timestamp bytes distinguishing repeated announces.
         public let randomHash: Data
+        /// Ratchet public key offered by the announce, or `nil` when none was carried.
         public let ratchet: Data?
+        /// Signature over the announced fields.
         public let signature: Data
+        /// Application data carried by the announce, or `nil` when none was carried.
         public let appData: Data?
         /// `destination_hash + public_key + name_hash + random_hash + ratchet + app_data`,
         /// the buffer the announce signature covers (`Identity.py:539`).

@@ -112,6 +112,7 @@ public final class RNCopyListener {
 
     // MARK: - Configuration
 
+    /// What the listener accepts, and where it saves.
     public struct Configuration {
         /// The identity the `rncp.receive` destination is built on.
         public var identity: Identity
@@ -144,6 +145,7 @@ public final class RNCopyListener {
         /// Python: `save_path`.
         public var savePath: String?
 
+        /// Creates a listener configuration.
         public init(identity: Identity,
                     allowedIdentityHashes: Set<Data> = [],
                     allowAll: Bool = false,
@@ -165,11 +167,12 @@ public final class RNCopyListener {
 
     // MARK: - State
 
-    /// `RNS.
+    /// Destination incoming copies are served on.
     ///
-    /// Destination(identity, IN, SINGLE, "rncp", "receive")`. Python: rncp.py:112.
+    /// `RNS.Destination(identity, IN, SINGLE, "rncp", "receive")`. Python: rncp.py:112.
     public let destination: Destination
 
+    /// The configuration the listener serves under.
     public var configuration: Configuration
 
     private let transport: Transport
@@ -202,6 +205,7 @@ public final class RNCopyListener {
 
     // MARK: - Init
 
+    /// Registers the `rncp.receive` destination on `transport`.
     public init(transport: Transport,
                 fileSystem: RNCopyFileSystem = RNCopyDiskFileSystem(),
                 configuration: Configuration) throws {
@@ -247,6 +251,7 @@ public final class RNCopyListener {
         Reticulum.log("rncp listening on " + RNSUtilities.prettyhexrep(destination.hash), level: .info)
     }
 
+    /// Deregisters the destination and its request handler.
     public func stop() {
         destination.deregisterRequestHandler(path: RNCopyApp.fetchRequestPath)
         transport.deregister(destination: destination)

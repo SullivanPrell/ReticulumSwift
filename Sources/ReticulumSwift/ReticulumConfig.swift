@@ -31,8 +31,11 @@ public struct ReticulumConfig {
 
     // MARK: - Top-level sections
 
+    /// Parsed `[reticulum]` section.
     public var reticulum: ReticulumSection = .init()
+    /// Parsed `[logging]` section.
     public var logging: LoggingSection = .init()
+    /// Parsed interface blocks, in file order.
     public var interfaces: [InterfaceConfig] = []
 
     /// `"<section>.<key>"` for every key in a recognized top-level section that no branch
@@ -50,7 +53,9 @@ public struct ReticulumConfig {
 
     // MARK: - [reticulum] section
 
+    /// The `[reticulum]` section: transport, shared-instance and global interface defaults.
     public struct ReticulumSection {
+        /// Whether this node routes traffic for other nodes.
         public var enableTransport: Bool = false
         /// When true, a non-transport node keeps using its persistent identity
         /// as the transport identity instead of a fresh ephemeral one.
@@ -65,6 +70,7 @@ public struct ReticulumConfig {
         /// Privacy hardening for
         /// shared/transport instances. Mirrors Python's `local_hops_delta = No`.
         public var localHopsDelta: Bool = false
+        /// Whether this node serves or joins a shared instance.
         public var shareInstance: Bool = true
         /// TCP port the shared instance serves local clients on.
         ///
@@ -74,6 +80,7 @@ public struct ReticulumConfig {
         ///
         /// Mirrors Python's `instance_control_port = 37429`.
         public var instanceControlPort: UInt16 = 37429
+        /// Whether an interface failing to start brings the whole stack down.
         public var panicOnInterfaceError: Bool = false
         /// Whether the probe destination is enabled.
         ///
@@ -188,12 +195,15 @@ public struct ReticulumConfig {
         ///
         /// Python maps a configured `0` target to "no target" (`:643-645`).
         public var defaultArTarget: Int? = nil
+        /// Configured `default_ar_penalty`, or `nil` when unset.
         public var defaultArPenalty: Int? = nil
+        /// Configured `default_ar_grace`, or `nil` when unset.
         public var defaultArGrace: Int? = nil
 
         /// Egress-control defaults every interface starts from
         /// (`Interface.py:135-136`, accessors at `Reticulum.py:1173-1176`).
         public var egressControl: Bool? = nil
+        /// Configured `ec_pr_freq`, or `nil` when unset.
         public var ecPrFreq: Double? = nil
 
         /// Ingress-control defaults every interface starts from (`Interface.py:126-134`,
@@ -201,18 +211,27 @@ public struct ReticulumConfig {
         ///
         /// A per-interface block still overrides them.
         public var icMaxHeldAnnounces: Int? = nil
+        /// Configured `ic_burst_hold`, or `nil` when unset.
         public var icBurstHold: Double? = nil
+        /// Configured `ic_burst_freq_new`, or `nil` when unset.
         public var icBurstFreqNew: Double? = nil
+        /// Configured `ic_burst_freq`, or `nil` when unset.
         public var icBurstFreq: Double? = nil
+        /// Configured `ic_pr_burst_freq_new`, or `nil` when unset.
         public var icPrBurstFreqNew: Double? = nil
+        /// Configured `ic_pr_burst_freq`, or `nil` when unset.
         public var icPrBurstFreq: Double? = nil
+        /// Configured `ic_new_time`, or `nil` when unset.
         public var icNewTime: Double? = nil
+        /// Configured `ic_burst_penalty`, or `nil` when unset.
         public var icBurstPenalty: Double? = nil
+        /// Configured `ic_held_release_interval`, or `nil` when unset.
         public var icHeldReleaseInterval: Double? = nil
     }
 
     // MARK: - [logging] section
 
+    /// The `[logging]` section.
     public struct LoggingSection {
         /// 0=critical … 7=extreme.
         ///
@@ -226,9 +245,13 @@ public struct ReticulumConfig {
 
     // MARK: - [[Interface]] subsections
 
+    /// One interface block, with its type and raw parameters.
     public struct InterfaceConfig {
+        /// Block name, which becomes the interface name.
         public var name: String
+        /// Interface type named by the block.
         public var type: String
+        /// Whether the block is enabled.
         public var enabled: Bool
         /// All raw key-value pairs from the subsection (for type-specific
         /// parameters like `target_host`, `target_port`, and so on).
@@ -249,8 +272,11 @@ public struct ReticulumConfig {
             self.parameters = parameters
         }
 
+        /// Returns the raw value of parameter `key`.
         public subscript(_ key: String) -> String? { parameters[key] }
+        /// Returns parameter `key` parsed as an integer.
         public func int(_ key: String) -> Int? { parameters[key].flatMap(Int.init) }
+        /// Returns parameter `key` parsed as a boolean.
         public func bool(_ key: String) -> Bool? { parameters[key].flatMap(parseBool) }
         /// Python's `c.as_float(key)`.
         ///
@@ -275,17 +301,24 @@ public struct ReticulumConfig {
         /// One `[[[sub]]]` block: a name and its raw keys, with the same typed accessors the
         /// parent block offers.
         public struct SubBlockConfig {
+            /// Sub-block name.
             public var name: String
+            /// Raw parameters of the sub-block.
             public var parameters: [String: String]
 
+            /// Creates a sub-block from a name and its raw parameters.
             public init(name: String, parameters: [String: String]) {
                 self.name = name
                 self.parameters = parameters
             }
 
+            /// Returns the raw value of parameter `key`.
             public subscript(_ key: String) -> String? { parameters[key] }
+            /// Returns parameter `key` parsed as an integer.
             public func int(_ key: String) -> Int? { parameters[key].flatMap(Int.init) }
+            /// Returns parameter `key` parsed as a boolean.
             public func bool(_ key: String) -> Bool? { parameters[key].flatMap(parseBool) }
+            /// Returns parameter `key` parsed as a double.
             public func double(_ key: String) -> Double? { parameters[key].flatMap(Double.init) }
         }
     }

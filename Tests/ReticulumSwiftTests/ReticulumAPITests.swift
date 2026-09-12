@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Covers the Python-parity static methods on `Reticulum`.
+///
 /// Tests for `Reticulum` class static API methods, mirroring Python's:
 ///   - `Reticulum.should_use_implicit_proof()`
 ///   - `Reticulum.transport_enabled()`

@@ -19,6 +19,7 @@ import Foundation
 /// implemented because Reticulum doesn't use them.
 public enum MsgPack {
 
+    /// A decoded MessagePack value.
     public indirect enum Value: Equatable {
         case `nil`
         case bool(Bool)
@@ -30,6 +31,7 @@ public enum MsgPack {
         case array([Value])
         case map([(Value, Value)])
 
+        /// Returns whether two values carry equal contents.
         public static func == (lhs: Value, rhs: Value) -> Bool {
             switch (lhs, rhs) {
             case (.nil, .nil): return true
@@ -53,6 +55,7 @@ public enum MsgPack {
         }
     }
 
+    /// A failure raised while decoding.
     public enum Error: Swift.Error {
         case truncated
         case unsupportedType(UInt8)
@@ -62,6 +65,7 @@ public enum MsgPack {
 
     // MARK: - Encode
 
+    /// Encodes `value` to MessagePack bytes.
     public static func encode(_ value: Value) -> Data {
         var out = Data()
         write(value, into: &out)
@@ -181,6 +185,7 @@ public enum MsgPack {
 
     // MARK: - Decode
 
+    /// Decodes one MessagePack value from `data`.
     public static func decode(_ data: Data) throws -> Value {
         var cursor = data.startIndex
         let value = try read(data, cursor: &cursor)

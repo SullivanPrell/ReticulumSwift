@@ -11,6 +11,8 @@
 import XCTest
 @testable import ReticulumSwift
 
+/// Parity coverage for the `Resource` safeguards RNS 1.3.9 added.
+///
 /// Parity tests for RNS 1.3.9 Resource safeguards (commits bb289744 / 3a36c367):
 /// - a receiver that cancels an in-progress transfer emits RESOURCE_RCL (wire)
 /// - ResourceAdvertisement.unpack rejects an oversized declared transfer size

@@ -91,7 +91,9 @@ final class InterfaceMutabilityTests: XCTestCase {
         }
     }
 
-    /// The no-op-setter half of the same defect, and arguably the worse half: these are declared
+    /// The no-op-setter half of the same defect, and arguably the worse half.
+    ///
+    /// These are declared
     /// `{ get set }` but the `Interface` extension supplies `set { }` (`Interface.swift:281-309`),
     /// so on any type that doesn't override them the assignment **compiles and is silently
     /// discarded**. Only 2 of 19 conformers store `bootstrapOnly`, so 17 of them accept the

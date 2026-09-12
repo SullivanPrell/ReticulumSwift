@@ -20,6 +20,7 @@ import Foundation
 /// assertable from XCTest.
 public enum RNIDCommandLine {
 
+    /// Program name printed in usage and version output.
     public static let program = "rnid"
     /// Python: `argparse.ArgumentParser(description=…)`.
     public static let description = "Reticulum Identity & Encryption Utility"
@@ -128,56 +129,93 @@ public enum RNIDCommandLine {
     /// Everything `main()` reads off `args`.
     public struct Invocation {
         // Identity resolution
+        /// Config directory given with `--config`.
         public var config: String?
+        /// Identity file given with `-i`.
         public var identity: String?
+        /// Path a newly generated identity is written to.
         public var generate: String?
+        /// Path a public key is imported from.
         public var importPublic: String?
+        /// Path a private key is imported from.
         public var importPrivate: String?
+        /// Whether the public key is exported.
         public var exportPublic = false
+        /// Whether the private key is exported.
         public var exportPrivate = false
 
         // Verbosity
+        /// Number of times `-v` was given.
         public var verbose = 0
+        /// Number of times `-q` was given.
         public var quiet = 0
+        /// Whether output goes to standard output instead of a file.
         public var stdout = false
 
         // Operations
+        /// Destination aspects to announce on.
         public var announce: String?
+        /// Destination name to hash.
         public var hash: String?
+        /// Input and output paths for `-d`.
         public var decrypt: [String]?
+        /// Input and output paths for `-e`.
         public var encrypt: [String]?
+        /// Signature and file paths for `-V`.
         public var validate: [String]?
+        /// Input and output paths for `-s`.
         public var sign: [String]?
         /// `nil` with ``signMessageProvided`` true means a bare `-S` (open `$EDITOR`).
         public var signMessage: String?
+        /// Whether a signing message was supplied on the command line.
         public var signMessageProvided = false
+        /// Metadata to embed in the output file.
         public var embedMeta: String?
+        /// Whether metadata is embedded without the source path.
         public var embedMetaWithoutPath = false
+        /// Metadata field selection to display.
         public var metaSpec: String?
+        /// Whether output is written as raw bytes.
         public var raw = false
 
         // I/O
+        /// Path written to.
         public var write: String?
+        /// Path read from.
         public var read: String?
+        /// Whether existing files are overwritten.
         public var force = false
 
         // Information flow
+        /// Whether a path request is issued before resolving.
         public var request = false
+        /// Whether the cached identity is bypassed.
         public var noCache = false
+        /// Seconds to wait for a path request to resolve.
         public var timeout: TimeInterval = Transport.pathRequestTimeout
+        /// Whether the identity hash is printed.
         public var printIdentity = false
+        /// Whether the private key is printed.
         public var printPrivate = false
 
         // Formatting
+        /// Whether output is base32-encoded.
         public var base32 = false
+        /// Whether output is base64-encoded.
         public var base64 = false
+        /// Whether output is base256-encoded.
         public var base256 = false
+        /// Whether output is hex-encoded.
         public var hex = false
+        /// Whether embedded metadata is displayed.
         public var showMeta = false
 
+        /// Whether `--help` was given.
         public var wantsHelp = false
+        /// Whether `--version` was given.
         public var wantsVersion = false
 
+        /// Creates an invocation with every option unset.
         public init() {}
 
         /// Python: `op_requires_identity = (args.sign or args.sign_message or args.encrypt or

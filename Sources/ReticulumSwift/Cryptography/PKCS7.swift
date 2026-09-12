@@ -15,15 +15,19 @@ import Foundation
 /// Block size is 16 bytes; pad value equals the
 /// number of pad bytes appended.
 public enum PKCS7 {
+    /// The cipher block size padding is measured against.
     public static let blockSize: Int = 16
 
+    /// Returns `data` padded up to a whole number of blocks.
     public static func pad(_ data: Data, blockSize: Int = blockSize) -> Data {
         let padLength = blockSize - (data.count % blockSize)
         return data + Data(repeating: UInt8(padLength), count: padLength)
     }
 
+    /// A failure raised when padding is malformed.
     public enum UnpadError: Error { case invalidPadding }
 
+    /// Returns `data` with its padding removed.
     public static func unpad(_ data: Data, blockSize: Int = blockSize) throws -> Data {
         guard !data.isEmpty, data.count % blockSize == 0 else {
             throw UnpadError.invalidPadding

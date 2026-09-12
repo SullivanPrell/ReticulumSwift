@@ -22,7 +22,9 @@ public enum ResourceError: Error {
     case metadataTooLarge
 }
 
+/// A payload transferred over a link as hash-verified parts.
 public final class Resource {
+    /// Lifecycle state of a resource transfer.
     public enum Status: Sendable { case queued, transferring, complete, failed, rejected, corrupt }
 
     /// Size of the random hash prepended to wire data (matches Python RANDOM_HASH_SIZE = 4).
@@ -37,6 +39,7 @@ public final class Resource {
     /// Maximum metadata size in bytes (matches Python METADATA_MAX_SIZE = 16777215).
     public static let metadataMaxSize: Int = 16_777_215
 
+    /// Link the resource is transferred over.
     public let link: Link
     /// Uncompressed original payload (without metadata prefix).
     public let uncompressedData: Data
@@ -58,37 +61,32 @@ public final class Resource {
     /// 4-byte map hash per encrypted segment.
     public let mapHashes: [Data]
 
+    /// Current lifecycle state of the transfer.
     public private(set) var status: Status = .queued
 
-    /// - Parameters:
-    ///   - metadata: Pre-packed (for example, msgpack) metadata bytes to prepend. The receiver
-    ///               receives both the metadata and the payload via ``ResourceTransfer``.
-    ///               Mirrors Python `Resource(data, link, metadata=...)`.
-    /// The part size for a resource travelling over `link`—the one place it's decided.
+    /// Returns the part size for a resource travelling over `link`.
     ///
-    /// `bugs/016`. Python computes this on **both** sides from the per-link MTU
-    /// (`Resource.py:335`):
+    /// Both sides derive the part size from the negotiated link MTU, as Python does in
+    /// `Resource.py:335`. Deriving it from the fixed base MTU instead makes the two sides
+    /// disagree on the part count whenever the link MTU is above 500.
     ///
-    /// ```python
-    /// if self.link.mtu: self.sdu = self.link.mtu - HEADER_MAXSIZE - IFAC_MIN_SIZE
-    /// else:             self.sdu = link.mdu or Resource.SDU
-    /// ```
-    ///
-    /// This port used a fixed `Constants.mdu` (464), which is the reference's answer only at the
-    /// base MTU of 500. Above that the two sides derive different part counts, the receiver's
-    /// hashmap update walks off the end of its map, the error is swallowed at debug level
-    /// (`Resource.py:240`), and the transfer times out with the link still ACTIVE—silently, in
-    /// both directions.
-    ///
-    /// A function rather than a default argument at each call site, because "fixed at the call
-    /// sites the failing test touched" is how three of `bugs/013`'s four sub-defects came back.
-    /// Every site that needs a part size asks here.
+    /// - Parameter link: The link the resource is transferred over.
+    /// - Returns: The part size in bytes.
     public static func segmentSize(for link: Link) -> Int {
         link.establishedMtu - Constants.headerMaxSize - Constants.ifacMinSize
     }
 
-    /// - Parameter segmentSize: part size in bytes. `nil` derives it from the link, which is what
-    ///   every caller should want—see ``segmentSize(for:)``.
+    /// Creates a resource ready to be transferred over `link`.
+    ///
+    /// - Parameters:
+    ///   - link: The link the resource is transferred over.
+    ///   - payload: The bytes to transfer.
+    ///   - metadata: Pre-packed metadata prepended to the payload, delivered to the receiver
+    ///     alongside it. Mirrors Python `Resource(data, link, metadata=...)`.
+    ///   - segmentSize: Part size in bytes. `nil` derives it from the link, which is what
+    ///     every caller should want. See ``segmentSize(for:)``.
+    ///   - autoCompress: Whether the payload is compressed when compression shrinks it.
+    /// - Throws: `ResourceError` when the payload cannot be packed or encrypted.
     public init(link: Link, payload: Data, metadata: Data? = nil,
                 segmentSize: Int? = nil, autoCompress: Bool = true) throws {
         let segmentSize = segmentSize ?? Resource.segmentSize(for: link)
@@ -162,9 +160,13 @@ public final class Resource {
         }.map { Data($0) }
     }
 
+    /// Bytes sent over the wire, after compression and encryption.
     public var transferSize: Int { encryptedStream.count }
+    /// Size of the uncompressed payload in bytes.
     public var dataSize: Int { uncompressedData.count }
+    /// Number of parts the payload is split into.
     public var partCount: Int { encryptedSegments.count }
+    /// Whether the resource carries a metadata block.
     public var hasMetadata: Bool { metadata != nil }
 
     // MARK: - Receiving
@@ -302,15 +304,25 @@ public struct ResourceAdvertisement: Equatable {
     /// `WINDOW_MAX` is the fast-window cap (75).
     public static let collisionGuardSize = 2 * ResourceTransfer.windowMaxFast + hashmapMaxLength
 
+    /// Bytes to be transferred, after compression and encryption.
     public var transferSize: UInt64        // t
+    /// Size of the uncompressed payload in bytes.
     public var dataSize: UInt64            // d
+    /// Number of parts the payload is split into.
     public var partCount: UInt64           // n
+    /// Full SHA-256 hash of the resource.
     public var resourceHash: Data          // h—full 32-byte SHA256
+    /// Random bytes distinguishing otherwise identical resources.
     public var randomHash: Data            // r—4 bytes
+    /// Hash of the whole transfer, shared by every segment of a split resource.
     public var originalHash: Data          // o
+    /// Index of this segment within a split resource.
     public var segmentIndex: UInt64        // i
+    /// Number of segments the resource is split into.
     public var totalSegments: UInt64       // l
+    /// Request this resource belongs to, or `nil` when it is neither a request nor a response.
     public var requestID: Data?            // q (nil when not a request/response)
+    /// Concatenated part hashes, one map hash per part.
     public var hashmap: Data               // m—MAPHASH_LEN bytes per part
 
     // Flag bits packed into `f`:
@@ -320,13 +332,20 @@ public struct ResourceAdvertisement: Equatable {
     //   bit 3 (0x08) u–is request
     //   bit 4 (0x10) p–is response
     //   bit 5 (0x20) x–has metadata
+    /// Whether the payload is encrypted.
     public var encrypted: Bool
+    /// Whether the payload is compressed.
     public var compressed: Bool
+    /// Whether the resource is one segment of a split transfer.
     public var split: Bool
+    /// Whether the resource carries a request.
     public var isRequest: Bool
+    /// Whether the resource carries a response.
     public var isResponse: Bool
+    /// Whether the resource carries a metadata block.
     public var hasMetadata: Bool
 
+    /// Creates an advertisement describing a resource transfer.
     public init(
         transferSize: UInt64, dataSize: UInt64, partCount: UInt64,
         resourceHash: Data, randomHash: Data, originalHash: Data,
@@ -353,6 +372,7 @@ public struct ResourceAdvertisement: Equatable {
         self.hasMetadata = hasMetadata
     }
 
+    /// Flag byte packing the boolean fields of the advertisement.
     public var flags: UInt8 {
         var f: UInt8 = 0
         if encrypted   { f |= 0x01 }
@@ -398,6 +418,7 @@ public struct ResourceAdvertisement: Equatable {
         return MsgPack.encode(map)
     }
 
+    /// Decodes an advertisement from its packed representation.
     public static func unpack(_ data: Data) throws -> ResourceAdvertisement {
         guard case .map(let pairs) = try MsgPack.decode(data) else {
             throw MsgPack.Error.typeMismatch

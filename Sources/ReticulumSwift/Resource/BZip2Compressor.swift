@@ -32,6 +32,7 @@ public struct BZip2Compressor: DataCompressor {
     /// workFactor for compression (0 = default = 30).
     public let workFactor: Int32
 
+    /// Creates a compressor with the given libbz2 tuning parameters.
     public init(blockSize: Int32 = 9, verbosity: Int32 = 0, workFactor: Int32 = 0) {
         self.blockSize  = blockSize
         self.verbosity  = verbosity
@@ -40,6 +41,7 @@ public struct BZip2Compressor: DataCompressor {
 
     // MARK: - DataCompressor
 
+    /// Returns `data` compressed, or `nil` when libbz2 fails.
     public func compress(_ data: Data) -> Data? {
         guard !data.isEmpty else { return Data() }
 
@@ -67,6 +69,7 @@ public struct BZip2Compressor: DataCompressor {
         }
     }
 
+    /// Returns `data` decompressed, or `nil` when libbz2 fails.
     public func decompress(_ data: Data) -> Data? {
         guard !data.isEmpty else { return Data() }
 

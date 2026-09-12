@@ -180,8 +180,10 @@ final class HomeResolutionTests: XCTestCase {
                       """)
     }
 
-    /// The sanctioned exception is sanctioned *once*. If a second one appears the preceding guard
-    /// keeps passing while the invariant erodes, so the count is pinned.
+    /// The sanctioned exception is sanctioned *once*.
+    ///
+    /// If a second one appears the preceding guard keeps passing while the invariant erodes,
+    /// so the count is pinned.
     func testTheSanctionedFallbackIsASingleSite() throws {
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

@@ -144,6 +144,8 @@ final class LinkParityTests: XCTestCase {
 
     // MARK: - 1. Initiator establishment timeout includes firstHopTimeout
 
+    /// Asserts the initiator's establishment timeout includes the first-hop timeout.
+    ///
     /// Before the fix: `establishmentTimeout = perHop * max(1, hops) = 6`
     /// After  the fix: `establishmentTimeout = firstHopTimeout + perHop * max(1, hops) = 6 + 6 = 12`
     ///
@@ -171,6 +173,8 @@ final class LinkParityTests: XCTestCase {
 
     // MARK: - 2. Responder requestTime is set in answer()
 
+    /// Asserts the responder stamps its request time when it answers a link.
+    ///
     /// Python: `link.request_time = time.time()` (validate_request, line 215)
     func testResponderRequestTimeSetOnAnsweredLink() throws {
         let (_, bLink, aT, bT) = try establishLink()
