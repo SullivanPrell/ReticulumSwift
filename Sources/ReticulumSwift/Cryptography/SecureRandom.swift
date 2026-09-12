@@ -12,12 +12,9 @@ import Foundation
 
 /// Cryptographically secure random bytes.
 ///
-/// Every caller in the port needs the same thing—`n` unpredictable bytes—and each one
-/// used to reach for `SecRandomCopyBytes` through an unsafe mutable buffer, force-unwrapping
-/// `baseAddress` and discarding the `OSStatus`. That shape had two defects beyond the banned
-/// `!`: a failure filled the buffer with zeroes and reported nothing, and the check would
-/// have had to be repeated correctly at eleven call sites. Binding the pointer and checking
-/// the status once, here, removes both.
+/// Binds the buffer's base address and checks the `OSStatus` once, here, rather than at each
+/// of the port's eleven call sites: an unchecked `SecRandomCopyBytes` reports nothing on
+/// failure and leaves the buffer zero-filled.
 public enum SecureRandom {
 
   /// Returns `count` cryptographically secure random bytes.
