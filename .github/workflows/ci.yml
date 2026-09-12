@@ -23,3 +23,37 @@ jobs:
 
       - name: Test
         run: swift test
+
+  style:
+    name: Style (format, licenses, prose)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # `swift format` ships with the toolchain from Swift 6.0 on. The image
+      # carries several Xcodes and defaults to an older one, so select the
+      # newest explicitly rather than relying on the image's default.
+      - name: Select newest Xcode
+        run: |
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selecting: $newest"
+          sudo xcode-select -s "$newest/Contents/Developer"
+          swift --version
+
+      # Pinned. The rules vendored in .vale/styles are the ones this version
+      # ships, and a newer Vale can add or retune rules, which would fail a
+      # tree nobody changed.
+      - name: Install Vale
+        env:
+          VALE_VERSION: 3.20.0
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/vale-cli/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_macOS_arm64.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" vale
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/vale" --version
+
+      # swift-fmt-check, check-licenses and lint-docs: the same target
+      # contributors run before pushing. Nothing here builds or runs the code.
+      - name: Check
+        run: make check
