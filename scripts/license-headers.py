@@ -43,9 +43,11 @@ def has_header(text):
     return MARKER in text[:2000]
 
 
-def strip_stale_header(text):
+def strip_stale_header(text, prefix):
     """Remove a previously applied banner block so the year can be refreshed."""
-    match = re.match(r"(?:#![^\n]*\n)?(//===-+===//\n(?://[^\n]*\n)*?//===-+===//\n)", text)
+    p = re.escape(prefix)
+    banner = rf"(?:#![^\n]*\n)?({p}===-+==={p}\n(?:{p}[^\n]*\n)*?{p}===-+==={p}\n)"
+    match = re.match(banner, text)
     if match and MARKER in match.group(1):
         start, end = match.span(1)
         return text[:start] + text[end:].lstrip("\n")
@@ -57,8 +59,9 @@ def apply(path, header, check):
         original = handle.read()
     if not original.strip():
         return False
-    comment = header if not path.endswith(".sh") else header.replace("//", "#")
-    body = strip_stale_header(original)
+    prefix = "#" if path.endswith(".sh") else "//"
+    comment = header if prefix == "//" else header.replace("//", "#")
+    body = strip_stale_header(original, prefix)
     shebang = ""
     if body.startswith("#!"):
         shebang, _, body = body.partition("\n")
