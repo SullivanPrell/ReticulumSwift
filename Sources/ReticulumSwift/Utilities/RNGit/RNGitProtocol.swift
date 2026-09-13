@@ -254,15 +254,25 @@ extension MsgPack.Value {
     }
   }
 
-  /// The keys a dictionary built from this map holds, in the order Python keeps them.
-  private var pythonKeys: [MsgPack.Value] {
+  /// The entries a dictionary built from this map holds.
+  ///
+  /// A repeated key keeps the place it first took and the value it last took, as building
+  /// the dictionary entry by entry does.
+  fileprivate var pythonItems: [(key: MsgPack.Value, value: MsgPack.Value)] {
     guard case .map(let fields) = self else { return [] }
-    var keys: [MsgPack.Value] = []
-    for (key, _) in fields where !keys.contains(where: { $0.pythonEquals(key) }) {
-      keys.append(key)
+    var items: [(key: MsgPack.Value, value: MsgPack.Value)] = []
+    for (key, value) in fields {
+      if let index = items.firstIndex(where: { $0.key.pythonEquals(key) }) {
+        items[index].value = value
+      } else {
+        items.append((key, value))
+      }
     }
-    return keys
+    return items
   }
+
+  /// The keys a dictionary built from this map holds, in the order Python keeps them.
+  private var pythonKeys: [MsgPack.Value] { pythonItems.map(\.key) }
 
   /// What `len` answers for this value, or `nil` where Python raises for it.
   public var pythonLength: Int? {
@@ -299,5 +309,158 @@ extension MsgPack.Value {
       return .refused
     }
     return .valid(digest)
+  }
+}
+
+/// What `san_ref` makes of one value a request carries.
+///
+/// Python: `san_ref` (`util.py:36-62`). It reaches for `str.startswith` straight away, so a
+/// value of any other type raises out of whatever called it.
+public enum RNGitReferenceName: Equatable, Sendable {
+
+  /// A usable reference name.
+  case valid(String)
+
+  /// A name `san_ref` answers `None` for.
+  case refused
+
+  /// A value `san_ref` raises for.
+  case unusable
+}
+
+extension MsgPack.Value {
+
+  /// The reference name this value carries, as `san_ref` reads it.
+  public var pythonReferenceName: RNGitReferenceName {
+    guard let text = asString else { return .unusable }
+    guard let name = GitReferenceNames.sanitise(text) else { return .refused }
+    return .valid(name)
+  }
+
+  /// This value as Python writes it into a formatted string.
+  ///
+  /// Python: `f"{value}"`, which is `str`. A string is written as it stands; every other
+  /// value is written as `repr` writes it, which is also how a container writes what it
+  /// holds.
+  public var pythonDescription: String {
+    if case .string(let text) = self { return text }
+    return pythonRepresentation
+  }
+
+  /// This value as `repr` writes it.
+  public var pythonRepresentation: String {
+    switch self {
+    case .nil: return "None"
+    case .bool(let flag): return flag ? "True" : "False"
+    case .int(let number): return String(number)
+    case .uint(let number): return String(number)
+    case .double(let number): return "\(number)"
+    case .string(let text): return Self.quotedText(Array(text.unicodeScalars))
+    case .bytes(let data): return Self.quotedBytes(data)
+    case .array(let items):
+      return "[" + items.map(\.pythonRepresentation).joined(separator: ", ") + "]"
+    case .map:
+      let written = pythonItems.map {
+        $0.key.pythonRepresentation + ": " + $0.value.pythonRepresentation
+      }
+      return "{" + written.joined(separator: ", ") + "}"
+    }
+  }
+
+  /// The quote `repr` puts around a string holding `hasApostrophe` and `hasQuotationMark`.
+  ///
+  /// The apostrophe is preferred, and gives way only to a string that holds one already and
+  /// no quotation mark to give way to in turn.
+  private static func quote(_ hasApostrophe: Bool, _ hasQuotationMark: Bool) -> Unicode.Scalar {
+    hasApostrophe && !hasQuotationMark ? "\"" : "'"
+  }
+
+  /// `scalars` as `repr` writes a string.
+  private static func quotedText(_ scalars: [Unicode.Scalar]) -> String {
+    let quote = quote(scalars.contains("'"), scalars.contains("\""))
+    var written = String(quote)
+    for scalar in scalars {
+      if let escape = escape(scalar, quote) {
+        written += escape
+      } else if isPrintable(scalar) {
+        written.unicodeScalars.append(scalar)
+      } else {
+        written += hexEscape(scalar.value)
+      }
+    }
+    return written + String(quote)
+  }
+
+  /// `data` as `repr` writes a byte string.
+  ///
+  /// Only the printable part of ASCII is written as itself; every other byte is written as
+  /// a two-digit escape, whatever the code point of that value would be.
+  private static func quotedBytes(_ data: Data) -> String {
+    let quote = quote(data.contains(0x27), data.contains(0x22))
+    var written = "b" + String(quote)
+    for byte in data {
+      let scalar = Unicode.Scalar(byte)
+      if let escape = escape(scalar, quote) {
+        written += escape
+      } else if (0x20..<0x7F).contains(byte) {
+        written.unicodeScalars.append(scalar)
+      } else {
+        written += hexEscape(UInt32(byte))
+      }
+    }
+    return written + String(quote)
+  }
+
+  /// The escape `repr` always writes `scalar` as, or `nil` where it writes it some other way.
+  private static func escape(_ scalar: Unicode.Scalar, _ quote: Unicode.Scalar) -> String? {
+    switch scalar {
+    case quote, "\\": return "\\" + String(scalar)
+    case "\n": return "\\n"
+    case "\r": return "\\r"
+    case "\t": return "\\t"
+    default: return nil
+    }
+  }
+
+  /// The numeric escape `repr` writes the code point `value` as.
+  private static func hexEscape(_ value: UInt32) -> String {
+    if value < 0x100 { return String(format: "\\x%02x", value) }
+    if value < 0x10000 { return String(format: "\\u%04x", value) }
+    return String(format: "\\U%08x", value)
+  }
+
+  /// Whether `str.isprintable` answers true for `scalar`.
+  ///
+  /// Python: the space is printable, and every other separator is not, along with every
+  /// category that carries no glyph of its own.
+  private static func isPrintable(_ scalar: Unicode.Scalar) -> Bool {
+    if scalar == " " { return true }
+    switch scalar.properties.generalCategory {
+    case .control, .format, .surrogate, .privateUse, .unassigned, .lineSeparator,
+      .paragraphSeparator, .spaceSeparator:
+      return false
+    default: return true
+    }
+  }
+}
+
+extension String {
+
+  /// This string with the whitespace Python strips taken off both ends.
+  ///
+  /// Python: `str.strip()`, which takes off every character `str.isspace` answers true for.
+  /// That is a wider set than the bytes of `bytes.strip`, and holds the separators and the
+  /// four information separators alongside the familiar ASCII whitespace.
+  public var pythonStripped: String {
+    let whitespace: Set<Unicode.Scalar> = [
+      "\u{09}", "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{1C}", "\u{1D}", "\u{1E}", "\u{1F}",
+      "\u{20}", "\u{85}", "\u{A0}", "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}",
+      "\u{2004}", "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}",
+      "\u{2028}", "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}",
+    ]
+    var scalars = Array(unicodeScalars)[...]
+    while let first = scalars.first, whitespace.contains(first) { scalars = scalars.dropFirst() }
+    while let last = scalars.last, whitespace.contains(last) { scalars = scalars.dropLast() }
+    return String(String.UnicodeScalarView(scalars))
   }
 }
