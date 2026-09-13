@@ -12,8 +12,8 @@ import Foundation
 
 /// What a remote identity is asking an `rngit` node to do.
 ///
-/// Python: the `PERM_` constants (`server.py:1927-1935`). The node compares these values
-/// against its own configuration, so they name a configuration surface rather than a wire one.
+/// These are compared against the node's own configuration, so they name a configuration surface
+/// rather than a wire one.
 public enum RNGitPermission: UInt8, CaseIterable, Sendable {
 
   /// Read a repository.
@@ -45,8 +45,7 @@ public enum RNGitPermission: UInt8, CaseIterable, Sendable {
 
   /// The permission a configuration keyword names, or `nil` if none does.
   ///
-  /// Python: the `PERM_*_SMPHR` lists (`server.py:1936-1944`), which the reference compares
-  /// against the keyword already lowercased.
+  /// The keyword is matched already lowercased.
   public static func named(_ keyword: String) -> RNGitPermission? {
     switch keyword {
     case "r", "read": return .read
@@ -64,9 +63,6 @@ public enum RNGitPermission: UInt8, CaseIterable, Sendable {
 }
 
 /// Who a permission line grants a permission to.
-///
-/// Python: `TGT_NONE` and `TGT_ALL` (`server.py:1947-1948`), or the identity hash the line
-/// spells out.
 public enum RNGitPermissionTarget: Hashable, Sendable {
 
   /// Nobody, which overrides every other grant at the same level.
@@ -80,8 +76,7 @@ public enum RNGitPermissionTarget: Hashable, Sendable {
 
   /// The target a configuration keyword or identity hash names, or `nil` if neither.
   ///
-  /// Python: the target half of `parse_permission` (`server.py:2281-2288`). A hash is taken
-  /// only at the length of a truncated identity hash, and anything else is dropped.
+  /// A hash is taken only at the length of a truncated identity hash, and anything else is dropped.
   public static func named(_ text: String) -> RNGitPermissionTarget? {
     if ["n", "none", "nobody"].contains(text) { return .nobody }
     if ["a", "all", "everyone"].contains(text) { return .everyone }
@@ -94,7 +89,6 @@ public enum RNGitPermissionTarget: Hashable, Sendable {
 
 /// The targets an `allowed` file grants each permission to.
 ///
-/// Python: the dictionary `permissions_from_allowed_input` returns (`server.py:2469-2509`).
 /// Order is the order the file grants them in, and a target is listed once per permission.
 public struct RNGitPermissionSet: Equatable, Sendable {
 
@@ -127,8 +121,7 @@ public struct RNGitPermissionSet: Equatable, Sendable {
 
   /// The targets granted `permission`, or `nil` for a permission no grant is stored under.
   ///
-  /// Python: the `if`-chains in the three resolvers, whose `else` branch refuses the request
-  /// outright. `readWrite` is a spelling a configuration line may use, never a stored key.
+  /// `readWrite` is a spelling a configuration line may use, never a stored key.
   public subscript(permission: RNGitPermission) -> [RNGitPermissionTarget]? {
     switch permission {
     case .read: return read
@@ -143,12 +136,19 @@ public struct RNGitPermissionSet: Equatable, Sendable {
     }
   }
 
+  /// The `allowed` file a node writes for a repository it makes for `identityHash`.
+  ///
+  /// The hash is written as undelimited hexadecimal.
+  public static func creationLine(for identityHash: Data) -> String {
+    "adm:" + identityHash.map { String(format: "%02x", $0) }.joined()
+  }
+
   /// The permission and target one configuration line grants, each `nil` where the line names
   /// none.
   ///
-  /// Python: `parse_permission` (`server.py:2262-2289`), which resolves the target through
-  /// the node's identity aliases before reading it, and whose two halves fail independently:
-  /// `"read:garbage"` names a permission and no target. Five callers read them apart.
+  /// The target is resolved through the node's identity aliases before it is read, and the two
+  /// halves fail independently: `"read:garbage"` names a permission and no target. Five callers
+  /// read them apart.
   public static func grant(
     in line: String, aliases: [String: String] = [:]
   ) -> (permission: RNGitPermission?, target: RNGitPermissionTarget?) {
@@ -162,9 +162,8 @@ public struct RNGitPermissionSet: Equatable, Sendable {
 
   /// The grants an `allowed` file makes, with lines that grant nothing left out.
   ///
-  /// Python: `permissions_from_allowed_input` (`server.py:2469-2509`). A line starting with
-  /// `#` is a comment, `readwrite` grants both read and write, and a target of no bytes is
-  /// falsy there, so it grants nothing.
+  /// A line starting with `#` is a comment, `readwrite` grants both read and write, and a target of
+  /// no bytes grants nothing.
   public static func parsing(_ input: String?, aliases: [String: String] = [:])
     -> RNGitPermissionSet
   {
@@ -182,9 +181,8 @@ public struct RNGitPermissionSet: Equatable, Sendable {
 
   /// Adds what one permission line grants, leaving the set alone where it grants nothing.
   ///
-  /// Python: the body of the loop in `permissions_from_allowed_input`
-  /// (`server.py:2483-2504`), which `update_group_permissions` repeats over the entries of
-  /// the configuration's `access` section (`server.py:2611-2695`).
+  /// ``RNGitRepositoryStore`` repeats this over the entries of the configuration's `access`
+  /// section.
   public mutating func grant(_ entry: String, aliases: [String: String] = [:]) {
     let grant = Self.grant(in: entry, aliases: aliases)
     guard let permission = grant.permission, let target = grant.target,
@@ -214,8 +212,7 @@ public struct RNGitPermissionSet: Equatable, Sendable {
 
   /// The alias an identity name stands for, or the name itself.
   ///
-  /// Python: `__resolve_identity_alias` (`server.py:2250-2259`), which leaves a keyword or a
-  /// spelled-out hash alone and looks anything else up.
+  /// A keyword or a spelled-out hash is left alone; anything else is looked up.
   public static func resolvingAlias(_ alias: String, aliases: [String: String]) -> String {
     let keywords = ["n", "none", "nobody", "a", "all", "everyone"]
     if keywords.contains(alias.lowercased()) { return alias }
@@ -229,8 +226,6 @@ public struct RNGitPermissionSet: Equatable, Sendable {
 }
 
 /// One repository a node serves, with the permissions its own `allowed` file grants.
-///
-/// Python: an entry of a group's `repositories` dictionary (`server.py:2620-2645`).
 public struct RNGitRepository: Equatable, Sendable {
 
   /// The name the repository answers to, without its group.
@@ -262,8 +257,6 @@ public struct RNGitRepository: Equatable, Sendable {
 }
 
 /// One group of repositories, with the permissions its own `allowed` file grants.
-///
-/// Python: an entry of the node's `groups` dictionary (`server.py:2527-2545`).
 public struct RNGitGroup: Equatable, Sendable {
 
   /// The name the group answers to.
@@ -296,9 +289,8 @@ public struct RNGitGroup: Equatable, Sendable {
 
 /// Decides what a remote identity may do on an `rngit` node.
 ///
-/// Python: the `resolve_*_permission` methods (`server.py:2310-2467`). A repository that
-/// grants a permission to anyone at all settles the question for that permission, so a group
-/// grant is only consulted where the repository names nobody.
+/// A repository that grants a permission to anyone at all settles the question for that permission,
+/// so a group grant is only consulted where the repository names nobody.
 public struct RNGitAccessControl: Sendable {
 
   /// The groups the node serves, by name.
@@ -322,8 +314,7 @@ public struct RNGitAccessControl: Sendable {
 
   /// Whether `identityHash` may do `permission` on one repository.
   ///
-  /// Python: `resolve_permission` (`server.py:2310-2368`), the only resolver that consults
-  /// the block list.
+  /// The only resolver that consults the block list.
   public func allows(
     _ identityHash: Data, group groupName: String, repository repositoryName: String,
     permission: RNGitPermission
@@ -345,8 +336,6 @@ public struct RNGitAccessControl: Sendable {
   }
 
   /// Whether `identityHash` may do `permission` on one group.
-  ///
-  /// Python: `resolve_group_permission` (`server.py:2370-2395`).
   public func allowsGroup(
     _ identityHash: Data, group groupName: String, permission: RNGitPermission
   ) -> Bool {
@@ -358,9 +347,8 @@ public struct RNGitAccessControl: Sendable {
 
   /// Whether `identityHash` may do `permission` on one work document.
   ///
-  /// Python: `resolve_doc_permission` (`server.py:2397-2467`), which reads the document's own
-  /// `allowed` file at this point and treats an unreadable one as granting nothing. Pass what
-  /// that file grants as `documentPermissions`.
+  /// The document's own `allowed` file is read at this point, and an unreadable one grants nothing.
+  /// Pass what that file grants as `documentPermissions`.
   public func allowsDocument(
     _ identityHash: Data, group groupName: String, repository repositoryName: String,
     permission: RNGitPermission, documentPermissions: RNGitPermissionSet
@@ -387,8 +375,6 @@ public struct RNGitAccessControl: Sendable {
   }
 
   /// The group and repository a request path names, or `nil` if it names neither.
-  ///
-  /// Python: `parse_request_repository_path` (`server.py:2291-2299`).
   public static func repositoryPath(_ path: String) -> (group: String, repository: String)? {
     let components = path.components(separatedBy: "/")
     guard components.count == 2, components[0].count <= 256, components[1].count <= 256 else {
@@ -398,8 +384,6 @@ public struct RNGitAccessControl: Sendable {
   }
 
   /// The group a request path names, or `nil` if it names none.
-  ///
-  /// Python: `parse_request_group_path` (`server.py:2301-2308`).
   public static func groupPath(_ path: String) -> String? {
     let components = path.components(separatedBy: "/")
     guard components.count == 1, components[0].count <= 256 else { return nil }
@@ -430,9 +414,9 @@ extension Data {
 
   /// The bytes a hexadecimal string names, or `nil` if it names none.
   ///
-  /// Python: `bytes.fromhex`, which refuses any character that is not a hexadecimal digit, as
-  /// well as an odd number of digits. It skips ASCII whitespace, but only between complete
-  /// byte pairs: `"aa bb"` is two bytes where `"a abb"` is an error.
+  /// Refuses any character that is not a hexadecimal digit, as well as an odd number of digits.
+  /// ASCII whitespace is skipped, but only between complete byte pairs: `"aa bb"` is two bytes
+  /// where `"a abb"` is an error.
   public init?(pythonHex text: String) {
     var digits: [UInt8] = []
     for scalar in text.unicodeScalars {

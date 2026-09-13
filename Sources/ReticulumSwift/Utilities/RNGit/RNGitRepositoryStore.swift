@@ -12,8 +12,7 @@ import Foundation
 
 /// Why an `allowed` file could not be read.
 ///
-/// Python: the exceptions `load_allowed_permissions` lets through (`server.py:2511-2525`),
-/// which its two callers treat differently.
+/// The two callers treat these differently.
 public enum RNGitAllowedError: Error, Equatable, Sendable {
 
   /// The file is not valid UTF-8.
@@ -24,9 +23,6 @@ public enum RNGitAllowedError: Error, Equatable, Sendable {
 }
 
 /// The groups and repositories a node serves, as it reads them from disk.
-///
-/// Python: the node's `groups` dictionary and the four methods that fill it
-/// (`server.py:2511-2644`).
 public struct RNGitRepositoryStore: Sendable {
 
   /// The groups the node serves, by name.
@@ -40,21 +36,21 @@ public struct RNGitRepositoryStore: Sendable {
 
   private let runner: RNGitCommandRunner
 
-  /// Creates a store that reads through `runner`.
+  /// Creates a store that reads through `runner`, holding `groups` to begin with.
   public init(
-    runner: RNGitCommandRunner, identityAliases: [String: String] = [:],
-    access: RNGitConfigSection? = nil
+    runner: RNGitCommandRunner, groups: [String: RNGitGroup] = [:],
+    identityAliases: [String: String] = [:], access: RNGitConfigSection? = nil
   ) {
     self.runner = runner
+    self.groups = groups
     self.identityAliases = identityAliases
     self.access = access
   }
 
   /// What the `allowed` file at `path` grants, and whether it is a program.
   ///
-  /// Python: `load_allowed_permissions` (`server.py:2511-2525`). An executable file is run
-  /// and its output read whatever its exit status; anything else is read as text. A path
-  /// naming no file grants nothing.
+  /// An executable file is run and its output read whatever its exit status; anything else is read
+  /// as text. A path naming no file grants nothing.
   public func allowedPermissions(at path: String) throws
     -> (permissions: RNGitPermissionSet, dynamic: Bool)
   {
@@ -78,8 +74,7 @@ public struct RNGitRepositoryStore: Sendable {
 
   /// Reads the group named `name` at `path`, along with every repository it holds.
   ///
-  /// Python: `load_repository_group` (`server.py:2527-2545`). A group already known under a
-  /// different path is left as it is.
+  /// A group already known under a different path is left as it is.
   public mutating func loadGroup(named name: String, at path: String) throws {
     if groups[name] == nil { groups[name] = RNGitGroup(name: name, path: path) }
     guard groups[name]?.path == path else { return }
@@ -94,8 +89,8 @@ public struct RNGitRepositoryStore: Sendable {
   /// Reads the permissions of the group named `name` from its `allowed` file and the
   /// configuration.
   ///
-  /// Python: `update_group_permissions` (`server.py:2547-2601`). The `allowed` file replaces
-  /// what the group held, and the configuration's entries are added on top of it.
+  /// The `allowed` file replaces what the group held, and the configuration's entries are added on
+  /// top of it.
   public mutating func updateGroupPermissions(named name: String) {
     guard let group = groups[name] else { return }
 
@@ -119,8 +114,7 @@ public struct RNGitRepositoryStore: Sendable {
 
   /// Reads the permissions of one repository from its own `allowed` file.
   ///
-  /// Python: `update_repository_permissions` (`server.py:2603-2618`), which leaves the
-  /// repository as it is where the file cannot be read.
+  /// The repository is left as it is where the file cannot be read.
   public mutating func updateRepositoryPermissions(group name: String, repository: String) {
     guard let path = groups[name]?.repositories[repository]?.path else { return }
     guard let allowed = try? allowedPermissions(at: path + ".allowed") else { return }
@@ -129,8 +123,8 @@ public struct RNGitRepositoryStore: Sendable {
 
   /// Reads the repository at `path` into the group named `name`, answering whether it is one.
   ///
-  /// Python: `load_repository` (`server.py:2620-2644`). A working directory, a `.work` or
-  /// `.releases` directory, and anything that is not a bare repository are all passed over.
+  /// A working directory, a `.work` or `.releases` directory, and anything that is not a bare
+  /// repository are all passed over.
   @discardableResult
   public mutating func loadRepository(into name: String, at path: String) throws -> Bool {
     guard groups[name] != nil, !path.isEmpty else { return false }

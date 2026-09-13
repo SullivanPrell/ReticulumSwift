@@ -11,8 +11,6 @@
 import Foundation
 
 /// The node's answer to a request for a bundle of the objects a peer is missing.
-///
-/// Python: `handle_fetch` (`server.py:2930-3003`).
 public struct RNGitFetchHandler {
 
   /// The groups the node serves, and what they grant.
@@ -30,28 +28,28 @@ public struct RNGitFetchHandler {
   /// The links the node has open, by link identifier.
   public var activeLinks: Set<Data>
 
-  /// Where the node puts the directories it holds a bundle in.
-  public var temporaryRoot: String
+  /// Where the node holds a bundle while it builds it.
+  public var temporaries: RNGitTemporaryDirectories
 
   /// Creates a handler answering from `access`.
   public init(
     access: RNGitAccessControl, runner: RNGitCommandRunner,
     settings: RNGitNodeSettings = RNGitNodeSettings(),
     statistics: RNGitStatistics = RNGitStatistics(), activeLinks: Set<Data> = [],
-    temporaryRoot: String = NSTemporaryDirectory()
+    temporaries: RNGitTemporaryDirectories = RNGitTemporaryDirectories()
   ) {
     self.access = access
     self.runner = runner
     self.settings = settings
     self.statistics = statistics
     self.activeLinks = activeLinks
-    self.temporaryRoot = temporaryRoot
+    self.temporaries = temporaries
   }
 
   /// The answer a peer holding `identityHash` gets on `link`, or `nil` where it gets none.
   ///
-  /// A request naming its repository with anything but a string leaves the reference raising
-  /// before it reaches a handler of its own, which sends nothing at all.
+  /// A request naming its repository with anything but a string is answered with nothing at
+  /// all.
   public mutating func handle(
     _ request: MsgPack.Value, from identityHash: Data?, on link: Data?
   ) -> RNGitAnswer? {
@@ -80,13 +78,13 @@ public struct RNGitFetchHandler {
     guard refs.pythonIsTruthy else {
       return .response(RNGitResponse(.invalidRequest, "No refs specified"))
     }
-    return bundle(refs, fields["have"], at: path, of: names, for: identityHash)
+    return bundle(refs, fields["have"], at: path, of: names, for: identityHash, on: link)
   }
 
   /// A bundle of what `refs` name at `path`, less what the peer says it holds.
   private mutating func bundle(
     _ refs: MsgPack.Value, _ have: MsgPack.Value?, at path: String,
-    of names: (group: String, repository: String), for identityHash: Data
+    of names: (group: String, repository: String), for identityHash: Data, on link: Data
   ) -> RNGitAnswer? {
     guard let entries = refs.pythonIterated else { return Self.remoteFailure }
     var requested: [String] = []
@@ -100,11 +98,7 @@ public struct RNGitFetchHandler {
       return .response(RNGitResponse(.invalidRequest, "Invalid request"))
     }
 
-    let directory = temporaryRoot + "/rngit-" + UUID().uuidString
-    guard
-      (try? FileManager.default.createDirectory(
-        atPath: directory, withIntermediateDirectories: true)) != nil
-    else { return Self.remoteFailure }
+    guard let directory = temporaries.make(for: link) else { return Self.remoteFailure }
     let bundlePath = directory + "/fetch.bundle"
 
     var arguments = ["bundle", "create", "--no-progress", bundlePath]
@@ -159,13 +153,11 @@ public struct RNGitFetchHandler {
     }
   }
 
-  /// The answer the reference gives for everything its handler raises on.
+  /// The answer given for everything the handler cannot complete.
   private static let remoteFailure = RNGitAnswer.response(
     RNGitResponse(.remoteFailure, "Remote error"))
 
   /// Counts one fetch, unless the settings leave this peer or every fetch out.
-  ///
-  /// Python: `fetch_succeeded` (`server.py:4769-4772`).
   private mutating func fetchSucceeded(
     _ names: (group: String, repository: String), for identityHash: Data
   ) {

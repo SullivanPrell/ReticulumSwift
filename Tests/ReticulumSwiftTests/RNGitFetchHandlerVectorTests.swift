@@ -79,6 +79,7 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
     let calls: [Call]
     let fetches: Int
     let temporaries: Int
+    let linked: Int
   }
 
   /// A permission set granting the named targets, which are keywords or identity hashes.
@@ -127,7 +128,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "014e6f74206964656e746966696564",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "no identity",
       groupGrants: permissions(),
@@ -145,7 +147,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "014e6f74206964656e746966696564",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "request not a map",
       groupGrants: permissions(),
@@ -160,7 +163,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c69642072657175657374",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "request nil",
       groupGrants: permissions(),
@@ -175,7 +179,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c69642072657175657374",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "request empty",
       groupGrants: permissions(),
@@ -190,7 +195,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "024e6f207265706f7369746f727920737065636966696564",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "repository not a string",
       groupGrants: permissions(),
@@ -208,7 +214,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "RAISED",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "read refused",
       groupGrants: permissions(),
@@ -226,7 +233,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "034e6f7420666f756e64",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "unknown repository",
       groupGrants: permissions(),
@@ -244,7 +252,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "034e6f7420666f756e64",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "path without a group",
       groupGrants: permissions(),
@@ -262,7 +271,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "034e6f7420666f756e64",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "blocked identity",
       groupGrants: permissions(),
@@ -280,7 +290,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "034e6f7420666f756e64",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "no refs field",
       groupGrants: permissions(),
@@ -295,7 +306,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "024e6f207265667320737065636966696564",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "refs empty",
       groupGrants: permissions(),
@@ -310,7 +322,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "024e6f207265667320737065636966696564",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "refs empty string",
       groupGrants: permissions(),
@@ -325,7 +338,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "024e6f207265667320737065636966696564",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "refs a string",
       groupGrants: permissions(),
@@ -342,7 +356,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "refs an integer",
       groupGrants: permissions(),
@@ -357,7 +372,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "refs names only",
       groupGrants: permissions(),
@@ -374,7 +390,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "refs a map",
       groupGrants: permissions(),
@@ -392,7 +409,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "ref entry without a name",
       groupGrants: permissions(),
@@ -413,7 +431,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "ref name not a string",
       groupGrants: permissions(),
@@ -431,7 +450,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "ref name refused",
       groupGrants: permissions(),
@@ -449,7 +469,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c69642072657175657374",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "ref name without a slash",
       groupGrants: permissions(),
@@ -467,7 +488,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c69642072657175657374",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
     Vector(
       name: "one ref",
       groupGrants: permissions(),
@@ -489,7 +511,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 1,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "three refs",
       groupGrants: permissions(),
@@ -520,7 +543,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           ], "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have held",
       groupGrants: permissions(),
@@ -553,7 +577,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           ], "<repo>"),
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have absent",
       groupGrants: permissions(),
@@ -584,7 +609,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>"),
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have short",
       groupGrants: permissions(),
@@ -607,7 +633,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c696420534841",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have an integer",
       groupGrants: permissions(),
@@ -628,7 +655,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have false",
       groupGrants: permissions(),
@@ -655,7 +683,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have empty",
       groupGrants: permissions(),
@@ -682,7 +711,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have bytes",
       groupGrants: permissions(),
@@ -715,7 +745,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c696420534841",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have a list",
       groupGrants: permissions(),
@@ -750,7 +781,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c696420534841",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have not hex",
       groupGrants: permissions(),
@@ -776,7 +808,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c696420534841",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have odd length",
       groupGrants: permissions(),
@@ -802,7 +835,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c696420534841",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have spaced hex",
       groupGrants: permissions(),
@@ -841,7 +875,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           ], "<repo>"),
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "ref have and global have",
       groupGrants: permissions(),
@@ -876,7 +911,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           ], "<repo>"),
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "global have absent",
       groupGrants: permissions(),
@@ -900,7 +936,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>"),
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "global have empty",
       groupGrants: permissions(),
@@ -923,7 +960,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "global have a string",
       groupGrants: permissions(),
@@ -942,7 +980,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "02496e76616c696420534841",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "global have an integer",
       groupGrants: permissions(),
@@ -961,7 +1000,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "global have bytes",
       groupGrants: permissions(),
@@ -980,7 +1020,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "global have false",
       groupGrants: permissions(),
@@ -999,7 +1040,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "ff52656d6f7465206572726f72",
       calls: [],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "global have a map",
       groupGrants: permissions(),
@@ -1025,7 +1067,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           ], "<repo>"),
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "bundle empty",
       groupGrants: permissions(),
@@ -1047,7 +1090,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "bundle empty mixed case",
       groupGrants: permissions(),
@@ -1069,7 +1113,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "bundle failed",
       groupGrants: permissions(),
@@ -1091,7 +1136,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "bundle would not run",
       groupGrants: permissions(),
@@ -1113,7 +1159,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "cat-file would not run",
       groupGrants: permissions(),
@@ -1141,7 +1188,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
         Call(["git", "cat-file", "-t", "1111111111111111111111111111111111111111"], "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "read granted by group",
       groupGrants: permissions(read: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]),
@@ -1163,7 +1211,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           "<repo>")
       ],
       fetches: 0,
-      temporaries: 1),
+      temporaries: 1,
+      linked: 1),
     Vector(
       name: "read granted to another",
       groupGrants: permissions(),
@@ -1181,7 +1230,8 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       answer: "034e6f7420666f756e64",
       calls: [],
       fetches: 0,
-      temporaries: 0),
+      temporaries: 0,
+      linked: 0),
   ]
 
   private static let identityA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -1211,7 +1261,7 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
           groups: ["group": group], blockedIdentities: vector.blocked ? [identity] : []),
         runner: runner, settings: settings,
         activeLinks: [try XCTUnwrap(Data(pythonHex: "cccccccccccccccc"))],
-        temporaryRoot: root)
+        temporaries: RNGitTemporaryDirectories(root: root))
 
       let answer = handler.handle(
         vector.request, from: vector.identity.flatMap { Data(pythonHex: $0) },
@@ -1222,6 +1272,9 @@ final class RNGitFetchHandlerVectorTests: XCTestCase {
       let held = try FileManager.default.contentsOfDirectory(atPath: root)
       XCTAssertEqual(
         held.filter { $0.hasPrefix("rngit-") }.count, vector.temporaries, vector.name)
+      XCTAssertEqual(
+        handler.temporaries.held[Data(pythonHex: vector.link) ?? Data()]?.count ?? 0,
+        vector.linked, vector.name)
 
       let counters = handler.statistics.groups["group"]?.repositories["repo"]
       XCTAssertEqual(
