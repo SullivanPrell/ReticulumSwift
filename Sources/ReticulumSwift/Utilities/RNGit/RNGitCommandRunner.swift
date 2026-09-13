@@ -40,7 +40,8 @@ public protocol RNGitCommandRunner: Sendable {
   ///
   /// Python: `subprocess.run([executable] + arguments, cwd=directory, capture_output=True)`,
   /// whose failure to launch raises and is caught by the helper that called it. A name
-  /// without a separator is looked up on the search path, as `execvp` does.
+  /// without a separator is looked up on the search path, as `execvp` does; a name with one
+  /// is run as it stands, so a file the system cannot execute does not run at all.
   func run(_ executable: String, arguments: [String], in directory: String?)
     -> RNGitCommandOutput?
 }
@@ -60,8 +61,13 @@ public struct RNGitProcessRunner: RNGitCommandRunner {
   {
     #if os(macOS)
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = [executable] + arguments
+    if executable.contains("/") {
+      process.executableURL = URL(fileURLWithPath: executable)
+      process.arguments = arguments
+    } else {
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+      process.arguments = [executable] + arguments
+    }
     if let directory { process.currentDirectoryURL = URL(fileURLWithPath: directory) }
 
     let output = Pipe()

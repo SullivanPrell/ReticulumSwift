@@ -174,27 +174,36 @@ public struct RNGitPermissionSet: Equatable, Sendable {
     for line in input.pythonLines {
       let entry = line.trimmedForMicron
       guard !entry.hasPrefix("#") else { continue }
-      let grant = Self.grant(in: entry, aliases: aliases)
-      guard let permission = grant.permission, let target = grant.target,
-        target != .identity(Data())
-      else { continue }
-
-      switch permission {
-      case .read: permissions.append(target, to: \.read)
-      case .write: permissions.append(target, to: \.write)
-      case .readWrite:
-        permissions.append(target, to: \.read)
-        permissions.append(target, to: \.write)
-      case .create: permissions.append(target, to: \.create)
-      case .stats: permissions.append(target, to: \.stats)
-      case .release: permissions.append(target, to: \.release)
-      case .interact: permissions.append(target, to: \.interact)
-      case .propose: permissions.append(target, to: \.propose)
-      case .admin: permissions.append(target, to: \.admin)
-      }
+      permissions.grant(entry, aliases: aliases)
     }
 
     return permissions
+  }
+
+  /// Adds what one permission line grants, leaving the set alone where it grants nothing.
+  ///
+  /// Python: the body of the loop in `permissions_from_allowed_input`
+  /// (`server.py:2483-2504`), which `update_group_permissions` repeats over the entries of
+  /// the configuration's `access` section (`server.py:2611-2695`).
+  public mutating func grant(_ entry: String, aliases: [String: String] = [:]) {
+    let grant = Self.grant(in: entry, aliases: aliases)
+    guard let permission = grant.permission, let target = grant.target,
+      target != .identity(Data())
+    else { return }
+
+    switch permission {
+    case .read: append(target, to: \.read)
+    case .write: append(target, to: \.write)
+    case .readWrite:
+      append(target, to: \.read)
+      append(target, to: \.write)
+    case .create: append(target, to: \.create)
+    case .stats: append(target, to: \.stats)
+    case .release: append(target, to: \.release)
+    case .interact: append(target, to: \.interact)
+    case .propose: append(target, to: \.propose)
+    case .admin: append(target, to: \.admin)
+    }
   }
 
   private mutating func append(
@@ -233,18 +242,22 @@ public struct RNGitRepository: Equatable, Sendable {
   /// What the repository's own `allowed` file grants.
   public var permissions: RNGitPermissionSet
 
-  /// Whether the `allowed` file is a program the node runs for each answer.
-  public var dynamicPermissions: Bool
+  /// The upstream this repository forks, or `nil` where it is not a fork.
+  public var fork: String?
+
+  /// The upstream this repository mirrors, or `nil` where it is not a mirror.
+  public var mirror: String?
 
   /// Creates a repository record.
   public init(
     name: String, path: String, permissions: RNGitPermissionSet = RNGitPermissionSet(),
-    dynamicPermissions: Bool = false
+    fork: String? = nil, mirror: String? = nil
   ) {
     self.name = name
     self.path = path
     self.permissions = permissions
-    self.dynamicPermissions = dynamicPermissions
+    self.fork = fork
+    self.mirror = mirror
   }
 }
 
