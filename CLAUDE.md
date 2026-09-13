@@ -3,8 +3,8 @@
 Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.4.2).
 Target: wire + API compatibility so a Swift node interoperates with Python nodes.
 
-Ships the library plus the nine `rn*` command-line utilities as executable products
-(`rnstatus`, `rnpath`, `rnprobe`, `rncp`, `rnid`, `rnx`, `rnsd`, `rnir`, `rnpkg`).
+Ships the library plus the ten command-line utilities as executable products
+(`rnstatus`, `rnpath`, `rnprobe`, `rncp`, `rnid`, `rnx`, `rnsd`, `rnir`, `rnpkg`, `rngcs`).
 
 ## Build and test
 
@@ -13,7 +13,7 @@ swift build
 swift test                          # runs the full test suite
 swift test --filter <SuiteName>     # e.g. WireGoldenBytesTests
 
-swift build -c release              # also builds the nine rn* executables
+swift build -c release              # also builds the ten utility executables
 
 # If you see SwiftShims module cache errors:
 rm -rf .build && swift test
@@ -94,9 +94,9 @@ Sources/ReticulumSwift/
 │   ├── SAMClient.swift / SAMSocket.swift ← I2P SAM bridge
 │   ├── BLEMeshInterface.swift / BLEMeshTransport.swift
 │   └── WeaveInterface.swift     ← Weave switching fabric (experimental)
-└── Utilities/                   ← The nine rn* tools: arg parsing, RPC client/server,
+└── Utilities/                   ← The ten utilities: arg parsing, RPC client/server,
                                    instance connection, status rendering, rncp, rnid,
-                                   rnpath, rnsh, rnx, daemon bootstrap
+                                   rngcs, rnpath, rnsh, rnx, daemon bootstrap
 ```
 
 ## Key architecture notes
