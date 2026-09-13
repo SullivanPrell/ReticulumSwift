@@ -1007,7 +1007,7 @@ final class RNGitClientCommandVectorTests: XCTestCase {
       answer: .none,
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
-      aborted: "No response from remote",
+      aborted: "Request failed or timed out",
       sent: Sent(
         awaitHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", awaitTimeout: 1606.0, path: "/git/create",
         fields: "8100aa67726f75702f7265706f", timeout: 120.0),
@@ -1024,7 +1024,7 @@ final class RNGitClientCommandVectorTests: XCTestCase {
       answer: .none,
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rRemote is forking repository to group/repo...\n",
-      aborted: "No response from remote",
+      aborted: "Request failed or timed out",
       sent: Sent(
         awaitHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", awaitTimeout: 1606.0, path: "/git/fork",
         fields:
@@ -1043,7 +1043,7 @@ final class RNGitClientCommandVectorTests: XCTestCase {
       answer: .none,
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rRemote is mirroring repository to group/repo...\n",
-      aborted: "No response from remote",
+      aborted: "Request failed or timed out",
       sent: Sent(
         awaitHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", awaitTimeout: 1606.0, path: "/git/mirror",
         fields:
@@ -1060,7 +1060,7 @@ final class RNGitClientCommandVectorTests: XCTestCase {
       answer: .none,
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rRemote is syncing repository...\n",
-      aborted: "No response from remote",
+      aborted: "Request failed or timed out",
       sent: Sent(
         awaitHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", awaitTimeout: 1606.0, path: "/git/sync",
         fields: "8100aa67726f75702f7265706f", timeout: 7200.0),

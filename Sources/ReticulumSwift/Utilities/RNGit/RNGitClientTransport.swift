@@ -86,7 +86,10 @@ public struct RNGitResponseReading: Equatable, Sendable {
     case sent(prefix: String, fallback: String)
   }
 
-  /// What the client says where nothing it can read came back.
+  /// What the client says where the request brought nothing back at all.
+  public static let noResult = "Request failed or timed out"
+
+  /// What the client says where what came back is not an answer it can read.
   public static let noAnswer = "No response from remote"
 
   /// What each code the reading names comes to.
@@ -103,6 +106,7 @@ public struct RNGitResponseReading: Equatable, Sendable {
 
   /// What `result` came to.
   public func reading(_ result: RNGitRequestResult) -> RNGitClientAnswer {
+    if case .none = result { return .failed(Self.noResult) }
     guard case .bytes(let response) = result, !response.isEmpty else {
       return .failed(Self.noAnswer)
     }
