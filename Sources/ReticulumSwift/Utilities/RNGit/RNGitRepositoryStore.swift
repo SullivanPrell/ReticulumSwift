@@ -72,6 +72,21 @@ public struct RNGitRepositoryStore: Sendable {
     return (RNGitPermissionSet.parsing(text, aliases: identityAliases), false)
   }
 
+  /// Reads every group the configuration's `repositories` section names.
+  ///
+  /// A leading tilde in a path is expanded, and a path naming no directory is passed over.
+  public mutating func loadGroups(from configuration: RNGitConfigSection) throws {
+    guard let section = configuration.section("repositories") else { return }
+    for name in section.keys {
+      guard let path = section.string(name) else {
+        throw RNGitSettingsError.notAPath(key: name)
+      }
+      let expanded = DaemonBootstrap.expandTilde(path)
+      guard RNGitWorkStore.isDirectory(expanded) else { continue }
+      try loadGroup(named: name, at: expanded)
+    }
+  }
+
   /// Reads the group named `name` at `path`, along with every repository it holds.
   ///
   /// A group already known under a different path is left as it is.

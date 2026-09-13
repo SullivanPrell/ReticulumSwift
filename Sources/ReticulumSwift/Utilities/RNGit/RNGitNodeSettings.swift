@@ -20,6 +20,9 @@ public enum RNGitSettingsError: Error, Equatable, Sendable {
 
   /// A setting read as a boolean whose value names neither.
   case notABoolean(key: String)
+
+  /// A setting read as a path whose value holds more than one, or opens a section.
+  case notAPath(key: String)
 }
 
 /// The settings an `rngit` node takes from its configuration file.

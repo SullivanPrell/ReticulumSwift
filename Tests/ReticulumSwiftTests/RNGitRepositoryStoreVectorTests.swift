@@ -66,6 +66,14 @@ final class RNGitRepositoryStoreVectorTests: XCTestCase {
     let steps: [Operation]
   }
 
+  private struct Configured {
+    let name: String
+    let configuration: String
+    let steps: [Operation]
+    let groups: [String: GroupRecord]
+    var home = false
+  }
+
   private struct Vector {
     let name: String
     let configuration: String
@@ -960,6 +968,195 @@ final class RNGitRepositoryStoreVectorTests: XCTestCase {
       ]),
   ]
 
+  private static let configured: [Configured] = [
+    Configured(
+      name: "one group named",
+      configuration: "[repositories]\ngroup = {root}/group\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+      ],
+      groups: [
+        "group": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ])
+      ]),
+    Configured(
+      name: "two groups named",
+      configuration: "[repositories]\ngroup = {root}/group\nother = {root}/other\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+        Operation(kind: .directory, target: "other"),
+        Operation(kind: .git, target: "other/two", steps: [["init", "--bare"]]),
+      ],
+      groups: [
+        "group": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ]),
+        "other": GroupRecord(
+          path: "other", dynamicPermissions: false,
+          permissions: permissions(),
+          repositories: [
+            "two": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ]),
+      ]),
+    Configured(
+      name: "path naming nothing",
+      configuration: "[repositories]\ngroup = {root}/missing\n",
+      steps: [],
+      groups: [:]),
+    Configured(
+      name: "path naming a file",
+      configuration: "[repositories]\ngroup = {root}/note\n",
+      steps: [
+        Operation(kind: .file, target: "note", content: "hello\n")
+      ],
+      groups: [:]),
+    Configured(
+      name: "two names for one path",
+      configuration: "[repositories]\ngroup = {root}/group\nother = {root}/group\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+      ],
+      groups: [
+        "group": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ]),
+        "other": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ]),
+      ]),
+    Configured(
+      name: "one name for two paths",
+      configuration: "[repositories]\ngroup = {root}/group\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+        Operation(kind: .directory, target: "other"),
+        Operation(kind: .git, target: "other/two", steps: [["init", "--bare"]]),
+      ],
+      groups: [
+        "group": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ])
+      ]),
+    Configured(
+      name: "no section",
+      configuration: "",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+      ],
+      groups: [:]),
+    Configured(
+      name: "empty section",
+      configuration: "[repositories]\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+      ],
+      groups: [:]),
+    Configured(
+      name: "group with a permissions file",
+      configuration: "[repositories]\ngroup = {root}/group\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+        Operation(
+          kind: .file, target: "group.allowed", content: "r:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+      ],
+      groups: [
+        "group": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(read: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ])
+      ]),
+    Configured(
+      name: "group the configuration also grants",
+      configuration:
+        "[repositories]\ngroup = {root}/group\n[access]\ngroup = adm:cccccccccccccccccccccccccccccccc\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+      ],
+      groups: [
+        "group": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(admin: ["cccccccccccccccccccccccccccccccc"]),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ])
+      ]),
+    Configured(
+      name: "path written from the home directory",
+      configuration: "[repositories]\ngroup = ~/group\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .git, target: "group/one", steps: [["init", "--bare"]]),
+      ],
+      groups: [
+        "group": GroupRecord(
+          path: "group", dynamicPermissions: false,
+          permissions: permissions(),
+          repositories: [
+            "one": Repository(
+              fork: nil, mirror: nil,
+              permissions: permissions())
+          ])
+      ], home: true),
+  ]
+
+  private static let broken: [Refusal] = [
+    Refusal(
+      name: "path written as a list",
+      configuration: "[repositories]\ngroup = {root}/group, {root}/other\n",
+      steps: [
+        Operation(kind: .directory, target: "group"),
+        Operation(kind: .directory, target: "other"),
+      ]),
+    Refusal(
+      name: "path written as a subsection",
+      configuration: "[repositories]\n[[group]]\npath = {root}/group\n",
+      steps: [
+        Operation(kind: .directory, target: "group")
+      ]),
+  ]
+
   private static let refusals: [Refusal] = [
     Refusal(
       name: "repository program not executable format",
@@ -1037,6 +1234,65 @@ final class RNGitRepositoryStoreVectorTests: XCTestCase {
         }
       }
     }
+  }
+
+  /// Every group the configuration names reads as the reference read it.
+  func testConfiguredGroupsMatchTheReference() throws {
+    for vector in Self.configured {
+      let root = try seeded(vector.steps, of: vector.name)
+      defer { try? FileManager.default.removeItem(atPath: root) }
+
+      let text = vector.configuration.replacingOccurrences(of: "{root}", with: root)
+      let configuration = try RNGitConfigFile.parse(text)
+      var store = RNGitRepositoryStore(
+        runner: runner, identityAliases: Self.aliases,
+        access: configuration.section("access"))
+
+      let held = ProcessInfo.processInfo.environment["HOME"]
+      if vector.home { setenv("HOME", root, 1) }
+      defer { if let held, vector.home { setenv("HOME", held, 1) } }
+      try store.loadGroups(from: configuration)
+
+      XCTAssertEqual(Set(store.groups.keys), Set(vector.groups.keys), vector.name)
+      for (name, expected) in vector.groups {
+        let label = "\(vector.name): \(name)"
+        let group = try XCTUnwrap(store.groups[name], label)
+        XCTAssertEqual(group.path, root + "/" + expected.path, label)
+        XCTAssertEqual(group.dynamicPermissions, expected.dynamicPermissions, label)
+        XCTAssertEqual(group.permissions, expected.permissions, label)
+        XCTAssertEqual(Set(group.repositories.keys), Set(expected.repositories.keys), label)
+
+        for (repositoryName, record) in expected.repositories {
+          let item = "\(label)/\(repositoryName)"
+          let repository = try XCTUnwrap(group.repositories[repositoryName], item)
+          XCTAssertEqual(repository.fork, record.fork, item)
+          XCTAssertEqual(repository.mirror, record.mirror, item)
+          XCTAssertEqual(repository.permissions, record.permissions, item)
+        }
+      }
+    }
+  }
+
+  /// Every configuration the reference raised on is refused here.
+  func testBrokenConfigurationsAreRefused() throws {
+    for vector in Self.broken {
+      let root = try seeded(vector.steps, of: vector.name)
+      defer { try? FileManager.default.removeItem(atPath: root) }
+
+      let text = vector.configuration.replacingOccurrences(of: "{root}", with: root)
+      let configuration = try RNGitConfigFile.parse(text)
+      var store = RNGitRepositoryStore(runner: runner, identityAliases: Self.aliases)
+      XCTAssertThrowsError(try store.loadGroups(from: configuration), vector.name)
+    }
+  }
+
+  /// A temporary directory the setup steps have been applied to.
+  private func seeded(_ steps: [Operation], of name: String) throws -> String {
+    let root = NSTemporaryDirectory() + "rngit-configured-" + UUID().uuidString
+    try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+    var store = RNGitRepositoryStore(runner: runner)
+    for step in steps { try apply(step, to: &store, in: root, of: name) }
+    return root
   }
 
   /// Every sequence the reference refused is refused here.
