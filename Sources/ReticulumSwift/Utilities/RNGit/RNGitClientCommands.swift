@@ -1,0 +1,182 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 ReticulumSwift contributors.
+//
+// Licensed under the Reticulum License. See LICENSE in the repository root for
+// the full license text, and NOTICE for attribution of the upstream project
+// this file is derived from.
+//
+// SPDX-License-Identifier: LicenseRef-Reticulum
+//===----------------------------------------------------------------------===//
+
+import Foundation
+
+/// The commands an `rngit` client runs against a node.
+///
+/// Each command opens a link to the destination its remote URL names, sends one request over it,
+/// and closes it again. A command that cannot go on throws an ``RNGitClientAbort`` carrying what
+/// the client says.
+public struct RNGitClientCommands {
+
+  /// The destination hash each alias names.
+  public var aliases: [String: String]
+
+  /// How long the client waits for a path, where the stack asks for no longer.
+  public var pathTimeout: TimeInterval
+
+  private let transport: RNGitClientTransport
+  private let output: RNGitClientOutput
+
+  /// Creates the commands, which run over `transport` and write to `output`.
+  public init(
+    aliases: [String: String] = [:], pathTimeout: TimeInterval = 15,
+    transport: RNGitClientTransport, output: RNGitClientOutput
+  ) {
+    self.aliases = aliases
+    self.pathTimeout = pathTimeout
+    self.transport = transport
+    self.output = output
+  }
+
+  /// Asks the node at `remote` to create the repository the URL names.
+  public func createRepository(remote: String?) throws {
+    guard let remote, !remote.isEmpty else { throw RNGitClientAbort("No remote specified") }
+    try connect(to: remote)
+    output.write("\r                       \r")
+    defer { transport.teardown() }
+
+    let path = try repositoryPath(remote)
+    let result = transport.request(.create, Self.fields(path), timeout: 120)
+    switch Self.creating.reading(result) {
+    case .done: output.write("Repository \(path) created\n")
+    case .failed(let message): throw RNGitClientAbort(message)
+    }
+  }
+
+  /// Asks the node at `target` to create the repository the URL names from the one at `source`.
+  public func forkRepository(source: String?, target: String?) throws {
+    guard let source, !source.isEmpty else { throw RNGitClientAbort("No source specified") }
+    guard let target, !target.isEmpty else { throw RNGitClientAbort("No target specified") }
+    try clone(source: source, target: target, sending: .fork, operation: "fork")
+  }
+
+  /// Asks the node at `target` to mirror the repository at `source` into the URL it names.
+  public func mirrorRepository(source: String?, target: String?) throws {
+    guard let source, !source.isEmpty else { throw RNGitClientAbort("No source specified") }
+    guard let target, !target.isEmpty else { throw RNGitClientAbort("No target specified") }
+    try clone(source: source, target: target, sending: .mirror, operation: "mirror")
+  }
+
+  /// Asks the node at `remote` to bring the repository the URL names up to its upstream.
+  public func syncRepository(remote: String?) throws {
+    guard let remote, !remote.isEmpty else { throw RNGitClientAbort("No remote specified") }
+    try connect(to: remote)
+    output.write("\r                       \r")
+    defer { transport.teardown() }
+
+    let path = try repositoryPath(remote)
+    output.write("Remote is syncing repository...\n")
+    let result = transport.request(.sync, Self.fields(path), timeout: 7200)
+    switch Self.cloning.reading(result) {
+    case .done: output.write("Repository synced\n")
+    case .failed(let message): throw RNGitClientAbort(message)
+    }
+  }
+
+  /// How the client reads what creating a repository answers.
+  private static let creating = RNGitResponseReading(
+    named: [
+      .disallowed: .sent(prefix: "", fallback: "Not allowed"),
+      .invalidRequest: .text("Remote error: Invalid request"),
+      .notFound: .text("Not found"),
+    ],
+    other: .sent(prefix: "Remote error: ", fallback: "Unknown error"))
+
+  /// How the client reads what cloning and synchronizing a repository answer.
+  private static let cloning = RNGitResponseReading(
+    named: [
+      .disallowed: .sent(prefix: "", fallback: "Not allowed"),
+      .invalidRequest: .sent(prefix: "", fallback: "Invalid request"),
+      .notFound: .sent(prefix: "", fallback: "Not found"),
+    ],
+    other: .sent(prefix: "Server error: ", fallback: "Unknown error"))
+
+  /// The fields a request naming `path`, and taking `source` where it has one, carries.
+  private static func fields(_ path: String, source: String? = nil) -> MsgPack.Value {
+    var entries: [(MsgPack.Value, MsgPack.Value)] = [
+      (.uint(UInt64(RNGitRequestKey.repository)), .string(path))
+    ]
+    if let source { entries.append((.string("source"), .string(source))) }
+    return .map(entries)
+  }
+
+  /// Asks the node at `target` to take the repository at `source` in, however `operation` says.
+  private func clone(
+    source: String, target: String, sending request: RNGitRequestPath, operation: String
+  ) throws {
+    let source = try resolvingAliases(in: source)
+    try connect(to: target)
+    output.write("\r                       \r")
+    defer { transport.teardown() }
+
+    let path = try repositoryPath(target)
+    output.write("Remote is \(operation)ing repository to \(path)...\n")
+    let result = transport.request(request, Self.fields(path, source: source), timeout: 7200)
+    switch Self.cloning.reading(result) {
+    case .done: output.write("Repository \(operation)ed to \(path)\n")
+    case .failed(let message): throw RNGitClientAbort(message)
+    }
+  }
+
+  /// Opens a link to the destination `remote` names.
+  private func connect(to remote: String) throws {
+    let destination = try read { try RNGitRemoteURL.destination(remote, aliases: aliases) }
+
+    output.write("Requesting path... ")
+    let timeout = max(pathTimeout, transport.mediumPathTimeout())
+    guard transport.awaitPath(to: destination, timeout: timeout) else {
+      output.write("\n")
+      throw RNGitClientAbort(
+        "Could not resolve path to " + RNSUtilities.prettyhexrep(destination))
+    }
+    output.write("\rPath resolved      ")
+
+    guard let identity = transport.recallIdentity(for: destination) else {
+      throw RNGitClientAbort("Could not recall remote identity")
+    }
+
+    output.write("\rEstablishing link... ")
+    guard transport.establishLink(to: identity) else {
+      throw RNGitClientAbort("Link establishment failed")
+    }
+    output.write("\rLink established     ")
+  }
+
+  /// The `group/repository` path `remote` names.
+  private func repositoryPath(_ remote: String) throws -> String {
+    let named = try read { try RNGitRemoteURL.repository(remote, aliases: aliases) }
+    return named.group + "/" + named.repository
+  }
+
+  /// `url` with the destination it names written out, where it is a remote URL.
+  ///
+  /// Anything else is left as it stands, so a path or a URL of another protocol reaches the node
+  /// as the client was given it.
+  private func resolvingAliases(in url: String) throws -> String {
+    guard url.lowercased().hasPrefix(RNGitRemoteURL.protocolSpecifier) else { return url }
+    let named = try read { try RNGitRemoteURL.repository(url, aliases: aliases) }
+    guard !named.destination.isEmpty, !named.group.isEmpty, !named.repository.isEmpty else {
+      throw RNGitClientAbort("Invalid source URL")
+    }
+    return RNGitRemoteURL.protocolSpecifier + named.destination.hexString + "/" + named.group + "/"
+      + named.repository
+  }
+
+  /// What `reading` answered, as an abort where it refused the URL.
+  private func read<Named>(_ reading: () throws -> Named) throws -> Named {
+    do {
+      return try reading()
+    } catch let error as RNGitRemoteURLError {
+      throw RNGitClientAbort(error.message)
+    }
+  }
+}
