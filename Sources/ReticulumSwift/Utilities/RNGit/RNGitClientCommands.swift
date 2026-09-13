@@ -23,18 +23,27 @@ public struct RNGitClientCommands {
   /// How long the client waits for a path, where the stack asks for no longer.
   public var pathTimeout: TimeInterval
 
-  private let transport: RNGitClientTransport
-  private let output: RNGitClientOutput
+  /// How the client dates a release.
+  public var rendering: RNGitReleaseRendering
 
-  /// Creates the commands, which run over `transport` and write to `output`.
+  let transport: RNGitClientTransport
+  let output: RNGitClientOutput
+  let input: RNGitClientInput?
+
+  /// Creates the commands, which run over `transport`, write to `output` and read from `input`.
+  ///
+  /// A client with no `input` reads every prompt as though the user had typed nothing more.
   public init(
     aliases: [String: String] = [:], pathTimeout: TimeInterval = 15,
-    transport: RNGitClientTransport, output: RNGitClientOutput
+    rendering: RNGitReleaseRendering = RNGitReleaseRendering(),
+    transport: RNGitClientTransport, output: RNGitClientOutput, input: RNGitClientInput? = nil
   ) {
     self.aliases = aliases
     self.pathTimeout = pathTimeout
+    self.rendering = rendering
     self.transport = transport
     self.output = output
+    self.input = input
   }
 
   /// Asks the node at `remote` to create the repository the URL names.
@@ -45,7 +54,7 @@ public struct RNGitClientCommands {
     defer { transport.teardown() }
 
     let path = try repositoryPath(remote)
-    let result = transport.request(.create, Self.fields(path), timeout: 120)
+    let result = try requesting(.create, Self.fields(path), timeout: 120)
     switch Self.creating.reading(result) {
     case .done: output.write("Repository \(path) created\n")
     case .failed(let message): throw RNGitClientAbort(message)
@@ -75,7 +84,7 @@ public struct RNGitClientCommands {
 
     let path = try repositoryPath(remote)
     output.write("Remote is syncing repository...\n")
-    let result = transport.request(.sync, Self.fields(path), timeout: 7200)
+    let result = try requesting(.sync, Self.fields(path), timeout: 7200)
     switch Self.cloning.reading(result) {
     case .done: output.write("Repository synced\n")
     case .failed(let message): throw RNGitClientAbort(message)
@@ -100,6 +109,18 @@ public struct RNGitClientCommands {
     ],
     other: .sent(prefix: "Server error: ", fallback: "Unknown error"))
 
+  /// What `path` answered, once the client has waited out the request.
+  func requesting(_ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval) throws
+    -> RNGitRequestResult
+  {
+    let result = transport.request(path, fields, timeout: timeout)
+    if case .none = result { throw RNGitClientAbort(Self.noResult) }
+    return result
+  }
+
+  /// What the client says where the request it sent brought nothing back at all.
+  static let noResult = "Request failed or timed out"
+
   /// The fields a request naming `path`, and taking `source` where it has one, carries.
   private static func fields(_ path: String, source: String? = nil) -> MsgPack.Value {
     var entries: [(MsgPack.Value, MsgPack.Value)] = [
@@ -120,15 +141,15 @@ public struct RNGitClientCommands {
 
     let path = try repositoryPath(target)
     output.write("Remote is \(operation)ing repository to \(path)...\n")
-    let result = transport.request(request, Self.fields(path, source: source), timeout: 7200)
+    let result = try requesting(request, Self.fields(path, source: source), timeout: 7200)
     switch Self.cloning.reading(result) {
     case .done: output.write("Repository \(operation)ed to \(path)\n")
     case .failed(let message): throw RNGitClientAbort(message)
     }
   }
 
-  /// Opens a link to the destination `remote` names.
-  private func connect(to remote: String) throws {
+  /// Opens a link to the destination `remote` names, saying `failure` where none comes up.
+  func connect(to remote: String, failure: String = "Link establishment failed") throws {
     let destination = try read { try RNGitRemoteURL.destination(remote, aliases: aliases) }
 
     output.write("Requesting path... ")
@@ -145,14 +166,12 @@ public struct RNGitClientCommands {
     }
 
     output.write("\rEstablishing link... ")
-    guard transport.establishLink(to: identity) else {
-      throw RNGitClientAbort("Link establishment failed")
-    }
+    guard transport.establishLink(to: identity) else { throw RNGitClientAbort(failure) }
     output.write("\rLink established     ")
   }
 
   /// The `group/repository` path `remote` names.
-  private func repositoryPath(_ remote: String) throws -> String {
+  func repositoryPath(_ remote: String) throws -> String {
     let named = try read { try RNGitRemoteURL.repository(remote, aliases: aliases) }
     return named.group + "/" + named.repository
   }
@@ -172,7 +191,7 @@ public struct RNGitClientCommands {
   }
 
   /// What `reading` answered, as an abort where it refused the URL.
-  private func read<Named>(_ reading: () throws -> Named) throws -> Named {
+  func read<Named>(_ reading: () throws -> Named) throws -> Named {
     do {
       return try reading()
     } catch let error as RNGitRemoteURLError {

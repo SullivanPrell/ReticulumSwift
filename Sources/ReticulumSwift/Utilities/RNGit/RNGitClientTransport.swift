@@ -30,6 +30,13 @@ public protocol RNGitClientOutput: AnyObject {
   func write(_ text: String)
 }
 
+/// Where a client's answers come from.
+public protocol RNGitClientInput: AnyObject {
+
+  /// The next line the user typed, or `nil` where there is no more to read.
+  func readLine() -> String?
+}
+
 /// What a client says before it gives up.
 public struct RNGitClientAbort: Error, Equatable, Sendable {
 
@@ -86,9 +93,6 @@ public struct RNGitResponseReading: Equatable, Sendable {
     case sent(prefix: String, fallback: String)
   }
 
-  /// What the client says where the request brought nothing back at all.
-  public static let noResult = "Request failed or timed out"
-
   /// What the client says where what came back is not an answer it can read.
   public static let noAnswer = "No response from remote"
 
@@ -106,7 +110,6 @@ public struct RNGitResponseReading: Equatable, Sendable {
 
   /// What `result` came to.
   public func reading(_ result: RNGitRequestResult) -> RNGitClientAnswer {
-    if case .none = result { return .failed(Self.noResult) }
     guard case .bytes(let response) = result, !response.isEmpty else {
       return .failed(Self.noAnswer)
     }
