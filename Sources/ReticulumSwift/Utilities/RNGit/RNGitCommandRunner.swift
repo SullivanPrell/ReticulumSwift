@@ -42,6 +42,10 @@ public protocol RNGitCommandRunner: Sendable {
   /// whose failure to launch raises and is caught by the helper that called it. A name
   /// without a separator is looked up on the search path, as `execvp` does; a name with one
   /// is run as it stands, so a file the system cannot execute does not run at all.
+  ///
+  /// Output that is not UTF-8 answers `nil` as well. Every caller decodes strictly, either
+  /// through `text=True` or through `bytes.decode("utf-8")`, so output the decoder refuses
+  /// raises where a failure to launch raises.
   func run(_ executable: String, arguments: [String], in directory: String?)
     -> RNGitCommandOutput?
 }
@@ -80,10 +84,12 @@ public struct RNGitProcessRunner: RNGitCommandRunner {
       let producedOutput = output.fileHandleForReading.readDataToEndOfFile()
       let producedErrors = errors.fileHandleForReading.readDataToEndOfFile()
       process.waitUntilExit()
+      guard let standardOutput = String(data: producedOutput, encoding: .utf8),
+        let standardError = String(data: producedErrors, encoding: .utf8)
+      else { return nil }
       return RNGitCommandOutput(
-        status: process.terminationStatus,
-        standardOutput: String(decoding: producedOutput, as: UTF8.self),
-        standardError: String(decoding: producedErrors, as: UTF8.self))
+        status: process.terminationStatus, standardOutput: standardOutput,
+        standardError: standardError)
     } catch {
       return nil
     }
