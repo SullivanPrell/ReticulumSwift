@@ -53,7 +53,7 @@ public enum RNGitWorkingCopy {
     upstreamSource(of: path, ofType: "mirror", runner: runner)
   }
 
-  /// When `path` last synchronised with its upstream, or `nil` where it never recorded one.
+  /// When `path` last synchronized with its upstream, or `nil` where it never recorded one.
   ///
   /// Python: `__mirror_synced` (`server.py:2761-2768`), whose `int()` refuses a blank or
   /// non-numeric setting.
@@ -66,7 +66,7 @@ public enum RNGitWorkingCopy {
     return RNGitConfigSection.integer(text)
   }
 
-  /// Records `time` as the moment `path` last synchronised, answering whether git took it.
+  /// Records `time` as the moment `path` last synchronized, answering whether git took it.
   ///
   /// Python: `__set_mirror_synced` (`server.py:2770-2778`).
   public static func setMirrorSynced(
@@ -77,7 +77,7 @@ public enum RNGitWorkingCopy {
       runner: runner) != nil
   }
 
-  /// When `path` last synchronised, taking a missing or unreadable setting as the epoch.
+  /// When `path` last synchronized, taking a missing or unreadable setting as the epoch.
   ///
   /// Python: `last_upstream_sync` (`server.py:2780-2782`).
   public static func lastUpstreamSync(_ path: String, runner: RNGitCommandRunner) -> Int {

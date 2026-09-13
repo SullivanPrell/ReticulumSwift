@@ -115,7 +115,7 @@ public final class MarkdownToMicron {
   /// Whether a link is rendered underlined.
   public var underlineLinks = true
 
-  /// A three or six digit hex colour applied to links, if any.
+  /// A three or six digit hex color applied to links, if any.
   public var linkColor: String?
 
   private let defaultURLScope: String

@@ -36,7 +36,7 @@ public struct RNGitNodeSettings: Equatable, Sendable {
   /// Seconds between announces, or zero to announce only at startup.
   public var announceInterval = 0
 
-  /// Seconds between mirror synchronisations, or zero to leave mirrors alone.
+  /// Seconds between mirror synchronizations, or zero to leave mirrors alone.
   public var mirrorInterval = 24 * 60 * 60
 
   /// Whether the node records page and repository statistics.
