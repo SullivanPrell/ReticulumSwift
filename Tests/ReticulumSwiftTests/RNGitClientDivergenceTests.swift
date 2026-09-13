@@ -87,6 +87,14 @@ final class RNGitClientDivergenceTests: XCTestCase {
       "Error editing permissions: unreadable data")
   }
 
+  /// Hands back the same notes at every edit.
+  private final class Scribe: RNGitClientEditor {
+    func editor() -> String { "write" }
+    func run(_ editor: String, over path: String) -> Int32 {
+      (try? "Notes".write(toFile: path, atomically: true, encoding: .utf8)) == nil ? 1 : 0
+    }
+  }
+
   func testAClientWithNoEditorSaysThereIsNoneToRun() {
     let output = Recorder()
     let commands = RNGitClientCommands(
@@ -95,5 +103,27 @@ final class RNGitClientDivergenceTests: XCTestCase {
     XCTAssertTrue(
       output.written.hasSuffix(RNGitClientCommands.noEditor + "Edit cancelled\n"),
       output.written)
+  }
+
+  func testAManifestThatCannotBeWrittenReadsAsAGenerationFailure() throws {
+    let manager = FileManager.default
+    let directory = NSTemporaryDirectory() + "rngit-readonly-" + UUID().uuidString
+    try manager.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    defer {
+      try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory)
+      try? manager.removeItem(atPath: directory)
+    }
+    try Data("body".utf8).write(to: URL(fileURLWithPath: directory + "/artifact.bin"))
+    try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory)
+
+    let commands = RNGitClientCommands(
+      identity: Identity(), transport: Stub(.bytes(Data([0x00]))), output: Recorder(),
+      editor: Scribe())
+    let message = aborting {
+      try commands.createRelease(
+        remote: Self.repository, target: "1.0.0:" + directory, noUpload: true)
+    }
+    XCTAssertEqual(
+      message?.hasPrefix("Release manifest generation failed: "), true, message ?? "no abort")
   }
 }

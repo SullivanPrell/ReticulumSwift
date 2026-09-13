@@ -86,6 +86,15 @@ public struct RNGitReleaseRendering: Sendable {
     return text + "\n"
   }
 
+  /// The instant `seconds` names, written the way a manifest carries it.
+  public func stamped(_ seconds: Int) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(seconds)))
+  }
+
   /// What the client writes where a release names no tag, status, time or artifact.
   private static let unknown = "unknown"
 

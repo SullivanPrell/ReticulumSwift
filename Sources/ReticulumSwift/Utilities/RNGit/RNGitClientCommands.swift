@@ -26,29 +26,47 @@ public struct RNGitClientCommands {
   /// How the client dates a release.
   public var rendering: RNGitReleaseRendering
 
+  /// The identity the client signs with, where a command is given no other signer.
+  public var identity: Identity?
+
+  /// What the client takes the time to be.
+  public var now: () -> Date
+
   let transport: RNGitClientTransport
   let output: RNGitClientOutput
   let input: RNGitClientInput?
   let editor: RNGitClientEditor?
+  let runner: RNGitCommandRunner?
 
   /// Creates the commands, which run over `transport`, write to `output` and read from `input`.
   ///
-  /// A client with no `input` reads every prompt as though the user had typed nothing more, and
-  /// one with no `editor` has none to run and so says so at every edit.
+  /// A client with no `input` reads every prompt as though the user had typed nothing more, one
+  /// with no `editor` has none to run and so says so at every edit, and one with no `runner` has
+  /// no `git` to ask.
   public init(
     aliases: [String: String] = [:], pathTimeout: TimeInterval = 15,
-    rendering: RNGitReleaseRendering = RNGitReleaseRendering(),
+    rendering: RNGitReleaseRendering = RNGitReleaseRendering(), identity: Identity? = nil,
+    now: @escaping () -> Date = Date.init,
     transport: RNGitClientTransport, output: RNGitClientOutput, input: RNGitClientInput? = nil,
-    editor: RNGitClientEditor? = nil
+    editor: RNGitClientEditor? = nil, runner: RNGitCommandRunner? = nil
   ) {
     self.aliases = aliases
     self.pathTimeout = pathTimeout
     self.rendering = rendering
+    self.identity = identity
+    self.now = now
     self.transport = transport
     self.output = output
     self.input = input
     self.editor = editor
+    self.runner = runner
   }
+
+  /// The extension a signature bears.
+  public static let signatureExtension = "rsg"
+
+  /// The extension a signed message bears.
+  public static let messageExtension = "rsm"
 
   /// Asks the node at `remote` to create the repository the URL names.
   public func createRepository(remote: String?) throws {
@@ -210,7 +228,12 @@ public struct RNGitClientCommands {
   }
 
   /// Opens a link to the destination `remote` names, saying `failure` where none comes up.
-  func connect(to remote: String, failure: String = "Link establishment failed") throws {
+  ///
+  /// `opened` runs once the link exists, which is before it is known to have come up: a link
+  /// that closes on the way up is still a link a command may have to close.
+  func connect(
+    to remote: String, failure: String = "Link establishment failed", opened: () -> Void = {}
+  ) throws {
     let destination = try read { try RNGitRemoteURL.destination(remote, aliases: aliases) }
 
     output.write("Requesting path... ")
@@ -227,6 +250,7 @@ public struct RNGitClientCommands {
     }
 
     output.write("\rEstablishing link... ")
+    opened()
     guard transport.establishLink(to: identity) else { throw RNGitClientAbort(failure) }
     output.write("\rLink established     ")
   }
