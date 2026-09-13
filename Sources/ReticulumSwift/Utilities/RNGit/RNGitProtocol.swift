@@ -105,22 +105,48 @@ public struct RNGitResponse: Equatable, Sendable {
   }
 }
 
+/// What rides alongside a file a node answers with.
+public enum RNGitFileMetadata: Equatable, Sendable {
+
+  /// The code an answer built for the peer carries.
+  case resultCode(RNGitResponseCode)
+
+  /// The name a file the node already held carries.
+  case name(String)
+
+  /// The metadata as it goes on the wire.
+  public var encoded: MsgPack.Value {
+    switch self {
+    case .resultCode(let code):
+      return .map([(.uint(UInt64(RNGitRequestKey.resultCode)), .uint(UInt64(code.rawValue)))])
+    case .name(let name):
+      return .map([(.string("name"), .bytes(Data(name.utf8)))])
+    }
+  }
+}
+
 /// A file a node answers with instead of bytes.
 ///
-/// The file is sent as a resource. The directory holding it lives as long as the link the request
-/// arrived on, which the node closes it with.
+/// The file is sent as a resource. A file the node built for the request is held in a directory
+/// that lives as long as the link the request arrived on, which the node closes it with; one the
+/// node already held is answered where it lies.
 public struct RNGitFile: Equatable, Sendable {
 
   /// Where the file is.
   public let path: String
 
-  /// The directory the node removes once the link closes.
-  public let directory: String
+  /// The directory the node removes once the link closes, where the file was built for the
+  /// request.
+  public let directory: String?
+
+  /// What the answer carries beside the file.
+  public let metadata: RNGitFileMetadata
 
   /// Creates an answer naming `path`, held in `directory`.
-  public init(path: String, directory: String) {
+  public init(path: String, directory: String? = nil, metadata: RNGitFileMetadata) {
     self.path = path
     self.directory = directory
+    self.metadata = metadata
   }
 }
 

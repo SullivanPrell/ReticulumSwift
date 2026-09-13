@@ -42,6 +42,12 @@ public struct RNGitConfigSection: Equatable, Sendable {
     }
   }
 
+  /// Stores `value` under `key`, keeping the place a key the section already holds was in.
+  public mutating func set(_ key: String, _ value: RNGitConfigValue) {
+    if entries[key] == nil { keys.append(key) }
+    entries[key] = value
+  }
+
   /// The value stored under `key`, or `nil` if the section has no such key.
   public subscript(key: String) -> RNGitConfigValue? { entries[key] }
 
@@ -341,5 +347,87 @@ public enum RNGitConfigFile {
           }
         })
     }
+  }
+}
+
+extension RNGitConfigFile {
+
+  /// `value` as a configuration file writes it, or `nil` where it cannot be written.
+  ///
+  /// A value is left bare unless it opens or closes with whitespace or a quote, or holds a
+  /// comma or a number sign. One holding both kinds of quote, or a line break, is written in
+  /// triple quotes, and only one holding both kinds of triple quote cannot be written at all.
+  /// A key, which no line break may reach, is written without the triple-quote form.
+  public static func quoted(_ value: String, multiline: Bool = true) -> String? {
+    if value.isEmpty { return "\"\"" }
+    let hasSingle = value.contains("'")
+    let hasDouble = value.contains("\"")
+    if multiline, (hasSingle && hasDouble) || value.contains("\n") {
+      if value.contains("\"\"\"") && value.contains("'''") { return nil }
+      return value.contains("\"\"\"") ? "\"\"\"" + value + "\"\"\"" : "'''" + value + "'''"
+    }
+    guard !value.contains("\n") else { return nil }
+
+    let edges: Set<Character> = [" ", "\r", "\n", "\u{0B}", "\t", "'", "\""]
+    if let first = value.first, let last = value.last, !edges.contains(first),
+      !edges.contains(last), !value.contains(","), !value.contains("#")
+    {
+      return value
+    }
+    guard !(hasSingle && hasDouble) else { return nil }
+    return hasDouble ? "'" + value + "'" : "\"" + value + "\""
+  }
+
+  /// The text a configuration file holds for `section`, or `nil` where it cannot be written.
+  ///
+  /// Values come before the subsections that follow them, and every line is ASCII. The indent
+  /// a parsed file was written with is not carried, so `indent` says what to write instead.
+  public static func encode(_ section: RNGitConfigSection, indent: String = "") -> String? {
+    var lines: [String] = []
+    guard write(section, depth: 0, indent: indent, into: &lines) else { return nil }
+    let text = lines.joined(separator: "\n")
+    guard text.allSatisfy({ $0.isASCII }) else { return nil }
+    return text.hasSuffix("\n") ? text : text + "\n"
+  }
+
+  /// Writes `section` into `lines`, answering whether every line could be written.
+  private static func write(
+    _ section: RNGitConfigSection, depth: Int, indent: String, into lines: inout [String]
+  ) -> Bool {
+    let margin = String(repeating: indent, count: depth)
+    var subsections: [String] = []
+    for key in section.keys {
+      guard let name = quoted(key, multiline: false) else { return false }
+      switch section[key] {
+      case .scalar(let value):
+        guard let written = quoted(value) else { return false }
+        lines.append(margin + name + " = " + written)
+      case .list(let values):
+        guard let written = listed(values) else { return false }
+        lines.append(margin + name + " = " + written)
+      case .section, .none:
+        subsections.append(key)
+      }
+    }
+    for key in subsections {
+      guard let name = quoted(key, multiline: false), let inner = section.section(key) else {
+        return false
+      }
+      let marker = String(repeating: "[", count: depth + 1)
+      lines.append(margin + marker + name + String(repeating: "]", count: depth + 1))
+      guard write(inner, depth: depth + 1, indent: indent, into: &lines) else { return false }
+    }
+    return true
+  }
+
+  /// `values` as one line writes them, or `nil` where one of them cannot be written.
+  private static func listed(_ values: [String]) -> String? {
+    if values.isEmpty { return "," }
+    var written: [String] = []
+    for value in values {
+      guard let quoted = quoted(value, multiline: false) else { return nil }
+      written.append(quoted)
+    }
+    return values.count == 1 ? written[0] + "," : written.joined(separator: ", ")
   }
 }

@@ -133,7 +133,8 @@ public struct RNGitFetchHandler {
 
     guard FileManager.default.fileExists(atPath: bundlePath) else { return Self.remoteFailure }
     fetchSucceeded(names, for: identityHash)
-    return .file(RNGitFile(path: bundlePath, directory: directory))
+    return .file(
+      RNGitFile(path: bundlePath, directory: directory, metadata: .resultCode(.ok)))
   }
 
   /// What `held` adds to the bundle arguments, or the answer it earns instead.
