@@ -20,9 +20,9 @@ final class RequestHandlerAutoCompressTests: XCTestCase {
       appName: "test", aspects: ["compress"])
     dest.registerRequestHandler(path: "/test", allow: .all) { _, _, _, _, _ in Data() }
     let key = Hashes.truncatedHash(Data("/test".utf8))
-    XCTAssertTrue(
-      dest.requestHandlers[key]?.autoCompress ?? false,
-      "Default autoCompress should be true")
+    XCTAssertEqual(
+      dest.requestHandlers[key]?.autoCompress, .enabled,
+      "Default autoCompress should be enabled")
   }
 
   func testAutoCompressFalsePreserved() throws {
@@ -33,8 +33,8 @@ final class RequestHandlerAutoCompressTests: XCTestCase {
       Data()
     }
     let key = Hashes.truncatedHash(Data("/test".utf8))
-    XCTAssertFalse(
-      dest.requestHandlers[key]?.autoCompress ?? true,
+    XCTAssertEqual(
+      dest.requestHandlers[key]?.autoCompress, .disabled,
       "autoCompress = false should be preserved")
   }
 
@@ -46,7 +46,7 @@ final class RequestHandlerAutoCompressTests: XCTestCase {
       Data()
     }
     let key = Hashes.truncatedHash(Data("/test".utf8))
-    XCTAssertTrue(dest.requestHandlers[key]?.autoCompress ?? false)
+    XCTAssertEqual(dest.requestHandlers[key]?.autoCompress, .enabled)
   }
 
   func testMultipleHandlersIndependentAutoCompress() throws {
@@ -63,8 +63,8 @@ final class RequestHandlerAutoCompressTests: XCTestCase {
     let yesKey = Hashes.truncatedHash(Data("/yes".utf8))
     let noKey = Hashes.truncatedHash(Data("/no".utf8))
 
-    XCTAssertTrue(dest.requestHandlers[yesKey]?.autoCompress ?? false)
-    XCTAssertFalse(dest.requestHandlers[noKey]?.autoCompress ?? true)
+    XCTAssertEqual(dest.requestHandlers[yesKey]?.autoCompress, .enabled)
+    XCTAssertEqual(dest.requestHandlers[noKey]?.autoCompress, .disabled)
   }
 
   func testAutoCompressStoredInEntry() throws {
