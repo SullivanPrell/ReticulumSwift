@@ -5,6 +5,41 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Request handlers can answer with a file, and responses carry metadata
+
+RNS 0.9.6 (`594f5fba`) let a response generator return `(file_handle, metadata)`: the file is
+sent as a resource whose payload is its raw bytes, the metadata rides in the resource's
+metadata block, and the requester reads it off `RequestReceipt.metadata`
+(`Link.py:836-846`, `902-903`, `1437-1441`). None of it was ported. `rngit` serves a git
+bundle this way, with the fetch result code in the metadata
+(`Utilities/rngit/server.py:3001`), so the whole fetch path depended on it.
+
+`Destination.registerResponseGenerator` registers a handler returning
+`Destination.RequestResponse`, either a `.value` or a `.file`. A file response is streamed
+from disk one segment at a time rather than read whole into memory, matching the reference's
+per-segment seek (`Resource.py:307-322`). On the receiving side a resource that carries
+metadata is delivered as a file response: its payload has no `[request_id, response]`
+envelope, because the request ID rode in the advertisement.
+
+`auto_compress` is polymorphic in the reference—a flag, or an integer byte ceiling
+(`Resource.py:372-376`)—and is now `Resource.AutoCompress` here, accepting both literal forms.
+
+### A resource's advertised size counts its metadata
+
+The reference advertises `total_size = data_size + metadata_size` (`Resource.py:297`) and
+gives segment 1 that much less room for data
+(`first_read_size = MAX_EFFICIENT_SIZE - metadata_size`, `Resource.py:311`). This port counted
+neither: a resource carrying metadata advertised a short size and split on boundaries the
+reference does not use. Both ends of a Swift-to-Swift transfer agreed on the same wrong
+boundaries, so it round-tripped and the divergence stayed invisible.
+
+`data_size` is also the whole resource's size on every segment of a split transfer, not the
+segment's own share, and the metadata flag stays set on segments 2 and later through
+`sent_metadata_size` (`Resource.py:259-272`, `791-792`).
+
+`rncp` reports the advertised size, so a transfer now prints the same total the Python tool
+prints (`rncp.py:582`).
+
 ### A failed RNode bring-up redials instead of parking the interface
 
 RNS 1.5.3 hardened the BLE arm of the RNode bring-up: a detect timeout now forces the link
