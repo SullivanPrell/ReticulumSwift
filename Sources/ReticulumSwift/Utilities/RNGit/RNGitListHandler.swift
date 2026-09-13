@@ -33,18 +33,18 @@ public struct RNGitListHandler: Sendable {
   /// out of the handler, which sends nothing at all (`Link.py:804-856`).
   public func handle(_ request: MsgPack.Value, from identityHash: Data?) -> RNGitResponse? {
     guard let identityHash else { return RNGitResponse(.disallowed, "Not identified") }
-    guard case .map(let fields) = request else {
+    guard let fields = RNGitRequestFields(request) else {
       return RNGitResponse(.invalidRequest, "Invalid request")
     }
-    guard let requested = Self.field(RNGitRequestKey.repository, in: fields) else {
+    guard let requested = fields[RNGitRequestKey.repository] else {
       return RNGitResponse(.invalidRequest, "No repository specified")
     }
     guard let requestedPath = requested.asString else { return nil }
 
     let names = RNGitAccessControl.repositoryPath(requestedPath)
-    let readable = Self.allows(access, identityHash, names, .read)
-    let writable = Self.allows(access, identityHash, names, .write)
-    let forPush = Self.isTruthy(Self.field("for_push", in: fields))
+    let readable = access.allows(identityHash, names: names, permission: .read)
+    let writable = access.allows(identityHash, names: names, permission: .write)
+    let forPush = fields["for_push"]?.pythonIsTruthy ?? false
 
     guard forPush ? writable : readable else {
       return RNGitResponse(.notFound, readable ? "Not allowed" : "Not found")
@@ -88,61 +88,6 @@ public struct RNGitListHandler: Sendable {
     return RNGitResponse(.ok, listed + "@\(head) HEAD\n")
   }
 
-  /// Whether `identityHash` holds `permission` on the repository `names` points at.
-  private static func allows(
-    _ access: RNGitAccessControl, _ identityHash: Data,
-    _ names: (group: String, repository: String)?, _ permission: RNGitPermission
-  ) -> Bool {
-    guard let names else { return false }
-    return access.allows(
-      identityHash, group: names.group, repository: names.repository, permission: permission)
-  }
-
-  /// The value `fields` holds for the integer key `key`.
-  ///
-  /// A later entry replaces an earlier one, as building the dictionary does, and a boolean
-  /// key counts as the integer it equals in Python.
-  private static func field(_ key: UInt8, in fields: [(MsgPack.Value, MsgPack.Value)])
-    -> MsgPack.Value?
-  {
-    var found: MsgPack.Value?
-    for (name, value) in fields where Self.names(name, key) { found = value }
-    return found
-  }
-
-  /// The value `fields` holds for the named key `key`.
-  private static func field(_ key: String, in fields: [(MsgPack.Value, MsgPack.Value)])
-    -> MsgPack.Value?
-  {
-    var found: MsgPack.Value?
-    for (name, value) in fields where name.asString == key { found = value }
-    return found
-  }
-
-  /// Whether `key` is the integer `index`.
-  private static func names(_ key: MsgPack.Value, _ index: UInt8) -> Bool {
-    switch key {
-    case .int, .uint: return key.asInt == Int(index)
-    case .bool(let flag): return (flag ? 1 : 0) == Int(index)
-    case .double(let value): return value == Double(index)
-    default: return false
-    }
-  }
-
-  /// Whether `value` is one Python reads as true.
-  private static func isTruthy(_ value: MsgPack.Value?) -> Bool {
-    switch value {
-    case nil, .nil: return false
-    case .bool(let flag): return flag
-    case .int(let number): return number != 0
-    case .uint(let number): return number != 0
-    case .double(let number): return number != 0
-    case .string(let text): return !text.isEmpty
-    case .bytes(let data): return !data.isEmpty
-    case .array(let items): return !items.isEmpty
-    case .map(let fields): return !fields.isEmpty
-    }
-  }
 }
 
 extension Data {
