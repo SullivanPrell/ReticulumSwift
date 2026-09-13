@@ -156,7 +156,7 @@ public struct RNGitPermissionSet: Equatable, Sendable {
     guard components.count == 2 else { return (nil, nil) }
 
     let keyword = components[0].lowercased()
-    let target = resolveAlias(components[1], aliases: aliases)
+    let target = resolvingAlias(components[1], aliases: aliases)
     return (RNGitPermission.named(keyword), RNGitPermissionTarget.named(target))
   }
 
@@ -207,7 +207,7 @@ public struct RNGitPermissionSet: Equatable, Sendable {
   ///
   /// Python: `__resolve_identity_alias` (`server.py:2250-2259`), which leaves a keyword or a
   /// spelled-out hash alone and looks anything else up.
-  private static func resolveAlias(_ alias: String, aliases: [String: String]) -> String {
+  public static func resolvingAlias(_ alias: String, aliases: [String: String]) -> String {
     let keywords = ["n", "none", "nobody", "a", "all", "everyone"]
     if keywords.contains(alias.lowercased()) { return alias }
     if alias.count == Identity.truncatedHashLength / 8 * 2, let hash = Data(pythonHex: alias),
