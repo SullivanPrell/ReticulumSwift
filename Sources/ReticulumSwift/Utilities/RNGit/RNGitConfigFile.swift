@@ -99,7 +99,8 @@ public struct RNGitConfigSection: Equatable, Sendable {
     "1": true, "0": false, "true": true, "false": false,
   ]
 
-  private static func integer(_ text: String) -> Int? {
+  /// The integer `text` names, as Python's `int()` reads it.
+  static func integer(_ text: String) -> Int? {
     var digits = ""
     var sign = 1
     var index = text.trimmedForMicron.startIndex
