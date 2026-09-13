@@ -12,9 +12,8 @@ import Foundation
 
 /// The node's answer to a peer sending objects and the references they update.
 ///
-/// Python: `handle_push` (`server.py:3005-3101`). A request carries either a bundle to
-/// fetch from or a list of reference updates to apply, and the handler takes the first of
-/// those it finds something in.
+/// A request carries either a bundle to fetch from or a list of reference updates to apply, and the
+/// handler takes the first of those it finds something in.
 public struct RNGitPushHandler {
 
   /// The groups the node serves, and what they grant.
@@ -70,7 +69,7 @@ public struct RNGitPushHandler {
       }
       return RNGitResponse(.disallowed, "Not allowed")
     }
-    // Write access is granted only for a repository the node holds (`server.py:2314-2315`).
+    // Write access is granted only for a repository the node holds.
     guard let names, let path = access.groups[names.group]?.repositories[names.repository]?.path
     else { return RNGitResponse(.notFound, "Not found") }
 
@@ -197,13 +196,12 @@ public struct RNGitPushHandler {
     }
   }
 
-  /// The answer the reference gives for everything its handler raises on.
+  /// The answer given for everything the handler cannot complete.
   private static let remoteFailure = RNGitResponse(.remoteFailure, "Remote error")
 
   /// Counts one push, unless the settings leave every push out.
   ///
-  /// Python: `push_succeeded` (`server.py:4774-4776`), which unlike its siblings does not
-  /// consult the identities statistics are ignored for.
+  /// Unlike its siblings, this does not consult the identities statistics are ignored for.
   private mutating func pushSucceeded(_ names: (group: String, repository: String)) {
     guard settings.statsEnabled else { return }
     statistics.recordPush(names.group, names.repository, on: RNGitStatsStore.day())

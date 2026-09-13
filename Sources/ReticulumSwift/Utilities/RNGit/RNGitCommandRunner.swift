@@ -11,9 +11,6 @@
 import Foundation
 
 /// What one `git` invocation produced.
-///
-/// Python: the `subprocess.CompletedProcess` the node's git helpers read
-/// (`server.py:2709-2780`).
 public struct RNGitCommandOutput: Equatable, Sendable {
 
   /// The exit status the command returned.
@@ -38,10 +35,9 @@ public protocol RNGitCommandRunner: Sendable {
 
   /// Runs `executable` with `arguments` in `directory`, or answers `nil` if it could not run.
   ///
-  /// Python: `subprocess.run([executable] + arguments, cwd=directory, capture_output=True)`,
-  /// whose failure to launch raises and is caught by the helper that called it. A name
-  /// without a separator is looked up on the search path, as `execvp` does; a name with one
-  /// is run as it stands, so a file the system cannot execute does not run at all.
+  /// A failure to launch is caught by the helper that called it. A name without a separator is
+  /// looked up on the search path, as `execvp` does; a name with one is run as it stands, so a file
+  /// the system cannot execute does not run at all.
   ///
   /// Output that is not UTF-8 answers `nil` as well. Every caller decodes strictly, either
   /// through `text=True` or through `bytes.decode("utf-8")`, so output the decoder refuses

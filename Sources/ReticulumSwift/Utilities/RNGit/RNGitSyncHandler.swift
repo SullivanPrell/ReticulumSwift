@@ -12,8 +12,7 @@ import Foundation
 
 /// The node's answer to a peer asking a fork or a mirror to catch up with its upstream.
 ///
-/// Python: `handle_sync` (`server.py:3331-3360`), which gates read and write separately
-/// rather than the way the push and delete handlers do.
+/// Gates read and write separately rather than the way the push and delete handlers do.
 public struct RNGitSyncHandler {
 
   /// The groups the node serves, and what they grant.
@@ -57,7 +56,7 @@ public struct RNGitSyncHandler {
     guard access.allows(identityHash, names: names, permission: .write) else {
       return RNGitResponse(.disallowed, "Not allowed")
     }
-    // Read access is granted only for a repository the node holds (`server.py:2314-2315`).
+    // Read access is granted only for a repository the node holds.
     guard let names, let repository = access.groups[names.group]?.repositories[names.repository]
     else { return RNGitResponse(.notFound, "Not found") }
 

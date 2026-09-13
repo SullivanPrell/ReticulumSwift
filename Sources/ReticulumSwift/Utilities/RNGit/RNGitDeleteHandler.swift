@@ -12,8 +12,7 @@ import Foundation
 
 /// The node's answer to a peer removing one reference from a repository.
 ///
-/// Python: `handle_delete` (`server.py:3102-3133`), which counts a removal the way it counts
-/// a push.
+/// Counts a removal the way it counts a push.
 public struct RNGitDeleteHandler {
 
   /// The groups the node serves, and what they grant.
@@ -64,7 +63,7 @@ public struct RNGitDeleteHandler {
       }
       return RNGitResponse(.disallowed, "Not allowed")
     }
-    // Write access is granted only for a repository the node holds (`server.py:2314-2315`).
+    // Write access is granted only for a repository the node holds.
     guard let names, let path = access.groups[names.group]?.repositories[names.repository]?.path
     else { return RNGitResponse(.notFound, "Not found") }
 
@@ -81,8 +80,7 @@ public struct RNGitDeleteHandler {
       return RNGitResponse(.remoteFailure, "Could not delete ref")
     }
 
-    // Python: `push_succeeded` (`server.py:4774-4776`), which unlike its siblings does not
-    // consult the identities statistics are ignored for.
+    // Unlike its siblings, this does not consult the identities statistics are ignored for.
     if settings.statsEnabled {
       statistics.recordPush(names.group, names.repository, on: RNGitStatsStore.day())
     }

@@ -38,8 +38,8 @@ struct MicronPattern {
   private let regex: NSRegularExpression
 
   init(_ pattern: String) {
-    // The patterns are compile-time constants from the reference, so a failure here is a
-    // transcription error rather than anything a caller can cause.
+    // The patterns are compile-time constants, so a failure here is a transcription error
+    // rather than anything a caller can cause.
     guard
       let compiled = try? NSRegularExpression(
         pattern: pattern, options: [.useUnixLineSeparators])
@@ -49,7 +49,7 @@ struct MicronPattern {
 
   /// The capture groups of the match anchored at the start of `text`, or `nil`.
   ///
-  /// Python: `re.match`, which anchors at the start but not the end.
+  /// Anchors at the start but not the end.
   func match(_ text: String) -> [String?]? {
     let subject = text as NSString
     guard
@@ -64,7 +64,7 @@ struct MicronPattern {
 
   /// The first capture group of every match in `text`, in order.
   ///
-  /// Python: `re.findall` on a pattern holding exactly one group.
+  /// The pattern holds exactly one group.
   func firstGroups(in text: String) -> [String?] {
     let subject = text as NSString
     return regex.matches(in: text, range: NSRange(location: 0, length: subject.length))
@@ -76,7 +76,7 @@ struct MicronPattern {
 
   /// Returns `text` with every match replaced by what `transform` returns for it.
   ///
-  /// Python: `re.sub` with a function, which takes the replacement literally.
+  /// The replacement is taken literally.
   func replacingMatches(in text: String, with transform: ([String?]) -> String) -> String {
     let subject = text as NSString
     let found = regex.matches(
@@ -117,9 +117,8 @@ extension String {
 
   /// This string split at every line boundary, with no empty line after a trailing one.
   ///
-  /// Python: `str.splitlines`, whose boundary set holds seven characters
-  /// `components(separatedBy:)` would keep, and which takes a carriage return and line feed
-  /// together as one boundary.
+  /// The boundary set holds seven characters `components(separatedBy:)` would keep, and a carriage
+  /// return and line feed together are one boundary.
   var pythonLines: [String] {
     let scalars = Array(unicodeScalars)
     var lines: [String] = []
@@ -146,7 +145,7 @@ extension String {
 
   /// This string without leading or trailing Python whitespace.
   ///
-  /// Python: `str.strip`, whose set is the one ``MicronPattern/whitespace`` spells out.
+  /// The set is the one ``MicronPattern/whitespace`` spells out.
   var trimmedForMicron: String {
     let scalars = Array(unicodeScalars)
     var start = 0

@@ -277,10 +277,10 @@ final class MarkdownToMicronVectorTests: XCTestCase {
 
   /// Orderings the reference gave for the one input whose truncation leaves two tags open.
   ///
-  /// `_truncate_cell` (`util.py:690-746`) collects the still-open tags in a `set` and
-  /// writes them out by iterating it, so the order follows the interpreter's string hash
-  /// seed and changes between processes. Twelve seeds gave these two orderings, so there
-  /// is no single byte sequence to match and the digest skips these entries.
+  /// The still-open tags are collected in a set and written out by iterating it, so the
+  /// order follows the recording interpreter's string hash seed and changes between
+  /// processes. Twelve seeds gave these two orderings, so there is no single byte sequence
+  /// to match and the digest skips these entries.
   private static let unstable: [(config: Int, input: Int, outputs: [String])] = [
     (
       2, 48,

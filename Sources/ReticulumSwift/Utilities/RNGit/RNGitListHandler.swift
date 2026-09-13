@@ -11,8 +11,6 @@
 import Foundation
 
 /// The node's answer to a request for the references a repository holds.
-///
-/// Python: `handle_list` (`server.py:2869-2928`).
 public struct RNGitListHandler: Sendable {
 
   /// The groups the node serves, and what they grant.
@@ -29,8 +27,8 @@ public struct RNGitListHandler: Sendable {
 
   /// The answer a peer holding `identityHash` gets, or `nil` where the peer gets none.
   ///
-  /// A request naming its repository with anything but a string leaves the reference raising
-  /// out of the handler, which sends nothing at all (`Link.py:804-856`).
+  /// A request naming its repository with anything but a string is answered with nothing at
+  /// all.
   public func handle(_ request: MsgPack.Value, from identityHash: Data?) -> RNGitResponse? {
     guard let identityHash else { return RNGitResponse(.disallowed, "Not identified") }
     guard let fields = RNGitRequestFields(request) else {
@@ -93,8 +91,6 @@ public struct RNGitListHandler: Sendable {
 extension Data {
 
   /// These bytes as UTF-8, dropping every byte that is not part of a sequence.
-  ///
-  /// Python: `bytes.decode("utf-8", errors="ignore")`.
   var utf8IgnoringInvalid: String {
     var parser = UTF8.ForwardParser()
     var bytes = makeIterator()
@@ -111,8 +107,7 @@ extension Data {
 
   /// These bytes without leading and trailing ASCII whitespace.
   ///
-  /// Python: `bytes.strip`, whose set is space, tab, newline, carriage return, vertical tab
-  /// and form feed.
+  /// The set is space, tab, newline, carriage return, vertical tab and form feed.
   var pythonStripped: Data {
     let whitespace: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D, 0x0B, 0x0C]
     var start = startIndex

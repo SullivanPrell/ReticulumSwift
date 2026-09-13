@@ -11,8 +11,6 @@
 import Foundation
 
 /// The counters a node keeps for one repository, each keyed by `YYYY-MM-DD`.
-///
-/// Python: `STATS_INIT_REPO` (`server.py:4641`).
 public struct RNGitRepositoryStatistics: Equatable, Sendable {
 
   /// Repository page views.
@@ -44,8 +42,6 @@ public struct RNGitRepositoryStatistics: Equatable, Sendable {
 }
 
 /// The counters a node keeps for one group.
-///
-/// Python: `STATS_INIT_GROUP` (`server.py:4642`).
 public struct RNGitGroupStatistics: Equatable, Sendable {
 
   /// Group page views, by `YYYY-MM-DD`.
@@ -63,19 +59,13 @@ public struct RNGitGroupStatistics: Equatable, Sendable {
 
 /// Everything a node counts, as it holds the figures in memory and on disk.
 ///
-/// Python: the node's `stats` dictionary (`server.py:2078`) and the seven `record_*`
-/// methods that fill it (`server.py:4793-4907`).
-///
-/// Each group and repository carries its own counters. Python assigns the shared class
-/// dictionaries `STATS_INIT_GROUP` and `STATS_INIT_REPO` rather than copies of them
-/// (`server.py:4810`, `server.py:4828`), so every group it creates in one run is the same
-/// dictionary and reports the same figures.
+/// Each group and repository carries its own counters, held by value, so one group's
+/// figures never appear under another.
 public struct RNGitStatistics: Equatable, Sendable {
 
   /// Front page views, by `YYYY-MM-DD`.
   ///
-  /// Python: `stats["pages"]["front"]`, the only page `record_page_view` writes
-  /// (`server.py:4798`).
+  /// The only page a view is recorded against.
   public var frontPageViews: [String: Int]
 
   /// Counters for the groups the node serves, by group name.
@@ -237,14 +227,11 @@ public enum RNGitStatsError: Error, Equatable, Sendable {
 }
 
 /// The stats file a node keeps beside its configuration.
-///
-/// Python: `__load_stats` and `__persist_stats` (`server.py:2076-2095`).
 public enum RNGitStatsStore {
 
   /// The statistics stored at `path`, creating the file with empty ones if it is missing.
   ///
-  /// Answers empty statistics when the file cannot be read or does not decode, as Python
-  /// does by setting `stats` before it opens the file (`server.py:2078`).
+  /// Answers empty statistics when the file cannot be read or does not decode.
   public static func load(from path: String) -> RNGitStatistics {
     guard FileManager.default.fileExists(atPath: path) else {
       try? RNGitStatistics().encoded().write(to: URL(fileURLWithPath: path))
@@ -268,8 +255,6 @@ public enum RNGitStatsStore {
   }
 
   /// The day `date` falls on where the node runs, as the counters key it.
-  ///
-  /// Python: `_get_day` (`server.py:4788-4791`).
   public static func day(at date: Date = Date()) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")

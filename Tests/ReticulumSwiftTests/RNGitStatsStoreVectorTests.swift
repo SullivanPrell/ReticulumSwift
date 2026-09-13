@@ -16,9 +16,9 @@ import XCTest
 /// The stats file an `rngit` node keeps, as Python RNS 1.5.4 writes and reads it.
 ///
 /// Every expectation is the figure the reference produced, and every byte string is what its
-/// `umsgpack` packed. Python shares one dictionary across the groups it creates in a run
-/// (`server.py:4810`); the sequences here were recorded with that dictionary copied per group,
-/// which is what `STATS_INIT_GROUP` names.
+/// `umsgpack` packed. The reference shares one counter dictionary across the groups it makes
+/// in a run; these sequences were recorded with it copied per group, which is what the Swift
+/// store does.
 final class RNGitStatsStoreVectorTests: XCTestCase {
 
   /// Each sequence of recorded events, with the figures and the file the reference made.
@@ -474,7 +474,7 @@ final class RNGitStatsStoreVectorTests: XCTestCase {
     ("truncated map", "82a570"),
   ]
 
-  /// The file a node writes when it finds no stats file, per `server.py:2079-2081`.
+  /// The file a node writes when it finds no stats file.
   private static let emptyFile = "82a5706167657381a566726f6e7480a667726f75707380"
 
   /// Every recorded sequence yields the reference's figures and its file.
@@ -526,8 +526,8 @@ final class RNGitStatsStoreVectorTests: XCTestCase {
 
   /// Persisting replaces a stats path that is a symbolic link, leaving its target alone.
   ///
-  /// Python renames the temporary file over the path (`server.py:2094`), which replaces the
-  /// link itself rather than writing through it.
+  /// The temporary file is renamed over the path, which replaces the link itself rather
+  /// than writing through it.
   func testPersistReplacesASymbolicLink() throws {
     let directory = URL(fileURLWithPath: NSTemporaryDirectory())
       .appendingPathComponent(UUID().uuidString)

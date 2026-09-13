@@ -13,13 +13,11 @@ import Foundation
 /// How many terminal cells a string occupies.
 ///
 /// `MarkdownToMicron` measures every table cell and wrapped line with this, so a column that
-/// holds CJK or emoji lines up on a Python node and a Swift one alike. Python reaches the
-/// same numbers through the `wcwidth` package (`util.py:142-156`); this is a port of that
-/// package's `wcwidth` and `wcswidth` against the tables in ``WidthTables``.
+/// holds CJK or emoji lines up wherever the page is served. This ports `wcwidth` 0.8.2's
+/// `wcwidth` and `wcswidth` against the tables in ``WidthTables``.
 ///
-/// Ported from `wcwidth` 0.8.2. The `ambiguous_width` parameter is not carried: `util.py`
-/// never passes it, so East Asian Ambiguous code points are always one cell. Neither is
-/// `wcstwidth`, the per-terminal variant, which `util.py` does not call.
+/// The `ambiguous_width` parameter is not carried, so East Asian Ambiguous code points are
+/// always one cell, and neither is `wcstwidth`, the per-terminal variant.
 public enum DisplayWidth {
 
   /// Zero-width joiner.
@@ -32,8 +30,6 @@ public enum DisplayWidth {
   private static let variationSelector15: UInt32 = 0xFE0E
 
   /// Returns whether `scalar` falls inside one of the inclusive ranges in the table.
-  ///
-  /// Python: `bisearch` (`wcwidth/bisearch.py`).
   static func contains(_ table: [(UInt32, UInt32)], _ scalar: UInt32) -> Bool {
     guard let first = table.first, let last = table.last else { return false }
     if scalar < first.0 || scalar > last.1 { return false }
@@ -54,8 +50,6 @@ public enum DisplayWidth {
   }
 
   /// The cells one code point occupies: 0, 1 or 2, or -1 when it is not printable.
-  ///
-  /// Python: `wcwidth` (`wcwidth/_wcwidth.py`).
   public static func cells(of scalar: Unicode.Scalar) -> Int {
     let value = scalar.value
     if (32..<0x7F).contains(value) { return 1 }
@@ -67,9 +61,8 @@ public enum DisplayWidth {
 
   /// The cells `text` occupies, or -1 when it holds a C0 or C1 control character.
   ///
-  /// Python: `wcswidth` (`wcwidth/_wcswidth.py`). The walk is grapheme-aware rather than
-  /// per-code-point: a ZWJ sequence, a base and its combining marks, a regional indicator
-  /// pair and a virama conjunct each measure as one cluster.
+  /// The walk is grapheme-aware rather than per-code-point: a ZWJ sequence, a base and its
+  /// combining marks, a regional indicator pair and a virama conjunct each measure as one cluster.
   ///
   /// Python's pure-ASCII fast path is omitted; the walk returns the same width for those.
   public static func cells(of text: String) -> Int {
@@ -180,9 +173,6 @@ public enum DisplayWidth {
   }
 
   /// The cells `text` occupies, falling back to its code-point count when it is unmeasurable.
-  ///
-  /// Python: `MarkdownToMicron.display_width` (`util.py:150-156`), which takes the same
-  /// fallback both when the package is missing and when `wcswidth` reports -1.
   public static func display(of text: String) -> Int {
     let width = cells(of: text)
     return width >= 0 ? width : text.unicodeScalars.count

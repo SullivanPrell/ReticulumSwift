@@ -12,8 +12,7 @@ import Foundation
 
 /// Why a configuration file's value could not be read as the setting it names.
 ///
-/// Python: the `ValueError` that `Section.as_int` and `Section.as_bool` raise, which
-/// `__apply_config` does not catch.
+/// Applying a configuration does not catch this.
 public enum RNGitSettingsError: Error, Equatable, Sendable {
 
   /// A setting read as an integer whose value does not name one.
@@ -25,9 +24,8 @@ public enum RNGitSettingsError: Error, Equatable, Sendable {
 
 /// The settings an `rngit` node takes from its configuration file.
 ///
-/// Python: the fields `__apply_config` sets (`server.py:2189-2248`), over the defaults the
-/// initialiser sets first (`server.py:2000-2012`). Sections and keys the file leaves out
-/// leave the default in place, and the aliases are read before the sections that use them.
+/// The defaults the initialiser sets stand where a section or key is left out, and the aliases are
+/// read before the sections that use them.
 public struct RNGitNodeSettings: Equatable, Sendable {
 
   /// The name the node announces itself under.
@@ -92,13 +90,11 @@ public struct RNGitNodeSettings: Equatable, Sendable {
 
   /// The names an alias may not take, which `__apply_config` compares without folding case.
   ///
-  /// Python: `ALL_TGTS` (`server.py:1950`), tested with `not alias in self.ALL_TGTS`, unlike
-  /// the lowercased test `__resolve_identity_alias` makes against the same list.
+  /// Tested without lowercasing, unlike the test ``RNGitPermissionSet/resolvingAlias(_:aliases:)``
+  /// makes against the same list.
   private static let reservedNames = ["n", "none", "nobody", "a", "all", "everyone"]
 
   /// The lowest and highest log levels the file may ask for.
-  ///
-  /// Python: `RNS.LOG_NONE` and `RNS.LOG_EXTREME` (`RNS/__init__.py:58-67`).
   private static let logNone = -1
   private static let logExtreme = 8
 

@@ -12,51 +12,42 @@ import Foundation
 
 /// What `git` reports about one directory a node serves.
 ///
-/// Python: the node's git helpers (`server.py:2709-2782`), each of which runs one command
-/// with `check=True` and answers `False` for every failure, git's included.
+/// Each runs one command and answers `false` for every failure, git's included.
 public enum RNGitWorkingCopy {
 
   /// Whether `git` runs at all.
-  ///
-  /// Python: `_ensure_git` (`server.py:2709-2711`).
   public static func gitAvailable(runner: RNGitCommandRunner) -> Bool {
     succeeded(["--version"], in: nil, runner: runner) != nil
   }
 
   /// Whether `path` is a repository holding its own git directory.
   ///
-  /// Python: `__is_git_repository` (`server.py:2713-2721`). The test is that `--git-dir`
-  /// answers `.`, so a repository with a working tree, which answers `.git`, is not one.
+  /// The test is that `--git-dir` answers `.`, so a repository with a working tree, which answers
+  /// `.git`, is not one.
   public static func isGitRepository(_ path: String, runner: RNGitCommandRunner) -> Bool {
     succeeded(["rev-parse", "--git-dir"], in: path, runner: runner) == "."
   }
 
   /// Whether `path` is a bare repository.
-  ///
-  /// Python: `__is_bare_repository` (`server.py:2723-2731`).
   public static func isBareRepository(_ path: String, runner: RNGitCommandRunner) -> Bool {
     succeeded(["config", "--bool", "core.bare"], in: path, runner: runner) == "true"
   }
 
   /// The upstream `path` forks, or `nil` where it is not a fork.
   ///
-  /// Python: `__is_fork` (`server.py:2733-2745`), which answers the source even when the
-  /// configured source is blank.
+  /// Answers the source even where the configured source is blank.
   public static func forkSource(of path: String, runner: RNGitCommandRunner) -> String? {
     upstreamSource(of: path, ofType: "fork", runner: runner)
   }
 
   /// The upstream `path` mirrors, or `nil` where it is not a mirror.
-  ///
-  /// Python: `__is_mirror` (`server.py:2747-2759`).
   public static func mirrorSource(of path: String, runner: RNGitCommandRunner) -> String? {
     upstreamSource(of: path, ofType: "mirror", runner: runner)
   }
 
   /// When `path` last synchronized with its upstream, or `nil` where it never recorded one.
   ///
-  /// Python: `__mirror_synced` (`server.py:2761-2768`), whose `int()` refuses a blank or
-  /// non-numeric setting.
+  /// A blank or non-numeric setting is refused.
   public static func mirrorSynced(_ path: String, runner: RNGitCommandRunner) -> Int? {
     guard
       let text = succeeded(
@@ -67,8 +58,6 @@ public enum RNGitWorkingCopy {
   }
 
   /// Records `time` as the moment `path` last synchronized, answering whether git took it.
-  ///
-  /// Python: `__set_mirror_synced` (`server.py:2770-2778`).
   public static func setMirrorSynced(
     _ path: String, at time: Int, runner: RNGitCommandRunner
   ) -> Bool {
@@ -78,8 +67,6 @@ public enum RNGitWorkingCopy {
   }
 
   /// When `path` last synchronized, taking a missing or unreadable setting as the epoch.
-  ///
-  /// Python: `last_upstream_sync` (`server.py:2780-2782`).
   public static func lastUpstreamSync(_ path: String, runner: RNGitCommandRunner) -> Int {
     mirrorSynced(path, runner: runner) ?? 0
   }
@@ -95,9 +82,8 @@ public enum RNGitWorkingCopy {
   /// Fetches every reference from `source` into the mirror at `path`, answering whether the
   /// mirror is now current.
   ///
-  /// Python: `__sync_mirror` (`server.py:2109-2138`). A failure to point HEAD at the
-  /// upstream's default branch, and a failure to record the moment, both leave the mirror
-  /// counted as synchronized.
+  /// A failure to point HEAD at the upstream's default branch, and a failure to record the moment,
+  /// both leave the mirror counted as synchronized.
   public static func syncMirror(
     _ path: String, from source: String, runner: RNGitCommandRunner, now: () -> Int
   ) -> Bool {
@@ -114,8 +100,7 @@ public enum RNGitWorkingCopy {
   /// Fetches every reference from `source` into the fork at `path`, answering whether the
   /// fork is now current.
   ///
-  /// Python: `__sync_fork` (`server.py:2140-2170`), which leaves HEAD where the fork's
-  /// maintainer put it.
+  /// Leaves HEAD where the fork's maintainer put it.
   public static func syncFork(
     _ path: String, from source: String, runner: RNGitCommandRunner, now: () -> Int
   ) -> Bool {
@@ -131,9 +116,8 @@ public enum RNGitWorkingCopy {
   /// Points HEAD at `path` to the branch `source` defaults to, falling back to the first
   /// branch `path` holds.
   ///
-  /// Python: `__update_head_to_source_default` (`server.py:2784-2832`). A first command that
-  /// cannot run leaves the fallback to answer; every later one that cannot run abandons the
-  /// attempt, which the mirror sync that called it goes on regardless of.
+  /// A first command that cannot run leaves the fallback to answer; every later one that cannot run
+  /// abandons the attempt, which the mirror sync that called it goes on regardless of.
   public static func updateHeadToSourceDefault(
     _ path: String, from source: String, runner: RNGitCommandRunner
   ) -> Bool {

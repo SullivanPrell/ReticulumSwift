@@ -11,9 +11,6 @@
 import Foundation
 
 /// What one key in a configuration section holds.
-///
-/// Python: a `configobj` section entry, which is a string, a list of strings, or a
-/// subsection.
 public enum RNGitConfigValue: Equatable, Sendable {
 
   /// One value, unquoted.
@@ -27,8 +24,6 @@ public enum RNGitConfigValue: Equatable, Sendable {
 }
 
 /// One section of a configuration file, in the order the file writes its keys.
-///
-/// Python: `configobj.Section` (`RNS/vendor/configobj.py:426-1060`).
 public struct RNGitConfigSection: Equatable, Sendable {
 
   /// Every key this section holds, subsections included, in file order.
@@ -60,8 +55,6 @@ public struct RNGitConfigSection: Equatable, Sendable {
   }
 
   /// The values `key` holds, taking one value as a list of one.
-  ///
-  /// Python: `Section.as_list` (`RNS/vendor/configobj.py:1011-1030`).
   public func list(_ key: String) -> [String]? {
     switch entries[key] {
     case .scalar(let value): return [value]
@@ -72,8 +65,7 @@ public struct RNGitConfigSection: Equatable, Sendable {
 
   /// The integer `key` holds, or `nil` if its value does not name one.
   ///
-  /// Python: `Section.as_int`, which is `int()` over the string, so it takes a sign,
-  /// surrounding whitespace and single underscores between digits.
+  /// Takes a sign, surrounding whitespace, and single underscores between digits.
   public func int(_ key: String) -> Int? {
     guard let text = string(key) else { return nil }
     return Self.integer(text)
@@ -81,8 +73,7 @@ public struct RNGitConfigSection: Equatable, Sendable {
 
   /// The boolean `key` holds, or `nil` if its value names neither.
   ///
-  /// Python: `Section.as_bool`, which reads the eight words of `ConfigObj._bools`
-  /// (`RNS/vendor/configobj.py:1161-1165`) without regard to case, and raises otherwise.
+  /// Eight words are read without regard to case, and anything else is refused.
   public func bool(_ key: String) -> Bool? {
     guard let text = string(key) else { return nil }
     return Self.booleans[text.lowercased()]
@@ -132,12 +123,9 @@ public struct RNGitConfigSection: Equatable, Sendable {
   }
 }
 
-/// Why a configuration file did not parse, with the line the reference blamed.
+/// Why a configuration file did not parse, with the line it was found on.
 ///
-/// Python: the `NestingError`, `DuplicateError` and `ParseError` subclasses of
-/// `ConfigObjError` (`RNS/vendor/configobj.py:158-208`). The reference collects every error
-/// and raises at the end; this parser stops at the first, which is the one the reference
-/// reports when a file has only one.
+/// The parser stops at the first error a file holds.
 public enum RNGitConfigError: Error, Equatable, Sendable {
 
   /// A bracket marker whose depth does not follow the section before it.
@@ -152,8 +140,7 @@ public enum RNGitConfigError: Error, Equatable, Sendable {
 
 /// A configuration file read the way `configobj` reads one.
 ///
-/// Python: `ConfigObj._parse` (`RNS/vendor/configobj.py:1528-1695`) with the default
-/// options, which is how the `rngit` node and client load theirs.
+/// Read with the default options, which is how the `rngit` node and client load theirs.
 public enum RNGitConfigFile {
 
   /// The configuration `text` spells out.
@@ -258,8 +245,6 @@ public enum RNGitConfigFile {
   // MARK: - Values
 
   /// The value one `key = value` line holds, with its comment dropped.
-  ///
-  /// Python: `_handle_value` (`RNS/vendor/configobj.py:1840-1886`).
   private static func handle(_ value: String, line: Int) throws -> RNGitConfigValue {
     guard let groups = valueExpression.match(value) else {
       throw RNGitConfigError.parse(line: line)
@@ -288,8 +273,6 @@ public enum RNGitConfigFile {
   }
 
   /// The text a triple-quoted value holds, with the index of its last line.
-  ///
-  /// Python: `_multiline` (`RNS/vendor/configobj.py:1889-1920`).
   private static func multiline(
     _ value: String, lines: [String], from start: Int
   ) throws -> (String, Int) {
@@ -321,7 +304,7 @@ public enum RNGitConfigFile {
 
   /// `value` without the pair of quotes around it.
   ///
-  /// Python: `_unquote` (`RNS/vendor/configobj.py:1739-1746`), which refuses an empty string.
+  /// An empty string is refused.
   private static func unquote(_ value: String, line: Int) throws -> String {
     guard let first = value.first, let last = value.last else {
       throw RNGitConfigError.parse(line: line)

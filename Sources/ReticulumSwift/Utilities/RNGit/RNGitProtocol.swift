@@ -11,8 +11,6 @@
 import Foundation
 
 /// The request paths a node registers a handler for.
-///
-/// Python: `PATH_*` on both classes (`server.py:285-295`, `server.py:1953-1963`).
 public enum RNGitRequestPath: String, CaseIterable, Sendable {
 
   /// The references a repository holds.
@@ -50,8 +48,6 @@ public enum RNGitRequestPath: String, CaseIterable, Sendable {
 }
 
 /// The first byte of every answer a node sends.
-///
-/// Python: `RES_*` on both classes (`server.py:297-301`, `server.py:1965-1969`).
 public enum RNGitResponseCode: UInt8, CaseIterable, Sendable {
 
   /// The request succeeded, and the rest of the answer is its result.
@@ -72,8 +68,7 @@ public enum RNGitResponseCode: UInt8, CaseIterable, Sendable {
 
 /// The keys a request map carries.
 ///
-/// Python: `IDX_*` on both classes (`server.py:303-305`, `server.py:1971-1973`), which are
-/// integers rather than strings; the requests that carry other fields key those by name.
+/// These are integers rather than strings; the requests that carry other fields key those by name.
 public enum RNGitRequestKey {
 
   /// The `group/repository` path a request works on.
@@ -112,9 +107,8 @@ public struct RNGitResponse: Equatable, Sendable {
 
 /// A file a node answers with instead of bytes.
 ///
-/// Python: `return open(path, "rb"), {IDX_RESULT_CODE: RES_OK}` (`server.py:2997`), which
-/// sends the file as a resource. The directory holding it lives as long as the link the
-/// request arrived on, which the node closes it with.
+/// The file is sent as a resource. The directory holding it lives as long as the link the request
+/// arrived on, which the node closes it with.
 public struct RNGitFile: Equatable, Sendable {
 
   /// Where the file is.
@@ -142,9 +136,8 @@ public enum RNGitAnswer: Equatable, Sendable {
 
 /// The fields a request map carries, read as Python reads them.
 ///
-/// Python: the `dict` a handler works on once `type(data) == dict` holds. A key is matched
-/// as Python matches it, so a boolean or a float equal to an integer key finds that key, and
-/// a later entry replaces an earlier one, as building the dictionary does.
+/// A key is matched the way a dictionary matches it, so a boolean or a float equal to an integer
+/// key finds that key, and a later entry replaces an earlier one.
 public struct RNGitRequestFields {
 
   private let fields: [(MsgPack.Value, MsgPack.Value)]
@@ -205,8 +198,8 @@ extension RNGitAccessControl {
 
   /// Whether `identityHash` may do `permission` on the repository `names` points at.
   ///
-  /// Python: `resolve_permission` given what `parse_request_repository_path` returned, which
-  /// answers false for the pair it returns when it parsed nothing (`server.py:2314`).
+  /// Answers false for the pair ``RNGitAccessControl/repositoryPath(_:)`` returns when it parsed
+  /// nothing.
   public func allows(
     _ identityHash: Data, names: (group: String, repository: String)?,
     permission: RNGitPermission
@@ -219,8 +212,7 @@ extension RNGitAccessControl {
 
 /// What `san_sha` makes of one value a request carries.
 ///
-/// Python: `san_sha` (`util.py:74-77`). Its `len` call sits outside the `try`, so a value
-/// with no length raises out of the handler that called it rather than answering `None`.
+/// A value with no length raises rather than answering `nil`.
 public enum RNGitObjectID: Equatable, Sendable {
 
   /// A full-length hexadecimal object id.
@@ -314,8 +306,7 @@ extension MsgPack.Value {
 
 /// What `san_ref` makes of one value a request carries.
 ///
-/// Python: `san_ref` (`util.py:36-62`). It reaches for `str.startswith` straight away, so a
-/// value of any other type raises out of whatever called it.
+/// A value of any other type raises.
 public enum RNGitReferenceName: Equatable, Sendable {
 
   /// A usable reference name.
@@ -339,9 +330,8 @@ extension MsgPack.Value {
 
   /// This value as Python writes it into a formatted string.
   ///
-  /// Python: `f"{value}"`, which is `str`. A string is written as it stands; every other
-  /// value is written as `repr` writes it, which is also how a container writes what it
-  /// holds.
+  /// A string is written as it stands; every other value is written the way a container writes what
+  /// it holds.
   public var pythonDescription: String {
     if case .string(let text) = self { return text }
     return pythonRepresentation
@@ -431,8 +421,8 @@ extension MsgPack.Value {
 
   /// Whether `str.isprintable` answers true for `scalar`.
   ///
-  /// Python: the space is printable, and every other separator is not, along with every
-  /// category that carries no glyph of its own.
+  /// The space is printable, and every other separator is not, along with every category that
+  /// carries no glyph of its own.
   private static func isPrintable(_ scalar: Unicode.Scalar) -> Bool {
     if scalar == " " { return true }
     switch scalar.properties.generalCategory {
@@ -448,9 +438,9 @@ extension String {
 
   /// This string with the whitespace Python strips taken off both ends.
   ///
-  /// Python: `str.strip()`, which takes off every character `str.isspace` answers true for.
-  /// That is a wider set than the bytes of `bytes.strip`, and holds the separators and the
-  /// four information separators alongside the familiar ASCII whitespace.
+  /// Every character that is whitespace is taken off. That is a wider set than
+  /// ``Foundation/Data/pythonStripped``, and holds the separators and the four information
+  /// separators alongside the familiar ASCII whitespace.
   public var pythonStripped: String {
     let whitespace: Set<Unicode.Scalar> = [
       "\u{09}", "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{1C}", "\u{1D}", "\u{1E}", "\u{1F}",
