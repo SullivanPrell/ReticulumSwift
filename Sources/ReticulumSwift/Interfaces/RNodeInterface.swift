@@ -568,10 +568,16 @@ public final class RNodeInterface: Interface {
   /// Signalled when a bring-up reaches a terminal outcome—online, or failed and closed.
   private let bringUpSettled = DispatchSemaphore(value: 0)
 
+  /// Set by ``stop()``, cleared by ``start()``.
+  ///
+  /// Python gates its retry loop on `detached` for the same reason: a stopped interface must
+  /// not bring itself back up (`RNodeInterface.py:1174`).
+  private var stopped = false
+
   /// Opens the device, detects it and brings the radio up.
   public func start() throws {
     // Python `configure_device` (`RNodeInterface.py:424-467`): reset state, open, detect,
-    // wait bounded; no answer closes the port and stays offline. On detect: initRadio,
+    // wait bounded; no answer closes the port and redials. On detect: initRadio,
     // validate the echoed parameters, and only then interface_ready/online. `online` gates
     // `process_outgoing` (`:708-710`)—reporting it before the modem is configured is a
     // healthy-looking interface whose radio is off, the exact `bugs/013` shape.
@@ -581,6 +587,7 @@ public final class RNodeInterface: Interface {
     // sequence is handed to `bringUpQueue` and `start()` returns immediately; a caller that
     // wants the reference's blocking semantics—and knows it isn't on the transport's
     // delivery thread—calls ``waitUntilOnline(timeout:)``.
+    stopped = false
     transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
     resetRadioState()
     try transport?.open()
@@ -611,14 +618,12 @@ public final class RNodeInterface: Interface {
       Thread.sleep(forTimeInterval: 0.01)
     }
     guard detected else {
-      Reticulum.log("Could not detect device for \(displayName)", level: .error)
-      transport?.close()
+      abortBringUp("Could not detect device for \(displayName)")
       return
     }
 
     do { try initRadio() } catch {
-      Reticulum.log("Could not configure radio for \(displayName): \(error)", level: .error)
-      transport?.close()
+      abortBringUp("Could not configure radio for \(displayName): \(error)")
       return
     }
     let validateDeadline = Date().addingTimeInterval(validateTimeout)
@@ -626,11 +631,9 @@ public final class RNodeInterface: Interface {
       Thread.sleep(forTimeInterval: 0.01)
     }
     guard validateRadioState() else {
-      Reticulum.log(
+      abortBringUp(
         "After configuring \(displayName), the reported radio parameters "
-          + "did not match your configuration. Aborting RNode startup",
-        level: .error)
-      transport?.close()
+          + "did not match your configuration. Aborting RNode startup")
       return
     }
 
@@ -655,6 +658,7 @@ public final class RNodeInterface: Interface {
 
   /// Turns the radio off and closes the device.
   public func stop() {
+    stopped = true
     reconnector.cancel()
     transport?.onTransportError = nil
     idTimer?.invalidate()
@@ -663,16 +667,40 @@ public final class RNodeInterface: Interface {
     isOnline = false
   }
 
-  /// Device loss → offline → redial, re-running the whole `start()` gate: a re-powered RNode
-  /// lost its radio configuration with its power, so reopening the port alone would bring
-  /// back an interface whose modem is unconfigured—Python's `reconnect_port` ends in
-  /// `configure_device` for the same reason (`RNodeInterface.py:1155-1187`).
+  /// Device loss → offline → redial (`RNodeInterface.py:1155-1187`).
   private func handleTransportLoss(_ error: Error) {
     Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
     isOnline = false
     interfaceReady = false
+    beginRedial()
+  }
+
+  /// Ends a bring-up that cannot complete, and redials.
+  ///
+  /// Python closes the port on every failed exit from `configure_device`
+  /// (`RNodeInterface.py:452`, `:466`), which ends the read loop and lands in `reconnect_port`
+  /// (`:1172-1174`). A device that was merely slow to boot therefore joins on a later attempt
+  /// instead of staying down until something calls `start()` again. Closing the transport is
+  /// also what releases a BLE link, so the next attempt connects afresh rather than reusing a
+  /// wedged one (`:446-450`).
+  private func abortBringUp(_ reason: String) {
+    Reticulum.log(reason, level: .error)
+    isOnline = false
+    interfaceReady = false
+    transport?.close()
+    beginRedial()
+  }
+
+  /// Redial every ``reconnectWaitOverride`` seconds until an attempt brings the radio up.
+  ///
+  /// Re-runs the whole `start()` gate: a re-powered RNode lost its radio configuration with
+  /// its power, so reopening the port alone would bring back an interface whose modem is
+  /// unconfigured—Python's `reconnect_port` ends in `configure_device` for the same reason
+  /// (`RNodeInterface.py:1172-1187`).
+  private func beginRedial() {
+    guard !stopped else { return }
     reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
-      guard let self else { return true }
+      guard let self, !self.stopped else { return true }
       // `start()` returns before the bring-up finishes, so reading `isOnline` on the next
       // line would report the *previous* attempt's outcome—always false, so the loop
       // would fire a second, spurious bring-up over a radio that had already recovered,
@@ -1193,6 +1221,13 @@ public protocol RNodeTransport: AnyObject {
   var onTransportError: ((Error) -> Void)? { get set }
 
   func open() throws
+
+  /// Releases the device, so a later ``open()`` starts from a fresh connection.
+  ///
+  /// A failed bring-up calls this and then redials, so a conformer that only pauses delivery
+  /// hands the next attempt the same wedged link. Upstream forces the disconnect for the same
+  /// reason (`RNodeInterface.py:446-450`, `must_disconnect`).
   func close()
+
   func write(_ data: Data) throws
 }

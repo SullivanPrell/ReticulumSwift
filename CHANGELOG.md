@@ -3,6 +3,41 @@
 All notable changes to ReticulumSwift are documented here. This project follows
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### A failed RNode bring-up redials instead of parking the interface
+
+RNS 1.5.3 hardened the BLE arm of the RNode bring-up: a detect timeout now forces the link
+down so the next attempt connects afresh instead of reusing a wedged one
+(`RNodeInterface.py:446-450`).
+
+The reference reaches its retry loop by closing the port, which ends the read loop and lands
+in `reconnect_port`—a 5 s ladder that re-runs the whole `configure_device` gate
+(`:1172-1187`). Every failed exit from a bring-up takes that path: no detect answer, a radio
+that cannot be configured, echoed parameters that do not match the configuration. This port
+closed the transport on all three and returned, leaving the interface offline until something
+called `start()` again, so an RNode that was slow to boot never joined at all.
+
+Both `RNodeInterface` and `RNodeMultiInterface` now redial on those exits, on the same ladder
+device loss already used, and `stop()` ends it—the reference gates its retry on `detached` for
+the same reason. `RNodeTransport.close()` is documented as releasing the device: a conformer
+that only pauses delivery hands the next attempt the same dead link.
+
+### RNS 1.5.4 audit
+
+The rest of the release is already present or does not apply:
+
+- `HDLC.frame()` and its use in `BackboneClientInterface` / `LocalClientInterface`: this port
+  has framed through `HDLC.frame` since it had those interfaces.
+- `Packet.py:305-310`, suppressing an outbound-failure log when the packet named an
+  interface: this port logs nothing on that path.
+- `Link.get_expected_rate`'s docstring typo: never carried here.
+- `_get_windows_paired_ble_addresses`, which is WinRT and has no Apple-platform
+  equivalent.
+
+`Reticulum.rnsProtocolVersion` stays at 1.5.2 until the `rngit` utility lands, which is the
+remainder of 1.5.3.
+
 ## [1.20.0]—Interface discovery publishes, and path requests batch
 
 The two areas 1.19.0 listed as outstanding are now ported. Nothing in the wire protocol

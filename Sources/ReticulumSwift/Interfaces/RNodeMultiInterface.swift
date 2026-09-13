@@ -413,12 +413,16 @@ public final class RNodeMultiInterface: Interface {
   private let bringUpQueue = DispatchQueue(label: "ReticulumSwift.RNodeMultiInterface.bringUp")
   private let bringUpSettled = DispatchSemaphore(value: 0)
 
+  /// Set by ``stop()``, cleared by ``start()``—Python's `detached` gate on the retry loop.
+  private var stopped = false
+
   /// Opens the device, detects it and brings every sub-interface radio up.
   public func start() throws {
     // The same gate as `RNodeInterface.start()`: Python's multi bring-up goes detect →
     // CMD_INTERFACES → per-sub radio init before anything reports online; `open();
     // online = true` with `detect`/`initAllRadios` production-dead left every configured
     // radio silent behind an Up interface.
+    stopped = false
     transport?.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
     try transport?.open()
     try detect()
@@ -446,14 +450,12 @@ public final class RNodeMultiInterface: Interface {
       Thread.sleep(forTimeInterval: 0.01)
     }
     guard detected else {
-      Reticulum.log("Could not detect device for \(displayName)", level: .error)
-      transport?.close()
+      abortBringUp("Could not detect device for \(displayName)")
       return
     }
 
     do { try initAllRadios() } catch {
-      Reticulum.log("Could not configure radios for \(displayName): \(error)", level: .error)
-      transport?.close()
+      abortBringUp("Could not configure radios for \(displayName): \(error)")
       return
     }
     isOnline = true
@@ -462,21 +464,40 @@ public final class RNodeMultiInterface: Interface {
 
   /// Turns each radio off and closes the device.
   public func stop() {
+    stopped = true
     reconnector.cancel()
     transport?.onTransportError = nil
     transport?.close()
     isOnline = false
   }
 
-  /// Device loss → offline → redial, re-running the whole `start()` gate so every
-  /// sub-interface radio is reconfigured on the re-powered device.
+  /// Device loss → offline → redial.
   private func handleTransportLoss(_ error: Error) {
     Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
     isOnline = false
+    beginRedial()
+  }
+
+  /// Ends a bring-up that cannot complete, and redials.
+  ///
+  /// The same contract as `RNodeInterface.abortBringUp`: Python closes the port on a failed
+  /// `configure_device`, which ends the read loop and lands in `reconnect_port`
+  /// (`RNodeMultiInterface.py:432-434`, `:1042-1057`).
+  private func abortBringUp(_ reason: String) {
+    Reticulum.log(reason, level: .error)
+    isOnline = false
+    transport?.close()
+    beginRedial()
+  }
+
+  /// Redial every ``reconnectWaitOverride`` seconds, re-running the whole `start()` gate so
+  /// every sub-interface radio is reconfigured on the re-powered device.
+  private func beginRedial() {
+    guard !stopped else { return }
     reconnector.begin(wait: reconnectWaitOverride) { [weak self] in
-      guard let self else { return true }
-      // See `RNodeInterface.handleTransportLoss`: `start()` is asynchronous, so the
-      // outcome has to be waited for rather than read off the next line.
+      guard let self, !self.stopped else { return true }
+      // See `RNodeInterface.beginRedial`: `start()` is asynchronous, so the outcome has to
+      // be waited for rather than read off the next line.
       do { try self.start() } catch { return false }
       return self.waitUntilOnline(timeout: self.detectTimeout + 1)
     }
