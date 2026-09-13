@@ -98,6 +98,40 @@ struct MicronPattern {
 
 extension String {
 
+  /// The characters Python treats as a line boundary, which ICU's `\R` does not match.
+  private static let lineBoundaries: Set<UInt32> = [
+    0x0A, 0x0B, 0x0C, 0x0D, 0x1C, 0x1D, 0x1E, 0x85, 0x2028, 0x2029,
+  ]
+
+  /// This string split at every line boundary, with no empty line after a trailing one.
+  ///
+  /// Python: `str.splitlines`, whose boundary set holds seven characters
+  /// `components(separatedBy:)` would keep, and which takes a carriage return and line feed
+  /// together as one boundary.
+  var pythonLines: [String] {
+    let scalars = Array(unicodeScalars)
+    var lines: [String] = []
+    var current = String.UnicodeScalarView()
+    var index = 0
+
+    while index < scalars.count {
+      let scalar = scalars[index]
+      if Self.lineBoundaries.contains(scalar.value) {
+        lines.append(String(current))
+        current = String.UnicodeScalarView()
+        if scalar.value == 0x0D, index + 1 < scalars.count, scalars[index + 1].value == 0x0A {
+          index += 1
+        }
+      } else {
+        current.append(scalar)
+      }
+      index += 1
+    }
+
+    if !current.isEmpty { lines.append(String(current)) }
+    return lines
+  }
+
   /// This string without leading or trailing Python whitespace.
   ///
   /// Python: `str.strip`, whose set is the one ``MicronPattern/whitespace`` spells out.

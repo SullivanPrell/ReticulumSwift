@@ -224,7 +224,7 @@ public struct MicronFormatter {
   /// each such line is prefixed with a backslash.
   private static func uncolored(_ escaped: String, afterBreak: Bool) -> String {
     if escaped.contains("\n") {
-      let lines = splitLines(escaped)
+      let lines = escaped.pythonLines
       guard lines.count > 1 else { return escaped }
       let prefixed = lines.map { startsMarkup($0) ? "\\" + $0 : $0 }
       return prefixed.joined(separator: "\n") + (escaped.hasSuffix("\n") ? "\n" : "")
@@ -246,34 +246,6 @@ public struct MicronFormatter {
       of: "`", with: "\\`")
   }
 
-  /// Returns `text` split on the boundaries Python's `str.splitlines` recognises.
-  ///
-  /// The set is wider than a line feed, so a value holding a carriage return or a form feed
-  /// splits where the reference splits it and is rejoined with line feeds.
-  private static func splitLines(_ text: String) -> [String] {
-    let boundaries: Set<UInt32> = [0x0A, 0x0B, 0x0C, 0x0D, 0x1C, 0x1D, 0x1E, 0x85, 0x2028, 0x2029]
-    let scalars = Array(text.unicodeScalars)
-    var lines: [String] = []
-    var current = String.UnicodeScalarView()
-    var index = 0
-
-    while index < scalars.count {
-      let scalar = scalars[index]
-      if boundaries.contains(scalar.value) {
-        lines.append(String(current))
-        current = String.UnicodeScalarView()
-        if scalar.value == 0x0D, index + 1 < scalars.count, scalars[index + 1].value == 0x0A {
-          index += 1
-        }
-      } else {
-        current.append(scalar)
-      }
-      index += 1
-    }
-
-    if !current.isEmpty { lines.append(String(current)) }
-    return lines
-  }
 }
 
 /// Colors source code for a Micron page.
