@@ -480,3 +480,145 @@ extension String {
     return String(String.UnicodeScalarView(scalars))
   }
 }
+
+extension String {
+
+  /// Whether `isdigit` answers true for this string.
+  ///
+  /// Every scalar must carry a digit value, which covers the decimal digits of every script along
+  /// with the forms, such as the superscripts, that stand for a digit without being one.
+  public var pythonIsDigit: Bool {
+    guard !isEmpty else { return false }
+    return unicodeScalars.allSatisfy {
+      $0.properties.numericType == .decimal || $0.properties.numericType == .digit
+    }
+  }
+
+  /// What `int` answers for this string, or `nil` where Python raises for it.
+  ///
+  /// Whitespace surrounds an optional sign and the digits, which are the decimal digits of any
+  /// script and may be parted singly by underscores.
+  public var pythonInteger: Int? {
+    var scalars = Array(pythonStripped.unicodeScalars)[...]
+    var negative = false
+    if let first = scalars.first, first == "+" || first == "-" {
+      negative = first == "-"
+      scalars = scalars.dropFirst()
+    }
+
+    var value = 0
+    var afterDigit = false
+    for scalar in scalars {
+      if scalar == "_" {
+        guard afterDigit else { return nil }
+        afterDigit = false
+        continue
+      }
+      guard scalar.properties.numericType == .decimal,
+        let digit = scalar.properties.numericValue
+      else { return nil }
+      let (scaled, scaledOver) = value.multipliedReportingOverflow(by: 10)
+      guard !scaledOver else { return nil }
+      let (added, addedOver) = scaled.addingReportingOverflow(Int(digit))
+      guard !addedOver else { return nil }
+      value = added
+      afterDigit = true
+    }
+
+    guard afterDigit else { return nil }
+    return negative ? -value : value
+  }
+}
+
+extension MsgPack.Value {
+
+  /// What `int` answers for this value, or `nil` where Python raises for it.
+  ///
+  /// A byte string is refused, as `int` refuses one given no base to read it in.
+  public var pythonInteger: Int? {
+    switch self {
+    case .bool(let flag): return flag ? 1 : 0
+    case .int(let number): return Int(number)
+    case .uint(let number): return Int(exactly: number)
+    case .double(let number):
+      guard number.isFinite else { return nil }
+      let truncated = number.rounded(.towardZero)
+      guard truncated >= -9_223_372_036_854_775_808, truncated < 9_223_372_036_854_775_808 else {
+        return nil
+      }
+      return Int(truncated)
+    case .string(let text): return text.pythonInteger
+    case .nil, .bytes, .array, .map: return nil
+    }
+  }
+
+  /// What `hexrep` writes for this value with no delimiter, or `nil` where Python raises.
+  ///
+  /// A value that cannot be walked is written as though it were the one value it holds.
+  public var pythonHexrep: String? {
+    var written = ""
+    for item in pythonIterated ?? [self] {
+      guard let number = item.pythonWholeNumber else { return nil }
+      written += Self.hexadecimal(number)
+    }
+    return written
+  }
+
+  /// This value as a format specification for an integer reads it, or `nil` where it is not one.
+  private var pythonWholeNumber: Int? {
+    switch self {
+    case .bool(let flag): return flag ? 1 : 0
+    case .int(let number): return Int(number)
+    case .uint(let number): return Int(exactly: number)
+    default: return nil
+    }
+  }
+
+  /// `number` as the two-digit hexadecimal format writes it, padded after the sign.
+  private static func hexadecimal(_ number: Int) -> String {
+    let sign = number < 0 ? "-" : ""
+    var digits = String(number.magnitude, radix: 16)
+    while sign.count + digits.count < 2 { digits = "0" + digits }
+    return sign + digits
+  }
+
+  /// Whether Python orders this value before `other`, or `nil` where it raises comparing them.
+  ///
+  /// Numbers compare across their types, and a sequence compares by its members and then by how
+  /// many it holds. Nothing else compares to anything but its own kind.
+  public func pythonPrecedes(_ other: MsgPack.Value) -> Bool? {
+    if let left = Self.magnitude(self), let right = Self.magnitude(other) { return left < right }
+    switch (self, other) {
+    case (.string(let left), .string(let right)):
+      return Self.precedes(
+        Array(left.unicodeScalars).map { UInt32($0.value) },
+        Array(right.unicodeScalars).map { UInt32($0.value) })
+    case (.bytes(let left), .bytes(let right)):
+      return Self.precedes(left.map { UInt32($0) }, right.map { UInt32($0) })
+    case (.array(let left), .array(let right)):
+      for (first, second) in zip(left, right) {
+        if first == second { continue }
+        return first.pythonPrecedes(second)
+      }
+      return left.count < right.count
+    default: return nil
+    }
+  }
+
+  /// This value as the number it compares by, or `nil` where it is not one.
+  private static func magnitude(_ value: MsgPack.Value) -> Double? {
+    switch value {
+    case .bool(let flag): return flag ? 1 : 0
+    case .int(let number): return Double(number)
+    case .uint(let number): return Double(number)
+    case .double(let number): return number
+    default: return nil
+    }
+  }
+
+  /// Whether `left` orders before `right` member by member, and then by how many each holds.
+  private static func precedes(_ left: [UInt32], _ right: [UInt32]) -> Bool {
+    for (first, second) in zip(left, right) where first != second { return first < second }
+    return left.count < right.count
+  }
+}
