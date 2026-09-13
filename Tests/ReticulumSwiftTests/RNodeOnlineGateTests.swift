@@ -44,6 +44,8 @@ final class RNodeOnlineGateTests: XCTestCase {
     weak var echoSource: RNodeInterface?
     /// Override the echoed bandwidth to stage a mismatch.
     var bandwidthOverride: UInt32?
+    /// When false the transport accepts writes and answers nothing, as an absent device does.
+    var isAnswering = true
 
     func open() throws { opened = true }
     func close() { closed = true }
@@ -51,7 +53,7 @@ final class RNodeOnlineGateTests: XCTestCase {
     func write(_ data: Data) throws {
       writes.append(data)
       let bytes = [UInt8](data)
-      guard bytes.count > 1, bytes[1] == KISS.cmdDetect, let iface = echoSource
+      guard isAnswering, bytes.count > 1, bytes[1] == KISS.cmdDetect, let iface = echoSource
       else { return }
       // Values below are chosen free of FEND/FESC bytes, so raw frames suffice.
       var reply = Data([KISS.fend, KISS.cmdDetect, KISS.detectResp, KISS.fend])
@@ -147,6 +149,55 @@ final class RNodeOnlineGateTests: XCTestCase {
     XCTAssertTrue(transport.closed, "Python closes the serial port on a failed detect")
   }
 
+  /// A failed bring-up redials rather than parking the interface offline for good.
+  ///
+  /// Python's failed `configure_device` closes the port (`RNodeInterface.py:452-453`), which
+  /// ends the read loop and lands in `reconnect_port`—a 5 s retry until the device answers
+  /// (`:1172-1187`). RNS 1.5.3 hardened the BLE arm of the same path, forcing the link down on
+  /// a detect timeout so the retry gets a fresh connection (`:446-450`).
+  func testAFailedBringUpRedialsUntilTheDeviceAnswers() throws {
+    let transport = EchoingRNodeTransport()
+    let iface = configuredInterface(transport: transport)
+    transport.echoSource = iface
+    transport.isAnswering = false
+    iface.detectTimeout = 0.05
+    iface.validateTimeout = 0.05
+    iface.reconnectWaitOverride = 0.1
+
+    try iface.start()
+    XCTAssertFalse(
+      iface.waitUntilOnline(timeout: 1.0), "precondition: the first bring-up must fail")
+
+    transport.isAnswering = true
+    XCTAssertTrue(
+      iface.waitUntilOnline(timeout: 5.0),
+      """
+      the interface never redialled. A bring-up that fails is the same condition as a \
+      device lost mid-session, and the reference retries both every 5 s; parking it \
+      offline means an RNode that was slow to boot never joins at all.
+      """)
+  }
+
+  /// `stop()` ends the redial ladder, so a stopped interface never comes back up by itself.
+  func testAStoppedInterfaceDoesNotRedial() throws {
+    let transport = EchoingRNodeTransport()
+    let iface = configuredInterface(transport: transport)
+    transport.echoSource = iface
+    transport.isAnswering = false
+    iface.detectTimeout = 0.05
+    iface.validateTimeout = 0.05
+    iface.reconnectWaitOverride = 0.1
+
+    try iface.start()
+    XCTAssertFalse(iface.waitUntilOnline(timeout: 1.0), "precondition: the bring-up must fail")
+    iface.stop()
+    transport.isAnswering = true
+
+    XCTAssertFalse(
+      iface.waitUntilOnline(timeout: 1.0),
+      "a stopped interface must stay down (Python gates the retry on `not self.detached`)")
+  }
+
   func testAParameterMismatchAbortsStartup() throws {
     let transport = EchoingRNodeTransport()
     let iface = configuredInterface(transport: transport)
@@ -188,12 +239,14 @@ final class RNodeOnlineGateTests: XCTestCase {
     var byteHandler: ((Data) -> Void)?
     private(set) var closed = false
     private(set) var writes: [Data] = []
+    /// When false the transport accepts writes and answers nothing, as an absent device does.
+    var isAnswering = true
     func open() throws {}
     func close() { closed = true }
     func write(_ data: Data) throws {
       writes.append(data)
       let bytes = [UInt8](data)
-      guard bytes.count > 1, bytes[1] == KISS.cmdDetect else { return }
+      guard isAnswering, bytes.count > 1, bytes[1] == KISS.cmdDetect else { return }
       byteHandler?(Data([KISS.fend, KISS.cmdDetect, KISS.detectResp, KISS.fend]))
     }
   }
@@ -235,4 +288,29 @@ final class RNodeOnlineGateTests: XCTestCase {
       "the multi interface has the identical gate defect: open(); online = true "
         + "with detect/initAllRadios production-dead")
   }
+
+  /// The multi-radio bring-up redials on the same terms as the single-radio one.
+  func testAFailedMultiBringUpRedialsUntilTheDeviceAnswers() throws {
+    let transport = EchoingMultiTransport()
+    transport.isAnswering = false
+    let sub = RNodeSubInterface(
+      name: "High", index: 0, interfaceType: "SX1262",
+      frequency: 869_525_000, bandwidth: 125_000,
+      txPower: 7, sf: 8, cr: 5)
+    let multi = try RNodeMultiInterface(
+      name: "Dual", transport: transport,
+      subInterfaces: [sub])
+    multi.detectTimeout = 0.05
+    multi.reconnectWaitOverride = 0.1
+
+    try multi.start()
+    XCTAssertFalse(
+      multi.waitUntilOnline(timeout: 1.0), "precondition: the first bring-up must fail")
+
+    transport.isAnswering = true
+    XCTAssertTrue(
+      multi.waitUntilOnline(timeout: 5.0),
+      "a multi-radio device that was slow to boot must still join on a later attempt")
+  }
+
 }
