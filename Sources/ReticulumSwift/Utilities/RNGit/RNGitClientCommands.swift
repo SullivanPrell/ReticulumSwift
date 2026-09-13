@@ -29,14 +29,17 @@ public struct RNGitClientCommands {
   let transport: RNGitClientTransport
   let output: RNGitClientOutput
   let input: RNGitClientInput?
+  let editor: RNGitClientEditor?
 
   /// Creates the commands, which run over `transport`, write to `output` and read from `input`.
   ///
-  /// A client with no `input` reads every prompt as though the user had typed nothing more.
+  /// A client with no `input` reads every prompt as though the user had typed nothing more, and
+  /// one with no `editor` has none to run and so says so at every edit.
   public init(
     aliases: [String: String] = [:], pathTimeout: TimeInterval = 15,
     rendering: RNGitReleaseRendering = RNGitReleaseRendering(),
-    transport: RNGitClientTransport, output: RNGitClientOutput, input: RNGitClientInput? = nil
+    transport: RNGitClientTransport, output: RNGitClientOutput, input: RNGitClientInput? = nil,
+    editor: RNGitClientEditor? = nil
   ) {
     self.aliases = aliases
     self.pathTimeout = pathTimeout
@@ -44,6 +47,7 @@ public struct RNGitClientCommands {
     self.transport = transport
     self.output = output
     self.input = input
+    self.editor = editor
   }
 
   /// Asks the node at `remote` to create the repository the URL names.
@@ -109,6 +113,28 @@ public struct RNGitClientCommands {
     ],
     other: .sent(prefix: "Server error: ", fallback: "Unknown error"))
 
+  /// How the client reads a code a node answers a management request with.
+  static let remoteError = RNGitResponseReading(
+    other: .sent(prefix: "Remote error: ", fallback: ""))
+
+  /// How the client reads a code a node answers a listing with.
+  static let serverError = RNGitResponseReading(
+    other: .sent(prefix: "Server error: ", fallback: ""))
+
+  /// The bytes `answer` carries, as an abort where it carries none.
+  func answered(_ answer: RNGitClientAnswer) throws -> Data {
+    switch answer {
+    case .done(let body): return body
+    case .failed(let message): throw RNGitClientAbort(message)
+    }
+  }
+
+  /// Whether the user said yes to what was just asked.
+  func agrees() -> Bool {
+    let typed = input.flatMap { $0.readLine() } ?? "n"
+    return typed.pythonStripped.lowercased() == "y"
+  }
+
   /// What `path` answered, once the client has waited out the request.
   func requesting(_ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval) throws
     -> RNGitRequestResult
@@ -120,6 +146,41 @@ public struct RNGitClientCommands {
 
   /// What the client says where the request it sent brought nothing back at all.
   static let noResult = "Request failed or timed out"
+
+  /// What the client says where it has no editor to run.
+  static let noEditor = "No editor found. Please set $EDITOR environment variable.\n"
+
+  /// What the user made of `template`, handed to them in a file named with `suffix`, or `nil`
+  /// where they came back with nothing.
+  func edited(_ template: String, suffix: String) -> String? {
+    guard let editor else {
+      output.write(Self.noEditor)
+      return nil
+    }
+
+    let program = editor.editor()
+    guard !program.isEmpty else {
+      output.write(Self.noEditor)
+      return nil
+    }
+
+    let path = NSTemporaryDirectory() + "/rngit-" + UUID().uuidString + suffix
+    guard
+      FileManager.default.createFile(
+        atPath: path, contents: Data(template.utf8), attributes: [.posixPermissions: 0o600])
+    else { return nil }
+
+    let code = editor.run(program, over: path)
+    guard code == 0 else {
+      output.write("Editor exited with error code \(code)\n")
+      try? FileManager.default.removeItem(atPath: path)
+      return nil
+    }
+
+    let made = try? String(contentsOfFile: path, encoding: .utf8)
+    try? FileManager.default.removeItem(atPath: path)
+    return made
+  }
 
   /// The fields a request naming `path`, and taking `source` where it has one, carries.
   private static func fields(_ path: String, source: String? = nil) -> MsgPack.Value {

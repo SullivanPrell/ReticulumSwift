@@ -22,7 +22,7 @@ extension RNGitClientCommands {
     let result = try requesting(.release, Self.releaseFields(path, "list"), timeout: 120)
     output.write("\r                       \r")
 
-    let body = try answered(Self.listed.reading(result))
+    let body = try answered(Self.serverError.reading(result))
     var value = MsgPack.Value.array([])
     if !body.isEmpty {
       guard let decoded = try? MsgPack.decode(body) else {
@@ -48,7 +48,7 @@ extension RNGitClientCommands {
       .release, Self.releaseFields(path, "view", tag: target), timeout: 300)
     output.write("\r                       \r")
 
-    let body = try answered(Self.viewed.reading(result))
+    let body = try answered(Self.remoteError.reading(result))
     guard !body.isEmpty else { throw RNGitClientAbort("Empty response from remote") }
     guard let value = try? MsgPack.decode(body) else {
       throw RNGitClientAbort("Error viewing release: unreadable data")
@@ -71,14 +71,6 @@ extension RNGitClientCommands {
       prompt: { "Are you sure you want to set \($0) as the latest release? [y/N]: " },
       cancelled: "Update cancelled\n", done: { "Release \($0) set as latest\n" })
   }
-
-  /// How the client reads what listing releases answers.
-  private static let listed = RNGitResponseReading(
-    other: .sent(prefix: "Server error: ", fallback: ""))
-
-  /// How the client reads what one release, and changing one, answer.
-  private static let viewed = RNGitResponseReading(
-    other: .sent(prefix: "Remote error: ", fallback: ""))
 
   /// The fields a release request naming `path` and `tag` carries.
   private static func releaseFields(_ path: String, _ operation: String, tag: String? = nil)
@@ -112,21 +104,7 @@ extension RNGitClientCommands {
 
     let result = try requesting(
       .release, Self.releaseFields(path, operation, tag: target), timeout: 120)
-    _ = try answered(Self.viewed.reading(result))
+    _ = try answered(Self.remoteError.reading(result))
     output.write(done(target))
-  }
-
-  /// The bytes `answer` carries, as an abort where it carries none.
-  private func answered(_ answer: RNGitClientAnswer) throws -> Data {
-    switch answer {
-    case .done(let body): return body
-    case .failed(let message): throw RNGitClientAbort(message)
-    }
-  }
-
-  /// Whether the user said yes to what was just asked.
-  private func agrees() -> Bool {
-    let typed = input.flatMap { $0.readLine() } ?? "n"
-    return typed.pythonStripped.lowercased() == "y"
   }
 }

@@ -37,6 +37,16 @@ public protocol RNGitClientInput: AnyObject {
   func readLine() -> String?
 }
 
+/// Where a client finds an editor to hand the user text in.
+public protocol RNGitClientEditor: AnyObject {
+
+  /// The editor to run, or the empty string where there is none to run.
+  func editor() -> String
+
+  /// The code `editor` came back with, having been run over the file at `path`.
+  func run(_ editor: String, over path: String) -> Int32
+}
+
 /// What a client says before it gives up.
 public struct RNGitClientAbort: Error, Equatable, Sendable {
 
