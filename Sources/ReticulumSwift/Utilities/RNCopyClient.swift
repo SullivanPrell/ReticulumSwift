@@ -356,7 +356,7 @@ public final class RNCopySender {
     do {
       try transfer.send(
         payload: payload, metadata: metadata,
-        autoCompress: configuration.autoCompress)
+        autoCompress: Resource.AutoCompress(configuration.autoCompress))
     } catch {
       // Python: print(f"Could not start transfer: {e}"). A zero-byte file lands here
       // in both implementations (Swift: ResourceTransfer.Error.payloadEmpty;

@@ -393,8 +393,25 @@ public final class ResourceTransfer {
   /// Mirrors Python `Resource.receiver_min_consecutive_height`.
   private var receiverMinConsecutiveHeight: Int = 0
 
+  /// Where a multi-segment transfer reads each segment's data from.
+  enum SegmentSource {
+    case none
+    case memory(Data)
+    case file(FileHandle)
+  }
+
   // Multi-segment sender state.
-  private var pendingSegments: [Data] = []  // remaining segment payloads (indices 2..N)
+  private var segmentSource: SegmentSource = .none
+  /// Data length of each segment, ahead of any metadata block.
+  private var segmentLengths: [Int] = []
+  /// Index into ``segmentLengths`` of the next segment to read.
+  private var segmentCursor: Int = 0
+  /// Byte offset into the source that the next segment starts at.
+  private var segmentOffset: Int = 0
+  /// Size of the whole resource's data, which every segment advertises.
+  private var segmentTotalDataSize: Int = 0
+  /// Size of the metadata block segment 1 carried, repeated to later segments.
+  private var segmentMetadataBlockSize: Int = 0
   private var segmentIndex: Int = 1
   private var totalSegments: Int = 1
   private var overallOriginalHash: Data = Data()
@@ -402,7 +419,7 @@ public final class ResourceTransfer {
   private var segmentIsRequest: Bool = false
   private var segmentIsResponse: Bool = false
   private var segmentMetadata: Data?
-  private var segmentAutoCompress: Bool = true
+  private var segmentAutoCompress: Resource.AutoCompress = .enabled
 
   // MARK: - Receiver state
 
@@ -539,61 +556,164 @@ public final class ResourceTransfer {
     requestID: Data? = nil,
     isRequest: Bool = false,
     isResponse: Bool = false,
-    autoCompress: Bool = true
+    autoCompress: Resource.AutoCompress = .enabled
+  ) throws {
+    guard !payload.isEmpty else { throw Error.payloadEmpty }
+    try send(
+      source: .memory(payload), dataSize: payload.count, metadata: metadata,
+      segmentSize: segmentSize, requestID: requestID, isRequest: isRequest,
+      isResponse: isResponse, autoCompress: autoCompress)
+  }
+
+  /// Prepare and advertise a resource whose payload is a file on disk.
+  ///
+  /// Each segment is read from the file as it is sent, so only one segment is resident
+  /// at a time. Python does the same, seeking the open handle per segment rather than
+  /// buffering the whole resource (`Resource.py:307-322`); it is how a request handler
+  /// answers with a file (`Link.py:846`).
+  ///
+  /// Throws when the file cannot be read, and ``Error/payloadEmpty`` when it is empty.
+  public func send(
+    /// Read at each segment boundary, so it must stay unchanged for the duration of the
+    /// transfer.
+    file: URL,
+    metadata: Data? = nil,
+    segmentSize: Int? = nil,
+    requestID: Data? = nil,
+    isRequest: Bool = false,
+    isResponse: Bool = false,
+    autoCompress: Resource.AutoCompress = .enabled
+  ) throws {
+    let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+    let dataSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
+    guard dataSize > 0 else { throw Error.payloadEmpty }
+    let handle = try FileHandle(forReadingFrom: file)
+    do {
+      try send(
+        source: .file(handle), dataSize: dataSize, metadata: metadata,
+        segmentSize: segmentSize, requestID: requestID, isRequest: isRequest,
+        isResponse: isResponse, autoCompress: autoCompress)
+    } catch {
+      try? handle.close()
+      throw error
+    }
+  }
+
+  /// Data lengths of each segment, ahead of any metadata block.
+  ///
+  /// Python decides the split on `total_size`, which counts the metadata block
+  /// (`Resource.py:297-307`), and then gives segment 1 that much less room for data
+  /// (`first_read_size = MAX_EFFICIENT_SIZE - metadata_size`, `Resource.py:311`) while
+  /// every later segment reads a full one (`Resource.py:318-320`). A split computed on
+  /// the payload alone puts the boundaries somewhere the reference does not.
+  static func segmentDataLengths(
+    dataSize: Int, metadataBlockSize: Int, maxSegment: Int
+  ) -> [Int] {
+    let totalSize = dataSize + metadataBlockSize
+    guard totalSize > maxSegment else { return [dataSize] }
+
+    var lengths: [Int] = []
+    var remaining = dataSize
+    var room = maxSegment - metadataBlockSize
+    while remaining > 0 {
+      let take = min(room, remaining)
+      lengths.append(take)
+      remaining -= take
+      room = maxSegment
+    }
+    return lengths
+  }
+
+  private func send(
+    source: SegmentSource, dataSize: Int, metadata: Data?, segmentSize: Int?,
+    requestID: Data?, isRequest: Bool, isResponse: Bool,
+    autoCompress: Resource.AutoCompress
   ) throws {
     guard link.status == .active else { throw Error.linkNotActive }
-    guard !payload.isEmpty else { throw Error.payloadEmpty }
 
-    // Split into segments of MAX_EFFICIENT_SIZE when payload is large.
-    // Mirrors Python Resource.__init__ splitting logic.
     let maxSeg =
       testSegmentSizeOverride
       ?? ResourceTransfer.testSegmentSizeOverrideGlobal
       ?? ResourceTransfer.maxEfficientSize
-    if payload.count > maxSeg {
-      var chunks: [Data] = []
-      var offset = 0
-      while offset < payload.count {
-        let end = min(offset + maxSeg, payload.count)
-        chunks.append(payload[offset..<end])
-        offset = end
-      }
-      stateLock.lock()
-      pendingSegments = Array(chunks.dropFirst())
-      segmentIndex = 1
-      totalSegments = chunks.count
-      segmentMetadata = metadata
-      segmentRequestID = requestID
-      segmentIsRequest = isRequest
-      segmentIsResponse = isResponse
-      segmentAutoCompress = autoCompress
-      stateLock.unlock()
+    let metadataBlockSize = metadata.map { Resource.metadataPrefixSize + $0.count } ?? 0
+    let lengths = ResourceTransfer.segmentDataLengths(
+      dataSize: dataSize, metadataBlockSize: metadataBlockSize, maxSegment: maxSeg)
 
-      // Compute original_hash from the first segment's resource hash
-      // (set after resource init). Use first segment to start.
-      try sendSegment(
-        payload: chunks[0], metadata: metadata,
-        segmentSize: segmentSize, requestID: requestID,
-        isRequest: isRequest, isResponse: isResponse,
-        autoCompress: autoCompress)
-      return
-    }
+    stateLock.lock()
+    segmentSource = source
+    segmentLengths = lengths
+    segmentCursor = 0
+    segmentOffset = 0
+    segmentTotalDataSize = dataSize
+    segmentMetadataBlockSize = metadataBlockSize
+    segmentIndex = 1
+    totalSegments = lengths.count
+    segmentMetadata = metadata
+    segmentRequestID = requestID
+    segmentIsRequest = isRequest
+    segmentIsResponse = isResponse
+    segmentAutoCompress = autoCompress
+    stateLock.unlock()
 
+    guard let first = try readNextSegment() else { throw Error.payloadEmpty }
     try sendSegment(
-      payload: payload, metadata: metadata, segmentSize: segmentSize,
+      payload: first, metadata: metadata, segmentSize: segmentSize,
       requestID: requestID, isRequest: isRequest, isResponse: isResponse,
-      autoCompress: autoCompress)
+      autoCompress: autoCompress, sentMetadataSize: 0)
+  }
+
+  /// Read the segment the cursor points at, and advance it.
+  ///
+  /// The read happens outside the lock: a file-backed transfer hits the disk here.
+  private func readNextSegment() throws -> Data? {
+    stateLock.lock()
+    guard segmentCursor < segmentLengths.count else {
+      stateLock.unlock()
+      return nil
+    }
+    let length = segmentLengths[segmentCursor]
+    let offset = segmentOffset
+    segmentOffset += length
+    segmentCursor += 1
+    let source = segmentSource
+    stateLock.unlock()
+
+    switch source {
+    case .memory(let data):
+      let start = data.startIndex + offset
+      return Data(data[start..<min(start + length, data.endIndex)])
+    case .file(let handle):
+      try handle.seek(toOffset: UInt64(offset))
+      return try handle.read(upToCount: length) ?? Data()
+    case .none:
+      return nil
+    }
+  }
+
+  /// Release a file-backed transfer's handle.
+  func closeSegmentSource() {
+    stateLock.lock()
+    let source = segmentSource
+    segmentSource = .none
+    stateLock.unlock()
+    if case .file(let handle) = source { try? handle.close() }
   }
 
   private func sendSegment(
     payload: Data, metadata: Data?, segmentSize: Int?,
-    requestID: Data?, isRequest: Bool, isResponse: Bool, autoCompress: Bool = true
+    requestID: Data?, isRequest: Bool, isResponse: Bool,
+    autoCompress: Resource.AutoCompress = .enabled, sentMetadataSize: Int = 0
   ) throws {
+    stateLock.lock()
+    let totalDataSize = segmentTotalDataSize
+    stateLock.unlock()
+
     // Resource construction is a callout (reads link state, performs crypto)—build
     // it OUTSIDE the lock.
     let resource = try Resource(
       link: link, payload: payload, metadata: metadata,
-      segmentSize: segmentSize, autoCompress: autoCompress)
+      segmentSize: segmentSize, autoCompress: autoCompress,
+      totalDataSize: totalDataSize, sentMetadataSize: sentMetadataSize)
 
     stateLock.lock()
     encryptedSegments = resource.encryptedSegments
@@ -797,21 +917,25 @@ public final class ResourceTransfer {
     stateLock.lock()
     let started = startedTransferring
     let advDataSize = Int(unsafeAdvertisement?.dataSize ?? 0)
-    let hasMoreSegments = !pendingSegments.isEmpty
-    var nextSegment: Data? = nil
+    let hasMoreSegments = segmentCursor < segmentLengths.count
     var nextReqID: Data? = nil
     var nextIsRequest = false
     var nextIsResponse = false
-    var nextAutoCompress = true
+    var nextAutoCompress: Resource.AutoCompress = .enabled
+    var nextSentMetadataSize = 0
     if hasMoreSegments {
-      nextSegment = pendingSegments.removeFirst()
       segmentIndex += 1
       nextReqID = segmentRequestID
       nextIsRequest = segmentIsRequest
       nextIsResponse = segmentIsResponse
       nextAutoCompress = segmentAutoCompress
+      nextSentMetadataSize = segmentMetadataBlockSize
     }
     stateLock.unlock()
+
+    // Reads the next segment—off disk for a file-backed transfer—so it stays outside
+    // the lock.
+    let nextSegment = hasMoreSegments ? ((try? readNextSegment()) ?? nil) : nil
 
     // ACT OUTSIDE LOCK.
     stopWatchdog()
@@ -838,7 +962,11 @@ public final class ResourceTransfer {
           requestID: nextReqID,
           isRequest: nextIsRequest,
           isResponse: nextIsResponse,
-          autoCompress: nextAutoCompress
+          autoCompress: nextAutoCompress,
+          // Python forwards the first segment's metadata size to every later one, so
+          // they keep advertising the flag without repeating the block
+          // (`Resource.py:791-792`).
+          sentMetadataSize: nextSentMetadataSize
         )
       } catch {
         fail("multi-segment next: \(error)")
@@ -846,6 +974,7 @@ public final class ResourceTransfer {
       return
     }
 
+    closeSegmentSource()
     stateLock.lock()
     unsafeStatus = .complete
     stateLock.unlock()
@@ -853,6 +982,7 @@ public final class ResourceTransfer {
   }
 
   internal func reject() {
+    closeSegmentSource()
     stateLock.lock()
     unsafeStatus = .rejected
     stateLock.unlock()
@@ -1429,6 +1559,7 @@ public final class ResourceTransfer {
     }
     link.unregisterOutgoingResource(self)
     link.unregisterIncomingResource(self)
+    closeSegmentSource()
     onFailed?(self, s)
   }
 }

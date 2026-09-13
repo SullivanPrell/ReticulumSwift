@@ -338,7 +338,12 @@ final class RNCopySenderTests: XCTestCase {
     guard case .completed(let bytes, _) = outcome else {
       return XCTFail("expected .completed, got \(outcome)")
     }
-    XCTAssertEqual(bytes, payload.count)
+    // Python reports `current_resource.total_size` (`rncp.py:582`), which counts the
+    // metadata block alongside the file (`Resource.py:297`).
+    let expectedTotal =
+      payload.count + Resource.metadataPrefixSize
+      + RNCopyApp.encodeMetadata(name: "hello.txt").count
+    XCTAssertEqual(bytes, expectedTotal)
 
     // The filename travelled in the resource metadata map {"name": b"hello.txt"} and the
     // listener wrote it relative to its CWD (no --save configured).
@@ -349,7 +354,7 @@ final class RNCopySenderTests: XCTestCase {
     XCTAssertFalse(progressSamples.isEmpty)
     XCTAssertEqual(progressSamples.last?.fraction, 1.0)
     XCTAssertTrue(progressSamples.last?.done ?? false)
-    XCTAssertEqual(progressSamples.last?.totalBytes, payload.count)
+    XCTAssertEqual(progressSamples.last?.totalBytes, expectedTotal)
   }
 
   func testSendHonoursSavePathAndRenameCounter() throws {
@@ -484,7 +489,10 @@ final class RNCopyFetcherTests: XCTestCase {
     }
     // No --save, so the file lands in the CWD under its metadata-derived basename.
     XCTAssertEqual(savedTo, "doc.txt")
-    XCTAssertEqual(bytes, payload.count)
+    XCTAssertEqual(
+      bytes,
+      payload.count + Resource.metadataPrefixSize
+        + RNCopyApp.encodeMetadata(name: "doc.txt").count)
     XCTAssertEqual(clientFileSystem.files["doc.txt"], payload)
   }
 

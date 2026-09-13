@@ -288,6 +288,33 @@ public final class Destination {
     _ requestedAt: Double
   ) -> MsgPack.Value?
 
+  /// What a response generator answers a request with.
+  ///
+  /// Python's response generator is polymorphic in its return: `bytes` and native values
+  /// go back in the `[request_id, response]` envelope, while a `(file_handle, metadata)`
+  /// tuple is sent as a resource whose payload is the file itself
+  /// (`Link.py:836-846`).
+  public enum RequestResponse {
+    /// A value, sent in the response envelope.
+    case value(MsgPack.Value)
+    /// A file, sent as a resource response, with optional metadata alongside it.
+    ///
+    /// The file is read segment by segment as it is sent.
+    case file(URL, metadata: MsgPack.Value? = nil)
+  }
+
+  /// Request handler that may answer with a file.
+  ///
+  /// Python names this a response generator (`Destination.py:381`). It receives the
+  /// request's native value, as ``NativeRequestHandler`` does.
+  public typealias ResponseGenerator = (
+    _ pathHash: Data,
+    _ requestData: MsgPack.Value,
+    _ requestID: Data,
+    _ link: Link,
+    _ requestedAt: Double
+  ) -> RequestResponse?
+
   /// A registered request handler together with its allow policy.
   public struct RequestHandlerEntry {
     /// Request path the handler is registered for.
@@ -298,6 +325,11 @@ public final class Destination {
     ///
     /// When set, `handler` is a no-op stub.
     let nativeHandler: NativeRequestHandler?
+    /// Non-nil for handlers registered via `registerResponseGenerator`, the only ones
+    /// that can answer with a file.
+    ///
+    /// When set, `handler` is a no-op stub.
+    let responseGenerator: ResponseGenerator?
     /// Access policy applied to requesters.
     public let allow: AllowPolicy
     /// Identity hashes (16 bytes each) that are explicitly allowed when
@@ -306,7 +338,7 @@ public final class Destination {
     /// Whether Resource responses should be auto-compressed.
     ///
     /// Mirrors Python's `auto_compress` parameter (default `True`).
-    public let autoCompress: Bool
+    public let autoCompress: Resource.AutoCompress
   }
 
   /// Path-hash → handler entry.
@@ -351,13 +383,13 @@ public final class Destination {
     path: String,
     allow: AllowPolicy = .none,
     allowedList: [Identity] = [],
-    autoCompress: Bool = true,
+    autoCompress: Resource.AutoCompress = .enabled,
     handler: @escaping RequestHandler
   ) {
     let key = Hashes.truncatedHash(Data(path.utf8))
     let hashes = Set(allowedList.map { $0.hash })
     requestHandlers[key] = RequestHandlerEntry(
-      path: path, handler: handler, nativeHandler: nil,
+      path: path, handler: handler, nativeHandler: nil, responseGenerator: nil,
       allow: allow, allowedHashes: hashes,
       autoCompress: autoCompress
     )
@@ -375,13 +407,37 @@ public final class Destination {
     path: String,
     allow: AllowPolicy = .none,
     allowedList: [Identity] = [],
-    autoCompress: Bool = true,
+    autoCompress: Resource.AutoCompress = .enabled,
     handler: @escaping NativeRequestHandler
   ) {
     let key = Hashes.truncatedHash(Data(path.utf8))
     let hashes = Set(allowedList.map { $0.hash })
     requestHandlers[key] = RequestHandlerEntry(
       path: path, handler: { _, _, _, _, _ in nil }, nativeHandler: handler,
+      responseGenerator: nil,
+      allow: allow, allowedHashes: hashes,
+      autoCompress: autoCompress
+    )
+  }
+
+  /// Register a handler that may answer with a file as well as with a value.
+  ///
+  /// Python: a response generator returning `(file_handle, metadata)` is sent as a
+  /// resource response carrying that metadata (`Link.py:836-846`). `rngit` serves a git
+  /// bundle this way, with the result code in the metadata
+  /// (`Utilities/rngit/server.py:3001`).
+  public func registerResponseGenerator(
+    path: String,
+    allow: AllowPolicy = .none,
+    allowedList: [Identity] = [],
+    autoCompress: Resource.AutoCompress = .enabled,
+    generator: @escaping ResponseGenerator
+  ) {
+    let key = Hashes.truncatedHash(Data(path.utf8))
+    let hashes = Set(allowedList.map { $0.hash })
+    requestHandlers[key] = RequestHandlerEntry(
+      path: path, handler: { _, _, _, _, _ in nil }, nativeHandler: nil,
+      responseGenerator: generator,
       allow: allow, allowedHashes: hashes,
       autoCompress: autoCompress
     )

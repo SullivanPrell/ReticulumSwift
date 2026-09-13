@@ -247,7 +247,7 @@ public final class RNCopyListener {
       destination.registerNativeRequestHandler(
         path: RNCopyApp.fetchRequestPath,
         allow: .all,
-        autoCompress: configuration.fetchAutoCompress
+        autoCompress: Resource.AutoCompress(configuration.fetchAutoCompress)
       ) { [weak self] _, requestData, _, link, _ in
         guard let self else { return nil }
         // Python's request data is a str, and `fetch_request` calls
@@ -478,7 +478,7 @@ public final class RNCopyListener {
         try transfer.send(
           payload: payload,
           metadata: RNCopyApp.encodeMetadata(name: RNCopyApp.basename(path)),
-          autoCompress: configuration.fetchAutoCompress)
+          autoCompress: Resource.AutoCompress(configuration.fetchAutoCompress))
         return .bool(true)
       } catch {
         Reticulum.log(
