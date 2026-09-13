@@ -62,6 +62,18 @@ struct MicronPattern {
   /// Whether a match anchored at the start of `text` exists.
   func matches(_ text: String) -> Bool { match(text) != nil }
 
+  /// The first capture group of every match in `text`, in order.
+  ///
+  /// Python: `re.findall` on a pattern holding exactly one group.
+  func firstGroups(in text: String) -> [String?] {
+    let subject = text as NSString
+    return regex.matches(in: text, range: NSRange(location: 0, length: subject.length))
+      .map { match in
+        let range = match.range(at: 1)
+        return range.location == NSNotFound ? nil : subject.substring(with: range)
+      }
+  }
+
   /// Returns `text` with every match replaced by what `transform` returns for it.
   ///
   /// Python: `re.sub` with a function, which takes the replacement literally.
