@@ -739,6 +739,10 @@ final class RNGitListHandlerVectorTests: XCTestCase {
       XCTAssertEqual(
         runner.run("git", arguments: ["init", "--bare", "."], in: path)?.status,
         0, name)
+      // The branch a new repository points `HEAD` at is named here rather than left to whatever
+      // the host's own `git` defaults to.
+      try "ref: refs/heads/main\n".write(
+        toFile: path + "/HEAD", atomically: false, encoding: .utf8)
     case .reference(let reference, let digest):
       let full = path + "/" + reference
       try FileManager.default.createDirectory(
