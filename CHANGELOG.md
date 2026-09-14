@@ -5,6 +5,53 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The `rngit` executable
+
+A twelfth executable product, and the node behind it. `rngit node` brings a repository node up
+out of what stands in its configuration directory and serves repositories on a destination the
+node's own identity names; every other subcommand asks a node to do one thing and stops.
+
+A node keeps four files: the log `server_log`, the configuration `config`, the identity
+`repositories_identity` and the statistics `stats`. It reads `/etc/rngit` before anything under
+the user's home, so one machine can serve repositories for everyone on it, and keeps its files
+under `~/.rngit/reticulum` where a client's own configuration stands at `~/.config/rngit/config`.
+A directory holding no configuration is given the shipped one, and one holding no identity is
+given a new one.
+
+Eleven request paths are served on an inbound single destination, each to any peer, with every
+handler settling for itself what the peer that asked may do. The node holds the one store, the
+one set of statistics and the one set of temporary directories the handlers read and write, so
+what a handler changed is read back before its answer goes out. A peer is held from the moment it
+identifies until its link is no longer up, and the directories made for a link go with it.
+
+Between requests the node wakes every 5 seconds and runs what has come due: announcing itself on
+the configured interval, writing its statistics out every 180 seconds, bringing mirrors up to
+their upstreams every 900 seconds, and sweeping links every 5 seconds. A mirror whose interval
+has not passed is left where it is, and a repository that mirrors nothing is never reached for.
+
+`rngit node --print-identity` prints the peer identity, the node identity, the repositories
+destination and, where the node serves pages, the Nomad Network destination, and stops without
+bringing the stack up. A node that cannot be brought up far enough to say what it is stops the
+run with 255, as a node that cannot be brought up at all does.
+
+The page server a node can run alongside its repositories is not part of this; the
+`serve_nomadnet` setting is read and carried, and the destination it names is printed, but
+nothing serves on it yet.
+
+### Exit statuses `rngit` stops on
+
+A run that gives up part way now stops with 1 rather than 255. `rngit` and `git-remote-rns` stop
+on different statuses, and the helper's had been carried across to both; the helper keeps its
+255. A client configuration that will not parse stops the run with 255, where it had stopped
+with 1.
+
+A sync request is written to the node's log as an upstream sync, which is what it is.
+
+Behavior is pinned by the eleven recorded request-handler registrations and the 26-row task
+dispatch, both recorded from Python RNS 1.5.4, and by the shipped configuration file's text. An
+80-mutant sweep leaves two survivors, both inside the handlers registered on the destination, and
+both needing a link a peer has identified over to tell apart. 4,046 tests, 0 failures.
+
 ### The `git-remote-rns` executable
 
 An eleventh executable product. Git runs it for an `rns://` remote, handing it the remote's name

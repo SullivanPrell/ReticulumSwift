@@ -3,8 +3,9 @@
 Swift port of [Reticulum Network Stack](https://reticulum.network) (Python ref: RNS 1.4.2).
 Target: wire + API compatibility so a Swift node interoperates with Python nodes.
 
-Ships the library plus the ten command-line utilities as executable products
-(`rnstatus`, `rnpath`, `rnprobe`, `rncp`, `rnid`, `rnx`, `rnsd`, `rnir`, `rnpkg`, `rngcs`).
+Ships the library plus the twelve command-line utilities as executable products
+(`rnstatus`, `rnpath`, `rnprobe`, `rncp`, `rnid`, `rnx`, `rnsd`, `rnir`, `rnpkg`, `rngcs`,
+`git-remote-rns`, `rngit`).
 
 ## Build and test
 
@@ -13,7 +14,7 @@ swift build
 swift test                          # runs the full test suite
 swift test --filter <SuiteName>     # e.g. WireGoldenBytesTests
 
-swift build -c release              # also builds the ten utility executables
+swift build -c release              # also builds the twelve utility executables
 
 # If you see SwiftShims module cache errors:
 rm -rf .build && swift test

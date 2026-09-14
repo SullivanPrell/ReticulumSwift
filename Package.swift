@@ -21,7 +21,8 @@ let package = Package(
         .executable(name: "rnir", targets: ["rnir"]),
         .executable(name: "rnpkg", targets: ["rnpkg"]),
         .executable(name: "rngcs", targets: ["rngcs"]),
-        .executable(name: "git-remote-rns", targets: ["git-remote-rns"])
+        .executable(name: "git-remote-rns", targets: ["git-remote-rns"]),
+        .executable(name: "rngit", targets: ["rngit"])
     ],
     dependencies: [
         // CryptoKit ships with Apple platforms; for portability we may add
@@ -195,6 +196,16 @@ let package = Package(
             name: "git-remote-rns",
             dependencies: ["ReticulumSwift"],
             path: "Sources/git-remote-rns",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rngit",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rngit",
             linkerSettings: [
                 .linkedLibrary("c++"),
                 .linkedLibrary("c++abi"),

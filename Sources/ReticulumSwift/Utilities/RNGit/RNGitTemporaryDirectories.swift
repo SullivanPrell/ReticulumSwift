@@ -36,4 +36,12 @@ public struct RNGitTemporaryDirectories: Sendable {
     held[link, default: []].append(path)
     return path
   }
+
+  /// Removes whatever was held for `link`, answering what it removed.
+  @discardableResult
+  public mutating func release(_ link: Data) -> [String] {
+    let paths = held.removeValue(forKey: link) ?? []
+    for path in paths { try? FileManager.default.removeItem(atPath: path) }
+    return paths
+  }
 }
