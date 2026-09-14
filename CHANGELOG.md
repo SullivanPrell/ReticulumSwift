@@ -5,6 +5,27 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The `rngit` client keeps work documents
+
+The work-document commands are the client half of a repository's proposal and review flow,
+ported from `RNS/Utilities/rngit/server.py`. `list` and `view` read what a repository holds;
+`create`, `propose`, `edit`, `comment` and `permissions` hand the operator an editor and send
+back what they wrote; `delete` asks the operator to confirm, and `complete` and `activate`
+move a document between scopes. Each opens a link, sends one request on the node's
+`/mgmt/work` path, and tears the link down on the way out. The client signs a document the
+operator writes, and `view` validates that signature over the document's content and prints
+the signer's hash in place of the author the node claims.
+
+Where a node answers with a value that cannot stand where it sent it—a listing that is no map,
+a title that is no text, content that is no text under a signature—the client refuses the
+answer and closes the link. Python RNS 1.5.4 reads those answers without checking them and
+raises out of the interpreter, so the text it prints names CPython's own types and is no
+contract. What is pinned here is the refusal.
+
+Behavior is pinned by 323 runs recorded from Python RNS 1.5.4, and eight malformed answers
+recorded alongside them. A 33-mutant sweep over the commands leaves no survivors; three of the
+runs were recorded to close what it found. 3,963 tests, 0 failures.
+
 ### The `rngit` client fetches a release
 
 `fetch-release` is the client half of a release download, ported from

@@ -99,7 +99,7 @@ public struct RNGitReleaseRendering: Sendable {
   private static let unknown = "unknown"
 
   /// `seconds` since the epoch written out in `format`.
-  private func dated(_ seconds: Int, as format: String) -> String {
+  func dated(_ seconds: Int, as format: String) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = timeZone
