@@ -468,17 +468,48 @@ extension String {
   /// ``Foundation/Data/pythonStripped``, and holds the separators and the four information
   /// separators alongside the familiar ASCII whitespace.
   public var pythonStripped: String {
-    let whitespace: Set<Unicode.Scalar> = [
-      "\u{09}", "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{1C}", "\u{1D}", "\u{1E}", "\u{1F}",
-      "\u{20}", "\u{85}", "\u{A0}", "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}",
-      "\u{2004}", "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}",
-      "\u{2028}", "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}",
-    ]
     var scalars = Array(unicodeScalars)[...]
-    while let first = scalars.first, whitespace.contains(first) { scalars = scalars.dropFirst() }
-    while let last = scalars.last, whitespace.contains(last) { scalars = scalars.dropLast() }
+    while let first = scalars.first, Self.pythonWhitespace.contains(first) {
+      scalars = scalars.dropFirst()
+    }
+    while let last = scalars.last, Self.pythonWhitespace.contains(last) {
+      scalars = scalars.dropLast()
+    }
     return String(String.UnicodeScalarView(scalars))
   }
+
+  /// This string parted at every run of whitespace, taking at most `limit` parts.
+  ///
+  /// Whitespace at either end parts nothing, so a string holding only whitespace parts into
+  /// nothing at all, and the last field carries everything left once `limit` parts are taken.
+  public func pythonSplit(limit: Int = .max) -> [String] {
+    var fields: [String] = []
+    var scalars = Array(unicodeScalars)[...]
+    while true {
+      while let first = scalars.first, Self.pythonWhitespace.contains(first) {
+        scalars = scalars.dropFirst()
+      }
+      guard !scalars.isEmpty else { return fields }
+      guard fields.count < limit else {
+        fields.append(String(String.UnicodeScalarView(scalars)))
+        return fields
+      }
+      var field = String.UnicodeScalarView()
+      while let first = scalars.first, !Self.pythonWhitespace.contains(first) {
+        field.append(first)
+        scalars = scalars.dropFirst()
+      }
+      fields.append(String(field))
+    }
+  }
+
+  /// Every scalar Python reads as whitespace.
+  private static let pythonWhitespace: Set<Unicode.Scalar> = [
+    "\u{09}", "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{1C}", "\u{1D}", "\u{1E}", "\u{1F}",
+    "\u{20}", "\u{85}", "\u{A0}", "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}",
+    "\u{2004}", "\u{2005}", "\u{2006}", "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}",
+    "\u{2028}", "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}",
+  ]
 }
 
 extension String {
