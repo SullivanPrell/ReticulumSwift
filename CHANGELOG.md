@@ -5,6 +5,76 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Reading a repository for a page
+
+`RNGitRepositoryReader` runs `git` and answers what a page needs from it: what the repository
+says it is, its branches and tags with the subject and any tag message each points at, the object
+a ref names, what a directory holds, what is known about a file, what that file holds, the
+readme under whichever of eleven names it carries one, how many commits a ref has behind it, a
+page of those commits, everything a commit page prints, and what a commit's signature says.
+
+A signature is read as the signature it is: the envelope's namespace is not asked about, so one
+made for something other than `git` still reaches a verdict. The verdicts are the eight the
+reference reaches, down to their wording.
+
+`RNGitCommandRunner` gained a second call that answers bytes rather than text, because a file is
+binary when its first 8 KiB carry a zero byte, and a run that could not start and a run whose
+output is not text are not the same answer.
+
+A repository's description is read from its configuration, and from the file beside the
+repository rather than inside it where the configuration carries none.
+
+`get_blob_stream` and `get_webp_stream` are not part of this: both hand back an open handle whose
+lifetime belongs to the link that asked, which is the page server's to own.
+
+### What a page is made of
+
+The micron a page is built out of, as pieces that join: headings, bold, italics, underlines,
+foreground colour, dividers, alignment, escaping, and the three link forms—one bold, one drawn as
+body text, and one naming another node. A link's fields are carried in the order they are given
+and written the way a query string writes them, a space as `+` and everything else outside
+letters, digits and `_.-~` as `%XX`, because a link is compared by the text it reads as.
+
+The paths of the seventeen things a node serves, the limits it serves them under—256 KiB before a
+file is offered as a download rather than rendered, 1,000 directory entries and 100 commits to a
+page, 8 seconds for one `git` call, 100 columns wide, a tab drawn as three spaces—the colours a
+page and a chart draw with, and the ten icons in both the Nerd Font and the plain Unicode
+tables.
+
+Sizes, absolute and relative timestamps, tab expansion, and the colouring of a diff and of a
+commit message.
+
+### Converting an image for a reader
+
+`RNGitMediaEncoder` converts an image to WebP through whichever of `magick`, `convert`, `gm`,
+`ffmpeg` and `avconv` stands on the search path, in that order. `RNGIT_MEDIA_BACKEND` names one
+and makes it the only one tried. Otherwise the backend that last converted something is tried
+before the rest. A quality outside one to a hundred is brought inside it, a size below one pixel
+is not asked for, and each family takes its options at the one place the rest of its words still
+read the same way afterwards.
+
+A conversion is given 8 seconds. What is left at the output path is a WebP file or nothing: a run
+that timed out, failed, could not start, or wrote something whose header does not read as WebP
+has its output taken away. The header is read from all three chunk kinds, each of which carries
+the size in a different place and to a different width.
+
+A machine carrying none of the five backends is told so once rather than on every conversion.
+
+No WebP encoding backend stands on the machine this was recorded on: the only one of the five on
+the search path is `ffmpeg`, and this build of it carries no WebP encoder. The conversion command
+lines are pinned by 175 recorded rows and the outcome handling by a scripted converter, so a
+conversion through a real encoder is pinned rather than run.
+
+Behavior is pinned by 62 readings of a deterministic repository, 85 micron and formatter rows,
+both icon tables and the class constants, and the 175 conversion command lines, all recorded from
+Python RNS 1.5.4. An 82-mutant sweep leaves four survivors, each of which is the same program:
+the `git diff --numstat --no-index` fallback cannot report a revision as binary, because `git`
+cannot reach a revision as a path; zeroing a `-` before reading it as a number changes nothing,
+because a number that will not read falls back to zero anyway; dropping the one space a
+signature's continuation line carries changes nothing, because the armour reader trims every line
+it takes; and `git ls-tree <ref>:` lists the tree `git ls-tree <ref>` lists. 4,109 tests, 0
+failures.
+
 ### The `rngit` executable
 
 A twelfth executable product, and the node behind it. `rngit node` brings a repository node up

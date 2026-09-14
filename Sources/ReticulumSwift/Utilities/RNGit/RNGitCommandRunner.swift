@@ -30,6 +30,22 @@ public struct RNGitCommandOutput: Equatable, Sendable {
   }
 }
 
+/// What one invocation wrote, as the bytes it wrote rather than as text.
+public struct RNGitCommandBytes: Equatable, Sendable {
+
+  /// The exit status the command returned.
+  public let status: Int32
+
+  /// Everything the command wrote to standard output.
+  public let standardOutput: Data
+
+  /// Creates an outcome.
+  public init(status: Int32, standardOutput: Data) {
+    self.status = status
+    self.standardOutput = standardOutput
+  }
+}
+
 /// Runs the commands a node needs: `git`, and the `allowed` programs a group may carry.
 public protocol RNGitCommandRunner: Sendable {
 
@@ -44,6 +60,25 @@ public protocol RNGitCommandRunner: Sendable {
   /// raises where a failure to launch raises.
   func run(_ executable: String, arguments: [String], in directory: String?)
     -> RNGitCommandOutput?
+
+  /// Runs `executable` with `arguments` in `directory`, answering what it wrote as bytes.
+  ///
+  /// The output of a file read out of a repository is whatever the file holds, which need not
+  /// decode, so the reader that has to look at those bytes asks for them here instead.
+  func run(bytes executable: String, arguments: [String], in directory: String?)
+    -> RNGitCommandBytes?
+}
+
+extension RNGitCommandRunner {
+
+  /// The bytes of what the command printed, for a runner that only answers text.
+  public func run(bytes executable: String, arguments: [String], in directory: String?)
+    -> RNGitCommandBytes?
+  {
+    run(executable, arguments: arguments, in: directory).map {
+      RNGitCommandBytes(status: $0.status, standardOutput: Data($0.standardOutput.utf8))
+    }
+  }
 }
 
 /// Runs a command as a subprocess.
@@ -86,6 +121,40 @@ public struct RNGitProcessRunner: RNGitCommandRunner {
       return RNGitCommandOutput(
         status: process.terminationStatus, standardOutput: standardOutput,
         standardError: standardError)
+    } catch {
+      return nil
+    }
+    #else
+    return nil
+    #endif
+  }
+
+  /// Runs `executable` with `arguments` in `directory`, answering what it wrote as bytes.
+  public func run(bytes executable: String, arguments: [String], in directory: String?)
+    -> RNGitCommandBytes?
+  {
+    #if os(macOS)
+    let process = Process()
+    if executable.contains("/") {
+      process.executableURL = URL(fileURLWithPath: executable)
+      process.arguments = arguments
+    } else {
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+      process.arguments = [executable] + arguments
+    }
+    if let directory { process.currentDirectoryURL = URL(fileURLWithPath: directory) }
+
+    let output = Pipe()
+    let errors = Pipe()
+    process.standardOutput = output
+    process.standardError = errors
+
+    do {
+      try process.run()
+      let produced = output.fileHandleForReading.readDataToEndOfFile()
+      _ = errors.fileHandleForReading.readDataToEndOfFile()
+      process.waitUntilExit()
+      return RNGitCommandBytes(status: process.terminationStatus, standardOutput: produced)
     } catch {
       return nil
     }

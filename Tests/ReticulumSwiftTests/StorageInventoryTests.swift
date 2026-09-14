@@ -35,13 +35,15 @@ final class StorageInventoryTests: XCTestCase {
   ///
   /// `RNGitTemporaryDirectories`, `RNGitPushHandler` and `RNGitHelperRuntime` each build one
   /// `<root>/rngit-<uuid>` under the system temporary directory and remove it again, and
-  /// `RNGitLinkTransport` names a file response inside the one its run holds.
+  /// `RNGitLinkTransport` names a file response inside the one its run holds, and
+  /// `RNGitMediaEncoder` names the WebP it converts a file to (`media.py:219`).
   /// `StorageInventory` declares what lives inside a Reticulum configuration directory, and
   /// `url(_:in:)` resolves an entry against that directory, so a path outside it has no entry
   /// to be.
   private static let temporaryScratchNames: Set<String> = [
     "rngit-",
     "response-",
+    "rns_media_",
   ]
 
   /// Names inside an `rngit` repository group, which is a directory the operator chooses.
