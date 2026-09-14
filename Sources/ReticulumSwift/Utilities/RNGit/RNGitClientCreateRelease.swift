@@ -176,9 +176,9 @@ extension RNGitClientCommands {
     return loaded
   }
 
-  /// `directory` and `name` joined the way the reference joins a path, which leaves the
-  /// separator alone where the directory already ends in one.
-  private static func joined(_ directory: String, _ name: String) -> String {
+  /// `directory` and `name` joined the way a path is joined, which leaves the separator alone
+  /// where the directory already ends in one.
+  static func joined(_ directory: String, _ name: String) -> String {
     directory.hasSuffix("/") ? directory + name : directory + "/" + name
   }
 

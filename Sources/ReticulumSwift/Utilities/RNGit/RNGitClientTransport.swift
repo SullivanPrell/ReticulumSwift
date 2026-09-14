@@ -23,6 +23,42 @@ public enum RNGitRequestResult: Equatable, Sendable {
   case none
 }
 
+/// How far along a transfer that is still arriving is.
+public struct RNGitTransferProgress: Equatable, Sendable {
+
+  /// How much of it has arrived, from none of it to all of it.
+  public let fraction: Double
+
+  /// How many bytes it carries, or `nil` where the transfer names no size.
+  public let size: Int?
+
+  /// How many bytes go over the link to carry it, or `nil` where it names none.
+  public let transferSize: Int?
+
+  /// Creates a report of a transfer that is `fraction` along.
+  public init(fraction: Double, size: Int?, transferSize: Int?) {
+    self.fraction = fraction
+    self.size = size
+    self.transferSize = transferSize
+  }
+}
+
+/// What a node answered a request with.
+public struct RNGitClientResponse {
+
+  /// What came back.
+  public let result: RNGitRequestResult
+
+  /// What the node named the answer, or `nil` where it named it nothing.
+  public let metadata: MsgPack.Value?
+
+  /// Creates an answer carrying `result`, named `metadata`.
+  public init(result: RNGitRequestResult, metadata: MsgPack.Value? = nil) {
+    self.result = result
+    self.metadata = metadata
+  }
+}
+
 /// Where a client's bytes go.
 public protocol RNGitClientOutput: AnyObject {
 
@@ -73,8 +109,13 @@ public protocol RNGitClientTransport: AnyObject {
   func establishLink(to identity: Identity) -> Bool
 
   /// Sends a request to `path` carrying `fields`, answering what came back.
-  func request(_ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval)
-    -> RNGitRequestResult
+  ///
+  /// A transfer that comes back as a file arrives over time, and `progress` is told how far
+  /// along it is as it goes, where the caller asked to be told.
+  func request(
+    _ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval,
+    progress: ((RNGitTransferProgress) -> Void)?
+  ) -> RNGitClientResponse
 
   /// Closes the link.
   func teardown()
@@ -126,6 +167,15 @@ public struct RNGitResponseReading: Equatable, Sendable {
     let code = RNGitResponseCode(rawValue: response[response.startIndex])
     guard code != .ok else { return .done(Data(response.dropFirst())) }
     return .failed(saying(code.flatMap { named[$0] } ?? other, response))
+  }
+
+  /// What the reading makes of `response`, whatever code it carries.
+  ///
+  /// A code the reading holds no rule for is read as every other one is, and so is the code for
+  /// an answer that went through, where a step reads one as a refusal all the same.
+  func refusal(_ response: Data) -> String {
+    let code = RNGitResponseCode(rawValue: response[response.startIndex])
+    return saying(code.flatMap { named[$0] } ?? other, response)
   }
 
   /// What `rule` makes of `response`.

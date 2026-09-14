@@ -33,10 +33,11 @@ final class RNGitClientDivergenceTests: XCTestCase {
     func awaitPath(to destinationHash: Data, timeout: TimeInterval) -> Bool { true }
     func recallIdentity(for destinationHash: Data) -> Identity? { Identity() }
     func establishLink(to identity: Identity) -> Bool { true }
-    func request(_ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval)
-      -> RNGitRequestResult
-    {
-      answer
+    func request(
+      _ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval,
+      progress: ((RNGitTransferProgress) -> Void)?
+    ) -> RNGitClientResponse {
+      RNGitClientResponse(result: answer)
     }
     func teardown() {}
   }

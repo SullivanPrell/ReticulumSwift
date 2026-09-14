@@ -1757,13 +1757,14 @@ final class RNGitClientCommandVectorTests: XCTestCase {
 
     func establishLink(to identity: Identity) -> Bool { run.linkComesUp }
 
-    func request(_ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval)
-      -> RNGitRequestResult
-    {
+    func request(
+      _ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval,
+      progress: ((RNGitTransferProgress) -> Void)?
+    ) -> RNGitClientResponse {
       sent.path = path.rawValue
       sent.fields = MsgPack.encode(fields).hexString
       sent.timeout = timeout
-      return run.answer
+      return RNGitClientResponse(result: run.answer)
     }
 
     func teardown() { tornDown = true }

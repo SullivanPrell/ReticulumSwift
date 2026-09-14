@@ -2723,12 +2723,14 @@ final class RNGitClientCreateReleaseTests: XCTestCase {
 
     func establishLink(to identity: Identity) -> Bool { vector?.linkComesUp ?? false }
 
-    func request(_ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval)
-      -> RNGitRequestResult
-    {
+    func request(
+      _ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval,
+      progress: ((RNGitTransferProgress) -> Void)?
+    ) -> RNGitClientResponse {
       requests.append(
         Request(path: path.rawValue, fields: MsgPack.encode(fields).hexString, timeout: timeout))
-      return answers.isEmpty ? .bytes(Data([0])) : answers.removeFirst()
+      return RNGitClientResponse(
+        result: answers.isEmpty ? .bytes(Data([0])) : answers.removeFirst())
     }
 
     func teardown() { tornDown = true }

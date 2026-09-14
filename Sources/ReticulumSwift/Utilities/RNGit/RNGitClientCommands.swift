@@ -32,6 +32,9 @@ public struct RNGitClientCommands {
   /// What the client takes the time to be.
   public var now: () -> Date
 
+  /// Where the client writes what it fetches, which is where it was run.
+  public var workingDirectory: String
+
   let transport: RNGitClientTransport
   let output: RNGitClientOutput
   let input: RNGitClientInput?
@@ -46,7 +49,7 @@ public struct RNGitClientCommands {
   public init(
     aliases: [String: String] = [:], pathTimeout: TimeInterval = 15,
     rendering: RNGitReleaseRendering = RNGitReleaseRendering(), identity: Identity? = nil,
-    now: @escaping () -> Date = Date.init,
+    now: @escaping () -> Date = Date.init, workingDirectory: String = ".",
     transport: RNGitClientTransport, output: RNGitClientOutput, input: RNGitClientInput? = nil,
     editor: RNGitClientEditor? = nil, runner: RNGitCommandRunner? = nil
   ) {
@@ -55,6 +58,7 @@ public struct RNGitClientCommands {
     self.rendering = rendering
     self.identity = identity
     self.now = now
+    self.workingDirectory = workingDirectory
     self.transport = transport
     self.output = output
     self.input = input
@@ -157,9 +161,18 @@ public struct RNGitClientCommands {
   func requesting(_ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval) throws
     -> RNGitRequestResult
   {
-    let result = transport.request(path, fields, timeout: timeout)
-    if case .none = result { throw RNGitClientAbort(Self.noResult) }
-    return result
+    try requesting(path, fields, timeout: timeout, progress: nil).result
+  }
+
+  /// What `path` answered, once the client has waited out the request, told to `progress` as it
+  /// arrives.
+  func requesting(
+    _ path: RNGitRequestPath, _ fields: MsgPack.Value, timeout: TimeInterval,
+    progress: ((RNGitTransferProgress) -> Void)?
+  ) throws -> RNGitClientResponse {
+    let answer = transport.request(path, fields, timeout: timeout, progress: progress)
+    if case .none = answer.result { throw RNGitClientAbort(Self.noResult) }
+    return answer
   }
 
   /// What the client says where the request it sent brought nothing back at all.
