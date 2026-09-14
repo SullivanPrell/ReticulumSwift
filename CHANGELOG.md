@@ -5,6 +5,26 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The `rngit` client fetches a release
+
+`fetch-release` is the client half of a release download, ported from
+`RNS/Utilities/rngit/server.py`. It reads the release manifest, resolves the origin the
+manifest names, asks the node for each artifact the target selects, and validates what
+arrives against the manifest's hashes. A manifest already on disk is read rather than
+fetched, which is what an offline verification runs on.
+
+Artifact selection is `fnmatch`, ported as `FileNameMatching`: a pattern matches a whole
+name, `*` stands for any run of characters, `?` for one, and `[abc]` for one of the
+characters a set holds, which `[!abc]` turns around. Consecutive `*` collapse into one and a
+reversed range such as `[c-a]` matches nothing, as they do in CPython's `fnmatch.translate`.
+
+A request that carries a resource reports its progress as it arrives, rendered the way the
+reference renders it, so `RNGitClientTransport.request` now takes a progress callback and
+answers with the node's metadata alongside the result.
+
+Behavior is pinned by 66 runs recorded from Python RNS 1.5.4 and 2,028 name-and-pattern pairs
+recorded from CPython's own `fnmatch`. 3,961 tests, 0 failures.
+
 ### The storage-inventory guard reads paths built by concatenation
 
 `StorageInventoryTests` holds the claim that every persisted path is declared in
