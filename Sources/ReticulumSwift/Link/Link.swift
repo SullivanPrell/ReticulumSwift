@@ -2259,14 +2259,22 @@ public final class Link {
       self?.evictPendingRequest(requestID)
       receipt?.fail("response resource transfer failed (\(status))")
     }
-    rt.onAssembledInternal = { [weak self, weak receipt] payload, _ in
+    rt.onAssembledInternal = { [weak self, weak receipt] payload, transfer in
       guard let self, let receipt else { return }
       self.evictPendingRequest(requestID)
-      // The assembled payload is the msgpack envelope [request_id, response]
+      // A resource carrying metadata is a file response, and its payload is the file's
+      // bytes with no envelope around them—the request ID rode in the advertisement.
+      // Python branches on the same flag (`Link.py:902-903`).
+      if transfer.hasMetadata {
+        let metadata = transfer.receivedMetadata.flatMap { try? MsgPack.decode($0) }
+        receipt.deliverReady(payload, metadata: metadata)
+        return
+      }
+      // Otherwise the assembled payload is the msgpack envelope [request_id, response]
       // (same as the single-packet RESPONSE), NOT the bare response. Decode it
       // and deliver the response value, unwrapping .bytes exactly like
       // handleIncomingResponse. Mirrors Python response_resource_concluded
-      // (Link.py:890-904): unpackb(packed_response)[1]. A non-envelope payload
+      // (Link.py:908-912): unpackb(packed_response)[1]. A non-envelope payload
       // (unexpected) is delivered as-is so nothing is silently lost.
       let responseData: Data
       if case .array(let parts) = (try? MsgPack.decode(payload)) ?? .nil,

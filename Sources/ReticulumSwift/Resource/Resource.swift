@@ -39,12 +39,43 @@ public final class Resource {
   /// Maximum metadata size in bytes (matches Python METADATA_MAX_SIZE = 16777215).
   public static let metadataMaxSize: Int = 16_777_215
 
+  /// Whether a resource is compressed before transfer, and up to what size.
+  ///
+  /// Python's `auto_compress` takes either a flag or an integer byte ceiling, and an
+  /// integer means "compress, but only this far" (`Resource.py:372-376`).
+  public enum AutoCompress: Equatable, Sendable {
+    /// Compress when it helps, up to ``Resource/autoCompressMaxSize``.
+    case enabled
+    /// Never compress.
+    case disabled
+    /// Compress when it helps, for payloads at or under this many bytes.
+    case upTo(Int)
+
+    /// Whether a payload of this size is offered to the compressor.
+    ///
+    /// Python: `if self.auto_compress and data_size <= self.auto_compress_limit`
+    /// (`Resource.py:392`), where the limit defaults to `AUTO_COMPRESS_MAX_SIZE`.
+    func compresses(payloadSize: Int) -> Bool {
+      switch self {
+      case .disabled: return false
+      case .enabled: return payloadSize <= Resource.autoCompressMaxSize
+      case .upTo(let limit): return payloadSize <= limit
+      }
+    }
+  }
+
   /// Link the resource is transferred over.
   public let link: Link
   /// Uncompressed original payload (without metadata prefix).
   public let uncompressedData: Data
   /// Pre-packed metadata bytes (without the 3-byte size prefix), or nil.
   public let metadata: Data?
+  /// Size of the length prefix that precedes a metadata block.
+  static let metadataPrefixSize: Int = 3
+  /// Whether the resource carries, or is a later segment of one that carried, metadata.
+  public let hasMetadata: Bool
+  /// Value advertised as the resource's total uncompressed data size.
+  let advertisedDataSize: Int
   /// True if the payload was compressed before encryption.
   public private(set) var isCompressed: Bool
   /// 4-byte random hash used in map hash computation.
@@ -86,10 +117,18 @@ public final class Resource {
   ///   - segmentSize: Part size in bytes. `nil` derives it from the link, which is what
   ///     every caller should want. See ``segmentSize(for:)``.
   ///   - autoCompress: Whether the payload is compressed when compression shrinks it.
+  ///   - totalDataSize: Size of the whole resource's data, when this is one segment of a
+  ///     larger transfer. Python reads it off the input file, so every segment of a split
+  ///     resource advertises the same figure rather than its own share
+  ///     (`Resource.py:296-297`). Defaults to `payload.count`.
+  ///   - sentMetadataSize: Size of the metadata block segment 1 carried, passed to
+  ///     segments 2 and later so they keep advertising the flag and the size without
+  ///     repeating the block itself (Python `sent_metadata_size`, `Resource.py:259-272`).
   /// - Throws: `ResourceError` when the payload cannot be packed or encrypted.
   public init(
     link: Link, payload: Data, metadata: Data? = nil,
-    segmentSize: Int? = nil, autoCompress: Bool = true
+    segmentSize: Int? = nil, autoCompress: AutoCompress = .enabled,
+    totalDataSize: Int? = nil, sentMetadataSize: Int = 0
   ) throws {
     let segmentSize = segmentSize ?? Resource.segmentSize(for: link)
     self.link = link
@@ -99,6 +138,14 @@ public final class Resource {
     if let m = metadata, m.count > Resource.metadataMaxSize {
       throw ResourceError.metadataTooLarge
     }
+
+    // Python: the block is the 3-byte length prefix plus the packed metadata, and its
+    // size stays on the resource as `metadata_size` (`Resource.py:267-268`). A later
+    // segment repeats the size without the block (`Resource.py:271-272`).
+    let metadataBlockSize =
+      metadata.map { Resource.metadataPrefixSize + $0.count } ?? sentMetadataSize
+    self.hasMetadata = metadata != nil || sentMetadataSize > 0
+    self.advertisedDataSize = (totalDataSize ?? payload.count) + metadataBlockSize
 
     // Generate 4-byte random hash prefix.
     let rh = SecureRandom.bytes(Resource.randomHashSize)
@@ -118,7 +165,9 @@ public final class Resource {
     // Attempt compression.
     var compressed = false
     var transferData = plaintext
-    if autoCompress, plaintext.count <= Resource.autoCompressMaxSize {
+    // Python compares `data_size`, which it fixes before the metadata block exists
+    // (`Resource.py:392`), so the block never counts against the ceiling.
+    if autoCompress.compresses(payloadSize: payload.count) {
       if let cdata = Resource.compressor.compress(plaintext), cdata.count < plaintext.count {
         transferData = cdata
         compressed = true
@@ -164,12 +213,14 @@ public final class Resource {
 
   /// Bytes sent over the wire, after compression and encryption.
   public var transferSize: Int { encryptedStream.count }
-  /// Size of the uncompressed payload in bytes.
-  public var dataSize: Int { uncompressedData.count }
+  /// Size of the whole resource's uncompressed data, including any metadata block.
+  ///
+  /// Python: `self.d = resource.total_size`, which is `data_size + metadata_size`
+  /// (`Resource.py:297`, `1293`). For one segment of a split resource this is still the
+  /// whole resource's size, not the segment's.
+  public var dataSize: Int { advertisedDataSize }
   /// Number of parts the payload is split into.
   public var partCount: Int { encryptedSegments.count }
-  /// Whether the resource carries a metadata block.
-  public var hasMetadata: Bool { metadata != nil }
 
   // MARK: - Receiving
 
@@ -479,4 +530,24 @@ public struct ResourceAdvertisement: Equatable {
     }
     return adv
   }
+}
+
+/// A flag still reads as a flag at a call site.
+///
+/// Python accepts `auto_compress=True` and `auto_compress=False` alongside the integer
+/// form (`Resource.py:372-376`), and so does this.
+extension Resource.AutoCompress: ExpressibleByBooleanLiteral {
+  /// Builds ``Resource/AutoCompress/enabled`` from `true`, ``disabled`` from `false`.
+  public init(booleanLiteral value: Bool) { self = value ? .enabled : .disabled }
+}
+
+/// An integer literal is the ceiling, matching Python's integer `auto_compress`.
+extension Resource.AutoCompress: ExpressibleByIntegerLiteral {
+  /// Builds ``Resource/AutoCompress/upTo(_:)`` with the literal as the byte ceiling.
+  public init(integerLiteral value: Int) { self = .upTo(value) }
+}
+
+extension Resource.AutoCompress {
+  /// Builds the flag form from a value decided at runtime, such as a command-line switch.
+  public init(_ flag: Bool) { self = flag ? .enabled : .disabled }
 }

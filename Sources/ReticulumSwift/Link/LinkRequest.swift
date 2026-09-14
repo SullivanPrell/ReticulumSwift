@@ -147,6 +147,18 @@ public final class RequestReceipt {
     return unsafeStatus
   }
 
+  private var unsafeMetadata: MsgPack.Value?
+  /// Metadata the responder sent alongside a file response, or `nil`.
+  ///
+  /// Only a file response carries it: Python passes the concluded resource's metadata
+  /// into `response_received` (`Link.py:902-903`, `1437-1441`). `rngit` puts the fetch
+  /// result code here (`Utilities/rngit/server.py:3001`).
+  public var metadata: MsgPack.Value? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return unsafeMetadata
+  }
+
   private var timeoutItem: DispatchWorkItem?
 
   private var unsafeOnResponse: ((Data, RequestReceipt) -> Void)?
@@ -296,7 +308,7 @@ public final class RequestReceipt {
     stateLock.unlock()
   }
 
-  func deliverReady(_ data: Data, size: Int? = nil) {
+  func deliverReady(_ data: Data, size: Int? = nil, metadata: MsgPack.Value? = nil) {
     stateLock.lock()
     // Only conclude once, from a non-terminal state.
     switch unsafeStatus {
@@ -310,6 +322,7 @@ public final class RequestReceipt {
     // Only overwrite when a size is supplied, so a value already recorded from a
     // response Resource advertisement survives conclusion.
     if let size { unsafeResponseSize = size }
+    unsafeMetadata = metadata
     unsafeResponseConcludedAt = Date()
     unsafeConcludedAt = Date()
     unsafeProgress = 1.0
@@ -629,33 +642,58 @@ extension Link {
     // response_resource_concluded (Link.py:890-904) which unpacks exactly that.
     // Resourcing the bare response value instead sends an un-enveloped payload: a Python
     // fetcher's `unpackb([request_id, response])` throws on it, which surfaces as a timeout.
-    if let native = entry.nativeHandler {
-      // Native (Python-compatible) handler: response embedded directly in envelope.
-      guard let responseValue = native(pathHash, rawValue, requestID, self, requestedAt) else {
-        return
-      }
-      let responseBody = MsgPack.encode(.array([.bytes(requestID), responseValue]))
-      if responseBody.count <= mdu {
-        try? send(responseBody, context: .response)
-      } else {
-        let rt = ResourceTransfer(link: self)
-        try? rt.send(
-          payload: responseBody, requestID: requestID, isResponse: true,
-          autoCompress: entry.autoCompress)
-      }
+    //
+    // The three handler kinds differ only in how they produce a response; what to do
+    // with one is decided once, in `emitResponse`.
+    let response: Destination.RequestResponse?
+    if let generator = entry.responseGenerator {
+      response = generator(pathHash, rawValue, requestID, self, requestedAt)
+    } else if let native = entry.nativeHandler {
+      response = native(pathHash, rawValue, requestID, self, requestedAt).map { .value($0) }
     } else {
       // Bytes handler: response wrapped as .bytes in the envelope.
-      guard let response = entry.handler(pathHash, payload, requestID, self, requestedAt) else {
-        return
+      response = entry.handler(pathHash, payload, requestID, self, requestedAt)
+        .map { .value(.bytes($0)) }
+    }
+    guard let response else { return }
+    emitResponse(response, requestID: requestID, autoCompress: entry.autoCompress)
+  }
+
+  /// Send one response, as a packet, an enveloped resource, or a file resource.
+  ///
+  /// Python: `Link.handle_request`'s tail (`Link.py:844-852`). A file response is the
+  /// one case that carries no `[request_id, response]` envelope—the request ID rides in
+  /// the resource advertisement instead.
+  private func emitResponse(
+    _ response: Destination.RequestResponse, requestID: Data,
+    autoCompress: Resource.AutoCompress
+  ) {
+    switch response {
+    case .file(let url, let metadata):
+      let packedMetadata = metadata.map { MsgPack.encode($0) }
+      let rt = ResourceTransfer(link: self)
+      do {
+        try rt.send(
+          file: url, metadata: packedMetadata, requestID: requestID, isResponse: true,
+          autoCompress: autoCompress)
+      } catch {
+        // Python lets the exception escape `handle_request`, which answers nothing and
+        // leaves the requester to time out. Answering with an empty body instead would
+        // read as success.
+        Reticulum.log(
+          "Could not send file response for \(url.lastPathComponent): \(error)",
+          level: .error)
       }
-      let responseBody = MsgPack.encode(.array([.bytes(requestID), .bytes(response)]))
+
+    case .value(let value):
+      let responseBody = MsgPack.encode(.array([.bytes(requestID), value]))
       if responseBody.count <= mdu {
         try? send(responseBody, context: .response)
       } else {
         let rt = ResourceTransfer(link: self)
         try? rt.send(
           payload: responseBody, requestID: requestID, isResponse: true,
-          autoCompress: entry.autoCompress)
+          autoCompress: autoCompress)
       }
     }
   }
