@@ -19,7 +19,8 @@ let package = Package(
         .executable(name: "rnid", targets: ["rnid"]),
         .executable(name: "rnx", targets: ["rnx"]),
         .executable(name: "rnir", targets: ["rnir"]),
-        .executable(name: "rnpkg", targets: ["rnpkg"])
+        .executable(name: "rnpkg", targets: ["rnpkg"]),
+        .executable(name: "rngcs", targets: ["rngcs"])
     ],
     dependencies: [
         // CryptoKit ships with Apple platforms; for portability we may add
@@ -173,6 +174,16 @@ let package = Package(
             name: "rnpkg",
             dependencies: ["ReticulumSwift"],
             path: "Sources/rnpkg",
+            linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedLibrary("c++abi"),
+                .linkedLibrary("z"),
+            ]
+        ),
+        .executableTarget(
+            name: "rngcs",
+            dependencies: ["ReticulumSwift"],
+            path: "Sources/rngcs",
             linkerSettings: [
                 .linkedLibrary("c++"),
                 .linkedLibrary("c++abi"),

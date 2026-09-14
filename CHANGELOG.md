@@ -40,6 +40,27 @@ segment's own share, and the metadata flag stays set on segments 2 and later thr
 `rncp` reports the advertised size, so a transfer now prints the same total the Python tool
 prints (`rncp.py:582`).
 
+### A tenth utility: `rngcs` signs git commits with a Reticulum identity
+
+`rngit` serves git repositories over Reticulum, and `rngcs` is the piece git itself runs.
+Named in `gpg.ssh.program`, it lets git sign a commit against a Reticulum identity rather
+than an SSH key (`Utilities/rngit/commitsigs.py`). All four operations git invokes are
+present: `sign`, `verify`, `find-principals` and `check-novalidate`.
+
+The signature is an `rsg`—the format `rnid` already produces—carried in the `signature` field
+of an ordinary `SSHSIG` envelope, so git stores and hands back a blob it understands while the
+trust decision stays Reticulum's. `SSHSignature` builds and reads that envelope;
+`GitCommitSignature` is the four operations over it.
+
+Validity alone does not make a commit signed: the author field has to be the signer's identity
+hash, or on a tag the tagger field, which is the convention `rngit` repositories are built on
+(`commitsigs.py:288-290`). A commit signed by someone other than its author is refused.
+
+Verified against the reference in both directions. A commit the Python `rngcs` signs verifies
+here and reports the same signer, one signed here verifies there, and the signed envelope is
+byte-identical across the two—only the Ed25519 signature differs, because CryptoKit randomises
+where the reference does not. A signature captured from Python 1.5.4 is pinned in the suite.
+
 ### A failed RNode bring-up redials instead of parking the interface
 
 RNS 1.5.3 hardened the BLE arm of the RNode bring-up: a detect timeout now forces the link
@@ -70,7 +91,7 @@ The rest of the release is already present or does not apply:
 - `_get_windows_paired_ble_addresses`, which is WinRT and has no Apple-platform
   equivalent.
 
-`Reticulum.rnsProtocolVersion` stays at 1.5.2 until the `rngit` utility lands, which is the
+`Reticulum.rnsProtocolVersion` stays at 1.5.2 until the rest of `rngit` lands, which is the
 remainder of 1.5.3.
 
 ## [1.20.0]—Interface discovery publishes, and path requests batch
