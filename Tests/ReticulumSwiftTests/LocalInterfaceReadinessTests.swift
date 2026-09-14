@@ -43,13 +43,12 @@ final class LocalInterfaceReadinessTests: XCTestCase {
     super.tearDown()
   }
 
-  private func freePort() -> UInt16 { UInt16.random(in: 41_000...48_000) }
-
   /// Stand up a shared-instance server on a throwaway port, retrying a couple
-  /// of times in case the random port is already taken by something else.
+  /// of times in case something takes the port between choosing it and binding it.
   private func startServer() throws -> PosixTCPServer {
     for _ in 0..<8 {
-      let server = PosixTCPServer(name: "Shared Instance", port: freePort())
+      guard let port = try? freeLoopbackPort() else { continue }
+      let server = PosixTCPServer(name: "Shared Instance", port: port)
       do {
         try server.start()
         servers.append(server)
@@ -97,8 +96,13 @@ final class LocalInterfaceReadinessTests: XCTestCase {
   /// Python raises out of `connect()` when the shared instance isn't there;
   /// `InstanceConnection.attach` already documents that outcome as
   /// `couldNotConnect`, which was unreachable while `start()` couldn't fail.
+  ///
+  /// The port has to be one nothing answers on, so it comes from
+  /// ``freeLoopbackPort(attempts:nextCandidate:file:line:)``, which proves that before
+  /// handing it over. A random pick out of a range made the assertion depend on what else
+  /// the machine happened to be running.
   func testStartThrowsWhenNothingIsListening() throws {
-    let client = makeClient(port: freePort())
+    let client = makeClient(port: try freeLoopbackPort())
     client.connectTimeout = 1
     XCTAssertThrowsError(try client.start()) { error in
       guard case LocalInterface.ConnectionError.couldNotConnect = error else {
@@ -111,7 +115,7 @@ final class LocalInterfaceReadinessTests: XCTestCase {
   /// A failed initial connect must not leave a reconnect timer running: Python
   /// raises out of the constructor and the interface is discarded.
   func testFailedStartLeavesNothingRunning() throws {
-    let client = makeClient(port: freePort())
+    let client = makeClient(port: try freeLoopbackPort())
     client.connectTimeout = 1
     client.reconnectWait = 0.1
     XCTAssertThrowsError(try client.start())
