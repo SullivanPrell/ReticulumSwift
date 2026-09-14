@@ -28,6 +28,34 @@ final class StorageInventoryTests: XCTestCase {
     ".config/reticulum",
   ]
 
+  /// The literal half of every `rngit` scratch name.
+  ///
+  /// `RNGitTemporaryDirectories` and `RNGitPushHandler` each build one `<root>/rngit-<uuid>`
+  /// under the system temporary directory and remove it again. `StorageInventory` declares what
+  /// lives inside a Reticulum configuration directory, and `url(_:in:)` resolves an entry against
+  /// that directory, so a path outside it has no entry to be.
+  private static let temporaryScratchNames: Set<String> = [
+    "rngit-"
+  ]
+
+  /// Names inside an `rngit` repository group, which is a directory the operator chooses.
+  ///
+  /// A group's path is whatever the node configuration's `repositories` section gives it
+  /// (`server.py:2246`), so these sit outside the Reticulum configuration directory as well.
+  private static let rngitRepositoryComponents: Set<String> = [
+    "HEAD",
+    "META",
+    "THANKS",
+    "active",
+    "artifacts",
+    "completed",
+    "fetch.bundle",
+    "latest",
+    "latest.tmp",
+    "push.bundle",
+    "root",
+  ]
+
   // MARK: - The guard
 
   func testEveryPersistedPathIsDeclared() throws {
@@ -37,19 +65,23 @@ final class StorageInventoryTests: XCTestCase {
     for site in try Self.pathComponentLiterals() {
       if declared.contains(site.literal) { continue }
       if Self.configDirectoryDiscovery.contains(site.literal) { continue }
+      if Self.temporaryScratchNames.contains(site.literal) { continue }
+      if Self.rngitRepositoryComponents.contains(site.literal) { continue }
       undeclared.append("  \(site.file):\(site.line) — \"\(site.literal)\"")
     }
 
     XCTAssertTrue(
       undeclared.isEmpty,
       """
-      \(undeclared.count) site(s) name a config-directory path that \
+      \(undeclared.count) site(s) name a path component that \
       `StorageInventory` does not declare:
       \(undeclared.joined(separator: "\n"))
       A persisted path composed at its call site cannot be compared against the \
       reference's, which is how all four files in bugs/029 diverged unnoticed. \
       Declare it in StorageInventory — with the Python file:line it mirrors, or \
-      an explicit reason if it is port-only — and resolve it from there.
+      an explicit reason if it is port-only — and resolve it from there. A path \
+      outside the configuration directory has no entry to be, and belongs in one \
+      of the exemption sets above with its reason stated.
       """)
   }
 
@@ -186,7 +218,12 @@ final class StorageInventoryTests: XCTestCase {
     let literal: String
   }
 
-  /// Every `appendingPathComponent("literal")` in production sources, outside comments.
+  /// Every path component a literal names in production sources, outside comments.
+  ///
+  /// Two forms name one: `appendingPathComponent("literal")`, and a `"/literal"` concatenated
+  /// onto a path. The second form is read because a whole subsystem can use it alone—no file
+  /// under `Utilities/RNGit` calls `appendingPathComponent` with a literal at all—and a scan that
+  /// reads only the first reports a clean tree it never looked at.
   ///
   /// Interpolated components are skipped: they name per-invocation temporaries (`rnid-<uuid>.tmp`)
   /// rather than a persisted path, and there is nothing stable to declare.
@@ -214,6 +251,13 @@ final class StorageInventoryTests: XCTestCase {
               line: index + 1,
               literal: literal))
         }
+        for component in Self.components(concatenatedIn: code) {
+          sites.append(
+            Site(
+              file: url.lastPathComponent,
+              line: index + 1,
+              literal: component))
+        }
       }
     }
     return sites
@@ -231,5 +275,37 @@ final class StorageInventoryTests: XCTestCase {
       search = search[closing...]
     }
     return found
+  }
+
+  /// Extract the component each `"/…"` concatenated onto a path on one line names.
+  private static func components(concatenatedIn code: String) -> [String] {
+    var found: [String] = []
+    var index = code.startIndex
+    while let open = code[index...].firstIndex(of: "\"") {
+      let afterQuote = code.index(after: open)
+      guard let closing = code[afterQuote...].firstIndex(of: "\"") else { break }
+      if code[..<open].last(where: { !$0.isWhitespace }) == "+",
+        let component = Self.component(named: code[afterQuote..<closing])
+      {
+        found.append(component)
+      }
+      index = code.index(after: closing)
+    }
+    return found
+  }
+
+  /// The component `literal` names, or `nil` where it names none.
+  ///
+  /// One leading separator and one run of path characters: a bare `"/"` joins two values the scan
+  /// cannot read and names nothing, and a literal carrying anything else is prose.
+  private static func component(named literal: Substring) -> String? {
+    guard literal.hasPrefix("/") else { return nil }
+    var name = literal.dropFirst()
+    if name.hasSuffix("/") { name = name.dropLast() }
+    guard !name.isEmpty else { return nil }
+    let named = name.allSatisfy {
+      $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-")
+    }
+    return named ? String(name) : nil
   }
 }

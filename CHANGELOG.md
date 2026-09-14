@@ -5,6 +5,20 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The storage-inventory guard reads paths built by concatenation
+
+`StorageInventoryTests` holds the claim that every persisted path is declared in
+`StorageInventory` rather than composed at a call site. Its scan matched one form,
+`appendingPathComponent("literal")`, so a path built as `base + "/name"` was invisible to it.
+No file under `Utilities/RNGit` calls `appendingPathComponent` with a literal at all, so the
+whole subsystem passed a guard that never looked at it.
+
+The scan now reads both forms. Thirty-three sites across the `rngit` node surface, and the two
+`<root>/rngit-<uuid>` scratch directories, are outside a Reticulum configuration directory—an
+`rngit` repository group is wherever the node configuration's `repositories` section puts it
+(`server.py:2246`)—so they are exempted by name, in two sets stating why, alongside the
+existing exemption for the components that find the configuration directory itself.
+
 ### The `rngit` node: eleven request handlers, its permission model, and its stores
 
 `rngit` serves git repositories over Reticulum. The node half of it is now ported from
