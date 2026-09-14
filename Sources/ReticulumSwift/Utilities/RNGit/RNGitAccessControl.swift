@@ -412,29 +412,49 @@ public struct RNGitAccessControl: Sendable {
 
 extension Data {
 
+  /// What reading a hexadecimal string came to.
+  public enum PythonHex: Equatable, Sendable {
+
+    /// The bytes the string names.
+    case bytes(Data)
+
+    /// The offset reading stopped at, where the string names no bytes.
+    case stopped(at: Int)
+  }
+
   /// The bytes a hexadecimal string names, or `nil` if it names none.
   ///
   /// Refuses any character that is not a hexadecimal digit, as well as an odd number of digits.
   /// ASCII whitespace is skipped, but only between complete byte pairs: `"aa bb"` is two bytes
   /// where `"a abb"` is an error.
   public init?(pythonHex text: String) {
+    guard case .bytes(let bytes) = Data.reading(pythonHex: text) else { return nil }
+    self = bytes
+  }
+
+  /// The bytes `text` names, or where reading them stopped.
+  ///
+  /// Reading stops where a character that is neither a hexadecimal digit nor skipped whitespace
+  /// stands, where whitespace stands part-way through a byte, and at the end of a string that
+  /// ends part-way through one.
+  public static func reading(pythonHex text: String) -> PythonHex {
     var digits: [UInt8] = []
-    for scalar in text.unicodeScalars {
+    for (offset, scalar) in text.unicodeScalars.enumerated() {
       switch scalar {
       case " ", "\t", "\n", "\r", "\u{0B}", "\u{0C}":
-        guard digits.count % 2 == 0 else { return nil }
+        guard digits.count % 2 == 0 else { return .stopped(at: offset) }
       case "0"..."9": digits.append(UInt8(scalar.value - 0x30))
       case "a"..."f": digits.append(UInt8(scalar.value - 0x61 + 10))
       case "A"..."F": digits.append(UInt8(scalar.value - 0x41 + 10))
-      default: return nil
+      default: return .stopped(at: offset)
       }
     }
 
-    guard digits.count % 2 == 0 else { return nil }
+    guard digits.count % 2 == 0 else { return .stopped(at: text.unicodeScalars.count) }
     var bytes = Data(capacity: digits.count / 2)
     for index in stride(from: 0, to: digits.count, by: 2) {
       bytes.append(digits[index] << 4 | digits[index + 1])
     }
-    self = bytes
+    return .bytes(bytes)
   }
 }
