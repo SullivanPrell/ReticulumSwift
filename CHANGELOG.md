@@ -5,6 +5,62 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Writing a page into its template
+
+`RNGitPageTemplates` carries the fifteen templates a node ships and the base every page is
+written into. A template of the same name standing in the node's template directory is taken
+instead, and one the system can execute is run and what it printed taken; trailing whitespace is
+dropped either way, and a directory is not a template. A name the node neither ships nor finds a
+file for leaves the page as it stands, and a page asked for under no name at all is written into
+the base on its own.
+
+The base carries the node's name, the version, the navigation and the page, and says how long the
+page took to make or that it does not know. The time is written as a fraction (`12.0s`, not `12s`),
+because Python's `prettytime` prints whichever its argument's type calls for and the time
+a page took is always a float.
+
+### Counting thanks
+
+`RNGitPageThanks` counts what a repository and a release have been thanked for, in
+`<repository>.thanks` and `<release>/THANKS` as msgpack. The last 256 additions are held, keyed
+by the reader and the path together, so thanking the same thing twice is counted once. One
+addition past that forgets the first.
+
+Thanking something that has never been thanked answers zero and writes one. The count reaches
+the reader on the next read. A file that does not read as msgpack, or reads as msgpack carrying
+no count, answers zero without writing.
+
+### Charts
+
+Three renderers. A half-block chart draws two rows to the character, each bar shaded along a
+gradient from a dark end to the colour it is given, the dark end being 42% of that colour where
+the caller names none, and the gradient run 1.3 times its height so a bar reaches full colour
+before its top. A full-block chart draws one row to the character and picks one of four shades by
+how far up the bar the row stands. A combined chart stacks pushes, fetches, views and downloads
+in that order, each point's four counts taking the fraction of the character they are worth.
+
+Nothing to draw is drawn as `No data available`. Labels are cut to twelve characters, the first
+padded left and the last padded right, and the axis is two characters wider than the points it
+carries.
+
+The single-half branches of the combined chart are unreachable: the four category ranges tile
+the character with no gap between them, so a half that resolves to nothing is a half whose
+character is empty. Measured over 20,000 random stacks against the reference's own resolver:
+147,383 characters with both halves resolved, none with one.
+
+### What a reader may see
+
+`RNGitPageAccess` resolves a reader who has not identified against a standing identity recovered
+from a key of nothing but zeroes, which no grant names, so a page can be asked for without
+identifying. Groups a reader may read carry only the repositories that reader may read, and a
+group holding none of them is not among them.
+
+Behavior is pinned by 67 tests recorded from Python RNS 1.5.4. An 85-mutant sweep leaves three
+survivors, each of which is the same program: both single-half branches of the combined chart, as
+measured above; refusing a template that is a directory, because a directory is executable and
+running one answers nothing either way; and substituting a group for one the node does not hold,
+because the grant resolver refuses a group name it does not hold before reading anything from it.
+
 ### Reading a repository for a page
 
 `RNGitRepositoryReader` runs `git` and answers what a page needs from it: what the repository
