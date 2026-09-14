@@ -5,6 +5,20 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The storage-inventory guard reads paths built by concatenation
+
+`StorageInventoryTests` holds the claim that every persisted path is declared in
+`StorageInventory` rather than composed at a call site. Its scan matched one form,
+`appendingPathComponent("literal")`, so a path built as `base + "/name"` was invisible to it.
+No file under `Utilities/RNGit` calls `appendingPathComponent` with a literal at all, so the
+whole subsystem passed a guard that never looked at it.
+
+The scan now reads both forms. Thirty-three sites across the `rngit` node surface, and the two
+`<root>/rngit-<uuid>` scratch directories, are outside a Reticulum configuration directory—an
+`rngit` repository group is wherever the node configuration's `repositories` section puts it
+(`server.py:2246`)—so they are exempted by name, in two sets stating why, alongside the
+existing exemption for the components that find the configuration directory itself.
+
 ### The `rngit` node: eleven request handlers, its permission model, and its stores
 
 `rngit` serves git repositories over Reticulum. The node half of it is now ported from
@@ -31,10 +45,66 @@ The page-rendering primitives a node serves Nomad Network with are here as well:
 `GitReferenceNames`, `DisplayWidth`, `MarkdownToMicron` and `SyntaxHighlighter`.
 
 Behaviour is pinned by vectors recorded from Python RNS 1.5.4, run against the reference's
-own routines rather than written by hand. 3,887 tests, 0 failures.
+own routines rather than written by hand. 3,937 tests, 0 failures.
 
 The `rngit` command line and `git-remote-rns` are not here yet, so
 `Reticulum.rnsProtocolVersion` stays at 1.5.2.
+
+### Request handlers can answer with a file, and responses carry metadata
+
+RNS 0.9.6 (`594f5fba`) let a response generator return `(file_handle, metadata)`: the file is
+sent as a resource whose payload is its raw bytes, the metadata rides in the resource's
+metadata block, and the requester reads it off `RequestReceipt.metadata`
+(`Link.py:836-846`, `902-903`, `1437-1441`). None of it was ported. `rngit` serves a git
+bundle this way, with the fetch result code in the metadata
+(`Utilities/rngit/server.py:3001`), so the whole fetch path depended on it.
+
+`Destination.registerResponseGenerator` registers a handler returning
+`Destination.RequestResponse`, either a `.value` or a `.file`. A file response is streamed
+from disk one segment at a time rather than read whole into memory, matching the reference's
+per-segment seek (`Resource.py:307-322`). On the receiving side a resource that carries
+metadata is delivered as a file response: its payload has no `[request_id, response]`
+envelope, because the request ID rode in the advertisement.
+
+`auto_compress` is polymorphic in the reference—a flag, or an integer byte ceiling
+(`Resource.py:372-376`)—and is now `Resource.AutoCompress` here, accepting both literal forms.
+
+### A resource's advertised size counts its metadata
+
+The reference advertises `total_size = data_size + metadata_size` (`Resource.py:297`) and
+gives segment 1 that much less room for data
+(`first_read_size = MAX_EFFICIENT_SIZE - metadata_size`, `Resource.py:311`). This port counted
+neither: a resource carrying metadata advertised a short size and split on boundaries the
+reference does not use. Both ends of a Swift-to-Swift transfer agreed on the same wrong
+boundaries, so it round-tripped and the divergence stayed invisible.
+
+`data_size` is also the whole resource's size on every segment of a split transfer, not the
+segment's own share, and the metadata flag stays set on segments 2 and later through
+`sent_metadata_size` (`Resource.py:259-272`, `791-792`).
+
+`rncp` reports the advertised size, so a transfer now prints the same total the Python tool
+prints (`rncp.py:582`).
+
+### A tenth utility: `rngcs` signs git commits with a Reticulum identity
+
+`rngit` serves git repositories over Reticulum, and `rngcs` is the piece git itself runs.
+Named in `gpg.ssh.program`, it lets git sign a commit against a Reticulum identity rather
+than an SSH key (`Utilities/rngit/commitsigs.py`). All four operations git invokes are
+present: `sign`, `verify`, `find-principals` and `check-novalidate`.
+
+The signature is an `rsg`—the format `rnid` already produces—carried in the `signature` field
+of an ordinary `SSHSIG` envelope, so git stores and hands back a blob it understands while the
+trust decision stays Reticulum's. `SSHSignature` builds and reads that envelope;
+`GitCommitSignature` is the four operations over it.
+
+Validity alone does not make a commit signed: the author field has to be the signer's identity
+hash, or on a tag the tagger field, which is the convention `rngit` repositories are built on
+(`commitsigs.py:288-290`). A commit signed by someone other than its author is refused.
+
+Verified against the reference in both directions. A commit the Python `rngcs` signs verifies
+here and reports the same signer, one signed here verifies there, and the signed envelope is
+byte-identical across the two—only the Ed25519 signature differs, because CryptoKit randomises
+where the reference does not. A signature captured from Python 1.5.4 is pinned in the suite.
 
 ### A failed RNode bring-up redials instead of parking the interface
 
@@ -66,7 +136,7 @@ The rest of the release is already present or does not apply:
 - `_get_windows_paired_ble_addresses`, which is WinRT and has no Apple-platform
   equivalent.
 
-`Reticulum.rnsProtocolVersion` stays at 1.5.2 until the `rngit` utility lands, which is the
+`Reticulum.rnsProtocolVersion` stays at 1.5.2 until the rest of `rngit` lands, which is the
 remainder of 1.5.3.
 
 ## [1.20.0]—Interface discovery publishes, and path requests batch

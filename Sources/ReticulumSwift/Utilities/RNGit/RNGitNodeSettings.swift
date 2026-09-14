@@ -108,6 +108,7 @@ public struct RNGitNodeSettings: Equatable, Sendable {
         !hash.isEmpty
       else { continue }
       guard !Self.reservedNames.contains(alias) else { continue }
+      guard identityAliases[alias] == nil else { continue }
       identityAliases[alias] = hash.map { String(format: "%02x", $0) }.joined()
     }
   }
