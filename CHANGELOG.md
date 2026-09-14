@@ -5,6 +5,39 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### `git-remote-rns`
+
+The remote helper git runs for an `rns://` remote, ported from
+`RNS/Utilities/rngit/client.py`. It reads git's commands on standard input and answers on
+standard output: `capabilities` names what it supports, `list` reads the node's refs, `fetch`
+asks the node for a bundle carrying the objects a ref needs and hands it to `git bundle
+unbundle`, and `push` builds a bundle of what the node does not hold and sends it. A batch ends
+at a blank line, and `fetch` and `push` clear each other's queue, so one batch carries only one
+of the two.
+
+A URL names a destination, a group and a repository as `rns://<hash>/<group>/<repo>`, where the
+destination may be a name the configuration file aliases. Everything past the group is the
+repository, so a repository name may carry slashes.
+
+A push whose ref reaches nothing the node lacks builds no bundle, and the helper asks the node
+to move the ref instead. A push git cannot be told about any other way is answered with `error
+<ref> "<reason>"`, quoted the way git reads a quoted string: every scalar outside printable
+ASCII is written as its hexadecimal.
+
+The link comes down when git stops sending commands, and when the helper stops on a failure it
+reports. A command carrying fewer words than the command it names leaves the link standing,
+which is what the reference does.
+
+The helper reads `ref_batch_size` out of the `[client]` section of its configuration file. An
+`rngit` client reads the same file and passes that section over, so the two read it through
+separate types.
+
+Behavior is pinned by 96 runs, 20 URLs, 13 configurations, and 17 quoted values recorded from
+Python RNS 1.5.4. An 84-mutant sweep over the helper leaves two survivors, neither of which can
+change what the helper writes: `fetch` and `push` swapped where a batch ends, which is a no-op
+because each clears the other's queue, and a strip applied a second time. 3,970 tests, 0
+failures.
+
 ### The `rngit` client keeps work documents
 
 The work-document commands are the client half of a repository's proposal and review flow,

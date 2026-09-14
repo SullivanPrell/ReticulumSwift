@@ -12,9 +12,9 @@ import Foundation
 
 /// How a client says what a transfer still arriving has done so far.
 ///
-/// The first report starts the clock rather than going out itself, and a report goes out no
-/// more often than once every half second after that, so a transfer over inside half a second
-/// says nothing. Speed is what arrived since the last report, over the time it took.
+/// The first report starts the clock rather than going out itself, and a report goes out no more
+/// often than once every `interval` after that, so a transfer over inside one says nothing. Speed
+/// is what arrived since the last report, over the time it took.
 struct RNGitTransferReporting {
 
   /// What the client calls the transfer.
@@ -23,6 +23,9 @@ struct RNGitTransferReporting {
   /// What every report is written behind.
   let indent: String
 
+  /// How long the client waits between reports.
+  let interval: TimeInterval
+
   /// How far along the last report was.
   private var previous: Double = 0
 
@@ -30,9 +33,12 @@ struct RNGitTransferReporting {
   private var updated: TimeInterval?
 
   /// Creates a reporting of a transfer the client calls `label`, written behind `indent`.
-  init(label: String, indent: String) {
+  ///
+  /// A transfer the client calls nothing is written with no name at all.
+  init(label: String, indent: String, interval: TimeInterval = 0.5) {
     self.label = label
     self.indent = indent
+    self.interval = interval
   }
 
   /// Writes what `progress` says to `output`, where a report is due at `instant`.
@@ -43,7 +49,7 @@ struct RNGitTransferReporting {
       updated = instant
       return
     }
-    guard instant > last + 0.5 else { return }
+    guard instant > last + interval else { return }
 
     let elapsed = instant - last
     let size = progress.size ?? 0
@@ -56,7 +62,7 @@ struct RNGitTransferReporting {
     let percent = NetworkProbe.pythonFloatString(
       NetworkProbe.pythonRound(progress.fraction * 100, 1))
     output.write(
-      indent + "Transferring \(label): \(percent)% ("
+      indent + "Transferring" + (label.isEmpty ? "" : " " + label) + ": \(percent)% ("
         + RNSUtilities.prettysize(Double(size) * progress.fraction) + "/"
         + RNSUtilities.prettysize(size) + ") " + RNSUtilities.prettyspeed(speed)
         + String(repeating: " ", count: 10) + "\r")
