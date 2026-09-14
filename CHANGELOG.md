@@ -5,6 +5,23 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### A test that needs a free port proves the port is free
+
+`LocalInterfaceReadinessTests` picked a throwaway port at random out of a fixed range and
+asserted that connecting to it fails. Nothing checked the pick, so a collision with any
+listener on the machine made the connect succeed and the test report `XCTAssertThrowsError
+failed: did not throw an error`, a failure about the host rather than about the interface.
+Six consecutive full-suite runs on one tree scored 0, 5, 0, 2, 0, 0 failures, and both
+failing runs were that test.
+
+`freeLoopbackPort()` asks the kernel for a port instead. It binds to port 0, reads back what
+the kernel assigned, and then proves that port: a candidate comes back only once a connect to
+it draws a reset. A port something listens on is rejected, and so is one a socket holds without
+listening—macOS drops the segment there rather than resetting it, so a connect hangs until its
+own timeout instead of failing fast, which turns a wrong answer into a slow one. Running out of
+candidates skips the test rather than handing back a port in use. The fixture is shared, so the
+other suites that take a throwaway port can move onto it.
+
 ### `git-remote-rns`
 
 The remote helper git runs for an `rns://` remote, ported from
