@@ -12,16 +12,14 @@ import Foundation
 
 /// The checks an `rngit` node applies to reference names and object ids a client sends.
 ///
-/// Python: `san_ref`, `san_refs` and `san_sha` (`Utilities/rngit/util.py:36-77`). These
-/// guard what reaches `git` on the serving side, so a name that fails is rejected rather
-/// than corrected.
+/// These guard what reaches `git` on the serving side, so a name that fails is rejected rather than
+/// corrected.
 public enum GitReferenceNames {
 
   /// The lowest code point a reference may contain.
   ///
-  /// Python: `if not all(ord(c) >= 40 for c in ref)` (`util.py:52`). The bound is 40, the
-  /// code point of `(`, so it refuses the control characters and also every punctuation
-  /// mark below it.
+  /// The bound is the code point of `(`, so it refuses the control characters and also every
+  /// punctuation mark below it.
   private static let lowestAllowedScalar: UInt32 = 40
 
   /// Returns `ref` when it is a usable reference name, and `nil` otherwise.
@@ -50,16 +48,14 @@ public enum GitReferenceNames {
     if ref.contains("*") { return nil }
     if ref.contains("[") { return nil }
     if ref.contains("@{") { return nil }
-    // Unreachable: a bare `@` carries no `/` and is already refused above. Kept because
-    // the reference carries it (`util.py:61`).
+    // Unreachable: a bare `@` carries no `/` and is already refused above. Kept so the
+    // refused set reads in full.
     if ref == "@" { return nil }
 
     return ref
   }
 
   /// Returns `refs` when every entry is a usable reference name, and `nil` otherwise.
-  ///
-  /// Python: `san_refs` (`util.py:65-71`).
   public static func sanitise(_ refs: [String]) -> [String]? {
     for ref in refs where sanitise(ref) == nil { return nil }
     return refs
@@ -67,7 +63,7 @@ public enum GitReferenceNames {
 
   /// Returns `sha` when it is a full-length hex object id, and `nil` otherwise.
   ///
-  /// Python: `san_sha` (`util.py:74-78`), a length floor and then `bytes.fromhex`.
+  /// A length floor, and then a reading of the hexadecimal.
   ///
   /// The floor counts code points, as `len` does; `String.count` would count `\r\n` once.
   public static func sanitiseObjectID(_ sha: String) -> String? {

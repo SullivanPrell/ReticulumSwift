@@ -14,9 +14,8 @@ import XCTest
 
 /// The reference and object-id checks an `rngit` node applies to a client's request.
 ///
-/// Python: `san_ref`, `san_refs` and `san_sha` (`Utilities/rngit/util.py:36-77`). A name
-/// that fails is not corrected, it is rejected, because these guard what reaches `git` on
-/// the serving side.
+/// A name that fails is not corrected, it is rejected, because these guard what reaches
+/// `git` on the serving side.
 final class GitReferenceNameTests: XCTestCase {
 
   /// An ordinary reference passes.
@@ -26,8 +25,6 @@ final class GitReferenceNameTests: XCTestCase {
   }
 
   /// A reference must contain a separator and must not be shaped like an option or a path.
-  ///
-  /// Python: `util.py:37-47`.
   func testShapeRulesAreEnforced() {
     for rejected in [
       "-refs/heads/main", "/refs/heads/main", "refs/heads/", "refs/heads/main.",
@@ -39,8 +36,6 @@ final class GitReferenceNameTests: XCTestCase {
   }
 
   /// A component ending in `.lock` is refused, because that is git's own lock suffix.
-  ///
-  /// Python: `util.py:49-50`.
   func testLockComponentIsRefused() {
     XCTAssertNil(GitReferenceNames.sanitise("refs/heads/main.lock"))
     XCTAssertNil(GitReferenceNames.sanitise("refs/main.lock/x"))
@@ -49,9 +44,8 @@ final class GitReferenceNameTests: XCTestCase {
 
   /// The lower bound is code point 40, not the control range the comment names.
   ///
-  /// Python: `if not all(ord(c) >= 40 for c in ref): return None` (`util.py:52`). `(` is
-  /// 40 and passes; every punctuation mark below it, `'` and `&` and `!` among them, is
-  /// refused along with the control characters.
+  /// `(` is 40 and passes; every punctuation mark below it, `'` and `&` and `!` among them,
+  /// is refused along with the control characters.
   func testTheLowerBoundIsFortyNotThirtyTwo() {
     XCTAssertEqual(GitReferenceNames.sanitise("refs/heads/(x)"), "refs/heads/(x)")
     for rejected in ["refs/heads/it's", "refs/heads/a&b", "refs/heads/a!b", "refs/heads/a\u{01}b"] {
@@ -60,8 +54,6 @@ final class GitReferenceNameTests: XCTestCase {
   }
 
   /// The characters git itself reserves in a reference name are refused.
-  ///
-  /// Python: `util.py:53-61`.
   func testGitReservedCharactersAreRefused() {
     for rejected in [
       "refs/heads/\u{7F}", "refs/heads/a~b", "refs/heads/a^b", "refs/heads/a:b",
@@ -72,8 +64,6 @@ final class GitReferenceNameTests: XCTestCase {
   }
 
   /// A list passes only when every entry does.
-  ///
-  /// Python: `san_refs` (`util.py:65-71`).
   func testAListIsAcceptedOnlyWhole() {
     XCTAssertEqual(
       GitReferenceNames.sanitise(["refs/heads/main", "refs/tags/v1"]),
@@ -84,7 +74,7 @@ final class GitReferenceNameTests: XCTestCase {
 
   /// An object id is 40 hex characters or more, and nothing else.
   ///
-  /// Python: `san_sha` (`util.py:74-78`), which checks the length and then `bytes.fromhex`.
+  /// The length is checked, and then the hexadecimal is read.
   func testObjectIdMustBeHexAndFullLength() {
     let sha = String(repeating: "a", count: 40)
     XCTAssertEqual(GitReferenceNames.sanitiseObjectID(sha), sha)

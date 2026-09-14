@@ -5,6 +5,37 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The `rngit` node: eleven request handlers, its permission model, and its stores
+
+`rngit` serves git repositories over Reticulum. The node half of it is now ported from
+`RNS/Utilities/rngit/server.py`, as the library types a node is built from.
+
+Every request path the reference registers is answered: `/git/list`, `/git/fetch`,
+`/git/push`, `/git/create`, `/git/fork`, `/git/mirror`, `/git/sync`, `/git/delete`,
+`/mgmt/release`, `/mgmt/work` and `/mgmt/perms`. `RNGitCloneHandler` answers the fork and
+mirror paths, which the reference routes into one routine, and it is the only handler that
+reads the link a request arrived over, because it builds the repository in a directory
+belonging to that link.
+
+`RNGitAccessControl` is the permission model: nine permissions over three targets, resolved
+at repository level with a fallback to the group, and separately at group level, where the
+blocklist does not apply. `RNGitPermissionSet` reads the `allowed` file beside a group or a
+repository, which may be a program the node runs rather than a file it reads.
+
+Four stores carry what the handlers read and write: `RNGitRepositoryStore` for the groups
+and repositories, `RNGitWorkStore` for the work documents, `RNGitReleaseStore` for the
+releases, and `RNGitStatsStore` for the counts a node keeps. `RNGitConfigFile` parses the
+node configuration and `RNGitNodeSettings` reads every section of it.
+
+The page-rendering primitives a node serves Nomad Network with are here as well:
+`GitReferenceNames`, `DisplayWidth`, `MarkdownToMicron` and `SyntaxHighlighter`.
+
+Behaviour is pinned by vectors recorded from Python RNS 1.5.4, run against the reference's
+own routines rather than written by hand. 3,937 tests, 0 failures.
+
+The `rngit` command line and `git-remote-rns` are not here yet, so
+`Reticulum.rnsProtocolVersion` stays at 1.5.2.
+
 ### Request handlers can answer with a file, and responses carry metadata
 
 RNS 0.9.6 (`594f5fba`) let a response generator return `(file_handle, metadata)`: the file is

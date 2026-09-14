@@ -38,8 +38,8 @@ struct MicronPattern {
   private let regex: NSRegularExpression
 
   init(_ pattern: String) {
-    // The patterns are compile-time constants from the reference, so a failure here is a
-    // transcription error rather than anything a caller can cause.
+    // The patterns are compile-time constants, so a failure here is a transcription error
+    // rather than anything a caller can cause.
     guard
       let compiled = try? NSRegularExpression(
         pattern: pattern, options: [.useUnixLineSeparators])
@@ -49,7 +49,7 @@ struct MicronPattern {
 
   /// The capture groups of the match anchored at the start of `text`, or `nil`.
   ///
-  /// Python: `re.match`, which anchors at the start but not the end.
+  /// Anchors at the start but not the end.
   func match(_ text: String) -> [String?]? {
     let subject = text as NSString
     guard
@@ -62,9 +62,21 @@ struct MicronPattern {
   /// Whether a match anchored at the start of `text` exists.
   func matches(_ text: String) -> Bool { match(text) != nil }
 
+  /// The first capture group of every match in `text`, in order.
+  ///
+  /// The pattern holds exactly one group.
+  func firstGroups(in text: String) -> [String?] {
+    let subject = text as NSString
+    return regex.matches(in: text, range: NSRange(location: 0, length: subject.length))
+      .map { match in
+        let range = match.range(at: 1)
+        return range.location == NSNotFound ? nil : subject.substring(with: range)
+      }
+  }
+
   /// Returns `text` with every match replaced by what `transform` returns for it.
   ///
-  /// Python: `re.sub` with a function, which takes the replacement literally.
+  /// The replacement is taken literally.
   func replacingMatches(in text: String, with transform: ([String?]) -> String) -> String {
     let subject = text as NSString
     let found = regex.matches(
@@ -98,9 +110,42 @@ struct MicronPattern {
 
 extension String {
 
+  /// The characters Python treats as a line boundary, which ICU's `\R` does not match.
+  private static let lineBoundaries: Set<UInt32> = [
+    0x0A, 0x0B, 0x0C, 0x0D, 0x1C, 0x1D, 0x1E, 0x85, 0x2028, 0x2029,
+  ]
+
+  /// This string split at every line boundary, with no empty line after a trailing one.
+  ///
+  /// The boundary set holds seven characters `components(separatedBy:)` would keep, and a carriage
+  /// return and line feed together are one boundary.
+  var pythonLines: [String] {
+    let scalars = Array(unicodeScalars)
+    var lines: [String] = []
+    var current = String.UnicodeScalarView()
+    var index = 0
+
+    while index < scalars.count {
+      let scalar = scalars[index]
+      if Self.lineBoundaries.contains(scalar.value) {
+        lines.append(String(current))
+        current = String.UnicodeScalarView()
+        if scalar.value == 0x0D, index + 1 < scalars.count, scalars[index + 1].value == 0x0A {
+          index += 1
+        }
+      } else {
+        current.append(scalar)
+      }
+      index += 1
+    }
+
+    if !current.isEmpty { lines.append(String(current)) }
+    return lines
+  }
+
   /// This string without leading or trailing Python whitespace.
   ///
-  /// Python: `str.strip`, whose set is the one ``MicronPattern/whitespace`` spells out.
+  /// The set is the one ``MicronPattern/whitespace`` spells out.
   var trimmedForMicron: String {
     let scalars = Array(unicodeScalars)
     var start = 0

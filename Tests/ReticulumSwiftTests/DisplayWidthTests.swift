@@ -75,8 +75,6 @@ final class DisplayWidthTests: XCTestCase {
   }
 
   /// An unmeasurable string falls back to its code-point count.
-  ///
-  /// Python: `return w if w is not None and w >= 0 else len(text)` (`util.py:156`).
   func testUnmeasurableStringsFallBackToLength() {
     XCTAssertEqual(DisplayWidth.cells(of: "a\u{9}b"), -1)
     XCTAssertEqual(DisplayWidth.display(of: "a\u{9}b"), 3)

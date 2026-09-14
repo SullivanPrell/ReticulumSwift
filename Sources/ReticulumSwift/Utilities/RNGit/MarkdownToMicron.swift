@@ -12,9 +12,7 @@ import Foundation
 
 /// Colours a fenced code block for ``MarkdownToMicron``.
 ///
-/// Python: the `syntax_highlighter` an `rngit` page node hands the converter
-/// (`pages.py:163`). A throw takes the converter's literal-block fallback, matching the
-/// bare `except` at `util.py:216`.
+/// A throw takes the converter's literal-block fallback.
 public protocol MicronSyntaxHighlighting {
 
   /// Returns `code` marked up in Micron, for `language`.
@@ -23,10 +21,9 @@ public protocol MicronSyntaxHighlighting {
 
 /// Renders markdown as Micron, the markup a NomadNet browser displays.
 ///
-/// Python: `MarkdownToMicron` (`Utilities/rngit/util.py:79-811`). An `rngit` page node
-/// converts a repository's README, release notes and work-item bodies with this, so the
-/// output has to match the Python node's byte for byte or the same page renders
-/// differently depending on which implementation serves it.
+/// An `rngit` page node converts a repository's README, release notes and work-item bodies with
+/// this, so the output has to match byte for byte across implementations or the same page renders
+/// differently depending on which node serves it.
 public final class MarkdownToMicron {
 
   /// Micron markup the converter emits.
@@ -90,7 +87,7 @@ public final class MarkdownToMicron {
   private static let linkPlaceholder = MicronPattern("\\u0000LINK(\\d+)\\u0000")
   private static let codePlaceholder = MicronPattern("\\u0000CODE(\\d+)\\u0000")
 
-  /// The Micron tags ``visibleWidth(of:)`` discounts, applied in the reference's order.
+  /// The Micron tags ``visibleWidth(of:)`` discounts, in the order they are applied.
   private static let invisibleTags = [
     MicronPattern("`[FB][0-9a-fA-F]{3}"),
     MicronPattern("`[FB]T[0-9a-fA-F]{6}"),
@@ -100,7 +97,7 @@ public final class MarkdownToMicron {
     MicronPattern("`b"),
   ]
 
-  /// The widest line the converter will emit.
+  /// The widest line the converter emits.
   public let maxWidth: Int
 
   /// The highlighter fenced code blocks are passed to, if any.
@@ -115,15 +112,14 @@ public final class MarkdownToMicron {
   /// Whether a link is rendered underlined.
   public var underlineLinks = true
 
-  /// A three or six digit hex colour applied to links, if any.
+  /// A three or six digit hex color applied to links, if any.
   public var linkColor: String?
 
   private let defaultURLScope: String
 
   /// Creates a converter.
   ///
-  /// Python: `__init__` (`util.py:130-145`), where an empty `url_scope` also takes the
-  /// default because the reference selects it with `or`.
+  /// An empty `urlScope` also takes the default.
   public init(
     maxWidth: Int = 100, syntaxHighlighter: MicronSyntaxHighlighting? = nil,
     urlScope: String? = nil
@@ -144,8 +140,6 @@ public final class MarkdownToMicron {
   // MARK: - Blocks
 
   /// Returns `text` rendered as Micron.
-  ///
-  /// Python: `format_block` (`util.py:158-300`).
   public func formatBlock(_ text: String) -> String {
     var result: [String] = []
 
@@ -290,8 +284,6 @@ public final class MarkdownToMicron {
   // MARK: - Lines
 
   /// Returns one line rendered as Micron.
-  ///
-  /// Python: `format_line` (`util.py:304-321`).
   public func formatLine(_ line: String, mode: LineMode = .normal) -> String {
     if mode == .codeBlock { return escapeLiterals(line) }
 
@@ -329,9 +321,8 @@ public final class MarkdownToMicron {
 
   /// Returns `text` with links, code spans, bold and italic rendered.
   ///
-  /// Python: `_format_inline` (`util.py:324-370`). Links and code spans are lifted out
-  /// before bold and italic run, so emphasis markers inside them survive literally, and
-  /// they are put back afterwards.
+  /// Links and code spans are lifted out before bold and italic run, so emphasis markers inside
+  /// them survive literally, and they are put back afterwards.
   private func formatInline(_ text: String) -> String {
     var links: [(text: String, url: String)] = []
     var codeSpans: [String] = []
@@ -372,8 +363,8 @@ public final class MarkdownToMicron {
 
   /// Returns a link target rendered with its scope, anchor and styling.
   ///
-  /// Python: `restore_link` (`util.py:340-362`). An anchor survives only on a target that
-  /// takes the local scope; one that carries a scheme keeps just the part before the `#`.
+  /// An anchor survives only on a target that takes the local scope; one that carries a scheme
+  /// keeps just the part before the `#`.
   private func renderLink(_ entry: (text: String, url: String)) -> String {
     let components = entry.url.components(separatedBy: "#")
     var url = components[0]
@@ -406,16 +397,13 @@ public final class MarkdownToMicron {
   }
 
   /// Returns the rows rendered as a boxed table, with each cell's markdown converted.
-  ///
-  /// Python: `format_table` (`util.py:423-528`).
   public func formatTable(_ rows: [String], align: String = "c") -> [String] {
     buildTable(rows, align: align, convertCells: true)
   }
 
   /// Returns the rows rendered as a boxed table, with each cell passed through as written.
   ///
-  /// Python: `format_table_raw` (`util.py:530-630`), which also leaves the header line
-  /// unescaped where ``formatTable(_:align:)`` escapes it.
+  /// Leaves the header line unescaped where ``formatTable(_:align:)`` escapes it.
   public func formatTableRaw(_ rows: [String], align: String = "c") -> [String] {
     buildTable(rows, align: align, convertCells: false)
   }
@@ -498,8 +486,7 @@ public final class MarkdownToMicron {
     return result
   }
 
-  /// Python: `_parse_table_row` (`util.py:632-653`), where a backslash escapes the next
-  /// character and is itself dropped.
+  /// A backslash escapes the next character and is itself dropped.
   private func parseTableRow(_ line: String) -> [String] {
     var line = line.trimmedForMicron
     if line.hasPrefix("|") { line.removeFirst() }
@@ -537,8 +524,6 @@ public final class MarkdownToMicron {
   // MARK: - Measurement
 
   /// The cells `text` occupies once its Micron tags are discounted.
-  ///
-  /// Python: `_visible_width` (`util.py:667-674`).
   private func visibleWidth(of text: String) -> Int {
     var stripped = text
     for pattern in Self.invisibleTags { stripped = pattern.removingMatches(in: stripped) }
@@ -547,8 +532,7 @@ public final class MarkdownToMicron {
 
   /// Returns `text` laid into `width` cells under `align`.
   ///
-  /// Python: `_pad_cell` (`util.py:676-688`). A cell wider than its column is truncated
-  /// first, which can leave no padding at all.
+  /// A cell wider than its column is truncated first, which can leave no padding at all.
   private func pad(_ text: String, to width: Int, align: Alignment) -> String {
     let text = truncate(text, to: width)
     let padding = max(width - visibleWidth(of: text), 0)
@@ -567,8 +551,8 @@ public final class MarkdownToMicron {
 
   /// Returns `text` cut to `width` cells, with an ellipsis in place of what was dropped.
   ///
-  /// Python: `_truncate_cell` (`util.py:690-746`). Cutting a cell can leave a Micron tag
-  /// open, so the tags still active at the cut are closed before the ellipsis.
+  /// Cutting a cell can leave a Micron tag open, so the tags still active at the cut are closed
+  /// before the ellipsis.
   private func truncate(_ text: String, to width: Int) -> String {
     if visibleWidth(of: text) <= width { return text }
 
@@ -629,8 +613,7 @@ public final class MarkdownToMicron {
 
   /// Returns `text` broken into lines of at most `width` cells.
   ///
-  /// Python: `_wrap_text` (`util.py:748-811`). A word wider than the line is broken by
-  /// binary search on how much of it fits.
+  /// A word wider than the line is broken by binary search on how much of it fits.
   private func wrap(_ text: String, to width: Int) -> [String] {
     if text.isEmpty { return [""] }
 
@@ -698,8 +681,6 @@ public final class MarkdownToMicron {
 }
 
 /// Returns `text` rendered as Micron with the converter's defaults.
-///
-/// Python: `convert_markdown_to_micron` (`util.py:814-816`).
 public func convertMarkdownToMicron(_ text: String) -> String {
   MarkdownToMicron().formatBlock(text)
 }

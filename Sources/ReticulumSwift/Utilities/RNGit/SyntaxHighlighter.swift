@@ -12,8 +12,8 @@ import Foundation
 
 /// One token of a lexed source file, as a dotted type path and the text it covers.
 ///
-/// Python: the `(ttype, value)` pairs pygments yields, where the type is spelled
-/// `Token.Literal.String.Double` and each level has the level above it as its parent.
+/// The type is spelled `Token.Literal.String.Double`, and each level has the level above it as its
+/// parent.
 public struct MicronToken {
 
   /// The token type, spelled as pygments spells it.
@@ -31,10 +31,7 @@ public struct MicronToken {
 
 /// Supplies the token stream ``SyntaxHighlighter`` colors.
 ///
-/// Python: the three pygments lookups `_highlight_pygments` tries in turn
-/// (`highlight.py:178-202`). Pygments is not an RNS dependency (`setup.py:35`), so a node
-/// without it renders code as an uncolored literal block, and so does a Swift node until
-/// a lexer is supplied here.
+/// A node with no lexer renders code as an uncolored literal block.
 public protocol MicronLexing {
 
   /// Returns the tokens for `code` under the lexer named `name`, or `nil` if there is none.
@@ -49,13 +46,11 @@ public protocol MicronLexing {
 
 /// Writes a token stream out as Micron, coloring each token by its type.
 ///
-/// Python: `MicronFormatter` (`highlight.py:212-308`). Micron has no style sheet, so the
-/// color is written inline at every token and closed again straight after it.
+/// Micron has no style sheet, so the color is written inline at every token and closed again
+/// straight after it.
 public struct MicronFormatter {
 
   /// The theme key each token type takes its color from.
-  ///
-  /// Python: `granular_token_map` (`highlight.py:316-412`).
   static let granularTokenMap: [String: String] = Dictionary(
     uniqueKeysWithValues: tokenMapEntries)
 
@@ -149,8 +144,6 @@ public struct MicronFormatter {
   }
 
   /// Returns `tokens` written out as Micron.
-  ///
-  /// Python: `format` (`highlight.py:217-278`).
   public func format(_ tokens: [MicronToken]) -> String {
     var parts: [String] = []
     var previousWasDot = false
@@ -183,8 +176,6 @@ public struct MicronFormatter {
   }
 
   /// Returns the color `key` names, or `nil` when the theme leaves it uncolored.
-  ///
-  /// Python: `_get_color_from_key` (`highlight.py:299-301`).
   func color(forKey key: String?) -> String? {
     guard let key, let color = theme[key] else { return nil }
     return color
@@ -192,8 +183,7 @@ public struct MicronFormatter {
 
   /// Returns the theme key for `type`, walking up its parents until one is mapped.
   ///
-  /// Python: `_get_color_key_for_token` (`highlight.py:280-297`). The walk stops before the
-  /// root `Token`, which is the empty tuple and so ends the reference's loop.
+  /// The walk stops before the root token, which names nothing.
   static func colorKey(for type: String) -> String? {
     var current = type
     while current != "Token" {
@@ -224,7 +214,7 @@ public struct MicronFormatter {
   /// each such line is prefixed with a backslash.
   private static func uncolored(_ escaped: String, afterBreak: Bool) -> String {
     if escaped.contains("\n") {
-      let lines = splitLines(escaped)
+      let lines = escaped.pythonLines
       guard lines.count > 1 else { return escaped }
       let prefixed = lines.map { startsMarkup($0) ? "\\" + $0 : $0 }
       return prefixed.joined(separator: "\n") + (escaped.hasSuffix("\n") ? "\n" : "")
@@ -239,54 +229,24 @@ public struct MicronFormatter {
 
   /// Returns `text` with the Micron control character escaped.
   ///
-  /// Python: `_escape_value` (`highlight.py:303-305`), which escapes the backslash first so
-  /// the backslash it then writes before each backtick is left alone.
+  /// The backslash is escaped first, so the backslash then written before each backtick is left
+  /// alone.
   static func escape(_ text: String) -> String {
     text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(
       of: "`", with: "\\`")
   }
 
-  /// Returns `text` split on the boundaries Python's `str.splitlines` recognises.
-  ///
-  /// The set is wider than a line feed, so a value holding a carriage return or a form feed
-  /// splits where the reference splits it and is rejoined with line feeds.
-  private static func splitLines(_ text: String) -> [String] {
-    let boundaries: Set<UInt32> = [0x0A, 0x0B, 0x0C, 0x0D, 0x1C, 0x1D, 0x1E, 0x85, 0x2028, 0x2029]
-    let scalars = Array(text.unicodeScalars)
-    var lines: [String] = []
-    var current = String.UnicodeScalarView()
-    var index = 0
-
-    while index < scalars.count {
-      let scalar = scalars[index]
-      if boundaries.contains(scalar.value) {
-        lines.append(String(current))
-        current = String.UnicodeScalarView()
-        if scalar.value == 0x0D, index + 1 < scalars.count, scalars[index + 1].value == 0x0A {
-          index += 1
-        }
-      } else {
-        current.append(scalar)
-      }
-      index += 1
-    }
-
-    if !current.isEmpty { lines.append(String(current)) }
-    return lines
-  }
 }
 
 /// Colors source code for a Micron page.
 ///
-/// Python: `SyntaxHighlighter` (`highlight.py:35-209`). An `rngit` page node renders every
-/// file it serves and every fenced code block through this, so the colors a browser shows
-/// are decided here rather than by the browser.
+/// An `rngit` page node renders every file it serves and every fenced code block through this, so
+/// the colors a browser shows are decided here rather than by the browser.
 public final class SyntaxHighlighter: MicronSyntaxHighlighting {
 
   /// The colors used when no theme is given.
   ///
-  /// Python: `_get_default_theme` (`highlight.py:44-139`). A `nil` color means the token is
-  /// written out with no tag at all.
+  /// A `nil` color means the token is written out with no tag at all.
   public static let defaultTheme: [String: String?] = Dictionary(
     uniqueKeysWithValues: themeEntries)
 
@@ -365,8 +325,8 @@ public final class SyntaxHighlighter: MicronSyntaxHighlighting {
 
   /// Returns `content` marked up in Micron, lexed by `language` or else by `filename`.
   ///
-  /// Python: `highlight` (`highlight.py:156-176`). Without a lexer, and for any lexing
-  /// failure, the content is written out as an escaped literal block.
+  /// Without a lexer, and for any lexing failure, the content is written out as an escaped literal
+  /// block.
   public func highlight(_ content: String, filename: String?, language: String?) -> String {
     if content.isEmpty { return Self.plainText(content) }
 
@@ -388,8 +348,7 @@ public final class SyntaxHighlighter: MicronSyntaxHighlighting {
 
   /// Returns `content` colored by the first lexer the three lookups find.
   ///
-  /// Python: `_highlight_pygments` (`highlight.py:178-202`). Guessing is only tried on
-  /// content long enough for the guess to mean anything.
+  /// Guessing is only tried on content long enough for the guess to mean anything.
   private func render(
     _ content: String, filename: String?, language: String?, lexer: MicronLexing
   ) throws -> String {
@@ -412,23 +371,18 @@ public final class SyntaxHighlighter: MicronSyntaxHighlighting {
   }
 
   /// Returns `content` as an uncolored Micron literal block.
-  ///
-  /// Python: `_plain_text` (`highlight.py:204-206`).
   static func plainText(_ content: String) -> String {
     "`=\n\(escapeMicron(content))\n`="
   }
 
   /// Returns `text` with the Micron control character escaped.
-  ///
-  /// Python: `_escape_micron` (`highlight.py:208-209`).
   public static func escapeMicron(_ text: String) -> String {
     text.replacingOccurrences(of: "`", with: "\\`")
   }
 
   /// Returns the literal block every fallback path writes, with its backslashes doubled.
   ///
-  /// Python: the `_plain_text(content).replace("\\", "\\\\")` at `highlight.py:168`, `:173`
-  /// and `:176`, which doubles the backslashes the backtick escape has just written as well.
+  /// Doubles the backslashes the backtick escape has just written as well.
   private static func escapedPlainText(_ content: String) -> String {
     plainText(content).replacingOccurrences(of: "\\", with: "\\\\")
   }
