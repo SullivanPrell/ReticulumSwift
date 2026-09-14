@@ -10,6 +10,16 @@
 
 import Foundation
 
+/// Where a node is reached.
+public enum RNGitDestination {
+
+  /// The application every destination a node builds sits under.
+  public static let appName = "git"
+
+  /// The aspect a node serves its repositories on.
+  public static let aspect = "repositories"
+}
+
 /// The request paths a node registers a handler for.
 public enum RNGitRequestPath: String, CaseIterable, Sendable {
 

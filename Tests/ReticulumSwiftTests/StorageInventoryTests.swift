@@ -22,20 +22,26 @@ import XCTest
 final class StorageInventoryTests: XCTestCase {
 
   /// Components that name *where the config directory is*, not a file inside it. Resolving the
-  /// config directory is `InstanceConnection`'s job and is already pinned by `HomeResolutionTests`.
+  /// config directory is `InstanceConnection`'s job and is already pinned by `HomeResolutionTests`;
+  /// an `rngit` client keeps its own three files under `.rngit`, which `client.py:134-141` puts
+  /// outside the Reticulum configuration directory and `RNGitClientEnvironmentTests` pins.
   private static let configDirectoryDiscovery: Set<String> = [
     ".reticulum",
     ".config/reticulum",
+    ".rngit",
   ]
 
   /// The literal half of every `rngit` scratch name.
   ///
-  /// `RNGitTemporaryDirectories` and `RNGitPushHandler` each build one `<root>/rngit-<uuid>`
-  /// under the system temporary directory and remove it again. `StorageInventory` declares what
-  /// lives inside a Reticulum configuration directory, and `url(_:in:)` resolves an entry against
-  /// that directory, so a path outside it has no entry to be.
+  /// `RNGitTemporaryDirectories`, `RNGitPushHandler` and `RNGitHelperRuntime` each build one
+  /// `<root>/rngit-<uuid>` under the system temporary directory and remove it again, and
+  /// `RNGitLinkTransport` names a file response inside the one its run holds.
+  /// `StorageInventory` declares what lives inside a Reticulum configuration directory, and
+  /// `url(_:in:)` resolves an entry against that directory, so a path outside it has no entry
+  /// to be.
   private static let temporaryScratchNames: Set<String> = [
-    "rngit-"
+    "rngit-",
+    "response-",
   ]
 
   /// Names inside an `rngit` repository group, which is a directory the operator chooses.

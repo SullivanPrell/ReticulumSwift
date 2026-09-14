@@ -5,6 +5,49 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The `git-remote-rns` executable
+
+An eleventh executable product. Git runs it for an `rns://` remote, handing it the remote's name
+and the URL, and it takes `RNGIT_CONFIG` and `RNS_CONFIG` from its environment. It reads its own
+configuration, brings Reticulum up with its log written to a file rather than the stream git is
+reading, opens a link to the node the URL names, and answers git over that link.
+
+A run that cannot bring itself up exits 1: two words git did not give, a URL under another
+scheme, a URL naming no repository, or a configuration file that will not parse. A run that gives
+up part way writes `git-remote-rns failed: <reason>` where its failures go and exits 255.
+
+### Where a client keeps its files
+
+A client keeps three files under `~/.rngit`: the log `client_log`, the configuration
+`client_config` and the identity `client_identity`. They stand under `~/.rngit/reticulum`
+instead where a node's own configuration stands at `~/.config/rngit/config`, so the two do not
+share a directory. A directory named on the command line or in the environment is taken as it
+stands. The client
+writes the default configuration where it finds none, and generates an identity where it finds
+none, keeping it for the next run.
+
+### A client reaches a node over a link
+
+`RNGitLinkTransport` carries a request to a node, and is the first type to do so outside the
+test stubs. It waits for a path for the longer of 15 seconds and the slowest interface's own
+timeout, recalls the node's identity, opens a link, identifies over it, and waits for the link
+for the longer of 15 seconds and the link's own establishment timeout. A response carrying
+metadata is a file, and its bytes are written under a directory the run makes and removes, so
+they outlive the request; a response carrying none is bytes.
+
+### The `rngit` argument surface
+
+Eight subcommands, `node`, `release`, `perms`, `work`, `create`, `fork`, `sync` and `mirror`,
+each carrying its own options, positionals, usage block and help text. A first word naming none of
+them leaves the run on `node`, which refuses it as an unrecognized argument. The `rngit`
+executable itself waits on the node runtime; what lands here is the reading, as library types.
+
+Behavior is pinned by 71 `rngit` command lines, 13 `git-remote-rns` command lines, 7
+configuration-directory resolutions and the default configuration file's text, all recorded from
+Python RNS 1.5.4. A 74-mutant sweep leaves five survivors: four inside the one function that
+needs a live link behind it, and the line that joins the two tested halves of the run once the
+stack is up. 3,991 tests, 0 failures.
+
 ### `git-remote-rns`
 
 The remote helper git runs for an `rns://` remote, ported from
