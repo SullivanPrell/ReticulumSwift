@@ -50,6 +50,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
     let answers: [Answer]
     let present: [Named]
     let beside: [Named]
+    let folders: [String]
     let written: String
     let aborted: String?
     let exited: Int?
@@ -97,6 +98,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n\r                       \r  Transferring beta.tar: 100% (3 B)                         \n",
       aborted: nil,
@@ -145,6 +147,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 1 artifact...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n",
       aborted: nil,
@@ -188,6 +191,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 1 artifact...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n",
       aborted: nil,
@@ -230,6 +234,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\n",
       aborted: "No available artifacts specified for fetch",
@@ -268,6 +273,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n\r                       \r  Transferring beta.tar: 100% (3 B)                         \n",
       aborted: nil,
@@ -316,6 +322,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [Named(name: "alpha.bin", bytes: "6f6e65")],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\nExisting file alpha.bin validated, not fetching again\n\r                       \r  Transferring beta.tar: 100% (3 B)                         \n",
       aborted: nil,
@@ -360,6 +367,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [Named(name: "alpha.bin", bytes: "6f74686572")],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\nExisting file alpha.bin does not match manifest, fetching and overwriting\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n\r                       \r  Transferring beta.tar: 100% (3 B)                         \n",
       aborted: nil,
@@ -408,6 +416,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\n\r                       \r  Transferring alpha.bin: 100% (5 B)                         \n",
       aborted: "Fetched file alpha.bin does not match manifest, aborting",
@@ -444,6 +453,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "No remote specified",
       exited: nil,
@@ -462,6 +472,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "No remote specified",
       exited: nil,
@@ -480,6 +491,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "No target specified",
       exited: nil,
@@ -498,6 +510,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "No target specified",
       exited: nil,
@@ -523,6 +536,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     ",
       aborted: "Invalid release specification",
@@ -542,6 +556,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "Invalid protocol in remote URL",
       exited: nil,
@@ -560,6 +575,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     ",
       aborted: "Invalid number of URL components",
@@ -579,6 +595,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "Requesting path... \n",
       aborted: "Could not resolve path to <aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa>",
       exited: nil,
@@ -597,6 +614,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "Requesting path... \rPath resolved      ",
       aborted: "Could not recall remote identity",
       exited: nil,
@@ -615,6 +633,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "Requesting path... \rPath resolved      \rEstablishing link... ",
       aborted: "Link establishment failed",
       exited: nil,
@@ -633,6 +652,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "Invalid required signer identity hash length",
       exited: nil,
@@ -651,6 +671,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted:
         "Invalid required signer identity hash: non-hexadecimal number found in fromhex() arg at position 0",
@@ -677,6 +698,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n\r                       \r  Transferring beta.tar: 100% (3 B)                         \n",
       aborted: nil,
@@ -726,6 +748,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \n",
       aborted: "Release manifest not signed by <0d8c96d5e594ebc2b5f3433908ba100e>, aborting",
@@ -751,6 +774,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("034e6f20737563682072656c65617365", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "No such release",
@@ -776,6 +800,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("03", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Not found",
@@ -801,6 +826,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("014e6f7065", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Nope",
@@ -826,6 +852,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("01", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Not allowed",
@@ -851,6 +878,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("027768617465766572", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Remote error: Invalid request",
@@ -876,6 +904,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("ff62726f6b65", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Remote error: broke",
@@ -901,6 +930,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("ff", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Remote error: Unknown error",
@@ -926,6 +956,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.bytes("", nil)],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "No response from remote",
@@ -951,6 +982,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [.none],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     ",
       aborted: "Request failed or timed out",
@@ -981,6 +1013,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Invalid result metadata on fetch response",
@@ -1010,6 +1043,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Error fetching release: 'bytes' object has no attribute 'name'",
@@ -1040,6 +1074,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Error fetching release: '_io.BufferedReader' object is not subscriptable",
@@ -1070,6 +1105,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\n\r                       \r",
       aborted: "Gone",
@@ -1111,6 +1147,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (918 B)                         \n",
       aborted: "No embedded message in release manifest",
@@ -1141,6 +1178,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \n",
       aborted: "Could not validate release manifest signature",
@@ -1171,6 +1209,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (412 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\n",
       aborted: "Release manifest contains no artifacts",
@@ -1207,6 +1246,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (919 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\n",
       aborted: "Incomplete package data in manifest",
@@ -1237,6 +1277,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (908 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\n",
       aborted: "Incomplete release origin data in manifest",
@@ -1267,6 +1308,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (925 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\n",
       aborted: "Invalid origin hash length in manifest",
@@ -1297,6 +1339,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (931 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\n",
       aborted: "Invalid data in release manifest",
@@ -1327,6 +1370,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (658 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 1 artifact...\n",
       aborted: "Error fetching release: 'name'",
@@ -1363,6 +1407,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (428 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 1 artifact...\n",
       aborted: "Error fetching release: 'rsg'",
@@ -1400,6 +1445,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (680 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 1 artifact...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n",
       aborted: nil,
@@ -1443,6 +1489,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "74776f"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar validated against manifest MANIFESTS/manifest.rsm\n\nAll files validated\n",
       aborted: nil,
@@ -1474,6 +1521,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "74776f"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 1 artifact...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n\nAll files validated\n",
       aborted: nil,
@@ -1505,6 +1553,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "6f74686572"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar does not match manifest\n\nRelease is not valid\n",
       aborted: nil,
@@ -1536,6 +1585,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar from manifest does not exist locally, cannot validate\n\nRelease is not valid\n",
       aborted: nil,
@@ -1567,6 +1617,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "74776f"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar validated against manifest MANIFESTS/manifest.rsm\n\nAll files validated\n",
       aborted: nil,
@@ -1592,6 +1643,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "Cannot perform offline verification without a local manifest",
       exited: nil,
@@ -1610,6 +1662,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       answers: [],
       present: [],
       beside: [],
+      folders: [],
       written: "",
       aborted: "Cannot perform offline verification without a local manifest",
       exited: nil,
@@ -1634,6 +1687,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "1c3bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         )
       ],
+      folders: [],
       written: "",
       aborted: "Could not validate release manifest signature",
       exited: nil,
@@ -1658,6 +1712,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "5024dde3a345fd1a71c82e2ca8ce8c5ac1400672680a8c861408c887416a83ce7eda00d3c5b2bff6bd2dd56b29edfd177fdd5332e07ddb4cea43ab3fc81b930a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d65746189a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         )
       ],
+      folders: [],
       written: "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\n",
       aborted: "Incomplete release origin data in manifest",
       exited: nil,
@@ -1682,6 +1737,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "de303faf8f3cb086b28c9b4add849b0b36ede3f28e333e18b3ce92c11f08f4932d2de2db8cc0086b875f004e9a4482d11990e95e45f050a4c5413d9a34d8c80f83a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140"
         )
       ],
+      folders: [],
       written: "",
       aborted: "No embedded message in release manifest",
       exited: nil,
@@ -1706,6 +1762,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "74776f"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar validated against manifest MANIFESTS/manifest.rsm\n\nAll files validated\n",
       aborted: nil,
@@ -1737,6 +1794,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         )
       ],
+      folders: [],
       written: "",
       aborted: "Release manifest not signed by <0d8c96d5e594ebc2b5f3433908ba100e>, aborting",
       exited: nil,
@@ -1768,6 +1826,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         )
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRequesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n\r                       \r  Transferring beta.tar: 100% (3 B)                         \n",
       aborted: nil,
@@ -1816,6 +1875,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "74776f"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar validated against manifest MANIFESTS/manifest.rsm\n\nAll files validated\n",
       aborted: nil,
@@ -1846,6 +1906,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \r",
       aborted: "Error fetching release: '_io.BufferedReader' object is not subscriptable",
@@ -1878,6 +1939,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (933 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 2 artifacts...\n\r                       \r  Transferring alpha.bin: 100% (3 B)                         \n\r                       \r  Transferring beta.tar: 100% (3 B)                         \n",
       aborted: nil,
@@ -1925,6 +1987,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       ],
       present: [],
       beside: [],
+      folders: [],
       written:
         "Requesting path... \rPath resolved      \rEstablishing link... \rLink established     \r                       \rTransferring manifest.rsm: 100% (664 B)                         \nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nFetching 1 artifact...\n\r                       \r",
       aborted: "Remote error: Unknown error",
@@ -1969,6 +2032,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "74776f"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar validated against manifest MANIFESTS/manifest.rsm\n\nAll files validated\n",
       aborted: nil,
@@ -2004,6 +2068,7 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ), Named(name: "alpha.bin", bytes: "6f6e65"), Named(name: "beta.tar", bytes: "74776f"),
       ],
+      folders: [],
       written:
         "Valid release manifest signature, signed by <039da95c7a04620318d94346e34924c9>\nRelease origin is rns://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/group/repo\nRelease manifest validated, signed by <039da95c7a04620318d94346e34924c9>\nValidating 2 artifacts...\n  File alpha.bin validated against manifest MANIFESTS/manifest.rsm\n  File beta.tar validated against manifest MANIFESTS/manifest.rsm\n\nAll files validated\n",
       aborted: nil,
@@ -2018,6 +2083,51 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
             "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573"
         ),
       ]),
+    Run(
+      label: "an offline check where the manifest name is a directory",
+      remote: "MANIFESTS/manifest.rsm",
+      target: "1.0.0:all",
+      signer: nil,
+      offline: true,
+      hasPath: true,
+      recalls: true,
+      linkComesUp: true,
+      answers: [],
+      present: [],
+      beside: [],
+      folders: ["manifest.rsm"],
+      written: "",
+      aborted: "Cannot perform offline verification without a local manifest",
+      exited: nil,
+      requests: [],
+      tornDown: false,
+      left: []),
+    Run(
+      label: "a fetch where the manifest name is a directory",
+      remote: "MANIFESTS/manifest.rsm",
+      target: "1.0.0:all",
+      signer: nil,
+      offline: false,
+      hasPath: true,
+      recalls: true,
+      linkComesUp: true,
+      answers: [
+        .file(
+          "manifest.rsm",
+          "e33bcc0bbc7517a9ea267e31e6e23fc025f6b0706417b0e7827c7e0dc7b5beaf465dc299cafeb527803664bd0aa85fa35af87f87b32712157e3fda00da2f090a84a86861736874797065a6736861323536a468617368c4208a7525b1492fb84833f5c4a69b30f4bfbb134f9b666b61a2c1872d63d234c085a46d6574618aa67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a46e616d65a77061636b616765a776657273696f6ea5312e302e30a872656c6561736564b4323032352d30392d30345431343a31333a32305aa974696d657374616d70ce68b9b140a66f726967696ec410aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa470617468aa67726f75702f7265706fa6636f6d6d6974d92863306666656531323334353637383930633066666565313233343536373839306330666665653132a96172746966616374739282a46e616d65a9616c7068612e62696ea3727367c4ef69f6ec66cde1a52840a7f8abd24012416ce575c2bbc60f46dc797bb0bab157a4514f000c5a73f73f3bdebc4f490b93d0ac79fbbe8cb77a5aa7681fe4ecf69e0d83a86861736874797065a6736861323536a468617368c4207692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431eda46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b14082a46e616d65a8626574612e746172a3727367c4efdc2349e98df6ee8a1b92141408bb57cfb84876736f2219ea95f5c9321b6ea1c085e5281a090446e1644572475e0744713a75eb1bd24ef4b7e301e3ed625dd50d83a86861736874797065a6736861323536a468617368c4203fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3a46d65746183a67369676e6572c410039da95c7a04620318d94346e34924c9a67075626b6579c44069efaca886c2e8fbc23f395b04095c20ab5897d0c5a52a682e0fb65cc9fa072029874879008795f7bccdb52e5323513bb928042b01bc8ed2dbf4fade0f68cfb7a974696d657374616d70ce68b9b140a76d657373616765c4054e6f746573",
+          "81a46e616d65c40c6d616e69666573742e72736d"),
+        .file("alpha.bin", "6f6e65", "81a46e616d65c409616c7068612e62696e"),
+        .file("beta.tar", "74776f", "81a46e616d65c408626574612e746172"),
+      ],
+      present: [],
+      beside: [],
+      folders: ["manifest.rsm"],
+      written: "",
+      aborted: "Invalid protocol in remote URL",
+      exited: nil,
+      requests: [],
+      tornDown: false,
+      left: []),
   ]
 
   private static let progress: [Progress] = [
@@ -2106,6 +2216,24 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
         Report(fraction: 1.0, size: 512, transferSize: 530, at: 0.75),
       ],
       written: "Transferring manifest.rsm: 100.0% (512 B/512 B) 5.46 Kbps          \r"),
+    Progress(
+      label: "a report whose percent needs the tenths place rounded",
+      indent: "  ",
+      transfer: "alpha.bin",
+      reports: [
+        Report(fraction: 0.0, size: 1_000_000, transferSize: 1_010_000, at: 0.0),
+        Report(fraction: 0.123456, size: 1_000_000, transferSize: 1_010_000, at: 1.0),
+      ],
+      written: "  Transferring alpha.bin: 12.3% (123.46 KB/1.00 MB) 987.65 Kbps          \r"),
+    Progress(
+      label: "a report whose percent rounds up into the tenths place",
+      indent: "  ",
+      transfer: "alpha.bin",
+      reports: [
+        Report(fraction: 0.0, size: 1_000_000, transferSize: 1_010_000, at: 0.0),
+        Report(fraction: 0.567891, size: 1_000_000, transferSize: 1_010_000, at: 1.0),
+      ],
+      written: "  Transferring alpha.bin: 56.8% (567.89 KB/1.00 MB) 4.54 Mbps          \r"),
   ]
 
   /// Holds what the client wrote.
@@ -2195,6 +2323,10 @@ final class RNGitClientFetchReleaseTests: XCTestCase {
       for file in run.beside {
         manager.createFile(
           atPath: manifests + "/" + file.name, contents: Data(pythonHex: file.bytes))
+      }
+      for folder in run.folders {
+        try manager.createDirectory(
+          atPath: manifests + "/" + folder, withIntermediateDirectories: true)
       }
 
       let output = Recorder()

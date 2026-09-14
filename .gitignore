@@ -3,6 +3,7 @@
 build/
 .swiftpm/
 Packages/
+*.resolved
 # Internal parity / planning log — not part of the public package.
 tasks/
 *.xcodeproj/xcuserdata/

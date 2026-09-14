@@ -29,6 +29,13 @@ public enum FileNameMatching {
     /// Any run of characters, however long.
     case run
 
+    /// One character, of the class this term names.
+    case one(CharacterClass)
+  }
+
+  /// The characters one term of a pattern stands for.
+  private enum CharacterClass {
+
     /// Any one character.
     case any
 
@@ -38,10 +45,9 @@ public enum FileNameMatching {
     /// One of the characters this set holds, or one it does not where it is turned around.
     case set(members: [ClosedRange<UInt32>], negated: Bool)
 
-    /// Whether `scalar` is one of the characters this term stands for.
+    /// Whether `scalar` is one of the characters this class stands for.
     func holds(_ scalar: Unicode.Scalar) -> Bool {
       switch self {
-      case .run: return true
       case .any: return true
       case .literal(let other): return scalar == other
       case .set(let members, let negated):
@@ -65,7 +71,7 @@ public enum FileNameMatching {
         runIndex = index
         continue
       }
-      if term < terms.count, terms[term].holds(name[index]) {
+      if term < terms.count, case .one(let one) = terms[term], one.holds(name[index]) {
         term += 1
         index += 1
         continue
@@ -91,15 +97,15 @@ public enum FileNameMatching {
       case "*":
         if case .run? = terms.last { continue }
         terms.append(.run)
-      case "?": terms.append(.any)
+      case "?": terms.append(.one(.any))
       case "[":
         guard let (term, next) = set(in: pattern, from: index) else {
-          terms.append(.literal("["))
+          terms.append(.one(.literal("[")))
           continue
         }
-        terms.append(term)
+        terms.append(.one(term))
         index = next
-      default: terms.append(.literal(scalar))
+      default: terms.append(.one(.literal(scalar)))
       }
     }
     return terms
@@ -107,7 +113,9 @@ public enum FileNameMatching {
 
   /// The set that opens at `start`, and where the pattern goes on after it, or `nil` where
   /// nothing closes it.
-  private static func set(in pattern: [Unicode.Scalar], from start: Int) -> (Term, Int)? {
+  private static func set(in pattern: [Unicode.Scalar], from start: Int)
+    -> (CharacterClass, Int)?
+  {
     var end = start
     if end < pattern.count, pattern[end] == "!" { end += 1 }
     if end < pattern.count, pattern[end] == "]" { end += 1 }
