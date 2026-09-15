@@ -78,9 +78,9 @@ failures.
 ### Stopping a conversion that could not be started
 
 A conversion whose producing process could not be started no longer waits for it. Both processes
-were waited for whatever had become of them, and on macOS 14 `Process.waitUntilExit` does not
-return for a process that never launched, so a producer that is not on the machine left the run
-standing where it was rather than answering that it could not be run. A process carrying no
+were waited for whatever had become of them, and on macOS 14 `Process.waitUntilExit` can stand
+without end on a process that never launched, so a producer that is not on the machine could
+leave the run where it was rather than answering that it could not be run. A process carrying no
 identifier is now left alone; one that started is still stopped and waited for, which two
 readings that count the processes a run waits for hold apart.
 

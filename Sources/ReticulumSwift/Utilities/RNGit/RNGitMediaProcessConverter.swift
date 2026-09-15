@@ -147,8 +147,8 @@ public struct RNGitMediaProcessConverter: RNGitMediaConverter {
 
   /// Stops `process` and waits for it to go, where it ever started.
   ///
-  /// Waiting on a process that never started does not return on macOS 14, so one that carries no
-  /// identifier is left alone.
+  /// Waiting on a process that never started can stand without end on macOS 14, so one that
+  /// carries no identifier is left alone.
   private func terminate(_ process: Process) {
     guard process.processIdentifier > 0 else { return }
     if process.isRunning { kill(process.processIdentifier, SIGKILL) }
