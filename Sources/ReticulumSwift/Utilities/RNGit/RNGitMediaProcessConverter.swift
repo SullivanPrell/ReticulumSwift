@@ -105,6 +105,9 @@ public struct RNGitMediaProcessConverter: RNGitMediaConverter {
   }
 
   #if os(macOS)
+  /// How a process that has been stopped is waited for.
+  var waiting: @Sendable (Process) -> Void = { $0.waitUntilExit() }
+
   /// A process that runs `words` in `directory`, the program it runs looked up on the search path
   /// where the word naming it carries no separator.
   private func process(_ words: [String], in directory: String?) -> Process {
@@ -142,17 +145,21 @@ public struct RNGitMediaProcessConverter: RNGitMediaConverter {
     return true
   }
 
-  /// Stops `process` and waits for it to go.
+  /// Stops `process` and waits for it to go, where it ever started.
+  ///
+  /// Waiting on a process that never started does not return on macOS 14, so one that carries no
+  /// identifier is left alone.
   private func terminate(_ process: Process) {
+    guard process.processIdentifier > 0 else { return }
     if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-    process.waitUntilExit()
+    waiting(process)
   }
 
   /// What a process wrote to its error stream, up to what is kept of one.
   private func tail(_ errors: Pipe) -> String {
     let written =
       (try? errors.fileHandleForReading.read(upToCount: Self.errorTail)) ?? Data()
-    return String(decoding: written ?? Data(), as: UTF8.self).trimmingCharacters(
+    return String(decoding: written, as: UTF8.self).trimmingCharacters(
       in: .whitespacesAndNewlines)
   }
   #endif
