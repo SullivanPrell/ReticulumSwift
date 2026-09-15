@@ -9,6 +9,7 @@ jobs:
   build-test:
     name: Build & test (macOS)
     runs-on: macos-14
+    timeout-minutes: 60
     steps:
       - name: Checkout (with LFS for CI2PD binary)
         uses: actions/checkout@v4
@@ -21,12 +22,31 @@ jobs:
       - name: Build
         run: swift build
 
+      # Writing to a pipe, the test binary buffers 16 KiB of output at a time, so a
+      # run that stops answering names no test and loses its last buffer. `script`
+      # gives it a pty, which line-buffers instead; the prompt variables keep the
+      # `git` the tests run from asking that pty anything. The watchdog samples a
+      # process that has gone quiet before the step's own limit ends it.
       - name: Test
-        run: swift test
+        timeout-minutes: 40
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+          GIT_ASKPASS: /usr/bin/false
+        run: |
+          ( sleep 1800
+            pid=$(pgrep -n xctest) || exit 0
+            echo "Quiet for 30 minutes. Sampling $pid:" >&2
+            sample "$pid" 10 -f /dev/stderr ) &
+          watchdog=$!
+          status=0
+          script -q /dev/null swift test < /dev/null || status=$?
+          kill "$watchdog" 2>/dev/null || true
+          exit $status
 
   style:
     name: Style (format, licenses, prose)
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
