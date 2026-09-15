@@ -95,6 +95,43 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
     guard case .couldNotRun = outcome else { return XCTFail("\(outcome)") }
   }
 
+  #if os(macOS)
+  /// How many processes a converter waited for, counted from the single thread a test runs on.
+  private final class Waits: @unchecked Sendable {
+    var count = 0
+  }
+
+  /// A producer that could not be started is not waited for, as nothing was ever started.
+  func testAProducerThatCouldNotBeStartedIsNotWaitedFor() throws {
+    let path = try makeDirectory() + "/out"
+    let waits = Waits()
+    var converter = RNGitMediaProcessConverter()
+    converter.waiting = { _ in waits.count += 1 }
+
+    let outcome = converter.convert(
+      producing: ["/nonexistent/producer"], in: nil, through: ["cat"], to: path, within: 8)
+
+    guard case .couldNotRun = outcome else { return XCTFail("\(outcome)") }
+    XCTAssertEqual(waits.count, 0)
+  }
+
+  /// Both processes of a run stopped because its time was up are waited for.
+  func testBothProcessesOfARunStoppedAreWaitedFor() throws {
+    let path = try makeDirectory() + "/out"
+    let waits = Waits()
+    var converter = RNGitMediaProcessConverter()
+    converter.waiting = {
+      $0.waitUntilExit()
+      waits.count += 1
+    }
+
+    XCTAssertEqual(
+      converter.convert(
+        producing: ["sleep", "30"], in: nil, through: ["cat"], to: path, within: 0.3), .timedOut)
+    XCTAssertEqual(waits.count, 2)
+  }
+  #endif
+
   /// A file reaches the encoder as it stands, and what the encoder writes reaches the output.
   func testAFileReachesTheEncoderAsItStands() throws {
     let directory = try makeDirectory()
