@@ -306,6 +306,12 @@ public struct RNGitRepositoryReader: Sendable {
     return GitReferenceNames.sanitiseObjectID(trimmed(resolved.standardOutput).lowercased())
   }
 
+  /// Whether `target` names a commit object, or nothing where the check could not be run at all.
+  public func isCommit(_ target: String, in repository: String) -> Bool? {
+    guard let read = git(["cat-file", "-t", target], in: repository) else { return nil }
+    return read.status == 0 && trimmed(read.standardOutput) == "commit"
+  }
+
   /// The branch `HEAD` points at, or `nil` where it points at nothing symbolic.
   ///
   /// Mirrors Python's inline `git symbolic-ref HEAD`, replacing every `refs/heads/` in the

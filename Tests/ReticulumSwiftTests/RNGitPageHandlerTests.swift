@@ -944,4 +944,342 @@ final class RNGitPageHandlerTests: XCTestCase {
         encoding: .utf8))
     XCTAssertTrue(page.contains("This page requires identification, and none was received."))
   }
+
+  /// The full hash `ref` names in `repository`, fetched directly rather than through the code
+  /// under test.
+  private func revParse(_ ref: String, in repository: String) throws -> String {
+    let result = RNGitProcessRunner().run("git", arguments: ["rev-parse", ref], in: repository)
+    try XCTSkipIf(result == nil, "no git to resolve a hash with")
+    XCTAssertEqual(result?.status, 0)
+    return (result?.standardOutput ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Two commits touching the same three files, so the second commit's own status detection (the
+  /// only one with a parent to compare against) reports all four letters: `alpha.txt` modified,
+  /// `beta.txt` deleted, `gamma.txt` added, and `pic.bin` — a binary file present on both sides,
+  /// which numstat can only ever report as `-`/`-` — left at the reader's own fallback of "R".
+  private func makeHistoryRepository() throws -> String {
+    let path = fixtureBase + "/history"
+    let script = #"""
+      set -e
+      root="$1"
+      rm -rf "$root"
+      mkdir -p "$root"
+      cd "$root"
+
+      export GIT_AUTHOR_NAME="Hist Author"
+      export GIT_AUTHOR_EMAIL="hist@example.com"
+      export GIT_COMMITTER_NAME="Hist Author"
+      export GIT_COMMITTER_EMAIL="hist@example.com"
+      export GIT_AUTHOR_DATE="1700000100 +0000"
+      export GIT_COMMITTER_DATE="1700000100 +0000"
+
+      git init -q .
+      git symbolic-ref HEAD refs/heads/main
+      git config user.name "$GIT_AUTHOR_NAME"
+      git config user.email "$GIT_AUTHOR_EMAIL"
+      git config commit.gpgsign false
+
+      printf 'alpha one\n' > alpha.txt
+      printf 'beta one\n' > beta.txt
+      printf 'BIN\000one\n' > pic.bin
+      git add -A
+      git commit -q -m "First commit"
+
+      rm beta.txt
+      printf 'alpha one\nalpha two\n' > alpha.txt
+      printf 'GAMMA\n' > gamma.txt
+      printf 'BIN\000two\n' > pic.bin
+      export GIT_AUTHOR_DATE="1700000200 +0000"
+      export GIT_COMMITTER_DATE="1700000200 +0000"
+      git add -A
+      git commit -q -m "Second commit"
+      """#
+    let scriptPath = fixtureBase + "/history.sh"
+    try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+    let built = RNGitProcessRunner().run("sh", arguments: [scriptPath, path], in: fixtureBase)
+    try XCTSkipIf(built == nil, "no shell to build the repository with")
+    XCTAssertEqual(built?.status, 0, built?.standardError ?? "")
+    return path
+  }
+
+  // MARK: - Commits page
+
+  /// Each commit lists its full hash in the link's `h` field, its short hash as the visible
+  /// label, its author, and its subject on its own line.
+  func testCommitsPageListsHashAuthorAndSubject() throws {
+    let hash = try revParse("HEAD", in: demoRepository)
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitsPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("h=\(hash)"))
+    XCTAssertTrue(page.contains(String(hash.prefix(7))))
+    XCTAssertTrue(page.contains("Author"))
+    XCTAssertTrue(page.contains("First commit"))
+  }
+
+  /// Filtering to one file's history adds that file to the breadcrumb and titles the heading
+  /// with it.
+  func testCommitsPageBreadcrumbIncludesFilePathWhenFiltering() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitsPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "README.mu"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("README.mu"))
+    XCTAssertTrue(page.contains("Commits for README.mu"))
+  }
+
+  /// A path that touches no commits under `ref` reports the empty-state message, not an error.
+  func testCommitsPageNoCommitsFoundForUnmatchedPath() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitsPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "nonexistent-file.txt"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("No commits found."))
+  }
+
+  /// A page past the end of history is empty, not an error.
+  func testCommitsPageNoCommitsFoundPastLastPage() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitsPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo", page: 5),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("No commits found."))
+  }
+
+  /// An unresolvable ref reports the error by name.
+  func testCommitsPageRefNotFound() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitsPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          ref: "nonexistent-ref"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("The ref 'nonexistent-ref' does not exist in this repository."))
+  }
+
+  /// An unknown repository is reported as not found, worded the way the refs/tree/blob pages are.
+  func testCommitsPageRepositoryNotFound() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitsPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "nonexistent"),
+        encoding: .utf8))
+    XCTAssertTrue(
+      page.contains("The requested repository does not exist or you do not have access to it."))
+  }
+
+  /// A reader with no identity is turned away where the node blocks the null identity.
+  func testCommitsPageNoIdentityBlocked() throws {
+    var settings = RNGitNodeSettings()
+    settings.blockedIdentities = [Self.nullIdentityHash]
+    let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
+    var handler = Self.handler(access: blocked, settings: settings)
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitsPage(
+          identityHash: nil, groupName: "Zebra", repositoryName: "one"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("This page requires identification, and none was received."))
+  }
+
+  // MARK: - Commit page
+
+  /// The metadata block names the author and, this fixture's committer differing from its
+  /// author, the committer too, and offers a link to browse the tree at this commit.
+  func testCommitPageShowsMetadataCommitterAndTreeLink() throws {
+    let hash = try revParse("HEAD", in: demoRepository)
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          commitHash: hash),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("Commit \(hash)"))
+    XCTAssertTrue(page.contains("Browse tree at this commit"))
+    XCTAssertTrue(page.contains("ref=\(hash)"))
+    XCTAssertTrue(page.contains("Author     : Author <author@example.com>"))
+    XCTAssertTrue(page.contains("Committer : Committer <committer@example.com>"))
+    XCTAssertTrue(page.contains("Date       : 2023-11-14T22:13:20+00:00"))
+    XCTAssertTrue(page.contains("Date      : 2023-11-14T22:13:20+00:00"))
+  }
+
+  /// An unsigned commit computes "Not signed" internally but never actually renders the
+  /// "Signature  :" line — `show_sig` only turns true inside the three signed branches, so this
+  /// is the reference's own control flow, not an omission to fix.
+  func testCommitPageSignatureLineOmittedWhenUnsigned() throws {
+    let hash = try revParse("HEAD", in: demoRepository)
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          commitHash: hash),
+        encoding: .utf8))
+
+    XCTAssertFalse(page.contains("Signature"))
+    XCTAssertFalse(page.contains("Not signed"))
+  }
+
+  /// The Diff section renders the commit's own patch, colour-coded by addition.
+  func testCommitPageShowsDiffSection() throws {
+    let hash = try revParse("HEAD", in: demoRepository)
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          commitHash: hash),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains(">>Diff\n"))
+    XCTAssertTrue(page.contains("\(RNGitPage.Colour.diffAdded)+A micron readme`f"))
+  }
+
+  /// A commit with a parent gets full status detection: a file absent from the parent is "A",
+  /// one absent from the commit itself is "D", one present on both sides that changed is "M",
+  /// and a binary file present on both sides keeps the reader's own fallback of "R".
+  func testCommitPageShowsAllFourFileStatusIndicators() throws {
+    let history = try makeHistoryRepository()
+    let access = RNGitPageAccess(
+      control: RNGitAccessControl(groups: [
+        "proj": RNGitGroup(
+          name: "proj", path: fixtureBase + "/g",
+          repositories: ["history": RNGitRepository(name: "history", path: history)],
+          permissions: Self.readableByEveryone())
+      ]))
+    var handler = Self.handler(access: access)
+    let hash = try revParse("HEAD", in: history)
+
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "history",
+          commitHash: hash),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("\(RNGitPage.Colour.diffAdded)A`f"))
+    XCTAssertTrue(page.contains("\(RNGitPage.Colour.diffRemoved)D`f"))
+    XCTAssertTrue(page.contains("`Faa0M`f"))
+    XCTAssertTrue(page.contains("\(RNGitPage.Colour.diffPosition)R`f"))
+    XCTAssertTrue(page.contains("alpha.txt"))
+    XCTAssertTrue(page.contains("beta.txt"))
+    XCTAssertTrue(page.contains("gamma.txt"))
+    XCTAssertTrue(page.contains("pic.bin"))
+    XCTAssertTrue(page.contains("4 files changed"))
+  }
+
+  /// Missing group or repository names are rejected before anything else runs.
+  func testCommitPageInvalidRequestForEmptyNames() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "", repositoryName: ""),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("Invalid request"))
+  }
+
+  /// This page's own repository-not-found wording differs from the refs/tree/blob/commits
+  /// pages': "was not found" at an "Error" heading, not "does not exist or access" at "Not
+  /// Found".
+  func testCommitPageRepositoryNotFound() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "nonexistent"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("The requested repository was not found."))
+  }
+
+  func testCommitPageRefNotFound() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          ref: "nonexistent-ref"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("The ref 'nonexistent-ref' does not exist in this repository."))
+  }
+
+  /// Both an empty hash and one under seven characters are rejected before any git call.
+  func testCommitPageEmptyOrShortCommitHashRejected() throws {
+    var handler = Self.handler(access: realAccess())
+
+    let emptyPage = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo"),
+        encoding: .utf8))
+    XCTAssertTrue(emptyPage.contains("No valid commit hash specified."))
+
+    let shortPage = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          commitHash: "abc12"),
+        encoding: .utf8))
+    XCTAssertTrue(shortPage.contains("No valid commit hash specified."))
+  }
+
+  func testCommitPageUnresolvableCommitHash() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          commitHash: "abcdef0"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("The commit abcdef0 does not exist in this repository."))
+  }
+
+  /// A hash that resolves to a real object which is not a commit (here, a blob) is reported by
+  /// name rather than treated as a commit.
+  func testCommitPageHashResolvesButIsNotACommit() throws {
+    let blobHash = try revParse("HEAD:README.mu", in: demoRepository)
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          commitHash: blobHash),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("The hash \(blobHash) does not refer to a commit."))
+  }
+
+  /// A reader with no identity is turned away where the node blocks the null identity.
+  func testCommitPageNoIdentityBlocked() throws {
+    var settings = RNGitNodeSettings()
+    settings.blockedIdentities = [Self.nullIdentityHash]
+    let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
+    var handler = Self.handler(access: blocked, settings: settings)
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveCommitPage(
+          identityHash: nil, groupName: "Zebra", repositoryName: "one"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("This page requires identification, and none was received."))
+  }
 }

@@ -778,6 +778,319 @@ public struct RNGitPageHandler {
     return normalised.replacingOccurrences(of: "/./", with: "/")
   }
 
+  // MARK: - Commits page
+
+  /// A repository's commit history, optionally scoped to one file's changes, paginated past
+  /// `RNGitPage.commitsPerPage` commits.
+  ///
+  /// Mirrors `serve_commits_page`.
+  public mutating func serveCommitsPage(
+    identityHash: Data?, groupName: String, repositoryName: String, ref: String = "HEAD",
+    filePath rawFilePath: String = "", page: Int = 0
+  ) -> Data {
+    let startedAt = Date().timeIntervalSince1970
+    let filePath = RNGitPageMicron.unquotePlus(rawFilePath)
+    let pageNum = max(0, page)
+
+    if identityHash == nil, settings.blockedIdentities.contains(access.nullIdentityHash) {
+      return templates.render(
+        "", template: RNGitPageTemplate.noIdentity.rawValue, startedAt: startedAt)
+    }
+
+    guard
+      let repository = access.repository(
+        readableBy: identityHash, in: groupName, named: repositoryName)
+    else {
+      return templates.render(
+        RNGitPageMicron.heading("Not Found", level: 1)
+          + "\n\nThe requested repository does not exist or you do not have access to it.\n",
+        startedAt: startedAt)
+    }
+
+    guard let resolvedRef = reader.resolve(ref, in: repository.path) else {
+      return templates.render(
+        RNGitPageMicron.heading("Ref Not Found", level: 1)
+          + "\n\nThe ref '\(ref)' does not exist in this repository.\n",
+        startedAt: startedAt)
+    }
+
+    var contentParts: [String] = []
+
+    var breadcrumbParts = [
+      RNGitPageMicron.link("Node", RNGitPage.Path.index),
+      RNGitPageMicron.link(groupName, RNGitPage.Path.group, [("g", groupName)]),
+      RNGitPageMicron.link(
+        repositoryName, RNGitPage.Path.repository, [("g", groupName), ("r", repositoryName)]),
+      "commits",
+    ]
+    if !filePath.isEmpty { breadcrumbParts.insert(RNGitPageMicron.escape(filePath), at: 3) }
+    let navigation = ">>\n" + breadcrumbParts.joined(separator: " / ") + "\n"
+
+    let titleSuffix = filePath.isEmpty ? "" : " for \(filePath)"
+
+    let skip = pageNum * RNGitPage.commitsPerPage
+    let commits = reader.commits(
+      in: repository.path, at: resolvedRef, path: filePath, skip: skip,
+      limit: RNGitPage.commitsPerPage)
+
+    switch commits {
+    case nil:
+      contentParts.append("Error reading commit history.\n")
+
+    case .some(let commits) where commits.isEmpty:
+      contentParts.append("No commits found.\n")
+
+    case .some(let commits):
+      contentParts.append(
+        RNGitPageMicron.heading(
+          "Commits\(titleSuffix) \(RNGitPage.Colour.dimmer)\(ref) "
+            + "(\(String(resolvedRef.prefix(8))))`f", level: 2))
+      contentParts.append("\n")
+
+      for commit in commits {
+        let shortHash = String(commit.hash.prefix(7))
+        let date =
+          RNGitPageFormatting.absoluteTime(TimeInterval(commit.timestamp)) + " - "
+          + RNGitPageFormatting.relativeTime(TimeInterval(commit.timestamp))
+        let hashLink = RNGitPageMicron.link(
+          shortHash, RNGitPage.Path.commit,
+          [("g", groupName), ("r", repositoryName), ("ref", ref), ("h", commit.hash)])
+        contentParts.append(
+          "\(RNGitPage.Colour.file)\(hashLink)`f \(RNGitPageMicron.escape(commit.author)) "
+            + "\(RNGitPage.Colour.dim)\(date)`f\n")
+        contentParts.append("\(RNGitPageMicron.escape(commit.subject))\n\n")
+      }
+
+      let hasMore = commits.count == RNGitPage.commitsPerPage
+      if pageNum > 0 || hasMore {
+        var navLinks: [String] = []
+        if pageNum > 0 {
+          navLinks.append(
+            RNGitPageMicron.link(
+              "« Newer", RNGitPage.Path.commits,
+              [
+                ("g", groupName), ("r", repositoryName), ("ref", ref), ("path", filePath),
+                ("page", String(pageNum - 1)),
+              ]))
+        }
+        navLinks.append("Page \(pageNum + 1)")
+        if hasMore {
+          navLinks.append(
+            RNGitPageMicron.link(
+              "Older »", RNGitPage.Path.commits,
+              [
+                ("g", groupName), ("r", repositoryName), ("ref", ref), ("path", filePath),
+                ("page", String(pageNum + 1)),
+              ]))
+        }
+        contentParts.append(navLinks.joined(separator: " | ") + "\n")
+      }
+    }
+
+    viewSucceeded(group: groupName, repository: repositoryName, for: identityHash)
+
+    return templates.render(
+      contentParts.joined(), navigation: navigation, template: RNGitPageTemplate.commits.rawValue,
+      startedAt: startedAt)
+  }
+
+  // MARK: - Commit page
+
+  /// One commit: its metadata, message, signature status, changed files and diff.
+  ///
+  /// Mirrors `serve_commit_page`, including two divergences from its sibling pages: a repository
+  /// that cannot be found here reads "was not found" at an "Error" heading, not the "Not Found"
+  /// wording the other pages use, and none of this page's own error replies below carry the
+  /// breadcrumb, even once it has been built, the way the closing, successful reply does.
+  public mutating func serveCommitPage(
+    identityHash: Data?, groupName: String, repositoryName: String, ref: String = "HEAD",
+    commitHash: String = ""
+  ) -> Data {
+    let startedAt = Date().timeIntervalSince1970
+
+    guard !groupName.isEmpty, !repositoryName.isEmpty else {
+      return templates.render(
+        RNGitPageMicron.heading("Error", level: 2) + "\nInvalid request\n", startedAt: startedAt)
+    }
+
+    if identityHash == nil, settings.blockedIdentities.contains(access.nullIdentityHash) {
+      return templates.render(
+        "", template: RNGitPageTemplate.noIdentity.rawValue, startedAt: startedAt)
+    }
+
+    guard
+      let repository = access.repository(
+        readableBy: identityHash, in: groupName, named: repositoryName)
+    else {
+      return templates.render(
+        RNGitPageMicron.heading("Error", level: 2)
+          + "\nThe requested repository was not found.\n",
+        startedAt: startedAt)
+    }
+
+    guard let resolvedRef = reader.resolve(ref, in: repository.path) else {
+      return templates.render(
+        RNGitPageMicron.heading("Ref Not Found", level: 1)
+          + "\n\nThe ref '\(ref)' does not exist in this repository.\n",
+        startedAt: startedAt)
+    }
+
+    guard !commitHash.isEmpty, commitHash.count >= 7 else {
+      return templates.render(
+        RNGitPageMicron.heading("Error", level: 2) + "\nNo valid commit hash specified.\n",
+        startedAt: startedAt)
+    }
+
+    guard let resolvedHash = reader.resolve(commitHash, in: repository.path) else {
+      return templates.render(
+        RNGitPageMicron.heading("Error", level: 2)
+          + "\nThe commit \(commitHash) does not exist in this repository.\n",
+        startedAt: startedAt)
+    }
+
+    let breadcrumb = [
+      RNGitPageMicron.link("Node", RNGitPage.Path.index),
+      RNGitPageMicron.link(groupName, RNGitPage.Path.group, [("g", groupName)]),
+      RNGitPageMicron.link(
+        repositoryName, RNGitPage.Path.repository, [("g", groupName), ("r", repositoryName)]),
+      RNGitPageMicron.link(
+        "commits", RNGitPage.Path.commits,
+        [("g", groupName), ("r", repositoryName), ("ref", ref)]),
+      String(resolvedHash.prefix(7)),
+    ].joined(separator: " / ")
+    let navigation = ">>\n" + breadcrumb + "\n"
+
+    let commitCheck = reader.isCommit(resolvedHash, in: repository.path)
+    if commitCheck == false {
+      return templates.render(
+        RNGitPageMicron.heading("Error", level: 2)
+          + "\nThe hash \(commitHash) does not refer to a commit.\n",
+        startedAt: startedAt)
+    }
+    if commitCheck == nil {
+      return templates.render(
+        RNGitPageMicron.heading("Error", level: 2) + "\nCould not verify commit object.\n",
+        startedAt: startedAt)
+    }
+
+    guard let commitInfo = reader.commitInfo(in: repository.path, of: resolvedHash) else {
+      return templates.render(
+        RNGitPageMicron.heading("Error", level: 2) + "\n\nCould not retrieve commit information.\n",
+        startedAt: startedAt)
+    }
+
+    var contentParts: [String] = []
+    contentParts.append(RNGitPageMicron.heading("Commit \(resolvedHash)", level: 2))
+    contentParts.append("\n")
+
+    let folderIcon = RNGitPage.icon(.folder)
+    contentParts.append(
+      RNGitPageMicron.link(
+        "\(folderIcon) Browse tree at this commit", RNGitPage.Path.tree,
+        [("g", groupName), ("r", repositoryName), ("ref", resolvedHash)]) + "\n\n")
+
+    var showSig = false
+    let sigStatus = reader.commitSignature(in: repository.path, of: resolvedHash)
+    let sigText: String
+    if sigStatus.signed {
+      if sigStatus.valid, sigStatus.authorMatch {
+        sigText = "`FT66BB85Valid, signed by author`f"
+        showSig = true
+      } else if sigStatus.valid {
+        sigText = "`Faa0\(RNGitPageMicron.escape(sigStatus.message))`f"
+        showSig = true
+      } else {
+        sigText = "\(RNGitPage.Colour.diffRemoved)\(RNGitPageMicron.escape(sigStatus.message))`f"
+        showSig = true
+      }
+    } else {
+      sigText = "Not signed"
+    }
+
+    if !commitInfo.parents.isEmpty {
+      let parentLinks = commitInfo.parents.map { parentHash in
+        RNGitPageMicron.link(
+          String(parentHash.prefix(7)), RNGitPage.Path.commit,
+          [("g", groupName), ("r", repositoryName), ("ref", ref), ("h", parentHash)])
+      }
+      contentParts.append("Parents    : \(parentLinks.joined(separator: " "))\n")
+    }
+
+    contentParts.append(
+      "Author     : \(RNGitPageMicron.escape(commitInfo.authorName)) "
+        + "<\(RNGitPageMicron.escape(commitInfo.authorEmail))>\n")
+    if showSig { contentParts.append("Signature  : \(sigText)\n") }
+    contentParts.append("Date       : \(commitInfo.authorDate)\n")
+
+    if commitInfo.committerName != commitInfo.authorName {
+      contentParts.append(
+        "Committer : \(RNGitPageMicron.escape(commitInfo.committerName)) "
+          + "<\(RNGitPageMicron.escape(commitInfo.committerEmail))>\n")
+      contentParts.append("Date      : \(commitInfo.committerDate)\n")
+    }
+
+    contentParts.append("\n")
+
+    if !commitInfo.message.isEmpty {
+      contentParts.append(RNGitPageFormatting.commit(commitInfo.message) + "\n")
+      contentParts.append("\n")
+    }
+
+    if !commitInfo.files.isEmpty {
+      contentParts.append(RNGitPageMicron.heading("Changes", level: 2))
+      contentParts.append("\n")
+
+      let totalAdditions = commitInfo.files.reduce(0) { $0 + $1.additions }
+      let totalDeletions = commitInfo.files.reduce(0) { $0 + $1.deletions }
+      contentParts.append(
+        "  \(commitInfo.files.count) files changed, \(totalAdditions) insertions(+), "
+          + "\(totalDeletions) deletions(-)\n\n")
+
+      for fileInfo in commitInfo.files {
+        let statusDisplay: String
+        switch fileInfo.status {
+        case "A": statusDisplay = "\(RNGitPage.Colour.diffAdded)A`f"
+        case "D": statusDisplay = "\(RNGitPage.Colour.diffRemoved)D`f"
+        case "M": statusDisplay = "`Faa0M`f"
+        case "R": statusDisplay = "\(RNGitPage.Colour.diffPosition)R`f"
+        default: statusDisplay = fileInfo.status
+        }
+
+        let fileLink = RNGitPageMicron.link(
+          RNGitPageMicron.escape(fileInfo.path), RNGitPage.Path.blob,
+          [
+            ("g", groupName), ("r", repositoryName), ("ref", resolvedHash),
+            ("path", fileInfo.path),
+          ])
+
+        var stats: [String] = []
+        if fileInfo.additions > 0 {
+          stats.append("\(RNGitPage.Colour.diffAdded)+\(fileInfo.additions)`f")
+        }
+        if fileInfo.deletions > 0 {
+          stats.append("\(RNGitPage.Colour.diffRemoved)-\(fileInfo.deletions)`f")
+        }
+
+        contentParts.append("  \(statusDisplay) \(fileLink) \(stats.joined(separator: " "))\n")
+      }
+
+      contentParts.append("\n")
+    }
+
+    if RNGitPage.showDiffByDefault, let diff = commitInfo.diff, !diff.isEmpty {
+      contentParts.append(RNGitPageMicron.heading("Diff", level: 2))
+      contentParts.append("\n")
+      let formattedDiff = RNGitPageFormatting.diff(diff)
+      contentParts.append(String(formattedDiff.drop(while: \.isWhitespace)))
+    }
+
+    viewSucceeded(group: groupName, repository: repositoryName, for: identityHash)
+
+    return templates.render(
+      contentParts.joined(), navigation: navigation, template: RNGitPageTemplate.commit.rawValue,
+      startedAt: startedAt)
+  }
+
   /// `path`'s extension, lowercased and with its leading dot, or empty where it has none.
   private static func fileExtension(of path: String) -> String {
     let extensionText = (path as NSString).pathExtension
