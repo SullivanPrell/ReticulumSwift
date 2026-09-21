@@ -14,7 +14,7 @@ import Foundation
 ///
 /// Built fresh for each request, the way the git-wire-protocol handlers are: it is handed a
 /// copy of the node's statistics, records into that copy, and the caller reads `statistics`
-/// back afterward. `thanks` is the exception — a class the node holds for as long as it runs, so
+/// back afterward. `thanks` is the exception—a class the node holds for as long as it runs, so
 /// a link is only ever counted once no matter how many handlers come and go answering it.
 public struct RNGitPageHandler {
 
@@ -102,7 +102,7 @@ public struct RNGitPageHandler {
 
   // MARK: - Group page
 
-  /// One group's repositories, and what each holds — or that `groupName` names no group
+  /// One group's repositories, and what each holds—or that `groupName` names no group
   /// `identityHash` may see, which reads the same whether it exists and is closed or does not
   /// exist at all.
   ///
@@ -159,7 +159,7 @@ public struct RNGitPageHandler {
   /// One repository's branches and tags, `refType` narrowing them to `"heads"` or `"tags"`.
   ///
   /// Mirrors `serve_refs_page`, including its one quirk: when `refType` narrows the page to just
-  /// branches or just tags, "No refs found" never shows even if that narrowed set is empty —
+  /// branches or just tags, "No refs found" never shows even if that narrowed set is empty—
   /// Python's own guard is an AND of both sides, not the one the request actually asked for.
   public mutating func serveRefsPage(
     identityHash: Data?, groupName: String, repositoryName: String, refType: String = ""
@@ -457,7 +457,7 @@ public struct RNGitPageHandler {
   /// Counts one view, in the narrowest scope the arguments name.
   ///
   /// A nil `group` and nil `repository` count a front-page view, `group` alone counts that
-  /// group's view, and both present count that repository's view — unless `identityHash` is one
+  /// group's view, and both present count that repository's view—unless `identityHash` is one
   /// the node does not count, or the node counts no views at all.
   private mutating func viewSucceeded(
     group: String?, repository: String?, for identityHash: Data?

@@ -236,7 +236,7 @@ final class RNGitPageHandlerTests: XCTestCase {
   }
 
   /// A group no group of that name has, and a group whose repositories are all closed, both
-  /// read as "not found" — the same message either way.
+  /// read as "not found"—the same message either way.
   func testGroupPageNotFoundForUnknownGroup() throws {
     var handler = Self.handler(access: Self.access())
     let page = try XCTUnwrap(
@@ -433,8 +433,8 @@ final class RNGitPageHandlerTests: XCTestCase {
   ///
   /// The first click reads back "Thanks (0)", not "(1)": the reference's own
   /// `repository_thanks` writes the new count to disk but falls out of its `if` without
-  /// returning it when the file did not already exist, so only the next call — deduped or
-  /// not — actually reads that count back.
+  /// returning it when the file did not already exist, so only the next call—deduped or
+  /// not—actually reads that count back.
   func testRepoPageThanksCountsOnceThenAgainForADifferentLink() throws {
     let linkA = Data(repeating: 0x01, count: 16)
     let linkB = Data(repeating: 0x02, count: 16)

@@ -110,7 +110,7 @@ final class RNGitRepositoryReaderTests: XCTestCase {
     XCTAssertEqual(reader.activeWorkDocumentCount(of: repository), 0)
   }
 
-  /// Only numerically-named directories are counted: a non-numeric directory and a file that
+  /// Only numerically named directories are counted: a non-numeric directory and a file that
   /// merely happens to have a numeric name are both skipped, matching the reference's own
   /// `f.isdigit() and os.path.isdir(...)` filter.
   func testActiveWorkDocumentCountCountsOnlyNumericDirectories() throws {
