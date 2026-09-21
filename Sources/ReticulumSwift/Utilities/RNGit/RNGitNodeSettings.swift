@@ -58,6 +58,12 @@ public struct RNGitNodeSettings: Equatable, Sendable {
   /// Whether the node also serves its repositories as Nomad Network pages.
   public var serveNomadNet = false
 
+  /// Whether a blob page run through the syntax highlighter rather than shown as plain text.
+  ///
+  /// Mirrors `self.highlight_syntax`, which the reference sets once in `__init__` and never
+  /// reads from configuration — there is no file key for it, only the default.
+  public var highlightSyntax = true
+
   /// The identity hash each alias names, in lowercase hexadecimal.
   public var identityAliases: [String: String] = [:]
 

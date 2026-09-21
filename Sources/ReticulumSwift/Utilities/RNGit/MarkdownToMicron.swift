@@ -17,6 +17,9 @@ public protocol MicronSyntaxHighlighting {
 
   /// Returns `code` marked up in Micron, for `language`.
   func highlight(_ code: String, language: String?) throws -> String
+
+  /// Returns `code` marked up in Micron, guessing the lexer from `language` or else `filename`.
+  func highlight(_ code: String, filename: String?, language: String?) throws -> String
 }
 
 /// Renders markdown as Micron, the markup a NomadNet browser displays.

@@ -52,7 +52,11 @@ final class RNGitPageHandlerTests: XCTestCase {
 
   /// Builds `demoRepository`, pinning `HEAD` to `main` explicitly so the fixture does not
   /// inherit whatever `init.defaultBranch` the host happens to be configured with.
-  private static let fixtureScript = """
+  ///
+  /// A raw string literal: the script embeds `printf` octal escapes (`\000`, for the binary
+  /// fixtures) that must reach the shell unchanged, not collapsed by Swift's own `\0`-is-NUL
+  /// string-literal escaping.
+  private static let fixtureScript = #"""
     set -e
     root="$1"
     rm -rf "$root"
@@ -73,7 +77,17 @@ final class RNGitPageHandlerTests: XCTestCase {
     git config commit.gpgsign false
 
     printf 'A micron readme\n' > README.mu
+
+    mkdir -p src
+    printf 'let x = 1\n' > src/main.swift
+    printf '# Notes\n\nSome *notes*.\n' > notes.md
+    printf 'abc\000def\n' > data.bin
+    printf 'PNG\000fakeimagedata\n' > logo.png
+    yes 'line of text ' | head -c 300000 > big.txt
+    ln -s README.mu link_to_readme
+
     git add -A
+    git update-index --add --cacheinfo 160000,1234567890123456789012345678901234567890,sub
     git commit -q -m "First commit"
 
     git branch other
@@ -81,7 +95,7 @@ final class RNGitPageHandlerTests: XCTestCase {
     git tag -a annotated -m "An annotated tag"
 
     git config repository.description "A configured description"
-    """
+    """#
 
   /// An empty repository: initialised, with `HEAD` pinned, but with no commit and so no refs.
   private func makeEmptyRepository() throws -> String {
@@ -540,5 +554,394 @@ final class RNGitPageHandlerTests: XCTestCase {
 
     XCTAssertTrue(page.contains("Mirrored from"))
     XCTAssertTrue(page.contains("https://example.com/upstream"))
+  }
+
+  // MARK: - Tree page
+
+  /// Root listing sorts directories and the submodule ahead of files, then alphabetically by
+  /// lowercased name within each group — the reference's own `sort_key`. Root has no parent
+  /// directory to link back to.
+  func testTreePageSortsDirectoriesAndSubmodulesBeforeFilesAlphabetically() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo"),
+        encoding: .utf8))
+
+    let markers = [
+      "path=src", "sub", "path=big.txt", "path=data.bin", "link_to_readme", "path=logo.png",
+      "path=README.mu",
+    ]
+    let positions = try markers.map { marker -> String.Index in
+      try XCTUnwrap(page.range(of: marker)?.lowerBound, "expected to find '\(marker)'")
+    }
+    XCTAssertEqual(positions, positions.sorted(), "expected \(markers) in that order")
+    XCTAssertFalse(page.contains("../"), "the root listing has no parent directory to link to")
+  }
+
+  /// A submodule (a gitlink tree entry) is marked distinctly from an ordinary directory.
+  func testTreePageMarksSubmoduleEntries() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("sub"))
+    XCTAssertTrue(page.contains("(submodule)"))
+  }
+
+  /// A symlink entry in a tree listing shows its target rather than a size.
+  func testTreePageShowsSymlinkTargetWithArrow() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("link_to_readme"))
+    XCTAssertTrue(page.contains("→ README.mu"))
+  }
+
+  /// A subdirectory's page carries a parent-directory link and lists only its own entries.
+  func testTreePageNestedDirectoryShowsParentLinkAndOwnEntries() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          treePath: "src"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("../"), "a subdirectory must link back to its parent")
+    XCTAssertTrue(page.contains("path=src/main.swift"))
+    XCTAssertTrue(page.contains("main.swift"))
+  }
+
+  /// An unresolvable ref reports the error by name and offers a way back to the refs list.
+  func testTreePageRefNotFoundShowsErrorAndRefsLink() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          ref: "nonexistent-ref"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("The ref 'nonexistent-ref' does not exist in this repository."))
+    XCTAssertTrue(page.contains("View All Refs"))
+  }
+
+  /// An unknown repository is reported as not found, distinctly worded from the refs/repo pages.
+  func testTreePageRepositoryNotFound() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "nonexistent"),
+        encoding: .utf8))
+    XCTAssertTrue(
+      page.contains("The requested repository does not exist or you do not have access to it."))
+  }
+
+  /// A reader with no identity is turned away where the node blocks the null identity.
+  func testTreePageNoIdentityBlocked() throws {
+    var settings = RNGitNodeSettings()
+    settings.blockedIdentities = [Self.nullIdentityHash]
+    let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
+    var handler = Self.handler(access: blocked, settings: settings)
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(identityHash: nil, groupName: "Zebra", repositoryName: "one"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("This page requires identification, and none was received."))
+  }
+
+  /// A repository whose root holds `count` files named so a lexical sort matches a numeric one
+  /// (`file0000.txt` through `file<count-1>.txt`), for the tree page's pagination boundary.
+  private func makeManyFilesRepository(count: Int) throws -> String {
+    let path = fixtureBase + "/many"
+    let width = String(count - 1).count
+    let script = """
+      set -e
+      root="$1"
+      rm -rf "$root"
+      mkdir -p "$root"
+      cd "$root"
+      git init -q .
+      git symbolic-ref HEAD refs/heads/main
+      git config user.name Author
+      git config user.email author@example.com
+      git config commit.gpgsign false
+      i=0
+      while [ $i -le \(count - 1) ]; do
+        name=$(printf 'file%0\(width)d.txt' "$i")
+        printf 'x' > "$name"
+        i=$((i + 1))
+      done
+      git add -A
+      git commit -q -m many
+      """
+    let scriptPath = fixtureBase + "/many.sh"
+    try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+    let built = RNGitProcessRunner().run("sh", arguments: [scriptPath, path], in: fixtureBase)
+    try XCTSkipIf(built == nil, "no shell to build the repository with")
+    XCTAssertEqual(built?.status, 0, built?.standardError ?? "")
+    return path
+  }
+
+  /// More than one page of entries: pagination controls with the right counts, and the
+  /// unclamped low bound the reference's own slicing arithmetic produces.
+  func testTreePagePaginatesPastOneThousandEntries() throws {
+    let many = try makeManyFilesRepository(count: 1001)
+    let access = RNGitPageAccess(
+      control: RNGitAccessControl(groups: [
+        "proj": RNGitGroup(
+          name: "proj", path: fixtureBase + "/g",
+          repositories: ["many": RNGitRepository(name: "many", path: many)],
+          permissions: Self.readableByEveryone())
+      ]))
+    var handler = Self.handler(access: access)
+
+    let firstPage = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "many"),
+        encoding: .utf8))
+    XCTAssertTrue(firstPage.contains("Showing 1-1000 of 1001 entries"))
+    XCTAssertTrue(firstPage.contains("Page 1 of 2"))
+    XCTAssertTrue(firstPage.contains("Next »"))
+    XCTAssertFalse(firstPage.contains("« Previous"))
+
+    let secondPage = try XCTUnwrap(
+      String(
+        data: handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "many", page: 1),
+        encoding: .utf8))
+    XCTAssertTrue(secondPage.contains("Showing 1001-1001 of 1001 entries"))
+    XCTAssertTrue(secondPage.contains("Page 2 of 2"))
+    XCTAssertTrue(secondPage.contains("« Previous"))
+    XCTAssertFalse(secondPage.contains("Next »"))
+  }
+
+  // MARK: - Blob page
+
+  /// A symlink shows its target in italics rather than trying to display file content.
+  func testBlobPageSymlinkShowsTargetInItalics() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "link_to_readme"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("Symlink → README.mu"))
+    XCTAssertTrue(page.contains("`*README.mu`*"))
+  }
+
+  /// A non-image binary file gets a placeholder message and only a download link, no
+  /// rendered/raw toggle.
+  func testBlobPageBinaryNonImageShowsPlaceholderAndOnlyDownload() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "data.bin"),
+        encoding: .utf8))
+
+    XCTAssertTrue(
+      page.contains("This file appears to be binary and cannot be displayed as text."))
+    XCTAssertTrue(page.contains("Displaying Raw"))
+    XCTAssertFalse(page.contains("View rendered"))
+    XCTAssertTrue(page.contains("Binary"))
+  }
+
+  /// A binary file with an image extension is offered inline as an image rather than the
+  /// binary-file placeholder.
+  func testBlobPageBinaryImageRendersImageMarkup() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "logo.png"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("`(Image file"))
+    XCTAssertTrue(page.contains("/media/proj/demo/HEAD/logo.png"))
+    XCTAssertFalse(page.contains("appears to be binary and cannot be displayed"))
+  }
+
+  /// A file over the display limit shows a size-exceeded message rather than its content.
+  func testBlobPageOversizedFileExceedsDisplayLimit() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "big.txt"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("which exceeds the display limit of"))
+    XCTAssertTrue(page.contains("Text,"))
+  }
+
+  /// A `.mu` file is rendered by default, its Micron markup passed through as page content.
+  func testBlobPageMicronFileRendersByDefault() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "README.mu"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("Displaying Rendered"))
+    XCTAssertTrue(page.contains("View raw"))
+    XCTAssertTrue(page.contains("A micron readme"))
+  }
+
+  /// Asking for the raw view of a renderable file flips the nav state without needing the
+  /// render flag.
+  func testBlobPageMicronFileRawShowsRawNavState() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "README.mu", raw: true),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("Displaying Raw"))
+    XCTAssertTrue(page.contains("View rendered"))
+  }
+
+  /// A `.md` file is converted through `MarkdownToMicron` when rendered, not shown as literal
+  /// source: the heading marker becomes a Micron heading, and the italic marker becomes one too.
+  func testBlobPageMarkdownFileRendersThroughMarkdownToMicron() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "notes.md"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains(">Notes"))
+    XCTAssertTrue(page.contains("`*notes`*"))
+    XCTAssertFalse(page.contains("# Notes"), "the heading marker must be converted, not shown raw")
+  }
+
+  /// A non-renderable source file is always shown through the syntax highlighter, never offered
+  /// a rendered view.
+  func testBlobPageSourceFileIsSyntaxHighlighted() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "src/main.swift"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("Displaying Raw"))
+    XCTAssertFalse(page.contains("View rendered"), "a non-renderable file has no rendered view")
+    XCTAssertTrue(page.contains("let"), "the highlighted output must still carry the source text")
+    XCTAssertFalse(page.contains("`="), "highlighted output does not use the plain-source wrapper")
+  }
+
+  /// Turning off syntax highlighting falls back to the same plain-source wrapping a
+  /// renderable-but-unrendered file gets, matching the reference's own fallback.
+  func testBlobPageSourceFileWithHighlightingDisabledShowsPlainSource() throws {
+    var settings = RNGitNodeSettings()
+    settings.highlightSyntax = false
+    var handler = Self.handler(access: realAccess(), settings: settings)
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "src/main.swift"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("`="))
+    XCTAssertTrue(page.contains("let x = 1"))
+  }
+
+  /// A path naming a directory is answered with the tree page, not a blob error.
+  func testBlobPageOfADirectoryRedirectsToTreePage() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "src"),
+        encoding: .utf8))
+
+    XCTAssertTrue(page.contains("Contents:"))
+    XCTAssertTrue(page.contains("main.swift"))
+  }
+
+  /// An empty file path is rejected before any repository lookup.
+  func testBlobPageInvalidPathForEmptyFilePath() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo", filePath: ""),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("No file path specified."))
+  }
+
+  /// An unresolvable ref is reported with the blob page's own wording ("Ref Not Found" as a
+  /// level-1 heading), distinct from the tree page's "Error" level-2 heading for the same case.
+  func testBlobPageRefNotFound() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          ref: "nonexistent-ref", filePath: "README.mu"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("The ref 'nonexistent-ref' does not exist in this repository."))
+  }
+
+  /// An unknown repository is reported as not found.
+  func testBlobPageRepositoryNotFound() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "nonexistent",
+          filePath: "README.mu"),
+        encoding: .utf8))
+    XCTAssertTrue(
+      page.contains("The requested repository does not exist or you do not have access to it."))
+  }
+
+  /// A path that resolves to no object at the ref reports "not found", not an error.
+  func testBlobPageFileNotFoundAtRef() throws {
+    var handler = Self.handler(access: realAccess())
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
+          filePath: "nonexistent-file.txt"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("File not found at this ref."))
+  }
+
+  /// A reader with no identity is turned away where the node blocks the null identity.
+  func testBlobPageNoIdentityBlocked() throws {
+    var settings = RNGitNodeSettings()
+    settings.blockedIdentities = [Self.nullIdentityHash]
+    let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
+    var handler = Self.handler(access: blocked, settings: settings)
+    let page = try XCTUnwrap(
+      String(
+        data: handler.serveBlobPage(identityHash: nil, groupName: "Zebra", repositoryName: "one"),
+        encoding: .utf8))
+    XCTAssertTrue(page.contains("This page requires identification, and none was received."))
   }
 }

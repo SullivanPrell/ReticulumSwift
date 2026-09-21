@@ -113,4 +113,11 @@ public enum RNGitPageMicron {
     }
     return encoded
   }
+
+  /// The value a field carries `text` back as: `+` read as a space, then everything else
+  /// percent-decoded.
+  static func unquotePlus(_ value: String) -> String {
+    let spaced = value.replacingOccurrences(of: "+", with: " ")
+    return spaced.removingPercentEncoding ?? spaced
+  }
 }
