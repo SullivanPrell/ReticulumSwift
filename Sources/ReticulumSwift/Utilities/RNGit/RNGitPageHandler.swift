@@ -454,9 +454,11 @@ public struct RNGitPageHandler {
 
   // MARK: - Statistics
 
-  /// Counts one view of `repository` in `group` — or `group`'s own page where `repository` is
-  /// absent, or the front page where both are — unless `identityHash` is one the node does not
-  /// count, or the node counts no views at all.
+  /// Counts one view, in the narrowest scope the arguments name.
+  ///
+  /// A nil `group` and nil `repository` count a front-page view, `group` alone counts that
+  /// group's view, and both present count that repository's view — unless `identityHash` is one
+  /// the node does not count, or the node counts no views at all.
   private mutating func viewSucceeded(
     group: String?, repository: String?, for identityHash: Data?
   ) {

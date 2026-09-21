@@ -188,6 +188,7 @@ final class RNGitPageHandlerTests: XCTestCase {
   func testFrontPageCountsTheViewBeforeTurningAnUnidentifiedReaderAway() throws {
     var settings = RNGitNodeSettings()
     settings.statsEnabled = true
+    settings.blockedIdentities = [Self.nullIdentityHash]
     let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
     var handler = Self.handler(access: blocked, settings: settings)
 
@@ -260,6 +261,7 @@ final class RNGitPageHandlerTests: XCTestCase {
   func testGroupPageDoesNotCountViewWhenBlocked() throws {
     var settings = RNGitNodeSettings()
     settings.statsEnabled = true
+    settings.blockedIdentities = [Self.nullIdentityHash]
     let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
     var handler = Self.handler(access: blocked, settings: settings)
 
@@ -376,6 +378,7 @@ final class RNGitPageHandlerTests: XCTestCase {
   func testRefsPageNoIdentityBlocked() throws {
     var settings = RNGitNodeSettings()
     settings.statsEnabled = true
+    settings.blockedIdentities = [Self.nullIdentityHash]
     let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
     var handler = Self.handler(access: blocked, settings: settings)
     let page = try XCTUnwrap(
@@ -427,6 +430,11 @@ final class RNGitPageHandlerTests: XCTestCase {
 
   /// Thanking the same repository from the same link twice counts once; a different link counts
   /// again, mirroring the reference's own link-keyed deduplication.
+  ///
+  /// The first click reads back "Thanks (0)", not "(1)": the reference's own
+  /// `repository_thanks` writes the new count to disk but falls out of its `if` without
+  /// returning it when the file did not already exist, so only the next call — deduped or
+  /// not — actually reads that count back.
   func testRepoPageThanksCountsOnceThenAgainForADifferentLink() throws {
     let linkA = Data(repeating: 0x01, count: 16)
     let linkB = Data(repeating: 0x02, count: 16)
@@ -438,7 +446,7 @@ final class RNGitPageHandlerTests: XCTestCase {
           identityHash: Self.stranger, groupName: "proj", repositoryName: "demo",
           thanksClicked: true, linkID: linkA),
         encoding: .utf8))
-    XCTAssertTrue(first.contains("Thanks (1)"))
+    XCTAssertTrue(first.contains("Thanks (0)"), "the very first click never reads its own write")
 
     let second = try XCTUnwrap(
       String(
@@ -480,8 +488,10 @@ final class RNGitPageHandlerTests: XCTestCase {
 
   /// A reader with no identity is turned away where the node blocks the null identity.
   func testRepoPageNoIdentityBlocked() throws {
+    var settings = RNGitNodeSettings()
+    settings.blockedIdentities = [Self.nullIdentityHash]
     let blocked = Self.access(blockedIdentities: [Self.nullIdentityHash])
-    var handler = Self.handler(access: blocked)
+    var handler = Self.handler(access: blocked, settings: settings)
     let page = try XCTUnwrap(
       String(
         data: handler.serveRepoPage(identityHash: nil, groupName: "Zebra", repositoryName: "one"),
@@ -524,7 +534,8 @@ final class RNGitPageHandlerTests: XCTestCase {
     var handler = Self.handler(access: access)
     let page = try XCTUnwrap(
       String(
-        data: handler.serveRepoPage(identityHash: Self.stranger, groupName: "a", repositoryName: "a"),
+        data: handler.serveRepoPage(
+          identityHash: Self.stranger, groupName: "a", repositoryName: "a"),
         encoding: .utf8))
 
     XCTAssertTrue(page.contains("Mirrored from"))
