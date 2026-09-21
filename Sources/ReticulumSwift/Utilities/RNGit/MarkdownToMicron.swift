@@ -26,6 +26,9 @@ public protocol MicronSyntaxHighlighting {
 /// differently depending on which node serves it.
 public final class MarkdownToMicron {
 
+  /// The bullet a page prepends to a linked list entry, matching Python's `self.mdc.BULLET`.
+  public static let bullet = Markup.bullet
+
   /// Micron markup the converter emits.
   private enum Markup {
     static let bold = "`!"

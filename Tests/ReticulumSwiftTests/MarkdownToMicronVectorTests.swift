@@ -416,4 +416,12 @@ final class MarkdownToMicronVectorTests: XCTestCase {
     converter.restoreURLScope()
     XCTAssertEqual(converter.formatBlock("[a](b)"), "`_`!`[a`:/one/b]`!`_")
   }
+
+  /// `util.py`'s `MarkdownToMicron.BULLET`, which a page's group and repository links prepend.
+  ///
+  /// python3 -c "from RNS.Utilities.rngit.util import MarkdownToMicron; print(repr(MarkdownToMicron.BULLET))"
+  /// '•'
+  func testBulletMatchesTheReference() {
+    XCTAssertEqual(MarkdownToMicron.bullet, "\u{2022}")
+  }
 }

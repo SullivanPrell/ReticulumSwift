@@ -95,6 +95,40 @@ final class RNGitRepositoryReaderTests: XCTestCase {
     XCTAssertEqual(references.tags, [])
   }
 
+  /// `HEAD` is a symbolic ref to `main`, the way the fixture script points it.
+  func testTheDefaultBranchMatchesTheReference() {
+    XCTAssertEqual(reader.defaultBranch(of: repository), "main")
+  }
+
+  /// A repository that is not there points `HEAD` at nothing.
+  func testAMissingRepositoryHasNoDefaultBranch() {
+    XCTAssertEqual(reader.defaultBranch(of: base + "/nothing"), nil)
+  }
+
+  /// A repository with no `.work/active` directory at all has no active work.
+  func testActiveWorkDocumentCountIsZeroWithNoWorkDirectory() {
+    XCTAssertEqual(reader.activeWorkDocumentCount(of: repository), 0)
+  }
+
+  /// Only numerically-named directories are counted: a non-numeric directory and a file that
+  /// merely happens to have a numeric name are both skipped, matching the reference's own
+  /// `f.isdigit() and os.path.isdir(...)` filter.
+  func testActiveWorkDocumentCountCountsOnlyNumericDirectories() throws {
+    let active = repository + ".work/active"
+    try FileManager.default.createDirectory(
+      atPath: active, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      atPath: active + "/1", withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      atPath: active + "/2", withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      atPath: active + "/not-a-number", withIntermediateDirectories: true)
+    try "not a directory".write(
+      toFile: active + "/3", atomically: true, encoding: .utf8)
+
+    XCTAssertEqual(reader.activeWorkDocumentCount(of: repository), 2)
+  }
+
   /// Each branch and tag carries what the reference read about it.
   func testTheReferenceDetailsMatchTheReference() {
     let details = reader.referenceDetails(of: repository, defaultBranch: "main")

@@ -306,6 +306,16 @@ public struct RNGitRepositoryReader: Sendable {
     return GitReferenceNames.sanitiseObjectID(trimmed(resolved.standardOutput).lowercased())
   }
 
+  /// The branch `HEAD` points at, or `nil` where it points at nothing symbolic.
+  ///
+  /// Mirrors Python's inline `git symbolic-ref HEAD`, replacing every `refs/heads/` in the
+  /// answer rather than only stripping it as a prefix, exactly as the reference does.
+  public func defaultBranch(of repository: String) -> String? {
+    guard let resolved = git(["symbolic-ref", "HEAD"], in: repository), resolved.status == 0
+    else { return nil }
+    return trimmed(resolved.standardOutput).replacingOccurrences(of: "refs/heads/", with: "")
+  }
+
   // MARK: - Trees and blobs
 
   /// What `path` holds at `ref`, empty where it is an empty directory and nothing where it is
@@ -417,6 +427,31 @@ public struct RNGitRepositoryReader: Sendable {
       }
     }
     return nil
+  }
+
+  // MARK: - Work documents
+
+  /// How many work documents are active under `repository`.
+  ///
+  /// Counted rather than read: a work document lives under `<repository>.work/active/<id>`,
+  /// named for the numeric id `mkdir` gave it when it was opened, and this only counts those
+  /// directories without looking inside any of them.
+  public func activeWorkDocumentCount(of repository: String) -> Int {
+    let activeDirectory = repository + ".work/active"
+    var isDirectory: ObjCBool = false
+    guard
+      FileManager.default.fileExists(atPath: activeDirectory, isDirectory: &isDirectory),
+      isDirectory.boolValue,
+      let entries = try? FileManager.default.contentsOfDirectory(atPath: activeDirectory)
+    else { return 0 }
+
+    return entries.filter { name in
+      guard !name.isEmpty, name.allSatisfy(\.isNumber) else { return false }
+      var entryIsDirectory: ObjCBool = false
+      return FileManager.default.fileExists(
+        atPath: activeDirectory + "/" + name, isDirectory: &entryIsDirectory)
+        && entryIsDirectory.boolValue
+    }.count
   }
 
   // MARK: - Commits
