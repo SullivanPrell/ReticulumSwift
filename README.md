@@ -7,7 +7,7 @@
 > please look there first to understand Reticulum itself. ReticulumSwift exists to bring
 > that same network, wire-for-wire, to Apple platforms.
 
-A from-scratch Swift implementation of the [Reticulum Network Stack](https://reticulum.network)—wire-compatible
+A native Swift port of the [Reticulum Network Stack](https://reticulum.network)—wire-compatible
 with the Python reference implementation, with first-class support
 for Apple platforms.
 
