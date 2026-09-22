@@ -559,8 +559,9 @@ final class RNGitPageHandlerTests: XCTestCase {
   // MARK: - Tree page
 
   /// Root listing sorts directories and the submodule ahead of files, then alphabetically by
-  /// lowercased name within each group — the reference's own `sort_key`. Root has no parent
-  /// directory to link back to.
+  /// lowercased name within each group—the reference's own `sort_key`.
+  ///
+  /// Root has no parent directory to link back to.
   func testTreePageSortsDirectoriesAndSubmodulesBeforeFilesAlphabetically() throws {
     var handler = Self.handler(access: realAccess())
     let page = try XCTUnwrap(
@@ -956,8 +957,8 @@ final class RNGitPageHandlerTests: XCTestCase {
 
   /// Two commits touching the same three files, so the second commit's own status detection (the
   /// only one with a parent to compare against) reports all four letters: `alpha.txt` modified,
-  /// `beta.txt` deleted, `gamma.txt` added, and `pic.bin` — a binary file present on both sides,
-  /// which numstat can only ever report as `-`/`-` — left at the reader's own fallback of "R".
+  /// `beta.txt` deleted, `gamma.txt` added, and `pic.bin`—a binary file present on both sides,
+  /// which numstat can only ever report as `-`/`-`—left at the reader's own fallback of "R".
   private func makeHistoryRepository() throws -> String {
     let path = fixtureBase + "/history"
     let script = #"""
@@ -1125,7 +1126,7 @@ final class RNGitPageHandlerTests: XCTestCase {
   }
 
   /// An unsigned commit computes "Not signed" internally but never actually renders the
-  /// "Signature  :" line — `show_sig` only turns true inside the three signed branches, so this
+  /// "Signature  :" line—`show_sig` only turns true inside the three signed branches, so this
   /// is the reference's own control flow, not an omission to fix.
   func testCommitPageSignatureLineOmittedWhenUnsigned() throws {
     let hash = try revParse("HEAD", in: demoRepository)

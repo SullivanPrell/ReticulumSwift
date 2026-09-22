@@ -1091,7 +1091,7 @@ public struct RNGitPageHandler {
       startedAt: startedAt)
   }
 
-  /// `path`'s extension, lowercased and with its leading dot, or empty where it has none.
+  /// The extension of `path`, lowercased and with its leading dot, or empty where it has none.
   private static func fileExtension(of path: String) -> String {
     let extensionText = (path as NSString).pathExtension
     return extensionText.isEmpty ? "" : "." + extensionText.lowercased()
