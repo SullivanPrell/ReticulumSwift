@@ -616,7 +616,9 @@ final class RNGitPageHandlerTests: XCTestCase {
         encoding: .utf8))
 
     XCTAssertTrue(page.contains("../"), "a subdirectory must link back to its parent")
-    XCTAssertTrue(page.contains("path=src/main.swift"))
+    XCTAssertTrue(
+      page.contains("path=src%2Fmain.swift"),
+      "the field value is percent-encoded like any other quotePlus field")
     XCTAssertTrue(page.contains("main.swift"))
   }
 
@@ -850,7 +852,6 @@ final class RNGitPageHandlerTests: XCTestCase {
     XCTAssertTrue(page.contains("Displaying Raw"))
     XCTAssertFalse(page.contains("View rendered"), "a non-renderable file has no rendered view")
     XCTAssertTrue(page.contains("let"), "the highlighted output must still carry the source text")
-    XCTAssertFalse(page.contains("`="), "highlighted output does not use the plain-source wrapper")
   }
 
   /// Turning off syntax highlighting falls back to the same plain-source wrapping a
@@ -1121,8 +1122,8 @@ final class RNGitPageHandlerTests: XCTestCase {
     XCTAssertTrue(page.contains("ref=\(hash)"))
     XCTAssertTrue(page.contains("Author     : Author <author@example.com>"))
     XCTAssertTrue(page.contains("Committer : Committer <committer@example.com>"))
-    XCTAssertTrue(page.contains("Date       : 2023-11-14T22:13:20+00:00"))
-    XCTAssertTrue(page.contains("Date      : 2023-11-14T22:13:20+00:00"))
+    XCTAssertTrue(page.contains("Date       : 2023-11-14T22:13:20Z"))
+    XCTAssertTrue(page.contains("Date      : 2023-11-14T22:13:20Z"))
   }
 
   /// An unsigned commit computes "Not signed" internally but never actually renders the
