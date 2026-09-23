@@ -1,15 +1,14 @@
 # ReticulumSwift
 
-> **Reticulum is the work of [Mark Qvist](https://github.com/markqvist).** This is an
-> independent, community Swift implementation of his protocol—**not an official
-> Reticulum project**. The canonical project, protocol specification, and reference
-> (Python) implementation live at **[github.com/markqvist/Reticulum](https://github.com/markqvist/Reticulum)**;
-> please look there first to understand Reticulum itself. ReticulumSwift exists to bring
-> that same network, wire-for-wire, to Apple platforms.
+> **Reticulum is the work of [Mark Qvist](https://github.com/markqvist).** ReticulumSwift
+> is a community translation of his Python reference implementation into Swift. It's
+> **not an official Reticulum project** and **not a clean-room implementation**. The
+> canonical project, the protocol, and the reference implementation live at
+> **[github.com/markqvist/Reticulum](https://github.com/markqvist/Reticulum)**; start there
+> to understand Reticulum itself. See [Provenance](#provenance).
 
-A native Swift port of the [Reticulum Network Stack](https://reticulum.network)—wire-compatible
-with the Python reference implementation, with first-class support
-for Apple platforms.
+A Swift port of the [Reticulum Network Stack](https://reticulum.network) for Apple
+platforms, built to interoperate with the Python reference implementation.
 
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2016%2B%20%7C%20macOS%2013%2B%20%7C%20tvOS%2016%2B%20%7C%20watchOS%209%2B-blue)](#requirements)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange)](https://swift.org)
@@ -23,10 +22,9 @@ and LoRa to TCP/IP and I2P. A self-certifying cryptographic address
 identifies every destination, and every packet carries end-to-end encryption by
 default.
 
-**ReticulumSwift** ports that stack to idiomatic Swift. It's byte-for-byte
-wire-compatible with Python Reticulum (RNS 1.5.2): a Swift node and a Python node
-interoperate on the same network, exchange announces, establish links, and transfer
-resources transparently.
+**ReticulumSwift** translates that stack into Swift. It tracks Python Reticulum
+(RNS 1.5.2). The interoperability suite runs Swift and Python nodes on one network,
+where they exchange announces, establish links, and transfer resources.
 
 ---
 
@@ -50,9 +48,11 @@ The goal of the stack is a complete iOS/macOS Reticulum experience—think
 
 ## Status
 
-ReticulumSwift implements the full Reticulum 1.5.2 protocol: all core layers and
-every standard interface. It's wire-compatible with the Python reference
-implementation.
+ReticulumSwift is **experimental**. It covers the core layers of Reticulum 1.5.2 and
+the standard interfaces listed below, but it hasn't had an independent security review
+and isn't a substitute for the reference implementation. The Python implementation is
+the authority on how Reticulum behaves. Where this port differs from it, the port is
+wrong.
 
 | Layer | State |
 |-------|-------|
@@ -65,14 +65,18 @@ implementation.
 | IFAC (deterministic Ed25519) | ✅ wire-compatible |
 | `rnsd` daemon + RPC + shared instance | ✅ config-compatible |
 
-An extensive XCTest suite covers behavior (3,580 tests, ~78% line coverage), and
-a live interoperability suite verifies wire compatibility against Python RNS—see [docs/INTEROP.md](docs/INTEROP.md).
+An XCTest suite covers behavior (3,580 tests, ~78% line coverage), and a live
+interoperability suite tests wire compatibility against Python RNS—see
+[docs/INTEROP.md](docs/INTEROP.md). Passing tests show interoperation in the cases
+tested, not parity in every case.
 
 ### Interfaces
 
 TCP client/server · UDP · AutoInterface (mDNS) · Backbone · Local · RNode (LoRa) ·
 RNodeMulti · I2P (embedded i2pd) · Serial · KISS · AX.25 KISS · Weave.
-`PipeInterface` is intentionally out of scope on Apple platforms.
+Weave support is experimental because its wire protocol is still changing upstream. Backbone
+runs as a client only on Apple platforms. `PipeInterface` is out of scope on Apple
+platforms.
 
 See [docs/INTERFACES.md](docs/INTERFACES.md) for configuration of each.
 
@@ -177,13 +181,29 @@ If you hit `SwiftShims` module-cache errors: `rm -rf .build && swift test`.
 
 ---
 
+## Provenance
+
+ReticulumSwift is a translation of the Python reference implementation of Reticulum,
+not an independent or clean-room implementation of the protocol. Its authors wrote it
+from the Python source, and the code follows that source closely: types, functions, constants, and
+control flow mirror their Python counterparts, and doc comments throughout
+`Sources/` cite the Python file, function, or line that each part translates. That
+makes it a derivative work of Reticulum. It carries Reticulum's copyright notice and
+license. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Its authors wrote most of the code with machine assistance (Claude Code). Commits made
+that way carry a `Co-Authored-By: Claude` trailer.
+
+---
+
 ## License
 
-ReticulumSwift is released under the **Reticulum License**—a permissive MIT-style 
+ReticulumSwift is released under the **Reticulum License**—a permissive MIT-style
 license with two binding conditions inherited from upstream Reticulum: the software
 **may not be used in systems that can purposefully harm human beings**, and it **may
 not be used to create AI/ML/LLM training datasets**. See [LICENSE](LICENSE).
 
 ReticulumSwift is a derivative work of [Reticulum](https://github.com/markqvist/Reticulum)
-by Mark Qvist. See [NOTICE](NOTICE) and [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md) for
-attribution and bundled-binary licenses (i2pd, Boost, OpenSSL).
+by Mark Qvist, as [Provenance](#provenance) describes. See [NOTICE](NOTICE) and
+[docs/THIRD-PARTY.md](docs/THIRD-PARTY.md) for attribution and bundled-binary licenses
+(i2pd, Boost, OpenSSL).
