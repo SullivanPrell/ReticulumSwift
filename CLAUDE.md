@@ -20,16 +20,16 @@ swift build -c release              # also builds the twelve utility executables
 rm -rf .build && swift test
 ```
 
-Cross-implementation parity for the utilities lives in `../../tri-test`, which compares
+Cross-implementation parity for the utilities lives in `../../reticulum-interop` (formerly `tri-test`), which compares
 each tool against the installed Python one—CLI surface, instance-control socket, and
 file/identity round-trips:
 
 ```bash
-cd ../../tri-test && RETICULUM_LOCAL_DEPS=1 make build-utilities test-utilities
+cd ../../reticulum-interop && RETICULUM_LOCAL_DEPS=1 make build-utilities test-utilities
 ```
 
-`RETICULUM_LOCAL_DEPS=1` is what points tri-test at this working tree; without it, it
-tests the published release pinned in `tri-test/versions.env`.
+`RETICULUM_LOCAL_DEPS=1` is what points reticulum-interop at this working tree; without it, it
+tests the published release pinned in `reticulum-interop/versions.env`.
 
 ## Tech stack
 
