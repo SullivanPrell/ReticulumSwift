@@ -22,6 +22,231 @@ own timeout instead of failing fast, which turns a wrong answer into a slow one.
 candidates skips the test rather than handing back a port in use. The fixture is shared, so the
 other suites that take a throwaway port can move onto it.
 
+### Writing a page into its template
+
+`RNGitPageTemplates` carries the fifteen templates a node ships and the base every page is
+written into. A template of the same name standing in the node's template directory is taken
+instead, and one the system can execute is run and what it printed taken; trailing whitespace is
+dropped either way, and a directory is not a template. A name the node neither ships nor finds a
+file for leaves the page as it stands, and a page asked for under no name at all is written into
+the base on its own.
+
+The base carries the node's name, the version, the navigation and the page, and says how long the
+page took to make or that it does not know. The time is written as a fraction (`12.0s`, not `12s`),
+because Python's `prettytime` prints whichever its argument's type calls for and the time
+a page took is always a float.
+
+### Counting thanks
+
+`RNGitPageThanks` counts what a repository and a release have been thanked for, in
+`<repository>.thanks` and `<release>/THANKS` as msgpack. The last 256 additions are held, keyed
+by the reader and the path together, so thanking the same thing twice is counted once. One
+addition past that forgets the first.
+
+Thanking something that has never been thanked answers zero and writes one. The count reaches
+the reader on the next read. A file that does not read as msgpack, or reads as msgpack carrying
+no count, answers zero without writing.
+
+### Charts
+
+Three renderers. A half-block chart draws two rows to the character, each bar shaded along a
+gradient from a dark end to the colour it is given, the dark end being 42% of that colour where
+the caller names none, and the gradient run 1.3 times its height so a bar reaches full colour
+before its top. A full-block chart draws one row to the character and picks one of four shades by
+how far up the bar the row stands. A combined chart stacks pushes, fetches, views and downloads
+in that order, each point's four counts taking the fraction of the character they are worth.
+
+Nothing to draw is drawn as `No data available`. Labels are cut to twelve characters, the first
+padded left and the last padded right, and the axis is two characters wider than the points it
+carries.
+
+The single-half branches of the combined chart are unreachable: the four category ranges tile
+the character with no gap between them, so a half that resolves to nothing is a half whose
+character is empty. Measured over 20,000 random stacks against the reference's own resolver:
+147,383 characters with both halves resolved, none with one.
+
+### What a reader may see
+
+`RNGitPageAccess` resolves a reader who has not identified against a standing identity recovered
+from a key of nothing but zeroes, which no grant names, so a page can be asked for without
+identifying. Groups a reader may read carry only the repositories that reader may read, and a
+group holding none of them is not among them.
+
+Behavior is pinned by 67 tests recorded from Python RNS 1.5.4. An 85-mutant sweep leaves three
+survivors, each of which is the same program: both single-half branches of the combined chart, as
+measured above; refusing a template that is a directory, because a directory is executable and
+running one answers nothing either way; and substituting a group for one the node does not hold,
+because the grant resolver refuses a group name it does not hold before reading anything from it.
+
+### Reading a repository for a page
+
+`RNGitRepositoryReader` runs `git` and answers what a page needs from it: what the repository
+says it is, its branches and tags with the subject and any tag message each points at, the object
+a ref names, what a directory holds, what is known about a file, what that file holds, the
+readme under whichever of eleven names it carries one, how many commits a ref has behind it, a
+page of those commits, everything a commit page prints, and what a commit's signature says.
+
+A signature is read as the signature it is: the envelope's namespace is not asked about, so one
+made for something other than `git` still reaches a verdict. The verdicts are the eight the
+reference reaches, down to their wording.
+
+`RNGitCommandRunner` gained a second call that answers bytes rather than text, because a file is
+binary when its first 8 KiB carry a zero byte, and a run that could not start and a run whose
+output is not text are not the same answer.
+
+A repository's description is read from its configuration, and from the file beside the
+repository rather than inside it where the configuration carries none.
+
+`get_blob_stream` and `get_webp_stream` are not part of this: both hand back an open handle whose
+lifetime belongs to the link that asked, which is the page server's to own.
+
+### What a page is made of
+
+The micron a page is built out of, as pieces that join: headings, bold, italics, underlines,
+foreground colour, dividers, alignment, escaping, and the three link forms—one bold, one drawn as
+body text, and one naming another node. A link's fields are carried in the order they are given
+and written the way a query string writes them, a space as `+` and everything else outside
+letters, digits and `_.-~` as `%XX`, because a link is compared by the text it reads as.
+
+The paths of the seventeen things a node serves, the limits it serves them under—256 KiB before a
+file is offered as a download rather than rendered, 1,000 directory entries and 100 commits to a
+page, 8 seconds for one `git` call, 100 columns wide, a tab drawn as three spaces—the colours a
+page and a chart draw with, and the ten icons in both the Nerd Font and the plain Unicode
+tables.
+
+Sizes, absolute and relative timestamps, tab expansion, and the colouring of a diff and of a
+commit message.
+
+### Converting an image for a reader
+
+`RNGitMediaEncoder` converts an image to WebP through whichever of `magick`, `convert`, `gm`,
+`ffmpeg` and `avconv` stands on the search path, in that order. `RNGIT_MEDIA_BACKEND` names one
+and makes it the only one tried. Otherwise the backend that last converted something is tried
+before the rest. A quality outside one to a hundred is brought inside it, a size below one pixel
+is not asked for, and each family takes its options at the one place the rest of its words still
+read the same way afterwards.
+
+A conversion is given 8 seconds. What is left at the output path is a WebP file or nothing: a run
+that timed out, failed, could not start, or wrote something whose header does not read as WebP
+has its output taken away. The header is read from all three chunk kinds, each of which carries
+the size in a different place and to a different width.
+
+A machine carrying none of the five backends is told so once rather than on every conversion.
+
+No WebP encoding backend stands on the machine this was recorded on: the only one of the five on
+the search path is `ffmpeg`, and this build of it carries no WebP encoder. The conversion command
+lines are pinned by 175 recorded rows and the outcome handling by a scripted converter, so a
+conversion through a real encoder is pinned rather than run.
+
+Behavior is pinned by 62 readings of a deterministic repository, 85 micron and formatter rows,
+both icon tables and the class constants, and the 175 conversion command lines, all recorded from
+Python RNS 1.5.4. An 82-mutant sweep leaves four survivors, each of which is the same program:
+the `git diff --numstat --no-index` fallback cannot report a revision as binary, because `git`
+cannot reach a revision as a path; zeroing a `-` before reading it as a number changes nothing,
+because a number that will not read falls back to zero anyway; dropping the one space a
+signature's continuation line carries changes nothing, because the armour reader trims every line
+it takes; and `git ls-tree <ref>:` lists the tree `git ls-tree <ref>` lists. 4,109 tests, 0
+failures.
+
+### Stopping a conversion that could not be started
+
+A conversion whose producing process could not be started no longer waits for it. Both processes
+were waited for whatever had become of them, and on macOS 14 `Process.waitUntilExit` can stand
+without end on a process that never launched, so a producer that is not on the machine could
+leave the run where it was rather than answering that it could not be run. A process carrying no
+identifier is now left alone; one that started is still stopped and waited for, which two
+readings that count the processes a run waits for hold apart.
+
+### The `rngit` executable
+
+A twelfth executable product, and the node behind it. `rngit node` brings a repository node up
+out of what stands in its configuration directory and serves repositories on a destination the
+node's own identity names; every other subcommand asks a node to do one thing and stops.
+
+A node keeps four files: the log `server_log`, the configuration `config`, the identity
+`repositories_identity` and the statistics `stats`. It reads `/etc/rngit` before anything under
+the user's home, so one machine can serve repositories for everyone on it, and keeps its files
+under `~/.rngit/reticulum` where a client's own configuration stands at `~/.config/rngit/config`.
+A directory holding no configuration is given the shipped one, and one holding no identity is
+given a new one.
+
+Eleven request paths are served on an inbound single destination, each to any peer, with every
+handler settling for itself what the peer that asked may do. The node holds the one store, the
+one set of statistics and the one set of temporary directories the handlers read and write, so
+what a handler changed is read back before its answer goes out. A peer is held from the moment it
+identifies until its link is no longer up, and the directories made for a link go with it.
+
+Between requests the node wakes every 5 seconds and runs what has come due: announcing itself on
+the configured interval, writing its statistics out every 180 seconds, bringing mirrors up to
+their upstreams every 900 seconds, and sweeping links every 5 seconds. A mirror whose interval
+has not passed is left where it is, and a repository that mirrors nothing is never reached for.
+
+`rngit node --print-identity` prints the peer identity, the node identity, the repositories
+destination and, where the node serves pages, the Nomad Network destination, and stops without
+bringing the stack up. A node that cannot be brought up far enough to say what it is stops the
+run with 255, as a node that cannot be brought up at all does.
+
+The page server a node can run alongside its repositories is not part of this; the
+`serve_nomadnet` setting is read and carried, and the destination it names is printed, but
+nothing serves on it yet.
+
+### Exit statuses `rngit` stops on
+
+A run that gives up part way now stops with 1 rather than 255. `rngit` and `git-remote-rns` stop
+on different statuses, and the helper's had been carried across to both; the helper keeps its
+255. A client configuration that will not parse stops the run with 255, where it had stopped
+with 1.
+
+A sync request is written to the node's log as an upstream sync, which is what it is.
+
+Behavior is pinned by the eleven recorded request-handler registrations and the 26-row task
+dispatch, both recorded from Python RNS 1.5.4, and by the shipped configuration file's text. An
+80-mutant sweep leaves two survivors, both inside the handlers registered on the destination, and
+both needing a link a peer has identified over to tell apart. 4,046 tests, 0 failures.
+
+### The `git-remote-rns` executable
+
+An eleventh executable product. Git runs it for an `rns://` remote, handing it the remote's name
+and the URL, and it takes `RNGIT_CONFIG` and `RNS_CONFIG` from its environment. It reads its own
+configuration, brings Reticulum up with its log written to a file rather than the stream git is
+reading, opens a link to the node the URL names, and answers git over that link.
+
+A run that cannot bring itself up exits 1: two words git did not give, a URL under another
+scheme, a URL naming no repository, or a configuration file that will not parse. A run that gives
+up part way writes `git-remote-rns failed: <reason>` where its failures go and exits 255.
+
+### Where a client keeps its files
+
+A client keeps three files under `~/.rngit`: the log `client_log`, the configuration
+`client_config` and the identity `client_identity`. They stand under `~/.rngit/reticulum`
+instead where a node's own configuration stands at `~/.config/rngit/config`, so the two do not
+share a directory. A directory named on the command line or in the environment is taken as it
+stands. The client
+writes the default configuration where it finds none, and generates an identity where it finds
+none, keeping it for the next run.
+
+### A client reaches a node over a link
+
+`RNGitLinkTransport` carries a request to a node, and is the first type to do so outside the
+test stubs. It waits for a path for the longer of 15 seconds and the slowest interface's own
+timeout, recalls the node's identity, opens a link, identifies over it, and waits for the link
+for the longer of 15 seconds and the link's own establishment timeout. A response carrying
+metadata is a file, and its bytes are written under a directory the run makes and removes, so
+they outlive the request; a response carrying none is bytes.
+
+### The `rngit` argument surface
+
+Eight subcommands, `node`, `release`, `perms`, `work`, `create`, `fork`, `sync` and `mirror`,
+each carrying its own options, positionals, usage block and help text. A first word naming none of
+them leaves the run on `node`, which refuses it as an unrecognized argument. The `rngit`
+executable itself waits on the node runtime; what lands here is the reading, as library types.
+
+Behavior is pinned by 71 `rngit` command lines, 13 `git-remote-rns` command lines, 7
+configuration-directory resolutions and the default configuration file's text, all recorded from
+Python RNS 1.5.4. A 74-mutant sweep leaves five survivors: four inside the one function that
+needs a live link behind it, and the line that joins the two tested halves of the run once the
+stack is up. 3,991 tests, 0 failures.
+
 ### `git-remote-rns`
 
 The remote helper git runs for an `rns://` remote, ported from
