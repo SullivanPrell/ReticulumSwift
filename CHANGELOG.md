@@ -50,10 +50,10 @@ no count, answers zero without writing.
 ### Charts
 
 Three renderers. A half-block chart draws two rows to the character, each bar shaded along a
-gradient from a dark end to the colour it is given, the dark end being 42% of that colour where
-the caller names none, and the gradient run 1.3 times its height so a bar reaches full colour
+gradient from a dark end to the color it is given, the dark end being 42% of that color where
+the caller names none, and the gradient run 1.3 times its height so a bar reaches full color
 before its top. A full-block chart draws one row to the character and picks one of four shades by
-how far up the bar the row stands. A combined chart stacks pushes, fetches, views and downloads
+how far up the bar the row stands. A combined chart stacks pushes, fetches, views, and downloads
 in that order, each point's four counts taking the fraction of the character they are worth.
 
 Nothing to draw is drawn as `No data available`. Labels are cut to twelve characters, the first
@@ -103,7 +103,7 @@ lifetime belongs to the link that asked, which is the page server's to own.
 ### What a page is made of
 
 The micron a page is built out of, as pieces that join: headings, bold, italics, underlines,
-foreground colour, dividers, alignment, escaping, and the three link forms—one bold, one drawn as
+foreground color, dividers, alignment, escaping, and the three link forms—one bold, one drawn as
 body text, and one naming another node. A link's fields are carried in the order they are given
 and written the way a query string writes them, a space as `+` and everything else outside
 letters, digits and `_.-~` as `%XX`, because a link is compared by the text it reads as.
@@ -143,7 +143,7 @@ both icon tables and the class constants, and the 175 conversion command lines, 
 Python RNS 1.5.4. An 82-mutant sweep leaves four survivors, each of which is the same program:
 the `git diff --numstat --no-index` fallback cannot report a revision as binary, because `git`
 cannot reach a revision as a path; zeroing a `-` before reading it as a number changes nothing,
-because a number that will not read falls back to zero anyway; dropping the one space a
+because a number that does not read falls back to zero anyway; dropping the one space a
 signature's continuation line carries changes nothing, because the armour reader trims every line
 it takes; and `git ls-tree <ref>:` lists the tree `git ls-tree <ref>` lists. 4,109 tests, 0
 failures.
@@ -194,7 +194,7 @@ nothing serves on it yet.
 
 A run that gives up part way now stops with 1 rather than 255. `rngit` and `git-remote-rns` stop
 on different statuses, and the helper's had been carried across to both; the helper keeps its
-255. A client configuration that will not parse stops the run with 255, where it had stopped
+255. A client configuration that does not parse stops the run with 255, where it had stopped
 with 1.
 
 A sync request is written to the node's log as an upstream sync, which is what it is.
@@ -212,7 +212,7 @@ configuration, brings Reticulum up with its log written to a file rather than th
 reading, opens a link to the node the URL names, and answers git over that link.
 
 A run that cannot bring itself up exits 1: two words git did not give, a URL under another
-scheme, a URL naming no repository, or a configuration file that will not parse. A run that gives
+scheme, a URL naming no repository, or a configuration file that does not parse. A run that gives
 up part way writes `git-remote-rns failed: <reason>` where its failures go and exits 255.
 
 ### Where a client keeps its files
@@ -237,7 +237,7 @@ they outlive the request; a response carrying none is bytes.
 ### The `rngit` argument surface
 
 Eight subcommands, `node`, `release`, `perms`, `work`, `create`, `fork`, `sync` and `mirror`,
-each carrying its own options, positionals, usage block and help text. A first word naming none of
+each carrying its own options, positionals, usage block, and help text. A first word naming none of
 them leaves the run on `node`, which refuses it as an unrecognized argument. The `rngit`
 executable itself waits on the node runtime; what lands here is the reading, as library types.
 

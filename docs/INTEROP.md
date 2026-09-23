@@ -1,16 +1,18 @@
 # Interoperability with Python Reticulum
 
 ReticulumSwift targets **wire- and crypto-compatibility** with the Python
-reference implementation (RNS 1.4.1). A Swift node and a Python node are peers on
-the same network: they exchange announces, establish links, transfer resources,
-and route for each other with no bridge or translation layer.
+reference implementation (RNS 1.5.2), which it translates. A Swift node and a
+Python node are peers on the same network: they exchange announces, establish
+links, transfer resources, and route for each other with no bridge or translation
+layer. The Python implementation is the authority. Where the two disagree, the
+Swift port has the bug.
 
 ## What "compatible" means here
 
 - **Byte-identical wire format.** Packet headers, flag bytes, announce payloads,
   destination/identity hashing, resource advertisements, and link handshake
-  messages are encoded exactly as Python encodes them. The test suite includes
-  golden-byte vectors captured from Python.
+  messages follow Python's encoding. Some unit tests assert against wire bytes
+  captured from Python.
 - **Same cryptography.** X25519 ECDH, Ed25519 signatures, HKDF-SHA256,
   HMAC-SHA256, and the Reticulum Token (AES-CBC + HMAC) match RNS. IFAC uses
   deterministic Ed25519 that reproduces Python's pure25519 signatures bit-for-bit.
@@ -36,8 +38,7 @@ The shortest interop check:
 
 ## How the project verifies interop
 
-Beyond the in-package unit tests (which assert against captured Python wire
-bytes), a separate **live Python↔Swift test harness** exercises
+Beyond the in-package unit tests, a separate **live Python↔Swift test harness** exercises
 interoperability. It stands up a Python `TCPServer` backbone and runs both Python and
 Swift nodes as clients against it, then asserts end-to-end behavior across:
 
@@ -48,8 +49,8 @@ Swift nodes as clients against it, then asserts end-to-end behavior across:
 
 That harness lives in its own repository and isn't required to build or use
 ReticulumSwift. If you are contributing protocol-level changes and want to run it,
-open an issue—the preceding methodology (Python `rnsd` ⟷ Swift `rnsd`) reproduces
-the same coverage manually.
+open an issue. The manual check in the preceding section covers a subset of the
+same flows.
 
 ## Reporting an interop bug
 

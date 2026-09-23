@@ -11,6 +11,12 @@ Swift tests pass.
   The reference implementation (<https://github.com/markqvist/Reticulum>) is the
   source of truth. Check new wire-level behavior against captured Python bytes
   where possible.
+- **Cite the reference.** ReticulumSwift is a translation of the Python
+  implementation, not a clean-room one. When a change ports Python behavior,
+  its doc comment names the Python file and function it translates.
+- **Disclose machine assistance.** If a tool generated part of a change, say so
+  in the pull request and add a `Co-Authored-By` trailer. The pull request's
+  author answers for all of it.
 - **No regressions.** The full `swift test` suite must pass before any commit.
 - **No new crypto dependencies.** All cryptography goes through Apple CryptoKit
   (Curve25519, HMAC-SHA256, HKDF, SHA-256/512) and CommonCrypto (AES-CBC).
