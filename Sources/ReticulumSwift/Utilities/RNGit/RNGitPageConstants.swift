@@ -183,4 +183,12 @@ public enum RNGitPage {
   public static func icon(_ icon: Icon, usingNerdFonts: Bool = useNerdFonts) -> String {
     (usingNerdFonts ? nerdFontIcons : unicodeIcons)[icon] ?? ""
   }
+
+  /// `names`, in the order Python's `sorted()` puts them.
+  ///
+  /// Swift's default `String` comparison is Unicode-aware and can disagree with Python's, which
+  /// orders by code point, so a page that sorts a list for display sorts it this way instead.
+  static func sorted(_ names: some Sequence<String>) -> [String] {
+    names.sorted { $0.unicodeScalars.lexicographicallyPrecedes($1.unicodeScalars) { $0 < $1 } }
+  }
 }
