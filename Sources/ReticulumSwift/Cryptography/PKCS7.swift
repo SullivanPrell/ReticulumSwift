@@ -28,16 +28,21 @@ public enum PKCS7 {
   public enum UnpadError: Error { case invalidPadding }
 
   /// Returns `data` with its padding removed.
+  ///
+  /// Mirrors Python's `PKCS7.unpad`: only the last byte is read, as the pad
+  /// length `n`, and `n` bytes are dropped from the end. The other pad bytes
+  /// and the block alignment go unchecked, so ANSI X.923 padding (zeros, then
+  /// the length byte), which microReticulum sends, unpads like PKCS#7, and an
+  /// `n` of 0 returns `data` unchanged. Callers must authenticate `data` first:
+  /// `Token.decrypt` verifies the HMAC before it unpads.
+  ///
+  /// - Throws: `UnpadError.invalidPadding` when `n` exceeds `blockSize`, which
+  ///   is Python's only check, or when `data` is empty or shorter than `n`,
+  ///   where Python raises `IndexError` or slices from the end instead.
   public static func unpad(_ data: Data, blockSize: Int = blockSize) throws -> Data {
-    guard !data.isEmpty, data.count % blockSize == 0 else {
-      throw UnpadError.invalidPadding
-    }
-    let padLength = Int(data[data.count - 1])
-    guard padLength > 0, padLength <= blockSize, padLength <= data.count else {
-      throw UnpadError.invalidPadding
-    }
-    // Verify all pad bytes equal padLength
-    for byte in data.suffix(padLength) where byte != UInt8(padLength) {
+    guard let last = data.last else { throw UnpadError.invalidPadding }
+    let padLength = Int(last)
+    guard padLength <= blockSize, padLength <= data.count else {
       throw UnpadError.invalidPadding
     }
     return data.prefix(data.count - padLength)

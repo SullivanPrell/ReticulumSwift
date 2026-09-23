@@ -5,6 +5,23 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Unpadding reads only the length byte, as Python does
+
+`PKCS7.unpad` refused any pad byte other than the length, and any input that was empty, not a
+whole number of blocks, or ended in a zero. Python's `PKCS7.unpad` reads only the last byte `n`,
+raises only when `n` is larger than the block size, and drops `n` bytes. microReticulum 0.5.0
+pads a token's plaintext with zeros followed by the length byte (ANSI X.923). Python accepts that
+padding. Swift refused it after the HMAC had already verified, so every encrypted packet, link
+RTT, request and resource a microReticulum node sent to a Swift node was dropped.
+
+`unpad` now follows Python: it reads the last byte, throws when it exceeds the block size, and
+returns the data with that many bytes removed, so a length of zero leaves the data as it was. It
+still throws on empty input and on a length longer than the data, where Python raises
+`IndexError` or slices from the end. `Token.decrypt` never passes either, because it only unpads
+authenticated, block-aligned AES-CBC output. Because the HMAC check comes first, accepting
+more padding gives no padding oracle. The tests pin values captured from the Python reference,
+including a token that Python built with X.923 padding and decrypted.
+
 ### A test that needs a free port proves the port is free
 
 `LocalInterfaceReadinessTests` picked a throwaway port at random out of a fixed range and

@@ -26,9 +26,43 @@ final class CryptoTests: XCTestCase {
     }
   }
 
-  func testPKCS7RejectsBadPadding() {
-    let bogus = Data(repeating: 0xFF, count: 16)  // pad byte 0xFF > blockSize
-    XCTAssertThrowsError(try PKCS7.unpad(bogus))
+  // Python's `PKCS7.unpad` reads only the last byte `n`, raises only when
+  // `n > bs`, and returns `data[:len-n]`. Expected values below were captured
+  // from `RNS/Cryptography/PKCS7.py` (RNS 1.5.4).
+
+  func testPKCS7UnpadAcceptsZeroFilledPaddingLikePython() throws {
+    // ANSI X.923 as microReticulum 0.5.0 pads: zeros, then one length byte.
+    let body = Data((1...13).map { UInt8($0) })
+    XCTAssertEqual(try PKCS7.unpad(body + Data([0x00, 0x00, 0x03])), body)
+    XCTAssertEqual(try PKCS7.unpad(Data(repeating: 0, count: 15) + Data([0x10])), Data())
+  }
+
+  func testPKCS7UnpadIgnoresPadBytesOtherThanTheLast() throws {
+    let body = Data((1...13).map { UInt8($0) })
+    XCTAssertEqual(try PKCS7.unpad(body + Data([0xAA, 0xBB, 0x03])), body)
+  }
+
+  func testPKCS7UnpadOfZeroLengthPadReturnsDataUnchanged() throws {
+    let data = Data((1...15).map { UInt8($0) }) + Data([0x00])
+    XCTAssertEqual(try PKCS7.unpad(data), data)
+  }
+
+  func testPKCS7UnpadDoesNotRequireBlockAlignment() throws {
+    let data = Data([0x09, 0x08, 0x07, 0x06, 0x05, 0x02, 0x02])
+    XCTAssertEqual(try PKCS7.unpad(data), Data([0x09, 0x08, 0x07, 0x06, 0x05]))
+  }
+
+  func testPKCS7UnpadRejectsPadLengthAboveBlockSize() {
+    XCTAssertThrowsError(try PKCS7.unpad(Data(repeating: 0xFF, count: 16)))
+    XCTAssertThrowsError(try PKCS7.unpad(Data(repeating: 0, count: 15) + Data([0x11])))
+  }
+
+  // Python raises IndexError on empty input and slices from the end when
+  // `n > len`; neither is reachable from `Token.decrypt`, which only hands
+  // unpad a non-empty, block-aligned AES-CBC output. Swift throws for both.
+  func testPKCS7UnpadRejectsEmptyInputAndPadLongerThanData() {
+    XCTAssertThrowsError(try PKCS7.unpad(Data()))
+    XCTAssertThrowsError(try PKCS7.unpad(Data([0x01, 0x02, 0x05])))
   }
 
   // MARK: AES-CBC
@@ -107,5 +141,18 @@ final class CryptoTests: XCTestCase {
     var encrypted = try token.encrypt(Data("ok".utf8))
     encrypted[encrypted.count - 1] ^= 0xFF
     XCTAssertThrowsError(try token.decrypt(encrypted))
+  }
+
+  // A token whose plaintext is padded ANSI X.923-style (zeros, then the length
+  // byte), as microReticulum 0.5.0 sends it. Built and decrypted by the Python
+  // reference (RNS 1.5.4): key 0x00…0x3F, IV 0xA0…0xAF, plaintext
+  // "microReticulum" padded with [0x00, 0x02].
+  func testTokenDecryptsZeroFilledPaddingLikePython() throws {
+    let token = try Token(key: Data((0..<64).map { UInt8($0) }))
+    let encrypted = try XCTUnwrap(
+      Data(
+        hex: "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf7b4a5e7d061135f53fd9962badd785c9"
+          + "dad3b1b76df655ec04796a02badeee50cd080eef561293c7dade87ab8a32c12a"))
+    XCTAssertEqual(try token.decrypt(encrypted), Data("microReticulum".utf8))
   }
 }
