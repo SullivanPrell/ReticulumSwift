@@ -79,7 +79,7 @@ final class RNGitNodeTests: XCTestCase {
   /// A node brought up in a directory of its own.
   private func makeNode(
     configuration: String? = nil, runner: Runner = Runner(),
-    clock: @escaping @Sendable () -> Date = Date.init
+    clock: @escaping @Sendable () -> Date = { Date() }
   ) throws -> RNGitNode {
     let directory = try makeDirectory()
     if let configuration {

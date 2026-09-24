@@ -91,7 +91,7 @@ public final class RNGitNode {
     configDirectory: String?, verbosity: Int = 0,
     home: String = DaemonBootstrap.homeDirectory().path,
     runner: RNGitCommandRunner = RNGitProcessRunner(),
-    clock: @escaping @Sendable () -> Date = Date.init
+    clock: @escaping @Sendable () -> Date = { Date() }
   ) throws {
     guard Self.canRunGit(runner) else { throw RNGitClientAbort(Self.noGit) }
 

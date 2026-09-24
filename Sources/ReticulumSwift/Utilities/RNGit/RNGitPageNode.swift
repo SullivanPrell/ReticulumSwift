@@ -147,12 +147,12 @@ public final class RNGitPageNode {
   /// - Throws: ``RNGitSettingsError`` where the `[pages]` section names no boolean for a key
   ///   read as one, and whatever the destination throws.
   public init(
-    owner: RNGitNode, version: String, clock: @escaping @Sendable () -> Date = Date.init
+    owner: RNGitNode, version: String, clock: @escaping @Sendable () -> Date = { Date() }
   ) throws {
     self.owner = owner
     self.clock = clock
 
-    let directory = owner.directory + "/templates"
+    let directory = owner.directory + "/" + RNGitNodeEnvironment.templatesDirectoryName
     if !RNGitNodeEnvironment.isDirectory(directory) {
       do {
         try FileManager.default.createDirectory(

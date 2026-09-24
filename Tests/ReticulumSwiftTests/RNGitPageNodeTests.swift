@@ -34,7 +34,7 @@ final class RNGitPageNodeTests: XCTestCase {
   /// A node brought up in a directory of its own out of `configuration`.
   private func makeOwner(
     configuration: String = "", identityKey: Data? = nil,
-    clock: @escaping @Sendable () -> Date = Date.init
+    clock: @escaping @Sendable () -> Date = { Date() }
   ) throws -> RNGitNode {
     let directory = NSTemporaryDirectory() + "/rngit-page-node-" + UUID().uuidString
     try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
