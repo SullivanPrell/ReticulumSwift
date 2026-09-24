@@ -42,6 +42,21 @@ public struct RNGitPageHandler {
   /// The templates a page is rendered into.
   public var templates: RNGitPageTemplates
 
+  /// The links the node has open, by link identifier, which a media conversion needs.
+  public var activeLinks: Set<Data> = []
+
+  /// Where the node writes a file it sends, held against the link that asked for it.
+  public var temporaries = RNGitTemporaryDirectories()
+
+  /// Whether an image a page shows is sent converted to WebP.
+  ///
+  /// Mirrors `self.media_conversion`, which the reference turns on unless the `[pages]`
+  /// section's `media_conversion` turns it off.
+  public var mediaConversion = true
+
+  /// Converts an image a page shows to WebP.
+  public var mediaEncoder = RNGitMediaEncoder()
+
   /// Reads a repository through `runner`, for the pages that show what one holds.
   private var reader: RNGitRepositoryReader { RNGitRepositoryReader(runner: runner) }
 

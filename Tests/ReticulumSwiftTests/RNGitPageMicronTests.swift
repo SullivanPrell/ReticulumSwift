@@ -131,4 +131,44 @@ final class RNGitPageMicronTests: XCTestCase {
     XCTAssertEqual(RNGitPageMicron.quotePlus("\u{00E6}"), "%C3%A6")
     XCTAssertEqual(RNGitPageMicron.quotePlus("\u{2603}"), "%E2%98%83")
   }
+
+  /// A field reads back as `urllib.parse.unquote_plus` reads it in Python RNS 1.5.4: `+` as a
+  /// space, each run of escapes decoded as UTF-8 with whatever does not decode replaced, and an
+  /// escape that is not two hexadecimal digits left as it stands.
+  func testAFieldReadsBackAsTheReferenceReadsIt() {
+    let recorded: [(String, String)] = [
+      ("", ""),
+      ("plain", "plain"),
+      ("a+b", "a b"),
+      ("a%2Bb", "a+b"),
+      ("a%20b%", "a b%"),
+      ("100%", "100%"),
+      ("%zz", "%zz"),
+      ("%FF", "\u{FFFD}"),
+      ("%ff%FE", "\u{FFFD}\u{FFFD}"),
+      ("%C3%A9", "\u{E9}"),
+      ("%c3%a9", "\u{E9}"),
+      ("%E2%82", "\u{FFFD}"),
+      ("caf%C3%A9+%E2", "caf\u{E9} \u{FFFD}"),
+      ("%2", "%2"),
+      ("+%2B+", " + "),
+      ("a%2fb", "a/b"),
+      ("%00x", "\u{0}x"),
+      ("%41%4g", "A%4g"),
+      ("%C3\u{E9}%A9", "\u{FFFD}\u{E9}\u{FFFD}"),
+      ("\u{E9}+%C3%A9", "\u{E9} \u{E9}"),
+      ("%ED%A0%80", "\u{FFFD}\u{FFFD}\u{FFFD}"),
+      ("%C0%80", "\u{FFFD}\u{FFFD}"),
+      ("%F4%90%80%80", "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}"),
+      ("%F0%9F%98%80", "\u{1F600}"),
+      ("%%41", "%A"),
+      ("src%2Fmain.swift", "src/main.swift"),
+      ("notes+v1.txt", "notes v1.txt"),
+      ("%E2%82%AC%E2", "\u{20AC}\u{FFFD}"),
+      ("+\u{301}%41", " \u{301}A"),
+    ]
+    for (field, read) in recorded {
+      XCTAssertEqual(RNGitPageMicron.unquotePlus(field), read, field)
+    }
+  }
 }

@@ -513,6 +513,34 @@ extension String {
     }
   }
 
+  /// This string with every `character` taken off both ends, as `strip(character)` takes them.
+  public func pythonStripping(_ character: Unicode.Scalar) -> String {
+    var scalars = unicodeScalars[...]
+    while scalars.first == character { scalars = scalars.dropFirst() }
+    while scalars.last == character { scalars = scalars.dropLast() }
+    return String(scalars)
+  }
+
+  /// What follows this path's last separator, as `os.path.basename` answers it.
+  public var pythonBasename: String {
+    guard let separator = unicodeScalars.lastIndex(of: "/") else { return self }
+    return String(unicodeScalars[unicodeScalars.index(after: separator)...])
+  }
+
+  /// This path parted into a root and an extension, as `os.path.splitext` parts it.
+  ///
+  /// The extension runs from the last dot after the last separator, unless only dots come before
+  /// that dot in the last component, in which case there is none.
+  public var pythonSplitExtension: (root: String, pathExtension: String) {
+    let scalars = unicodeScalars
+    guard let dot = scalars.lastIndex(of: ".") else { return (self, "") }
+    let separator = scalars.lastIndex(of: "/")
+    if let separator, separator > dot { return (self, "") }
+    let name = separator.map { scalars.index(after: $0) } ?? scalars.startIndex
+    guard scalars[name..<dot].contains(where: { $0 != "." }) else { return (self, "") }
+    return (String(scalars[..<dot]), String(scalars[dot...]))
+  }
+
   /// Every scalar Python reads as whitespace.
   private static let pythonWhitespace: Set<Unicode.Scalar> = [
     "\u{09}", "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{1C}", "\u{1D}", "\u{1E}", "\u{1F}",

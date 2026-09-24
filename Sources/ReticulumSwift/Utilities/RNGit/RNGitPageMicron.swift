@@ -114,10 +114,49 @@ public enum RNGitPageMicron {
     return encoded
   }
 
-  /// The value a field carries `text` back as: `+` read as a space, then everything else
-  /// percent-decoded.
+  /// The value a field carries `text` back as, read as `urllib.parse.unquote_plus` reads it: `+`
+  /// as a space, and each run of escapes decoded as UTF-8.
+  ///
+  /// Bytes that do not decode are replaced, and a `%` that two hexadecimal digits do not follow
+  /// stands as it is. Only a run of ASCII is decoded, so a character outside it is carried over
+  /// unchanged and ends the run before it.
   static func unquotePlus(_ value: String) -> String {
-    let spaced = value.replacingOccurrences(of: "+", with: " ")
-    return spaced.removingPercentEncoding ?? spaced
+    var read = String.UnicodeScalarView()
+    var pending: [UInt8] = []
+    func decodePending() {
+      read.append(contentsOf: String(decoding: pending, as: UTF8.self).unicodeScalars)
+      pending.removeAll()
+    }
+
+    let scalars = Array(value.unicodeScalars)
+    var index = 0
+    while index < scalars.count {
+      let scalar = scalars[index]
+      if !scalar.isASCII {
+        decodePending()
+        read.append(scalar)
+        index += 1
+      } else if scalar == "%", index + 2 < scalars.count,
+        let high = hexDigit(scalars[index + 1]), let low = hexDigit(scalars[index + 2])
+      {
+        pending.append(high << 4 | low)
+        index += 3
+      } else {
+        pending.append(scalar == "+" ? UInt8(ascii: " ") : UInt8(scalar.value))
+        index += 1
+      }
+    }
+    decodePending()
+    return String(read)
+  }
+
+  /// The value of one hexadecimal digit, or `nil` where `scalar` is none.
+  private static func hexDigit(_ scalar: Unicode.Scalar) -> UInt8? {
+    switch scalar {
+    case "0"..."9": return UInt8(scalar.value - 0x30)
+    case "a"..."f": return UInt8(scalar.value - 0x57)
+    case "A"..."F": return UInt8(scalar.value - 0x37)
+    default: return nil
+    }
   }
 }

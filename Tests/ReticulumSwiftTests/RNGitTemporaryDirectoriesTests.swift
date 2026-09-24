@@ -54,4 +54,21 @@ final class RNGitTemporaryDirectoriesTests: XCTestCase {
     XCTAssertNil(temporaries.make(for: link))
     XCTAssertNil(temporaries.held[link])
   }
+
+  /// Letting go of one directory a link holds removes that one and leaves the rest held.
+  func testLettingGoOfOneDirectoryLeavesTheRestHeld() throws {
+    var temporaries = RNGitTemporaryDirectories(root: root)
+    let link = Data([0x04])
+    let first = try XCTUnwrap(temporaries.make(for: link))
+    let second = try XCTUnwrap(temporaries.make(for: link))
+
+    temporaries.release(first, of: link)
+    XCTAssertEqual(temporaries.held[link], [second])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: first))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: second))
+
+    temporaries.release(second, of: link)
+    XCTAssertNil(temporaries.held[link])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: second))
+  }
 }
