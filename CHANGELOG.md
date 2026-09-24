@@ -5,6 +5,22 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### rngit and git-remote-rns reach the network
+
+`rngit` and `git-remote-rns` built their stack with `Reticulum.fromConfigDir`, which brings up
+no interfaces and joins no shared instance. A node announced to no one, and every clone, fetch,
+push, and `rngit` client task failed with `Could not resolve path`. Both programs now build the
+stack with `InstanceConnection.attach(configDirectory:)`, which joins the shared instance where
+one is running and otherwise brings up the interfaces the configuration names, as
+`RNS.Reticulum(configdir=...)` does (`server.py:67`, `client.py:152`).
+
+`Reticulum.fromConfigDir` is deprecated. Its documentation said it follows
+`RNS.Reticulum(configdir=...)`, and those two programs were its only callers.
+
+`FileLogSink.install()` now keeps the sink for as long as it stays installed. The installed
+handler held the sink weakly, so `git-remote-rns`, which kept no other reference, logged
+nothing at all. `rnsd` and `rngit` no longer hold a reference of their own for that reason.
+
 ### The rngit page node
 
 `rngit` now serves its pages over Nomad Network. `RNGitPageNode` is the port of
