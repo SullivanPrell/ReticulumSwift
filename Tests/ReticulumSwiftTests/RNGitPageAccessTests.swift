@@ -302,4 +302,38 @@ final class RNGitPageAccessTests: XCTestCase {
           documentPermissions: toEveryone))
     }
   }
+
+  /// A work document's own grants are read from the `allowed` file its number names, beside
+  /// the repository's work.
+  func testAWorkDocumentsOwnFileIsReadForItsNumber() throws {
+    let base = NSTemporaryDirectory() + "/rngit-document-grants-" + UUID().uuidString
+    defer { try? FileManager.default.removeItem(atPath: base) }
+    let work = base + "/open.work"
+    try FileManager.default.createDirectory(atPath: work, withIntermediateDirectories: true)
+    try ("interact:" + Self.alice.hexString + "\n").write(
+      toFile: work + "/7.allowed", atomically: true, encoding: .utf8)
+
+    var readable = RNGitPermissionSet()
+    readable.read = [.everyone]
+    let access = RNGitPageAccess(
+      control: RNGitAccessControl(groups: [
+        "public": RNGitGroup(
+          name: "public", path: base,
+          repositories: ["open": RNGitRepository(name: "open", path: base + "/open")],
+          permissions: readable)
+      ]))
+
+    for reader in [Self.alice, nil] as [Data?] {
+      XCTAssertEqual(
+        access.allowsDocument(
+          reader, group: "public", repository: "open", number: 7, permission: .interact),
+        reader == Self.alice)
+      XCTAssertFalse(
+        access.allowsDocument(
+          reader, group: "public", repository: "open", number: 8, permission: .interact))
+    }
+    XCTAssertFalse(
+      access.allowsDocument(
+        Self.alice, group: "public", repository: "nosuch", number: 7, permission: .interact))
+  }
 }
