@@ -20,6 +20,26 @@ answers nothing when `latest` resolves to a tag that is not a string, since the 
 in both cases. Both methods return `Data?` for that reason. A release tag is joined to the
 releases directory as `os.path.join` joins it.
 
+### The rngit work pages
+
+`RNGitPageHandler` renders a repository's work documents as `serve_work_page` lists them and
+as `serve_work_doc_page` shows one, with its signature checked against the key it carries and
+the updates posted to it. The tests check every page against output recorded from Python
+RNS 1.5.4.
+
+A document's own `allowed` file is now read in one place,
+`RNGitAccessControl.allowsDocument(_:group:repository:number:permission:)`, which the pages
+and the work handler both ask.
+
+Three things the reference does are kept as it does them:
+
+- A document kept in a directory named with leading zeroes is listed, but its page is not
+  found, because the page looks under the number the listing links to.
+- An update is shown as Markdown whatever format it was posted in. The reference reads the
+  format from beside the update's content, and the node writes it into the update's `meta`.
+- Both methods return `Data?`, and answer nothing where the reference raises: on a document
+  with no `meta`, on a time that is not a number, and on a title it cannot cut short.
+
 ## [1.21.0]—Git repositories over Reticulum
 
 The `rngit` utility RNS 1.5.3 added: the client, the repository node and its request handlers,

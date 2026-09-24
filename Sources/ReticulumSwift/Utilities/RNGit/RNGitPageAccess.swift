@@ -41,7 +41,19 @@ public struct RNGitPageAccess: Sendable {
       permission: permission)
   }
 
-  /// Whether `identityHash` may do `permission` on one work document.
+  /// Whether `identityHash` may do `permission` on the work document numbered `number`, by what
+  /// the node grants and what the document's own `allowed` file grants.
+  public func allowsDocument(
+    _ identityHash: Data?, group: String, repository: String, number: Int,
+    permission: RNGitPermission
+  ) -> Bool {
+    control.allowsDocument(
+      identityHash ?? nullIdentityHash, group: group, repository: repository, number: number,
+      permission: permission)
+  }
+
+  /// Whether `identityHash` may do `permission` on one work document, given what the document's
+  /// own `allowed` file grants as `documentPermissions`.
   public func allowsDocument(
     _ identityHash: Data?, group: String, repository: String, permission: RNGitPermission,
     documentPermissions: RNGitPermissionSet

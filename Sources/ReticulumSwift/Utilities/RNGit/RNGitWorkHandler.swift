@@ -102,21 +102,21 @@ public struct RNGitWorkHandler {
       guard let number = given.pythonInteger else {
         return RNGitResponse(.invalidRequest, "Invalid request")
       }
-      read = documentAllows(hash, names, work, number, .read) || admin
+      read = documentAllows(hash, names, number, .read) || admin
       guard read else { return RNGitResponse(.notFound, "Document not found") }
     }
     if name == "comment", given.pythonIsTruthy {
       guard let number = given.pythonInteger else {
         return RNGitResponse(.invalidRequest, "Invalid request")
       }
-      interact = interact || documentAllows(hash, names, work, number, .interact)
+      interact = interact || documentAllows(hash, names, number, .interact)
     }
     if name == "edit", given.pythonIsTruthy {
       guard let number = given.pythonInteger else {
         return RNGitResponse(.invalidRequest, "Invalid request")
       }
-      interact = interact || documentAllows(hash, names, work, number, .interact)
-      write = write || documentAllows(hash, names, work, number, .write)
+      interact = interact || documentAllows(hash, names, number, .interact)
+      write = write || documentAllows(hash, names, number, .write)
     }
 
     let comments = interact && (read || write)
@@ -169,7 +169,7 @@ public struct RNGitWorkHandler {
         let directory = path + "/" + entry
         guard RNGitWorkStore.isDirectory(directory) else { continue }
         guard let number = entry.pythonInteger,
-          documentAllows(hash, names, work, number, .read),
+          documentAllows(hash, names, number, .read),
           RNGitWorkStore.isFile(directory + "/root"),
           let document = RNGitWorkStore.document(at: directory + "/root"),
           document.pythonIsTruthy,
@@ -484,7 +484,7 @@ public struct RNGitWorkHandler {
 
     guard let meta = Self.mapping(document, "meta") else { return nil }
     let author = meta["author"] == .bytes(hash)
-    guard author || documentAllows(hash, names, work, number, .admin) else {
+    guard author || documentAllows(hash, names, number, .admin) else {
       return RNGitResponse(.disallowed, "No access, not author")
     }
     guard RNGitWorkStore.unlink(work + "/" + String(number) + ".allowed") else {
@@ -572,7 +572,7 @@ public struct RNGitWorkHandler {
     else { return .refused(RNGitResponse(.remoteFailure, "Error loading document")) }
     guard let meta = Self.mapping(document, "meta") else { return .refused(nil) }
     let author = meta["author"] == .bytes(hash)
-    guard author || documentAllows(hash, names, work, number, .admin) else {
+    guard author || documentAllows(hash, names, number, .admin) else {
       return .refused(RNGitResponse(.disallowed, "Not allowed"))
     }
     return .allowed
@@ -686,7 +686,7 @@ public struct RNGitWorkHandler {
     let author = meta["author"] == .bytes(hash)
     let write = access.allows(hash, names: names, permission: .write)
     let interact = access.allows(hash, names: names, permission: .interact)
-    let admin = documentAllows(hash, names, work, number, .admin)
+    let admin = documentAllows(hash, names, number, .admin)
     guard (author && interact && write) || admin else {
       return .refused(RNGitResponse(.disallowed, "Not allowed"))
     }
@@ -695,18 +695,12 @@ public struct RNGitWorkHandler {
 
   /// Whether `hash` may do `permission` on the document numbered `number`.
   private func documentAllows(
-    _ hash: Data, _ names: (group: String, repository: String), _ work: String, _ number: Int,
+    _ hash: Data, _ names: (group: String, repository: String), _ number: Int,
     _ permission: RNGitPermission
   ) -> Bool {
-    var granted: String?
-    let path = work + "/" + String(number) + ".allowed"
-    if RNGitWorkStore.isDirectory(work), RNGitWorkStore.isFile(path) {
-      granted = try? String(contentsOfFile: path, encoding: .utf8)
-    }
-    return access.allowsDocument(
-      hash, group: names.group, repository: names.repository, permission: permission,
-      documentPermissions: RNGitPermissionSet.parsing(
-        granted, aliases: access.identityAliases))
+    access.allowsDocument(
+      hash, group: names.group, repository: names.repository, number: number,
+      permission: permission)
   }
 
   /// The scope holding the document numbered `number`, or `nil` where no scope holds it.

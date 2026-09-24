@@ -345,10 +345,30 @@ public struct RNGitAccessControl: Sendable {
     return Self.decide(identityHash, grants: grants, admins: group.permissions.admin) ?? false
   }
 
-  /// Whether `identityHash` may do `permission` on one work document.
+  /// Whether `identityHash` may do `permission` on the work document numbered `number`, by what
+  /// the node grants and what the document's own `allowed` file grants.
   ///
-  /// The document's own `allowed` file is read at this point, and an unreadable one grants nothing.
-  /// Pass what that file grants as `documentPermissions`.
+  /// Mirrors `resolve_doc_permission` (`server.py:2397-2466`), which reads
+  /// `<repository>.work/<number>.allowed` each time it is asked. A file that is missing or cannot
+  /// be read grants nothing of its own.
+  public func allowsDocument(
+    _ identityHash: Data, group groupName: String, repository repositoryName: String,
+    number: Int, permission: RNGitPermission
+  ) -> Bool {
+    guard let path = groups[groupName]?.repositories[repositoryName]?.path else { return false }
+    let work = RNGitWorkStore.directory(forRepository: path)
+    let allowed = work + "/" + String(number) + ".allowed"
+    var granted: String?
+    if RNGitWorkStore.isDirectory(work), RNGitWorkStore.isFile(allowed) {
+      granted = try? String(contentsOfFile: allowed, encoding: .utf8)
+    }
+    return allowsDocument(
+      identityHash, group: groupName, repository: repositoryName, permission: permission,
+      documentPermissions: RNGitPermissionSet.parsing(granted, aliases: identityAliases))
+  }
+
+  /// Whether `identityHash` may do `permission` on one work document, given what the document's
+  /// own `allowed` file grants as `documentPermissions`.
   public func allowsDocument(
     _ identityHash: Data, group groupName: String, repository repositoryName: String,
     permission: RNGitPermission, documentPermissions: RNGitPermissionSet
