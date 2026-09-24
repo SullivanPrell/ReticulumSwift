@@ -70,15 +70,11 @@ let paths = DaemonBootstrap.Paths(
 // Python: `targetlogdest = RNS.LOG_FILE` under -s, otherwise `RNS.LOG_STDOUT` (`rnsd.py:43-47`).
 // The log file lives at <configdir>/logfile, so the destination is chosen only once the
 // config directory is known (`Reticulum.py:237-243`).
-var fileSink: FileLogSink?
 if options.service {
-  let sink = FileLogSink(fileURL: paths.logFile)
-  sink.install()
-  fileSink = sink
+  FileLogSink(fileURL: paths.logFile).install()
 } else {
   FileLogSink.installStdoutHandler()
 }
-_ = fileSink  // held for the process lifetime; the handler captures it weakly
 
 // Python's module default until the config file is applied.
 Reticulum.globalLogLevel = .notice
