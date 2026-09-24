@@ -131,7 +131,9 @@ public enum RNGitRuntime {
       return notReady
     }
 
-    guard let task = setup.task else { return serve(setup, on: stack, streams: streams) }
+    guard let task = setup.task else {
+      return serve(setup, on: stack, streams: streams, version: version)
+    }
     return ask(
       task, setup, on: stack, streams: streams, workingDirectory: workingDirectory,
       environment: environment)
@@ -163,7 +165,9 @@ public enum RNGitRuntime {
   }
 
   /// Serves repositories until the run is stopped.
-  static func serve(_ setup: RNGitProgramSetup, on stack: Reticulum, streams: Streams) -> Int32 {
+  static func serve(
+    _ setup: RNGitProgramSetup, on stack: Reticulum, streams: Streams, version: String
+  ) -> Int32 {
     Reticulum.log("Starting Reticulum Git Node...", level: .notice)
     let node: RNGitNode
     do {
@@ -200,10 +204,32 @@ public enum RNGitRuntime {
       "Reticulum Git Node listening on " + RNSUtilities.prettyhexrep(destination.hash),
       level: .notice)
 
+    let pages: RNGitPageNode?
+    do {
+      pages = try servedPages(of: node, version: version)
+    } catch {
+      Reticulum.log("Could not bring up the Nomad Network pages: \(error)", level: .error)
+      return RNGitNode.notReadyStatus
+    }
+    if let pages { stack.transport.register(destination: pages.destination) }
+
     while true {
       Thread.sleep(forTimeInterval: RNGitNodeRuntime.jobsInterval)
-      node.runDueJobs(at: Date().timeIntervalSince1970)
+      let now = Date().timeIntervalSince1970
+      node.runDueJobs(at: now)
+      pages?.runDueJobs(at: now)
     }
+  }
+
+  /// The Nomad Network pages of `node`, or `nil` where its configuration does not serve them.
+  ///
+  /// Brought up after the repositories destination, as `ReticulumGitNode.__init__` brings up
+  /// its `NomadNetworkNode` (`server.py:2065`).
+  ///
+  /// - Throws: Whatever ``RNGitPageNode/init(owner:version:clock:)`` throws.
+  static func servedPages(of node: RNGitNode, version: String) throws -> RNGitPageNode? {
+    guard node.settings.serveNomadNet else { return nil }
+    return try RNGitPageNode(owner: node, version: version)
   }
 
   // MARK: - The client

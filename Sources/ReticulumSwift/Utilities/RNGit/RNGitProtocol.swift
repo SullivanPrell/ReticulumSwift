@@ -563,11 +563,28 @@ extension String {
     }
   }
 
-  /// What `int` answers for this string, or `nil` where Python raises for it.
+  /// What `int` answers for this string, or `nil` where Python raises for it or answers a
+  /// number `Int` cannot hold.
   ///
   /// Whitespace surrounds an optional sign and the digits, which are the decimal digits of any
   /// script and may be parted singly by underscores.
   public var pythonInteger: Int? {
+    guard let read = pythonIntegerRead(), !read.clamped else { return nil }
+    return read.value
+  }
+
+  /// What `int` answers for this string, held to the range of `Int`, or `nil` where Python
+  /// raises for it.
+  ///
+  /// Python's integer has no bounds, so a number past the range of `Int` is answered as the
+  /// bound on its side.
+  public var pythonIntegerClamped: Int? { pythonIntegerRead()?.value }
+
+  /// What `int` answers for this string, held to the range of `Int` and saying whether it had
+  /// to be, or `nil` where Python raises for it.
+  ///
+  /// The digits are gathered toward the sign they carry, so the lowest `Int` is read exactly.
+  private func pythonIntegerRead() -> (value: Int, clamped: Bool)? {
     var scalars = Array(pythonStripped.unicodeScalars)[...]
     var negative = false
     if let first = scalars.first, first == "+" || first == "-" {
@@ -576,6 +593,7 @@ extension String {
     }
 
     var value = 0
+    var clamped = false
     var afterDigit = false
     for scalar in scalars {
       if scalar == "_" {
@@ -586,16 +604,23 @@ extension String {
       guard scalar.properties.numericType == .decimal,
         let digit = scalar.properties.numericValue
       else { return nil }
-      let (scaled, scaledOver) = value.multipliedReportingOverflow(by: 10)
-      guard !scaledOver else { return nil }
-      let (added, addedOver) = scaled.addingReportingOverflow(Int(digit))
-      guard !addedOver else { return nil }
-      value = added
       afterDigit = true
+      guard !clamped else { continue }
+      let (scaled, scaledOver) = value.multipliedReportingOverflow(by: 10)
+      let (next, nextOver) =
+        negative
+        ? scaled.subtractingReportingOverflow(Int(digit))
+        : scaled.addingReportingOverflow(Int(digit))
+      if scaledOver || nextOver {
+        clamped = true
+        value = negative ? .min : .max
+      } else {
+        value = next
+      }
     }
 
     guard afterDigit else { return nil }
-    return negative ? -value : value
+    return (value, clamped)
   }
 }
 

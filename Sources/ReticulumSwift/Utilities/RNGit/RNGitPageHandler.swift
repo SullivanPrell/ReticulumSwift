@@ -57,6 +57,32 @@ public struct RNGitPageHandler {
   /// Converts an image a page shows to WebP.
   public var mediaEncoder = RNGitMediaEncoder()
 
+  /// Whether the icons a page draws are the ones a Nerd Font carries.
+  ///
+  /// Mirrors `self.use_nerdfonts`, which the reference turns off where the `[pages]` section's
+  /// `unicode_icons` is set.
+  public var useNerdFonts = RNGitPage.useNerdFonts
+
+  /// What `icon` is drawn as on this node's pages.
+  func icon(_ icon: RNGitPage.Icon) -> String {
+    RNGitPage.icon(icon, usingNerdFonts: useNerdFonts)
+  }
+
+  /// `value` times `factor`, or the highest `Int` where the product runs past it.
+  ///
+  /// A page number is whatever a reader asks for and the reference's integers have no bounds, so
+  /// a page far past the last is answered as one rather than trapping the node.
+  static func saturating(_ value: Int, times factor: Int) -> Int {
+    let (product, overflow) = value.multipliedReportingOverflow(by: factor)
+    return overflow ? .max : product
+  }
+
+  /// `value` plus `addend`, or the highest `Int` where the sum runs past it.
+  static func saturating(_ value: Int, plus addend: Int) -> Int {
+    let (sum, overflow) = value.addingReportingOverflow(addend)
+    return overflow ? .max : sum
+  }
+
   /// Reads a repository through `runner`, for the pages that show what one holds.
   private var reader: RNGitRepositoryReader { RNGitRepositoryReader(runner: runner) }
 
@@ -209,7 +235,7 @@ public struct RNGitPageHandler {
         navigation: navigation, startedAt: startedAt)
     }
 
-    let sep = RNGitPage.icon(.separator)
+    let sep = icon(.separator)
     let filterLinks = [
       RNGitPageMicron.link("All", RNGitPage.Path.refs, [("g", groupName), ("r", repositoryName)]),
       RNGitPageMicron.link(
@@ -339,44 +365,44 @@ public struct RNGitPageHandler {
     let workCount = reader.activeWorkDocumentCount(of: repository.path)
     let releasesCount = Self.publishedReleaseCount(of: repository.path)
 
-    let sep = RNGitPage.icon(.separator)
+    let sep = icon(.separator)
     var statsLinks = [
       RNGitPageMicron.requestLink(
-        RNGitPage.icon(.folder) + " Files", RNGitPage.Path.tree,
+        icon(.folder) + " Files", RNGitPage.Path.tree,
         [("g", groupName), ("r", repositoryName), ("ref", "HEAD")])
     ]
     if releasesCount > 0 {
       statsLinks.append(
         RNGitPageMicron.requestLink(
-          RNGitPage.icon(.package) + " Releases (\(releasesCount))", RNGitPage.Path.releases,
+          icon(.package) + " Releases (\(releasesCount))", RNGitPage.Path.releases,
           [("g", groupName), ("r", repositoryName)]))
     }
     statsLinks.append(
       RNGitPageMicron.requestLink(
-        RNGitPage.icon(.work) + " Work (\(workCount))", RNGitPage.Path.work,
+        icon(.work) + " Work (\(workCount))", RNGitPage.Path.work,
         [("g", groupName), ("r", repositoryName)]))
     statsLinks.append(
       RNGitPageMicron.requestLink(
-        RNGitPage.icon(.commits) + " Commits (\(commitsCount))", RNGitPage.Path.commits,
+        icon(.commits) + " Commits (\(commitsCount))", RNGitPage.Path.commits,
         [("g", groupName), ("r", repositoryName), ("ref", "HEAD")]))
     statsLinks.append(
       RNGitPageMicron.requestLink(
-        RNGitPage.icon(.branch) + " Branches (\(branchCount))", RNGitPage.Path.refs,
+        icon(.branch) + " Branches (\(branchCount))", RNGitPage.Path.refs,
         [("g", groupName), ("r", repositoryName), ("type", "heads")]))
     statsLinks.append(
       RNGitPageMicron.requestLink(
-        RNGitPage.icon(.tag) + " Tags (\(tagCount))", RNGitPage.Path.refs,
+        icon(.tag) + " Tags (\(tagCount))", RNGitPage.Path.refs,
         [("g", groupName), ("r", repositoryName), ("type", "tags")]))
     statsLinks.append(
       RNGitPageMicron.requestLink(
-        RNGitPage.icon(.heart) + " Thanks (\(thanksCount))", RNGitPage.Path.repository,
+        icon(.heart) + " Thanks (\(thanksCount))", RNGitPage.Path.repository,
         [("g", groupName), ("r", repositoryName), ("thanks", "y")]))
     if access.allows(
       identityHash, group: groupName, repository: repositoryName, permission: .stats)
     {
       statsLinks.append(
         RNGitPageMicron.requestLink(
-          RNGitPage.icon(.stats) + " Stats", RNGitPage.Path.stats,
+          icon(.stats) + " Stats", RNGitPage.Path.stats,
           [("g", groupName), ("r", repositoryName)]))
     }
     content += statsLinks.joined(separator: " \(sep) ") + "\n\n<"
@@ -473,8 +499,8 @@ public struct RNGitPageHandler {
       if entries.isEmpty {
         contentParts.append("Empty directory.\n")
       } else {
-        let fileIcon = RNGitPage.icon(.file)
-        let folderIcon = RNGitPage.icon(.folder)
+        let fileIcon = icon(.file)
+        let folderIcon = icon(.folder)
 
         let sorted = entries.sorted { lhs, rhs in
           let lhsIsDirectory = lhs.kind == "tree" || lhs.kind == "commit"
@@ -484,8 +510,8 @@ public struct RNGitPageHandler {
         }
 
         let totalEntries = sorted.count
-        let startIndex = pageNum * RNGitPage.treeEntriesPerPage
-        let endIndex = startIndex + RNGitPage.treeEntriesPerPage
+        let startIndex = Self.saturating(pageNum, times: RNGitPage.treeEntriesPerPage)
+        let endIndex = Self.saturating(startIndex, plus: RNGitPage.treeEntriesPerPage)
         let safeStart = min(startIndex, totalEntries)
         let safeEnd = min(endIndex, totalEntries)
         let pageEntries = Array(sorted[safeStart..<safeEnd])
@@ -497,7 +523,8 @@ public struct RNGitPageHandler {
 
         if totalEntries > RNGitPage.treeEntriesPerPage {
           contentParts.append(
-            "\(RNGitPage.Colour.dim)Showing \(startIndex + 1)-\(min(endIndex, totalEntries)) "
+            "\(RNGitPage.Colour.dim)Showing \(Self.saturating(startIndex, plus: 1))-"
+              + "\(min(endIndex, totalEntries)) "
               + "of \(totalEntries) entries`f\n\n")
         }
 
@@ -567,7 +594,7 @@ public struct RNGitPageHandler {
           }
           let totalPages =
             (totalEntries + RNGitPage.treeEntriesPerPage - 1) / RNGitPage.treeEntriesPerPage
-          navLinks.append("Page \(pageNum + 1) of \(totalPages)")
+          navLinks.append("Page \(Self.saturating(pageNum, plus: 1)) of \(totalPages)")
           if endIndex < totalEntries {
             navLinks.append(
               RNGitPageMicron.link(
@@ -665,7 +692,7 @@ public struct RNGitPageHandler {
       for: filePath, groupName: groupName, repositoryName: repositoryName, ref: ref)
     navParts.append(">>\n" + breadcrumbParts.joined(separator: " / ") + "\n")
 
-    let sep = RNGitPage.icon(.separator)
+    let sep = icon(.separator)
     let downloadLink = RNGitPageMicron.link(
       "Download", RNGitPage.Path.download,
       [("g", groupName), ("r", repositoryName), ("ref", ref), ("path", filePath)])
@@ -843,7 +870,7 @@ public struct RNGitPageHandler {
 
     let titleSuffix = filePath.isEmpty ? "" : " for \(filePath)"
 
-    let skip = pageNum * RNGitPage.commitsPerPage
+    let skip = Self.saturating(pageNum, times: RNGitPage.commitsPerPage)
     let commits = reader.commits(
       in: repository.path, at: resolvedRef, path: filePath, skip: skip,
       limit: RNGitPage.commitsPerPage)
@@ -888,7 +915,7 @@ public struct RNGitPageHandler {
                 ("page", String(pageNum - 1)),
               ]))
         }
-        navLinks.append("Page \(pageNum + 1)")
+        navLinks.append("Page \(Self.saturating(pageNum, plus: 1))")
         if hasMore {
           navLinks.append(
             RNGitPageMicron.link(
@@ -998,7 +1025,7 @@ public struct RNGitPageHandler {
     contentParts.append(RNGitPageMicron.heading("Commit \(resolvedHash)", level: 2))
     contentParts.append("\n")
 
-    let folderIcon = RNGitPage.icon(.folder)
+    let folderIcon = icon(.folder)
     contentParts.append(
       RNGitPageMicron.link(
         "\(folderIcon) Browse tree at this commit", RNGitPage.Path.tree,

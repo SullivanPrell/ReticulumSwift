@@ -96,6 +96,59 @@ final class RNGitWorkPagesVectorTests: XCTestCase {
     }
   }
 
+  /// A node whose `[pages]` section sets `unicode_icons` marks each document with the file icon
+  /// every font carries, as the reference renders the "work all" step with `use_nerdfonts` off.
+  func testTheListingDrawsUnicodeIconsWhereTheNodeTurnsNerdFontsOff() throws {
+    var handler = handler(blockNullIdentity: false)
+    handler.useNerdFonts = false
+    let page = handler.serveWorkPage(
+      identityHash: nil, groupName: "proj", repositoryName: "demo", scope: "all",
+      timeZone: try XCTUnwrap(TimeZone(identifier: "UTC")))
+    XCTAssertEqual(page.map(Self.normalised), Self.listingWithUnicodeIcons.joined(separator: "\n"))
+  }
+
+  /// The "work all" page, rendered by the reference with `use_nerdfonts` off.
+  private static let listingWithUnicodeIcons: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / `!`[demo`:/page/repo.mu`g=proj|r=demo]`! / work",
+    "",
+    "`!`[Active`:/page/work.mu`g=proj|r=demo|scope=active]`! • `!`[Completed`:/page/work.mu`g=proj|r=demo|scope=completed]`! • `!`[Proposed`:/page/work.mu`g=proj|r=demo|scope=proposed]`! • `_`!`[All`:/page/work.mu`g=proj|r=demo|scope=all]`!`_",
+    "",
+    ">>Active (3)",
+    "",
+    "`!`[🗎 Numbered with zeroes`:/page/work_doc.mu`g=proj|r=demo|id=7|scope=active]`! `F666#7`f",
+    "`F6662026-09-25 by <aca31af0441d81dbec71e82da0b4b5f5>`f",
+    "",
+    "`!`[🗎 A title long enough that the listing has to cut it short before it runs off the edge of the …`:/page/work_doc.mu`g=proj|r=demo|id=2|scope=active]`! `F666#2`f",
+    "`F6662026-09-22 by <069092a03c194639207219dd05f9c840>`f",
+    "",
+    "`!`[🗎 Port the work pages`:/page/work_doc.mu`g=proj|r=demo|id=1|scope=active]`! `F666#1`f",
+    "`F6662026-09-21 by <aca31af0441d81dbec71e82da0b4b5f5>`f",
+    "`F6666 updates`f",
+    "",
+    ">>Completed (3)",
+    "",
+    "`!`[🗎 'a', 1`:/page/work_doc.mu`g=proj|r=demo|id=13|scope=completed]`! `F666#13`f",
+    "`F6662026-09-28 by <069092a03c194639207219dd05f9c840>`f",
+    "",
+    "`!`[🗎 b'bytes title'`:/page/work_doc.mu`g=proj|r=demo|id=11|scope=completed]`! `F666#11`f",
+    "`F666 by unknown`f",
+    "",
+    "`!`[🗎 Untitled`:/page/work_doc.mu`g=proj|r=demo|id=12|scope=completed]`! `F666#12`f",
+    "`F666 by unknown`f",
+    "",
+    ">>Proposed (0)",
+    "",
+    "`*No proposed work documents`*",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
+
   /// A handler over group "proj" and its three repositories, each open to everyone, counting
   /// every view.
   private func handler(blockNullIdentity: Bool) -> RNGitPageHandler {
