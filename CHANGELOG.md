@@ -40,6 +40,35 @@ Three things the reference does are kept as it does them:
 - Both methods return `Data?`, and answer nothing where the reference raises: on a document
   with no `meta`, on a time that is not a number, and on a title it cannot cut short.
 
+### The rngit page file handlers
+
+`RNGitPageHandler` answers the four file requests the pages link to, as `pages.py` does:
+`serveArtifact` sends a published release's artifact, `serveDownload` a repository file at a
+ref, `serveWorkDocumentDownload` a work document's text named for its title, and `serveMedia` an
+image a page shows. Where `mediaConversion` is on and the link is still open, `serveMedia`
+converts an image to WebP through `mediaEncoder`, and sends the original where the conversion
+fails. The tests check 71 requests against answers recorded from Python RNS 1.5.4.
+
+The reference hands the transfer the pipe `git show` writes to. This port writes that output to
+a directory held for the link and sends the file, and
+`RNGitTemporaryDirectories.release(_:of:)` lets go of one such directory.
+
+`RNGitPageMicron.unquotePlus` now reads a field as `urllib.parse.unquote_plus` does. It used to
+leave the whole field undecoded when one escape was not two hexadecimal digits or did not decode
+as UTF-8, so `a%20b%` read as `a%20b%` where Python reads `a b%`. It now replaces bytes that do
+not decode and keeps a stray `%` as it is. The tree, blob, and commits pages and the artifact,
+download, and media handlers all read their path or name through it, at the six places the
+reference calls `unquote_plus`. `String.pythonBasename` and `String.pythonSplitExtension` take a path apart as
+`os.path` does. Unlike `NSString.pathExtension`, they give `logo.png/` no extension.
+
+Four things the reference does are kept as it does them:
+
+- `serveWorkDocumentDownload` reads a `proposed` scope as `active`, so it finds no proposed
+  document by name.
+- A document number is written back as Python writes it, so `01` finds document 1.
+- Where a work document's text is bytes, the download is counted and nothing is sent.
+- `serveMedia` answers `false` to a request it cannot serve, and counts nothing.
+
 ## [1.21.0]—Git repositories over Reticulum
 
 The `rngit` utility RNS 1.5.3 added: the client, the repository node and its request handlers,
