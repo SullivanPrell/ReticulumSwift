@@ -506,35 +506,36 @@ final class RNIDOperationsTests: XCTestCase {
     XCTAssertEqual(operations.validate(paths: ["m.rsm"]), .ok)
 
     let leadIn = "s  long="
-    XCTAssertEqual(
-      output.lines,
-      [
-        "RSM Metadata\n============\n",
-        "b  signer=" + RNSUtilities.hexrep(identity.hash, delimit: false),
-        "b  pubkey=" + RNSUtilities.hexrep(identity.getPublicKey(), delimit: false).prefix(64),
-        String(repeating: " ", count: "b  pubkey=".count)
-          + RNSUtilities.hexrep(identity.getPublicKey(), delimit: false).suffix(64),
-        "s  text=plain",
-        "b  blob=dead",
-        "l  list=['a', 'b']",
-        "i  count=7",
-        "f  ratio=1.5",
-        // bool renders with "u", NOT "i": in Python `type(True) == int` is False.
-        "u  flag=True",
-        "N  nothing=None",
-        // A "note" key whose value is None is skipped entirely.
-        leadIn + String(repeating: "L", count: 64),
-        String(repeating: " ", count: leadIn.count) + String(repeating: "L", count: 64),
-        String(repeating: " ", count: leadIn.count) + String(repeating: "L", count: 64),
-        String(repeating: " ", count: leadIn.count) + String(repeating: "L", count: 8),
-        "d  section:",
-        "s    inner=value",
-        "\nValidation\n==========",
-        "\nSignature is valid, the message was signed by "
-          + RNSUtilities.prettyhexrep(identity.hash) + "\n",
-        "Message\n=======\n",
-        "body",
-      ])
+    // Annotated and bound apart from the assertion: Swift 6.4 cannot type-check
+    // this literal inline within its solver budget.
+    let pubkeyHex = RNSUtilities.hexrep(identity.getPublicKey(), delimit: false)
+    let expected: [String] = [
+      "RSM Metadata\n============\n",
+      "b  signer=" + RNSUtilities.hexrep(identity.hash, delimit: false),
+      "b  pubkey=" + String(pubkeyHex.prefix(64)),
+      String(repeating: " ", count: "b  pubkey=".count) + String(pubkeyHex.suffix(64)),
+      "s  text=plain",
+      "b  blob=dead",
+      "l  list=['a', 'b']",
+      "i  count=7",
+      "f  ratio=1.5",
+      // bool renders with "u", NOT "i": in Python `type(True) == int` is False.
+      "u  flag=True",
+      "N  nothing=None",
+      // A "note" key whose value is None is skipped entirely.
+      leadIn + String(repeating: "L", count: 64),
+      String(repeating: " ", count: leadIn.count) + String(repeating: "L", count: 64),
+      String(repeating: " ", count: leadIn.count) + String(repeating: "L", count: 64),
+      String(repeating: " ", count: leadIn.count) + String(repeating: "L", count: 8),
+      "d  section:",
+      "s    inner=value",
+      "\nValidation\n==========",
+      "\nSignature is valid, the message was signed by "
+        + RNSUtilities.prettyhexrep(identity.hash) + "\n",
+      "Message\n=======\n",
+      "body",
+    ]
+    XCTAssertEqual(output.lines, expected)
   }
 
   func testSignMessageGates() throws {
