@@ -69,6 +69,17 @@ struct RNGitPageRequest {
   /// Whether `key` holds a value Python reads as true.
   func flag(_ key: String) -> Bool { fields?[key]?.pythonIsTruthy ?? false }
 
+  /// The ref a page shows, which is `HEAD` where the request names none (`pages.py:449`).
+  var ref: String { text("var_ref", default: "HEAD") }
+
+  /// Which work documents the work page lists, which is the active ones where the request
+  /// names no scope (`pages.py:1468`).
+  var workScope: String { text("var_scope", default: "active") }
+
+  /// Where a work document is looked for, which is every scope where the request names none
+  /// (`pages.py:1571`, `pages.py:1890`).
+  var documentScope: String { text("var_scope", default: "all") }
+
   /// The page `var_page` asks for, which is the first where `int` raises for it, and never
   /// before the first.
   ///
@@ -246,7 +257,7 @@ public final class RNGitPageNode {
   ) -> Destination.RequestResponse? {
     let group = fields.text("var_g")
     let repository = fields.text("var_r")
-    let ref = fields.text("var_ref", default: "HEAD")
+    let ref = fields.ref
 
     switch path {
     case RNGitPage.Path.index:
@@ -300,12 +311,12 @@ public final class RNGitPageNode {
       return page(
         handler.serveWorkPage(
           identityHash: reader, groupName: group, repositoryName: repository,
-          scope: fields.text("var_scope", default: "active")))
+          scope: fields.workScope))
     case RNGitPage.Path.workDocument:
       return page(
         handler.serveWorkDocumentPage(
           identityHash: reader, groupName: group, repositoryName: repository,
-          documentID: fields.text("var_id"), scope: fields.text("var_scope", default: "all")))
+          documentID: fields.text("var_id"), scope: fields.documentScope))
     case RNGitPage.Path.media:
       return download(handler.serveMedia(identityHash: reader, request: request, link: link))
     case RNGitPage.Path.artifact:
@@ -322,7 +333,7 @@ public final class RNGitPageNode {
       return download(
         handler.serveWorkDocumentDownload(
           identityHash: reader, groupName: group, repositoryName: repository,
-          documentID: fields.text("var_id"), scope: fields.text("var_scope", default: "all")))
+          documentID: fields.text("var_id"), scope: fields.documentScope))
     default:
       return nil
     }

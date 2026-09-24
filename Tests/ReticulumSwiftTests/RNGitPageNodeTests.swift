@@ -94,6 +94,12 @@ final class RNGitPageNodeTests: XCTestCase {
       ),
       ("[rngit]\nunicode_icons = yes\nmedia_conversion = no\n", .success((true, true))),
       ("[pages]\nunicode_icons = yes, no\n", .failure(.notABoolean(key: "unicode_icons"))),
+      // The reference raised on "perhaps": it reads `unicode_icons` first wherever the file
+      // puts it.
+      (
+        "[pages]\nmedia_conversion = maybe\nunicode_icons = perhaps\n",
+        .failure(.notABoolean(key: "unicode_icons"))
+      ),
     ]
     for (text, expected) in recorded {
       let configuration = try RNGitConfigFile.parse(text)
@@ -289,6 +295,31 @@ final class RNGitPageNodeTests: XCTestCase {
     XCTAssertEqual(fields.text("var_ref", default: "HEAD"), "HEAD")
     XCTAssertEqual(RNGitPageRequest(.nil).text("var_g"), "")
     XCTAssertEqual(RNGitPageRequest(.array([])).text("var_ref", default: "HEAD"), "HEAD")
+  }
+
+  /// The ref and the scopes a request names nothing for are the reference's defaults, and a
+  /// value that is not a string reads as the default too.
+  func testTheRefAndTheScopesDefaultAsTheReferenceDefaultsThem() {
+    let empty = RNGitPageRequest(.map([]))
+    XCTAssertEqual(empty.ref, "HEAD")
+    XCTAssertEqual(empty.workScope, "active")
+    XCTAssertEqual(empty.documentScope, "all")
+    XCTAssertEqual(RNGitPageRequest(.nil).ref, "HEAD")
+
+    let named = RNGitPageRequest(
+      .map([(.string("var_ref"), .string("main")), (.string("var_scope"), .string("proposed"))]))
+    XCTAssertEqual(named.ref, "main")
+    XCTAssertEqual(named.workScope, "proposed")
+    XCTAssertEqual(named.documentScope, "proposed")
+
+    // `data.get("var_ref", "HEAD")` keeps an empty string the request carries.
+    XCTAssertEqual(RNGitPageRequest(.map([(.string("var_ref"), .string(""))])).ref, "")
+
+    let numbers = RNGitPageRequest(
+      .map([(.string("var_ref"), .int(5)), (.string("var_scope"), .int(1))]))
+    XCTAssertEqual(numbers.ref, "HEAD")
+    XCTAssertEqual(numbers.workScope, "active")
+    XCTAssertEqual(numbers.documentScope, "all")
   }
 
   // MARK: - Links
