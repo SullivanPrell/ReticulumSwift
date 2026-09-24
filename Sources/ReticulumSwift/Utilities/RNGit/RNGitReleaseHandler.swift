@@ -433,8 +433,9 @@ public struct RNGitReleaseHandler {
     return String(path[path.index(after: separator)...])
   }
 
-  /// `path` joined to `component`, which replaces it where it opens with a separator.
-  private static func joined(_ path: String, _ component: String) -> String {
+  /// `path` joined to `component` as `os.path.join` joins them, which replaces `path` where
+  /// `component` opens with a separator.
+  static func joined(_ path: String, _ component: String) -> String {
     if component.hasPrefix("/") { return component }
     if path.isEmpty || path.hasSuffix("/") { return path + component }
     return path + "/" + component

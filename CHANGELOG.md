@@ -5,6 +5,21 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The rngit stats, releases, and release pages
+
+`RNGitPageHandler` renders three more pages from `pages.py`: `serve_stats_page`,
+`serve_releases_page` and `serve_release_page`. `RNGitStatistics.repositoryStats` totals a
+repository's counters over a window of days as `repository_stats` does (`server.py:4644`),
+and scores and grades its activity the same way. Each day falls where the node's time zone
+puts it, and the days its level is spread over run from the first view, fetch or push, even
+one older than the window. The tests check every page and figure against output recorded from
+Python RNS 1.5.4.
+
+The releases page answers nothing when a published release has no notes, and the release page
+answers nothing when `latest` resolves to a tag that is not a string, since the reference raises
+in both cases. Both methods return `Data?` for that reason. A release tag is joined to the
+releases directory as `os.path.join` joins it.
+
 ## [1.21.0]—Git repositories over Reticulum
 
 The `rngit` utility RNS 1.5.3 added: the client, the repository node and its request handlers,
