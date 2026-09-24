@@ -5,6 +5,24 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.21.0]—Git repositories over Reticulum
+
+The `rngit` utility RNS 1.5.3 added: the client, the repository node and its request handlers,
+`git-remote-rns`, and `rngcs`. The node does not serve its NomadNet pages yet. The front,
+group, repository, refs, tree, blob, commits, and commit pages render, but the stats, releases,
+work and file pages and the `nomadnetwork.node` destination that serves them are unported, so
+`rnsProtocolVersion` stays at 1.5.2.
+
+### Seven more rngit pages
+
+`RNGitPageHandler` renders seven more pages from `pages.py`: `serve_group_page`,
+`serve_repo_page`, `serve_refs_page`, `serve_tree_page`, `serve_blob_page`,
+`serve_commits_page` and `serve_commit_page`. Each keeps the reference's order of validation,
+lookup, blocked-identity check and view count, which differs from page to page: the group page
+checks a blocked reader before counting the view, and the front page after. The repository
+page's readme renders through `SyntaxHighlighter`. Its "forked from" indent clamps at zero,
+where Python's string repetition accepts a negative count.
+
 ### Unpadding reads only the length byte, as Python does
 
 `PKCS7.unpad` refused any pad byte other than the length, and any input that was empty, not a
