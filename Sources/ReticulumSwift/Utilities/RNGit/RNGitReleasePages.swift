@@ -69,7 +69,7 @@ extension RNGitPageHandler {
       $0["status"] == .string("published")
     }
     let rendering = RNGitReleaseRendering(timeZone: timeZone)
-    let separator = RNGitPage.icon(.separator)
+    let separator = icon(.separator)
 
     var content = RNGitPageMicron.heading("Releases (\(published.count))", level: 2) + "\n"
     for release in published {
@@ -187,11 +187,11 @@ extension RNGitPageHandler {
       return notFound("The release \(tag) does not exist.")
     }
 
-    let separator = RNGitPage.icon(.separator)
+    let separator = icon(.separator)
     let thanksCount = thanks.release(at: directory, thankedBy: thanksClicked ? linkID : nil)
     var content =
       RNGitPageMicron.requestLink(
-        RNGitPage.icon(.heart) + " Thanks (\(thanksCount))", RNGitPage.Path.release,
+        icon(.heart) + " Thanks (\(thanksCount))", RNGitPage.Path.release,
         [("g", groupName), ("r", repositoryName), ("t", tag), ("thanks", "y")]) + "\n\n"
 
     let created = details["created"]?.asInt ?? 0
@@ -225,7 +225,7 @@ extension RNGitPageHandler {
         let measured = size != 0 ? RNSUtilities.prettysize(size) : "0 B"
         let fields = [("g", groupName), ("r", repositoryName), ("t", tag), ("a", name)]
         let named = RNGitPageMicron.requestLink(
-          RNGitPage.icon(.file) + " " + RNGitPageMicron.escape(name), RNGitPage.Path.artifact,
+          icon(.file) + " " + RNGitPageMicron.escape(name), RNGitPage.Path.artifact,
           fields)
         let sized = RNGitPageMicron.requestLink("(\(measured))", RNGitPage.Path.artifact, fields)
         content += "\(named) \(RNGitPage.Colour.dim)\(sized)`f\n"

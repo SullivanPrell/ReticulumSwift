@@ -180,7 +180,10 @@ public enum RNGitPage {
   ]
 
   /// What `icon` is drawn as.
-  public static func icon(_ icon: Icon, usingNerdFonts: Bool = useNerdFonts) -> String {
+  ///
+  /// Takes no default: a node chooses its icons once, so a page asks the handler serving it
+  /// rather than reading ``useNerdFonts`` itself.
+  public static func icon(_ icon: Icon, usingNerdFonts: Bool) -> String {
     (usingNerdFonts ? nerdFontIcons : unicodeIcons)[icon] ?? ""
   }
 

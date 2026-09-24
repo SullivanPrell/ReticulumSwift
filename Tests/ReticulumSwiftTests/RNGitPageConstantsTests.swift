@@ -114,9 +114,14 @@ final class RNGitPageConstantsTests: XCTestCase {
     }
   }
 
-  /// A page draws the Nerd Font icons unless it is told otherwise.
-  func testAPageDrawsNerdFontIconsUnlessToldOtherwise() {
-    XCTAssertEqual(RNGitPage.icon(.folder), RNGitPage.icon(.folder, usingNerdFonts: true))
-    XCTAssertNotEqual(RNGitPage.icon(.folder, usingNerdFonts: false), RNGitPage.icon(.folder))
+  /// A handler draws the Nerd Font icons unless the node tells it otherwise.
+  func testAHandlerDrawsNerdFontIconsUnlessToldOtherwise() {
+    var handler = RNGitPageHandler(
+      access: RNGitPageAccess(control: RNGitAccessControl(groups: [:])),
+      runner: RNGitProcessRunner(), destinationHash: Data(count: 16),
+      templates: RNGitPageTemplates(directory: "/nonexistent", nodeName: "", version: ""))
+    XCTAssertEqual(handler.icon(.folder), RNGitPage.icon(.folder, usingNerdFonts: true))
+    handler.useNerdFonts = false
+    XCTAssertEqual(handler.icon(.folder), RNGitPage.icon(.folder, usingNerdFonts: false))
   }
 }
