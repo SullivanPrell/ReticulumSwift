@@ -153,9 +153,10 @@ public final class FileLogSink {
 
   /// Route every `Reticulum.log` call through this sink.
   ///
-  /// Remember the handler receives the *raw* message, so formatting happens here.
+  /// Remember the handler receives the *raw* message, so formatting happens here. The sink
+  /// lasts for as long as it stays installed, so the caller need not hold on to it.
   public func install() {
-    Reticulum.logHandler = handler
+    Reticulum.logHandler = { message, level in self.emit(message, level: level) }
   }
 
   /// Format `message` and send it to the current destination, applying Python's fallback.

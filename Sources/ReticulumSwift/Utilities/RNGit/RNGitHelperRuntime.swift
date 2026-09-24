@@ -137,7 +137,10 @@ public struct RNGitHelperRuntime {
   }
 
   /// The stack the helper runs on, with its log written to `logFile`.
-  private static func start(
+  ///
+  /// The stack joins the shared instance where one is running and otherwise brings up the
+  /// interfaces the configuration names (`client.py:152`).
+  static func start(
     configurationDirectory: String?, logFile: String, logLevel: Int?
   ) throws -> Reticulum {
     let configDir =
@@ -146,14 +149,13 @@ public struct RNGitHelperRuntime {
     let paths = DaemonBootstrap.Paths(configDir: configDir)
     try DaemonBootstrap.createStorageTree(paths)
 
-    let sink = FileLogSink(fileURL: URL(fileURLWithPath: logFile))
-    sink.install()
+    FileLogSink(fileURL: URL(fileURLWithPath: logFile)).install()
     if let logLevel, let level = Reticulum.LogLevel(rawValue: logLevel) {
       Reticulum.globalLogLevel = level
     }
 
-    let reticulum = Reticulum.fromConfigDir(configDir)
-    try reticulum.start()
-    return reticulum
+    return try InstanceConnection.attach(
+      configDirectory: configDir, logLevel: Reticulum.globalLogLevel
+    ).reticulum
   }
 }

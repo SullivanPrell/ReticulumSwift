@@ -77,9 +77,6 @@ public enum RNGitRuntime {
   /// What a run says of an operation its subcommand does not take.
   public static let invalidOperation = "Invalid operation"
 
-  /// The sink a run writes its log through, held for as long as the run lasts.
-  private static var logSink: FileLogSink?
-
   /// Where a run's output goes.
   public struct Streams {
 
@@ -189,9 +186,7 @@ public enum RNGitRuntime {
       Reticulum.globalLogLevel = level
     }
     if setup.service == true {
-      let sink = FileLogSink(fileURL: URL(fileURLWithPath: node.logPath))
-      sink.install()
-      logSink = sink
+      FileLogSink(fileURL: URL(fileURLWithPath: node.logPath)).install()
     }
 
     stack.transport.register(destination: destination)
@@ -361,21 +356,20 @@ public enum RNGitRuntime {
     return 1
   }
 
-  /// The stack the run works over.
+  /// The stack the run works over, joined to the shared instance where one is running and
+  /// otherwise with the interfaces the configuration names (`server.py:67`).
   ///
   /// A run kept as a service writes its log to a file and takes the log level the configuration
   /// holds, where any other run writes to standard output and takes the level the command line
   /// asked for on top of it.
-  private static func start(_ setup: RNGitProgramSetup) throws -> Reticulum {
+  static func start(_ setup: RNGitProgramSetup) throws -> Reticulum {
     let configDir =
       setup.rnsConfigDirectory.map { DaemonBootstrap.expandTildeURL($0) }
       ?? DaemonBootstrap.homeDirectory().appendingPathComponent(".reticulum")
     let paths = DaemonBootstrap.Paths(configDir: configDir)
 
     if setup.service == true {
-      let sink = FileLogSink(fileURL: paths.logFile)
-      sink.install()
-      logSink = sink
+      FileLogSink(fileURL: paths.logFile).install()
     } else {
       FileLogSink.installStdoutHandler()
     }
@@ -385,9 +379,8 @@ public enum RNGitRuntime {
       paths: paths,
       verbosity: setup.service == true ? nil : setup.verbosity - setup.quietness)
 
-    let reticulum = Reticulum.fromConfigDir(configDir)
-    try reticulum.start()
-    Reticulum.globalLogLevel = bootstrapped.logLevel
-    return reticulum
+    return try InstanceConnection.attach(
+      configDirectory: configDir, logLevel: bootstrapped.logLevel
+    ).reticulum
   }
 }

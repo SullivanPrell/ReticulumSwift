@@ -803,8 +803,16 @@ public final class Reticulum {
     self.transport = Transport()
   }
 
-  /// Convenience: init from a config directory path (mirrors Python's
-  /// `RNS.Reticulum(configdir=...)` pattern).
+  /// A stack whose storage and configuration file are the ones in `configDir`.
+  ///
+  /// The stack starts with no interfaces and never joins a shared instance.
+  /// `RNS.Reticulum(configdir=...)` does both; for the stack it builds, use
+  /// ``InstanceConnection/attach(configDirectory:requireSharedInstance:logLevel:synthesizeInterfaces:)``.
+  @available(
+    *, deprecated,
+    message:
+      "Starts with no interfaces and no shared instance; use InstanceConnection.attach(configDirectory:) instead"
+  )
   public static func fromConfigDir(_ configDir: URL) -> Reticulum {
     let storagePath = StorageInventory.url(.storage, in: configDir)
     let configPath = StorageInventory.url(.config, in: configDir)

@@ -284,6 +284,22 @@ final class FileLogSinkTests: XCTestCase {
     XCTAssertFalse(contents(of: logFile).contains("filtered"))
   }
 
+  /// An installed sink keeps receiving the log with nothing else holding it.
+  func testAnInstalledSinkLastsWhileItIsInstalled() {
+    let savedHandler = Reticulum.logHandler
+    let savedLevel = Reticulum.globalLogLevel
+    defer {
+      Reticulum.logHandler = savedHandler
+      Reticulum.globalLogLevel = savedLevel
+    }
+
+    FileLogSink(fileURL: logFile).install()
+    Reticulum.globalLogLevel = .info
+    Reticulum.log("kept", level: .notice)
+
+    XCTAssertTrue(contents(of: logFile).contains("kept"))
+  }
+
   func testInstallStdoutHandlerFormatsLikePython() {
     let savedHandler = Reticulum.logHandler
     let savedLevel = Reticulum.globalLogLevel
