@@ -21,3 +21,7 @@ Resources/*.xcframework.zip
 # Python bytecode from .vale/tools helpers.
 __pycache__/
 *.pyc
+
+# Agent instructions stay local; they are not published.
+CLAUDE.md
+CLAUDE.local.md

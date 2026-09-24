@@ -25,7 +25,7 @@ import XCTest
 /// `Discovery.py:380-392`) that its own config path then rejected.
 ///
 /// `PipeInterface` is the one documented divergence: not implemented by design (macOS/Linux
-/// subprocess pipes, no mobile use case—CLAUDE.md "Deferred Indefinitely"), so its block takes
+/// subprocess pipes, no mobile use case—`docs/INTERFACES.md`), so its block takes
 /// the loud unknown-type path, pinned here so the divergence stays recorded.
 final class RemainingConstructionTests: XCTestCase {
 
@@ -284,7 +284,7 @@ final class RemainingConstructionTests: XCTestCase {
     XCTAssertFalse(
       stack.transport.interfaces.contains { $0.name == "Pipes" },
       "PipeInterface is deliberately unimplemented (POSIX subprocess pipes, "
-        + "no mobile use case — CLAUDE.md); its block must keep taking the loud "
+        + "no mobile use case — docs/INTERFACES.md); its block must keep taking the loud "
         + "unknown-type ERROR path, not construct something else")
   }
 }
