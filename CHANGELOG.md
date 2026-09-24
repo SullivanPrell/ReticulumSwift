@@ -19,7 +19,7 @@ The `[pages]` section sets `unicode_icons` and `media_conversion`, which the nod
 when it starts serving the pages. A value that names no boolean stops the pages and leaves the
 repositories served. A request's fields are read as `pages.py` reads them: `page` as `int` reads
 it and never below zero, a flag as true where its value is not empty, and text as the default
-where it is not a string. The tests check 19 settings, 22 page numbers, and 17 flags against
+where it is not a string. The tests check 20 settings, 22 page numbers, and 17 flags against
 Python RNS 1.5.4.
 
 `RNGitPageHandler.useNerdFonts` chooses a node's icons, and every page asks the handler for
