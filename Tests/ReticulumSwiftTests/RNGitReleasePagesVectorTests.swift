@@ -91,6 +91,42 @@ final class RNGitReleasePagesVectorTests: XCTestCase {
     }
   }
 
+  /// A node whose `[pages]` section sets `unicode_icons` draws the thanks and artifact icons every
+  /// font carries, as the reference renders the "release micron" step with `use_nerdfonts` off.
+  func testAReleaseDrawsUnicodeIconsWhereTheNodeTurnsNerdFontsOff() throws {
+    var handler = handler(blockNullIdentity: false)
+    handler.useNerdFonts = false
+    let page = handler.serveReleasePage(
+      identityHash: nil, groupName: "proj", repositoryName: "demo", tag: "v1.1",
+      thanksClicked: false, linkID: nil, timeZone: try XCTUnwrap(TimeZone(identifier: "UTC")))
+    XCTAssertEqual(page.map(Self.normalised), Self.releaseWithUnicodeIcons.joined(separator: "\n"))
+  }
+
+  /// The "release micron" page, rendered by the reference with `use_nerdfonts` off.
+  private static let releaseWithUnicodeIcons: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / `!`[demo`:/page/repo.mu`g=proj|r=demo]`! / `!`[releases`:/page/releases.mu`g=proj|r=demo]`! / v1.1",
+    "",
+    "`[♥ Thanks (0)`:/page/release.mu`g=proj|r=demo|t=v1.1|thanks=y]",
+    "",
+    ">>Release v1.1 • 2026-09-22 18:00:00",
+    "",
+    ">Heading",
+    "`!Micron`! preview",
+    "",
+    "",
+    ">>Artifacts (1)",
+    "",
+    "`[🗎 one.bin`:/file/artifact`g=proj|r=demo|t=v1.1|a=one.bin] `F666`[(1 B)`:/file/artifact`g=proj|r=demo|t=v1.1|a=one.bin]`f",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
+
   /// A handler over group "proj" and its four repositories, each open to everyone, counting
   /// every view.
   private func handler(blockNullIdentity: Bool) -> RNGitPageHandler {

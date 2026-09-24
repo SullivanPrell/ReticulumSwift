@@ -1284,4 +1284,200 @@ final class RNGitPageHandlerTests: XCTestCase {
         encoding: .utf8))
     XCTAssertTrue(page.contains("This page requires identification, and none was received."))
   }
+
+  // MARK: - Icons
+
+  /// The repository and tree pages draw the icons a Nerd Font carries by default, as the
+  /// reference renders them over the same repository.
+  func testPagesDrawNerdFontIconsByDefault() throws {
+    var handler = Self.handler(access: realAccess())
+    XCTAssertEqual(
+      Self.normalised(
+        handler.serveRepoPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo")),
+      Self.repositoryPageWithNerdFonts.joined(separator: "\n"))
+    XCTAssertEqual(
+      Self.normalised(
+        handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo")),
+      Self.treePageWithNerdFonts.joined(separator: "\n"))
+  }
+
+  /// A node whose `[pages]` section sets `unicode_icons` draws the icons every font carries on
+  /// every page that draws one, as the reference renders them with `use_nerdfonts` off.
+  func testPagesDrawUnicodeIconsWhereTheNodeTurnsNerdFontsOff() throws {
+    var handler = Self.handler(access: realAccess())
+    handler.useNerdFonts = false
+    XCTAssertEqual(
+      Self.normalised(
+        handler.serveRepoPage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo")),
+      Self.repositoryPageWithUnicodeIcons.joined(separator: "\n"))
+    XCTAssertEqual(
+      Self.normalised(
+        handler.serveTreePage(
+          identityHash: Self.stranger, groupName: "proj", repositoryName: "demo")),
+      Self.treePageWithUnicodeIcons.joined(separator: "\n"))
+
+    let head = try revParse("HEAD", in: demoRepository)
+    let commitPage = Self.normalised(
+      handler.serveCommitPage(
+        identityHash: Self.stranger, groupName: "proj", repositoryName: "demo", commitHash: head))
+    XCTAssertTrue(
+      commitPage.contains(
+        "`!`[\u{1F5C0} Browse tree at this commit`:/page/tree.mu`g=proj|r=demo|ref=\(head)]`!\n"))
+  }
+
+  /// A page far past the last is answered as the reference answers it, rather than trapping on
+  /// the arithmetic that finds where it starts.
+  ///
+  /// The reference's integers have no bounds: the tree page lists nothing, and the commits page
+  /// hands `git log` a skip past what it reads as an integer.
+  func testAPageFarPastTheLastIsAnsweredAsTheReferenceAnswersIt() throws {
+    var handler = Self.handler(access: realAccess())
+    for page in [5_000_000_000_000_000, Int.max] {
+      XCTAssertEqual(
+        Self.normalised(
+          handler.serveTreePage(
+            identityHash: Self.stranger, groupName: "proj", repositoryName: "demo", page: page)),
+        Self.treePageFarPastTheLast.joined(separator: "\n"), "\(page)")
+      XCTAssertEqual(
+        Self.normalised(
+          handler.serveCommitsPage(
+            identityHash: Self.stranger, groupName: "proj", repositoryName: "demo", page: page)),
+        Self.commitsPageFarPastTheLast.joined(separator: "\n"), "\(page)")
+    }
+  }
+
+  /// The tree page the reference renders for `var_page=9223372036854775807`, and for any page
+  /// past the last.
+  private static let treePageFarPastTheLast: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / `!`[demo`:/page/repo.mu`g=proj|r=demo]`! / `!`[files`:/page/tree.mu`g=proj|r=demo]`! / ",
+    "",
+    ">>Contents: HEAD (140253e0)",
+    "",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
+
+  /// The commits page the reference renders for `var_page=9223372036854775807`, and for any
+  /// page whose skip `git` cannot read.
+  private static let commitsPageFarPastTheLast: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / `!`[demo`:/page/repo.mu`g=proj|r=demo]`! / commits",
+    "",
+    "Error reading commit history.",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
+
+  /// `page` with how long it took to generate replaced, as the recorded pages have it.
+  private static func normalised(_ page: Data) -> String {
+    String(decoding: page, as: UTF8.self).replacingOccurrences(
+      of: #"Generated in [^`]*`f$"#, with: "Generated in {GEN_TIME}`f",
+      options: .regularExpression)
+  }
+
+  /// The repository page Python RNS 1.5.4's `serve_repo_page` renders over `demoRepository`,
+  /// with `use_nerdfonts` on.
+  private static let repositoryPageWithNerdFonts: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / demo `F666rns://7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a/proj/demo`f",
+    "",
+    "A configured description",
+    "",
+    "`[󰉖 Files`:/page/tree.mu`g=proj|r=demo|ref=HEAD] • `[󱌣 Work (0)`:/page/work.mu`g=proj|r=demo] • `[󰋚 Commits (1)`:/page/commits.mu`g=proj|r=demo|ref=HEAD] • `[󰘬 Branches (2)`:/page/refs.mu`g=proj|r=demo|type=heads] • `[󰓼 Tags (2)`:/page/refs.mu`g=proj|r=demo|type=tags] • `[󰋑 Thanks (0)`:/page/repo.mu`g=proj|r=demo|thanks=y]",
+    "",
+    "<-─",
+    "",
+    "A micron readme",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
+
+  /// The repository page, with `use_nerdfonts` off.
+  private static let repositoryPageWithUnicodeIcons: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / demo `F666rns://7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a/proj/demo`f",
+    "",
+    "A configured description",
+    "",
+    "`[🗀 Files`:/page/tree.mu`g=proj|r=demo|ref=HEAD] • `[☸ Work (0)`:/page/work.mu`g=proj|r=demo] • `[🖹 Commits (1)`:/page/commits.mu`g=proj|r=demo|ref=HEAD] • `[⑃ Branches (2)`:/page/refs.mu`g=proj|r=demo|type=heads] • `[⌆ Tags (2)`:/page/refs.mu`g=proj|r=demo|type=tags] • `[♥ Thanks (0)`:/page/repo.mu`g=proj|r=demo|thanks=y]",
+    "",
+    "<-─",
+    "",
+    "A micron readme",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
+
+  /// The tree page Python RNS 1.5.4's `serve_tree_page` renders at the root of
+  /// `demoRepository`, with `use_nerdfonts` on.
+  private static let treePageWithNerdFonts: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / `!`[demo`:/page/repo.mu`g=proj|r=demo]`! / `!`[files`:/page/tree.mu`g=proj|r=demo]`! / ",
+    "",
+    ">>Contents: HEAD (140253e0)",
+    "",
+    "`Ffe6`[󰉖`:/page/tree.mu`g=proj|r=demo|ref=HEAD|path=src]`f`[ src/`:/page/tree.mu`g=proj|r=demo|ref=HEAD|path=src]",
+    "`Ffe6⧉`f sub `F666(submodule)`f",
+    "`F66d`[`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=big.txt]`f`[ big.txt`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=big.txt] `F666(300.00 KB)`f",
+    "`F66d`[`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=data.bin]`f`[ data.bin`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=data.bin] `F666(8 B)`f",
+    "`F66d↳`f link_to_readme `F666→ README.mu`f",
+    "`F66d`[`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=logo.png]`f`[ logo.png`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=logo.png] `F666(18 B)`f",
+    "`F66d`[`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=notes.md]`f`[ notes.md`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=notes.md] `F666(23 B)`f",
+    "`F66d`[`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=README.mu]`f`[ README.mu`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=README.mu] `F666(16 B)`f",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
+
+  /// The tree page, with `use_nerdfonts` off.
+  private static let treePageWithUnicodeIcons: [String] = [
+    "#!c=0",
+    "> A Node",
+    "",
+    ">>",
+    "`!`[Node`:/page/index.mu]`! / `!`[proj`:/page/group.mu`g=proj]`! / `!`[demo`:/page/repo.mu`g=proj|r=demo]`! / `!`[files`:/page/tree.mu`g=proj|r=demo]`! / ",
+    "",
+    ">>Contents: HEAD (140253e0)",
+    "",
+    "`Ffe6`[🗀`:/page/tree.mu`g=proj|r=demo|ref=HEAD|path=src]`f`[ src/`:/page/tree.mu`g=proj|r=demo|ref=HEAD|path=src]",
+    "`Ffe6⧉`f sub `F666(submodule)`f",
+    "`F66d`[🗎`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=big.txt]`f`[ big.txt`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=big.txt] `F666(300.00 KB)`f",
+    "`F66d`[🗎`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=data.bin]`f`[ data.bin`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=data.bin] `F666(8 B)`f",
+    "`F66d↳`f link_to_readme `F666→ README.mu`f",
+    "`F66d`[🗎`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=logo.png]`f`[ logo.png`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=logo.png] `F666(18 B)`f",
+    "`F66d`[🗎`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=notes.md]`f`[ notes.md`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=notes.md] `F666(23 B)`f",
+    "`F66d`[🗎`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=README.mu]`f`[ README.mu`:/page/blob.mu`g=proj|r=demo|ref=HEAD|path=README.mu] `F666(16 B)`f",
+    "",
+    "<",
+    "-",
+    "`a`F666`[Served by rngit 1.5.4`:/page/index.mu] - Generated in {GEN_TIME}`f",
+  ]
 }

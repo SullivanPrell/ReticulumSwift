@@ -5,6 +5,37 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### The rngit page node
+
+`rngit` now serves its pages over Nomad Network. `RNGitPageNode` is the port of
+`NomadNetworkNode` (`pages.py:51`). It brings up a `nomadnetwork.node` destination under the
+node's identity and answers the 17 paths the reference registers, in the same order. It sends
+`/media` without compression, announces the node's name as UTF-8, and holds a link from the
+moment it opens. Every 60 seconds it lets go of any link that is no longer active, and a closed
+link's temporary directories go with it. `RNGitRuntime` brings the pages up after the
+repositories destination, as `server.py:2065` does, and only where `serve_nomadnet` is on.
+
+The `[pages]` section sets `unicode_icons` and `media_conversion`, which the node reads once
+when it starts serving the pages. A value that names no boolean stops the pages and leaves the
+repositories served. A request's fields are read as `pages.py` reads them: `page` as `int` reads
+it and never below zero, a flag as true where its value is not empty, and text as the default
+where it is not a string. The tests check 19 settings, 22 page numbers, and 17 flags against
+Python RNS 1.5.4.
+
+`RNGitPageHandler.useNerdFonts` chooses a node's icons, and every page asks the handler for
+them. `RNGitPage.icon(_:usingNerdFonts:)` no longer has a default for its second argument, so a
+page cannot draw its icons without asking the handler.
+
+A page number far past the last page no longer stops the node. Once the pages are served, a
+reader chooses `var_page`. The tree and commits pages multiplied it by the page size, and an
+`Int` overflow traps. The arithmetic now saturates. For such a page, the tree page shows an
+empty listing and the commits page says `Error reading commit history.`, as Python does.
+
+`String.pythonIntegerClamped` reads `int` of a string and holds the answer to the range of
+`Int`, where Python's integer has no bounds. `String.pythonInteger` now reads
+`-9223372036854775808` as `Int.min` instead of `nil`, because the digits accumulate toward the
+sign they carry.
+
 ### The rngit stats, releases, and release pages
 
 `RNGitPageHandler` renders three more pages from `pages.py`: `serve_stats_page`,

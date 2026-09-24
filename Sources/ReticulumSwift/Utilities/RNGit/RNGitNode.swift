@@ -32,6 +32,9 @@ public final class RNGitNode {
   /// What the configuration spells out.
   public private(set) var settings: RNGitNodeSettings
 
+  /// The configuration as it was read, which the pages read their own section of.
+  public let configuration: RNGitConfigSection
+
   /// The groups the node serves, and what they grant.
   public private(set) var store: RNGitRepositoryStore
 
@@ -105,6 +108,7 @@ public final class RNGitNode {
       throw RNGitClientAbort("Could not parse the configuration at " + configurationPath)
     }
 
+    self.configuration = configuration
     self.identity = try RNGitNodeEnvironment.identity(
       at: self.directory + "/" + RNGitNodeEnvironment.identityFileName, in: self.directory)
     self.settings = try RNGitNodeSettings(configuration: configuration, verbosity: verbosity)

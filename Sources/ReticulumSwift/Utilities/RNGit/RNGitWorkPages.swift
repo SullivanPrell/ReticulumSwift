@@ -74,7 +74,7 @@ extension RNGitPageHandler {
           label, RNGitPage.Path.work,
           [("g", groupName), ("r", repositoryName), ("scope", name)]) + underline
     }
-    var content = filters.joined(separator: " \(RNGitPage.icon(.separator)) ") + "\n\n"
+    var content = filters.joined(separator: " \(icon(.separator)) ") + "\n\n"
 
     let work = RNGitWorkStore.directory(forRepository: repository.path)
     let rendering = RNGitReleaseRendering(timeZone: timeZone)
@@ -102,7 +102,7 @@ extension RNGitPageHandler {
           let created = Self.localTime(document.created, "yyyy-MM-dd", rendering, otherwise: "")
         else { return nil }
         let link = RNGitPageMicron.link(
-          RNGitPage.icon(.file) + " " + title, RNGitPage.Path.workDocument,
+          icon(.file) + " " + title, RNGitPage.Path.workDocument,
           [
             ("g", groupName), ("r", repositoryName), ("id", String(document.number)),
             ("scope", folder),
