@@ -1160,7 +1160,7 @@ public struct RNGitPageHandler {
 
   /// `text` without the whitespace it ends on, matching Python's argument-less `.rstrip()`,
   /// which strips every trailing whitespace character rather than only trailing newlines.
-  private static func rstripped(_ text: String) -> String {
+  static func rstripped(_ text: String) -> String {
     var trimmed = Substring(text)
     while let last = trimmed.last, last.isWhitespace { trimmed = trimmed.dropLast() }
     return String(trimmed)
@@ -1173,7 +1173,7 @@ public struct RNGitPageHandler {
   /// A nil `group` and nil `repository` count a front-page view, `group` alone counts that
   /// group's view, and both present count that repository's view—unless `identityHash` is one
   /// the node does not count, or the node counts no views at all.
-  private mutating func viewSucceeded(
+  mutating func viewSucceeded(
     group: String?, repository: String?, for identityHash: Data?
   ) {
     if let identityHash, settings.statsIgnored.contains(identityHash) { return }
