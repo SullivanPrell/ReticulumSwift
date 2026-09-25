@@ -5,6 +5,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.22.0]—rngit serves its pages, and parity moves to 1.5.4
+
+`rngit` serves its Nomad Network pages: the stats, releases, work, and file pages join the ones
+1.21.0 rendered, and the node answers them on `nomadnetwork.node`. That completes what RNS 1.5.3
+added, so `rnsProtocolVersion` moves to 1.5.4. `rngit` and `git-remote-rns` also reach the
+network now; in 1.21.0 neither brought up an interface.
+
 ### Reference parity moves to RNS 1.5.4
 
 `Reticulum.rnsProtocolVersion` reads `1.5.4`, up from `1.5.2`.
