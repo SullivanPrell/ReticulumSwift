@@ -23,7 +23,7 @@ identifies every destination, and every packet carries end-to-end encryption by
 default.
 
 **ReticulumSwift** translates that stack into Swift. It tracks Python Reticulum
-(RNS 1.5.2). The interoperability suite runs Swift and Python nodes on one network,
+(RNS 1.5.4). The interoperability suite runs Swift and Python nodes on one network,
 where they exchange announces, establish links, and transfer resources.
 
 ---
@@ -48,7 +48,7 @@ The goal of the stack is a complete iOS/macOS Reticulum experience—think
 
 ## Status
 
-ReticulumSwift is **experimental**. It covers the core layers of Reticulum 1.5.2 and
+ReticulumSwift is **experimental**. It covers the core layers of Reticulum 1.5.4 and
 the standard interfaces listed below, but it hasn't had an independent security review
 and isn't a substitute for the reference implementation. The Python implementation is
 the authority on how Reticulum behaves. Where this port differs from it, the port is

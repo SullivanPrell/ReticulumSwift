@@ -34,20 +34,20 @@ public final class Reticulum {
   /// a single version string for both its library and its protocol). Bump only
   /// when parity is verified against a new RNS release. Informational only.
   ///
-  /// **Moved to 1.5.2 on 2026-09-04**, once the observability surface caught up with
-  /// the transport work. The blocker this comment used to record has gone: `txdrp` and
-  /// the rest of the keys `rnstatus.py` subscripts without a presence check are now in
-  /// the payload, so Python 1.5.2's own `rnstatus` renders a Swift daemon instead of
-  /// raising `KeyError`. Of upstream's 77 per-interface keys this port emits 73 and adds
-  /// none of its own; all 28 top-level keys are present. The four it omits are
-  /// deliberate: `interference_last_ts` and `interference_last_dbm` are dead upstream
-  /// (upstream comments out every writer at `RNodeInterface.py:957-966`), and `blocked_ips`
-  /// and `blocked_ip_list` are `BackboneInterface` server state, which this client-only
-  /// Backbone never holds. `rnstatus.py` guards all four. `tri-test`'s
-  /// `make test-utilities` drives Python 1.5.2's utilities against this port's daemon
-  /// and both directions agree, including the key order of `rnstatus -j`.
+  /// `reticulum-interop` verifies the match. Its `make test-utilities` drives Python 1.5.4's
+  /// utilities against this port's daemon, and both directions agree, including the key order
+  /// of `rnstatus -j`. Its `make test-rngit` serves one repository from a Python and a Swift
+  /// `rngit` node, compares every page each browser reads, and clones the repository through
+  /// each `git-remote-rns`.
   ///
-  /// What landed:
+  /// Of upstream's 77 per-interface `rnstatus` keys this port emits 73 and adds none of its
+  /// own; all 28 top-level keys are present. The four it omits are deliberate:
+  /// `interference_last_ts` and `interference_last_dbm` are dead upstream (upstream comments out
+  /// every writer at `RNodeInterface.py:957-966`), and `blocked_ips` and `blocked_ip_list` are
+  /// `BackboneInterface` server state, which this client-only Backbone never holds.
+  /// `rnstatus.py` guards all four.
+  ///
+  /// What each release since 1.4.2 brought:
   ///
   ///  - **1.5.0**, transport core. `Packet.unpack` now rejects a zero-length data
   ///    field and validates transport-ID and destination-hash lengths; `Packet.send`
@@ -62,6 +62,15 @@ public final class Reticulum {
   ///  - **1.5.2**, maintenance. Its `Resource` request-window and `Buffer` MDU fixes
   ///    were already correct here; `Resource.cancel`'s new membership guards only
   ///    suppress a Python warning that this port's idempotent removal never emits.
+  ///  - **1.5.3**, `rngit`. Images a page shows convert to WebP (`media.py`), and the
+  ///    node's per-repository `allowed` files and work scopes were reworked; this port
+  ///    serves the whole page layer on `nomadnetwork.node` (``RNGitPageNode``). The
+  ///    `HDLC.frame()` the Backbone and Local client interfaces gained was already here,
+  ///    and its other changes are a log line and a docstring.
+  ///  - **1.5.4**, RNode. A BLE detect timeout forces the link down so the next attempt
+  ///    connects afresh (`RNodeInterface.py:446-450`); this port closes the transport and
+  ///    redials after every failed bring-up (``RNodeTransport/close()``). The rest is BLE
+  ///    bookkeeping, a Windows-only paired-device lookup, and log text.
   ///
   /// Three areas are deliberately not ported because the seam differs, each pinned by
   /// a test: traffic classes (`TC_DATA`/`TC_ANNOUNCE`/…) presuppose Python's inbound
@@ -70,13 +79,11 @@ public final class Reticulum {
   /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
   /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
   ///
-  /// The two areas that were outstanding when the parity claim moved to 1.5.2 have since
-  /// landed: interface-discovery *publishing*, which now announces this node's own
-  /// discoverable interfaces and dials the ones it hears about
-  /// (``publishesInterfaceDiscovery``, ``autoconnectsDiscoveredInterfaces``); and the
-  /// `discovery_path_requests` batching, together with the announce replay that answers
-  /// the requestors it batches.
-  public static let rnsProtocolVersion = "1.5.2"
+  /// Interface discovery is ported on both sides: this node announces its own discoverable
+  /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,
+  /// ``autoconnectsDiscoveredInterfaces``), and batches `discovery_path_requests` together
+  /// with the announce replay that answers the requestors it batches.
+  public static let rnsProtocolVersion = "1.5.4"
 
   /// Log severity levels, ordered from `none` through `extreme`.
   public enum LogLevel: Int, Comparable, Sendable {
