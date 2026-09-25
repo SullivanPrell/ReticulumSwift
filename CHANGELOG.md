@@ -5,6 +5,27 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Reference parity moves to RNS 1.5.4
+
+`Reticulum.rnsProtocolVersion` reads `1.5.4`, up from `1.5.2`.
+
+RNS 1.5.3 brought the `rngit` page layer, which this port now serves in full on
+`nomadnetwork.node`, and an `HDLC.frame()` for the Backbone and Local client interfaces, which
+this port already had. RNS 1.5.4 changes only `RNodeInterface.py`: a BLE detect timeout now
+forces the link down so the next attempt connects afresh (`RNodeInterface.py:446-450`). This
+port already closes the transport and redials after every failed bring-up.
+
+reticulum-interop runs Python 1.5.4 against this port. `make test-utilities` drives each
+implementation's `rn*` utilities against the other's daemon, and `make test-rngit` serves one
+repository from a Python and a Swift `rngit` node, compares every page each browser reads, and
+clones the repository through each `git-remote-rns`. On this tree the first passed 140 tests
+with 1 expected failure, and the second passed all 9.
+
+One gap is known. A utility that finds no configuration file uses the default one in memory,
+where Python writes the default to disk and logs that it did. `rnsd`, `rnpkg`, `rnir` and
+`rngit` write it; `rnstatus`, `rnpath`, `rnprobe`, `rncp`, `rnid`, `rnx` and `git-remote-rns`
+do not.
+
 ### rngit and git-remote-rns reach the network
 
 `rngit` and `git-remote-rns` built their stack with `Reticulum.fromConfigDir`, which brings up

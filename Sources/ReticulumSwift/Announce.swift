@@ -150,8 +150,7 @@ public enum Announce {
   /// to a single reader of the announce layout: `Announce.validate(_:)` and
   /// `Identity.validateAnnounce(_:onlyValidateSignature:isBlackholed:)` both go
   /// through here, so a change to the wire format can't reach one and miss the
-  /// other. They previously carried separate hand-rolled parsers that had
-  /// already drifted apart over the ratchet field.
+  /// other.
   public struct Parsed {
     /// The announced identity, loaded from the announce's public key.
     ///

@@ -1,7 +1,7 @@
 # Interoperability with Python Reticulum
 
 ReticulumSwift targets **wire- and crypto-compatibility** with the Python
-reference implementation (RNS 1.5.2), which it translates. A Swift node and a
+reference implementation (RNS 1.5.4), which it translates. A Swift node and a
 Python node are peers on the same network: they exchange announces, establish
 links, transfer resources, and route for each other with no bridge or translation
 layer. The Python implementation is the authority. Where the two disagree, the
