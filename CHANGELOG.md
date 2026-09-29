@@ -5,6 +5,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `Destination.encrypt` encrypts a `SINGLE` packet to the ratchet the transport recalls for the
+  destination, and records its ID in `latestRatchetID` (`Destination.py:606-610`). It used the
+  identity key, so a destination that enforces ratchets dropped every packet this port sent it.
+
 ## [1.22.0]—rngit serves its pages, and parity moves to 1.5.4
 
 `rngit` serves its Nomad Network pages: the stats, releases, work, and file pages join the ones

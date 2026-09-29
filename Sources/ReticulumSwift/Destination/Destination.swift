@@ -811,6 +811,10 @@ public final class Destination {
   public enum EncryptionError: Error { case missingGroupKey }
 
   /// Encrypts `plaintext` for this destination.
+  ///
+  /// A `SINGLE` destination encrypts to the ratchet the shared instance recalls for its
+  /// hash, when there is one, and records that ratchet's ID in ``latestRatchetID``
+  /// (`Destination.py:606-610`).
   public func encrypt(_ plaintext: Data) throws -> Data {
     switch kind {
     case .plain:
@@ -820,7 +824,12 @@ public final class Destination {
       guard let key = groupKeyBytes else { throw EncryptionError.missingGroupKey }
       let token = try Token(key: key)
       return try token.encrypt(plaintext)
-    case .single, .link:
+    case .single:
+      guard let identity else { throw DestinationError.missingIdentity }
+      let ratchet = Reticulum.shared?.transport.currentRatchetKey(forDestination: hash)
+      if let ratchet { latestRatchetID = Identity.ratchetID(forPublicKey: ratchet) }
+      return try identity.encrypt(plaintext, ratchetPublicKey: ratchet)
+    case .link:
       guard let identity else { throw DestinationError.missingIdentity }
       return try identity.encrypt(plaintext)
     }
