@@ -250,6 +250,16 @@ public final class Destination {
   /// Default is `.proveNone`, matching Python's `PROVE_NONE` default.
   public var proofStrategy: ProofStrategy = .proveNone
 
+  /// Whether the proof strategy proves `packet`: always for `.proveAll`, and for `.proveApp`
+  /// when ``onProofRequested`` returns `true` (`Transport.py:2600-2605`, `Link.py:961-967`).
+  func shouldProve(_ packet: Packet) -> Bool {
+    switch proofStrategy {
+    case .proveAll: return true
+    case .proveApp: return onProofRequested?(packet) == true
+    case .proveNone: return false
+    }
+  }
+
   // MARK: - Request handlers
 
   /// Controls which remote peers are allowed to invoke a request handler.

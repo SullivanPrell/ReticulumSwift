@@ -2133,6 +2133,8 @@ public final class Link {
         lastReceivedDataPacketHash = hash
         stateLock.unlock()
         onDataReceived?(plaintext, self)
+        // Link.py:961-967: the destination's proof strategy decides whether to prove it.
+        if let hash, destination.shouldProve(packet) { proveLinkPacket(hash) }
       }
     }
   }

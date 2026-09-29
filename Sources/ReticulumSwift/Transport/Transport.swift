@@ -3946,13 +3946,7 @@ public final class Transport {
       if let plaintext = try? localDest.decrypt(packet.data) {
         localDest.onPacketReceived?(plaintext, packet)
         // For proof-generating strategies, deliver the proof directly to the receipt.
-        let shouldProve: Bool
-        switch localDest.proofStrategy {
-        case .proveAll: shouldProve = true
-        case .proveApp: shouldProve = localDest.onProofRequested?(packet) == true
-        case .proveNone: shouldProve = false
-        }
-        if shouldProve, let r = receipt,
+        if localDest.shouldProve(packet), let r = receipt,
           let identity = localDest.identity, identity.hasPrivateKey,
           let hashable = try? packet.hashablePart()
         {
@@ -5170,25 +5164,12 @@ public final class Transport {
       deliveredPacket.receivingInterface = interface
 
       onPacketDelivered?(deliveredPacket, destination, interface)
-      // Decrypt and dispatch to destination's application callback.
-      if let cb = destination.onPacketReceived {
-        if let plaintext = try? destination.decrypt(deliveredPacket.data) {
-          cb(plaintext, deliveredPacket)
-        }
-      }
-      // Generate a delivery proof for DATA packets if the destination's
-      // proof strategy requires it. Mirrors Python's `packet.prove()`.
-      if packet.packetType == .data {
-        switch destination.proofStrategy {
-        case .proveAll:
-          sendProof(for: packet, from: interface, destination: destination)
-        case .proveApp:
-          if destination.onProofRequested?(packet) == true {
-            sendProof(for: packet, from: interface, destination: destination)
-          }
-        case .proveNone:
-          break
-        }
+      // Destination.py:419-429 and Transport.py:2599-2600: a packet that doesn't decrypt is
+      // neither delivered nor proven.
+      guard let plaintext = try? destination.decrypt(deliveredPacket.data) else { return }
+      destination.onPacketReceived?(plaintext, deliveredPacket)
+      if packet.packetType == .data, destination.shouldProve(packet) {
+        sendProof(for: packet, from: interface, destination: destination)
       }
       return
     }
