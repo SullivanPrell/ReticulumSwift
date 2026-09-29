@@ -96,6 +96,20 @@ final class LinkMTUNegotiationTests: XCTestCase {
     XCTAssertGreaterThan(a.getMdu() ?? 0, Constants.linkMdu)
   }
 
+  /// `Link.py:307`: without `link_mtu_discovery`, the initiator signals `Reticulum.MTU`
+  /// whatever the next hop's hardware MTU.
+  func testDisabledMTUDiscoverySignalsTheBaseMTU() throws {
+    let saved = Reticulum.linkMtuDiscoveryEnabled
+    Reticulum.linkMtuDiscoveryEnabled = false
+    defer { Reticulum.linkMtuDiscoveryEnabled = saved }
+
+    let (a, b) = try establish(hwMtu: 1500)
+
+    XCTAssertEqual(a.getMtu(), Constants.mtu)
+    XCTAssertEqual(b.getMtu(), Constants.mtu)
+    XCTAssertEqual(a.getMdu(), Constants.linkMdu)
+  }
+
   func testSignallingRoundTrip() throws {
     for mtu in [500, 1064, 1500, 262_144] {
       let bytes = Link.mtuSignallingBytes(mtu: mtu)

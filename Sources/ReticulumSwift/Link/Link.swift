@@ -1011,9 +1011,14 @@ public final class Link {
     let link = Link(role: .initiator, destination: destination)
     link.transport = transport
 
-    // Use next-hop HW MTU if available (link MTU discovery).
-    // Mirrors Python: Transport.next_hop_interface_hw_mtu → Link.signalling_bytes.
-    let signaledMtu = transport.nextHopInterfaceHwMtu(for: destination.hash) ?? Constants.mtu
+    // Link.py:305-309: signal the next hop's hardware MTU when link MTU discovery is on,
+    // and Reticulum.MTU otherwise.
+    var signaledMtu = Constants.mtu
+    if Reticulum.linkMtuDiscovery(),
+      let hwMtu = transport.nextHopInterfaceHwMtu(for: destination.hash), hwMtu > 0
+    {
+      signaledMtu = hwMtu
+    }
     let body = link.pubBytes + link.sigPubBytes + mtuSignallingBytes(mtu: signaledMtu)
     let packet = Packet(
       destinationType: .single,
