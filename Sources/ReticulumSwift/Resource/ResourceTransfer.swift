@@ -779,7 +779,8 @@ public final class ResourceTransfer {
 
     let wantsMoreHashmap = data[0] == ResourceTransfer.hashmapIsExhausted
     let pad = wantsMoreHashmap ? 1 + ResourceTransfer.mapHashLength : 1
-    guard data.count > pad + Constants.hashLength else { return }
+    // Zero requested hashes is valid: the receiver only wants the next hashmap segment.
+    guard data.count >= pad + Constants.hashLength else { return }
 
     let requestedHashesData = data[(pad + Constants.hashLength)...]
     var requestedHashes: Set<Data> = []

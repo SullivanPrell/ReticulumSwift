@@ -2062,7 +2062,8 @@ public final class Link {
         reqData.count > 1 && reqData[0] == ResourceTransfer.hashmapIsExhausted
         ? 1 + ResourceTransfer.mapHashLength
         : 1
-      guard reqData.count > hashStart + Constants.hashLength else { break }
+      // A request for the next hashmap segment can carry no part hashes (`Link.py:1085-1088`).
+      guard reqData.count >= hashStart + Constants.hashLength else { break }
       let resourceHash = reqData[hashStart..<hashStart + Constants.hashLength]
       for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
         rt.handleRequest(reqData)

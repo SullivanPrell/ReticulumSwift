@@ -27,6 +27,9 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - `RawChannelReader.read(_:)` returns what the buffer holds when it holds fewer bytes than asked,
   and `readinto(_:)` returns `nil` when the buffer is empty before the end of the stream and `0` at
   its end, as `RawChannelReader._read` and `readinto` do.
+- A resource sender answers a request for the next hashmap segment that carries no part hashes
+  (`Link.py:1081-1088`, `Resource.request`). It dropped the request, so a receiver that held
+  every part of a segment before asking for the next one stalled, and the transfer failed.
 
 ## [1.22.0]—rngit serves its pages, and parity moves to 1.5.4
 
