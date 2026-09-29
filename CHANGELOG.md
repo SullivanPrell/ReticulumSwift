@@ -5,6 +5,32 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `Destination.encrypt` encrypts a `SINGLE` packet to the ratchet the transport recalls for the
+  destination, and records its ID in `latestRatchetID` (`Destination.py:606-610`). It used the
+  identity key, so a destination that enforces ratchets dropped every packet this port sent it.
+- A destination proves an inbound packet only once it decrypts (`Destination.py:419-429`,
+  `Transport.py:2599-2600`). It proved every `DATA` packet under `PROVE_ALL`, so a sender saw
+  delivery of a packet the receiver had dropped.
+- A link proves an inbound `DATA` packet as its destination's proof strategy says
+  (`Link.py:961-967`). Under `PROVE_ALL` and `PROVE_APP` it proved none.
+- `Link.initiate` signals `Reticulum.MTU` when `link_mtu_discovery` is off (`Link.py:305-309`). It
+  signalled the next hop's hardware MTU whatever the setting.
+- `RawChannelWriter.write` sends one message and returns how many bytes it carried, or `0` when
+  the channel window is full, and compresses the chunk as `Buffer.py:232-267` does. It sent every
+  chunk in a loop and threw on a full window after sending some of them, so a caller that
+  retried sent those bytes twice. `close()` waits for room in the window before it ends the
+  stream, where it dropped the end-of-stream message on a full window. `write` is no longer
+  `@discardableResult`: a caller loops until it has written every byte, as `io.BufferedWriter`
+  does over `RawChannelWriter` in Python.
+- `RawChannelReader.read(_:)` returns what the buffer holds when it holds fewer bytes than asked,
+  and `readinto(_:)` returns `nil` when the buffer is empty before the end of the stream and `0` at
+  its end, as `RawChannelReader._read` and `readinto` do.
+- A resource sender answers a request for the next hashmap segment that carries no part hashes
+  (`Link.py:1081-1088`, `Resource.request`). It dropped the request, so a receiver that held
+  every part of a segment before asking for the next one stalled, and the transfer failed.
+
 ## [1.22.0]—rngit serves its pages, and parity moves to 1.5.4
 
 `rngit` serves its Nomad Network pages: the stats, releases, work, and file pages join the ones

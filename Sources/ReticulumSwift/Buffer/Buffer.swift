@@ -23,6 +23,8 @@ import Foundation
 public final class StreamDataMessage: MessageBase {
   /// Largest stream identifier that fits in the stream header.
   public static let streamIDMax: UInt16 = 0x3FFF
+  /// Bytes of stream header ahead of the chunk (`Buffer.py`, `HEADER_LEN`).
+  public static let headerLength: Int = 2
   /// Bytes of channel and stream header carried by every envelope.
   ///
   /// Channel overhead per envelope: 6-byte channel header + 2-byte stream header
@@ -30,12 +32,10 @@ public final class StreamDataMessage: MessageBase {
 
   /// Pluggable compressor for stream data.
   ///
-  /// Defaults to `BZip2Compressor` so a compressed chunk from a Python
-  /// `RNS.Buffer` peer (which sets the compressed flag) can be transparently
-  /// decompressed on receive. Compression on *send* stays opt-in per write
-  /// (`StreamDataMessage(compress: true)`), so installing a compressor never
-  /// changes the wire format unless a caller asks to compress. Set to `nil`
-  /// to opt out (compressed chunks from peers can no longer be decoded).
+  /// Defaults to `BZip2Compressor`. ``RawChannelWriter`` compresses a chunk with it when that
+  /// saves space (`Buffer.py:243-258`), and received chunks with the compressed flag set are
+  /// decompressed with it. Set to `nil` to send every chunk uncompressed; readers then can't decode
+  /// compressed chunks from peers.
   public static var compressor: (any DataCompressor)? = BZip2Compressor()
 
   public override class var typeID: UInt16 { SystemMessageTypes.streamData }
@@ -66,6 +66,15 @@ public final class StreamDataMessage: MessageBase {
       self.data = data
       self.isCompressed = false
     }
+    self.eof = eof
+  }
+
+  /// Creates a chunk whose `data` is already bz2-compressed.
+  convenience init(streamID: UInt16, compressedData: Data, eof: Bool) {
+    self.init()
+    self.streamID = streamID
+    self.data = compressedData
+    self.isCompressed = true
     self.eof = eof
   }
 
@@ -141,16 +150,17 @@ public final class RawChannelReader {
     return true
   }
 
-  /// Returns up to `count` bytes, or nil if fewer are available and not EOF.
+  /// Returns up to `count` buffered bytes.
+  ///
+  /// Returns `nil` when the buffer is empty before the end of the stream, and empty data at its
+  /// end (`RawChannelReader._read`).
   public func read(_ count: Int) -> Data? {
     lock.lock()
     defer { lock.unlock() }
-    guard buffer.count >= count || isEOF else { return nil }
     let take = min(count, buffer.count)
-    if take == 0 { return isEOF ? Data() : nil }
-    let slice = buffer.prefix(take)
+    let result = Data(buffer.prefix(take))
     buffer.removeFirst(take)
-    return Data(slice)
+    return result.isEmpty && !isEOF ? nil : result
   }
 
   /// All buffered bytes available.
@@ -185,26 +195,14 @@ public final class RawChannelReader {
   /// Whether `close()` has been called.
   public private(set) var isClosed: Bool = false
 
-  /// Fill `buffer` with available bytes, up to `buffer.count`.
+  /// Moves up to `buf.count` buffered bytes into `buf` and returns how many it moved.
   ///
-  /// Returns the number of bytes written, or `nil` when the stream is closed and empty.
-  /// Mirrors Python's `RNSInputBuffer.readinto(bytearray)`.
+  /// Returns `nil` when the buffer is empty before the end of the stream, and `0` at its end
+  /// (`RawChannelReader.readinto`).
   public func readinto(_ buf: inout [UInt8]) -> Int? {
-    lock.lock()
-    let available = buffer.count
-    let closed = isClosed
-    lock.unlock()
-
-    if available == 0 { return closed ? nil : 0 }
-
-    let take = min(available, buf.count)
-    lock.lock()
-    let slice = buffer.prefix(take)
-    buffer.removeFirst(take)
-    lock.unlock()
-
-    for (i, byte) in slice.enumerated() { buf[i] = byte }
-    return take
+    guard let ready = read(buf.count) else { return nil }
+    for (i, byte) in ready.enumerated() { buf[i] = byte }
+    return ready.count
   }
 
   /// Stops consuming the stream and releases its buffer.
@@ -231,13 +229,20 @@ public final class RawChannelWriter {
   /// Stream this writer produces.
   public let streamID: UInt16
   private let channel: Channel
-  /// Largest chunk written in one envelope, in bytes.
+  /// Largest input chunk one write consumes, in bytes (`Buffer.py`, `MAX_CHUNK_LEN`).
   public static let maxChunkLen: Int = 1024 * 16
+  /// Compression attempts per write, each on a shorter prefix (`COMPRESSION_TRIES`).
+  public static let compressionTries: Int = 4
+  /// Largest chunk one message carries: the channel MDU less the stream header (`_mdu`).
+  private let mdu: Int
+  /// Set by `close()`; every later message carries the end-of-stream flag (`_eof`).
+  private var eof = false
 
   /// Creates a writer producing a stream on `channel`.
   public init(streamID: UInt16, channel: Channel) {
     self.streamID = streamID
     self.channel = channel
+    self.mdu = channel.mdu - StreamDataMessage.headerLength
   }
 
   // MARK: - io.RawIOBase metadata (Python parity)
@@ -258,29 +263,52 @@ public final class RawChannelWriter {
   /// Whether `close()` has been called.
   public private(set) var isClosed: Bool = false
 
-  /// Write bytes, chunked to fit the channel MDU.
+  /// Sends one message carrying a chunk from the front of `bytes`, and returns how many bytes
+  /// of `bytes` it carried.
   ///
-  /// Returns bytes consumed.
-  @discardableResult
+  /// The chunk is at most ``maxChunkLen`` bytes. The writer sends it, or its first half or third,
+  /// bz2-compressed when that fits one message and saves space, and otherwise as much of it as
+  /// fits uncompressed. Returns `0` when the channel window is full (`Buffer.py:232-267`).
   public func write(_ bytes: Data) throws -> Int {
-    let maxData = channel.mdu - 2  // 2-byte stream header
-    var consumed = 0
-    var remaining = bytes
-    while !remaining.isEmpty {
-      let chunk = remaining.prefix(min(maxData, RawChannelWriter.maxChunkLen))
-      remaining = remaining.dropFirst(chunk.count)
-      let msg = StreamDataMessage(streamID: streamID, data: Data(chunk), eof: false)
-      try channel.send(msg)
-      consumed += chunk.count
+    let (message, carried) = nextMessage(Data(bytes.prefix(RawChannelWriter.maxChunkLen)))
+    do {
+      try channel.send(message)
+    } catch ChannelError.linkNotReady {
+      return 0
     }
-    return consumed
+    return carried
   }
 
-  /// Send an EOF signal to the remote reader and mark this writer closed.
+  private func nextMessage(_ chunk: Data) -> (StreamDataMessage, Int) {
+    if let compressor = StreamDataMessage.compressor {
+      var attempt = 1
+      while chunk.count > 32 && attempt < RawChannelWriter.compressionTries {
+        let segmentLength = chunk.count / attempt
+        if let compressed = compressor.compress(chunk.prefix(segmentLength)),
+          compressed.count < mdu, compressed.count < segmentLength
+        {
+          let message = StreamDataMessage(streamID: streamID, compressedData: compressed, eof: eof)
+          return (message, segmentLength)
+        }
+        attempt += 1
+      }
+    }
+    let plain = Data(chunk.prefix(mdu))
+    return (StreamDataMessage(streamID: streamID, data: plain, eof: eof), plain.count)
+  }
+
+  /// Waits for room in the channel window, then sends an empty end-of-stream message
+  /// (`Buffer.py:269-279`).
+  ///
+  /// The wait lasts at most ``Channel/closeTimeout``.
   public func close() throws {
+    let deadline = Date().addingTimeInterval(channel.closeTimeout)
+    while Date() < deadline && !channel.isReadyToSend() {
+      Thread.sleep(forTimeInterval: 0.05)
+    }
+    eof = true
     isClosed = true
-    let msg = StreamDataMessage(streamID: streamID, data: Data(), eof: true)
-    try? channel.send(msg)
+    _ = try write(Data())
   }
 }
 

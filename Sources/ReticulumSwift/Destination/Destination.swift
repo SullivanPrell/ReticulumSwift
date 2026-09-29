@@ -250,6 +250,16 @@ public final class Destination {
   /// Default is `.proveNone`, matching Python's `PROVE_NONE` default.
   public var proofStrategy: ProofStrategy = .proveNone
 
+  /// Whether the proof strategy proves `packet`: always for `.proveAll`, and for `.proveApp`
+  /// when ``onProofRequested`` returns `true` (`Transport.py:2600-2605`, `Link.py:961-967`).
+  func shouldProve(_ packet: Packet) -> Bool {
+    switch proofStrategy {
+    case .proveAll: return true
+    case .proveApp: return onProofRequested?(packet) == true
+    case .proveNone: return false
+    }
+  }
+
   // MARK: - Request handlers
 
   /// Controls which remote peers are allowed to invoke a request handler.
@@ -811,6 +821,10 @@ public final class Destination {
   public enum EncryptionError: Error { case missingGroupKey }
 
   /// Encrypts `plaintext` for this destination.
+  ///
+  /// A `SINGLE` destination encrypts to the ratchet the shared instance recalls for its
+  /// hash, when there is one, and records that ratchet's ID in ``latestRatchetID``
+  /// (`Destination.py:606-610`).
   public func encrypt(_ plaintext: Data) throws -> Data {
     switch kind {
     case .plain:
@@ -820,7 +834,12 @@ public final class Destination {
       guard let key = groupKeyBytes else { throw EncryptionError.missingGroupKey }
       let token = try Token(key: key)
       return try token.encrypt(plaintext)
-    case .single, .link:
+    case .single:
+      guard let identity else { throw DestinationError.missingIdentity }
+      let ratchet = Reticulum.shared?.transport.currentRatchetKey(forDestination: hash)
+      if let ratchet { latestRatchetID = Identity.ratchetID(forPublicKey: ratchet) }
+      return try identity.encrypt(plaintext, ratchetPublicKey: ratchet)
+    case .link:
       guard let identity else { throw DestinationError.missingIdentity }
       return try identity.encrypt(plaintext)
     }

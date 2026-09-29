@@ -1011,9 +1011,14 @@ public final class Link {
     let link = Link(role: .initiator, destination: destination)
     link.transport = transport
 
-    // Use next-hop HW MTU if available (link MTU discovery).
-    // Mirrors Python: Transport.next_hop_interface_hw_mtu → Link.signalling_bytes.
-    let signaledMtu = transport.nextHopInterfaceHwMtu(for: destination.hash) ?? Constants.mtu
+    // Link.py:305-309: signal the next hop's hardware MTU when link MTU discovery is on,
+    // and Reticulum.MTU otherwise.
+    var signaledMtu = Constants.mtu
+    if Reticulum.linkMtuDiscovery(),
+      let hwMtu = transport.nextHopInterfaceHwMtu(for: destination.hash), hwMtu > 0
+    {
+      signaledMtu = hwMtu
+    }
     let body = link.pubBytes + link.sigPubBytes + mtuSignallingBytes(mtu: signaledMtu)
     let packet = Packet(
       destinationType: .single,
@@ -2057,7 +2062,8 @@ public final class Link {
         reqData.count > 1 && reqData[0] == ResourceTransfer.hashmapIsExhausted
         ? 1 + ResourceTransfer.mapHashLength
         : 1
-      guard reqData.count > hashStart + Constants.hashLength else { break }
+      // A request for the next hashmap segment can carry no part hashes (`Link.py:1085-1088`).
+      guard reqData.count >= hashStart + Constants.hashLength else { break }
       let resourceHash = reqData[hashStart..<hashStart + Constants.hashLength]
       for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
         rt.handleRequest(reqData)
@@ -2128,6 +2134,8 @@ public final class Link {
         lastReceivedDataPacketHash = hash
         stateLock.unlock()
         onDataReceived?(plaintext, self)
+        // Link.py:961-967: the destination's proof strategy decides whether to prove it.
+        if let hash, destination.shouldProve(packet) { proveLinkPacket(hash) }
       }
     }
   }
