@@ -66,7 +66,7 @@ final class BufferReadintoTests: XCTestCase {
   func testReadintoReturnsCountWhenDataAvailable() throws {
     let (reader, writer) = makeReaderWriter()
     let payload = Data([0x01, 0x02, 0x03])
-    try writer.write(payload)
+    XCTAssertEqual(try writer.write(payload), payload.count)
 
     // Allow async loopback delivery
     Thread.sleep(forTimeInterval: 0.05)
@@ -89,7 +89,7 @@ final class BufferReadintoTests: XCTestCase {
 
   func testReadintoReturnsBytesBeforeNilAfterClose() throws {
     let (reader, writer) = makeReaderWriter()
-    try writer.write(Data([0xAA, 0xBB]))
+    XCTAssertEqual(try writer.write(Data([0xAA, 0xBB])), 2)
     Thread.sleep(forTimeInterval: 0.05)
     reader.close()
 
@@ -106,7 +106,7 @@ final class BufferReadintoTests: XCTestCase {
 
   func testReadintoFillsUpToBufferCapacity() throws {
     let (reader, writer) = makeReaderWriter()
-    try writer.write(Data(repeating: 0xFF, count: 10))
+    XCTAssertEqual(try writer.write(Data(repeating: 0xFF, count: 10)), 10)
     Thread.sleep(forTimeInterval: 0.05)
 
     var buf = [UInt8](repeating: 0, count: 4)  // smaller than available

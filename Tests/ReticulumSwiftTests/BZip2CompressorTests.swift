@@ -19,6 +19,17 @@ import XCTest
 final class BZip2CompressorTests: XCTestCase {
 
   private let compressor = BZip2Compressor()
+  private var savedStreamCompressor: (any DataCompressor)?
+
+  override func setUp() {
+    super.setUp()
+    savedStreamCompressor = StreamDataMessage.compressor
+  }
+
+  override func tearDown() {
+    StreamDataMessage.compressor = savedStreamCompressor
+    super.tearDown()
+  }
 
   // MARK: - BZip2Compressor basic round-trip
 
@@ -112,7 +123,6 @@ final class BZip2CompressorTests: XCTestCase {
 
   func testStreamDataMessageCompressedFlagInHeader() throws {
     StreamDataMessage.compressor = BZip2Compressor()
-    defer { StreamDataMessage.compressor = nil }
 
     let payload = Data(repeating: 0xCC, count: 500)
     let msg = StreamDataMessage(streamID: 3, data: payload, eof: false, compress: true)
@@ -138,7 +148,6 @@ final class BZip2CompressorTests: XCTestCase {
 
   func testStreamDataMessageCompressedRoundTrip() throws {
     StreamDataMessage.compressor = BZip2Compressor()
-    defer { StreamDataMessage.compressor = nil }
 
     let original = Data(repeating: 0xEE, count: 1000)
     let sent = StreamDataMessage(streamID: 7, data: original, eof: false, compress: true)

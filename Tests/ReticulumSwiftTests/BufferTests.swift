@@ -152,7 +152,7 @@ final class BufferTests: XCTestCase {
     let channel = Channel(outlet: outlet)
     let writer = Buffer.createWriter(streamID: 2, channel: channel)
 
-    try writer.write(Data("test".utf8))
+    XCTAssertEqual(try writer.write(Data("test".utf8)), 4)
 
     XCTAssertEqual(outlet.sentPackets.count, 1)
     let raw = outlet.sentPackets[0]
@@ -189,11 +189,15 @@ final class BufferTests: XCTestCase {
     // Raise window so all chunks can go out.
     let writer = Buffer.createWriter(streamID: 0, channel: channel)
 
-    // Write 50 bytes—needs 3 chunks at 22 bytes each (22+22+6=50).
+    // Write 50 bytes—needs 3 chunks at 22 bytes each (22+22+6=50). Each write sends one chunk.
     let data = Data(repeating: 0xCC, count: 50)
-    try writer.write(data)
+    var written: [Int] = []
+    while written.reduce(0, +) < data.count {
+      written.append(try writer.write(data.dropFirst(written.reduce(0, +))))
+    }
 
-    XCTAssertGreaterThan(outlet.sentPackets.count, 1)
+    XCTAssertEqual(written, [22, 22, 6])
+    XCTAssertEqual(outlet.sentPackets.count, 3)
     // Reconstruct and verify all data.
     var recovered = Data()
     for raw in outlet.sentPackets {
@@ -241,7 +245,7 @@ final class BufferTests: XCTestCase {
       }
     }
 
-    try writer.write(Data("hello".utf8))
+    XCTAssertEqual(try writer.write(Data("hello".utf8)), 5)
     wait(for: [received], timeout: 1.0)
     XCTAssertEqual(gotBytes, Data("hello".utf8))
     reader.close()

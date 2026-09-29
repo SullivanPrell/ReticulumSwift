@@ -397,6 +397,18 @@ public final class Channel {
     return min(m, Int(UInt16.max))
   }
 
+  /// How long `RawChannelWriter.close()` waits for room in the window.
+  ///
+  /// It's the round-trip time for each message in flight, or 15 seconds when the outlet
+  /// reports no round-trip time (`Buffer.py:270-274`).
+  public var closeTimeout: TimeInterval {
+    let rtt = outlet.rtt
+    guard rtt > 0 else { return 15 }
+    lock.lock()
+    defer { lock.unlock() }
+    return rtt * Double(txRing.count)
+  }
+
   // MARK: - Ready check
 
   /// Reports whether the window has room and the outlet is usable.
