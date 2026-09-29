@@ -5,6 +5,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.22.1]—six fixes from the RNS spec scenarios
+
+reticulum-interop's RNS spec scenarios, with Python 1.5.4 as the oracle, found six places where
+this port departed from the reference. A `SINGLE` packet now encrypts to the recalled ratchet,
+proofs follow the destination's proof strategy and only follow decryption, `link_mtu_discovery`
+off signals the base MTU, `RawChannelWriter` sends one chunk per `write` as Python's does, and a
+resource sender answers a hashmap request that carries no part hashes.
+
 ### Fixed
 
 - `Destination.encrypt` encrypts a `SINGLE` packet to the ratchet the transport recalls for the
