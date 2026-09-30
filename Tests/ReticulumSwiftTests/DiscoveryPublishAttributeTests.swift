@@ -245,6 +245,8 @@ final class DiscoveryPublishConfigTests: XCTestCase {
       "discovery_encrypt": "yes",
       "reachable_on": "hub.example.net",
       "publish_ifac": "yes",
+      // RNS 1.5.5 turns publish_ifac off when no IFAC value is set (`Reticulum.py:1095-1098`).
+      "network_name": "segment",
       "location_cmd": "~/bin/whereami",
       "latitude": "55.6761",
       "longitude": "12.5683",
