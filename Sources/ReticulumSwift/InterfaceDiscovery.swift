@@ -198,6 +198,27 @@ public enum InterfaceDiscoveryHelpers {
   /// matches is a separate, coarser fact.
   public static let implementationVersion = Reticulum.version
 
+  /// The leading digits of each dot-separated component of `version`.
+  ///
+  /// Stops at the first component that doesn't start with a digit, and returns `nil` when
+  /// there are none. Mirrors Python `version_tuple(version_string)` (`Discovery.py:995-1005`).
+  public static func versionTuple(_ version: String) -> [Int]? {
+    var components: [Int] = []
+    let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
+    for part in trimmed.split(separator: ".", omittingEmptySubsequences: false) {
+      let digits = part.prefix { ("0"..."9").contains($0) }
+      guard !digits.isEmpty, let n = Int(digits) else { break }
+      components.append(n)
+    }
+    return components.isEmpty ? nil : components
+  }
+
+  /// Whether `version` is at least `minimum`, compared as Python compares tuples.
+  static func versionAtLeast(_ version: [Int], _ minimum: [Int]) -> Bool {
+    for (a, b) in zip(version, minimum) where a != b { return a > b }
+    return version.count >= minimum.count
+  }
+
   /// Return true if `address` is a valid IPv4 or IPv6 address string.
   ///
   /// Mirrors Python `is_ip_address(address_string)` which uses `ipaddress.ip_address`.
@@ -714,11 +735,21 @@ public final class InterfaceDiscovery {
   /// stay down before it's torn down and its slot freed.
   public static let detachThreshold: TimeInterval = 12
 
-  /// The two types autoconnect dials, matched against the announced type.
+  /// The types autoconnect dials, matched against the announced type.
   ///
-  /// Python: `InterfaceDiscovery.AUTOCONNECT_TYPES` (`Discovery.py:449`). Both are dialled as
-  /// a Backbone client, because both describe a listening TCP endpoint.
-  public static let autoconnectTypes: Set<String> = ["BackboneInterface", "TCPServerInterface"]
+  /// Python: `InterfaceDiscovery.AUTOCONNECT_TYPES` (`Discovery.py:483`). RNS 1.5.5 dropped
+  /// `TCPServerInterface`.
+  public static let autoconnectTypes: Set<String> = ["BackboneInterface"]
+
+  /// Implementations autoconnect dials without `autoconnect_unverified_implementations`.
+  ///
+  /// Python: `InterfaceDiscovery.AUTOCONNECT_IMPLS` (`Discovery.py:486`).
+  public static let autoconnectImpls: Set<String> = ["RNS"]
+
+  /// The lowest announced version autoconnect dials.
+  ///
+  /// Python: `InterfaceDiscovery.AUTOCONNECT_MIN_V` (`Discovery.py:487`).
+  public static let autoconnectMinVersion = "1.5.2"
 
   /// The mode a transport node adopts a discovered peer under.
   ///
@@ -788,6 +819,11 @@ public final class InterfaceDiscovery {
   ///
   /// Python: `monitored_interfaces`.
   private var monitoredInterfaces: [any Interface] = []
+  /// Serialises the existence check and the dial.
+  ///
+  /// Two announces for one endpoint can't both dial it. Python: `autoconnect_lock`
+  /// (`Discovery.py:493`).
+  private let autoconnectLock = NSLock()
   private var monitoringAutoconnects = false
   private var monitorGeneration = 0
 
@@ -936,6 +972,18 @@ public final class InterfaceDiscovery {
     guard autoconnectCount() < Reticulum.maxAutoconnectedInterfaces() else { return }
     guard Self.autoconnectTypes.contains(info.type) else { return }
     guard let transport else { return }
+    guard autoconnectQualified(info) else {
+      let impl =
+        if let name = info.implName, !name.isEmpty, let version = info.version, !version.isEmpty {
+          "\(name) \(version)"
+        } else {
+          "unknown implementation"
+        }
+      Reticulum.log(
+        "Not auto-connecting discovered \(info.type) \(info.name) (\(impl)), "
+          + "auto-connect criteria not satisfied", level: .debug)
+      return
+    }
     guard !interfaceExists(info) else {
       Reticulum.log(
         "Discovered \(info.type) already exists, not auto-connecting",
@@ -958,14 +1006,31 @@ public final class InterfaceDiscovery {
     }
     guard let port = info.port else { return }
 
-    // Both announced types describe a listening TCP endpoint, and the client for one is a
-    // Backbone client (`Discovery.py:730-758`). This port's `BackboneInterface` *is* that
-    // client—it has no server side—so the same construction serves both.
-    let interface = BackboneInterface(
-      name: info.name, host: reachableOn,
-      port: UInt16(truncatingIfNeeded: port))
+    autoconnectLock.lock()
+    defer { autoconnectLock.unlock() }
+    if interfaceExists(info) { return }
 
-    Reticulum.log("Auto-connecting discovered \(info.type) \(info.name)", level: .notice)
+    let name = autoconnectInterfaceName(info.name)
+    if name != info.name {
+      Reticulum.log(
+        "Auto-connect name collision for \"\(info.name)\", connecting as \"\(name)\"",
+        level: .notice)
+    }
+
+    // Where Backbone isn't supported, Darwin included, Python dials the endpoint as a
+    // `TCPClientInterface` (RNS 1.5.5, `Discovery.py:827-842`).
+    #if canImport(Darwin)
+    Reticulum.log(
+      "BackboneInterface is not yet supported on this operating system, auto-connecting "
+        + "discovered \(info.type) \(name) using TCPClientInterface", level: .notice)
+    let interface: any Interface = TCPClientInterface(
+      name: name, host: reachableOn, port: UInt16(truncatingIfNeeded: port))
+    #else
+    let interface: any Interface = BackboneInterface(
+      name: name, host: reachableOn, port: UInt16(truncatingIfNeeded: port))
+    #endif
+
+    Reticulum.log("Auto-connecting discovered \(info.type) \(name)", level: .notice)
     interface.autoconnectHash = endpointHash(info)
     interface.autoconnectSource = info.networkID
 
@@ -998,17 +1063,47 @@ public final class InterfaceDiscovery {
     // segment, which is the whole point of `publish_ifac` (`Discovery.py:753-754`). The same
     // derivation the config path uses, so a discovered peer and a configured one land on
     // identical keys.
-    if info.ifacNetname != nil || info.ifacNetkey != nil {
-      interface.ifacNetname = info.ifacNetname
-      interface.ifacNetkey = info.ifacNetkey
+    //
+    // Nodes that published an unset value sent the string "None", which isn't a credential
+    // (`Discovery.py:843-850`).
+    let netname = info.ifacNetname.flatMap { $0.isEmpty || $0 == "None" ? nil : $0 }
+    let netkey = info.ifacNetkey.flatMap { $0.isEmpty || $0 == "None" ? nil : $0 }
+    if netname != nil || netkey != nil {
+      interface.ifacNetname = netname
+      interface.ifacNetkey = netkey
       Transport.configureIfac(
-        on: interface, netname: info.ifacNetname,
-        netkey: info.ifacNetkey, size: interface.ifacSize)
+        on: interface, netname: netname, netkey: netkey, size: interface.ifacSize)
     }
 
     transport.register(interface: interface)
     try? interface.start()
     monitorInterface(interface)
+  }
+
+  /// Whether `info` meets the auto-connect criteria.
+  ///
+  /// Its announce names an implementation in `autoconnectImpls` at `autoconnectMinVersion`
+  /// or later, unless `autoconnect_unverified_implementations` is set. Mirrors Python
+  /// `autoconnect_qualified(info)` (`Discovery.py:782-790`).
+  public func autoconnectQualified(_ info: DiscoveredInterfaceInfo) -> Bool {
+    if Reticulum.shouldAutoconnectUnverifiedImplementations() { return true }
+    guard let impl = info.implName, Self.autoconnectImpls.contains(impl) else { return false }
+    guard let version = info.version, !version.isEmpty,
+      let announced = InterfaceDiscoveryHelpers.versionTuple(version),
+      let minimum = InterfaceDiscoveryHelpers.versionTuple(Self.autoconnectMinVersion)
+    else { return false }
+    return InterfaceDiscoveryHelpers.versionAtLeast(announced, minimum)
+  }
+
+  /// `name`, or `name (n)` with the lowest `n` from 2 that no attached interface uses.
+  ///
+  /// Mirrors Python `autoconnect_interface_name(name)` (`Discovery.py:772-780`).
+  public func autoconnectInterfaceName(_ name: String) -> String {
+    let names = Set(transport?.interfaces.map(\.name) ?? [])
+    guard names.contains(name) else { return name }
+    var n = 2
+    while names.contains("\(name) (\(n))") { n += 1 }
+    return "\(name) (\(n))"
   }
 
   /// Dial everything already persisted, so a restart doesn't have to re-hear every peer.
@@ -1096,6 +1191,13 @@ public final class InterfaceDiscovery {
     }
   }
 
+  /// How many interfaces the monitor job is watching.
+  var monitoredInterfaceCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return monitoredInterfaces.count
+  }
+
   /// Stop the monitor job and forget every watched interface.
   public func stopMonitoring() {
     lock.lock()
@@ -1121,7 +1223,17 @@ public final class InterfaceDiscovery {
     var onlineInterfaces = 0
     let now = Date().timeIntervalSince1970
 
+    let attached = transport.interfaces
     for interface in watched {
+      // Detached by hand, with `rnstatus --detach` for instance (RNS 1.5.5,
+      // `Discovery.py:668-670`).
+      guard attached.contains(where: { $0 === interface }) else {
+        Reticulum.log(
+          "A monitored auto-connected interface was manually detached, removing from "
+            + "monitoring", level: .debug)
+        detached.append(interface)
+        continue
+      }
       if interface.isOnline {
         onlineInterfaces += 1
         if interface.autoconnectDown != nil {
@@ -1177,13 +1289,14 @@ public final class InterfaceDiscovery {
     for interface in detached { teardownInterface(interface) }
   }
 
-  /// Detach an interface and stop watching it.
+  /// Detach an interface if it's still attached, and stop watching it.
   ///
-  /// Mirrors `teardown_interface`
-  /// (`Discovery.py:670-673`).
+  /// Mirrors `teardown_interface` (`Discovery.py:721-726`).
   public func teardownInterface(_ interface: any Interface) {
-    interface.stop()
-    transport?.deregister(interface: interface)
+    if let transport, transport.interfaces.contains(where: { $0 === interface }) {
+      interface.stop()
+      transport.deregister(interface: interface)
+    }
     lock.lock()
     monitoredInterfaces.removeAll { $0 === interface }
     lock.unlock()

@@ -583,6 +583,18 @@ public final class Reticulum {
   /// Returns the configured `autoconnect_interface_gravity`, or `nil` when unset.
   public static func autoconnectInterfaceGravity() -> Int? { storedAutoconnectInterfaceGravity }
 
+  /// Configured `autoconnect_unverified_implementations`, `false` unless set.
+  ///
+  /// Mirrors Python's `Reticulum.__autoconnect_unverified` (RNS 1.5.5, `Reticulum.py:632-634`).
+  public static var storedAutoconnectUnverifiedImplementations = false
+  /// Whether auto-connect may dial an endpoint whose announce doesn't name a verified
+  /// implementation and version.
+  ///
+  /// Mirrors Python's `Reticulum.should_autoconnect_unverified_implementations()`.
+  public static func shouldAutoconnectUnverifiedImplementations() -> Bool {
+    storedAutoconnectUnverifiedImplementations
+  }
+
   /// Configured `autoconnect_announces_to_internal`, or `nil` when unset.
   ///
   /// Mirrors Python's `Reticulum.autoconnect_announces_to_internal()`.
@@ -2050,6 +2062,9 @@ public final class Reticulum {
     if let a = cfg.reticulum.autoconnectAnnouncesToInternal {
       Reticulum.storedAutoconnectAnnouncesToInternal = a
     }
+    // Python resets it in `__init__` and assigns whatever the option parses to.
+    Reticulum.storedAutoconnectUnverifiedImplementations =
+      cfg.reticulum.autoconnectUnverifiedImplementations
 
     // A key in a section this parser owns that no branch matched is a directive the operator
     // wrote and the daemon won't honour. D8's rationale for `bugs/030` is that an absent

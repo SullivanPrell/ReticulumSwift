@@ -82,7 +82,7 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     name: String = "Example hub"
   ) -> DiscoveredInterfaceInfo {
     let now = Date().timeIntervalSince1970
-    return DiscoveredInterfaceInfo(
+    var info = DiscoveredInterfaceInfo(
       type: type, transport: true, name: name, received: now,
       stamp: Data(repeating: 0xAB, count: 32), value: 16,
       transportID: String(repeating: "a", count: 32),
@@ -94,6 +94,20 @@ final class DiscoveryAutoconnectTests: XCTestCase {
       modulation: nil, channel: nil, configEntry: nil,
       discoveryHash: Data(repeating: 0xCD, count: 32),
       discovered: now, lastHeard: now, heardCount: 1)
+    // An announce that meets the RNS 1.5.5 criteria; DiscoveryAutoconnectCriteriaTests
+    // covers the ones that don't.
+    info.implName = "RNS"
+    info.version = "1.5.5"
+    return info
+  }
+
+  /// The host and port of the interface autoconnect dialled, whichever client type it is.
+  private func dialledEndpoints() -> [(host: String, port: UInt16, name: String)] {
+    transport.interfaces.compactMap {
+      if let b = $0 as? BackboneInterface { return (b.host, b.port, b.name) }
+      if let t = $0 as? TCPClientInterface { return (t.host, t.port, t.name) }
+      return nil
+    }
   }
 
   // MARK: - The address filters
@@ -136,21 +150,11 @@ final class DiscoveryAutoconnectTests: XCTestCase {
   func testAutoconnectDialsADiscoveredBackbone() {
     discovery.autoconnect(discovered())
 
-    let dialled = transport.interfaces.compactMap { $0 as? BackboneInterface }
+    let dialled = dialledEndpoints()
     XCTAssertEqual(dialled.count, 1)
     XCTAssertEqual(dialled.first?.host, "hub.example.net")
     XCTAssertEqual(dialled.first?.port, 4965)
     XCTAssertEqual(dialled.first?.name, "Example hub")
-  }
-
-  /// A discovered `TCPServerInterface` is dialled as a Backbone client, because that's the
-  /// client type for a listening endpoint (`Discovery.py:730-758`).
-  ///
-  /// Python degrades to
-  /// `TCPClientInterface` only on platforms with no Backbone, and then declines to connect.
-  func testADiscoveredListenerIsDialledAsABackboneClient() {
-    discovery.autoconnect(discovered(type: "TCPServerInterface"))
-    XCTAssertEqual(transport.interfaces.compactMap { $0 as? BackboneInterface }.count, 1)
   }
 
   /// The dialled interface carries the endpoint hash and the announcing network's identity, so
@@ -184,7 +188,7 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     XCTAssertEqual(transport.interfaces.count, 2)
   }
 
-  /// Only two types are dialled (`AUTOCONNECT_TYPES`).
+  /// Only a Backbone is dialled (`AUTOCONNECT_TYPES`).
   ///
   /// An RNode is discoverable but not
   /// dialable—there's no radio at the other end of a hostname.

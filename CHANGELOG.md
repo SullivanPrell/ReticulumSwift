@@ -29,6 +29,8 @@ All notable changes to ReticulumSwift are documented here. This project follows
   They persist under Python's `impl_name` and `version` keys, `nil` when absent, which Python's
   `rnstatus -d` reads from the discovery storage directly. Without them it hides the entry
   unless run with `--show-unknown`.
+- The `autoconnect_unverified_implementations` option, and
+  `Reticulum.shouldAutoconnectUnverifiedImplementations()` (RNS 1.5.5, `Reticulum.py:632-634`).
 
 ### Changed
 
@@ -37,6 +39,20 @@ All notable changes to ReticulumSwift are documented here. This project follows
   unset value published (`Discovery.py:540-547`).
 - A discovered I2P interface's config entry names the peer with its `.b32.i2p` suffix
   (`Discovery.py:408`).
+- Auto-connect follows the RNS 1.5.5 rules (`Discovery.py:483-490`, `772-876`):
+  - It dials only a discovered `BackboneInterface`. `TCPServerInterface` left
+    `AUTOCONNECT_TYPES`.
+  - The announce must name the `RNS` implementation at 1.5.2 or later, unless
+    the operator sets `autoconnect_unverified_implementations`. This port announces itself as `RNSwift`,
+    so a Python or Swift node on the defaults doesn't auto-connect to a Swift-published
+    endpoint.
+  - A name already in use gets the lowest free ` (n)` suffix from 2.
+  - On Darwin it dials the endpoint as a `TCPClientInterface`, as Python does wherever Backbone
+    isn't supported. It dialled a `BackboneInterface`.
+  - The existence check and the dial run under one lock, and an IFAC value of `"None"` counts
+    as unset.
+  - The monitor job drops an interface that's no longer attached instead of counting it as a
+    connected peer, and teardown leaves such an interface alone.
 
 ## [1.22.1]—six fixes from the RNS spec scenarios
 

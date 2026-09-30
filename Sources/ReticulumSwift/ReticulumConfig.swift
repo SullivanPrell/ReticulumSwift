@@ -148,6 +148,10 @@ public struct ReticulumConfig {
     ///
     /// Mirrors Python's `autoconnect_announces_to_internal` (RNS 1.4.1).
     public var autoconnectAnnouncesToInternal: Bool? = nil
+    /// Whether auto-connect may dial an implementation or version it can't verify.
+    ///
+    /// Mirrors Python's `autoconnect_unverified_implementations` (RNS 1.5.5).
+    public var autoconnectUnverifiedImplementations = false
 
     // MARK: - `bugs/030`—the rest of the section
     //
@@ -508,6 +512,8 @@ public struct ReticulumConfig {
           if let n = Int(value) { cfg.reticulum.autoconnectInterfaceGravity = n }
         case "autoconnect_announces_to_internal":
           if let b = parseBool(value), b { cfg.reticulum.autoconnectAnnouncesToInternal = true }
+        case "autoconnect_unverified_implementations":
+          if let b = parseBool(value) { cfg.reticulum.autoconnectUnverifiedImplementations = b }
 
         // MARK: `bugs/030`—keys the templates advertised and nothing read
 
