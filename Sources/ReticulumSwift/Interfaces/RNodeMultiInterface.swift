@@ -27,11 +27,6 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
   /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
   public let interfaceState = InterfaceState()
 
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
-
   // MARK:–Identity
 
   /// Configured name of this sub-interface.
@@ -257,11 +252,6 @@ public final class RNodeMultiInterface: Interface {
   /// One stored property satisfies the whole settable set;
   /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
   public let interfaceState = InterfaceState()
-
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
 
   // MARK:–Class constants (Python: RNodeMultiInterface.XXXX)
 

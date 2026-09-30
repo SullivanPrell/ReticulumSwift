@@ -78,14 +78,6 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
   public var inboundHandler: ((Packet, any Interface) -> Void)?
   /// Called with each frame received before packet decoding.
   public var rawInboundHandler: ((Data, any Interface) -> Void)?
-  /// Whether path requests arriving here are forwarded recursively.
-  public var recursivePrs: Bool = false
-  /// Whether announces from internal interfaces are sent to clients.
-  public var announcesFromInternal: Bool = true
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
 
   /// Called by Transport when a new client connects.
   ///
@@ -335,10 +327,6 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
   /// still needs `discoverable` set from config before it announces anything.
   public let supportsDiscovery = true
 
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
   /// Name identifying this accepted client.
   public let name: String
   /// Interface bitrate in bits per second.
@@ -428,8 +416,9 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     // dials in. See `swift_devel/bugs/025-*.md`.
     //
     // `inherit(from:)` covers everything held in `InterfaceState`—mode, announce cap and
-    // rate control, ingress/egress control and all nine `ic_*` tunables—and it's a copy, so
-    // reconfiguring the parent later doesn't retune already-connected clients.
+    // rate control, ingress/egress control, all nine `ic_*` tunables, gravity, and the
+    // `recursive_prs` / `announces_*_internal` pair RNS 1.5.5 added (`TCPInterface.py:639-642`)—
+    // and it's a copy, so reconfiguring the parent later doesn't retune connected clients.
     self.interfaceState.inherit(from: parentServer.interfaceState)
 
     // Attributes stored on the conformer rather than in the state box need their own copy.
@@ -438,9 +427,6 @@ public final class TCPServerClientInterface: Interface, MtuAutoconfiguringInterf
     // explicitly too (`TCPInterface.py:611`). Previously this was a fresh hardcoded
     // 10_000_000, so a configured server bitrate never reached any client.
     self.bitrate = parentServer.bitrate
-
-    // Python: `spawned_interface.gravity = self.gravity` (RNS 1.4.1, commit 3ca71527).
-    self.gravity = parentServer.gravity
 
     // IFAC (`TCPInterface.py:615-617`).
     self.ifacIdentity = parentServer.ifacIdentity

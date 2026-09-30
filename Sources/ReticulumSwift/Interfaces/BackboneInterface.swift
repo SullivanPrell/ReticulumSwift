@@ -109,14 +109,6 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
   public var inboundHandler: ((Packet, any Interface) -> Void)?
   /// Called with each inbound frame, before packet decoding.
   public var rawInboundHandler: ((Data, any Interface) -> Void)?
-  /// Whether path requests received here are resolved recursively.
-  public var recursivePrs: Bool = false
-  /// Whether announces originating on this instance are sent on this interface.
-  public var announcesFromInternal: Bool = true
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
 
   // MARK: - IFAC (Interface Access Code)
   //

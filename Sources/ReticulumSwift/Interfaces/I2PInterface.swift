@@ -81,14 +81,6 @@ public final class I2PInterface: Interface {
   public var hwMtu: Int? { I2PInterface.hwMtu }
 
   // Mode is held in `interfaceState` like every other interface.
-  /// Whether path requests received here are resolved recursively.
-  public var recursivePrs: Bool = false
-  /// Whether announces originating on this instance are sent on this interface.
-  public var announcesFromInternal: Bool = true
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
 
   // Tunnel
   /// Whether the interface asks Transport to establish a tunnel over it.

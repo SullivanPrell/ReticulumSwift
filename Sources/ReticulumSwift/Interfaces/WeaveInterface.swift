@@ -636,11 +636,6 @@ public final class WeaveInterface: Interface {
   /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
   public let interfaceState = InterfaceState()
 
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
-
   // MARK: - Class constants
 
   /// Maximum payload the hardware can carry. Python: `HW_MTU = 1024`
@@ -919,11 +914,6 @@ public final class WeaveInterfacePeer: Interface, SpawnedInterface {
   /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
   public let interfaceState = InterfaceState()
 
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
-
   // MARK: - Interface protocol
 
   /// Name identifying this peer.
@@ -1020,7 +1010,6 @@ public final class WeaveInterfacePeer: Interface, SpawnedInterface {
     // attribute copy Python performs in every interface that fans out per peer
     // (`TCPInterface.py:594-641`). See `swift_devel/bugs/025-*.md`.
     self.interfaceState.inherit(from: owner.interfaceState)
-    self.gravity = owner.gravity
     self.ifacIdentity = owner.ifacIdentity
     self.ifacKey = owner.ifacKey
     self.ifacSize = owner.ifacSize

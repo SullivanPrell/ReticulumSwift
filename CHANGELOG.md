@@ -14,6 +14,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - A request sent as a resource becomes `DELIVERED` when the resource completes, and its response
   timeout starts then (`Link.py:1366-1379`). The timeout ran from the moment the request was
   made, so an upload that took longer than the timeout failed while still in progress.
+- A spawned interface inherits its parent's `recursivePrs`, `announcesFromInternal`,
+  `announcesToInternal`, `gravity` and `bootstrapOnly`, as RNS 1.5.5 copies the first three and
+  `announce_cap` onto each spawned client (`TCPInterface.py:639-642`,
+  `BackboneInterface.py:741-744`, `AutoInterface.py:589-592`). Nineteen conformers declared their
+  own stored copies of these properties, which shadowed the ones `InterfaceState` holds, so
+  `inherit(from:)` copied the defaults. This release removes the stored copies, and
+  `InterfaceStateBackingTests` checks every conformer.
 
 ## [1.22.1]—six fixes from the RNS spec scenarios
 
