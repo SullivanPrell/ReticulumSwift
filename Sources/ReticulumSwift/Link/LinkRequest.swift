@@ -232,20 +232,43 @@ public final class RequestReceipt {
   }
 
   /// Creates a receipt tracking an outbound request.
-  public init(
+  public convenience init(
     requestID: Data, path: String, requestSize: Int, timeout: TimeInterval? = nil,
     maxResponseSize: Int? = nil
+  ) {
+    self.init(
+      requestID: requestID, path: path, requestSize: requestSize, timeout: timeout,
+      maxResponseSize: maxResponseSize, sentAsResource: false)
+  }
+
+  /// Creates a receipt, holding the timeout of a request sent as a resource.
+  ///
+  /// `RequestReceipt.request_resource_concluded` starts the response timeout only when
+  /// the request resource completes (`Link.py:1366-1379`). A request sent as a packet
+  /// times out from the send.
+  init(
+    requestID: Data, path: String, requestSize: Int, timeout: TimeInterval?,
+    maxResponseSize: Int?, sentAsResource: Bool
   ) {
     self.requestID = requestID
     self.path = path
     self.sentAt = Date()
     self.requestSize = requestSize
     self.maxResponseSize = maxResponseSize
-    if let t = timeout {
-      let item = DispatchWorkItem { [weak self] in self?.timeoutFired() }
-      self.timeoutItem = item
-      DispatchQueue.global().asyncAfter(deadline: .now() + t, execute: item)
+    if sentAsResource {
+      self.heldTimeout = timeout
+    } else if let t = timeout {
+      armTimeout(t)
     }
+  }
+
+  /// Response timeout a resource-sent request starts when its resource completes.
+  private var heldTimeout: TimeInterval?
+
+  private func armTimeout(_ t: TimeInterval) {
+    let item = DispatchWorkItem { [weak self] in self?.timeoutFired() }
+    timeoutItem = item
+    DispatchQueue.global().asyncAfter(deadline: .now() + t, execute: item)
   }
 
   func markDelivered() {
@@ -361,18 +384,34 @@ public final class RequestReceipt {
   /// runs the *failed* callback path—a caller that set a size cap wants a
   /// failure, not a truncated success.
   ///
-  /// Python guards on `self.status == RequestReceipt.DELIVERED`, so a rejection
-  /// arriving for a receipt that's merely `SENT`, already `RECEIVING`, or
-  /// already concluded fires nothing at all. `fail()` alone is more permissive
-  /// than that (it accepts any non-terminal state), so the state check is made
-  /// explicit here.
+  /// Python guards on `SENT` or `DELIVERED` (RNS 1.5.5, `Link.py:1407-1408`), so a
+  /// rejection for a receipt already `RECEIVING` or concluded fires nothing. A request
+  /// sent as one packet stays `SENT` until its response arrives, which 1.5.4's
+  /// `DELIVERED`-only guard left hanging. `fail()` alone accepts any non-terminal
+  /// state, so the state check is explicit here.
   func responseRejected() {
     stateLock.lock()
-    let isDelivered: Bool
-    if case .delivered = unsafeStatus { isDelivered = true } else { isDelivered = false }
+    let awaitingResponse: Bool
+    switch unsafeStatus {
+    case .sent, .delivered: awaitingResponse = true
+    default: awaitingResponse = false
+    }
     stateLock.unlock()
-    guard isDelivered else { return }
+    guard awaitingResponse else { return }
     fail("response exceeds maximum accepted size")
+  }
+
+  /// The resource carrying this request concluded (`Link.py:1366-1386`).
+  ///
+  /// A complete resource marks the request delivered and starts the response timeout
+  /// from now. A failed one fails the receipt.
+  func requestResourceConcluded(complete: Bool) {
+    guard complete else { return fail("resource request transfer failed") }
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    guard case .sent = unsafeStatus else { return }
+    unsafeStatus = .delivered
+    if let t = heldTimeout { armTimeout(t) }
   }
 
   private func timeoutFired() {
@@ -509,7 +548,8 @@ extension Link {
         path: path,
         requestSize: body.count,
         timeout: effectiveTimeout,
-        maxResponseSize: maxResponseSize
+        maxResponseSize: maxResponseSize,
+        sentAsResource: true
       )
       if let cb = responseCallback { receipt.onResponse = cb }
       if let cb = failedCallback { receipt.onFailed = cb }
@@ -521,9 +561,8 @@ extension Link {
       stateLock.unlock()
 
       let rt = ResourceTransfer(link: self)
-      rt.onFailed = { [weak receipt] _, _ in
-        receipt?.fail("resource request transfer failed")
-      }
+      rt.onFailed = { [weak receipt] _, _ in receipt?.requestResourceConcluded(complete: false) }
+      rt.onComplete = { [weak receipt] _ in receipt?.requestResourceConcluded(complete: true) }
       try rt.send(payload: body, requestID: requestID, isRequest: true)
 
       return receipt

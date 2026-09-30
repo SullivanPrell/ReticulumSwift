@@ -5,6 +5,16 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `RequestReceipt.responseRejected()` fails a receipt that's `SENT` as well as `DELIVERED`, as RNS
+  1.5.5 does (`Link.py:1407-1408`). A request sent as one packet stays `SENT` until its response
+  arrives, so an oversized response to it waited for the request timeout. Before this, no
+  rejection fired at all: nothing moved a receipt to `DELIVERED`.
+- A request sent as a resource becomes `DELIVERED` when the resource completes, and its response
+  timeout starts then (`Link.py:1366-1379`). The timeout ran from the moment the request was
+  made, so an upload that took longer than the timeout failed while still in progress.
+
 ## [1.22.1]—six fixes from the RNS spec scenarios
 
 reticulum-interop's RNS spec scenarios, with Python 1.5.4 as the oracle, found six places where

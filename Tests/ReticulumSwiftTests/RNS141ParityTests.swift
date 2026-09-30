@@ -585,20 +585,7 @@ final class RNS141ParityTests: XCTestCase {
     XCTAssertNotNil(failure, "Python's response_rejected() runs the failed callback")
   }
 
-  /// Python guards `response_rejected` on `status == DELIVERED`, so a rejection
-  /// for a receipt that never reached that state fires nothing at all.
-  func testResponseRejectedIgnoredUnlessDelivered() {
-    let r = RequestReceipt(
-      requestID: Data(repeating: 2, count: 16),
-      path: "/x", requestSize: 10, maxResponseSize: 16)
-    var failed = false
-    r.onFailed = { _, _ in failed = true }
-    r.responseRejected()  // still .sent
-    XCTAssertEqual(
-      r.status, .sent,
-      "a rejection before delivery must leave the receipt untouched")
-    XCTAssertFalse(failed, "Python fires no callback in this case")
-  }
+  // RNS 1.5.5 widened the guard to SENT: RequestReceiptStatusTests.
 
   // MARK: - Log level
 
