@@ -155,7 +155,8 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
         autoconnect_unverified_implementations = yes
       """)
     XCTAssertTrue(cfg.reticulum.autoconnectUnverifiedImplementations)
-    XCTAssertFalse(cfg.unrecognisedKeys.contains("autoconnect_unverified_implementations"))
+    XCTAssertFalse(
+      cfg.unrecognisedKeys.contains("reticulum.autoconnect_unverified_implementations"))
   }
 
   // MARK: - Naming and IFAC

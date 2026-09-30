@@ -1294,8 +1294,7 @@ public final class InterfaceDiscovery {
   /// Mirrors `teardown_interface` (`Discovery.py:721-726`).
   public func teardownInterface(_ interface: any Interface) {
     if let transport, transport.interfaces.contains(where: { $0 === interface }) {
-      interface.stop()
-      transport.deregister(interface: interface)
+      transport.detach(interface: interface)
     }
     lock.lock()
     monitoredInterfaces.removeAll { $0 === interface }

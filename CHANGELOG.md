@@ -31,6 +31,21 @@ All notable changes to ReticulumSwift are documented here. This project follows
   unless run with `--show-unknown`.
 - The `autoconnect_unverified_implementations` option, and
   `Reticulum.shouldAutoconnectUnverifiedImplementations()` (RNS 1.5.5, `Reticulum.py:632-634`).
+- Interface management, as RNS 1.5.5 adds it (`Reticulum.py:771-841`):
+  - `Reticulum.attachInterface(named:)` builds the named entry from the config file as it
+    stands, even when disabled.
+  - `detachInterface(named:)` stops the interface and the interfaces it spawned and removes
+    them. It refuses I2P and the shared-instance interfaces.
+  - `reloadInterface(named:)` detaches the interface and attaches it again.
+
+  Each returns Python's tri-state: `true`, `false` when refused, or `nil` when there's no such
+  interface. The shared instance serves them as `{"manage": …, "name": …}` RPC calls
+  (`Reticulum.py:1394-1398`), and `RPCClient` has a method for each. The
+  `enable_interface_management` option, on by default, refuses all three to callers, and
+  `rnsd --exampleconfig` documents it.
+- `Transport.detach(interface:)` stops and removes an interface along with the interfaces it
+  spawned. Discovery tears down an auto-connected interface through it, as Python's
+  `teardown_interface` goes through `_detach_interface` (`Discovery.py:721-726`).
 
 ### Changed
 
@@ -53,6 +68,11 @@ All notable changes to ReticulumSwift are documented here. This project follows
     as unset.
   - The monitor job drops an interface that's no longer attached instead of counting it as a
     connected peer, and teardown leaves such an interface alone.
+- `Reticulum.reloadInterface(named:)` returns `Bool?` and rebuilds the interface from the
+  config file. It stopped and restarted the running interface, and returned `false` for an
+  unknown name. Source-breaking for a caller that stores the result as `Bool`.
+- An attach that fails to build its interface logs and returns `false`, where Python panics
+  (`Reticulum.py:1212-1216`). On this path a panic would let any RPC caller stop the daemon.
 - A config value of `None` for `networkname`, `network_name`, `passphrase` or `pass_phrase` is
   ignored with a warning (RNS 1.5.5, `Reticulum.py:889-902`). It set an IFAC network name or
   passphrase of `None`.

@@ -286,6 +286,36 @@ public final class RPCClient {
     _ = try call(.map([(.string("unblackhole_identity"), .bytes(identityHash))]))
   }
 
+  /// Python: `attach_interface(name)` (RNS 1.5.5).
+  ///
+  /// `true` attached, `false` refused, `nil` the daemon's config has no entry by that name.
+  @discardableResult
+  public func attachInterface(named name: String) throws -> Bool? {
+    try manage("attach_interface", name: name)
+  }
+
+  /// Python: `detach_interface(name)` (RNS 1.5.5).
+  ///
+  /// `true` detached, `false` refused, `nil` no interface by that name.
+  @discardableResult
+  public func detachInterface(named name: String) throws -> Bool? {
+    try manage("detach_interface", name: name)
+  }
+
+  /// Python: `reload_interface(name)` (RNS 1.5.5).
+  ///
+  /// `true` reloaded, `false` refused or failed, `nil` no interface by that name.
+  @discardableResult
+  public func reloadInterface(named name: String) throws -> Bool? {
+    try manage("reload_interface", name: name)
+  }
+
+  /// `{"manage": <action>, "name": <name>}` (`Reticulum.py:1967-1992`).
+  private func manage(_ action: String, name: String) throws -> Bool? {
+    try call(.map([(.string("manage"), .string(action)), (.string("name"), .string(name))]))
+      .asBool
+  }
+
   // MARK: - Handshake
 
   /// Run CPython's mutual authentication: answer the peer's challenge, then issue a local one.

@@ -2910,6 +2910,24 @@ public final class Transport {
     pendingRestoresReadAt = nil
   }
 
+  /// Stop an interface and every interface it spawned, and remove them all.
+  ///
+  /// The body of `Reticulum._detach_interface` (RNS 1.5.5, `Reticulum.py:812-822`), which
+  /// discovery's `teardown_interface` also goes through (`Discovery.py:721-724`). Python calls
+  /// `detach()` and then `teardown()` on each spawned interface, and `stop()` covers both
+  /// here.
+  public func detach(interface iface: any Interface) {
+    let spawned = interfaces.filter {
+      ($0 as? any SpawnedInterface)?.spawningInterface === iface
+    }
+    for child in spawned {
+      child.stop()
+      deregister(interface: child)
+    }
+    iface.stop()
+    deregister(interface: iface)
+  }
+
   /// Remove an interface from the transport.
   ///
   /// Cleans up all per-interface state.

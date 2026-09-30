@@ -14,7 +14,7 @@ import XCTest
 
 /// Byte-exactness of the two configuration templates Python ships.
 ///
-/// Python reference: `RNS/Utilities/rnsd.py:90-583` (`__example_rns_config__`, printed by
+/// Python reference: `RNS/Utilities/rnsd.py:90-616` (`__example_rns_config__`, printed by
 /// `rnsd --exampleconfig`) and `RNS/Reticulum.py:1818+` (`__default_rns_config__`, written on
 /// a first run). Both are ~15 KB and ~4 KB of prose that no reviewer can diff by eye, so the
 /// SHA-256 assertions are the real guard—they were computed from the Python source with:
@@ -31,24 +31,24 @@ final class RNSConfigTemplatesTests: XCTestCase {
   // MARK: - __example_rns_config__
 
   func testExampleConfigByteLength() {
-    XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 15663)
+    XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 15926)
   }
 
   func testExampleConfigSHA256() {
     XCTAssertEqual(
       sha256Hex(RNSConfigTemplates.exampleConfig),
-      "78f08f25bbfe5cb15f22cdeec36c4b7476973bd8558f59e77faf8c118df2ca67")
+      "54c9c8e2099e49cd23910e24cf1ef0529256810863fca9b476210d6aba9d8ebf")
   }
 
   func testExampleConfigNewlineCount() {
-    XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 518)
+    XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 526)
   }
 
   func testExampleConfigBoundaries() {
     XCTAssertTrue(
       RNSConfigTemplates.exampleConfig
         .hasPrefix("# This is an example Reticulum config file.\n"))
-    // The literal ends with a blank line, so `print()` takes stdout to 15664 bytes.
+    // The literal ends with a blank line, so `print()` takes stdout to 15927 bytes.
     XCTAssertTrue(
       RNSConfigTemplates.exampleConfig
         .hasSuffix("    persistence = 200\n    slottime = 20\n\n"))

@@ -13,7 +13,7 @@ import Foundation
 /// The two configuration-file templates that ship inside Python RNS, transcribed byte for byte.
 ///
 /// Python reference:
-/// - ``exampleConfig``: `RNS/Utilities/rnsd.py` lines 90-583, `__example_rns_config__`—what
+/// - ``exampleConfig``: `RNS/Utilities/rnsd.py` lines 90-616, `__example_rns_config__`—what
 ///   `rnsd --exampleconfig` prints.
 /// - ``defaultConfig``: `RNS/Reticulum.py` line 1818+, `__default_rns_config__`—what
 ///   `Reticulum.__create_default_config()` writes on a first run.
@@ -28,8 +28,8 @@ import Foundation
 /// if you edit either string those tests must fail.
 public enum RNSConfigTemplates {
 
-  /// Python: `rnsd.py:90-583`, `__example_rns_config__`. 14959 bytes, 493 newlines,
-  /// SHA-256 c90492d51df94e2899e9fe0b201c79bfac1f117cf850d443ec9ad90bc9aebc93.
+  /// Python: `rnsd.py:90-616`, `__example_rns_config__` (RNS 1.5.5). 15926 bytes, 526 newlines,
+  /// SHA-256 54c9c8e2099e49cd23910e24cf1ef0529256810863fca9b476210d6aba9d8ebf.
   public static let exampleConfig: String = """
     # This is an example Reticulum config file.
     # You should probably edit it to include any additional,
@@ -157,6 +157,14 @@ public enum RNSConfigTemplates {
     # valid for discovered interfaces.
 
     # required_discovery_value = 14
+
+
+    # You can disable allowing interfaces to be attached, de-
+    # tached or reloaded via rnstatus, for example if running
+    # on a shared system where users with normal RPC access
+    # should not be allowed to control interface states.
+
+    # enable_interface_management = no
 
 
     # You can configure Reticulum to panic and forcibly close

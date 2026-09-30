@@ -37,6 +37,11 @@ public struct ReticulumConfig {
   public var logging: LoggingSection = .init()
   /// Parsed interface blocks, in file order.
   public var interfaces: [InterfaceConfig] = []
+  /// Whether the file has an `[interfaces]` section, even an empty one.
+  ///
+  /// `Reticulum._attach_interface` tells a missing section (`False`) from a missing entry
+  /// (`None`) (`Reticulum.py:781-795`), and `rnstatus` prints a different message for each.
+  public var hasInterfacesSection = false
 
   /// `"<section>.<key>"` for every key in a recognized top-level section that no branch
   /// matched—that is, every key this parser silently discarded.
@@ -94,6 +99,11 @@ public struct ReticulumConfig {
     ///
     /// Mirrors Python's `remote_management_allowed = <hex>`.
     public var remoteManagementAllowed: [Identity] = []
+    /// Whether callers may attach, detach and reload interfaces on this instance.
+    ///
+    /// Mirrors Python's `enable_interface_management`, on unless set to a false value
+    /// (RNS 1.5.5, `Reticulum.py:553-556`).
+    public var enableInterfaceManagement = true
     /// Whether to start listening for on-network interface discovery announces.
     ///
     /// Mirrors Python's `discover_interfaces = No`. Defaults to `false`.
@@ -413,6 +423,7 @@ public struct ReticulumConfig {
         if currentSection == "interfaces" { flushInterface() }
         currentSection = String(line.dropFirst().dropLast())
           .trimmingCharacters(in: .whitespaces)
+        if currentSection == "interfaces" { cfg.hasInterfacesSection = true }
         continue
       }
 
@@ -451,6 +462,8 @@ public struct ReticulumConfig {
           cfg.reticulum.allowProbes = parseBool(value) ?? false
         case "enable_remote_management":
           cfg.reticulum.remoteManagementEnabled = parseBool(value) ?? false
+        case "enable_interface_management":
+          cfg.reticulum.enableInterfaceManagement = parseBool(value) != false
         case "remote_management_allowed":
           // Comma-separated list of hex identity hashes.
           for hexHash in value.components(separatedBy: ",").map({
