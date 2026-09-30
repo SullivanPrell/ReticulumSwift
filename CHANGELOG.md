@@ -22,6 +22,22 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `inherit(from:)` copied the defaults. This release removes the stored copies, and
   `InterfaceStateBackingTests` checks every conformer.
 
+### Added
+
+- `DiscoveredInterfaceInfo.implName` and `version` hold the announcing implementation and version
+  from `TRANSPORT_IMPL` and `TRANSPORT_VERS`, as RNS 1.5.5 reads them (`Discovery.py:348-349`).
+  They persist under Python's `impl_name` and `version` keys, `nil` when absent, which Python's
+  `rnstatus -d` reads from the discovery storage directly. Without them it hides the entry
+  unless run with `--show-unknown`.
+
+### Changed
+
+- A discovered interface keeps an IFAC network name or passphrase only when it's a non-empty
+  string (`Discovery.py:378-379`), and the listing drops the string `"None"` that nodes with an
+  unset value published (`Discovery.py:540-547`).
+- A discovered I2P interface's config entry names the peer with its `.b32.i2p` suffix
+  (`Discovery.py:408`).
+
 ## [1.22.1]—six fixes from the RNS spec scenarios
 
 reticulum-interop's RNS spec scenarios, with Python 1.5.4 as the oracle, found six places where

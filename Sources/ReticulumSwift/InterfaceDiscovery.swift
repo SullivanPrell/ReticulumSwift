@@ -35,9 +35,9 @@ enum DiscoveryFieldKey: UInt64 {
   case transportID = 0xFE
 
   // Added in RNS 1.5.0. `TRANSPORT_IMPL`/`TRANSPORT_VERS` name the announcing
-  // implementation and its build; 1.5.2 emits both but doesn't read either back, so they
-  // are staged for a future consumer. `OP_ADDR` carries the operator's LXMF address and
-  // *is* consumed on receive (`Discovery.py:427-430`).
+  // implementation and its build, read back since 1.5.5 (`Discovery.py:348-349`) for
+  // display and the auto-connect criteria. `OP_ADDR` carries the operator's LXMF address
+  // (`Discovery.py:461-464`).
   case transportImpl = 0xFD
   case transportVers = 0xFC
   case operatorAddress = 0xF0
@@ -75,6 +75,8 @@ private enum PersistKey {
   static let lastHeard = "last_heard"
   static let heardCount = "heard_count"
   static let operatorLxmfAddress = "operator_lxmf_address"
+  static let implName = "impl_name"
+  static let version = "version"
 }
 
 // MARK: - DiscoveryStampValidator
@@ -153,6 +155,15 @@ public struct DiscoveredInterfaceInfo {
   /// `info["operator_lxmf_address"]` (`Discovery.py:430`), added in RNS 1.5.0—optional, so
   /// every pre-1.5.0 announce and every 1.5.x node that hasn't configured one leaves it nil.
   public var operatorLxmfAddress: String? = nil
+  /// The announcing implementation's name, from `TRANSPORT_IMPL`, when it published one.
+  ///
+  /// `info["impl_name"]` (`Discovery.py:348`, `364`), read since RNS 1.5.5. Auto-connect
+  /// requires it (`autoconnect_qualified`, `Discovery.py:782-790`).
+  public var implName: String? = nil
+  /// The announcing implementation's version, from `TRANSPORT_VERS`, when it published one.
+  ///
+  /// `info["version"]` (`Discovery.py:349`, `365`).
+  public var version: String? = nil
 
   // Persistence fields (written/read by InterfaceDiscovery)
   /// Timestamp this interface was first heard.
@@ -424,11 +435,17 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
       discovered: now, lastHeard: now, heardCount: 0
     )
 
-    // IFAC fields (optional)
-    if let nn = extractOptionalString(d[DiscoveryFieldKey.ifacNetname.rawValue]) {
+    // Read whatever the announce carries, without a type check (`Discovery.py:348-349`).
+    // Only strings are kept here: every consumer, the auto-connect criteria included, reads
+    // them as strings.
+    info.implName = extractOptionalString(d[DiscoveryFieldKey.transportImpl.rawValue])
+    info.version = extractOptionalString(d[DiscoveryFieldKey.transportVers.rawValue])
+
+    // IFAC values count only as non-empty strings (RNS 1.5.5, `Discovery.py:378-379`).
+    if let nn = extractOptionalString(d[DiscoveryFieldKey.ifacNetname.rawValue]), !nn.isEmpty {
       info.ifacNetname = nn
     }
-    if let nk = extractOptionalString(d[DiscoveryFieldKey.ifacNetkey.rawValue]) {
+    if let nk = extractOptionalString(d[DiscoveryFieldKey.ifacNetkey.rawValue]), !nk.isEmpty {
       info.ifacNetkey = nk
     }
 
@@ -559,6 +576,8 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
       "[[\(name)]]\n  type = \(connType)\n  enabled = yes\n  \(remoteKey) = \(host)\n  target_port = \(port)\(idStr)\(nnStr)\(nkStr)"
   }
 
+  /// `reachable_on` carries the bare base-32 address, and the config entry names it with its
+  /// `.b32.i2p` suffix (RNS 1.5.5, `Discovery.py:408`).
   private func buildI2PConfigEntry(
     name: String, b32: String,
     transportID: String,
@@ -568,7 +587,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     let nnStr = netname.map { "\n  network_name = \($0)" } ?? ""
     let nkStr = netkey.map { "\n  passphrase = \($0)" } ?? ""
     return
-      "[[\(name)]]\n  type = I2PInterface\n  enabled = yes\n  peers = \(b32)\(idStr)\(nnStr)\(nkStr)"
+      "[[\(name)]]\n  type = I2PInterface\n  enabled = yes\n  peers = \(b32).b32.i2p\(idStr)\(nnStr)\(nkStr)"
   }
 
   private func buildRNodeConfigEntry(
@@ -837,6 +856,11 @@ public final class InterfaceDiscovery {
       lock.unlock()
 
       guard var entry = info else { continue }
+
+      // Nodes that published an unset IFAC value sent the string "None", and it was persisted
+      // as one. Python drops it from the listing (`Discovery.py:540-547`).
+      if entry.ifacNetname == "None" { entry.ifacNetname = nil }
+      if entry.ifacNetkey == "None" { entry.ifacNetkey = nil }
 
       // Age filtering, plus the RNS 1.4.1 hygiene clauses (commit e29b8394).
       // Order follows Python's elif chain exactly.
@@ -1215,6 +1239,10 @@ public final class InterfaceDiscovery {
       (.string(PersistKey.discovered), .double(info.discovered)),
       (.string(PersistKey.lastHeard), .double(info.lastHeard)),
       (.string(PersistKey.heardCount), .int(Int64(info.heardCount))),
+      // Python's info dict always carries both keys, `None` when absent
+      // (`Discovery.py:364-365`).
+      (.string(PersistKey.implName), info.implName.map { .string($0) } ?? .nil),
+      (.string(PersistKey.version), info.version.map { .string($0) } ?? .nil),
     ]
     if let v = info.ifacNetname { pairs.append((.string(PersistKey.ifacNetname), .string(v))) }
     if let v = info.ifacNetkey { pairs.append((.string(PersistKey.ifacNetkey), .string(v))) }
@@ -1273,6 +1301,8 @@ public final class InterfaceDiscovery {
       configEntry: stringVal(d[PersistKey.configEntry]),
       discoveryHash: bytesVal(d[PersistKey.discoveryHash]),
       operatorLxmfAddress: stringVal(d[PersistKey.operatorLxmfAddress]),
+      implName: stringVal(d[PersistKey.implName]),
+      version: stringVal(d[PersistKey.version]),
       discovered: discovered, lastHeard: lastHeard, heardCount: heardCount
     )
   }
