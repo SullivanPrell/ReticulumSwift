@@ -53,6 +53,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
     as unset.
   - The monitor job drops an interface that's no longer attached instead of counting it as a
     connected peer, and teardown leaves such an interface alone.
+- A config value of `None` for `networkname`, `network_name`, `passphrase` or `pass_phrase` is
+  ignored with a warning (RNS 1.5.5, `Reticulum.py:889-902`). It set an IFAC network name or
+  passphrase of `None`.
+- A discoverable interface with `publish_ifac` set and neither an IFAC network name nor a
+  passphrase logs a warning and turns IFAC publishing off (`Reticulum.py:1095-1098`).
+- The discovery announce leaves out `IFAC_NETNAME` or `IFAC_NETKEY` when that value is unset or
+  empty (`Discovery.py:236-238`). It wrote a nil in its place, which changes the packed info and
+  so the stamp a receiver checks.
 
 ## [1.22.1]—six fixes from the RNS spec scenarios
 

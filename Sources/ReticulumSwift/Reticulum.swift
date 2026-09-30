@@ -1461,18 +1461,25 @@ public final class Reticulum {
     to interface: any Interface,
     from block: ReticulumConfig.InterfaceConfig
   ) {
-    // Python reads both spellings and lets the later one win (`Reticulum.py:778-788`), and
-    // treats an empty string as absent.
-    func nonEmpty(_ keys: String...) -> String? {
+    // Python reads both spellings and lets the later one win, treats an empty string as
+    // absent, and since 1.5.5 ignores the string `None` with a warning
+    // (`Reticulum.py:889-902`).
+    func configured(_ label: String, _ keys: String...) -> String? {
       var found: String?
       for key in keys {
-        if let value = block[key], !value.isEmpty { found = value }
+        guard let value = block[key] else { continue }
+        if value == "None" {
+          Reticulum.log(
+            "Ambiguous IFAC \(label) \"None\", this value is ignored and an IFAC \(label) has "
+              + "NOT been set", level: .warning)
+        }
+        if !value.isEmpty, value != "None" { found = value }
       }
       return found
     }
 
-    let netname = nonEmpty("networkname", "network_name")
-    let netkey = nonEmpty("passphrase", "pass_phrase")
+    let netname = configured("network name", "networkname", "network_name")
+    let netkey = configured("passphrase", "passphrase", "pass_phrase")
 
     // `ifac_size` in the config is in **bits** (`Reticulum.py:776`). A value below
     // `IFAC_MIN_SIZE * 8` is *ignored*—the assignment sits inside the `>=` guard—so the
@@ -1487,7 +1494,18 @@ public final class Reticulum {
     // (`Reticulum.py:955-958`).
     interface.ifacNetname = netname
     interface.ifacNetkey = netkey
-    guard netname != nil || netkey != nil else { return }
+    guard netname != nil || netkey != nil else {
+      // Nothing to publish, so publishing is turned off (`Reticulum.py:1095-1098`).
+      if interface.discoverable, interface.discoveryPublishIfac {
+        Reticulum.log(
+          "IFAC publishing was enabled for discoverable interface \(interface.displayName), but "
+            + "neither IFAC netname nor passphrase is configured", level: .warning)
+        Reticulum.log(
+          "Disabling IFAC publishing for \(interface.displayName)", level: .warning)
+        interface.discoveryPublishIfac = false
+      }
+      return
+    }
 
     Transport.configureIfac(on: interface, netname: netname, netkey: netkey, size: size)
   }
