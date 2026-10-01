@@ -40,6 +40,12 @@ public final class RPCServer {
   /// Weak to avoid a retain cycle (Transport → Reticulum → RPCServer → Transport).
   public weak var transport: Transport?
 
+  /// The instance whose interfaces `manage` calls attach, detach and reload.
+  ///
+  /// Weak for the same reason as `transport`. Without one, a `manage` call is answered with
+  /// `nil`.
+  public weak var reticulum: Reticulum?
+
   private static let challengePrefix = MultiprocessingAuth.challengePrefix
   private static let welcomeMessage = MultiprocessingAuth.welcomeMessage
   private static let failureMessage = MultiprocessingAuth.failureMessage
@@ -287,6 +293,19 @@ public final class RPCServer {
     // Calls using {"get": "<name>", ...}
     if let getKey = kv["get"], case .string(let path) = getKey {
       return respondGet(path: path, kv: kv)
+    }
+
+    // Interface management—{"manage": "<action>", "name": <name>} (RNS 1.5.5,
+    // `Reticulum.py:1394-1398`). The reply is the tri-state verbatim: `rnstatus` prints a
+    // different message for each value.
+    if let manageKey = kv["manage"], case .string(let action) = manageKey {
+      guard let reticulum, case .string(let name)? = kv["name"] else { return msgpack(.nil) }
+      switch action {
+      case "attach_interface": return msgpack(triState(reticulum.attachInterface(named: name)))
+      case "detach_interface": return msgpack(triState(reticulum.detachInterface(named: name)))
+      case "reload_interface": return msgpack(triState(reticulum.reloadInterface(named: name)))
+      default: return msgpack(.nil)
+      }
     }
 
     // Drop calls—{"drop": "<target>", ...}

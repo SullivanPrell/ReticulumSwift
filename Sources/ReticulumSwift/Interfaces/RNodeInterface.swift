@@ -284,11 +284,6 @@ public final class RNodeInterface: Interface {
       spreadingFactor: sf, codingRate: cr)
   }
 
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
-
   // MARK:–Class constants (Python: RNodeInterface.XXXX)
 
   /// Hardware MTU in bytes for an RNode radio frame.
@@ -657,14 +652,33 @@ public final class RNodeInterface: Interface {
   }
 
   /// Turns the radio off and closes the device.
+  ///
+  /// Mirrors `detach` (`RNodeInterface.py:1190-1209`): the external framebuffer goes off where
+  /// the device has a display, then the radio, then the host-left command goes out. A write
+  /// that fails is logged and ends the sequence, and the port is closed either way.
   public func stop() {
     stopped = true
     reconnector.cancel()
     transport?.onTransportError = nil
     idTimer?.invalidate()
     idTimer = nil
+    do {
+      if hasDisplay {
+        try transport?.write(Data([KISS.fend, KISS.cmdFbExt, 0x00, KISS.fend]))
+      }
+      try setRadioState(KISS.radioStateOff)
+      try leave()
+    } catch {
+      Reticulum.log("An error occurred while detaching \(displayName): \(error)", level: .error)
+    }
     transport?.close()
     isOnline = false
+  }
+
+  /// Whether the device has a display: it answered detect on an ESP32 or NRF52 platform
+  /// (`RNodeInterface.py:459`).
+  var hasDisplay: Bool {
+    detected && (platform == KISS.platformESP32 || platform == KISS.platformNRF52)
   }
 
   /// Device loss → offline → redial (`RNodeInterface.py:1155-1187`).

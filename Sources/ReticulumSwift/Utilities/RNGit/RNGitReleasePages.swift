@@ -20,7 +20,7 @@ extension RNGitPageHandler {
   /// One repository's published releases, newest first, each with the first line of its notes
   /// and its creation day in `timeZone`—or nil where the reference raises and answers nothing.
   ///
-  /// Mirrors `serve_releases_page` (`pages.py:1291-1355`). It raises on a published release
+  /// Mirrors `serve_releases_page` (`pages.py:1295-1359`). It raises on a published release
   /// with no notes to preview, since it takes the first of their lines without checking there
   /// is one. A repository with no releases at all is rendered through the `repo` template and
   /// counts no view.
@@ -112,7 +112,7 @@ extension RNGitPageHandler {
   /// One published release: its thanks, creation moment in `timeZone`, notes and artifacts—or
   /// nil where the reference raises and answers nothing.
   ///
-  /// Mirrors `serve_release_page` (`pages.py:1357-1459`). A `tag` of `latest` names the release
+  /// Mirrors `serve_release_page` (`pages.py:1361-1463`). A `tag` of `latest` names the release
   /// the `latest` file names, or else the newest release whether published or not. The
   /// breadcrumb keeps the tag as it was asked for; everything below it names the one it
   /// resolved to. The reference raises when that resolution lands on a tag that is not a

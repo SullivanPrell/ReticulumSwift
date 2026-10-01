@@ -352,19 +352,16 @@ public final class InterfaceAnnouncer {
       break
     }
 
-    // The segment's shared secret, so it's off the wire unless the operator asks
-    // (`Discovery.py:203-205`).
+    // The segment's shared secret, so it's off the wire unless the operator asks. Since
+    // 1.5.5 each key is left out when its value is unset or empty (`Discovery.py:236-238`);
+    // before, an unset one went out as nil.
     if interface.discoveryPublishIfac {
-      info.append(
-        (
-          .uint(DiscoveryFieldKey.ifacNetname.rawValue),
-          Self.optionalString(interface.ifacNetname)
-        ))
-      info.append(
-        (
-          .uint(DiscoveryFieldKey.ifacNetkey.rawValue),
-          Self.optionalString(interface.ifacNetkey)
-        ))
+      if let netname = interface.ifacNetname, !netname.isEmpty {
+        info.append((.uint(DiscoveryFieldKey.ifacNetname.rawValue), Self.optionalString(netname)))
+      }
+      if let netkey = interface.ifacNetkey, !netkey.isEmpty {
+        info.append((.uint(DiscoveryFieldKey.ifacNetkey.rawValue), Self.optionalString(netkey)))
+      }
     }
 
     let packed = MsgPack.encode(.map(info))

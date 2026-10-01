@@ -35,9 +35,9 @@ enum DiscoveryFieldKey: UInt64 {
   case transportID = 0xFE
 
   // Added in RNS 1.5.0. `TRANSPORT_IMPL`/`TRANSPORT_VERS` name the announcing
-  // implementation and its build; 1.5.2 emits both but doesn't read either back, so they
-  // are staged for a future consumer. `OP_ADDR` carries the operator's LXMF address and
-  // *is* consumed on receive (`Discovery.py:427-430`).
+  // implementation and its build, read back since 1.5.5 (`Discovery.py:348-349`) for
+  // display and the auto-connect criteria. `OP_ADDR` carries the operator's LXMF address
+  // (`Discovery.py:461-464`).
   case transportImpl = 0xFD
   case transportVers = 0xFC
   case operatorAddress = 0xF0
@@ -75,6 +75,66 @@ private enum PersistKey {
   static let lastHeard = "last_heard"
   static let heardCount = "heard_count"
   static let operatorLxmfAddress = "operator_lxmf_address"
+  static let implName = "impl_name"
+  static let version = "version"
+}
+
+extension DiscoveredInterfaceInfo {
+
+  /// The entry as Python persists it, in the order its `info` dict gains the keys.
+  ///
+  /// `received_announce` builds `type` through `height`, then adds the IFAC values, the
+  /// per-type fields, `config_entry`, `discovery_hash` and `operator_lxmf_address`
+  /// (`Discovery.py:363-463`). `interface_discovered` appends `discovered`, `last_heard` and
+  /// `heard_count` (`Discovery.py:606-608`). Python's `rnstatus -d -j` prints a file in that
+  /// order, so the order is part of what a file written here looks like to it.
+  ///
+  /// `impl_name` and `version` are always present and nil when absent, as Python writes them
+  /// (`Discovery.py:364-365`). A whole-number frequency or bandwidth is written as an integer,
+  /// since the announce carries one and Python persists what it decoded.
+  func persistedPairs() -> [(MsgPack.Value, MsgPack.Value)] {
+    var pairs: [(MsgPack.Value, MsgPack.Value)] = [
+      (.string(PersistKey.type), .string(type)),
+      (.string(PersistKey.implName), implName.map { .string($0) } ?? .nil),
+      (.string(PersistKey.version), version.map { .string($0) } ?? .nil),
+      (.string(PersistKey.transport), .bool(transport)),
+      (.string(PersistKey.name), .string(name)),
+      (.string(PersistKey.received), .double(received)),
+      (.string(PersistKey.stamp), .bytes(stamp)),
+      (.string(PersistKey.value), .int(Int64(value))),
+      (.string(PersistKey.transportID), .string(transportID)),
+      (.string(PersistKey.networkID), .string(networkID)),
+      (.string(PersistKey.hops), .int(Int64(hops))),
+      (.string(PersistKey.latitude), latitude.map { .double($0) } ?? .nil),
+      (.string(PersistKey.longitude), longitude.map { .double($0) } ?? .nil),
+      (.string(PersistKey.height), height.map { .double($0) } ?? .nil),
+    ]
+    func add(_ key: String, _ value: MsgPack.Value?) {
+      if let value { pairs.append((.string(key), value)) }
+    }
+    add(PersistKey.ifacNetname, ifacNetname.map { .string($0) })
+    add(PersistKey.ifacNetkey, ifacNetkey.map { .string($0) })
+    add(PersistKey.reachableOn, reachableOn.map { .string($0) })
+    add(PersistKey.port, port.map { .int(Int64($0)) })
+    add(PersistKey.frequency, frequency.map(Self.wholeNumber))
+    add(PersistKey.bandwidth, bandwidth.map(Self.wholeNumber))
+    add(PersistKey.sf, sf.map { .int(Int64($0)) })
+    add(PersistKey.cr, cr.map { .int(Int64($0)) })
+    add(PersistKey.channel, channel.map { .int(Int64($0)) })
+    add(PersistKey.modulation, modulation.map { .string($0) })
+    add(PersistKey.configEntry, configEntry.map { .string($0) })
+    add(PersistKey.discoveryHash, discoveryHash.map { .bytes($0) })
+    add(PersistKey.operatorLxmfAddress, operatorLxmfAddress.map { .string($0) })
+    pairs.append((.string(PersistKey.discovered), .double(discovered)))
+    pairs.append((.string(PersistKey.lastHeard), .double(lastHeard)))
+    pairs.append((.string(PersistKey.heardCount), .int(Int64(heardCount))))
+    return pairs
+  }
+
+  /// An integer when `value` is a whole number in range, else a float.
+  private static func wholeNumber(_ value: Double) -> MsgPack.Value {
+    (value == value.rounded() && abs(value) < 9.2e18) ? .int(Int64(value)) : .double(value)
+  }
 }
 
 // MARK: - DiscoveryStampValidator
@@ -153,6 +213,15 @@ public struct DiscoveredInterfaceInfo {
   /// `info["operator_lxmf_address"]` (`Discovery.py:430`), added in RNS 1.5.0—optional, so
   /// every pre-1.5.0 announce and every 1.5.x node that hasn't configured one leaves it nil.
   public var operatorLxmfAddress: String? = nil
+  /// The announcing implementation's name, from `TRANSPORT_IMPL`, when it published one.
+  ///
+  /// `info["impl_name"]` (`Discovery.py:348`, `364`), read since RNS 1.5.5. Auto-connect
+  /// requires it (`autoconnect_qualified`, `Discovery.py:782-790`).
+  public var implName: String? = nil
+  /// The announcing implementation's version, from `TRANSPORT_VERS`, when it published one.
+  ///
+  /// `info["version"]` (`Discovery.py:349`, `365`).
+  public var version: String? = nil
 
   // Persistence fields (written/read by InterfaceDiscovery)
   /// Timestamp this interface was first heard.
@@ -186,6 +255,27 @@ public enum InterfaceDiscoveryHelpers {
   /// which is what a consumer needs to attribute a behaviour or a bug; the protocol level it
   /// matches is a separate, coarser fact.
   public static let implementationVersion = Reticulum.version
+
+  /// The leading digits of each dot-separated component of `version`.
+  ///
+  /// Stops at the first component that doesn't start with a digit, and returns `nil` when
+  /// there are none. Mirrors Python `version_tuple(version_string)` (`Discovery.py:995-1005`).
+  public static func versionTuple(_ version: String) -> [Int]? {
+    var components: [Int] = []
+    let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
+    for part in trimmed.split(separator: ".", omittingEmptySubsequences: false) {
+      let digits = part.prefix { ("0"..."9").contains($0) }
+      guard !digits.isEmpty, let n = Int(digits) else { break }
+      components.append(n)
+    }
+    return components.isEmpty ? nil : components
+  }
+
+  /// Whether `version` is at least `minimum`, compared as Python compares tuples.
+  static func versionAtLeast(_ version: [Int], _ minimum: [Int]) -> Bool {
+    for (a, b) in zip(version, minimum) where a != b { return a > b }
+    return version.count >= minimum.count
+  }
 
   /// Return true if `address` is a valid IPv4 or IPv6 address string.
   ///
@@ -424,11 +514,17 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
       discovered: now, lastHeard: now, heardCount: 0
     )
 
-    // IFAC fields (optional)
-    if let nn = extractOptionalString(d[DiscoveryFieldKey.ifacNetname.rawValue]) {
+    // Read whatever the announce carries, without a type check (`Discovery.py:348-349`).
+    // Only strings are kept here: every consumer, the auto-connect criteria included, reads
+    // them as strings.
+    info.implName = extractOptionalString(d[DiscoveryFieldKey.transportImpl.rawValue])
+    info.version = extractOptionalString(d[DiscoveryFieldKey.transportVers.rawValue])
+
+    // IFAC values count only as non-empty strings (RNS 1.5.5, `Discovery.py:378-379`).
+    if let nn = extractOptionalString(d[DiscoveryFieldKey.ifacNetname.rawValue]), !nn.isEmpty {
       info.ifacNetname = nn
     }
-    if let nk = extractOptionalString(d[DiscoveryFieldKey.ifacNetkey.rawValue]) {
+    if let nk = extractOptionalString(d[DiscoveryFieldKey.ifacNetkey.rawValue]), !nk.isEmpty {
       info.ifacNetkey = nk
     }
 
@@ -559,6 +655,8 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
       "[[\(name)]]\n  type = \(connType)\n  enabled = yes\n  \(remoteKey) = \(host)\n  target_port = \(port)\(idStr)\(nnStr)\(nkStr)"
   }
 
+  /// `reachable_on` carries the bare base-32 address, and the config entry names it with its
+  /// `.b32.i2p` suffix (RNS 1.5.5, `Discovery.py:408`).
   private func buildI2PConfigEntry(
     name: String, b32: String,
     transportID: String,
@@ -568,7 +666,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     let nnStr = netname.map { "\n  network_name = \($0)" } ?? ""
     let nkStr = netkey.map { "\n  passphrase = \($0)" } ?? ""
     return
-      "[[\(name)]]\n  type = I2PInterface\n  enabled = yes\n  peers = \(b32)\(idStr)\(nnStr)\(nkStr)"
+      "[[\(name)]]\n  type = I2PInterface\n  enabled = yes\n  peers = \(b32).b32.i2p\(idStr)\(nnStr)\(nkStr)"
   }
 
   private func buildRNodeConfigEntry(
@@ -695,11 +793,21 @@ public final class InterfaceDiscovery {
   /// stay down before it's torn down and its slot freed.
   public static let detachThreshold: TimeInterval = 12
 
-  /// The two types autoconnect dials, matched against the announced type.
+  /// The types autoconnect dials, matched against the announced type.
   ///
-  /// Python: `InterfaceDiscovery.AUTOCONNECT_TYPES` (`Discovery.py:449`). Both are dialled as
-  /// a Backbone client, because both describe a listening TCP endpoint.
-  public static let autoconnectTypes: Set<String> = ["BackboneInterface", "TCPServerInterface"]
+  /// Python: `InterfaceDiscovery.AUTOCONNECT_TYPES` (`Discovery.py:483`). RNS 1.5.5 dropped
+  /// `TCPServerInterface`.
+  public static let autoconnectTypes: Set<String> = ["BackboneInterface"]
+
+  /// Implementations autoconnect dials without `autoconnect_unverified_implementations`.
+  ///
+  /// Python: `InterfaceDiscovery.AUTOCONNECT_IMPLS` (`Discovery.py:486`).
+  public static let autoconnectImpls: Set<String> = ["RNS"]
+
+  /// The lowest announced version autoconnect dials.
+  ///
+  /// Python: `InterfaceDiscovery.AUTOCONNECT_MIN_V` (`Discovery.py:487`).
+  public static let autoconnectMinVersion = "1.5.2"
 
   /// The mode a transport node adopts a discovered peer under.
   ///
@@ -769,6 +877,11 @@ public final class InterfaceDiscovery {
   ///
   /// Python: `monitored_interfaces`.
   private var monitoredInterfaces: [any Interface] = []
+  /// Serialises the existence check and the dial.
+  ///
+  /// Two announces for one endpoint can't both dial it. Python: `autoconnect_lock`
+  /// (`Discovery.py:493`).
+  private let autoconnectLock = NSLock()
   private var monitoringAutoconnects = false
   private var monitorGeneration = 0
 
@@ -798,6 +911,12 @@ public final class InterfaceDiscovery {
   public func interfaceDiscovered(_ info: DiscoveredInterfaceInfo) {
     guard let discoveryHash = info.discoveryHash else { return }
     guard InterfaceDiscovery.discoverableTypes.contains(info.type) else { return }
+    // Python: `Discovery.py:594-600`.
+    let versionStr =
+      RNStatusRenderer.implementation(info).map { " (\($0))" } ?? " (unknown implementation)"
+    Reticulum.log(
+      "Discovered \(info.type)\(versionStr) \(info.hops) hop\(info.hops == 1 ? "" : "s") away "
+        + "with stamp value \(info.value): \(info.name)", level: .debug)
     let filename = RNSUtilities.hexrep(discoveryHash, delimit: false)
     let filepath = storagePath.appendingPathComponent(filename)
 
@@ -837,6 +956,11 @@ public final class InterfaceDiscovery {
       lock.unlock()
 
       guard var entry = info else { continue }
+
+      // Nodes that published an unset IFAC value sent the string "None", and it was persisted
+      // as one. Python drops it from the listing (`Discovery.py:540-547`).
+      if entry.ifacNetname == "None" { entry.ifacNetname = nil }
+      if entry.ifacNetkey == "None" { entry.ifacNetkey = nil }
 
       // Age filtering, plus the RNS 1.4.1 hygiene clauses (commit e29b8394).
       // Order follows Python's elif chain exactly.
@@ -912,6 +1036,18 @@ public final class InterfaceDiscovery {
     guard autoconnectCount() < Reticulum.maxAutoconnectedInterfaces() else { return }
     guard Self.autoconnectTypes.contains(info.type) else { return }
     guard let transport else { return }
+    guard autoconnectQualified(info) else {
+      let impl =
+        if let name = info.implName, !name.isEmpty, let version = info.version, !version.isEmpty {
+          "\(name) \(version)"
+        } else {
+          "unknown implementation"
+        }
+      Reticulum.log(
+        "Not auto-connecting discovered \(info.type) \(info.name) (\(impl)), "
+          + "auto-connect criteria not satisfied", level: .debug)
+      return
+    }
     guard !interfaceExists(info) else {
       Reticulum.log(
         "Discovered \(info.type) already exists, not auto-connecting",
@@ -934,14 +1070,31 @@ public final class InterfaceDiscovery {
     }
     guard let port = info.port else { return }
 
-    // Both announced types describe a listening TCP endpoint, and the client for one is a
-    // Backbone client (`Discovery.py:730-758`). This port's `BackboneInterface` *is* that
-    // client—it has no server side—so the same construction serves both.
-    let interface = BackboneInterface(
-      name: info.name, host: reachableOn,
-      port: UInt16(truncatingIfNeeded: port))
+    autoconnectLock.lock()
+    defer { autoconnectLock.unlock() }
+    if interfaceExists(info) { return }
 
-    Reticulum.log("Auto-connecting discovered \(info.type) \(info.name)", level: .notice)
+    let name = autoconnectInterfaceName(info.name)
+    if name != info.name {
+      Reticulum.log(
+        "Auto-connect name collision for \"\(info.name)\", connecting as \"\(name)\"",
+        level: .notice)
+    }
+
+    // Where Backbone isn't supported, Darwin included, Python dials the endpoint as a
+    // `TCPClientInterface` (RNS 1.5.5, `Discovery.py:827-842`).
+    #if canImport(Darwin)
+    Reticulum.log(
+      "BackboneInterface is not yet supported on this operating system, auto-connecting "
+        + "discovered \(info.type) \(name) using TCPClientInterface", level: .notice)
+    let interface: any Interface = TCPClientInterface(
+      name: name, host: reachableOn, port: UInt16(truncatingIfNeeded: port))
+    #else
+    let interface: any Interface = BackboneInterface(
+      name: name, host: reachableOn, port: UInt16(truncatingIfNeeded: port))
+    #endif
+
+    Reticulum.log("Auto-connecting discovered \(info.type) \(name)", level: .notice)
     interface.autoconnectHash = endpointHash(info)
     interface.autoconnectSource = info.networkID
 
@@ -974,17 +1127,47 @@ public final class InterfaceDiscovery {
     // segment, which is the whole point of `publish_ifac` (`Discovery.py:753-754`). The same
     // derivation the config path uses, so a discovered peer and a configured one land on
     // identical keys.
-    if info.ifacNetname != nil || info.ifacNetkey != nil {
-      interface.ifacNetname = info.ifacNetname
-      interface.ifacNetkey = info.ifacNetkey
+    //
+    // Nodes that published an unset value sent the string "None", which isn't a credential
+    // (`Discovery.py:843-850`).
+    let netname = info.ifacNetname.flatMap { $0.isEmpty || $0 == "None" ? nil : $0 }
+    let netkey = info.ifacNetkey.flatMap { $0.isEmpty || $0 == "None" ? nil : $0 }
+    if netname != nil || netkey != nil {
+      interface.ifacNetname = netname
+      interface.ifacNetkey = netkey
       Transport.configureIfac(
-        on: interface, netname: info.ifacNetname,
-        netkey: info.ifacNetkey, size: interface.ifacSize)
+        on: interface, netname: netname, netkey: netkey, size: interface.ifacSize)
     }
 
     transport.register(interface: interface)
     try? interface.start()
     monitorInterface(interface)
+  }
+
+  /// Whether `info` meets the auto-connect criteria.
+  ///
+  /// Its announce names an implementation in `autoconnectImpls` at `autoconnectMinVersion`
+  /// or later, unless `autoconnect_unverified_implementations` is set. Mirrors Python
+  /// `autoconnect_qualified(info)` (`Discovery.py:782-790`).
+  public func autoconnectQualified(_ info: DiscoveredInterfaceInfo) -> Bool {
+    if Reticulum.shouldAutoconnectUnverifiedImplementations() { return true }
+    guard let impl = info.implName, Self.autoconnectImpls.contains(impl) else { return false }
+    guard let version = info.version, !version.isEmpty,
+      let announced = InterfaceDiscoveryHelpers.versionTuple(version),
+      let minimum = InterfaceDiscoveryHelpers.versionTuple(Self.autoconnectMinVersion)
+    else { return false }
+    return InterfaceDiscoveryHelpers.versionAtLeast(announced, minimum)
+  }
+
+  /// `name`, or `name (n)` with the lowest `n` from 2 that no attached interface uses.
+  ///
+  /// Mirrors Python `autoconnect_interface_name(name)` (`Discovery.py:772-780`).
+  public func autoconnectInterfaceName(_ name: String) -> String {
+    let names = Set(transport?.interfaces.map(\.name) ?? [])
+    guard names.contains(name) else { return name }
+    var n = 2
+    while names.contains("\(name) (\(n))") { n += 1 }
+    return "\(name) (\(n))"
   }
 
   /// Dial everything already persisted, so a restart doesn't have to re-hear every peer.
@@ -1072,6 +1255,13 @@ public final class InterfaceDiscovery {
     }
   }
 
+  /// How many interfaces the monitor job is watching.
+  var monitoredInterfaceCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return monitoredInterfaces.count
+  }
+
   /// Stop the monitor job and forget every watched interface.
   public func stopMonitoring() {
     lock.lock()
@@ -1097,7 +1287,17 @@ public final class InterfaceDiscovery {
     var onlineInterfaces = 0
     let now = Date().timeIntervalSince1970
 
+    let attached = transport.interfaces
     for interface in watched {
+      // Detached by hand, with `rnstatus --detach` for instance (RNS 1.5.5,
+      // `Discovery.py:668-670`).
+      guard attached.contains(where: { $0 === interface }) else {
+        Reticulum.log(
+          "A monitored auto-connected interface was manually detached, removing from "
+            + "monitoring", level: .debug)
+        detached.append(interface)
+        continue
+      }
       if interface.isOnline {
         onlineInterfaces += 1
         if interface.autoconnectDown != nil {
@@ -1153,13 +1353,13 @@ public final class InterfaceDiscovery {
     for interface in detached { teardownInterface(interface) }
   }
 
-  /// Detach an interface and stop watching it.
+  /// Detach an interface if it's still attached, and stop watching it.
   ///
-  /// Mirrors `teardown_interface`
-  /// (`Discovery.py:670-673`).
+  /// Mirrors `teardown_interface` (`Discovery.py:721-726`).
   public func teardownInterface(_ interface: any Interface) {
-    interface.stop()
-    transport?.deregister(interface: interface)
+    if let transport, transport.interfaces.contains(where: { $0 === interface }) {
+      transport.detach(interface: interface)
+    }
     lock.lock()
     monitoredInterfaces.removeAll { $0 === interface }
     lock.unlock()
@@ -1199,39 +1399,7 @@ public final class InterfaceDiscovery {
   }
 
   private func packInfo(_ info: DiscoveredInterfaceInfo) -> MsgPack.Value {
-    var pairs: [(MsgPack.Value, MsgPack.Value)] = [
-      (.string(PersistKey.type), .string(info.type)),
-      (.string(PersistKey.transport), .bool(info.transport)),
-      (.string(PersistKey.name), .string(info.name)),
-      (.string(PersistKey.received), .double(info.received)),
-      (.string(PersistKey.stamp), .bytes(info.stamp)),
-      (.string(PersistKey.value), .int(Int64(info.value))),
-      (.string(PersistKey.transportID), .string(info.transportID)),
-      (.string(PersistKey.networkID), .string(info.networkID)),
-      (.string(PersistKey.hops), .int(Int64(info.hops))),
-      (.string(PersistKey.latitude), info.latitude.map { .double($0) } ?? .nil),
-      (.string(PersistKey.longitude), info.longitude.map { .double($0) } ?? .nil),
-      (.string(PersistKey.height), info.height.map { .double($0) } ?? .nil),
-      (.string(PersistKey.discovered), .double(info.discovered)),
-      (.string(PersistKey.lastHeard), .double(info.lastHeard)),
-      (.string(PersistKey.heardCount), .int(Int64(info.heardCount))),
-    ]
-    if let v = info.ifacNetname { pairs.append((.string(PersistKey.ifacNetname), .string(v))) }
-    if let v = info.ifacNetkey { pairs.append((.string(PersistKey.ifacNetkey), .string(v))) }
-    if let v = info.reachableOn { pairs.append((.string(PersistKey.reachableOn), .string(v))) }
-    if let v = info.port { pairs.append((.string(PersistKey.port), .int(Int64(v)))) }
-    if let v = info.frequency { pairs.append((.string(PersistKey.frequency), .double(v))) }
-    if let v = info.bandwidth { pairs.append((.string(PersistKey.bandwidth), .double(v))) }
-    if let v = info.sf { pairs.append((.string(PersistKey.sf), .int(Int64(v)))) }
-    if let v = info.cr { pairs.append((.string(PersistKey.cr), .int(Int64(v)))) }
-    if let v = info.modulation { pairs.append((.string(PersistKey.modulation), .string(v))) }
-    if let v = info.channel { pairs.append((.string(PersistKey.channel), .int(Int64(v)))) }
-    if let v = info.configEntry { pairs.append((.string(PersistKey.configEntry), .string(v))) }
-    if let v = info.discoveryHash { pairs.append((.string(PersistKey.discoveryHash), .bytes(v))) }
-    if let v = info.operatorLxmfAddress {
-      pairs.append((.string(PersistKey.operatorLxmfAddress), .string(v)))
-    }
-    return .map(pairs)
+    .map(info.persistedPairs())
   }
 
   private func unpackInfo(_ map: [(MsgPack.Value, MsgPack.Value)]) -> DiscoveredInterfaceInfo? {
@@ -1273,6 +1441,8 @@ public final class InterfaceDiscovery {
       configEntry: stringVal(d[PersistKey.configEntry]),
       discoveryHash: bytesVal(d[PersistKey.discoveryHash]),
       operatorLxmfAddress: stringVal(d[PersistKey.operatorLxmfAddress]),
+      implName: stringVal(d[PersistKey.implName]),
+      version: stringVal(d[PersistKey.version]),
       discovered: discovered, lastHeard: lastHeard, heardCount: heardCount
     )
   }

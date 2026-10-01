@@ -88,6 +88,9 @@ public enum RNGitPage {
   /// What a tab is drawn as, which is three spaces and no more.
   public static let tabWidth = "   "
 
+  /// The files a page offers to send converted to Micron.
+  public static let convertableExtensions = [".md"]
+
   /// The files a page renders rather than shows as text.
   public static let renderableExtensions = [".md", ".mu"]
 

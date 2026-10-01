@@ -38,11 +38,6 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
   /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
   public let interfaceState = InterfaceState()
 
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
-
   // MARK: - Python class constants
 
   /// Seconds to wait between reconnect attempts.
@@ -123,8 +118,6 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
   public var wantsTunnel: Bool = false
   /// Identifier of the transport tunnel established over this interface.
   public var tunnelID: Data?
-  /// Whether the peer only bootstraps a connection and is dropped afterwards.
-  public var bootstrapOnly: Bool = false
 
   /// Lock-guarded—the existing `lock` serialized writers only, leaving a
   /// reader on another thread racing every increment.
@@ -246,7 +239,6 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     if let parent = parentInterface {
       self.interfaceState.inherit(from: parent.interfaceState)
       self.bitrate = parent.bitrate
-      self.gravity = parent.gravity
       self.ifacIdentity = parent.ifacIdentity
       self.ifacKey = parent.ifacKey
       self.ifacSize = parent.ifacSize

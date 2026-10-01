@@ -72,42 +72,16 @@ public enum RNStatusJSON {
 
   // MARK: - Discovered entries → msgpack
 
-  /// One discovery entry as a msgpack map, in Python's `info` dict insertion order
-  /// (`RNS/Discovery.py:318-410`, plus the persistence and status fields added by
-  /// `interface_discovered` and `list_discovered_interfaces`).
+  /// One discovery entry as a msgpack map, in the order Python's `rnstatus -d -j` prints it.
   ///
-  /// Optional fields are omitted rather than emitted as null, because Python only ever
-  /// sets them for the interface types that carry them and `-D` branches on presence.
+  /// That's the persisted order (``DiscoveredInterfaceInfo/persistedPairs()``) followed by
+  /// the `status` and `status_code` that `list_discovered_interfaces` adds
+  /// (`Discovery.py:565-569`).
+  ///
+  /// An entry persisted by RNS 1.5.4 or earlier has no `impl_name` or `version` key, and
+  /// Python prints none. This port can't tell absent from nil, so it prints both as null.
   public static func msgpackValue(for info: DiscoveredInterfaceInfo) -> MsgPack.Value {
-    var pairs: [(MsgPack.Value, MsgPack.Value)] = [
-      (.string("type"), .string(info.type)),
-      (.string("transport"), .bool(info.transport)),
-      (.string("name"), .string(info.name)),
-      (.string("received"), .double(info.received)),
-      (.string("stamp"), .bytes(info.stamp)),
-      (.string("value"), .int(Int64(info.value))),
-      (.string("transport_id"), .string(info.transportID)),
-      (.string("network_id"), .string(info.networkID)),
-      (.string("hops"), .int(Int64(info.hops))),
-      (.string("latitude"), info.latitude.map { .double($0) } ?? .nil),
-      (.string("longitude"), info.longitude.map { .double($0) } ?? .nil),
-      (.string("height"), info.height.map { .double($0) } ?? .nil),
-    ]
-    if let value = info.ifacNetname { pairs.append((.string("ifac_netname"), .string(value))) }
-    if let value = info.ifacNetkey { pairs.append((.string("ifac_netkey"), .string(value))) }
-    if let value = info.reachableOn { pairs.append((.string("reachable_on"), .string(value))) }
-    if let value = info.port { pairs.append((.string("port"), .int(Int64(value)))) }
-    if let value = info.frequency { pairs.append((.string("frequency"), numeric(value))) }
-    if let value = info.bandwidth { pairs.append((.string("bandwidth"), numeric(value))) }
-    if let value = info.sf { pairs.append((.string("sf"), .int(Int64(value)))) }
-    if let value = info.cr { pairs.append((.string("cr"), .int(Int64(value)))) }
-    if let value = info.channel { pairs.append((.string("channel"), .int(Int64(value)))) }
-    if let value = info.modulation { pairs.append((.string("modulation"), .string(value))) }
-    if let value = info.configEntry { pairs.append((.string("config_entry"), .string(value))) }
-    if let value = info.discoveryHash { pairs.append((.string("discovery_hash"), .bytes(value))) }
-    pairs.append((.string("discovered"), .double(info.discovered)))
-    pairs.append((.string("last_heard"), .double(info.lastHeard)))
-    pairs.append((.string("heard_count"), .int(Int64(info.heardCount))))
+    var pairs = info.persistedPairs()
     if let status = info.status { pairs.append((.string("status"), .string(status))) }
     if let code = info.statusCode { pairs.append((.string("status_code"), .int(Int64(code)))) }
     return .map(pairs)
@@ -118,14 +92,6 @@ public enum RNStatusJSON {
   /// The caller supplies the leading blank line (rnstatus.py:185).
   public static func encodeDiscovered(_ interfaces: [DiscoveredInterfaceInfo]) -> String {
     encode(normaliseDiscovered(.array(interfaces.map(msgpackValue(for:)))))
-  }
-
-  /// The wire carries whatever msgpack decoded—in practice an integer for frequency
-  /// and bandwidth.
-  ///
-  /// Emit the integral form so `-j` shows `867200000`, not `867200000.0`.
-  private static func numeric(_ value: Double) -> MsgPack.Value {
-    (value == value.rounded() && abs(value) < 9.2e18) ? .int(Int64(value)) : .double(value)
   }
 
   // MARK: - Encoder

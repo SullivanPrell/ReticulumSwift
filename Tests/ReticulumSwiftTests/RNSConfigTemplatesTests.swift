@@ -14,7 +14,7 @@ import XCTest
 
 /// Byte-exactness of the two configuration templates Python ships.
 ///
-/// Python reference: `RNS/Utilities/rnsd.py:90-583` (`__example_rns_config__`, printed by
+/// Python reference: `RNS/Utilities/rnsd.py:90-616` (`__example_rns_config__`, printed by
 /// `rnsd --exampleconfig`) and `RNS/Reticulum.py:1818+` (`__default_rns_config__`, written on
 /// a first run). Both are ~15 KB and ~4 KB of prose that no reviewer can diff by eye, so the
 /// SHA-256 assertions are the real guard—they were computed from the Python source with:
@@ -31,24 +31,24 @@ final class RNSConfigTemplatesTests: XCTestCase {
   // MARK: - __example_rns_config__
 
   func testExampleConfigByteLength() {
-    XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 15663)
+    XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 15926)
   }
 
   func testExampleConfigSHA256() {
     XCTAssertEqual(
       sha256Hex(RNSConfigTemplates.exampleConfig),
-      "78f08f25bbfe5cb15f22cdeec36c4b7476973bd8558f59e77faf8c118df2ca67")
+      "54c9c8e2099e49cd23910e24cf1ef0529256810863fca9b476210d6aba9d8ebf")
   }
 
   func testExampleConfigNewlineCount() {
-    XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 518)
+    XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 526)
   }
 
   func testExampleConfigBoundaries() {
     XCTAssertTrue(
       RNSConfigTemplates.exampleConfig
         .hasPrefix("# This is an example Reticulum config file.\n"))
-    // The literal ends with a blank line, so `print()` takes stdout to 15664 bytes.
+    // The literal ends with a blank line, so `print()` takes stdout to 15927 bytes.
     XCTAssertTrue(
       RNSConfigTemplates.exampleConfig
         .hasSuffix("    persistence = 200\n    slottime = 20\n\n"))
@@ -143,7 +143,7 @@ final class RNSConfigTemplatesTests: XCTestCase {
   }
 
   func testReticulumConfigDefaultTextIsTheTemplate() {
-    // This is what `Reticulum.start()` and the daemons write on a first run.
+    // What `InstanceConnection` parses when there's no config file to read.
     XCTAssertEqual(ReticulumConfig.defaultConfigText, RNSConfigTemplates.defaultConfig)
   }
 
@@ -156,6 +156,32 @@ final class RNSConfigTemplatesTests: XCTestCase {
     XCTAssertFalse(config.reticulum.enableTransport)
     XCTAssertTrue(config.reticulum.shareInstance)
     XCTAssertEqual(config.logging.logLevel, 4)
+  }
+
+  // MARK: - What a first run writes
+
+  /// Python writes ConfigObj's serialisation of the literal (`Reticulum.py:1355-1360`).
+  ///
+  /// The digest is of RNS 1.5.5 writing `ConfigObj(__default_rns_config__)`, which matches
+  /// the file its own first run leaves.
+  func testDefaultConfigFileIsWhatPythonWritesOnAFirstRun() {
+    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.utf8.count, 4035)
+    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.filter { $0 == "\n" }.count, 119)
+    XCTAssertEqual(
+      sha256Hex(RNSConfigTemplates.defaultConfigFile),
+      "a927b3a6e728fde161c05e8526bb46a72325852a4605ebe602779a61ea0ebcb7")
+  }
+
+  func testDefaultConfigFileParsesAsTheTemplateDoes() {
+    let written = ReticulumConfig.parse(RNSConfigTemplates.defaultConfigFile)
+    let template = ReticulumConfig.parse(RNSConfigTemplates.defaultConfig)
+    XCTAssertEqual(written.interfaces.map(\.name), template.interfaces.map(\.name))
+    XCTAssertEqual(written.interfaces.map(\.type), template.interfaces.map(\.type))
+    XCTAssertEqual(written.interfaces.map(\.enabled), template.interfaces.map(\.enabled))
+    XCTAssertEqual(written.reticulum.enableTransport, template.reticulum.enableTransport)
+    XCTAssertEqual(written.reticulum.shareInstance, template.reticulum.shareInstance)
+    XCTAssertEqual(written.reticulum.instanceName, template.reticulum.instanceName)
+    XCTAssertEqual(written.logging.logLevel, template.logging.logLevel)
   }
 
   func testRespondToProbesAliasIsAccepted() {

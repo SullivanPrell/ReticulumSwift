@@ -710,6 +710,7 @@ final class RNStatusRendererTests: XCTestCase {
         frequency: nil, bandwidth: nil, sf: nil, cr: nil, modulation: nil, channel: nil,
         configEntry: "[[my-backbone]]\n  type = BackboneInterface\n  enabled = yes",
         discoveryHash: Data(repeating: 0x22, count: 32),
+        implName: "RNS", version: "1.5.5",
         discovered: now - 300_000, lastHeard: now - 240, heardCount: 4,
         status: "available", statusCode: 1000),
       DiscoveredInterfaceInfo(
@@ -736,6 +737,7 @@ final class RNStatusRendererTests: XCTestCase {
         frequency: nil, bandwidth: nil, sf: nil, cr: nil, modulation: nil, channel: nil,
         configEntry: "[[stale]]\n  type = TCPClientInterface",
         discoveryHash: Data(repeating: 0x66, count: 32),
+        implName: "RNSwift", version: "1.22.1-development",
         discovered: now - 900_000, lastHeard: now - 300_000, heardCount: 1,
         status: "stale", statusCode: 0),
     ]
@@ -743,13 +745,16 @@ final class RNStatusRendererTests: XCTestCase {
 
   func testDiscoveredTable() {
     XCTAssertEqual(
-      Self.renderer().renderDiscoveredTable(Self.discoveredFixtures()),
+      Self.renderer {
+        $0.showStale = true
+        $0.showUnknown = true
+      }.renderDiscoveredTable(Self.discoveredFixtures()),
       "\n"
-        + "Name                      Type         Status       Last Heard   Value    Location       \n"
-        + "-----------------------------------------------------------------------------------------\n"
-        + "my-backbone               Backbone     ✓ Available  4m ago       21       55.6761, 12.5683\n"
-        + "a-very-long-discovered-i… RNode        ? Unknown    2h ago       18       N/A            \n"
-        + "stale-one                 TCPServer    × Stale      3d ago       14       -35.2717, 138.5542\n"
+        + "Name                      Type         Status     Last Heard   Value   Running          Location       \n"
+        + String(repeating: "-", count: 110) + "\n"
+        + "my-backbone               Backbone   ✓ Available  4m ago       21      RNS 1.5.5        55.6761, 12.5683\n"
+        + "a-very-long-discovered-i… RNode      ? Unknown    2h ago       18      Unknown          N/A            \n"
+        + "stale-one                 TCPServer  × Stale      3d ago       14      RNSwift 1.22.1-… -35.2717, 138.5542\n"
     )
   }
 
@@ -758,11 +763,14 @@ final class RNStatusRendererTests: XCTestCase {
     let rendered = Self.renderer { $0.nameFilter = "RNODE" }
       .renderDiscoveredTable(Self.discoveredFixtures())
     XCTAssertEqual(rendered.components(separatedBy: "\n").count, 4)  // blank, header, rule, ""
-    XCTAssertTrue(rendered.hasSuffix(String(repeating: "-", count: 89) + "\n"))
+    XCTAssertTrue(rendered.hasSuffix(String(repeating: "-", count: 110) + "\n"))
 
     // …and a matching filter keeps only that row, in the caller-supplied order.
-    let matched = Self.renderer { $0.nameFilter = "STALE" }
-      .renderDiscoveredTable(Self.discoveredFixtures())
+    let matched = Self.renderer {
+      $0.nameFilter = "STALE"
+      $0.showStale = true
+    }
+    .renderDiscoveredTable(Self.discoveredFixtures())
     XCTAssertTrue(matched.contains("stale-one"))
     XCTAssertFalse(matched.contains("my-backbone"))
   }
@@ -773,7 +781,7 @@ final class RNStatusRendererTests: XCTestCase {
     info.name = "x"
     let row = Self.renderer().renderDiscoveredTable([info])
       .components(separatedBy: "\n")[3]
-    // Python's `{:<12}` pads but never truncates, so the 17-character type pushes the
+    // Python's `{:<10}` pads but never truncates, so the 17-character type pushes the
     // rest of the row right instead of being clipped.
     XCTAssertTrue(row.contains("SomethingVeryLong ✓ Available"), row)
     // The ✓/×/… markers are single characters, so the columns line up.
@@ -785,19 +793,23 @@ final class RNStatusRendererTests: XCTestCase {
     // listDiscoveredInterfaces has already sorted descending on
     // (statusCode, value, lastHeard); the renderer must not re-sort.
     let reversed = Array(Self.discoveredFixtures().reversed())
-    let rows = Self.renderer().renderDiscoveredTable(reversed)
+    let rows = Self.renderer { $0.showStale = true }.renderDiscoveredTable(reversed)
       .components(separatedBy: "\n").dropFirst(3)
     XCTAssertTrue(rows.first!.hasPrefix("stale-one"), rows.first!)
   }
 
   func testDiscoveredDetails() {
     XCTAssertEqual(
-      Self.renderer().renderDiscoveredDetails(Self.discoveredFixtures()),
+      Self.renderer {
+        $0.showStale = true
+        $0.showUnknown = true
+      }.renderDiscoveredDetails(Self.discoveredFixtures()),
       "\n"
         + "Network   ID : bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
         + "Transport ID : aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
         + "Name         : my-backbone\n"
         + "Type         : BackboneInterface\n"
+        + "Stack        : RNS 1.5.5\n"
         + "Status       : Available\n"
         + "Transport    : Enabled\n"
         + "Distance     : 2 hops\n"
@@ -811,10 +823,11 @@ final class RNStatusRendererTests: XCTestCase {
         + "  [[my-backbone]]\n"
         + "    type = BackboneInterface\n"
         + "    enabled = yes\n"
-        + "\n================================\n\n"
+        + "\n===============================================\n\n"
         + "Transport ID : cccccccccccccccccccccccccccccccc\n"
         + "Name         : a-very-long-discovered-interface-name\n"
         + "Type         : RNodeInterface\n"
+        + "Stack        : Unknown\n"
         + "Status       : Unknown\n"
         + "Transport    : Disabled\n"
         + "Distance     : 1 hop\n"
@@ -829,10 +842,11 @@ final class RNStatusRendererTests: XCTestCase {
         + "\nConfiguration Entry:\n"
         + "  [[rnode]]\n"
         + "    type = RNodeInterface\n"
-        + "\n================================\n\n"
+        + "\n===============================================\n\n"
         + "Transport ID : dddddddddddddddddddddddddddddddd\n"
         + "Name         : stale-one\n"
         + "Type         : TCPServerInterface\n"
+        + "Stack        : RNSwift 1.22.1-development\n"
         + "Status       : Stale\n"
         + "Transport    : Enabled\n"
         + "Distance     : 3 hops\n"
@@ -850,7 +864,8 @@ final class RNStatusRendererTests: XCTestCase {
   func testDiscoveredDetailsOmitsNetworkIDWhenItMatchesTheTransportID() {
     // Python: network is set only when transport_id != network_id (a string compare on
     // undelimited hex), and it prints raw hex with no <> wrapper.
-    let rendered = Self.renderer().renderDiscoveredDetails([Self.discoveredFixtures()[1]])
+    let rendered = Self.renderer { $0.showUnknown = true }
+      .renderDiscoveredDetails([Self.discoveredFixtures()[1]])
     XCTAssertFalse(rendered.contains("Network   ID"))
     XCTAssertTrue(rendered.contains("Transport ID : cccccccccccccccccccccccccccccccc\n"))
     XCTAssertFalse(rendered.contains("<cc"))

@@ -156,46 +156,9 @@ final class RNStatusJSONTests: XCTestCase {
     XCTAssertEqual(entry?["network_id"]?.asString, "ccdd")
   }
 
-  // MARK: - Discovered array, end to end
+  // MARK: - Discovered array
 
-  /// Golden captured from the real Python `rnstatus -d -j` with the same three entries
-  /// and `time.time` pinned to `RNStatusRendererTests.now`.
-  func testEncodeDiscoveredMatchesPython() {
-    let encoded = RNStatusJSON.encodeDiscovered(RNStatusRendererTests.discoveredFixtures())
-    XCTAssertEqual(
-      encoded,
-      "[{\"type\": \"BackboneInterface\", \"transport\": true, \"name\": \"my-backbone\", "
-        + "\"received\": 1699999760.0, \"stamp\": \"1111111111111111\", \"value\": 21, "
-        + "\"transport_id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", "
-        + "\"network_id\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"hops\": 2, "
-        + "\"latitude\": 55.6761, \"longitude\": 12.5683, \"height\": 12.0, "
-        + "\"reachable_on\": \"example.org\", \"port\": 4965, "
-        + "\"config_entry\": \"[[my-backbone]]\\n  type = BackboneInterface\\n  enabled = yes\", "
-        + "\"discovery_hash\": \"\(String(repeating: "22", count: 32))\", "
-        + "\"discovered\": 1699700000.0, \"last_heard\": 1699999760.0, \"heard_count\": 4, "
-        + "\"status\": \"available\", \"status_code\": 1000}, "
-        + "{\"type\": \"RNodeInterface\", \"transport\": false, "
-        + "\"name\": \"a-very-long-discovered-interface-name\", \"received\": 1699992800.0, "
-        + "\"stamp\": \"3333333333333333\", \"value\": 18, "
-        + "\"transport_id\": \"cccccccccccccccccccccccccccccccc\", "
-        + "\"network_id\": \"cccccccccccccccccccccccccccccccc\", \"hops\": 1, "
-        + "\"latitude\": null, \"longitude\": null, \"height\": null, "
-        + "\"frequency\": 867200000, \"bandwidth\": 125000, \"sf\": 8, \"cr\": 5, "
-        + "\"config_entry\": \"[[rnode]]\\n  type = RNodeInterface\", "
-        + "\"discovery_hash\": \"\(String(repeating: "44", count: 32))\", "
-        + "\"discovered\": 1699910000.0, \"last_heard\": 1699992800.0, \"heard_count\": 2, "
-        + "\"status\": \"unknown\", \"status_code\": 100}, "
-        + "{\"type\": \"TCPServerInterface\", \"transport\": true, \"name\": \"stale-one\", "
-        + "\"received\": 1699700000.0, \"stamp\": \"5555555555555555\", \"value\": 14, "
-        + "\"transport_id\": \"dddddddddddddddddddddddddddddddd\", "
-        + "\"network_id\": \"dddddddddddddddddddddddddddddddd\", \"hops\": 3, "
-        + "\"latitude\": -35.2717, \"longitude\": 138.55425, \"height\": null, "
-        + "\"reachable_on\": \"1.2.3.4\", \"port\": 4242, "
-        + "\"config_entry\": \"[[stale]]\\n  type = TCPClientInterface\", "
-        + "\"discovery_hash\": \"\(String(repeating: "66", count: 32))\", "
-        + "\"discovered\": 1699100000.0, \"last_heard\": 1699700000.0, \"heard_count\": 1, "
-        + "\"status\": \"stale\", \"status_code\": 0}]")
-  }
+  // The end-to-end `-d -j` golden is `RNStatus155SurfaceTests.testDiscoveredJSONMatchesPython`.
 
   func testDiscoveredFrequencyStaysIntegral() {
     // DiscoveredInterfaceInfo.frequency is a Double? where the wire carries an int;

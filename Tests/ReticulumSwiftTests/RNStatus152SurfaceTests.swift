@@ -113,66 +113,14 @@ final class RNStatus152SurfaceTests: XCTestCase {
 
   // MARK: - Help text
 
-  /// The whole `--help` page, byte for byte.
-  ///
-  /// Captured from the tri-test virtualenv's `rnstatus --help` (RNS 1.5.2) and then
-  /// rewritten into the CPython &lt;= 3.11 options layout the port pins: 3.12 renders
-  /// `-s, --sort SORT` where 3.11 renders `-s SORT, --sort SORT`. That layout belongs to
-  /// whichever interpreter runs the Python tool, not to the port, so tri-test's
-  /// `normalize_help` reconciles the two rows it affects; applying that function to this
-  /// string reproduces the captured page exactly.
-  static let pythonHelp = """
-    usage: rnstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-P] [-l] [-B]
-                    [-b] [-t] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash]
-                    [-i path] [-w seconds] [-d] [-D] [-m] [-I seconds] [-v]
-                    [filter]
-
-    Reticulum Network Stack Status
-
-    positional arguments:
-      filter                only display interfaces with names including filter
-
-    options:
-      -h, --help            show this help message and exit
-      --config CONFIG       path to alternative Reticulum config directory
-      --version             show program's version number and exit
-      -a, --all             show all interfaces
-      -A, --announce-stats  show announce stats
-      -P, --pr-stats        show path request stats
-      -l, --link-stats      show link stats
-      -B, --burst           only show interfaces with active bursts
-      -b, --blocked-ips     show blocked IPs per interface
-      -t, --totals          display traffic totals
-      -p, --pps             display packets per second in totals
-      -q, --queues          display queue stats
-      -z, --profiling       display live profiling results
-      -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
-                            anns, arx, atx, arxc, atxc, held, prx, ptx, prxc,
-                            ptxc, pvs, ivs, flt, txdrp, txdrb, txbuf]
-      -r, --reverse         reverse sorting
-      -j, --json            output in JSON format
-      -R hash               transport identity hash of remote instance to get
-                            status from
-      -i path               path to identity used for remote management
-      -w seconds            timeout before giving up on remote queries
-      -d, --discovered      list discovered interfaces
-      -D                    show details and config entries for discovered
-                            interfaces
-      -m, --monitor         continuously monitor status
-      -I seconds, --monitor-interval seconds
-                            refresh interval for monitor mode (default: 1)
-      -v, --verbose
-    """
-
-  func testHelpTextIsTheWholePythonPage() {
-    XCTAssertEqual(RNStatusApp.helpText, Self.pythonHelp)
-  }
+  // The whole `--help` page is pinned against RNS 1.5.5 in
+  // `RNStatus155SurfaceTests.testHelpTextIsTheWholePythonPage`.
 
   /// The usage block is what `parser.print_usage(sys.stderr)` writes before an error, so
   /// a new flag has to reach the wrapped usage line as well as the options table.
   func testUsageBlockCarriesTheNewFlags() {
     let usage = RNStatusApp.usageText
-    XCTAssertEqual(usage.components(separatedBy: "\n").count, 4)
+    XCTAssertEqual(usage.components(separatedBy: "\n").count, 6)
     for token in ["[-b]", "[-p]", "[-q]", "[-z]"] {
       XCTAssertTrue(usage.contains(token), "missing \(token) in:\n\(usage)")
     }
@@ -529,6 +477,9 @@ final class RNStatus152SurfaceTests: XCTestCase {
       lastHeard: RNStatusRendererTests.now,
       heardCount: 1, status: "available", statusCode: 0)
     info.operatorLxmfAddress = "8dcd3f0a4e0c1a1b2c3d4e5f60718293"
+    // RNS 1.5.5 hides an entry naming no implementation unless --show-unknown is given.
+    info.implName = "RNS"
+    info.version = "1.5.5"
     let rendered = Self.renderer().renderDiscoveredDetails([info])
     XCTAssertTrue(rendered.contains("LXMF address : 8dcd3f0a4e0c1a1b2c3d4e5f60718293\n"), rendered)
     let lxmfIndex = try XCTUnwrap(rendered.range(of: "LXMF address")).lowerBound

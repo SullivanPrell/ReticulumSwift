@@ -5,6 +5,152 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `RequestReceipt.responseRejected()` fails a receipt that's `SENT` as well as `DELIVERED`, as RNS
+  1.5.5 does (`Link.py:1407-1408`). A request sent as one packet stays `SENT` until its response
+  arrives, so an oversized response to it waited for the request timeout. Before this, no
+  rejection fired at all: nothing moved a receipt to `DELIVERED`.
+- A request sent as a resource becomes `DELIVERED` when the resource completes, and its response
+  timeout starts then (`Link.py:1366-1379`). The timeout ran from the moment the request was
+  made, so an upload that took longer than the timeout failed while still in progress.
+- A spawned interface inherits its parent's `recursivePrs`, `announcesFromInternal`,
+  `announcesToInternal`, `gravity` and `bootstrapOnly`, as RNS 1.5.5 copies the first three and
+  `announce_cap` onto each spawned client (`TCPInterface.py:639-642`,
+  `BackboneInterface.py:741-744`, `AutoInterface.py:589-592`). Nineteen conformers declared their
+  own stored copies of these properties, which shadowed the ones `InterfaceState` holds, so
+  `inherit(from:)` copied the defaults. This release removes the stored copies, and
+  `InterfaceStateBackingTests` checks every conformer.
+- `RNodeInterface.stop()` and `RNodeMultiInterface.stop()` turn the radio off and send the
+  host-left command before closing the port, as Python's `detach` does
+  (`RNodeInterface.py:1190-1209`, `RNodeMultiInterface.py:911-919`). A device detected on an
+  ESP32 or NRF52 platform also has its external framebuffer turned off first. Both methods'
+  documentation said they turned the radio off, but neither wrote anything. A detached or
+  shut-down radio therefore stayed on. A write that fails is logged and the port still
+  closes. Python's multi-radio `detach` leaves the port open on a failed write.
+- A tool run where there's no config file prints Python's two notices around writing the
+  default config, and writes the file Python writes, which is ConfigObj's serialisation of
+  `__default_rns_config__` (`Reticulum.py:341-345`, `1355-1360`). The client tools wrote the
+  template literal without a word, which ConfigObj lays out with indented sections.
+  `RNSConfigTemplates.defaultConfigFile` holds the written form.
+- `rnstatus`, `rnpath`, `rnprobe`, `rncp` and `rnid` log to stdout in Python's `RNS.log`
+  format, as `rnsd` and `rnx` already did, and create the directories Python creates in the
+  config directory. They logged in this port's `[NOTICE]` format. `rnstatus` brings its stack
+  up at its own level, 3 plus `-v`, as Python's does, and no longer at error level.
+
+### Added
+
+- `DiscoveredInterfaceInfo.implName` and `version` hold the announcing implementation and version
+  from `TRANSPORT_IMPL` and `TRANSPORT_VERS`, as RNS 1.5.5 reads them (`Discovery.py:348-349`).
+  They persist under Python's `impl_name` and `version` keys, `nil` when absent, which Python's
+  `rnstatus -d` reads from the discovery storage directly. Without them it hides the entry
+  unless run with `--show-unknown`.
+- The `autoconnect_unverified_implementations` option, and
+  `Reticulum.shouldAutoconnectUnverifiedImplementations()` (RNS 1.5.5, `Reticulum.py:632-634`).
+- Interface management, as RNS 1.5.5 adds it (`Reticulum.py:771-841`):
+  - `Reticulum.attachInterface(named:)` builds the named entry from the config file as it
+    stands, even when disabled.
+  - `detachInterface(named:)` stops the interface and the interfaces it spawned and removes
+    them. It refuses I2P and the shared-instance interfaces.
+  - `reloadInterface(named:)` detaches the interface and attaches it again.
+
+  Each returns Python's tri-state: `true`, `false` when refused, or `nil` when there's no such
+  interface. The shared instance serves them as `{"manage": …, "name": …}` RPC calls
+  (`Reticulum.py:1394-1398`), and `RPCClient` has a method for each. The
+  `enable_interface_management` option, on by default, refuses all three to callers, and
+  `rnsd --exampleconfig` documents it.
+- `Transport.detach(interface:)` stops and removes an interface along with the interfaces it
+  spawned. Discovery tears down an auto-connected interface through it, as Python's
+  `teardown_interface` goes through `_detach_interface` (`Discovery.py:721-726`).
+- `rnstatus --attach`, `--detach` and `--reload` take an interface name and print Python's
+  result line, exiting `0` on success and `1` otherwise (`rnstatus.py:179-207`). Connected to a
+  shared instance, they go over RPC. Monitor mode ignores them, as Python's does. An RPC call
+  that throws prints `Unknown error while attaching interface …` and exits `1`, where Python
+  prints a traceback.
+- `rnstatus --show-stale` and `--show-unknown`, and `RNStatusRenderer.Options.showStale` and
+  `showUnknown`.
+- `InterfaceDiscovery` logs each discovered interface at debug level with the announcing
+  implementation, `Discovered BackboneInterface (RNS 1.5.5) 2 hops away with stamp value 21: …`
+  (`Discovery.py:594-600`).
+- rngit's blob page offers an `as micron` link beside `Download` for a Markdown file, and the
+  download page answers `fmt=mu` with the file converted to Micron, named for its stem with a
+  `.mu` extension (RNS 1.5.5, `pages.py:779-783`, `1873-1962`). Links in the converted file
+  point at the blob pages of the file's own directory. A format for any other file, or any
+  format but `mu`, is answered with nothing. The download counts before the conversion runs,
+  so a conversion that fails still counts, as Python's does.
+  `RNGitPage.convertableExtensions` lists the files offered.
+
+### Changed
+
+- A discovered interface keeps an IFAC network name or passphrase only when it's a non-empty
+  string (`Discovery.py:378-379`), and the listing drops the string `"None"` that nodes with an
+  unset value published (`Discovery.py:540-547`).
+- A discovered I2P interface's config entry names the peer with its `.b32.i2p` suffix
+  (`Discovery.py:408`).
+- Auto-connect follows the RNS 1.5.5 rules (`Discovery.py:483-490`, `772-876`):
+  - It dials only a discovered `BackboneInterface`. `TCPServerInterface` left
+    `AUTOCONNECT_TYPES`.
+  - The announce must name the `RNS` implementation at 1.5.2 or later, unless
+    the operator sets `autoconnect_unverified_implementations`. This port announces itself as `RNSwift`,
+    so a Python or Swift node on the defaults doesn't auto-connect to a Swift-published
+    endpoint.
+  - A name already in use gets the lowest free ` (n)` suffix from 2.
+  - On Darwin it dials the endpoint as a `TCPClientInterface`, as Python does wherever Backbone
+    isn't supported. It dialled a `BackboneInterface`.
+  - The existence check and the dial run under one lock, and an IFAC value of `"None"` counts
+    as unset.
+  - The monitor job drops an interface that's no longer attached instead of counting it as a
+    connected peer, and teardown leaves such an interface alone.
+- `Reticulum.reloadInterface(named:)` returns `Bool?` and rebuilds the interface from the
+  config file. It stopped and restarted the running interface, and returned `false` for an
+  unknown name. Source-breaking for a caller that stores the result as `Bool`.
+- An attach that fails to build its interface logs and returns `false`, where Python panics
+  (`Reticulum.py:1212-1216`). On this path a panic would let any RPC caller stop the daemon.
+- A config value of `None` for `networkname`, `network_name`, `passphrase` or `pass_phrase` is
+  ignored with a warning (RNS 1.5.5, `Reticulum.py:889-902`). It set an IFAC network name or
+  passphrase of `None`.
+- A discoverable interface with `publish_ifac` set and neither an IFAC network name nor a
+  passphrase logs a warning and turns IFAC publishing off (`Reticulum.py:1095-1098`).
+- The discovery announce leaves out `IFAC_NETNAME` or `IFAC_NETKEY` when that value is unset or
+  empty (`Discovery.py:236-238`). It wrote a nil in its place, which changes the packed info and
+  so the stamp a receiver checks.
+- `rnstatus -d` and `-D` follow RNS 1.5.5 (`rnstatus.py:240-359`):
+  - They hide stale entries unless run with `--show-stale`, and entries naming no implementation
+    unless run with `--show-unknown`.
+  - The table gains a Running column, clipped to 15 characters and `…` past 16, and its rule is
+    110 wide.
+  - The details gain a `Stack` line after `Type`.
+  - The details separator is 47 `=` wide, as it has been since RNS 1.5.0. It was 32. Python
+    prints it when the entry's index in the name-filtered list is above zero, so a hidden entry
+    still counts, and the port does the same.
+  - `--help` lists the new options.
+- `rnstatus -d -j` prints `impl_name` and `version` after `type` and `operator_lxmf_address`
+  after `discovery_hash`, as Python's does (`Discovery.py:363-463`). It left both
+  implementation keys and the operator address out. An entry RNS 1.5.4 or earlier persisted
+  has no implementation keys, and Python prints none. This port prints both as `null`.
+- A discovery file holds its keys in Python's order, with `channel` before `modulation`, and a
+  whole-number frequency or bandwidth as an integer. Python's `rnstatus -D`, reading a file this
+  port wrote, printed `867,200,000.0 Hz`. The file and `-d -j` now share one encoder.
+- rngit's work page shows a count after each scope filter, and the scope headings no longer
+  carry one (RNS 1.5.5, `pages.py:1505-1541`, `1575-1579`). A count includes every numbered document the
+  reader may read that has a `root` file, so a document whose root fails to load counts but
+  isn't listed, as in Python.
+- rngit's blob page reads a file's extension as `os.path.splitext` does, so a path ending in
+  `/` has none and shows as raw text. It used `NSString.pathExtension`, which read `README.md/`
+  as Markdown.
+- `SerialInterface`, `KISSInterface` and `AX25KISSInterface` log a port that won't open at
+  `start()` and redial it every `reconnectWait` seconds instead of throwing, as RNS 1.5.5
+  does (`SerialInterface.py:108-120`, `KISSInterface.py:142-154`,
+  `AX25KISSInterface.py:154-166`). `stop()` ends the redial loop. An interface built from the
+  config file stayed offline until restart, because the config path ignores a `start()` that
+  throws.
+
+### Deprecated
+
+- `Reticulum.haltInterface(_:)` and `resumeInterface(_:)` do nothing and mirror methods RNS
+  1.5.5 removed. Use `detachInterface(named:)` and `attachInterface(named:)`.
+  `Transport.halt(interfaceName:)` and `resume(interfaceName:)` stay as this port's own API.
+
 ## [1.22.1]—six fixes from the RNS spec scenarios
 
 reticulum-interop's RNS spec scenarios, with Python 1.5.4 as the oracle, found six places where

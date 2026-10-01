@@ -87,6 +87,27 @@ final class SpawnedInterfaceInheritanceTests: XCTestCase {
     XCTAssertEqual(client.ifacKey, Data(repeating: 0xAB, count: 64), "ifacKey")
   }
 
+  /// A spawned client carries the four attributes RNS 1.5.5 added to the spawn block.
+  ///
+  /// `TCPInterface.py:639-642`, `BackboneInterface.py:741-744`, `AutoInterface.py:589-592`.
+  /// Stored properties on the conformers shadowed three of them, so `inherit(from:)` copied
+  /// the defaults.
+  func testSpawnedClientInheritsTheAttributesRNS155Added() {
+    let server = TCPServerInterface(name: "hub", port: 4251)
+    server.recursivePrs = true
+    server.announcesFromInternal = false
+    server.announcesToInternal = true
+    server.announceCap = 0.07
+
+    let client = TCPServerClientInterface(
+      name: "Client on hub", parentServer: server, peerHost: "10.0.0.9", peerPort: 51001)
+
+    XCTAssertTrue(client.recursivePrs, "recursive_prs")
+    XCTAssertFalse(client.announcesFromInternal, "announces_from_internal")
+    XCTAssertEqual(client.announcesToInternal, true, "announces_to_internal")
+    XCTAssertEqual(client.announceCap, 0.07, "announce_cap, a fraction")
+  }
+
   /// A tunnel belongs to the connection that established it.
   ///
   /// Python doesn't copy these, and

@@ -26,7 +26,7 @@ extension RNGitPageHandler {
 
   /// One artifact of a published release, or nil where the reference answers nothing.
   ///
-  /// Mirrors `serve_artifact` (`pages.py:1714-1772`). The artifact's name is read back as
+  /// Mirrors `serve_artifact` (`pages.py:1750-1808`). The artifact's name is read back as
   /// `unquote_plus` reads it, and a name holding a separator once read is refused. A `tag` of
   /// `latest` names the release the `latest` file names, or else the newest release whether
   /// published or not. The release directory is joined as `os.path.join` joins it, so a tag
@@ -76,17 +76,24 @@ extension RNGitPageHandler {
 
   /// One file of a repository as it stands at `ref`, or nil where the reference answers nothing.
   ///
-  /// Mirrors `serve_download` (`pages.py:1837-1880`). The path is read back as `unquote_plus`
+  /// Mirrors `serve_download` (`pages.py:1873-1962`). The path is read back as `unquote_plus`
   /// reads it, and the file is named for its last component, which is empty where the path ends
   /// in a separator. A directory is sent as `git show` lists it, and a symbolic link as the path
   /// it holds. The reference hands the transfer the pipe `git show` writes to; this port writes
   /// what it prints to a directory held for `link` and sends that file.
+  ///
+  /// A `format` asks for the file converted. Only `mu` is answered, and only for a file
+  /// `convertableExtensions` names, which is checked before anything else is. The download is
+  /// counted before the conversion is tried, so a conversion that does not come off still
+  /// counts.
   public mutating func serveDownload(
     identityHash: Data?, groupName: String, repositoryName: String, ref: String = "HEAD",
-    path requestedPath: String, link: Data
+    path requestedPath: String, format: String = "", link: Data
   ) -> RNGitPageDownload? {
     let filePath = RNGitPageMicron.unquotePlus(requestedPath)
     let fileName = filePath.pythonBasename
+    let convertable = RNGitPage.convertableExtensions.contains(Self.fileExtension(of: filePath))
+    if !format.isEmpty, !convertable { return nil }
     guard
       let repository = access.repository(
         readableBy: identityHash, in: groupName, named: repositoryName)
@@ -94,12 +101,65 @@ extension RNGitPageHandler {
 
     let reader = RNGitRepositoryReader(runner: runner)
     guard let resolved = reader.resolve(ref, in: repository.path), !filePath.isEmpty,
-      reader.blobInfo(in: repository.path, at: resolved, path: filePath) != nil,
-      let spooled = spool(filePath, at: resolved, in: repository.path, for: link, named: fileName)
+      reader.blobInfo(in: repository.path, at: resolved, path: filePath) != nil
     else { return nil }
 
+    guard !format.isEmpty else {
+      guard
+        let spooled = spool(
+          filePath, at: resolved, in: repository.path, for: link, named: fileName)
+      else { return nil }
+      downloadSucceeded(group: groupName, repository: repositoryName, for: identityHash)
+      return .file(spooled)
+    }
+
+    guard let shown = shown(filePath, at: resolved, in: repository.path) else { return nil }
     downloadSucceeded(group: groupName, repository: repositoryName, for: identityHash)
-    return .file(spooled)
+    guard format == "mu" else { return nil }
+    return micron(
+      shown, of: filePath, named: fileName, group: groupName, repository: repositoryName,
+      ref: ref, for: link)
+  }
+
+  /// `content`, the Markdown file at `filePath`, converted to Micron in a directory held for
+  /// `link`, or nil where `link` is not open, the content is not UTF-8 or nothing is left of it.
+  ///
+  /// Mirrors the `mu` branch of `serve_download` (`pages.py:1917-1954`). Links are scoped to the
+  /// blob pages of the file's own directory at the ref the request names, and the file is
+  /// written under a unique name beside the original's stem but sent named for that stem.
+  private mutating func micron(
+    _ content: Data, of filePath: String, named fileName: String, group: String,
+    repository: String, ref: String, for link: Data
+  ) -> RNGitPageDownload? {
+    guard activeLinks.contains(link) else {
+      Reticulum.log("Could not resolve link for file conversion of " + filePath, level: .warning)
+      return nil
+    }
+
+    let text = String(decoding: content, as: UTF8.self)
+    guard Data(text.utf8) == content else {
+      Reticulum.log(
+        "Error during file conversion of \(filePath): the file is not UTF-8", level: .warning)
+      return nil
+    }
+
+    let components = filePath.pythonStripping("/").components(separatedBy: "/")
+    let directoryPath =
+      components.count > 1 ? components.dropLast().joined(separator: "/") + "/" : ""
+    let converter = MarkdownToMicron(
+      maxWidth: RNGitPage.maxRenderWidth, syntaxHighlighter: syntaxHighlighter,
+      urlScope: ":/page/blob.mu`g=\(group)|r=\(repository)|ref=\(ref)|path=\(directoryPath)")
+    let converted = Data(Self.rstripped(converter.formatBlock(text)).utf8)
+    guard !converted.isEmpty, let directory = temporaries.make(for: link) else { return nil }
+
+    let stem = fileName.pythonSplitExtension.root
+    let unique = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(8)
+    let path = directory + "/" + stem + "." + unique + ".mu"
+    guard FileManager.default.createFile(atPath: path, contents: converted) else {
+      temporaries.release(directory, of: link)
+      return nil
+    }
+    return .file(RNGitFile(path: path, directory: directory, metadata: .name(stem + ".mu")))
   }
 
   // MARK: - Media
@@ -107,7 +167,7 @@ extension RNGitPageHandler {
   /// A file a page shows inline, `false` where the request cannot be answered, or nil where the
   /// reference answers nothing.
   ///
-  /// Mirrors `serve_media` (`pages.py:1774-1835`). `request` names the file as
+  /// Mirrors `serve_media` (`pages.py:1810-1871`). `request` names the file as
   /// `/media/<group>/<repository>/<ref>/<path>`. Where `mediaConversion` is on, an image in any
   /// format but WebP is converted to WebP for a link that is still open, and sent in the
   /// original format where the conversion does not come off. Nothing is counted.
@@ -162,7 +222,7 @@ extension RNGitPageHandler {
   /// One work document's text, named for its title and format, or nil where the reference
   /// answers nothing.
   ///
-  /// Mirrors `serve_wd_download` (`pages.py:1882-1954`). A `scope` other than `active`,
+  /// Mirrors `serve_wd_download` (`pages.py:1964-2036`). A `scope` other than `active`,
   /// `completed` or `all` reads as `active`, so `proposed` finds nothing, and `all` looks in
   /// `active`, then `completed`, then `proposed`. The number is written back as Python writes
   /// it, so `01` finds document 1. A title is cut to 256 members, and one that is not text is
@@ -234,19 +294,26 @@ extension RNGitPageHandler {
     }
   }
 
+  /// What `git show` prints for `filePath` at `ref`, or nil where it could not be run.
+  ///
+  /// Mirrors `get_blob_stream` (`pages.py:2275-2286`), which strips separators from both ends of
+  /// the path.
+  private func shown(_ filePath: String, at ref: String, in repository: String) -> Data? {
+    runner.run(
+      bytes: "git", arguments: ["show", ref + ":" + filePath.pythonStripping("/")],
+      in: repository)?.standardOutput
+  }
+
   /// What `git show` prints for `filePath` at `ref`, written to a directory held for `link` and
   /// named `name`, or nil where it could not be run or written.
   private mutating func spool(
     _ filePath: String, at ref: String, in repository: String, for link: Data, named name: String
   ) -> RNGitFile? {
-    guard
-      let shown = runner.run(
-        bytes: "git", arguments: ["show", ref + ":" + filePath.pythonStripping("/")],
-        in: repository),
+    guard let shown = shown(filePath, at: ref, in: repository),
       let directory = temporaries.make(for: link)
     else { return nil }
     let path = directory + "/blob"
-    guard FileManager.default.createFile(atPath: path, contents: shown.standardOutput) else {
+    guard FileManager.default.createFile(atPath: path, contents: shown) else {
       temporaries.release(directory, of: link)
       return nil
     }
@@ -256,7 +323,7 @@ extension RNGitPageHandler {
   /// `filePath` at `ref` converted to WebP in a directory held for `link`, or nil where `link`
   /// is not open or the conversion does not come off.
   ///
-  /// Mirrors `get_webp_stream` (`pages.py:2206-2238`): the file is named for the original's
+  /// Mirrors `get_webp_stream` (`pages.py:2288-2320`): the file is named for the original's
   /// stem, and the directory is let go again where nothing was converted.
   private mutating func webP(
     _ filePath: String, at ref: String, in repository: String, for link: Data

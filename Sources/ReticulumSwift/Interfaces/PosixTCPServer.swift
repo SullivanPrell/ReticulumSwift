@@ -32,10 +32,6 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface,
   /// see `InterfaceState` and `swift_devel/bugs/025-*.md`.
   public let interfaceState = InterfaceState()
 
-  /// Mirrors Python's `Interface.announces_to_internal` (RNS 1.4.1).
-  public var announcesToInternal: Bool? = nil
-  /// Mirrors Python's `Interface.gravity` (RNS 1.4.1).
-  public var gravity: Int = InterfaceMode.defaultGravity
   /// Interface name as it appears in configuration and status output.
   public let name: String
   /// TCP port the server listens on.

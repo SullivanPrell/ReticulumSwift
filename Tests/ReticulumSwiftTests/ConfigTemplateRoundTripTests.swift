@@ -311,7 +311,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
   /// not resolve 4.4 the other way.
   func testTheTemplatesRemainPythonsOwnBytes() {
     XCTAssertEqual(
-      RNSConfigTemplates.exampleConfig.utf8.count, 15663,
+      RNSConfigTemplates.exampleConfig.utf8.count, 15926,
       "the example config is Python's literal; trimming keys from it is a "
         + "divergence, not a fix (task 4.4)")
     for documented in ["rpc_key", "instance_name", "shared_instance_type", "network_identity"] {
@@ -351,6 +351,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     "reticulum.interface_discovery_sources": .value("78616ff7c4b8d3886d67d494b440f333"),
     "reticulum.autoconnect_discovered_interfaces": .value("3"),
     "reticulum.required_discovery_value": .value("21"),
+    "reticulum.enable_interface_management": .value("no"),
     "reticulum.panic_on_interface_error": .value("yes"),
     "reticulum.autoconnect_interface_mode": .value("gateway"),
     "reticulum.autoconnect_announces_to_internal": .value("yes"),
