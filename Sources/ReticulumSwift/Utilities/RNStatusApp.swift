@@ -100,13 +100,13 @@ public enum RNStatusApp {
 
   /// Width of the `-d` table's horizontal rule.
   ///
-  /// Python: `print("-" * 89)` (rnstatus.py:266).
-  public static let discoveredTableRuleWidth: Int = 89
+  /// Python: `print("-" * 110)` (rnstatus.py:313, RNS 1.5.5).
+  public static let discoveredTableRuleWidth: Int = 110
 
   /// Width of the `-D` between-entry separator.
   ///
-  /// Python: `"="*32` (rnstatus.py:234).
-  public static let detailSeparatorWidth: Int = 32
+  /// Python: `"="*47` (rnstatus.py:280), 47 since RNS 1.5.0.
+  public static let detailSeparatorWidth: Int = 47
 
   /// Base log level; the effective level is `baseLogLevel + verbosity`.
   ///
@@ -154,6 +154,9 @@ public enum RNStatusApp {
     parser.option(
       ["--config"], metavar: "CONFIG", help: "path to alternative Reticulum config directory")
     parser.flag(["--version"], help: "show program's version number and exit")
+    parser.option(["--attach"], metavar: "name", help: "Attach interface by name")
+    parser.option(["--detach"], metavar: "name", help: "Detach interface by name")
+    parser.option(["--reload"], metavar: "name", help: "Reload interface by name")
     parser.flag(["-a", "--all"], help: "show all interfaces")
     parser.flag(["-A", "--announce-stats"], help: "show announce stats")
     parser.flag(["-P", "--pr-stats"], help: "show path request stats")
@@ -174,6 +177,8 @@ public enum RNStatusApp {
     parser.option(["-w"], metavar: "seconds", help: "timeout before giving up on remote queries")
     parser.flag(["-d", "--discovered"], help: "list discovered interfaces")
     parser.flag(["-D"], help: "show details and config entries for discovered interfaces")
+    parser.flag(["--show-stale"], help: "show stale discovery entries")
+    parser.flag(["--show-unknown"], help: "show discovery entries without version info")
     parser.flag(["-m", "--monitor"], help: "continuously monitor status")
     parser.option(
       ["-I", "--monitor-interval"], metavar: "seconds",
@@ -191,9 +196,11 @@ public enum RNStatusApp {
   /// `usage:` line across the declared flags). Since the help text is user-facing output
   /// like everything else in this port, it's reproduced literally instead.
   public static let helpText: String = """
-    usage: rnstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-P] [-l] [-B]
-                    [-b] [-t] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash]
-                    [-i path] [-w seconds] [-d] [-D] [-m] [-I seconds] [-v]
+    usage: rnstatus [-h] [--config CONFIG] [--version] [--attach name]
+                    [--detach name] [--reload name] [-a] [-A] [-P] [-l] [-B] [-b]
+                    [-t] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash] [-i path]
+                    [-w seconds] [-d] [-D] [--show-stale] [--show-unknown] [-m]
+                    [-I seconds] [-v]
                     [filter]
 
     Reticulum Network Stack Status
@@ -205,6 +212,9 @@ public enum RNStatusApp {
       -h, --help            show this help message and exit
       --config CONFIG       path to alternative Reticulum config directory
       --version             show program's version number and exit
+      --attach name         Attach interface by name
+      --detach name         Detach interface by name
+      --reload name         Reload interface by name
       -a, --all             show all interfaces
       -A, --announce-stats  show announce stats
       -P, --pr-stats        show path request stats
@@ -227,6 +237,8 @@ public enum RNStatusApp {
       -d, --discovered      list discovered interfaces
       -D                    show details and config entries for discovered
                             interfaces
+      --show-stale          show stale discovery entries
+      --show-unknown        show discovery entries without version info
       -m, --monitor         continuously monitor status
       -I seconds, --monitor-interval seconds
                             refresh interval for monitor mode (default: 1)
@@ -266,6 +278,57 @@ public enum RNStatusApp {
     case pathRequestTimeout = 12
     /// Remote setup error—missing `-i`, bad `-R`, unloadable identity (rnstatus.py:332).
     case remoteError = 20
+  }
+
+  // MARK: - Interface management
+
+  /// `--attach`, `--detach` and `--reload`.
+  public enum ManageAction: String, CaseIterable {
+    case attach, detach, reload
+  }
+
+  /// What the instance answered to a manage call.
+  public enum ManageReply: Equatable {
+    case succeeded, failed, missing, unknown
+
+    /// Maps the `True`, `False` or `None` a manage call returns.
+    public init(_ result: Bool?) {
+      switch result {
+      case true?: self = .succeeded
+      case false?: self = .failed
+      case nil: self = .missing
+      }
+    }
+  }
+
+  /// The manage option to act on, if any.
+  ///
+  /// Python tests `if attach:`, `if detach:` and `if reload:` in that order and exits after
+  /// the first that holds, so an empty name counts as absent (rnstatus.py:179-207).
+  public static func manageRequest(_ arguments: ParsedArguments) -> (
+    action: ManageAction, name: String
+  )? {
+    for action in ManageAction.allCases {
+      if let name = arguments.value("--\(action.rawValue)"), !name.isEmpty {
+        return (action, name)
+      }
+    }
+    return nil
+  }
+
+  /// The line `rnstatus` prints for a manage reply, and its exit code.
+  public static func manageReport(_ action: ManageAction, name: String, reply: ManageReply) -> (
+    message: String, code: Int32
+  ) {
+    let done = ["attach": "attached", "detach": "detached", "reload": "reloaded"][action.rawValue]!
+    let doing = ["attach": "attaching", "detach": "detaching", "reload": "reloading"][
+      action.rawValue]!
+    switch reply {
+    case .succeeded: return ("Interface \(name) was \(done)", 0)
+    case .failed: return ("Could not \(action.rawValue) interface \(name)", 1)
+    case .missing: return ("The interface \(name) does not exist", 1)
+    case .unknown: return ("Unknown error while \(doing) interface \(name)", 1)
+    }
   }
 
   // MARK: - Sort keys

@@ -59,8 +59,8 @@ final class RNStatusAppTests: XCTestCase {
     XCTAssertEqual(RNStatusApp.minimumColumnWidth, 10)  // rnstatus.py:618
     XCTAssertEqual(RNStatusApp.continuationIndent.count, 16)  // rnstatus.py:628
     XCTAssertTrue(RNStatusApp.continuationIndent.allSatisfy { $0 == " " })
-    XCTAssertEqual(RNStatusApp.discoveredTableRuleWidth, 89)  // rnstatus.py:266
-    XCTAssertEqual(RNStatusApp.detailSeparatorWidth, 32)  // rnstatus.py:234
+    XCTAssertEqual(RNStatusApp.discoveredTableRuleWidth, 110)  // rnstatus.py:313
+    XCTAssertEqual(RNStatusApp.detailSeparatorWidth, 47)  // rnstatus.py:280
     XCTAssertEqual(RNStatusApp.clearScreen, "\u{1b}[H\u{1b}[2J")  // rnstatus.py:742
   }
 
@@ -192,7 +192,7 @@ final class RNStatusAppTests: XCTestCase {
     // Captured from the installed Python utility: `rnstatus --help`.
     let lines = RNStatusApp.helpText.components(separatedBy: "\n")
     XCTAssertEqual(
-      lines.first, "usage: rnstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-P] [-l] [-B]")
+      lines.first, "usage: rnstatus [-h] [--config CONFIG] [--version] [--attach name]")
     XCTAssertEqual(lines.last, "  -v, --verbose")
     XCTAssertTrue(lines.contains("Reticulum Network Stack Status"))
     XCTAssertTrue(lines.contains("  -A, --announce-stats  show announce stats"))

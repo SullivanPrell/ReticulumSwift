@@ -46,6 +46,16 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - `Transport.detach(interface:)` stops and removes an interface along with the interfaces it
   spawned. Discovery tears down an auto-connected interface through it, as Python's
   `teardown_interface` goes through `_detach_interface` (`Discovery.py:721-726`).
+- `rnstatus --attach`, `--detach` and `--reload` take an interface name and print Python's
+  result line, exiting `0` on success and `1` otherwise (`rnstatus.py:179-207`). Connected to a
+  shared instance, they go over RPC. Monitor mode ignores them, as Python's does. An RPC call
+  that throws prints `Unknown error while attaching interface …` and exits `1`, where Python
+  prints a traceback.
+- `rnstatus --show-stale` and `--show-unknown`, and `RNStatusRenderer.Options.showStale` and
+  `showUnknown`.
+- `InterfaceDiscovery` logs each discovered interface at debug level with the announcing
+  implementation, `Discovered BackboneInterface (RNS 1.5.5) 2 hops away with stamp value 21: …`
+  (`Discovery.py:594-600`).
 
 ### Changed
 
@@ -81,6 +91,23 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - The discovery announce leaves out `IFAC_NETNAME` or `IFAC_NETKEY` when that value is unset or
   empty (`Discovery.py:236-238`). It wrote a nil in its place, which changes the packed info and
   so the stamp a receiver checks.
+- `rnstatus -d` and `-D` follow RNS 1.5.5 (`rnstatus.py:240-359`):
+  - They hide stale entries unless run with `--show-stale`, and entries naming no implementation
+    unless run with `--show-unknown`.
+  - The table gains a Running column, clipped to 15 characters and `…` past 16, and its rule is
+    110 wide.
+  - The details gain a `Stack` line after `Type`.
+  - The details separator is 47 `=` wide, as it has been since RNS 1.5.0. It was 32. Python
+    prints it when the entry's index in the name-filtered list is above zero, so a hidden entry
+    still counts, and the port does the same.
+  - `--help` lists the new options.
+- `rnstatus -d -j` prints `impl_name` and `version` after `type` and `operator_lxmf_address`
+  after `discovery_hash`, as Python's does (`Discovery.py:363-463`). It left both
+  implementation keys and the operator address out. An entry RNS 1.5.4 or earlier persisted
+  has no implementation keys, and Python prints none. This port prints both as `null`.
+- A discovery file holds its keys in Python's order, with `channel` before `modulation`, and a
+  whole-number frequency or bandwidth as an integer. Python's `rnstatus -D`, reading a file this
+  port wrote, printed `867,200,000.0 Hz`. The file and `-d -j` now share one encoder.
 
 ## [1.22.1]—six fixes from the RNS spec scenarios
 

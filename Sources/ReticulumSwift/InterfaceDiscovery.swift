@@ -79,6 +79,64 @@ private enum PersistKey {
   static let version = "version"
 }
 
+extension DiscoveredInterfaceInfo {
+
+  /// The entry as Python persists it, in the order its `info` dict gains the keys.
+  ///
+  /// `received_announce` builds `type` through `height`, then adds the IFAC values, the
+  /// per-type fields, `config_entry`, `discovery_hash` and `operator_lxmf_address`
+  /// (`Discovery.py:363-463`). `interface_discovered` appends `discovered`, `last_heard` and
+  /// `heard_count` (`Discovery.py:606-608`). Python's `rnstatus -d -j` prints a file in that
+  /// order, so the order is part of what a file written here looks like to it.
+  ///
+  /// `impl_name` and `version` are always present and nil when absent, as Python writes them
+  /// (`Discovery.py:364-365`). A whole-number frequency or bandwidth is written as an integer,
+  /// since the announce carries one and Python persists what it decoded.
+  func persistedPairs() -> [(MsgPack.Value, MsgPack.Value)] {
+    var pairs: [(MsgPack.Value, MsgPack.Value)] = [
+      (.string(PersistKey.type), .string(type)),
+      (.string(PersistKey.implName), implName.map { .string($0) } ?? .nil),
+      (.string(PersistKey.version), version.map { .string($0) } ?? .nil),
+      (.string(PersistKey.transport), .bool(transport)),
+      (.string(PersistKey.name), .string(name)),
+      (.string(PersistKey.received), .double(received)),
+      (.string(PersistKey.stamp), .bytes(stamp)),
+      (.string(PersistKey.value), .int(Int64(value))),
+      (.string(PersistKey.transportID), .string(transportID)),
+      (.string(PersistKey.networkID), .string(networkID)),
+      (.string(PersistKey.hops), .int(Int64(hops))),
+      (.string(PersistKey.latitude), latitude.map { .double($0) } ?? .nil),
+      (.string(PersistKey.longitude), longitude.map { .double($0) } ?? .nil),
+      (.string(PersistKey.height), height.map { .double($0) } ?? .nil),
+    ]
+    func add(_ key: String, _ value: MsgPack.Value?) {
+      if let value { pairs.append((.string(key), value)) }
+    }
+    add(PersistKey.ifacNetname, ifacNetname.map { .string($0) })
+    add(PersistKey.ifacNetkey, ifacNetkey.map { .string($0) })
+    add(PersistKey.reachableOn, reachableOn.map { .string($0) })
+    add(PersistKey.port, port.map { .int(Int64($0)) })
+    add(PersistKey.frequency, frequency.map(Self.wholeNumber))
+    add(PersistKey.bandwidth, bandwidth.map(Self.wholeNumber))
+    add(PersistKey.sf, sf.map { .int(Int64($0)) })
+    add(PersistKey.cr, cr.map { .int(Int64($0)) })
+    add(PersistKey.channel, channel.map { .int(Int64($0)) })
+    add(PersistKey.modulation, modulation.map { .string($0) })
+    add(PersistKey.configEntry, configEntry.map { .string($0) })
+    add(PersistKey.discoveryHash, discoveryHash.map { .bytes($0) })
+    add(PersistKey.operatorLxmfAddress, operatorLxmfAddress.map { .string($0) })
+    pairs.append((.string(PersistKey.discovered), .double(discovered)))
+    pairs.append((.string(PersistKey.lastHeard), .double(lastHeard)))
+    pairs.append((.string(PersistKey.heardCount), .int(Int64(heardCount))))
+    return pairs
+  }
+
+  /// An integer when `value` is a whole number in range, else a float.
+  private static func wholeNumber(_ value: Double) -> MsgPack.Value {
+    (value == value.rounded() && abs(value) < 9.2e18) ? .int(Int64(value)) : .double(value)
+  }
+}
+
 // MARK: - DiscoveryStampValidator
 
 /// Protocol for validating proof-of-work stamps on discovery announces.
@@ -853,6 +911,12 @@ public final class InterfaceDiscovery {
   public func interfaceDiscovered(_ info: DiscoveredInterfaceInfo) {
     guard let discoveryHash = info.discoveryHash else { return }
     guard InterfaceDiscovery.discoverableTypes.contains(info.type) else { return }
+    // Python: `Discovery.py:594-600`.
+    let versionStr =
+      RNStatusRenderer.implementation(info).map { " (\($0))" } ?? " (unknown implementation)"
+    Reticulum.log(
+      "Discovered \(info.type)\(versionStr) \(info.hops) hop\(info.hops == 1 ? "" : "s") away "
+        + "with stamp value \(info.value): \(info.name)", level: .debug)
     let filename = RNSUtilities.hexrep(discoveryHash, delimit: false)
     let filepath = storagePath.appendingPathComponent(filename)
 
@@ -1335,43 +1399,7 @@ public final class InterfaceDiscovery {
   }
 
   private func packInfo(_ info: DiscoveredInterfaceInfo) -> MsgPack.Value {
-    var pairs: [(MsgPack.Value, MsgPack.Value)] = [
-      (.string(PersistKey.type), .string(info.type)),
-      (.string(PersistKey.transport), .bool(info.transport)),
-      (.string(PersistKey.name), .string(info.name)),
-      (.string(PersistKey.received), .double(info.received)),
-      (.string(PersistKey.stamp), .bytes(info.stamp)),
-      (.string(PersistKey.value), .int(Int64(info.value))),
-      (.string(PersistKey.transportID), .string(info.transportID)),
-      (.string(PersistKey.networkID), .string(info.networkID)),
-      (.string(PersistKey.hops), .int(Int64(info.hops))),
-      (.string(PersistKey.latitude), info.latitude.map { .double($0) } ?? .nil),
-      (.string(PersistKey.longitude), info.longitude.map { .double($0) } ?? .nil),
-      (.string(PersistKey.height), info.height.map { .double($0) } ?? .nil),
-      (.string(PersistKey.discovered), .double(info.discovered)),
-      (.string(PersistKey.lastHeard), .double(info.lastHeard)),
-      (.string(PersistKey.heardCount), .int(Int64(info.heardCount))),
-      // Python's info dict always carries both keys, `None` when absent
-      // (`Discovery.py:364-365`).
-      (.string(PersistKey.implName), info.implName.map { .string($0) } ?? .nil),
-      (.string(PersistKey.version), info.version.map { .string($0) } ?? .nil),
-    ]
-    if let v = info.ifacNetname { pairs.append((.string(PersistKey.ifacNetname), .string(v))) }
-    if let v = info.ifacNetkey { pairs.append((.string(PersistKey.ifacNetkey), .string(v))) }
-    if let v = info.reachableOn { pairs.append((.string(PersistKey.reachableOn), .string(v))) }
-    if let v = info.port { pairs.append((.string(PersistKey.port), .int(Int64(v)))) }
-    if let v = info.frequency { pairs.append((.string(PersistKey.frequency), .double(v))) }
-    if let v = info.bandwidth { pairs.append((.string(PersistKey.bandwidth), .double(v))) }
-    if let v = info.sf { pairs.append((.string(PersistKey.sf), .int(Int64(v)))) }
-    if let v = info.cr { pairs.append((.string(PersistKey.cr), .int(Int64(v)))) }
-    if let v = info.modulation { pairs.append((.string(PersistKey.modulation), .string(v))) }
-    if let v = info.channel { pairs.append((.string(PersistKey.channel), .int(Int64(v)))) }
-    if let v = info.configEntry { pairs.append((.string(PersistKey.configEntry), .string(v))) }
-    if let v = info.discoveryHash { pairs.append((.string(PersistKey.discoveryHash), .bytes(v))) }
-    if let v = info.operatorLxmfAddress {
-      pairs.append((.string(PersistKey.operatorLxmfAddress), .string(v)))
-    }
-    return .map(pairs)
+    .map(info.persistedPairs())
   }
 
   private func unpackInfo(_ map: [(MsgPack.Value, MsgPack.Value)]) -> DiscoveredInterfaceInfo? {

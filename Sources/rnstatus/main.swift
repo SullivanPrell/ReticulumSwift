@@ -95,6 +95,8 @@ options.queueStats = queueStats
 options.nameFilter = nameFilter
 options.sort = arguments.value("--sort").flatMap { RNStatusApp.Sort(rawValue: $0.lowercased()) }
 options.sortReverse = sortReverse
+options.showStale = arguments.flag("--show-stale")
+options.showUnknown = arguments.flag("--show-unknown")
 
 // MARK: - Terminal helpers
 
@@ -143,6 +145,38 @@ do {
 // `Reticulum.applyConfig` overwrites globalLogLevel from the config file's `loglevel`.
 if let level = Reticulum.LogLevel(rawValue: RNStatusApp.baseLogLevel + verbosity) {
   Reticulum.globalLogLevel = level
+}
+
+// MARK: - Interface management (--attach / --detach / --reload)
+
+// Python: rnstatus.py:179-207. Monitor mode never passes these to program_setup
+// (rnstatus.py:928-933), so they only act on a single run. Connected to a shared instance,
+// the call goes over RPC; otherwise it acts on the instance this process started.
+if !monitor, let request = RNStatusApp.manageRequest(arguments) {
+  let reply: RNStatusApp.ManageReply
+  do {
+    let result: Bool?
+    if let rpc = connection.rpc {
+      switch request.action {
+      case .attach: result = try rpc.attachInterface(named: request.name)
+      case .detach: result = try rpc.detachInterface(named: request.name)
+      case .reload: result = try rpc.reloadInterface(named: request.name)
+      }
+    } else {
+      switch request.action {
+      case .attach: result = connection.reticulum.attachInterface(named: request.name)
+      case .detach: result = connection.reticulum.detachInterface(named: request.name)
+      case .reload: result = connection.reticulum.reloadInterface(named: request.name)
+      }
+    }
+    reply = RNStatusApp.ManageReply(result)
+  } catch {
+    reply = .unknown
+  }
+  let report = RNStatusApp.manageReport(request.action, name: request.name, reply: reply)
+  print(report.message)
+  connection.stop()
+  exit(report.code)
 }
 
 // MARK: - Discovered-interface mode (-d / -D)

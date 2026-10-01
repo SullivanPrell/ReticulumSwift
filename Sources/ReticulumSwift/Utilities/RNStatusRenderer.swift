@@ -76,6 +76,15 @@ public struct RNStatusRenderer {
     ///
     /// Python: `sort_reverse`.
     public var sortReverse: Bool = false
+    /// `--show-stale`.
+    ///
+    /// Python: `show_stale`. Keeps stale entries in the `-d` and `-D` views.
+    public var showStale: Bool = false
+    /// `--show-unknown`.
+    ///
+    /// Python: `show_unknown`. Keeps entries that name no implementation in the `-d` and
+    /// `-D` views.
+    public var showUnknown: Bool = false
 
     /// Creates an option set holding the reference defaults.
     public init() {}
@@ -638,24 +647,29 @@ public struct RNStatusRenderer {
 
   /// The `-d` table.
   ///
-  /// Python: rnstatus.py:264-306.
+  /// Python: rnstatus.py:311-359 (RNS 1.5.5).
   ///
   /// Column widths are Python `str.format` `<N` specifiers, which pad but **never
-  /// truncate**—an over-long Type pushes the rest of the row right. Only Name is
-  /// explicitly clipped. All widths count characters, so the ✓/×/… markers are 1 wide.
+  /// truncate**—an over-long Type pushes the rest of the row right. Only Name and Running
+  /// are explicitly clipped. All widths count characters, so the ✓/×/… markers are 1 wide.
+  ///
+  /// The table skips stale entries and entries naming no implementation unless
+  /// ``Options/showStale`` or ``Options/showUnknown`` is set.
   ///
   /// The caller-supplied order is preserved; `listDiscoveredInterfaces()` has already
   /// sorted descending on `(statusCode, value, lastHeard)`.
   public func renderDiscoveredTable(_ interfaces: [DiscoveredInterfaceInfo]) -> String {
     var out = "\n"  // rnstatus.py:185—unconditional, before any mode branch
     out +=
-      Self.pad("Name", 25) + " " + Self.pad("Type", 12) + " " + Self.pad("Status", 12)
-      + " " + Self.pad("Last Heard", 12) + " " + Self.pad("Value", 8) + " "
-      + Self.pad("Location", 15) + "\n"
+      Self.pad("Name", 25) + " " + Self.pad("Type", 10) + "   " + Self.pad("Status", 10)
+      + " " + Self.pad("Last Heard", 12) + " " + Self.pad("Value", 7) + " "
+      + Self.pad("Running", 16) + " " + Self.pad("Location", 15) + "\n"
     out += String(repeating: "-", count: RNStatusApp.discoveredTableRuleWidth) + "\n"
 
-    for info in filtered(interfaces) {
+    for info in filtered(interfaces) where shown(info) {
       let name = info.name.count > 24 ? String(info.name.prefix(24)) + "…" : info.name
+      var running = Self.implementation(info) ?? "Unknown"
+      if running.count > 16 { running = String(running.prefix(15)) + "…" }
       let type = info.type.replacingOccurrences(of: "Interface", with: "")
 
       let statusDisplay: String
@@ -686,16 +700,20 @@ public struct RNStatusRenderer {
       }
 
       out +=
-        Self.pad(name, 25) + " " + Self.pad(type, 12) + " " + Self.pad(statusDisplay, 12)
-        + " " + Self.pad(lastHeardDisplay, 12) + " " + Self.pad("\(info.value)", 8)
-        + " " + Self.pad(location, 15) + "\n"
+        Self.pad(name, 25) + " " + Self.pad(type, 10) + " " + Self.pad(statusDisplay, 12)
+        + " " + Self.pad(lastHeardDisplay, 12) + " " + Self.pad("\(info.value)", 7)
+        + " " + Self.pad(running, 16) + " " + Self.pad(location, 15) + "\n"
     }
     return out
   }
 
   /// The `-D` detail view.
   ///
-  /// Python: rnstatus.py:201-262.
+  /// Python: rnstatus.py:240-309 (RNS 1.5.5).
+  ///
+  /// The between-entry separator is printed when the entry's index in the name-filtered list
+  /// is above zero, so an entry the stale or unknown check skips still counts, and the first
+  /// entry printed can follow a separator.
   ///
   /// Python wraps each entry in a bare `try/except: pass` spanning the *whole* render,
   /// so an entry missing `config_entry` prints its full header block and then simply
@@ -710,7 +728,7 @@ public struct RNStatusRenderer {
   /// difference in a 9,700-line `-D` dump.
   public func renderDiscoveredDetails(_ interfaces: [DiscoveredInterfaceInfo]) -> String {
     var out = "\n"
-    for (index, info) in filtered(interfaces).enumerated() {
+    for (index, info) in filtered(interfaces).enumerated() where shown(info) {
       if index > 0 {
         out += "\n" + String(repeating: "=", count: RNStatusApp.detailSeparatorWidth) + "\n\n"
       }
@@ -746,6 +764,7 @@ public struct RNStatusRenderer {
 
       out += "Name         : \(info.name)\n"
       out += "Type         : \(info.type)\n"
+      out += "Stack        : \(Self.implementation(info) ?? "Unknown")\n"
       out += "Status       : \(statusDisplay)\n"
       out += "Transport    : \(info.transport ? "Enabled" : "Disabled")\n"
       out += "Distance     : \(info.hops) hop\(info.hops == 1 ? "" : "s")\n"
@@ -780,7 +799,25 @@ public struct RNStatusRenderer {
     return out
   }
 
-  /// Python: rnstatus.py:196-199—case-insensitive substring on the discovered name.
+  /// `"{impl_name} {version}"` when both are present and non-empty, else nil.
+  ///
+  /// Python: `has_impl_info` (rnstatus.py:246, 318).
+  static func implementation(_ info: DiscoveredInterfaceInfo) -> String? {
+    guard let implName = info.implName, !implName.isEmpty,
+      let version = info.version, !version.isEmpty
+    else { return nil }
+    return "\(implName) \(version)"
+  }
+
+  /// Python: `if status == "stale" and not show_stale: continue` and
+  /// `if not has_impl_info and not show_unknown: continue` (rnstatus.py:254-255, 330-331).
+  private func shown(_ info: DiscoveredInterfaceInfo) -> Bool {
+    if info.status == "stale" && !options.showStale { return false }
+    if Self.implementation(info) == nil && !options.showUnknown { return false }
+    return true
+  }
+
+  /// Python: rnstatus.py:235-238—case-insensitive substring on the discovered name.
   ///
   /// Neither the burst filter nor the interface hide list applies in discovered mode.
   private func filtered(_ interfaces: [DiscoveredInterfaceInfo]) -> [DiscoveredInterfaceInfo] {
