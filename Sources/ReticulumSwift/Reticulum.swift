@@ -26,7 +26,7 @@ public final class Reticulum {
   /// (releases are cut to mirror the RNS version they reach parity with) but
   /// advance independently—a patch release fixes the port without changing
   /// the protocol it targets.
-  public static let version = "1.22.1"
+  public static let version = "1.23.0"
 
   /// The Python RNS release whose wire protocol and behavior this port matches.
   ///
@@ -34,7 +34,7 @@ public final class Reticulum {
   /// a single version string for both its library and its protocol). Bump only
   /// when parity is verified against a new RNS release. Informational only.
   ///
-  /// `reticulum-interop` verifies the match. Its `make test-utilities` drives Python 1.5.4's
+  /// `reticulum-interop` verifies the match. Its `make test-utilities` drives Python 1.5.5's
   /// utilities against this port's daemon, and both directions agree, including the key order
   /// of `rnstatus -j`. Its `make test-rngit` serves one repository from a Python and a Swift
   /// `rngit` node, compares every page each browser reads, and clones the repository through
@@ -71,6 +71,14 @@ public final class Reticulum {
   ///    connects afresh (`RNodeInterface.py:446-450`); this port closes the transport and
   ///    redials after every failed bring-up (``RNodeTransport/close()``). The rest is BLE
   ///    bookkeeping, a Windows-only paired-device lookup, and log text.
+  ///  - **1.5.5**, interface management. A running instance attaches, detaches and reloads
+  ///    a configured interface on request, over RPC and through `rnstatus --attach`,
+  ///    `--detach` and `--reload`, where 1.5.4 had `halt_interface` and `resume_interface`
+  ///    (``attachInterface(named:)``). A discovery announce names its implementation and
+  ///    version, auto-connect dials only `RNS` 1.5.2 or later, and `rnstatus -d` hides stale
+  ///    and unnamed entries. `rngit` sends a Markdown file converted to Micron, the serial
+  ///    interfaces redial a port that won't open, and an RNode turns its radio off as it's
+  ///    detached.
   ///
   /// Three areas are deliberately not ported because the seam differs, each pinned by
   /// a test: traffic classes (`TC_DATA`/`TC_ANNOUNCE`/…) presuppose Python's inbound
@@ -83,7 +91,7 @@ public final class Reticulum {
   /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,
   /// ``autoconnectsDiscoveredInterfaces``), and batches `discovery_path_requests` together
   /// with the announce replay that answers the requestors it batches.
-  public static let rnsProtocolVersion = "1.5.4"
+  public static let rnsProtocolVersion = "1.5.5"
 
   /// Log severity levels, ordered from `none` through `extreme`.
   public enum LogLevel: Int, Comparable, Sendable {
