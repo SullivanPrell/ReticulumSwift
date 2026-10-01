@@ -320,9 +320,13 @@ public enum RNStatusApp {
   public static func manageReport(_ action: ManageAction, name: String, reply: ManageReply) -> (
     message: String, code: Int32
   ) {
-    let done = ["attach": "attached", "detach": "detached", "reload": "reloaded"][action.rawValue]!
-    let doing = ["attach": "attaching", "detach": "detaching", "reload": "reloading"][
-      action.rawValue]!
+    let done: String
+    let doing: String
+    switch action {
+    case .attach: (done, doing) = ("attached", "attaching")
+    case .detach: (done, doing) = ("detached", "detaching")
+    case .reload: (done, doing) = ("reloaded", "reloading")
+    }
     switch reply {
     case .succeeded: return ("Interface \(name) was \(done)", 0)
     case .failed: return ("Could not \(action.rawValue) interface \(name)", 1)

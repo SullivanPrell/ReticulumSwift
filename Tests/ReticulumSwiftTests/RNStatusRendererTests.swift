@@ -770,7 +770,7 @@ final class RNStatusRendererTests: XCTestCase {
       $0.nameFilter = "STALE"
       $0.showStale = true
     }
-      .renderDiscoveredTable(Self.discoveredFixtures())
+    .renderDiscoveredTable(Self.discoveredFixtures())
     XCTAssertTrue(matched.contains("stale-one"))
     XCTAssertFalse(matched.contains("my-backbone"))
   }
