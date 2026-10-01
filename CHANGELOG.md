@@ -56,6 +56,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - `InterfaceDiscovery` logs each discovered interface at debug level with the announcing
   implementation, `Discovered BackboneInterface (RNS 1.5.5) 2 hops away with stamp value 21: …`
   (`Discovery.py:594-600`).
+- rngit's blob page offers an `as micron` link beside `Download` for a Markdown file, and the
+  download page answers `fmt=mu` with the file converted to Micron, named for its stem with a
+  `.mu` extension (RNS 1.5.5, `pages.py:779-783`, `1873-1962`). Links in the converted file
+  point at the blob pages of the file's own directory. A format for any other file, or any
+  format but `mu`, is answered with nothing. The download counts before the conversion runs,
+  so a conversion that fails still counts, as Python's does.
+  `RNGitPage.convertableExtensions` lists the files offered.
 
 ### Changed
 
@@ -108,6 +115,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - A discovery file holds its keys in Python's order, with `channel` before `modulation`, and a
   whole-number frequency or bandwidth as an integer. Python's `rnstatus -D`, reading a file this
   port wrote, printed `867,200,000.0 Hz`. The file and `-d -j` now share one encoder.
+- rngit's work page shows a count after each scope filter, and the scope headings no longer
+  carry one (RNS 1.5.5, `pages.py:1505-1541`, `1575-1579`). A count includes every numbered document the
+  reader may read that has a `root` file, so a document whose root fails to load counts but
+  isn't listed, as in Python.
+- rngit's blob page reads a file's extension as `os.path.splitext` does, so a path ending in
+  `/` has none and shows as raw text. It used `NSString.pathExtension`, which read `README.md/`
+  as Markdown.
 
 ## [1.22.1]—six fixes from the RNS spec scenarios
 

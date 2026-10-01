@@ -665,6 +665,7 @@ public struct RNGitPageHandler {
 
     let fileExtension = Self.fileExtension(of: filePath)
     let renderable = RNGitPage.renderableExtensions.contains(fileExtension)
+    let convertable = RNGitPage.convertableExtensions.contains(fileExtension)
     var render = render
     var raw = raw
     if !renderable {
@@ -709,10 +710,18 @@ public struct RNGitPageHandler {
       let rawLink = RNGitPageMicron.link(
         "View raw", RNGitPage.Path.blob,
         [("g", groupName), ("r", repositoryName), ("ref", ref), ("path", filePath), ("raw", "y")])
+      let micronLink = RNGitPageMicron.link(
+        "as micron", RNGitPage.Path.download,
+        [("g", groupName), ("r", repositoryName), ("ref", ref), ("path", filePath), ("fmt", "mu")])
       let renderControls =
         render
         ? "Displaying Rendered \(sep) \(rawLink)" : "Displaying Raw \(sep) \(renderedLink)"
-      navParts.append("\n\(renderControls) \(sep) \(downloadLink)\n")
+      if convertable {
+        navParts.append(
+          "\n\(renderControls) \(sep) \(downloadLink) \(RNGitPage.Colour.dim)\(micronLink)`f\n")
+      } else {
+        navParts.append("\n\(renderControls) \(sep) \(downloadLink)\n")
+      }
     }
 
     if let blobInfo = reader.blobInfo(in: repository.path, at: resolvedRef, path: filePath) {
@@ -1133,10 +1142,10 @@ public struct RNGitPageHandler {
       startedAt: startedAt)
   }
 
-  /// The extension of `path`, lowercased and with its leading dot, or empty where it has none.
-  private static func fileExtension(of path: String) -> String {
-    let extensionText = (path as NSString).pathExtension
-    return extensionText.isEmpty ? "" : "." + extensionText.lowercased()
+  /// The extension of `path`, lowercased and with its leading dot, or empty where it has none,
+  /// as `os.path.splitext(path)[1].lower()` reads it: a path ending in a separator has none.
+  static func fileExtension(of path: String) -> String {
+    path.pythonSplitExtension.pathExtension.lowercased()
   }
 
   /// `text` with its leading and/or trailing `/` characters removed, matching Python's

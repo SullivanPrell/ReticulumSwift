@@ -251,7 +251,7 @@ public final class RNGitPageNode {
   }
 
   // swift-format-ignore: FunctionLength
-  private static func serve(
+  static func serve(
     _ path: String, _ fields: RNGitPageRequest, _ request: MsgPack.Value, _ reader: Data?,
     _ link: Data, _ handler: inout RNGitPageHandler
   ) -> Destination.RequestResponse? {
@@ -328,7 +328,7 @@ public final class RNGitPageNode {
       return download(
         handler.serveDownload(
           identityHash: reader, groupName: group, repositoryName: repository, ref: ref,
-          path: fields.text("var_path"), link: link))
+          path: fields.text("var_path"), format: fields.text("var_fmt"), link: link))
     case RNGitPage.Path.workDocumentFile:
       return download(
         handler.serveWorkDocumentDownload(

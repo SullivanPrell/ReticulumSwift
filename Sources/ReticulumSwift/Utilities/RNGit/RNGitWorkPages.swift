@@ -26,7 +26,7 @@ extension RNGitPageHandler {
   /// The work documents of one repository the reader may read, in the scope asked for, each
   /// section newest first—or nil where the reference raises and answers nothing.
   ///
-  /// Mirrors `serve_work_page` (`pages.py:1461-1561`). A document is ordered by the later of
+  /// Mirrors `serve_work_page` (`pages.py:1465-1597`). A document is ordered by the later of
   /// when it was created and when it was edited, and the reference raises where those cannot
   /// be compared, or where a document's title cannot be cut short or its creation cannot be
   /// dated. An entry that is not a document the reader may read is passed over, and so is
@@ -65,18 +65,24 @@ extension RNGitPageHandler {
         repositoryName, RNGitPage.Path.repository, [("g", groupName), ("r", repositoryName)])
       + " / work\n"
 
-    let filters = [
-      ("Active", "active"), ("Completed", "completed"), ("Proposed", "proposed"), ("All", "all"),
-    ].map { label, name in
+    let work = RNGitWorkStore.directory(forRepository: repository.path)
+    let counts = RNGitWorkStore.scopes.map {
+      countedDocuments(
+        in: work + "/" + $0, reader: identityHash, group: groupName, repository: repositoryName)
+    }
+    let filters = zip(
+      [("Active", "active"), ("Completed", "completed"), ("Proposed", "proposed"), ("All", "all")],
+      counts + [counts.reduce(0, +)]
+    ).map { scoped, count in
+      let (label, name) = scoped
       let underline = name == scope ? "`_" : ""
       return underline
         + RNGitPageMicron.link(
           label, RNGitPage.Path.work,
-          [("g", groupName), ("r", repositoryName), ("scope", name)]) + underline
+          [("g", groupName), ("r", repositoryName), ("scope", name)]) + underline + " (\(count))"
     }
     var content = filters.joined(separator: " \(icon(.separator)) ") + "\n\n"
 
-    let work = RNGitWorkStore.directory(forRepository: repository.path)
     let rendering = RNGitReleaseRendering(timeZone: timeZone)
     let dim = RNGitPage.Colour.dim
     for folder in scope == "all" ? RNGitWorkStore.scopes : [scope] {
@@ -86,8 +92,7 @@ extension RNGitPageHandler {
           repository: repositoryName)
       else { return nil }
 
-      let heading = RNGitPageMicron.heading(
-        "\(Self.capitalised(folder)) (\(listed.count))", level: 2)
+      let heading = RNGitPageMicron.heading(Self.capitalised(folder), level: 2)
       guard !listed.isEmpty else {
         content += heading + "\n`*No \(folder) work documents`*\n\n"
         continue
@@ -120,6 +125,28 @@ extension RNGitPageHandler {
     return templates.render(
       content, navigation: navigation, template: RNGitPageTemplate.work.rawValue,
       startedAt: startedAt)
+  }
+
+  /// How many entries under `folder` the work page's filters count: each directory named for
+  /// a number the reader may read that holds a `root` file, whether or not that file loads.
+  ///
+  /// Mirrors the counting loop of `serve_work_page` (`pages.py:1505-1524`), which passes over
+  /// any entry it raises on and counts nothing for a folder it cannot list.
+  private func countedDocuments(
+    in folder: String, reader: Data?, group: String, repository: String
+  ) -> Int {
+    guard RNGitWorkStore.isDirectory(folder),
+      let entries = try? FileManager.default.contentsOfDirectory(atPath: folder)
+    else { return 0 }
+    return entries.filter { entry in
+      let directory = folder + "/" + entry
+      guard RNGitWorkStore.isDirectory(directory), let number = entry.pythonInteger else {
+        return false
+      }
+      return access.allowsDocument(
+        reader, group: group, repository: repository, number: number, permission: .read)
+        && RNGitWorkStore.isFile(directory + "/root")
+    }.count
   }
 
   /// One document as the work page lists it.
