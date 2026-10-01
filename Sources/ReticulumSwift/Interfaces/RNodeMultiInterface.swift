@@ -453,10 +453,24 @@ public final class RNodeMultiInterface: Interface {
   }
 
   /// Turns each radio off and closes the device.
+  ///
+  /// Mirrors `detach` (`RNodeMultiInterface.py:911-919`): the external framebuffer goes off
+  /// where the device has a display, then each sub-interface's radio, then the host-left
+  /// command goes out. Python lets a failed write propagate and leaves the port open; this
+  /// port logs it, ends the sequence, and closes the port either way.
   public func stop() {
     stopped = true
     reconnector.cancel()
     transport?.onTransportError = nil
+    do {
+      if detected, platform == KISS.platformESP32 || platform == KISS.platformNRF52 {
+        try transport?.write(Data([KISS.fend, KISS.cmdFbExt, 0x00, KISS.fend]))
+      }
+      for sub in subInterfaces { try setRadioState(KISS.radioStateOff, for: sub) }
+      try transport?.write(Data([KISS.fend, KISS.cmdLeave, 0xFF, KISS.fend]))
+    } catch {
+      Reticulum.log("An error occurred while detaching \(displayName): \(error)", level: .error)
+    }
     transport?.close()
     isOnline = false
   }

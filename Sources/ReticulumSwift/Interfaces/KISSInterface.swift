@@ -233,8 +233,25 @@ public final class KISSInterface: Interface {
   private let reconnector = TransportReconnector()
 
   /// Open the serial port, configure the KISS TNC, and bring the interface online.
+  ///
+  /// A port that won't open leaves the interface offline and redialling every
+  /// `reconnectWait` seconds, as RNS 1.5.5 does (`KISSInterface.py:142-154`), so `start()` doesn't
+  /// throw for it.
   public func start() throws {
     transport.onTransportError = { [weak self] error in self?.handleTransportLoss(error) }
+    do {
+      try openPort()
+    } catch {
+      Reticulum.log("Could not open serial port for \(displayName)", level: .error)
+      Reticulum.log("The contained exception was: \(error)", level: .error)
+      Reticulum.log(
+        "Reticulum will attempt to bring up this interface periodically", level: .error)
+      redial()
+    }
+  }
+
+  /// Opens the port and brings the interface online.
+  private func openPort() throws {
     try transport.open(
       port: port, baudRate: speed,
       dataBits: dataBits, parity: parity, stopBits: stopBits)
@@ -272,9 +289,14 @@ public final class KISSInterface: Interface {
     isOnline = false
     interfaceReady = false
     lock.unlock()
+    redial()
+  }
+
+  /// Redials the port every `reconnectWait` seconds until it opens or `stop()` is called.
+  private func redial() {
     reconnector.begin(wait: reconnectWait) { [weak self] in
-      guard let self else { return true }
-      try? self.start()
+      guard let self else { return true }  // interface gone: end the loop
+      try? self.openPort()
       return self.isOnline
     }
   }

@@ -21,6 +21,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   own stored copies of these properties, which shadowed the ones `InterfaceState` holds, so
   `inherit(from:)` copied the defaults. This release removes the stored copies, and
   `InterfaceStateBackingTests` checks every conformer.
+- `RNodeInterface.stop()` and `RNodeMultiInterface.stop()` turn the radio off and send the
+  host-left command before closing the port, as Python's `detach` does
+  (`RNodeInterface.py:1190-1209`, `RNodeMultiInterface.py:911-919`). A device detected on an
+  ESP32 or NRF52 platform also has its external framebuffer turned off first. Both methods'
+  documentation said they turned the radio off, but neither wrote anything. A detached or
+  shut-down radio therefore stayed on. A write that fails is logged and the port still
+  closes. Python's multi-radio `detach` leaves the port open on a failed write.
 
 ### Added
 
@@ -122,6 +129,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - rngit's blob page reads a file's extension as `os.path.splitext` does, so a path ending in
   `/` has none and shows as raw text. It used `NSString.pathExtension`, which read `README.md/`
   as Markdown.
+- `SerialInterface`, `KISSInterface` and `AX25KISSInterface` log a port that won't open at
+  `start()` and redial it every `reconnectWait` seconds instead of throwing, as RNS 1.5.5
+  does (`SerialInterface.py:108-120`, `KISSInterface.py:142-154`,
+  `AX25KISSInterface.py:154-166`). `stop()` ends the redial loop. An interface built from the
+  config file stayed offline until restart, because the config path ignores a `start()` that
+  throws.
 
 ## [1.22.1]—six fixes from the RNS spec scenarios
 

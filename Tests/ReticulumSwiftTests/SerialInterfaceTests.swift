@@ -158,12 +158,15 @@ final class SerialInterfaceLifecycleTests: XCTestCase {
     XCTAssertFalse(t.isOpen)
   }
 
-  func testStartThrowsWhenPortFails() {
+  /// A port that won't open leaves the interface offline and redialling rather than failing
+  /// `start()`, as RNS 1.5.5 does (`SerialInterface.py:108-120`).
+  func testStartStaysOfflineWhenPortFails() {
     let t = MockSerialPort()
     t.shouldThrowOnOpen = true
     let iface = SerialInterface(name: "S", port: "/dev/x", transport: t)
-    XCTAssertThrowsError(try iface.start())
+    XCTAssertNoThrow(try iface.start())
     XCTAssertFalse(iface.isOnline)
+    iface.stop()
   }
 }
 

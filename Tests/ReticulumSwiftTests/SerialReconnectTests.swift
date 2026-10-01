@@ -160,6 +160,54 @@ final class SerialReconnectTests: XCTestCase {
     XCTAssertFalse(iface.isOnline)
   }
 
+  // MARK: - A failed first open is retried (RNS 1.5.5)
+
+  /// The three serial-family interfaces, each over a port of its own, redialling every 50 ms.
+  private func serialFamily() throws -> [(Interface, FlappableSerialPort)] {
+    let ports = [FlappableSerialPort(), FlappableSerialPort(), FlappableSerialPort()]
+    let serial = SerialInterface(name: "ser", port: "/dev/test", transport: ports[0])
+    serial.reconnectWait = 0.05
+    let kiss = KISSInterface(name: "kiss", port: "/dev/test", transport: ports[1])
+    kiss.reconnectWait = 0.05
+    let ax25 = try AX25KISSInterface(
+      name: "ax25", port: "/dev/test", callsign: "NO1CLL", ssid: 0, transport: ports[2])
+    ax25.reconnectWait = 0.05
+    return [(serial, ports[0]), (kiss, ports[1]), (ax25, ports[2])]
+  }
+
+  /// A port that won't open at start is redialled, not thrown.
+  ///
+  /// RNS 1.5.5 logs it and redials every 5 s in a daemon thread (`SerialInterface.py:108-120`,
+  /// `KISSInterface.py:142-154`, `AX25KISSInterface.py:154-166`). Through 1.5.4 the
+  /// constructor raised and the interface never came up.
+  func testAFailedFirstOpenIsRedialledInsteadOfThrown() throws {
+    for (iface, port) in try serialFamily() {
+      port.failNextOpens = 2
+      XCTAssertNoThrow(try iface.start(), iface.name)
+      XCTAssertFalse(iface.isOnline, iface.name)
+
+      let deadline = Date().addingTimeInterval(2.0)
+      while !iface.isOnline && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+      XCTAssertTrue(iface.isOnline, "\(iface.name): the failed first open was never retried")
+      XCTAssertGreaterThanOrEqual(port.openCount, 3, iface.name)
+      iface.stop()
+    }
+  }
+
+  /// A detach ends the redial loop a failed first open started, as `detached` ends Python's
+  /// `reconnect_port` loop (`SerialInterface.py:217-229`).
+  func testStopEndsTheRedialLoopOfAFailedFirstOpen() throws {
+    for (iface, port) in try serialFamily() {
+      port.failNextOpens = Int.max
+      try iface.start()
+      iface.stop()
+      let settledCount = port.openCount
+      Thread.sleep(forTimeInterval: 0.3)
+      XCTAssertEqual(port.openCount, settledCount, "\(iface.name): the redial loop outlived stop()")
+      XCTAssertFalse(iface.isOnline, iface.name)
+    }
+  }
+
   // MARK: - Failed writes aren't traffic
 
   func testAFailedWriteIsNotCountedAsTransmittedBytes() throws {
