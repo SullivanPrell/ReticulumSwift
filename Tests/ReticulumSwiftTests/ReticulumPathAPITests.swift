@@ -92,16 +92,4 @@ final class ReticulumPathAPITests: XCTestCase {
     let r = makeReticulum()
     XCTAssertFalse(r.usedDestinationData(Data(repeating: 0x11, count: 16)))
   }
-
-  // MARK: - haltInterface / resumeInterface (stubs—must not crash)
-
-  func testHaltInterfaceDoesNotCrash() {
-    let r = makeReticulum()
-    r.haltInterface(LoopbackInterface(name: "HaltTest"))
-  }
-
-  func testResumeInterfaceDoesNotCrash() {
-    let r = makeReticulum()
-    r.resumeInterface(LoopbackInterface(name: "ResumeTest"))
-  }
 }

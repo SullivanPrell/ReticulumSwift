@@ -1132,8 +1132,9 @@ public final class Transport {
 
   /// Bring an interface offline.
   ///
-  /// The interface stays registered but no longer
-  /// forwards packets. Mirrors Python `Reticulum.halt_interface()`.
+  /// The interface stays registered but no longer forwards packets. Python has no counterpart:
+  /// its `halt_interface` was a no-op until RNS 1.5.5 removed it.
+  /// `Reticulum.detachInterface(named:)` stops and removes an interface as Python does.
   public func halt(interfaceName: String) {
     lock.lock()
     let iface = interfaces.first { $0.name == interfaceName }
@@ -1143,7 +1144,7 @@ public final class Transport {
 
   /// Bring a previously halted interface back online.
   ///
-  /// Mirrors Python `Reticulum.resume_interface()`.
+  /// Python has no counterpart: its `resume_interface` was a no-op until RNS 1.5.5 removed it.
   public func resume(interfaceName: String) {
     lock.lock()
     let iface = interfaces.first { $0.name == interfaceName }

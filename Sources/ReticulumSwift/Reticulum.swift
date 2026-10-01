@@ -2028,14 +2028,24 @@ public final class Reticulum {
 
   // MARK: - Interface management
 
-  /// No-op stub.
+  /// Does nothing.
   ///
-  /// Mirrors Python `Reticulum.halt_interface(interface)`.
+  /// Mirrored Python's `Reticulum.halt_interface(interface)`, a no-op that RNS 1.5.5 removed
+  /// when it added interface management.
+  @available(
+    *, deprecated,
+    message: "RNS 1.5.5 removed halt_interface. Use detachInterface(named:) instead."
+  )
   public func haltInterface(_ interface: any Interface) {}
 
-  /// No-op stub.
+  /// Does nothing.
   ///
-  /// Mirrors Python `Reticulum.resume_interface(interface)`.
+  /// Mirrored Python's `Reticulum.resume_interface(interface)`, a no-op that RNS 1.5.5 removed
+  /// when it added interface management.
+  @available(
+    *, deprecated,
+    message: "RNS 1.5.5 removed resume_interface. Use attachInterface(named:) instead."
+  )
   public func resumeInterface(_ interface: any Interface) {}
 
   /// Build the named interface from the config file and attach it.

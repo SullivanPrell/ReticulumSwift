@@ -136,6 +136,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
   config file stayed offline until restart, because the config path ignores a `start()` that
   throws.
 
+### Deprecated
+
+- `Reticulum.haltInterface(_:)` and `resumeInterface(_:)` do nothing and mirror methods RNS
+  1.5.5 removed. Use `detachInterface(named:)` and `attachInterface(named:)`.
+  `Transport.halt(interfaceName:)` and `resume(interfaceName:)` stay as this port's own API.
+
 ## [1.22.1]—six fixes from the RNS spec scenarios
 
 reticulum-interop's RNS spec scenarios, with Python 1.5.4 as the oracle, found six places where
