@@ -5,6 +5,31 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.23.0]—interface management, and parity moves to 1.5.5
+
+A running instance attaches, detaches and reloads a configured interface on request, over RPC
+and through `rnstatus --attach`, `--detach` and `--reload`. Discovery announces name the
+implementation and version that sent them, and auto-connect follows the RNS 1.5.5 rules. That
+covers every Python file RNS 1.5.5 changes, so `rnsProtocolVersion` moves to 1.5.5.
+
+### Reference parity moves to RNS 1.5.5
+
+`Reticulum.rnsProtocolVersion` reads `1.5.5`, up from `1.5.4`.
+
+RNS 1.5.5 adds interface management to `Reticulum.py`, version fields and new auto-connect rules
+to discovery, `--show-stale` and `--show-unknown` to `rnstatus`, and Micron downloads of Markdown
+files to `rngit`. It also changes how the serial interfaces treat a port that won't open, what
+an RNode does as it's detached, what a spawned interface inherits, and when a link request's
+response timeout starts. The sections below list each change with its Python source lines.
+
+reticulum-interop runs Python 1.5.5 against this port. On this tree `make test-utilities` passed
+141 tests with 1 expected failure. `make test-rngit` passed 8 of 9, and the cell that failed runs
+only Python and Go and passed 5 of 5 on its own.
+
+This release closes the first-run gap that 1.22.0 recorded. A tool that finds no configuration file
+writes the file Python writes and logs Python's two notices, and reticulum-interop compares the
+output, the file and the directory tree with Python's.
+
 ### Fixed
 
 - `RequestReceipt.responseRejected()` fails a receipt that's `SENT` as well as `DELIVERED`, as RNS
