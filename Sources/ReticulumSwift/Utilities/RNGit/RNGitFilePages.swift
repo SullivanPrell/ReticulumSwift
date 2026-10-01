@@ -26,7 +26,7 @@ extension RNGitPageHandler {
 
   /// One artifact of a published release, or nil where the reference answers nothing.
   ///
-  /// Mirrors `serve_artifact` (`pages.py:1714-1772`). The artifact's name is read back as
+  /// Mirrors `serve_artifact` (`pages.py:1750-1808`). The artifact's name is read back as
   /// `unquote_plus` reads it, and a name holding a separator once read is refused. A `tag` of
   /// `latest` names the release the `latest` file names, or else the newest release whether
   /// published or not. The release directory is joined as `os.path.join` joins it, so a tag
@@ -167,7 +167,7 @@ extension RNGitPageHandler {
   /// A file a page shows inline, `false` where the request cannot be answered, or nil where the
   /// reference answers nothing.
   ///
-  /// Mirrors `serve_media` (`pages.py:1774-1835`). `request` names the file as
+  /// Mirrors `serve_media` (`pages.py:1810-1871`). `request` names the file as
   /// `/media/<group>/<repository>/<ref>/<path>`. Where `mediaConversion` is on, an image in any
   /// format but WebP is converted to WebP for a link that is still open, and sent in the
   /// original format where the conversion does not come off. Nothing is counted.
@@ -222,7 +222,7 @@ extension RNGitPageHandler {
   /// One work document's text, named for its title and format, or nil where the reference
   /// answers nothing.
   ///
-  /// Mirrors `serve_wd_download` (`pages.py:1882-1954`). A `scope` other than `active`,
+  /// Mirrors `serve_wd_download` (`pages.py:1964-2036`). A `scope` other than `active`,
   /// `completed` or `all` reads as `active`, so `proposed` finds nothing, and `all` looks in
   /// `active`, then `completed`, then `proposed`. The number is written back as Python writes
   /// it, so `01` finds document 1. A title is cut to 256 members, and one that is not text is
@@ -323,7 +323,7 @@ extension RNGitPageHandler {
   /// `filePath` at `ref` converted to WebP in a directory held for `link`, or nil where `link`
   /// is not open or the conversion does not come off.
   ///
-  /// Mirrors `get_webp_stream` (`pages.py:2206-2238`): the file is named for the original's
+  /// Mirrors `get_webp_stream` (`pages.py:2288-2320`): the file is named for the original's
   /// stem, and the directory is let go again where nothing was converted.
   private mutating func webP(
     _ filePath: String, at ref: String, in repository: String, for link: Data

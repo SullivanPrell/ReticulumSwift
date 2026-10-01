@@ -38,7 +38,7 @@ final class StorageInventoryTests: XCTestCase {
   /// `RNGitLinkTransport` names a file response inside the one its run holds, and
   /// `RNGitMediaEncoder` names the WebP it converts a file to (`media.py:219`). A page's file
   /// handler writes what `git show` prints to `blob` inside one of those directories, where the
-  /// reference streams the pipe (`pages.py:2193-2204`).
+  /// reference streams the pipe (`pages.py:2275-2286`).
   /// `StorageInventory` declares what lives inside a Reticulum configuration directory, and
   /// `url(_:in:)` resolves an entry against that directory, so a path outside it has no entry
   /// to be.

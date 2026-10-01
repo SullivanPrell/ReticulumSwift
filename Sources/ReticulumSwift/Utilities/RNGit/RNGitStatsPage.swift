@@ -21,7 +21,7 @@ extension RNGitPageHandler {
   /// falls on in `timeZone`, each charted, with a stack of all four when the repository scored
   /// any points.
   ///
-  /// Mirrors `serve_stats_page` (`pages.py:1188-1289`), which counts no view. Its "Stats
+  /// Mirrors `serve_stats_page` (`pages.py:1192-1293`), which counts no view. Its "Stats
   /// Unavailable" branch has no counterpart: the reference reaches it only when
   /// `repository_stats` refuses a reader the page has just let through, over the same
   /// permission.

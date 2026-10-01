@@ -203,7 +203,7 @@ extension RNGitPageHandler {
   /// One work document with its signature checked and every update posted to it—or nil where
   /// the reference raises and answers nothing.
   ///
-  /// Mirrors `serve_work_doc_page` (`pages.py:1563-1713`). A scope of `all` finds the document
+  /// Mirrors `serve_work_doc_page` (`pages.py:1599-1749`). A scope of `all` finds the document
   /// in the first scope holding it, and any scope not asked for by name is read as `active`.
   /// The document is looked for under the number `documentID` reads as, so a document kept in a
   /// directory named with leading zeroes is not found. The reference raises on a document

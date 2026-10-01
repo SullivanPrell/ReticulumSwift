@@ -69,15 +69,15 @@ struct RNGitPageRequest {
   /// Whether `key` holds a value Python reads as true.
   func flag(_ key: String) -> Bool { fields?[key]?.pythonIsTruthy ?? false }
 
-  /// The ref a page shows, which is `HEAD` where the request names none (`pages.py:449`).
+  /// The ref a page shows, which is `HEAD` where the request names none (`pages.py:450`).
   var ref: String { text("var_ref", default: "HEAD") }
 
   /// Which work documents the work page lists, which is the active ones where the request
-  /// names no scope (`pages.py:1468`).
+  /// names no scope (`pages.py:1472`).
   var workScope: String { text("var_scope", default: "active") }
 
   /// Where a work document is looked for, which is every scope where the request names none
-  /// (`pages.py:1571`, `pages.py:1890`).
+  /// (`pages.py:1607`, `pages.py:1972`).
   var documentScope: String { text("var_scope", default: "all") }
 
   /// The page `var_page` asks for, which is the first where `int` raises for it, and never

@@ -31,7 +31,7 @@ public enum RNGitNodeEnvironment {
   /// What the statistics file is called.
   public static let statisticsFileName = "stats"
 
-  /// What the directory holding the page templates is called (`pages.py:158`).
+  /// What the directory holding the page templates is called (`pages.py:159`).
   public static let templatesDirectoryName = "templates"
 
   /// The directory a node keeps its files in, where `given` names none.
