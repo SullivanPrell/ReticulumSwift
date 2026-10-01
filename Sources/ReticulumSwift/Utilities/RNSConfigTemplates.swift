@@ -10,22 +10,24 @@
 
 import Foundation
 
-/// The two configuration-file templates that ship inside Python RNS, transcribed byte for byte.
+/// The two configuration-file templates that ship inside Python RNS, transcribed byte for byte,
+/// and the file Python writes from the second.
 ///
 /// Python reference:
 /// - ``exampleConfig``: `RNS/Utilities/rnsd.py` lines 90-616, `__example_rns_config__`—what
 ///   `rnsd --exampleconfig` prints.
-/// - ``defaultConfig``: `RNS/Reticulum.py` line 1818+, `__default_rns_config__`—what
-///   `Reticulum.__create_default_config()` writes on a first run.
+/// - ``defaultConfig``: `RNS/Reticulum.py` line 2195+, `__default_rns_config__`, which
+///   `Reticulum.__create_default_config()` passes through ConfigObj and writes on a first run
+///   as ``defaultConfigFile``.
 ///
 /// These are two *different* blobs in Python and were previously conflated (and heavily
 /// abridged) in the Swift port. They're reproduced here exactly so that a config directory
 /// created by ReticulumSwift is indistinguishable from one created by Python RNS, and so
 /// that `rnsd --exampleconfig` is byte-identical to Python's.
 ///
-/// Both literals contain zero backslashes and zero double-quote characters, so they paste
-/// into a Swift `"""` literal verbatim. `RNSConfigTemplatesTests` pins their SHA-256 digests;
-/// if you edit either string those tests must fail.
+/// The two templates contain zero backslashes and zero double-quote characters, so they paste
+/// into a Swift `"""` literal verbatim. `RNSConfigTemplatesTests` pins all three SHA-256
+/// digests; if you edit any of the strings those tests must fail.
 public enum RNSConfigTemplates {
 
   /// Python: `rnsd.py:90-616`, `__example_rns_config__` (RNS 1.5.5). 15926 bytes, 526 newlines,
@@ -560,12 +562,11 @@ public enum RNSConfigTemplates {
 
     """
 
-  /// Python: `RNS/Reticulum.py:1818+`, `__default_rns_config__`. 3950 bytes, 120 newlines,
-  /// SHA-256 9b811134dd64a46a49ec2af3fe0d7293aa94bcc8c547c44b42f0eb38eef92e42.
+  /// Python: `RNS/Reticulum.py:2195+`, `__default_rns_config__` (RNS 1.5.5). 3950 bytes,
+  /// 120 newlines, SHA-256 9b811134dd64a46a49ec2af3fe0d7293aa94bcc8c547c44b42f0eb38eef92e42.
   ///
-  /// Note Python writes ConfigObj's *re-serialisation* of this literal rather than the
-  /// literal itself (`Reticulum.py:1185-1190`), so the on-disk bytes are close but not
-  /// guaranteed identical. Assert on parsed content, never on a file hash.
+  /// Python writes ConfigObj's serialisation of this literal rather than the literal itself,
+  /// which is ``defaultConfigFile``.
   public static let defaultConfig: String = """
     # This is the default Reticulum config file.
     # You should probably edit it to include any additional,
@@ -687,6 +688,136 @@ public enum RNSConfigTemplates {
         type = AutoInterface
         enabled = Yes
 
+
+    """
+
+  /// What Python writes on a first run: ConfigObj's serialisation of ``defaultConfig``
+  /// (`Reticulum.py:1355-1360`), captured from RNS 1.5.5. 4035 bytes, 119 newlines, SHA-256
+  /// a927b3a6e728fde161c05e8526bb46a72325852a4605ebe602779a61ea0ebcb7.
+  ///
+  /// ConfigObj indents each section's comments and keys, so this differs from the literal in
+  /// layout only. Each line holding only spaces is spelled with `\u{20}` escapes so that no
+  /// editor or formatter can strip it.
+  public static let defaultConfigFile: String = """
+    # This is the default Reticulum config file.
+    # You should probably edit it to include any additional,
+    # interfaces and settings you might need.
+
+    # Only the most basic options are included in this default
+    # configuration. To see a more verbose, and much longer,
+    # configuration example, you can run the command:
+    # rnsd --exampleconfig
+
+
+    [reticulum]
+    \u{20}\u{20}
+      # If you enable Transport, your system will route traffic
+      # for other peers, pass announces and serve path requests.
+      # This should only be done for systems that are suited to
+      # act as transport nodes, ie. if they are stationary and
+      # always-on. This directive is optional and can be removed
+      # for brevity.
+    \u{20}\u{20}
+      enable_transport = False
+    \u{20}\u{20}
+    \u{20}\u{20}
+      # By default, the first program to launch the Reticulum
+      # Network Stack will create a shared instance, that other
+      # programs can communicate with. Only the shared instance
+      # opens all the configured interfaces directly, and other
+      # local programs communicate with the shared instance over
+      # a local socket. This is completely transparent to the
+      # user, and should generally be turned on. This directive
+      # is optional and can be removed for brevity.
+    \u{20}\u{20}
+      share_instance = Yes
+    \u{20}\u{20}
+    \u{20}\u{20}
+      # If you want to run multiple *different* shared instances
+      # on the same system, you will need to specify different
+      # instance names for each. On platforms supporting domain
+      # sockets, this can be done with the instance_name option:
+    \u{20}\u{20}
+      instance_name = default
+
+
+    # Some platforms don't support domain sockets, and if that
+    # is the case, you can isolate different instances by
+    # specifying a unique set of ports for each:
+
+    # shared_instance_port = 37428
+    # instance_control_port = 37429
+
+
+    # If you want to explicitly use TCP for shared instance
+    # communication, instead of domain sockets, this is also
+    # possible, by using the following option:
+
+    # shared_instance_type = tcp
+
+
+    # You can configure whether Reticulum should discover
+    # available interfaces from other Transport Instances over
+    # the network. If this option is enabled, Reticulum will
+    # collect interface information discovered from the network.
+
+    # discover_interfaces = No
+
+
+    # You can configure Reticulum to panic and forcibly close
+    # if an unrecoverable interface error occurs, such as the
+    # hardware device for an interface disappearing. This is
+    # an optional directive, and can be left out for brevity.
+    # This behaviour is disabled by default.
+
+    # panic_on_interface_error = No
+
+
+    # If you're connecting to a large external network, you
+    # can use one or more external blackhole list to block
+    # spammy and excessive announces onto your network. This
+    # funtionality is especially useful if you're hosting public
+    # entrypoints or gateways. The list source below provides a
+    # functional example, but better, more timely maintained
+    # lists probably exist in the community.
+
+    # blackhole_sources = 521c87a83afb8f29e4455e77930b973b
+
+
+    [logging]
+      # Valid log levels are 0 through 8:
+      #   0: Log only critical information
+      #   1: Log errors and lower log levels
+      #   2: Log warnings and lower log levels
+      #   3: Log notices and lower log levels
+      #   4: Log info and lower (this is the default)
+      #   5: Verbose logging
+      #   6: Debug logging
+      #   7: Path logging
+      #   8: Extreme logging
+    \u{20}\u{20}
+      loglevel = 4
+
+
+    # The interfaces section defines the physical and virtual
+    # interfaces Reticulum will use to communicate on. This
+    # section will contain examples for a variety of interface
+    # types. You can modify these or use them as a basis for
+    # your own config, or simply remove the unused ones.
+
+    [interfaces]
+    \u{20}\u{20}
+      # This interface enables communication with other
+      # link-local Reticulum nodes over UDP. It does not
+      # need any functional IP infrastructure like routers
+      # or DHCP servers, but will require that at least link-
+      # local IPv6 is enabled in your operating system, which
+      # should be enabled by default in almost any OS. See
+      # the Reticulum Manual for more configuration options.
+    \u{20}\u{20}
+      [[Default Interface]]
+        type = AutoInterface
+        enabled = Yes
 
     """
 }

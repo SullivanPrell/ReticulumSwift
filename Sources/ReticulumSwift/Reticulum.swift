@@ -901,6 +901,19 @@ public final class Reticulum {
     StorageInventory.url(.knownDestinations, storage: configuration.storagePath)
   }
 
+  /// Writes the default config to `url`, logging a notice before and after as Python's
+  /// constructor does (`Reticulum.py:341-344`).
+  ///
+  /// Python then sleeps 1.5 seconds so the notice can be read. A library call doesn't block,
+  /// so `rnsd` waits instead (``RNSDApp/defaultConfigNoticeDelay``).
+  static func createDefaultConfig(at url: URL) throws {
+    log("Could not load config file, creating default configuration file...")
+    try RNSConfigTemplates.defaultConfigFile.write(to: url, atomically: true, encoding: .utf8)
+    log(
+      "Default config file created. Make any necessary changes in "
+        + url.deletingLastPathComponent().path + "/config and restart Reticulum if needed.")
+  }
+
   /// Brings the stack up: storage, config, identity, interfaces and the shared instance.
   public func start() throws {
     // Create storage directories.
@@ -912,7 +925,7 @@ public final class Reticulum {
     // Load and apply config file if available.
     if let cfgURL = resolvedConfigPath() {
       if !FileManager.default.fileExists(atPath: cfgURL.path) {
-        try ReticulumConfig.defaultConfigText.write(to: cfgURL, atomically: true, encoding: .utf8)
+        try Self.createDefaultConfig(at: cfgURL)
       }
       if let parsed = ReticulumConfig.load(from: cfgURL) {
         config = parsed

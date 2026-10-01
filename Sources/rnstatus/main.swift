@@ -130,22 +130,29 @@ signal(SIGINT) { _ in
 // up its own stack to make the link.
 let requireSharedInstance = (remoteHex == nil)
 
+// Python: `loglevel=3+verbosity` (rnstatus.py:173), capped at LOG_EXTREME
+// (Reticulum.py:312-316). The stack logs at this level from the start, so a first run
+// prints the default-config notices as Python's does.
+let logLevel =
+  Reticulum.LogLevel(
+    rawValue: min(RNStatusApp.baseLogLevel + verbosity, Reticulum.LogLevel.extreme.rawValue))
+  ?? .notice
+
 let connection: InstanceConnection
 do {
   connection = try InstanceConnection.attach(
     configDirectory: configDirectory,
     requireSharedInstance: requireSharedInstance,
-    logLevel: .error,
+    logLevel: logLevel,
     synthesizeInterfaces: !requireSharedInstance)
 } catch {
   fail("No shared RNS instance available to get status from", .noSharedInstance)
 }
 
-// Python: `loglevel=3+verbosity`. This has to happen AFTER start(), because
-// `Reticulum.applyConfig` overwrites globalLogLevel from the config file's `loglevel`.
-if let level = Reticulum.LogLevel(rawValue: RNStatusApp.baseLogLevel + verbosity) {
-  Reticulum.globalLogLevel = level
-}
+// Again after start(), because `Reticulum.applyConfig` overwrites globalLogLevel from the
+// config file's `loglevel`, which Python applies only when no level was requested
+// (Reticulum.py:465).
+Reticulum.globalLogLevel = logLevel
 
 // MARK: - Interface management (--attach / --detach / --reload)
 

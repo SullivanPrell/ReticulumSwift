@@ -28,6 +28,15 @@ All notable changes to ReticulumSwift are documented here. This project follows
   documentation said they turned the radio off, but neither wrote anything. A detached or
   shut-down radio therefore stayed on. A write that fails is logged and the port still
   closes. Python's multi-radio `detach` leaves the port open on a failed write.
+- A tool run where there's no config file prints Python's two notices around writing the
+  default config, and writes the file Python writes, which is ConfigObj's serialisation of
+  `__default_rns_config__` (`Reticulum.py:341-345`, `1355-1360`). The client tools wrote the
+  template literal without a word, which ConfigObj lays out with indented sections.
+  `RNSConfigTemplates.defaultConfigFile` holds the written form.
+- `rnstatus`, `rnpath`, `rnprobe`, `rncp` and `rnid` log to stdout in Python's `RNS.log`
+  format, as `rnsd` and `rnx` already did, and create the directories Python creates in the
+  config directory. They logged in this port's `[NOTICE]` format. `rnstatus` brings its stack
+  up at its own level, 3 plus `-v`, as Python's does, and no longer at error level.
 
 ### Added
 

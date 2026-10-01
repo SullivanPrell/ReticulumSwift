@@ -255,13 +255,7 @@ public enum DaemonBootstrap {
 
     var createdDefault = false
     if !fileManager.fileExists(atPath: paths.configFile.path) {
-      // Python logs both lines at the default level (LOG_NOTICE).
-      Reticulum.log("Could not load config file, creating default configuration file...")
-      try RNSConfigTemplates.defaultConfig
-        .write(to: paths.configFile, atomically: true, encoding: .utf8)
-      Reticulum.log(
-        "Default config file created. Make any necessary changes in "
-          + paths.configDir.path + "/config and restart Reticulum if needed.")
+      try Reticulum.createDefaultConfig(at: paths.configFile)
       createdDefault = true
     }
 

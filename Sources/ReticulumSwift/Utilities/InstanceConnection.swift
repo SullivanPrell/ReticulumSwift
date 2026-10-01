@@ -243,6 +243,15 @@ public final class InstanceConnection {
 
   // MARK: - Attach
 
+  /// Sends log lines to stdout in Python's format, unless the program already set a
+  /// destination.
+  ///
+  /// Python's `RNS.log` writes to stdout until a program names another destination
+  /// (`__init__.py:77`, `130-135`), so a Python tool prints what its stack logs in that format.
+  static func installDefaultLogDestination() {
+    if Reticulum.logHandler == nil { FileLogSink.installStdoutHandler() }
+  }
+
   /// Bring up a stack for a command-line utility.
   ///
   /// - Parameters:
@@ -263,11 +272,12 @@ public final class InstanceConnection {
     synthesizeInterfaces: Bool = true
   ) throws -> InstanceConnection {
 
+    installDefaultLogDestination()
     let configDirectory = resolveConfigDirectory(explicitConfigDirectory)
     let storagePath = storagePath(for: configDirectory)
     let configPath = configPath(for: configDirectory)
 
-    try FileManager.default.createDirectory(at: storagePath, withIntermediateDirectories: true)
+    try DaemonBootstrap.createStorageTree(DaemonBootstrap.Paths(configDir: configDirectory))
 
     let config: ReticulumConfig
     if let loaded = ReticulumConfig.load(from: configPath) {

@@ -143,7 +143,7 @@ final class RNSConfigTemplatesTests: XCTestCase {
   }
 
   func testReticulumConfigDefaultTextIsTheTemplate() {
-    // This is what `Reticulum.start()` and the daemons write on a first run.
+    // What `InstanceConnection` parses when there's no config file to read.
     XCTAssertEqual(ReticulumConfig.defaultConfigText, RNSConfigTemplates.defaultConfig)
   }
 
@@ -156,6 +156,32 @@ final class RNSConfigTemplatesTests: XCTestCase {
     XCTAssertFalse(config.reticulum.enableTransport)
     XCTAssertTrue(config.reticulum.shareInstance)
     XCTAssertEqual(config.logging.logLevel, 4)
+  }
+
+  // MARK: - What a first run writes
+
+  /// Python writes ConfigObj's serialisation of the literal (`Reticulum.py:1355-1360`).
+  ///
+  /// The digest is of RNS 1.5.5 writing `ConfigObj(__default_rns_config__)`, which matches
+  /// the file its own first run leaves.
+  func testDefaultConfigFileIsWhatPythonWritesOnAFirstRun() {
+    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.utf8.count, 4035)
+    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.filter { $0 == "\n" }.count, 119)
+    XCTAssertEqual(
+      sha256Hex(RNSConfigTemplates.defaultConfigFile),
+      "a927b3a6e728fde161c05e8526bb46a72325852a4605ebe602779a61ea0ebcb7")
+  }
+
+  func testDefaultConfigFileParsesAsTheTemplateDoes() {
+    let written = ReticulumConfig.parse(RNSConfigTemplates.defaultConfigFile)
+    let template = ReticulumConfig.parse(RNSConfigTemplates.defaultConfig)
+    XCTAssertEqual(written.interfaces.map(\.name), template.interfaces.map(\.name))
+    XCTAssertEqual(written.interfaces.map(\.type), template.interfaces.map(\.type))
+    XCTAssertEqual(written.interfaces.map(\.enabled), template.interfaces.map(\.enabled))
+    XCTAssertEqual(written.reticulum.enableTransport, template.reticulum.enableTransport)
+    XCTAssertEqual(written.reticulum.shareInstance, template.reticulum.shareInstance)
+    XCTAssertEqual(written.reticulum.instanceName, template.reticulum.instanceName)
+    XCTAssertEqual(written.logging.logLevel, template.logging.logLevel)
   }
 
   func testRespondToProbesAliasIsAccepted() {
