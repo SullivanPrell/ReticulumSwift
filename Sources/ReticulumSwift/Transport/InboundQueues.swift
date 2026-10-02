@@ -44,6 +44,19 @@ extension Transport {
   /// Default capacity of the ingress-limited queue (`INBOUND_IL_QUEUE_LENGTH`,
   /// `Transport.py:146`).
   public static let inboundIlQueueLength = 8
+
+  /// Name of the thread that drains the inbound queues.
+  public static let inboundWorkerName = "ReticulumSwift.Transport.inbound"
+}
+
+/// Inbound queue heights and drop counts read at one instant.
+public struct InboundQueueSnapshot: Equatable, Sendable {
+  /// Items queued across every class.
+  public let total: Int
+  /// Items queued per class, indexed by `Transport.TrafficClass.rawValue`.
+  public let heights: [Int]
+  /// Items refused per class since creation, indexed by `Transport.TrafficClass.rawValue`.
+  public let dropped: [Int]
 }
 
 /// One bounded first-in, first-out queue per traffic class, drained in class order.
@@ -52,16 +65,6 @@ extension Transport {
 /// that throttles `BackboneInterface`'s server-side dataplane (`Transport.py:59-60`) isn't
 /// ported, because this port's Backbone is client-only.
 public final class InboundQueues<Item>: @unchecked Sendable {
-
-  /// Queue heights and drop counts read at one instant.
-  public struct Snapshot: Equatable, Sendable {
-    /// Items queued across every class.
-    public let total: Int
-    /// Items queued per class, indexed by `TrafficClass.rawValue`.
-    public let heights: [Int]
-    /// Items refused per class since creation, indexed by `TrafficClass.rawValue`.
-    public let dropped: [Int]
-  }
 
   private let condition = NSCondition()
   private var queues: [FIFO]
@@ -129,11 +132,12 @@ public final class InboundQueues<Item>: @unchecked Sendable {
   }
 
   /// Heights and drop counts under one lock (`Transport.py:89-93`).
-  public func snapshot() -> Snapshot {
+  public func snapshot() -> InboundQueueSnapshot {
     condition.lock()
     defer { condition.unlock() }
     let heights = queues.map(\.count)
-    return Snapshot(total: heights.reduce(0, +), heights: heights, dropped: dropped)
+    return InboundQueueSnapshot(
+      total: heights.reduce(0, +), heights: heights, dropped: dropped)
   }
 
   /// Discards every queued item, refuses later puts, and wakes every waiting `get`.
