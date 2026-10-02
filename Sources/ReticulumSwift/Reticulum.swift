@@ -80,12 +80,13 @@ public final class Reticulum {
   ///    interfaces redial a port that won't open, and an RNode turns its radio off as it's
   ///    detached.
   ///
-  /// Three areas are deliberately not ported because the seam differs, each pinned by
-  /// a test: traffic classes (`TC_DATA`/`TC_ANNOUNCE`/…) presuppose Python's inbound
-  /// queue, where this port is synchronous; `ifac_handled` marks a Transport-level IFAC
-  /// seam, where this port applies IFAC inside `Interface.send`; and the adaptive
-  /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
-  /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
+  /// Inbound packets queue by traffic class for one drain worker, as in Python
+  /// (``Transport/TrafficClass``, ``InboundQueues``). Two areas are deliberately not ported
+  /// because the seam differs: `ifac_handled` marks a Transport-level IFAC seam, where this
+  /// port applies IFAC inside `Interface.send`; and the adaptive dataplane controls
+  /// (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`, and the data-queue high-water mark that
+  /// throttles them) live in `BackboneInterface`'s epoll reactor, where this port's Backbone
+  /// is client-only.
   ///
   /// Interface discovery is ported on both sides: this node announces its own discoverable
   /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,

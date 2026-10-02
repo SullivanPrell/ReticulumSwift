@@ -5,6 +5,55 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+Inbound packets queue by traffic class for one drain worker, as they do in Python since RNS
+1.5.0. A flood of announces or path requests now fills its own bounded queue and drops there.
+Before, it held up the data that arrived after it on the same interface.
+
+### Added
+
+- `Transport.start()` brings up a drain worker before it starts the interfaces. Each
+  interface's reader runs Python's `preprocess_inbound` (`Transport.py:1795-1897`), then
+  queues the packet under its `Transport.TrafficClass`: `data`, `announce`, `pathRequest` or
+  `ingressLimited` (`Transport.py:111-114`). The worker takes the lowest non-empty class first
+  (`InboundQueues`, `Transport.py:47-95`), so data never waits behind an announce. Preprocessing
+  covers the packet filter's verdict, the receive counters, an announce's signature check and
+  the ingress hold, and a path request's tag checks, deduplication, limiter reading and
+  in-flight batching. A full class drops the packet and counts the drop.
+- The `[reticulum]` options `qlen_in_data`, `qlen_in_announce`, `qlen_in_pr` and `qlen_in_il`
+  set the four capacities, 1024, 128, 128 and 8 by default (`Reticulum.py:716-730`). As in
+  Python, the parser ignores a value of zero or less.
+- `rnstatus -q` reports the queue heights, the drop counts, and the pressures. Python divides each
+  height by its class's configured capacity (`Reticulum.py:1667-1702`). These read zero
+  before.
+- `Transport.usesInboundQueue`, `inboundQueueSnapshot()` and `inboundQueueLengths`. Set
+  `usesInboundQueue = false` before `start()` to handle every packet on its reader thread,
+  as Python does with `USE_INBOUND_QUEUE = False`.
+
+### Changed
+
+- On a started transport, delivery callbacks such as `onPacketDelivered` and
+  `onAnnounceReceived` run on the drain worker, a thread named
+  `ReticulumSwift.Transport.inbound`, not on the interface's reader. Code that expects the
+  transport to finish with a packet before an interface's delivery call returns has to wait
+  for the callback, or set `usesInboundQueue = false`. A transport that isn't started still handles
+  packets inline.
+- A held announce re-enters as ingress-limited on release, as `Interface.py:296` does. A path
+  request admitted as ingress-limited stays limited when the worker answers it, which ORs that
+  with a second limiter reading (`Transport.py:3427`).
+- The ingress hold treats a destination as known only when the path table has it
+  (`Transport.py:1812`). Before, it also exempted the hashes of registered local destinations.
+
+### Deliberate differences from Python
+
+- A duplicate that queued behind its first copy drops when the worker reaches it. Python
+  checks the hashlist before queueing and records the hash after, so it handles both copies.
+- Path-request admission takes only a data packet for the plain path-request destination.
+  Python admits any packet other than an announce for that hash (`Transport.py:1827`). A
+  packet that nothing answers then spends a tag and holds its target's in-flight gate until
+  `PATH_REQUEST_GATE_TIMEOUT`, so genuine requests for that target batch behind it.
+- The data-queue high-water mark that throttles `BackboneInterface`'s server-side dataplane
+  (`Transport.py:59-60`) isn't ported, because this port's Backbone is client-only.
+
 ## [1.23.0]—interface management, and parity moves to 1.5.5
 
 A running instance attaches, detaches and reloads a configured interface on request, over RPC
