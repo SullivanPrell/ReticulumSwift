@@ -469,4 +469,37 @@ final class InboundQueueTransportTests: XCTestCase {
     Thread.sleep(forTimeInterval: 0.2)
     XCTAssertEqual(held.events.all, ["data:dup"])
   }
+
+  // MARK: - Statistics
+
+  /// `rnstatus -q` reads the running queues' heights, drop counts and pressures, each
+  /// pressure dividing a height by its class's configured capacity (`Reticulum.py:1667-1702`).
+  func testInterfaceStatsReportTheRunningQueues() throws {
+    Reticulum.storedInboundDataQueueLength = 4
+    Reticulum.storedInboundAnnounceQueueLength = 2
+    Reticulum.storedInboundPrQueueLength = 5
+    Reticulum.storedInboundIlQueueLength = 2
+    let held = try heldTransport()
+    // Three announces in a few milliseconds would otherwise trip the announce burst limiter.
+    held.interface.ingressControl = false
+    let destination = try plainDestination("stats")
+    for n in 0..<3 { held.interface.deliver(plainPacket(to: destination, "d\(n)")) }
+    for n in 0..<3 { held.interface.deliver(try remoteAnnounce("stats\(n)")) }
+    held.interface.deliver(pathRequest(for: Data(repeating: 0x33, count: 16), tag: Data([3])))
+
+    let stats = try XCTUnwrap(InterfaceStatsPayload.build(held.transport).asDictionary)
+
+    let depths: [String: Int] = [
+      "rxqt": 6, "rxqd": 3, "rxqa": 2, "rxqp": 1, "rxqil": 0,
+      "rxqtd": 1, "rxqdd": 0, "rxqad": 1, "rxqpd": 0, "rxqild": 0,
+    ]
+    for (key, expected) in depths { XCTAssertEqual(stats[key]?.asInt, expected, key) }
+    let pressures: [String: Double] = [
+      "tqpressure": 6.0 / 13.0, "dqpressure": 3.0 / 4.0, "aqpressure": 1.0,
+      "pqpressure": 1.0 / 5.0, "ilqpressure": 0,
+    ]
+    for (key, expected) in pressures {
+      XCTAssertEqual(try XCTUnwrap(stats[key]?.asDouble, key), expected, accuracy: 1e-12, key)
+    }
+  }
 }

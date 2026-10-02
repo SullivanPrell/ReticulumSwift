@@ -311,27 +311,37 @@ public enum InterfaceStatsPayload {
     ]
 
     // Inbound queue depths and pressures, read by `rnstatus -q` (`rnstatus.py:784-800`),
-    // again without presence guards.
-    //
-    // Python fills these from `Transport.inbound_queues.snapshot()`—the traffic-class
-    // worker queues. This port has no such queues: `handleIncoming` runs the frame to
-    // completion on the receiving interface's own thread, so the momentary depth really
-    // is zero and no frame is ever dropped for want of queue space. Zero is therefore
-    // the accurate reading, not a placeholder, and it stops a Python peer's `-q` from
-    // failing outright. If the queues are ever ported, these read from the snapshot and
-    // the pressures gain real denominators.
+    // again without presence guards. Python fills these from
+    // `Transport.inbound_queues.snapshot()` and divides each height by its class's
+    // configured capacity (`Reticulum.py:1667-1702`). A transport with no drain worker
+    // running has no queues, and every reading is zero.
     //
     // The pressures go out as floats. Python's `x/tql if x else 0` idiom emits an *int*
     // zero on an idle node and a float otherwise, so every reader already handles both;
     // a ratio that keeps one type is the better of the two behaviours to copy.
-    for key in [
-      "rxqt", "rxqd", "rxqa", "rxqp", "rxqil",
-      "rxqtd", "rxqdd", "rxqad", "rxqpd", "rxqild",
-    ] {
-      topPairs.append((.string(key), .int(0)))
+    let queueSnapshot = t.inboundQueueSnapshot()
+    let heights = queueSnapshot?.heights ?? [0, 0, 0, 0]
+    let dropped = queueSnapshot?.dropped ?? [0, 0, 0, 0]
+    let lengths = t.inboundQueueLengths
+    func pressure(_ height: Int, _ length: Int) -> Double {
+      height > 0 && length > 0 ? Double(height) / Double(length) : 0
     }
-    for key in ["tqpressure", "dqpressure", "aqpressure", "pqpressure", "ilqpressure"] {
-      topPairs.append((.string(key), .double(0)))
+    let depths = [queueSnapshot?.total ?? 0] + heights + [dropped.reduce(0, +)] + dropped
+    for (key, value) in zip(
+      [
+        "rxqt", "rxqd", "rxqa", "rxqp", "rxqil",
+        "rxqtd", "rxqdd", "rxqad", "rxqpd", "rxqild",
+      ], depths)
+    {
+      topPairs.append((.string(key), .int(Int64(value))))
+    }
+    let pressures =
+      [pressure(queueSnapshot?.total ?? 0, lengths.reduce(0, +))]
+      + heights.indices.map { pressure(heights[$0], lengths.count > $0 ? lengths[$0] : 0) }
+    for (key, value) in zip(
+      ["tqpressure", "dqpressure", "aqpressure", "pqpressure", "ilqpressure"], pressures)
+    {
+      topPairs.append((.string(key), .double(value)))
     }
     // `stats["txq"] = None` unconditionally in Python too (`Reticulum.py:1613`).
     topPairs.append((.string("txq"), .nil))

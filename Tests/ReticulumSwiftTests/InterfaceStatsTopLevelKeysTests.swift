@@ -75,7 +75,7 @@ final class InterfaceStatsTopLevelKeysTests: XCTestCase {
     XCTAssertEqual(produced.last, "rss")
   }
 
-  func testQueueDepthsAndPressuresReadZero() throws {
+  func testAnUnstartedTransportReportsZeroQueueDepthsAndPressures() throws {
     let t = Transport()
     let payload = try XCTUnwrap(InterfaceStatsPayload.build(t).asDictionary)
 
@@ -85,8 +85,7 @@ final class InterfaceStatsTopLevelKeysTests: XCTestCase {
     ] {
       XCTAssertEqual(
         payload[key]?.asInt, 0,
-        "\(key): this port runs each inbound frame to completion on the "
-          + "receiving thread, so no frame ever waits in a queue")
+        "\(key): no drain worker runs before `start()`, so nothing is queued")
     }
     for key in ["tqpressure", "dqpressure", "aqpressure", "pqpressure", "ilqpressure"] {
       XCTAssertEqual(payload[key]?.asDouble, 0, "\(key)")
