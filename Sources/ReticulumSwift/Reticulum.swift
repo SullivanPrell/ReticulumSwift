@@ -781,6 +781,35 @@ public final class Reticulum {
     pythonOr(storedDefaultIcHeldReleaseInterval, IngressControlState.icHeldReleaseInterval)
   }
 
+  /// Configured inbound data-queue capacity, or `nil` when unset.
+  ///
+  /// Mirrors `Reticulum.__inbound_data_queue_length` (`Reticulum.py:290`).
+  public static var storedInboundDataQueueLength: Int? = nil
+  /// Configured inbound announce-queue capacity, or `nil` when unset.
+  public static var storedInboundAnnounceQueueLength: Int? = nil
+  /// Configured inbound path-request-queue capacity, or `nil` when unset.
+  public static var storedInboundPrQueueLength: Int? = nil
+  /// Configured inbound ingress-limited-queue capacity, or `nil` when unset.
+  public static var storedInboundIlQueueLength: Int? = nil
+
+  /// Returns the data-queue capacity a starting transport uses (`Transport.py:310`).
+  public static func defaultDataQueueLength() -> Int {
+    pythonOr(storedInboundDataQueueLength, Transport.inboundDaQueueLength)
+  }
+  /// Returns the announce-queue capacity a starting transport uses (`Transport.py:311`).
+  public static func defaultAnnounceQueueLength() -> Int {
+    pythonOr(storedInboundAnnounceQueueLength, Transport.inboundAnQueueLength)
+  }
+  /// Returns the path-request-queue capacity a starting transport uses (`Transport.py:312`).
+  public static func defaultPrQueueLength() -> Int {
+    pythonOr(storedInboundPrQueueLength, Transport.inboundPrQueueLength)
+  }
+  /// Returns the ingress-limited-queue capacity a starting transport uses
+  /// (`Transport.py:313`).
+  public static func defaultIlQueueLength() -> Int {
+    pythonOr(storedInboundIlQueueLength, Transport.inboundIlQueueLength)
+  }
+
   /// Copy one parsed `[reticulum]` section onto the global defaults.
   ///
   /// Split out of `applyConfig` so the one call site can't be the missing thing again—the
@@ -811,6 +840,11 @@ public final class Reticulum {
     if let v = section.icNewTime { storedDefaultIcNewTime = v }
     if let v = section.icBurstPenalty { storedDefaultIcBurstPenalty = v }
     if let v = section.icHeldReleaseInterval { storedDefaultIcHeldReleaseInterval = v }
+
+    if let v = section.qlenInData { storedInboundDataQueueLength = v }
+    if let v = section.qlenInAnnounce { storedInboundAnnounceQueueLength = v }
+    if let v = section.qlenInPr { storedInboundPrQueueLength = v }
+    if let v = section.qlenInIl { storedInboundIlQueueLength = v }
   }
 
   /// Configuration this stack was created with.
