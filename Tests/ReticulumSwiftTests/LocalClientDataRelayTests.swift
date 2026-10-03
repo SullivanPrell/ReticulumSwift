@@ -38,7 +38,6 @@ final class LocalClientDataRelayTests: XCTestCase {
     var bitrate: Int = 0
     var isOnline: Bool = true
     var clientCount: Int = 1
-    var isRoutingEndpoint: Bool { false }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     var sent: [Packet] = []
     init(name: String) { self.name = name }

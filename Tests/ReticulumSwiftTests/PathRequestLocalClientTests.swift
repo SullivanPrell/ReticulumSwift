@@ -33,13 +33,13 @@ final class PathRequestLocalClientTests: XCTestCase {
     func send(_ packet: Packet) throws { sent.append(packet) }
   }
 
-  /// A shared-instance server interface fronting connected local clients.
+  /// Stands in for `LocalServerClientInterface`: the shared instance's interface for one
+  /// locally connected client.
   final class ServingIface: Interface, LocalClientServingInterface {
     var name: String
     var bitrate: Int = 0
     var isOnline: Bool = true
     var clientCount: Int = 1
-    var isRoutingEndpoint: Bool { false }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     var sent: [Packet] = []
     init(name: String) { self.name = name }

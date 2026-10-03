@@ -330,10 +330,12 @@ public final class LocalServerClientInterface: Interface, LocalClientServingInte
   /// Whether `optimise_mtu` sets `hwMtu` from the bitrate (`AUTOCONFIGURE_MTU`).
   public let autoconfigureMtu: Bool = true
 
-  // Transport reaches local clients through its dedicated local-client paths, as it reached
-  // them through the server before, so broadcasts to routing endpoints don't add a copy.
   /// Whether Transport routes packets and forwards announces through this interface.
-  public var isRoutingEndpoint: Bool { false }
+  ///
+  /// True: Python's server copies its outbound flag onto each connection
+  /// (`LocalInterface.py:450`, `Reticulum.py:403`), so Python's broadcast loops reach every
+  /// local client (`Transport.py:1449`).
+  public var isRoutingEndpoint: Bool { true }
 
   /// Called with each packet decoded from the client.
   public var inboundHandler: ((Packet, any Interface) -> Void)?
