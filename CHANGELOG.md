@@ -58,6 +58,20 @@ Before, it held up the data that arrived after it on the same interface.
   ahead of the identity, so a caller that waited for the path and then recalled the identity,
   as `git-remote-rns` does, could find none. reticulum-interop's Swift-to-Swift `git clone`
   failed 2 of 6 runs that way. 1.23.0 has the same order.
+- The shared instance keeps a local client attached until the client hangs up, as Python's
+  `LocalClientInterface.read_loop` does (`LocalInterface.py:276-295`). Each accepted
+  connection asked `DispatchIO` for 4096 bytes and took the read's completion for a hang-up,
+  although a stream read also completes when it has delivered that length. So the
+  shared instance dropped every client after its first 4 KB, closed its socket, and discarded
+  everything addressed to it afterwards. A local client sending a file stalled once its first
+  windows of parts had gone out, because the receiver's next requests never reached it. The
+  loop also started another read on every partial delivery, so a busy client's outstanding
+  reads grew without bound. reticulum-interop had no cell in which a client of a Swift daemon
+  sends more than 4 KB. All released versions behave this way.
+- Stopping the shared instance hangs up on its local clients. Closing a connection didn't
+  cancel the read still waiting on it, and `DispatchIO` waits for pending operations before it
+  closes, so each client's socket stayed open until the client itself hung up. 1.23.0 behaves
+  the same way.
 
 ### Deliberate differences from Python
 
