@@ -50,6 +50,10 @@ final class ReticulumSectionConfigTests: XCTestCase {
     let icNewTime = Reticulum.storedDefaultIcNewTime
     let icBurstPenalty = Reticulum.storedDefaultIcBurstPenalty
     let icHeldRelease = Reticulum.storedDefaultIcHeldReleaseInterval
+    let qlenInData = Reticulum.storedInboundDataQueueLength
+    let qlenInAnnounce = Reticulum.storedInboundAnnounceQueueLength
+    let qlenInPr = Reticulum.storedInboundPrQueueLength
+    let qlenInIl = Reticulum.storedInboundIlQueueLength
 
     func restore() {
       Reticulum.useImplicitProof = useImplicitProof
@@ -72,6 +76,10 @@ final class ReticulumSectionConfigTests: XCTestCase {
       Reticulum.storedDefaultIcNewTime = icNewTime
       Reticulum.storedDefaultIcBurstPenalty = icBurstPenalty
       Reticulum.storedDefaultIcHeldReleaseInterval = icHeldRelease
+      Reticulum.storedInboundDataQueueLength = qlenInData
+      Reticulum.storedInboundAnnounceQueueLength = qlenInAnnounce
+      Reticulum.storedInboundPrQueueLength = qlenInPr
+      Reticulum.storedInboundIlQueueLength = qlenInIl
     }
   }
 
@@ -282,6 +290,63 @@ final class ReticulumSectionConfigTests: XCTestCase {
     apply("ic_burst_freq = -1")
     XCTAssertNil(ReticulumConfig.parse("[reticulum]\nic_burst_freq = -1\n").reticulum.icBurstFreq)
     XCTAssertEqual(Reticulum.defaultIcBurstFreq(), IngressControlState.icBurstFreq)
+  }
+
+  // MARK: - Inbound queue lengths
+
+  /// `qlen_in_data`, `qlen_in_announce`, `qlen_in_pr` and `qlen_in_il` set the capacity of
+  /// each inbound queue (`Reticulum.py:716-730`).
+  func testInboundQueueLengthsAreHonoured() {
+    apply(
+      """
+      qlen_in_data = 2048
+      qlen_in_announce = 64
+      qlen_in_pr = 32
+      qlen_in_il = 4
+      """)
+    XCTAssertEqual(Reticulum.defaultDataQueueLength(), 2048)
+    XCTAssertEqual(Reticulum.defaultAnnounceQueueLength(), 64)
+    XCTAssertEqual(Reticulum.defaultPrQueueLength(), 32)
+    XCTAssertEqual(Reticulum.defaultIlQueueLength(), 4)
+  }
+
+  /// The four keys parse rather than landing in `unrecognisedKeys`.
+  func testInboundQueueLengthKeysAreRecognised() {
+    let config = ReticulumConfig.parse(
+      "[reticulum]\nqlen_in_data = 1\nqlen_in_announce = 1\nqlen_in_pr = 1\nqlen_in_il = 1\n")
+    XCTAssertEqual(config.unrecognisedKeys, [])
+  }
+
+  /// Unset lengths fall back to `INBOUND_*_QUEUE_LENGTH`, as `Transport.start` does with
+  /// `default_data_queue_length() or INBOUND_DA_QUEUE_LENGTH` (`Transport.py:310-313`).
+  func testUnsetInboundQueueLengthsFallBackToTheTransportConstants() {
+    Reticulum.storedInboundDataQueueLength = nil
+    Reticulum.storedInboundAnnounceQueueLength = nil
+    Reticulum.storedInboundPrQueueLength = nil
+    Reticulum.storedInboundIlQueueLength = nil
+    XCTAssertEqual(Reticulum.defaultDataQueueLength(), Transport.inboundDaQueueLength)
+    XCTAssertEqual(Reticulum.defaultAnnounceQueueLength(), Transport.inboundAnQueueLength)
+    XCTAssertEqual(Reticulum.defaultPrQueueLength(), Transport.inboundPrQueueLength)
+    XCTAssertEqual(Reticulum.defaultIlQueueLength(), Transport.inboundIlQueueLength)
+  }
+
+  /// Each key accepts only a positive integer (`if v > 0`, `Reticulum.py:718`).
+  func testAZeroOrNegativeInboundQueueLengthIsRejected() {
+    for value in ["0", "-5", "many"] {
+      let section = ReticulumConfig.parse(
+        """
+        [reticulum]
+        qlen_in_data = \(value)
+        qlen_in_announce = \(value)
+        qlen_in_pr = \(value)
+        qlen_in_il = \(value)
+        """
+      ).reticulum
+      XCTAssertNil(section.qlenInData, value)
+      XCTAssertNil(section.qlenInAnnounce, value)
+      XCTAssertNil(section.qlenInPr, value)
+      XCTAssertNil(section.qlenInIl, value)
+    }
   }
 
   // MARK: - Announce-rate defaults

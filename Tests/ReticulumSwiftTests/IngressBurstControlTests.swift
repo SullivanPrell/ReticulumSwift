@@ -306,6 +306,78 @@ final class IngressBurstControlTests: XCTestCase {
     XCTAssertEqual(t.heldAnnounceCount(for: iface), 1)
   }
 
+  // MARK: - processHeldAnnounces releases in the order announces were first held
+
+  /// Among the fewest-hop held announces, the first one held is the first released, and a
+  /// newer copy keeps its destination's place.
+  ///
+  /// Python holds announces in a `dict` (`Interface.py:273-276`), which iterates in insertion
+  /// order and keeps a key's place when a new value replaces the old. The release takes the
+  /// first entry with the fewest hops (`Interface.py:283-288`).
+  func testHeldAnnouncesReleaseInTheOrderTheyWereFirstHeld() {
+    let t = Transport()
+    let iface = makeInterface(name: "order", createdAt: Date())
+    t.register(interface: iface)
+    let hashes = (0..<16).map { Hashes.truncatedHash(Data("order\($0)".utf8)) }
+    for hash in hashes {
+      t.holdAnnounce(heldPacket(hash, Data([0])), destinationHash: hash, on: iface)
+    }
+    t.holdAnnounce(heldPacket(hashes[0], Data([1])), destinationHash: hashes[0], on: iface)
+
+    var released: [Packet] = []
+    for _ in hashes {
+      t.forceHeldRelease(for: iface, to: 0)
+      if let packet = t.processHeldAnnounces(for: iface) { released.append(packet) }
+    }
+
+    XCTAssertEqual(released.map(\.destinationHash), hashes)
+    XCTAssertEqual(released.first?.data, Data([1]), "the newer copy replaces the held one")
+  }
+
+  // MARK: - Interface jobs pass
+
+  /// The interface-jobs pass looks at the announce burst before it releases a held announce
+  /// (`Transport.py:1153-1155`).
+  ///
+  /// That look clears a burst that has subsided, so the released announce passes admission.
+  /// Without it, the released announce makes the clearing call itself, which still limits, so
+  /// the limiter holds it again.
+  func testTheInterfaceJobsPassClearsASubsidedBurstBeforeReleasing() throws {
+    let t = Transport()
+    let iface = makeInterface(name: "jobs", createdAt: Date(timeIntervalSinceNow: -60))
+    t.register(interface: iface)
+    let base = Date().timeIntervalSince1970 - 30
+    for i in 0..<10 { t.notifyIncomingAnnounce(on: iface, at: base + Double(i) * 0.01) }
+    XCTAssertTrue(t.shouldIngressLimit(on: iface, now: base + 0.1), "burst should activate")
+    let destination = try Destination(
+      identity: Identity(), direction: .in, kind: .single, appName: "test", aspects: ["jobs"])
+    let announce = try Announce.make(for: destination)
+    t.holdAnnounce(announce, destinationHash: destination.hash, on: iface)
+
+    t.runInterfaceJobs()
+
+    XCTAssertFalse(t.ingressState(for: iface)?.burstActive ?? true)
+    XCTAssertEqual(t.heldAnnounceCount(for: iface), 0, "the released announce was held again")
+    XCTAssertTrue(t.hasPath(to: destination.hash))
+  }
+
+  /// The interface-jobs pass looks at the path-request burst on every pass, so its cooldown
+  /// runs out without new path requests (`Transport.py:1154`, `Interface.py:216-224`).
+  func testTheInterfaceJobsPassCoolsAPathRequestBurstDown() {
+    let t = Transport()
+    let iface = makeInterface(name: "pr-jobs", createdAt: Date(timeIntervalSinceNow: -60))
+    t.register(interface: iface)
+    let base: TimeInterval = 1000
+    for i in 0..<10 { t.notifyIncomingPathRequest(on: iface, at: base + Double(i) * 0.01) }
+    XCTAssertTrue(t.shouldIngressLimitPR(on: iface, now: base + 0.1), "burst should activate")
+
+    for pass in 0...IngressControlState.icPrBurstCooldown {
+      t.runInterfaceJobs(now: base + 30 + Double(pass) * Transport.jobInterval)
+    }
+
+    XCTAssertFalse(t.ingressState(for: iface)?.prBurstActive ?? true)
+  }
+
   // MARK: - ingressControl = false bypasses all limiting
 
   func testIngressControlFalseBypassesLimiting() {
@@ -348,5 +420,14 @@ final class IngressBurstControlTests: XCTestCase {
     ingressControl: Bool = true
   ) -> TestInterface {
     TestInterface(name: name, createdAt: createdAt, ingressControl: ingressControl)
+  }
+
+  /// A one-hop announce packet for `destinationHash` that fails validation if released.
+  private func heldPacket(_ destinationHash: Data, _ data: Data) -> Packet {
+    var packet = Packet(
+      destinationType: .single, packetType: .announce, destinationHash: destinationHash,
+      data: data)
+    packet.hops = 1
+    return packet
   }
 }

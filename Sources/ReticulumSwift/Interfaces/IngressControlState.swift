@@ -111,8 +111,11 @@ public struct IngressControlState {
   /// Starts at ``IngressControlState/icPrBurstCooldown``.
   var prBurstCooldown: Int = 0
 
-  /// Held announce packets keyed by destination hash.
+  /// Held announce packets in the order their destinations were first held.
   ///
-  /// Capped at `maxHeldAnnounces`.
-  var heldAnnounces: [Data: Packet] = [:]
+  /// Python keeps them in a `dict` (`Interface.py:273-276`), which iterates in insertion
+  /// order and keeps a key's place when a new value replaces the old. The release takes the
+  /// first entry with the fewest hops (`Interface.py:283-288`), so the order decides between
+  /// announces at the same distance. Capped at `maxHeldAnnounces`.
+  var heldAnnounces: [(destinationHash: Data, packet: Packet)] = []
 }

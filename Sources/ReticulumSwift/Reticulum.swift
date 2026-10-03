@@ -80,12 +80,13 @@ public final class Reticulum {
   ///    interfaces redial a port that won't open, and an RNode turns its radio off as it's
   ///    detached.
   ///
-  /// Three areas are deliberately not ported because the seam differs, each pinned by
-  /// a test: traffic classes (`TC_DATA`/`TC_ANNOUNCE`/…) presuppose Python's inbound
-  /// queue, where this port is synchronous; `ifac_handled` marks a Transport-level IFAC
-  /// seam, where this port applies IFAC inside `Interface.send`; and the adaptive
-  /// dataplane controls (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`) live in
-  /// `BackboneInterface`'s epoll reactor, where this port's Backbone is client-only.
+  /// Inbound packets queue by traffic class for one drain worker, as in Python
+  /// (``Transport/TrafficClass``, ``InboundQueues``). Two areas are deliberately not ported
+  /// because the seam differs: `ifac_handled` marks a Transport-level IFAC seam, where this
+  /// port applies IFAC inside `Interface.send`; and the adaptive dataplane controls
+  /// (`tx_hwm`, `dp_ingress_*`, `TransmitBuffer`, and the data-queue high-water mark that
+  /// throttles them) live in `BackboneInterface`'s epoll reactor, where this port's Backbone
+  /// is client-only.
   ///
   /// Interface discovery is ported on both sides: this node announces its own discoverable
   /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,
@@ -781,6 +782,35 @@ public final class Reticulum {
     pythonOr(storedDefaultIcHeldReleaseInterval, IngressControlState.icHeldReleaseInterval)
   }
 
+  /// Configured inbound data-queue capacity, or `nil` when unset.
+  ///
+  /// Mirrors `Reticulum.__inbound_data_queue_length` (`Reticulum.py:290`).
+  public static var storedInboundDataQueueLength: Int? = nil
+  /// Configured inbound announce-queue capacity, or `nil` when unset.
+  public static var storedInboundAnnounceQueueLength: Int? = nil
+  /// Configured inbound path-request-queue capacity, or `nil` when unset.
+  public static var storedInboundPrQueueLength: Int? = nil
+  /// Configured inbound ingress-limited-queue capacity, or `nil` when unset.
+  public static var storedInboundIlQueueLength: Int? = nil
+
+  /// Returns the data-queue capacity a starting transport uses (`Transport.py:310`).
+  public static func defaultDataQueueLength() -> Int {
+    pythonOr(storedInboundDataQueueLength, Transport.inboundDaQueueLength)
+  }
+  /// Returns the announce-queue capacity a starting transport uses (`Transport.py:311`).
+  public static func defaultAnnounceQueueLength() -> Int {
+    pythonOr(storedInboundAnnounceQueueLength, Transport.inboundAnQueueLength)
+  }
+  /// Returns the path-request-queue capacity a starting transport uses (`Transport.py:312`).
+  public static func defaultPrQueueLength() -> Int {
+    pythonOr(storedInboundPrQueueLength, Transport.inboundPrQueueLength)
+  }
+  /// Returns the ingress-limited-queue capacity a starting transport uses
+  /// (`Transport.py:313`).
+  public static func defaultIlQueueLength() -> Int {
+    pythonOr(storedInboundIlQueueLength, Transport.inboundIlQueueLength)
+  }
+
   /// Copy one parsed `[reticulum]` section onto the global defaults.
   ///
   /// Split out of `applyConfig` so the one call site can't be the missing thing again—the
@@ -811,6 +841,11 @@ public final class Reticulum {
     if let v = section.icNewTime { storedDefaultIcNewTime = v }
     if let v = section.icBurstPenalty { storedDefaultIcBurstPenalty = v }
     if let v = section.icHeldReleaseInterval { storedDefaultIcHeldReleaseInterval = v }
+
+    if let v = section.qlenInData { storedInboundDataQueueLength = v }
+    if let v = section.qlenInAnnounce { storedInboundAnnounceQueueLength = v }
+    if let v = section.qlenInPr { storedInboundPrQueueLength = v }
+    if let v = section.qlenInIl { storedInboundIlQueueLength = v }
   }
 
   /// Configuration this stack was created with.

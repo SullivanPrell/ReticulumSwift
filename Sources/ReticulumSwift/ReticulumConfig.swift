@@ -241,6 +241,15 @@ public struct ReticulumConfig {
     public var icBurstPenalty: Double? = nil
     /// Configured `ic_held_release_interval`, or `nil` when unset.
     public var icHeldReleaseInterval: Double? = nil
+
+    /// Configured `qlen_in_data`, the data queue's capacity, or `nil` when unset.
+    public var qlenInData: Int? = nil
+    /// Configured `qlen_in_announce`, the announce queue's capacity, or `nil` when unset.
+    public var qlenInAnnounce: Int? = nil
+    /// Configured `qlen_in_pr`, the path-request queue's capacity, or `nil` when unset.
+    public var qlenInPr: Int? = nil
+    /// Configured `qlen_in_il`, the ingress-limited queue's capacity, or `nil` when unset.
+    public var qlenInIl: Int? = nil
   }
 
   // MARK: - [logging] section
@@ -595,6 +604,16 @@ public struct ReticulumConfig {
           if let v = Double(value), v >= 0 { cfg.reticulum.icBurstPenalty = v }
         case "ic_held_release_interval":
           if let v = Double(value), v >= 0 { cfg.reticulum.icHeldReleaseInterval = v }
+
+        // Inbound queue capacities (`Reticulum.py:716-730`). Each guards on `> 0`.
+        case "qlen_in_data":
+          if let n = Int(value), n > 0 { cfg.reticulum.qlenInData = n }
+        case "qlen_in_announce":
+          if let n = Int(value), n > 0 { cfg.reticulum.qlenInAnnounce = n }
+        case "qlen_in_pr":
+          if let n = Int(value), n > 0 { cfg.reticulum.qlenInPr = n }
+        case "qlen_in_il":
+          if let n = Int(value), n > 0 { cfg.reticulum.qlenInIl = n }
 
         default:
           cfg.unrecognisedKeys.append("reticulum.\(key)")

@@ -134,7 +134,7 @@ extension Transport {
     guard let cached = try? getCachedAnnounce(hash: packet.data),
       let iface = firstIface
     else { return false }
-    handleIncoming(packet: cached, from: iface)
+    inbound(cached, from: iface)
     return true
   }
 
@@ -151,7 +151,7 @@ extension Transport {
     if let cached = try? getCachedAnnounce(hash: packetHash),
       let iface = interfaces.first
     {
-      handleIncoming(packet: cached, from: iface)
+      inbound(cached, from: iface)
     } else {
       let pkt = Packet(
         destinationType: .single,

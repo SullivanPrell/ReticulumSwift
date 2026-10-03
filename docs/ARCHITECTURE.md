@@ -98,8 +98,16 @@ Sources/CI2PDCShims/          Clang module wrapping the i2pd C API (see Package.
   config is in **bits** (so `ifac_size = 64` means an 8-byte field).
 - **Crypto is CryptoKit-only.** Curve25519, HMAC-SHA256, HKDF, SHA-256/512 come
   from CryptoKit; AES-CBC from CommonCrypto. No third-party crypto libraries.
-- **Thread safety.** `Transport` isn't actor-isolated; callers must serialize
-  access (for example, drive it from a single queue). The test suite is single-threaded.
+- **Inbound packets queue by traffic class.** As in Python, each interface's reader
+  thread runs the packet filter and announce and path-request admission, then queues the
+  packet as data, announce, path request or ingress-limited. One drain worker,
+  started by `Transport.start()`, takes the lowest non-empty class first, so data
+  never waits behind an announce flood. A full class drops the packet and counts it
+  for `rnstatus -q`. Set `usesInboundQueue = false` before `start()` to handle every
+  packet on its reader thread instead.
+- **Thread safety.** `Transport` isn't actor-isolated. Interface readers and the
+  drain worker call into it concurrently, so locks guard its tables. Callbacks such
+  as `onPacketDelivered` run on the drain worker while it runs.
 
 ## How it maps to Python
 

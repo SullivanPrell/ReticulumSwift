@@ -721,7 +721,7 @@ public final class Transport {
   /// Guards `ingressStates`.
   ///
   /// A leaf lock: `processHeldAnnounces` re-enters
-  /// `handleIncoming` (which takes `lock`), so a holder MUST snapshot/select
+  /// `inbound` (which takes `lock`), so a holder must snapshot/select
   /// under this lock, release it, then make the reentrant call—never held
   /// across a callout, and never acquires `lock` while held.
   private let ingressLock = NSLock()
@@ -1017,8 +1017,30 @@ public final class Transport {
   /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
   private var lastKnownDestinationsClean: Date = .distantPast
 
+  /// A packet waiting for the drain worker, with the class it queued under.
+  struct InboundPacket {
+    let packet: Packet
+    let interface: any Interface
+    let trafficClass: TrafficClass
+  }
+
+  /// Whether `start()` brings up the inbound drain worker (`USE_INBOUND_QUEUE`,
+  /// `Transport.py:141`).
+  ///
+  /// Read at `start()`. With no worker running, inbound runs to completion on the receiving
+  /// thread, as it does in Python with `USE_INBOUND_QUEUE = False`.
+  public var usesInboundQueue = Transport.useInboundQueue
+
+  /// The queues the drain worker reads, or `nil` while no worker runs.
+  private var inboundQueues: InboundQueues<InboundPacket>?
+  /// Capacities of `inboundQueues`, per `TrafficClass.rawValue`.
+  private var runningInboundQueueLengths: [Int] = []
+  private let inboundQueueLock = NSLock()
+
   /// Creates an unstarted transport with no interfaces or destinations.
   public init() {}
+
+  deinit { inboundQueues?.close() }
 
   // MARK: - Announce handlers
 
@@ -1468,7 +1490,7 @@ public final class Transport {
   /// Mirrors Python `Transport.void_queues()`.
   public func voidQueues() {
     ingressLock.lock()
-    for key in ingressStates.keys { ingressStates[key]?.heldAnnounces = [:] }
+    for key in ingressStates.keys { ingressStates[key]?.heldAnnounces.removeAll() }
     ingressLock.unlock()
     receiptsLock.lock()
     receipts.removeAll()
@@ -1957,11 +1979,12 @@ public final class Transport {
     ingressLock.lock()
     defer { ingressLock.unlock() }
     guard var state = ingressStates[key] else { return }
-    if state.heldAnnounces[destinationHash] != nil {
-      // Overwrite existing held announce for same destination (most recent wins).
-      state.heldAnnounces[destinationHash] = packet
+    if let index = state.heldAnnounces.firstIndex(where: { $0.destinationHash == destinationHash })
+    {
+      // The most recent copy replaces the held one and keeps its place.
+      state.heldAnnounces[index].packet = packet
     } else if state.heldAnnounces.count < interface.interfaceState.icMaxHeldAnnounces {
-      state.heldAnnounces[destinationHash] = packet
+      state.heldAnnounces.append((destinationHash, packet))
     }
     ingressStates[key] = state
   }
@@ -1979,7 +2002,7 @@ public final class Transport {
   ) -> Packet? {
     let key = ObjectIdentifier(interface)
     // Do the whole select-and-remove under ingressLock, then RELEASE it before
-    // re-injecting: handleIncoming re-enters the transport (and takes `lock` /
+    // re-injecting: inbound re-enters the transport (and takes `lock` /
     // ingressLock again), so holding ingressLock across it would deadlock.
     var released: Packet? = nil
     ingressLock.lock()
@@ -1993,22 +2016,28 @@ public final class Transport {
         ? interface.interfaceState.icBurstFreqNew
         : interface.interfaceState.icBurstFreq
       let freq = tracker(for: interface)?.incomingAnnounceFrequency(now: now) ?? 0
-      if freq < threshold,
-        // Select lowest-hop held announce (mirrors Python's min-hops selection).
-        let (bestHash, bestPacket) = state.heldAnnounces
-          .min(by: { $0.value.hops < $1.value.hops })
-      {
-        state.heldAnnounces.removeValue(forKey: bestHash)
-        state.heldRelease = now + interface.interfaceState.icHeldReleaseInterval
-        ingressStates[key] = state
-        released = bestPacket
+      if freq < threshold {
+        // The first held of the fewest-hop announces (`Interface.py:283-288`).
+        var selected: Int? = nil
+        var minHops = Transport.pathfinderM
+        for (index, held) in state.heldAnnounces.enumerated()
+        where Int(held.packet.hops) < minHops {
+          minHops = Int(held.packet.hops)
+          selected = index
+        }
+        if let selected {
+          released = state.heldAnnounces.remove(at: selected).packet
+          state.heldRelease = now + interface.interfaceState.icHeldReleaseInterval
+          ingressStates[key] = state
+        }
       }
     }
     ingressLock.unlock()
 
-    // Re-inject the packet into the transport pipeline (outside ingressLock).
+    // Re-inject the packet into the transport pipeline (outside ingressLock), as
+    // `TC_INGRESS_LIMITED` (`Interface.py:296`).
     if let released {
-      handleIncoming(packet: released, from: interface)
+      inbound(released, from: interface, trafficClass: .ingressLimited)
     }
     return released
   }
@@ -2148,7 +2177,7 @@ public final class Transport {
         prTxBytes += sample.pathRequestTxBytes - prior.pathRequestTxBytes
         // Accumulate transport-level TX total from interface diffs.
         // Mirrors Python: Transport.traffic_txb += txDiff (count_traffic_loop).
-        // handleIncoming already counts RX per packet, so this adds only TX.
+        // preprocessInbound already counts RX per packet, so this adds only TX.
         if txDiff > 0 { trafficTxBytes += txDiff }
       }
       ifaceSpeedSamples[key] = sample
@@ -2791,12 +2820,12 @@ public final class Transport {
         self.notifyProtocolViolation(on: sourceInterface)
         return
       }
-      self.handleIncoming(packet: packet, from: sourceInterface)
+      self.inbound(packet, from: sourceInterface)
     }
     // Packet handler kept for test-stub loopback interfaces that deliver
     // pre-parsed packets directly (they don't use rawInboundHandler).
     interface.inboundHandler = { [weak self] packet, sourceInterface in
-      self?.handleIncoming(packet: packet, from: sourceInterface)
+      self?.inbound(packet, from: sourceInterface)
     }
     // TCPServerInterface spawns per-client sub-interfaces (mirrors Python's
     // TCPServerInterfaceClient model). Wire up the client connect/disconnect
@@ -3428,6 +3457,10 @@ public final class Transport {
   /// Starts the transport: interfaces, jobs loop and management destinations.
   public func start() throws {
     startTime = Date().timeIntervalSince1970
+    // Python spawns the workers at the end of `start` and holds early frames until `ready`
+    // (`Transport.py:526-531`, `:1753-1759`). Starting the worker before the interfaces
+    // queues those frames instead.
+    if usesInboundQueue { startInboundWorker() }
     for interface in interfaces { try interface.start() }
     // `Transport.prioritize_interfaces()` (`Transport.py:524`)—after the interfaces are
     // up, so `isOnline` is meaningful when the lowest bitrate is taken.
@@ -3576,6 +3609,7 @@ public final class Transport {
     jobsTimer?.cancel()
     jobsTimer = nil
     for interface in interfaces { interface.stop() }
+    stopInboundWorker()
     isRunning = false
   }
 
@@ -3610,13 +3644,7 @@ public final class Transport {
     sampleInterfaceSpeeds()
     sweepExpiredBlackholes()
     synthesizePendingTunnels()
-    // Process held announces for each interface (mirrors Python's per-interface job loop).
-    // Snapshot under `lock`—register/deregister mutate `interfaces` on
-    // network-callback threads while this jobs loop runs.
-    lock.lock()
-    let heldSnapshot = interfaces
-    lock.unlock()
-    for iface in heldSnapshot { processHeldAnnounces(for: iface) }
+    runInterfaceJobs()
     // Periodically clean known destinations (mirrors Python commit b408699e:
     // periodically clean known destinations based on local relevance).
     // Throttled to once per `knownDestinationsCleanInterval` because the
@@ -3626,6 +3654,27 @@ public final class Transport {
     {
       cleanKnownDestinations(now: now)
       lastKnownDestinationsClean = now
+    }
+  }
+
+  /// Runs the per-interface step of the interface-jobs pass (`Transport.py:1150-1158`).
+  ///
+  /// Each pass looks at both bursts before releasing a held announce, as Python does. The
+  /// look lets a burst that has subsided clear, so the released announce passes admission
+  /// instead of making the clearing call itself, which still limits. It also spends the
+  /// path-request cooldown, which counts looks rather than seconds.
+  ///
+  /// Tests pass `now` to step the clock.
+  func runInterfaceJobs(now: TimeInterval = Date().timeIntervalSince1970) {
+    // Snapshot under `lock`: register and deregister mutate `interfaces` on network-callback
+    // threads while the jobs loop runs.
+    lock.lock()
+    let snapshot = interfaces
+    lock.unlock()
+    for iface in snapshot {
+      _ = shouldIngressLimit(on: iface, now: now)
+      _ = shouldIngressLimitPR(on: iface, now: now)
+      processHeldAnnounces(for: iface, now: now)
     }
   }
 
@@ -4132,9 +4181,108 @@ public final class Transport {
     return Destination.computeHash(identity: nil, nameHash: nameHash, kind: .plain)
   }()
 
+  // MARK: - Inbound pipeline
+
+  /// Python's `Transport.inbound` for an unpacked packet (`Transport.py:1682-1897`).
+  ///
+  /// Runs `preprocess_inbound` on the calling thread. A packet that survives it queues under
+  /// its traffic class for the drain worker, or runs to completion here when no worker runs.
+  func inbound(_ packet: Packet, from interface: Interface, trafficClass: TrafficClass = .data) {
+    guard let trafficClass = preprocessInbound(packet, from: interface, trafficClass: trafficClass)
+    else { return }
+    let item = InboundPacket(packet: packet, interface: interface, trafficClass: trafficClass)
+    guard let queues = currentInboundQueues() else {
+      processInbound(item)
+      return
+    }
+    if !queues.put(item, trafficClass: trafficClass) {
+      Reticulum.log(
+        "Dropping inbound packet, queue is full (tc=\(trafficClass.rawValue))", level: .extreme)
+    }
+  }
+
+  /// Runs the whole inbound path on the calling thread, bypassing the queues.
   func handleIncoming(packet: Packet, from interface: Interface) {
+    guard let trafficClass = preprocessInbound(packet, from: interface, trafficClass: .data)
+    else { return }
+    processInbound(InboundPacket(packet: packet, interface: interface, trafficClass: trafficClass))
+  }
+
+  /// Heights and drop counts of the inbound queues, or `nil` while no drain worker runs.
+  public func inboundQueueSnapshot() -> InboundQueueSnapshot? {
+    currentInboundQueues()?.snapshot()
+  }
+
+  /// Capacities of the running inbound queues, per `TrafficClass.rawValue`, or empty while
+  /// no drain worker runs.
+  public var inboundQueueLengths: [Int] {
+    inboundQueueLock.lock()
+    defer { inboundQueueLock.unlock() }
+    return runningInboundQueueLengths
+  }
+
+  private func currentInboundQueues() -> InboundQueues<InboundPacket>? {
+    inboundQueueLock.lock()
+    defer { inboundQueueLock.unlock() }
+    return inboundQueues
+  }
+
+  /// Builds the queues from the configured capacities and spawns the drain worker
+  /// (`Transport.py:310-317`, `:526-529`).
+  private func startInboundWorker() {
+    let lengths = [
+      Reticulum.defaultDataQueueLength(), Reticulum.defaultAnnounceQueueLength(),
+      Reticulum.defaultPrQueueLength(), Reticulum.defaultIlQueueLength(),
+    ]
+    let queues = InboundQueues<InboundPacket>(
+      dataLength: lengths[0], announceLength: lengths[1], pathRequestLength: lengths[2],
+      ingressLimitedLength: lengths[3])
+    inboundQueueLock.lock()
+    let previous = inboundQueues
+    inboundQueues = queues
+    runningInboundQueueLengths = lengths
+    inboundQueueLock.unlock()
+    previous?.close()
+
+    // `Transport.inbound_job` (`Transport.py:1899-1912`). The worker holds the transport
+    // weakly: `deinit` closes the queues, which ends the loop.
+    let worker = Thread { [weak self] in
+      while let item = queues.get() {
+        guard let self else { return }
+        self.drainInbound(item)
+      }
+    }
+    worker.name = Transport.inboundWorkerName
+    worker.qualityOfService = .userInitiated
+    worker.start()
+  }
+
+  /// Closes the queues, which discards what they hold and ends the drain worker.
+  private func stopInboundWorker() {
+    inboundQueueLock.lock()
+    let queues = inboundQueues
+    inboundQueues = nil
+    runningInboundQueueLengths = []
+    inboundQueueLock.unlock()
+    queues?.close()
+  }
+
+  /// Hands one queued packet to `_inbound`.
+  private func drainInbound(_ item: InboundPacket) {
+    // `if not packet.receiving_interface.online: return` (`Transport.py:1916`). Only a queued
+    // packet can outlive its interface; one handled inline comes straight from the reader.
+    guard item.interface.isOnline else { return }
+    processInbound(item)
+  }
+
+  /// `preprocess_inbound` from the packet filter on (`Transport.py:1795-1888`).
+  ///
+  /// Returns the class the packet queues under, or `nil` when it stops here.
+  private func preprocessInbound(
+    _ packet: Packet, from interface: Interface, trafficClass: TrafficClass
+  ) -> TrafficClass? {
     // Count inbound traffic bytes + cache packet PHY stats under `metricsLock`.
-    // handleIncoming runs concurrently for every inbound frame across
+    // Preprocessing runs concurrently for every inbound frame across
     // interfaces, so these counter/array mutations must be serialized. The
     // packet pack/hash work is done first (outside the lock) so the lock is
     // held only for the mutations. `lock` isn't held here.
@@ -4166,16 +4314,12 @@ public final class Transport {
     }
     metricsLock.unlock()
 
-    // Drop duplicate or replayed packets. Link handshake packets
-    // (LRR and LRPROOF) are exempt so retransmissions work.
-    //
     // `if not Transport.packet_filter(packet): return interface.packet_filter_hit()`
-    // (`Transport.py:1795`). `filterAndRecord` is this port's live filter—the public
-    // `packetFilter` covers only the hashlist branch and no production path calls it—so
-    // this guard is the one place a filtered frame is observable.
-    guard filterAndRecord(packet: packet) else {
+    // (`Transport.py:1795`). The verdict only: `_inbound` records the hash
+    // (`Transport.py:1957-1960`), which `processInbound` does.
+    guard packetFilter(packet) else {
       notifyPacketFilterHit(on: interface)
-      return
+      return nil
     }
 
     // `Transport.rx_packets += 1` (`Transport.py:1798`)—after the packet filter and
@@ -4185,17 +4329,34 @@ public final class Transport {
     rxPackets += 1
     metricsLock.unlock()
 
+    if packet.packetType == .announce {
+      return admitAnnounce(packet, from: interface, trafficClass: max(trafficClass, .announce))
+    }
+    if isPathRequest(packet) {
+      guard let admitted = admitPathRequest(packet, from: interface) else { return nil }
+      return max(trafficClass, admitted)
+    }
+    return trafficClass
+  }
+
+  /// Python's `_inbound` (`Transport.py:1914`) from the hashlist on.
+  private func processInbound(_ item: InboundPacket) {
+    let packet = item.packet
+    let interface = item.interface
+
+    // Drops a copy that queued behind an identical packet, where Python handles both: its
+    // preprocessing checks the hashlist, and only `_inbound` records the hash.
+    guard filterAndRecord(packet: packet) else { return }
+
     // CACHE_REQUEST: serve cached announce packet if available.
     // Mirrors Python: `if packet.context == CACHE_REQUEST: if cache_request_packet(packet): return`
     if packet.packetType == .data, packet.context == .cacheRequest {
       if cacheRequestPacket(packet) { return }
     }
 
-    if packet.packetType == .data,
-      packet.destinationType == .plain,
-      packet.destinationHash == Transport.pathRequestDestinationHash
-    {
-      handlePathRequest(packet, from: interface)
+    if isPathRequest(packet) {
+      handlePathRequest(
+        packet, from: interface, ingressLimited: item.trafficClass == .ingressLimited)
       return
     }
 
@@ -4653,7 +4814,26 @@ public final class Transport {
     handleDelivery(packet, from: interface)
   }
 
-  private func handleAnnounce(_ packet: Packet, from interface: Interface) {
+  /// Whether `packet` is a path request: a `.data` packet for the `.plain`
+  /// `rnstransport.path.request` destination.
+  ///
+  /// Python's `preprocess_inbound` admits any packet other than an announce for that hash
+  /// (`Transport.py:1827`), but only a data packet reaches `path_request_handler`. Admitting
+  /// the rest would let a packet that nothing answers spend a tag and hold its target's
+  /// in-flight gate until `PATH_REQUEST_GATE_TIMEOUT` (`Transport.py:997`), batching genuine
+  /// requests for that target behind it.
+  private func isPathRequest(_ packet: Packet) -> Bool {
+    packet.packetType == .data && packet.destinationType == .plain
+      && packet.destinationHash == Transport.pathRequestDestinationHash
+  }
+
+  /// The announce half of `preprocess_inbound` (`Transport.py:1803-1825`): the signature
+  /// gate, the announce counter, and the ingress hold for unknown destinations.
+  ///
+  /// Returns `trafficClass`, or `nil` when the announce stops here.
+  private func admitAnnounce(
+    _ packet: Packet, from interface: Interface, trafficClass: TrafficClass
+  ) -> TrafficClass? {
     // Python's announce admission gate (`Transport.py:1806-1811`). Three
     // decisions, in this order, before anything else looks at the announce:
     //
@@ -4674,16 +4854,49 @@ public final class Transport {
       packet, onlyValidateSignature: true, isBlackholed: { self.isBlackholed($0) }
     ) {
     case .blackholed:
-      return
+      return nil
     case .invalid:
       notifyProtocolViolation(on: interface)
-      return
+      return nil
     case .valid:
       break
     }
 
     notifyIncomingAnnounce(on: interface, size: packet.rawByteCount)
 
+    // `announced_destination_known = packet.destination_hash in Transport.path_table`
+    // (`Transport.py:1812`). Announce rate limiting handles re-announces of a known
+    // destination.
+    //
+    // A deliberate difference: this node's own destinations count as known too. `_inbound`
+    // ignores an announce for one (`Transport.py:2175-2176`), so holding it only spends a
+    // release interval. In a node's first seconds, a transport node's echo of its own
+    // announce can be the announce that starts a burst, and the release then serves the
+    // echo before any announce held behind it.
+    lock.lock()
+    let isKnownDestination =
+      paths[packet.destinationHash] != nil
+      || registeredDestinations[packet.destinationHash] != nil
+    // `if packet.destination_hash in Transport.path_requests or … in
+    // Transport.discovery_path_requests: pass` (`Transport.py:1819-1821`). This node
+    // asked the network for exactly this destination on a peer's behalf, so holding the
+    // answer behind the burst limiter would strand the very requestors the waiting entry
+    // holds open for—and the entry would then time out having achieved nothing.
+    //
+    // Upstream exempts its client-side `path_requests` table here too; this port has no
+    // such table, so this checks only the half that exists.
+    let awaitedByDiscovery = discoveryPathRequests[packet.destinationHash] != nil
+    lock.unlock()
+    // `elif packet.receiving_interface.should_ingress_limit(): hold_announce(packet); return`
+    // (`Transport.py:1823-1825`).
+    if !isKnownDestination && !awaitedByDiscovery && shouldIngressLimit(on: interface) {
+      holdAnnounce(packet, destinationHash: packet.destinationHash, on: interface)
+      return nil
+    }
+    return trafficClass
+  }
+
+  private func handleAnnounce(_ packet: Packet, from interface: Interface) {
     // An announce for a destination this node owns is dropped here and goes no further.
     //
     // Python computes `local_destination` from `destinations_map` and hangs the ENTIRE
@@ -4702,23 +4915,15 @@ public final class Transport {
     // hands its own announce to every registered handler, and may relay it onward. The symptom
     // that surfaced it (`swift_devel/bugs/047`): a lone LXMF propagation node, on a mesh with
     // nobody else on it, peered with itself.
-    //
-    // One ordering difference from the reference, with no observable consequence: Python
-    // checks the announce signature before this gate and the full announce after it, so an
-    // invalid announce for an owned destination is rejected there and dropped here. Either way
-    // it goes nowhere.
     lock.lock()
     let isOwnDestination = registeredDestinations[packet.destinationHash] != nil
     lock.unlock()
     if isOwnDestination { return }
 
-    // Ingress burst limiting: hold announces during flooding bursts.
-    // Mirrors Python: `if interface.should_ingress_limit(): interface.hold_announce(packet); return`
-    // Only applies to unknown destinations (known paths exempt—Python checks path_requests too).
     do {
-      // The admission gate at the top of this function already verified this
-      // signature over these same bytes, so skip the second verification the
-      // way Python's `announce_signature_validated` does (`Identity.py:559`).
+      // `admitAnnounce` already verified this signature over these same bytes, so skip the
+      // second verification the way Python's `announce_signature_validated` does
+      // (`Identity.py:559`).
       let decoded = try Announce.validate(packet, signatureVerified: true)
 
       // Announce-retry cancel (mirrors Python `Transport.inbound()`'s
@@ -4786,8 +4991,8 @@ public final class Transport {
         // emission rather than an unheard blob) can fire.
         //
         // Known residual divergence: the dedup cache is populated earlier,
-        // *before* the ingress-burst and announce-rate filters run. An
-        // announce dropped by one of those never reaches the
+        // *before* the announce-rate filter runs. An announce that filter
+        // drops never reaches the
         // ladder and so never records its blob, yet its cache entry
         // survives—a later copy at equal-or-greater hops is then
         // swallowed here where Python would still evaluate it. Narrow
@@ -4805,27 +5010,6 @@ public final class Transport {
         // takeover—fall through.
       }
       lock.unlock()
-
-      // Ingress burst limiting for unknown destinations (mirrors Python).
-      // Known destinations are exempt (path requests for them may be pending).
-      lock.lock()
-      let isKnownDest =
-        registeredDestinations[decoded.destinationHash] != nil
-        || paths[decoded.destinationHash] != nil
-      // `if packet.destination_hash in Transport.path_requests or … in
-      // Transport.discovery_path_requests: pass` (`Transport.py:1819-1821`). This node
-      // asked the network for exactly this destination on a peer's behalf, so holding the
-      // answer behind the burst limiter would strand the very requestors the waiting entry
-      // holds open for—and the entry would then time out having achieved nothing.
-      //
-      // Upstream exempts its client-side `path_requests` table here too; this port has no
-      // such table, so this checks only the half that exists.
-      let awaitedByDiscovery = discoveryPathRequests[decoded.destinationHash] != nil
-      lock.unlock()
-      if !isKnownDest && !awaitedByDiscovery && shouldIngressLimit(on: interface) {
-        holdAnnounce(packet, destinationHash: decoded.destinationHash, on: interface)
-        return
-      }
 
       // Per-destination rate limiting (mirrors Python's announce_rate_table check).
       // Only active when interface.announceRateTarget != nil.
@@ -4863,6 +5047,28 @@ public final class Transport {
         announceEmittedAt: emittedAt
       )
       lock.lock()
+      // Remember the identity before the path can appear, as Python's `validate_announce`
+      // does before `_inbound` writes the path table (`Identity.py:577`, `Transport.py:2458`).
+      // The path store releases `lock` to write the announce cache, so a caller that waits
+      // for the path and then recalls the identity would otherwise find none.
+      //
+      // Attach app_data to the identity so callers can retrieve it via
+      // Identity.recallAppData / Transport.recallAppData. Python stores this in
+      // Identity.known_destination_hashes[hash]["app_data"].
+      if let ad = decoded.appData { decoded.identity.appData = ad }
+      knownIdentities[decoded.destinationHash] = decoded.identity
+      knownDestinationAnnouncedAt[decoded.destinationHash] = Date()
+      // `Identity.remember(packet.get_hash(), …)`—Identity.py:577, stored at field 1 of
+      // the known-destinations entry (`:107`).
+      knownDestinationPacketHash[decoded.destinationHash] =
+        (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
+      cachedAnnounces[decoded.destinationHash] = packet
+      if let ratchet = decoded.ratchet {
+        let now = Date()
+        knownRatchets[decoded.destinationHash] = ratchet
+        knownRatchetTimes[decoded.destinationHash] = now
+        persistKnownRatchet(ratchet, forDestination: decoded.destinationHash, receivedAt: now)
+      }
       // Path update logic (mirrors Python's Transport.announce_handler):
       // 1. Always update if no path is known yet.
       // 2. Update if new path has fewer hops.
@@ -4986,23 +5192,6 @@ public final class Transport {
         pathStatesLock.lock()
         pathStates[decoded.destinationHash] = Transport.stateUnknown
         pathStatesLock.unlock()
-      }
-      // Attach app_data to the identity so callers can retrieve it via
-      // Identity.recallAppData / Transport.recallAppData. Python stores this in
-      // Identity.known_destination_hashes[hash]["app_data"].
-      if let ad = decoded.appData { decoded.identity.appData = ad }
-      knownIdentities[decoded.destinationHash] = decoded.identity
-      knownDestinationAnnouncedAt[decoded.destinationHash] = Date()
-      // `Identity.remember(packet.get_hash(), …)`—Identity.py:577, stored at field 1 of
-      // the known-destinations entry (`:107`).
-      knownDestinationPacketHash[decoded.destinationHash] =
-        (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
-      cachedAnnounces[decoded.destinationHash] = packet
-      if let ratchet = decoded.ratchet {
-        let now = Date()
-        knownRatchets[decoded.destinationHash] = ratchet
-        knownRatchetTimes[decoded.destinationHash] = now
-        persistKnownRatchet(ratchet, forDestination: decoded.destinationHash, receivedAt: now)
       }
       // If this announce arrived on a tunneled interface, record the path in
       // the tunnel entry so it can be restored if the tunnel reappears.
@@ -5278,34 +5467,26 @@ public final class Transport {
     }
   }
 
-  private func handlePathRequest(_ packet: Packet, from interface: Interface) {
-    let body = packet.data
+  /// The path-request half of `preprocess_inbound` (`Transport.py:1827-1886`).
+  ///
+  /// Returns `.ingressLimited` when the receiving interface's path-request limiter is
+  /// active, `.pathRequest` otherwise, or `nil` when the request stops here.
+  private func admitPathRequest(_ packet: Packet, from interface: Interface) -> TrafficClass? {
     let hashLen = Constants.truncatedHashLength
     // `if not len(packet.data) >= TRUNCATED_HASHLENGTH//8: return` (`Transport.py:1830`).
     // Too short to name a destination, so upstream returns before it looks for a tag and
     // charges nothing.
-    guard body.count >= hashLen else { return }
+    guard let fields = pathRequestFields(packet.data) else { return nil }
     // `if tag_bytes == None: ... protocol_violation("Tagless path request")`
     // (`:1838-1840`). One byte longer than the preceding case, and upstream treats it very
     // differently: a tag is what makes a request distinguishable from a replay of itself,
     // so nothing can deduplicate a request without one, and upstream declines to act.
-    guard body.count > hashLen else {
+    guard !fields.rawTag.isEmpty else {
       notifyProtocolViolation(on: interface)
-      return
+      return nil
     }
-    let target = Data(body.prefix(hashLen))
-
-    // Extract the optional requesting transport instance ID and tag.
-    // Python body shapes: [target||tag] or [target||tx_id||tag]
-    let requestorTransportID: Data?
-    let rawTag: Data
-    if body.count > hashLen * 2 {
-      requestorTransportID = Data(body[body.startIndex + hashLen..<body.startIndex + hashLen * 2])
-      rawTag = Data(body.suffix(from: body.startIndex + hashLen * 2))
-    } else {
-      requestorTransportID = nil
-      rawTag = Data(body.suffix(from: body.startIndex + hashLen))
-    }
+    let target = fields.target
+    let rawTag = fields.rawTag
     // `if len(tag_bytes) > RNS.Identity.TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`
     // (`Transport.py:1842-1843`). The excess isn't merely ignored—it must not reach the
     // dedup key. Keyed on the untruncated bytes, a sender defeats deduplication for free by
@@ -5334,11 +5515,8 @@ public final class Transport {
         pathRequestTagSet.remove(evicted)
       }
     }
-    let cachedAnnounce = cachedAnnounces[target]
-    let isLocal = registeredDestinations[target] != nil
-    let pathEntry = paths[target]
     lock.unlock()
-    if alreadySeen { return }
+    if alreadySeen { return nil }
 
     // `interface.received_path_request(size=len(raw))` (`Transport.py:1857`). Upstream
     // counts here, below the length guard, both tag checks and the duplicate check, so the
@@ -5347,17 +5525,11 @@ public final class Transport {
     // carrying replays.
     notifyIncomingPathRequest(on: interface, size: packet.rawByteCount)
 
-    // `should_ingress_limit = ingress_limited or attached_interface.should_ingress_limit_pr()`
-    // (`Transport.py:3427`). Evaluated here, unconditionally, rather than at its single use
-    // below: the call advances the burst state machine (it refreshes the sustained stamp
-    // and spends cooldown), so gating the call itself on the branch would make the limiter
+    // `if interface.should_ingress_limit_pr(): traffic_class = TC_INGRESS_LIMITED`
+    // (`Transport.py:1859-1860`). Evaluated for every request that reaches this point,
+    // because the call advances the burst state machine (it refreshes the sustained stamp
+    // and spends cooldown): evaluating it only on some branches would make the limiter
     // observe only the traffic it's already suppressing.
-    //
-    // Python's other half—`preprocess_inbound` setting `TC_INGRESS_LIMITED`
-    // (`Transport.py:1859`), which `path_request_handler` then passes back in as
-    // `ingress_limited`—exists to carry the decision across an inbound queue this port
-    // doesn't have. Both paths OR into one flag consumed at one place, so a single
-    // evaluation here reaches the same decision.
     let ingressLimited = shouldIngressLimitPR(on: interface)
 
     // Batch onto a search already running for this destination
@@ -5366,18 +5538,59 @@ public final class Transport {
     // draw several identical searches. The claim lands before any branch runs, and
     // `answered` releases it again further down—so it only ever collapses requests that
     // arrive while a search is genuinely outstanding.
-    //
-    // Upstream places this in `inbound()`, ahead of the queue that carries the request to
-    // `path_request_handler`; this port has no such queue, so the equivalent position is
-    // here: past the tag dedup and the arrival counter, ahead of every answering branch.
     if !registerInflightPathRequest(target) {
       // `if not traffic_class == Transport.TC_INGRESS_LIMITED` (`Transport.py:1870`). A
       // flooding peer's duplicates drop outright rather than enrolling for a replay
       // each—enrolling them would turn the flood into an amplifier again, one announce
       // copy per duplicate, which is the shape the batching exists to prevent.
       if !ingressLimited { batchDiscoveryPathRequest(target, on: interface) }
-      return
+      return nil
     }
+    return ingressLimited ? .ingressLimited : .pathRequest
+  }
+
+  /// Splits a path-request body into its target, the requesting transport instance and the
+  /// untruncated tag (`Transport.py:3385-3402`).
+  ///
+  /// The body is `target || tag` or `target || transport id || tag`. Returns `nil` for a
+  /// body too short to name a destination.
+  private func pathRequestFields(_ body: Data) -> (
+    target: Data, requestorTransportID: Data?, rawTag: Data
+  )? {
+    let hashLen = Constants.truncatedHashLength
+    guard body.count >= hashLen else { return nil }
+    let target = Data(body.prefix(hashLen))
+    if body.count > hashLen * 2 {
+      return (
+        target, Data(body[body.startIndex + hashLen..<body.startIndex + hashLen * 2]),
+        Data(body.suffix(from: body.startIndex + hashLen * 2))
+      )
+    }
+    return (target, nil, Data(body.suffix(from: body.startIndex + hashLen)))
+  }
+
+  /// `path_request_handler` and `path_request` (`Transport.py:3380-3599`), for a request
+  /// `admitPathRequest` let through.
+  private func handlePathRequest(
+    _ packet: Packet, from interface: Interface, ingressLimited admittedAsLimited: Bool
+  ) {
+    guard let fields = pathRequestFields(packet.data) else { return }
+    let target = fields.target
+    let requestorTransportID = fields.requestorTransportID
+    // Truncated as `path_request_handler` truncates it (`Transport.py:3404-3405`). Admission
+    // already counted the excess as a protocol violation.
+    let tag = Data(fields.rawTag.prefix(Constants.truncatedHashLength))
+    // `should_ingress_limit = ingress_limited or attached_interface.should_ingress_limit_pr()`
+    // (`Transport.py:3427`). For a queued request the second call reads the limiter as it
+    // stands when the worker reaches the request, not as it stood on arrival.
+    let ingressLimited = admittedAsLimited || shouldIngressLimitPR(on: interface)
+
+    lock.lock()
+    let cachedAnnounce = cachedAnnounces[target]
+    let isLocal = registeredDestinations[target] != nil
+    let pathEntry = paths[target]
+    lock.unlock()
+
     // `if answered: ... inflight_path_requests.pop(destination_hash)`
     // (`Transport.py:3595-3599`). Upstream reaches its tail with a flag because its branches
     // fall through; these return, so the release rides on the return itself. Both answering
@@ -5537,9 +5750,10 @@ public final class Transport {
   /// `add_packet_hash` its caller reaches afterwards, merged into one call.
   ///
   /// Returns `false` for a packet the stack should drop—a duplicate, or one of the shapes
-  /// `applyFilter` rejects outright. `handleIncoming` counts every `false` as a packet
-  /// filter hit, which is what `interface.packet_filter_hit()` does upstream
-  /// (`Transport.py:1795`).
+  /// `applyFilter` rejects outright. `processInbound` calls it after `preprocessInbound` has
+  /// counted a `packetFilter` rejection as a packet filter hit (`Transport.py:1795`), so a
+  /// `false` there is a duplicate that queued behind its first copy, and it isn't counted
+  /// again.
   func filterAndRecord(packet: Packet) -> Bool {
     applyFilter(to: packet, recording: true)
   }
