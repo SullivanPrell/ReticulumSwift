@@ -12,9 +12,11 @@ import XCTest
 
 @testable import ReticulumSwift
 
-/// Tests that link lifecycle events update path responsiveness state.
-/// Python: link timeout → Transport.mark_path_unresponsive(dest_hash)
-///         link success → Transport.mark_path_responsive(dest_hash)
+/// A link's own lifecycle leaves the path's responsiveness alone.
+///
+/// Python's `Link` never calls `mark_path_responsive` or `mark_path_unresponsive`. Only the
+/// jobs loop marks a path unresponsive, on a transport node, when a relayed link request goes
+/// unproven (`Transport.py:931`, `:944`). An announce resets it (`Transport.py:2460`).
 final class PathResponsivenessTests: XCTestCase {
 
   final class LoopbackInterface: Interface {
@@ -33,7 +35,7 @@ final class PathResponsivenessTests: XCTestCase {
     }
   }
 
-  func testSuccessfulLinkEstablishmentMarksPathResponsive() throws {
+  func testSuccessfulLinkEstablishmentLeavesThePathStateAlone() throws {
     let aT = Transport()
     let bT = Transport()
     let bId = Identity()
@@ -60,19 +62,20 @@ final class PathResponsivenessTests: XCTestCase {
         identityHash: bId.hash
       ), forDestination: bDest.hash)
 
+    XCTAssertTrue(aT.markPathUnresponsive(for: bDest.hash))
+
     let established = expectation(description: "established")
     aT.onLinkEstablished = { _ in established.fulfill() }
     _ = try Link.initiate(destination: bDest, transport: aT)
     wait(for: [established], timeout: 1.0)
 
-    // Path should be marked responsive after successful establishment
-    XCTAssertFalse(
+    XCTAssertTrue(
       aT.pathIsUnresponsive(to: bDest.hash),
-      "path should be responsive after successful link establishment")
+      "Python's link never calls `mark_path_responsive`")
     _ = (aT, bT)
   }
 
-  func testLinkTimeoutMarksPathUnresponsive() throws {
+  func testLinkTimeoutLeavesThePathStateAlone() throws {
     let aT = Transport()
     let bId = Identity()
     let bDest = try Destination(
@@ -107,8 +110,8 @@ final class PathResponsivenessTests: XCTestCase {
     link.establishmentTimeout = 0.1  // very short timeout
     wait(for: [timeout], timeout: 1.0)
 
-    XCTAssertTrue(
+    XCTAssertFalse(
       aT.pathIsUnresponsive(to: bDest.hash),
-      "path should be unresponsive after link establishment timeout")
+      "Python's link watchdog closes the link without marking the path (Link.py:722-730)")
   }
 }
