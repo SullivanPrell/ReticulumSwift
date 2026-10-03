@@ -42,6 +42,20 @@ Before, it held up the data that arrived after it on the same interface.
   with a second limiter reading (`Transport.py:3427`).
 - The ingress hold treats a destination as known only when the path table has it
   (`Transport.py:1812`). Before, it also exempted the hashes of registered local destinations.
+  A node's own announce that a transport node echoes back counts toward a burst, and the
+  limiter holds it like any other unknown announce, as in Python.
+
+### Fixed
+
+- Each interface-jobs pass looks at the announce and path-request bursts before it releases a
+  held announce, as Python's jobs loop does (`Transport.py:1150-1158`). Before, only arrivals
+  looked. A burst that had subsided stayed active until the next unknown announce. When that
+  was the released announce, its look cleared the burst but still held it, for another
+  release interval. A path-request burst's cooldown, which counts looks, ran down only as
+  new path requests arrived.
+- Among the held announces with the fewest hops, the first one held is the first released,
+  as with Python's `dict` (`Interface.py:283-288`). A newer copy keeps its destination's
+  place. Before, a `Dictionary` picked one in no defined order.
 
 ### Deliberate differences from Python
 

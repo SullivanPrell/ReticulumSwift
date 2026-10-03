@@ -1490,7 +1490,7 @@ public final class Transport {
   /// Mirrors Python `Transport.void_queues()`.
   public func voidQueues() {
     ingressLock.lock()
-    for key in ingressStates.keys { ingressStates[key]?.heldAnnounces = [:] }
+    for key in ingressStates.keys { ingressStates[key]?.heldAnnounces.removeAll() }
     ingressLock.unlock()
     receiptsLock.lock()
     receipts.removeAll()
@@ -1979,11 +1979,12 @@ public final class Transport {
     ingressLock.lock()
     defer { ingressLock.unlock() }
     guard var state = ingressStates[key] else { return }
-    if state.heldAnnounces[destinationHash] != nil {
-      // Overwrite existing held announce for same destination (most recent wins).
-      state.heldAnnounces[destinationHash] = packet
+    if let index = state.heldAnnounces.firstIndex(where: { $0.destinationHash == destinationHash })
+    {
+      // The most recent copy replaces the held one and keeps its place.
+      state.heldAnnounces[index].packet = packet
     } else if state.heldAnnounces.count < interface.interfaceState.icMaxHeldAnnounces {
-      state.heldAnnounces[destinationHash] = packet
+      state.heldAnnounces.append((destinationHash, packet))
     }
     ingressStates[key] = state
   }
@@ -2015,15 +2016,20 @@ public final class Transport {
         ? interface.interfaceState.icBurstFreqNew
         : interface.interfaceState.icBurstFreq
       let freq = tracker(for: interface)?.incomingAnnounceFrequency(now: now) ?? 0
-      if freq < threshold,
-        // Select lowest-hop held announce (mirrors Python's min-hops selection).
-        let (bestHash, bestPacket) = state.heldAnnounces
-          .min(by: { $0.value.hops < $1.value.hops })
-      {
-        state.heldAnnounces.removeValue(forKey: bestHash)
-        state.heldRelease = now + interface.interfaceState.icHeldReleaseInterval
-        ingressStates[key] = state
-        released = bestPacket
+      if freq < threshold {
+        // The first held of the fewest-hop announces (`Interface.py:283-288`).
+        var selected: Int? = nil
+        var minHops = Transport.pathfinderM
+        for (index, held) in state.heldAnnounces.enumerated()
+        where Int(held.packet.hops) < minHops {
+          minHops = Int(held.packet.hops)
+          selected = index
+        }
+        if let selected {
+          released = state.heldAnnounces.remove(at: selected).packet
+          state.heldRelease = now + interface.interfaceState.icHeldReleaseInterval
+          ingressStates[key] = state
+        }
       }
     }
     ingressLock.unlock()
@@ -3638,13 +3644,7 @@ public final class Transport {
     sampleInterfaceSpeeds()
     sweepExpiredBlackholes()
     synthesizePendingTunnels()
-    // Process held announces for each interface (mirrors Python's per-interface job loop).
-    // Snapshot under `lock`—register/deregister mutate `interfaces` on
-    // network-callback threads while this jobs loop runs.
-    lock.lock()
-    let heldSnapshot = interfaces
-    lock.unlock()
-    for iface in heldSnapshot { processHeldAnnounces(for: iface) }
+    runInterfaceJobs()
     // Periodically clean known destinations (mirrors Python commit b408699e:
     // periodically clean known destinations based on local relevance).
     // Throttled to once per `knownDestinationsCleanInterval` because the
@@ -3654,6 +3654,27 @@ public final class Transport {
     {
       cleanKnownDestinations(now: now)
       lastKnownDestinationsClean = now
+    }
+  }
+
+  /// Runs the per-interface step of the interface-jobs pass (`Transport.py:1150-1158`).
+  ///
+  /// Each pass looks at both bursts before releasing a held announce, as Python does. The
+  /// look lets a burst that has subsided clear, so the released announce passes admission
+  /// instead of making the clearing call itself, which still limits. It also spends the
+  /// path-request cooldown, which counts looks rather than seconds.
+  ///
+  /// Tests pass `now` to step the clock.
+  func runInterfaceJobs(now: TimeInterval = Date().timeIntervalSince1970) {
+    // Snapshot under `lock`: register and deregister mutate `interfaces` on network-callback
+    // threads while the jobs loop runs.
+    lock.lock()
+    let snapshot = interfaces
+    lock.unlock()
+    for iface in snapshot {
+      _ = shouldIngressLimit(on: iface, now: now)
+      _ = shouldIngressLimitPR(on: iface, now: now)
+      processHeldAnnounces(for: iface, now: now)
     }
   }
 
