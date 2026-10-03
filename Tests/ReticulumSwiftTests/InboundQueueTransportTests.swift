@@ -421,6 +421,45 @@ final class InboundQueueTransportTests: XCTestCase {
     XCTAssertEqual(held.transport.inboundQueueSnapshot()?.heights, [0, 1, 0, 0])
   }
 
+  /// A path never becomes visible before the identity its announce carried.
+  ///
+  /// Python's `validate_announce` remembers the identity (`Identity.py:577`) before `_inbound`
+  /// writes the path table (`Transport.py:2172`, `:2458`). A caller on another thread that
+  /// waits for a path and then recalls the identity, as `git-remote-rns` does, otherwise finds
+  /// none while the transport writes the announce cache.
+  func testAPathNeverAppearsBeforeItsIdentity() throws {
+    let transport = Transport()
+    let cache = FileManager.default.temporaryDirectory
+      .appendingPathComponent("path-identity-\(UUID().uuidString)")
+    addTeardownBlock { try? FileManager.default.removeItem(at: cache) }
+    transport.cacheDirectory = cache
+    let interface = QueueInterface(name: "announces")
+    interface.ingressControl = false
+    transport.register(interface: interface)
+    let announces = try (0..<200).map { try remoteAnnounce("visible\($0)") }
+
+    let early = Events()
+    let delivered = Events()
+    let watched = DispatchSemaphore(value: 0)
+    let hashes = announces.map(\.destinationHash)
+    Thread.detachNewThread {
+      var pending = Set(hashes)
+      while !pending.isEmpty, delivered.all.isEmpty {
+        for hash in pending where transport.hasPath(to: hash) {
+          if transport.recall(identity: hash) == nil { early.append(hash.hexString) }
+          pending.remove(hash)
+        }
+      }
+      watched.signal()
+    }
+    for announce in announces { interface.deliver(announce) }
+    delivered.append("done")
+    XCTAssertEqual(watched.wait(timeout: .now() + 10), .success)
+
+    XCTAssertEqual(hashes.filter { transport.hasPath(to: $0) }.count, hashes.count)
+    XCTAssertEqual(early.all, [], "paths visible before their identity")
+  }
+
   // MARK: - Draining
 
   /// Data that queued behind an announce still drains first (`Transport.py:69-73`).

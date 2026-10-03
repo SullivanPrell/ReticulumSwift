@@ -52,6 +52,12 @@ Before, it held up the data that arrived after it on the same interface.
 - Among the held announces with the fewest hops, the first one held is the first released,
   as with Python's `dict` (`Interface.py:283-288`). A newer copy keeps its destination's
   place. Before, a `Dictionary` picked one in no defined order.
+- The transport stores an announce's identity before its path becomes visible, as Python's
+  `validate_announce` remembers it before `_inbound` writes the path table
+  (`Identity.py:577`). Before, the path store released the lock to write the announce cache
+  ahead of the identity, so a caller that waited for the path and then recalled the identity,
+  as `git-remote-rns` does, could find none. reticulum-interop's Swift-to-Swift `git clone`
+  failed 2 of 6 runs that way. 1.23.0 has the same order.
 
 ### Deliberate differences from Python
 

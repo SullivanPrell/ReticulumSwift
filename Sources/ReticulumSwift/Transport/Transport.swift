@@ -5047,6 +5047,28 @@ public final class Transport {
         announceEmittedAt: emittedAt
       )
       lock.lock()
+      // Remember the identity before the path can appear, as Python's `validate_announce`
+      // does before `_inbound` writes the path table (`Identity.py:577`, `Transport.py:2458`).
+      // The path store releases `lock` to write the announce cache, so a caller that waits
+      // for the path and then recalls the identity would otherwise find none.
+      //
+      // Attach app_data to the identity so callers can retrieve it via
+      // Identity.recallAppData / Transport.recallAppData. Python stores this in
+      // Identity.known_destination_hashes[hash]["app_data"].
+      if let ad = decoded.appData { decoded.identity.appData = ad }
+      knownIdentities[decoded.destinationHash] = decoded.identity
+      knownDestinationAnnouncedAt[decoded.destinationHash] = Date()
+      // `Identity.remember(packet.get_hash(), …)`—Identity.py:577, stored at field 1 of
+      // the known-destinations entry (`:107`).
+      knownDestinationPacketHash[decoded.destinationHash] =
+        (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
+      cachedAnnounces[decoded.destinationHash] = packet
+      if let ratchet = decoded.ratchet {
+        let now = Date()
+        knownRatchets[decoded.destinationHash] = ratchet
+        knownRatchetTimes[decoded.destinationHash] = now
+        persistKnownRatchet(ratchet, forDestination: decoded.destinationHash, receivedAt: now)
+      }
       // Path update logic (mirrors Python's Transport.announce_handler):
       // 1. Always update if no path is known yet.
       // 2. Update if new path has fewer hops.
@@ -5170,23 +5192,6 @@ public final class Transport {
         pathStatesLock.lock()
         pathStates[decoded.destinationHash] = Transport.stateUnknown
         pathStatesLock.unlock()
-      }
-      // Attach app_data to the identity so callers can retrieve it via
-      // Identity.recallAppData / Transport.recallAppData. Python stores this in
-      // Identity.known_destination_hashes[hash]["app_data"].
-      if let ad = decoded.appData { decoded.identity.appData = ad }
-      knownIdentities[decoded.destinationHash] = decoded.identity
-      knownDestinationAnnouncedAt[decoded.destinationHash] = Date()
-      // `Identity.remember(packet.get_hash(), …)`—Identity.py:577, stored at field 1 of
-      // the known-destinations entry (`:107`).
-      knownDestinationPacketHash[decoded.destinationHash] =
-        (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
-      cachedAnnounces[decoded.destinationHash] = packet
-      if let ratchet = decoded.ratchet {
-        let now = Date()
-        knownRatchets[decoded.destinationHash] = ratchet
-        knownRatchetTimes[decoded.destinationHash] = now
-        persistKnownRatchet(ratchet, forDestination: decoded.destinationHash, receivedAt: now)
       }
       // If this announce arrived on a tunneled interface, record the path in
       // the tunnel entry so it can be restored if the tunnel reappears.
