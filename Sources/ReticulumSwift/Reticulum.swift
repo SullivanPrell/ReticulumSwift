@@ -1965,14 +1965,35 @@ public final class Reticulum {
       iface = WeaveInterface(
         name: ifCfg.name, port: device, transport: try serialFactory(device))
 
+    case "PipeInterface":
+      // `PipeInterface.py:66-74`: `command` is required, and `respawn_delay` is a float that
+      // defaults to 5. A value `as_float` can't read raises.
+      guard let command = ifCfg["command"] else {
+        throw InterfaceConstructionError.missingKey(interface: ifCfg.name, key: "command")
+      }
+      var respawnDelay = PipeInterface.defaultRespawnDelay
+      if let raw = ifCfg["respawn_delay"] {
+        guard let value = Double(raw) else {
+          throw InterfaceConstructionError.invalidValue(
+            interface: ifCfg.name, key: "respawn_delay", value: raw)
+        }
+        respawnDelay = value
+      }
+      guard let pipeFactory = InterfaceTransportFactories.pipe else {
+        throw InterfaceTransportFactories.FactoryError.unavailable(
+          family: "pipe", device: command,
+          hint: "this platform can't start subprocesses")
+      }
+      iface = PipeInterface(
+        name: ifCfg.name, command: command, respawnDelay: respawnDelay,
+        transport: try pipeFactory())
+
     default:
       // The current reference no longer raises here: an unknown type goes through the
       // external-interface-module lookup, and a missing module is an ERROR log naming
       // it (`Reticulum.py:1055-1061`). This port loads no external modules, so the
       // parallel observable is the same loud log—an operator's typo is named, the
-      // other interfaces still come up. `PipeInterface` deliberately stays on this
-      // path: unimplemented by design (macOS/Linux subprocess pipes, no mobile use
-      // case), pinned by `RemainingConstructionTests`.
+      // other interfaces still come up.
       Reticulum.log(
         "Unsupported interface type '\(ifCfg.type)' for interface "
           + "'\(ifCfg.name)' — this interface will not be created",
@@ -1990,7 +2011,18 @@ public final class Reticulum {
       // wrote to them.
       Reticulum.applyInterfaceConfiguration(to: iface, from: ifCfg)
       transport.register(interface: iface)
-      try? iface.start()
+      if iface is PipeInterface {
+        // Python starts the child in `PipeInterface.__init__` and re-raises a failure
+        // (`PipeInterface.py:90-94`), which `Reticulum.py` turns into `RNS.panic()`.
+        do {
+          try iface.start()
+        } catch {
+          transport.deregister(interface: iface)
+          throw error
+        }
+      } else {
+        try? iface.start()
+      }
       // A radio's bring-up completes off the caller's thread (its detect response may
       // be delivered on the thread that called `start()`—see
       // `RNodeInterface.bringUpQueue`). This path is the one caller that genuinely
@@ -2112,8 +2144,8 @@ public final class Reticulum {
   ///
   /// Two outcomes differ from Python. A block that raises while building makes Python panic
   /// (`Reticulum.py:1212-1216`), which on this path lets any RPC caller stop the daemon, so
-  /// this logs and returns `false` instead. A block of a type this port doesn't build, such
-  /// as `PipeInterface`, returns `false` where Python reports `True` with nothing attached.
+  /// this logs and returns `false` instead. A block of a type this port doesn't build
+  /// returns `false` where Python reports `True` with nothing attached.
   ///
   /// - Parameters:
   ///   - name: The interface's section name in the config file.
