@@ -40,10 +40,6 @@ Before, it held up the data that arrived after it on the same interface.
 - A held announce re-enters as ingress-limited on release, as `Interface.py:296` does. A path
   request admitted as ingress-limited stays limited when the worker answers it, which ORs that
   with a second limiter reading (`Transport.py:3427`).
-- The ingress hold treats a destination as known only when the path table has it
-  (`Transport.py:1812`). Before, it also exempted the hashes of registered local destinations.
-  A node's own announce that a transport node echoes back counts toward a burst, and the
-  limiter holds it like any other unknown announce, as in Python.
 
 ### Fixed
 
@@ -67,6 +63,12 @@ Before, it held up the data that arrived after it on the same interface.
   `PATH_REQUEST_GATE_TIMEOUT`, so genuine requests for that target batch behind it.
 - The data-queue high-water mark that throttles `BackboneInterface`'s server-side dataplane
   (`Transport.py:59-60`) isn't ported, because this port's Backbone is client-only.
+- The ingress hold counts this node's own destinations as known, as this port did before.
+  Python checks only the path table (`Transport.py:1812`), so a transport node's echo of a
+  node's own announce can start a burst and take a release interval, although `_inbound`
+  then ignores it (`Transport.py:2175-2176`). reticulum-interop's `test_announce_threeway`
+  failed 2 of 5 runs that way: the Swift listener's echo started the burst, and the Python
+  announcer's announce came out a release interval later, after the listener's timeout.
 
 ## [1.23.0]—interface management, and parity moves to 1.5.5
 

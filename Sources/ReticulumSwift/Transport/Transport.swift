@@ -4867,8 +4867,16 @@ public final class Transport {
     // `announced_destination_known = packet.destination_hash in Transport.path_table`
     // (`Transport.py:1812`). Announce rate limiting handles re-announces of a known
     // destination.
+    //
+    // A deliberate difference: this node's own destinations count as known too. `_inbound`
+    // ignores an announce for one (`Transport.py:2175-2176`), so holding it only spends a
+    // release interval. In a node's first seconds, a transport node's echo of its own
+    // announce can be the announce that starts a burst, and the release then serves the
+    // echo before any announce held behind it.
     lock.lock()
-    let isKnownDestination = paths[packet.destinationHash] != nil
+    let isKnownDestination =
+      paths[packet.destinationHash] != nil
+      || registeredDestinations[packet.destinationHash] != nil
     // `if packet.destination_hash in Transport.path_requests or … in
     // Transport.discovery_path_requests: pass` (`Transport.py:1819-1821`). This node
     // asked the network for exactly this destination on a peer's behalf, so holding the

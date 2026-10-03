@@ -397,6 +397,30 @@ final class InboundQueueTransportTests: XCTestCase {
     XCTAssertEqual(held.transport.inboundQueueSnapshot()?.total, 0)
   }
 
+  /// An announce for one of this node's own destinations never starts a burst and is never
+  /// held.
+  ///
+  /// A deliberate difference: Python checks only the path table (`Transport.py:1812`), so the
+  /// echo of a node's own announce can start a burst and take a release interval, although
+  /// `_inbound` then ignores it (`Transport.py:2175-2176`).
+  func testAnAnnounceForALocalDestinationIsNeverHeld() throws {
+    let held = try heldTransport()
+    let local = try Destination(
+      identity: Identity(), direction: .in, kind: .single, appName: "queuetest",
+      aspects: ["local"])
+    held.transport.register(destination: local)
+    let start = Date().timeIntervalSince1970 - 0.5
+    for n in 0..<InterfaceFreqTracker.maxSamples {
+      held.transport.notifyIncomingAnnounce(on: held.interface, at: start + Double(n) * 0.01)
+    }
+
+    held.interface.deliver(try Announce.make(for: local))
+
+    XCTAssertEqual(held.transport.heldAnnounceCount(for: held.interface), 0)
+    XCTAssertFalse(held.transport.ingressState(for: held.interface)?.burstActive ?? true)
+    XCTAssertEqual(held.transport.inboundQueueSnapshot()?.heights, [0, 1, 0, 0])
+  }
+
   // MARK: - Draining
 
   /// Data that queued behind an announce still drains first (`Transport.py:69-73`).
