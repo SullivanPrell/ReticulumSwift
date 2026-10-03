@@ -53,9 +53,6 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     var bitrate: Int = 0
     var isOnline: Bool = true
     var clientCount: Int = 1
-    // Mirrors LocalServerClientInterface: not a mesh routing endpoint; Transport reaches
-    // it through its local-client paths.
-    var isRoutingEndpoint: Bool { false }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     private(set) var sent: [Packet] = []
 
@@ -202,7 +199,9 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
 
   func testAnnounceStillForwardedToLocalClientWhenTransportEnabled() throws {
     // Regression guard: enabling transport must not disturb the
-    // separate, unconditional local-client forward.
+    // separate, unconditional local-client forward. The relay reaches the local client
+    // too, as Python's announce-table retransmission does through `Transport.outbound`
+    // (`Transport.py:1449`), one hop further and after the immediate copy.
     let transport = Transport()
     transport.transportEnabled = true
 
@@ -221,6 +220,6 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     )
     try upstream.send(try Announce.make(for: destination))
 
-    XCTAssertEqual(localClient.sent.count, 1)
+    XCTAssertEqual(localClient.sent.map(\.hops), [0, 1], "the immediate copy, then the relay")
   }
 }

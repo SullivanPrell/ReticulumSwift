@@ -4192,6 +4192,10 @@ public final class Transport {
     return Destination.computeHash(identity: nil, nameHash: nameHash, kind: .plain)
   }()
 
+  /// Python's `Transport.control_hashes`: the path-request and tunnel-synthesize
+  /// destinations (`Transport.py:359`, `:365`).
+  static let controlHashes: Set<Data> = [pathRequestDestinationHash, tunnelSynthesizeHash]
+
   // MARK: - Inbound pipeline
 
   /// Python's `Transport.inbound` for an unpacked packet (`Transport.py:1682-1897`).
@@ -4358,6 +4362,8 @@ public final class Transport {
     // Drops a copy that queued behind an identical packet, where Python handles both: its
     // preprocessing checks the hashlist, and only `_inbound` records the hash.
     guard filterAndRecord(packet: packet) else { return }
+
+    relayPlainBroadcast(packet, from: interface)
 
     // CACHE_REQUEST: serve cached announce packet if available.
     // Mirrors Python: `if packet.context == CACHE_REQUEST: if cache_request_packet(packet): return`
@@ -4825,6 +4831,27 @@ public final class Transport {
     handleDelivery(packet, from: interface)
   }
 
+  /// Relays a plain broadcast between the local clients and every other interface
+  /// (`Transport.py:1977-1991`).
+  ///
+  /// From a local client, it goes out on every other interface; from anywhere else, to every
+  /// local client. Python does this before, and independently of, the rest of its inbound
+  /// handling, with transport on or off. Control traffic stays with its own
+  /// handlers. Python transmits on every interface; this port skips the listeners, whose
+  /// `send` would repeat the copy each of their connections already gets.
+  private func relayPlainBroadcast(_ packet: Packet, from interface: any Interface) {
+    guard packet.destinationType == .plain, packet.transportType == .broadcast,
+      !Transport.controlHashes.contains(packet.destinationHash)
+    else { return }
+    let targets: [any Interface]
+    if fromLocalClient(interface: interface) {
+      targets = interfaces.filter { $0 !== interface && $0.isOnline && $0.isRoutingEndpoint }
+    } else {
+      targets = localClientServingInterfaces(excluding: nil)
+    }
+    for target in targets { try? transmit(packet, on: target) }
+  }
+
   /// Whether `packet` is a path request: a `.data` packet for the `.plain`
   /// `rnstransport.path.request` destination.
   ///
@@ -5216,6 +5243,31 @@ public final class Transport {
       onAnnounceReceived?(decoded, interface)
       dispatchAnnounceHandlers(decoded)
 
+      // If this instance serves any local shared-instance clients, retransmit
+      // the announce to them immediately—independent of `transportEnabled`
+      // and regardless of path-response context. Mirrors Python's
+      // "if (len(Transport.local_client_interfaces)): ... new_announce.send()"
+      // block: apps sharing this daemon's connection (nomadnet, rnstatus,
+      // MeshChatX, …) must see every announce the daemon overhears, even
+      // when this instance isn't itself acting as a mesh transport/relay
+      // node. Unlike the mesh-relay forward after it, this copy keeps the
+      // announce's hop count (Python: `new_announce.hops = packet.hops`).
+      //
+      // This copy goes first. The local clients are routing endpoints, so the relay reaches
+      // them as well, one hop further. Python's relay waits for the jobs loop, so its local
+      // clients take this copy's hop count, and the relay, the same announce one hop further,
+      // doesn't replace the path. Sending the relay first would leave each of them a hop
+      // further from the destination.
+      let localTargets = localClientServingInterfaces(excluding: interface)
+      if shouldUpdate, !localTargets.isEmpty {
+        var localForward = packet
+        localForward.headerType = .type2
+        localForward.transportID = transportInstanceID
+        for iface in localTargets {
+          try? transmit(localForward, on: iface)
+        }
+      }
+
       // Relay onto other interfaces if this node is transport-enabled OR
       // a directly connected local client originated the announce.
       // The local-client alternative mirrors Python's
@@ -5306,25 +5358,6 @@ public final class Transport {
         lock.unlock()
       }
 
-      // If any local shared-instance clients are connected, retransmit
-      // the announce to them immediately—independent of `transportEnabled`
-      // and regardless of path-response context. Mirrors Python's
-      // "if (len(Transport.local_client_interfaces)): ... new_announce.send()"
-      // block: apps sharing this daemon's connection (nomadnet, rnstatus,
-      // MeshChatX, …) must see every announce the daemon overhears, even
-      // when this instance isn't itself acting as a mesh transport/relay
-      // node. Unlike the preceding mesh-relay forward, hops is passed through
-      // unchanged (Python: `new_announce.hops = packet.hops`).
-      let localTargets = localClientServingInterfaces(excluding: interface)
-      if shouldUpdate, !localTargets.isEmpty {
-        var localForward = packet
-        localForward.headerType = .type2
-        localForward.transportID = transportInstanceID
-        for iface in localTargets {
-          try? transmit(localForward, on: iface)
-        }
-      }
-
       // Answer the peers waiting on a search for this destination
       // (`Transport.py:2433-2455`). This replay is what pays for the batching in
       // `handlePathRequest`: the gate there drops those duplicate requests without an
@@ -5401,8 +5434,9 @@ public final class Transport {
     // its clients' traffic—outbound from a client to the mesh
     // (from_local_client) and inbound from the mesh to a client whose
     // destination is one hop away over the serving interface (for_local_client).
-    // Only SINGLE packets are transported; PLAIN/GROUP are local-only and
-    // Their own dispatchers route LINK-typed packets.
+    // This path forwards packets for single destinations only. `relayPlainBroadcast`
+    // carries plain broadcasts (Transport.py:1977-1991), and link packets have their own
+    // dispatchers.
     let fromLocal = fromLocalClient(interface: interface)
     let forLocal: Bool = {
       guard let p = path, p.hops == 0, let nextHop = p.nextHopInterface else { return false }

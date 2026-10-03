@@ -48,6 +48,10 @@ Before, it held up the data that arrived after it on the same interface.
   (`rnstatus.py:452`). `PosixTCPServer` no longer conforms to `LocalClientServingInterface`, its
   `send` does nothing (`LocalInterface.py:462-463`), and `detachInterface` refuses it, as
   `Reticulum.py:809-811` refuses `LocalServerInterface`.
+- With transport enabled, a local client receives an announce twice, as Python's do: the
+  shared instance's immediate copy (`Transport.py:2400-2429`), then its relay, one hop
+  further. The immediate copy goes first, so the client takes the path's hop count from it, and
+  the relay, the same announce one hop further, doesn't replace it.
 
 ### Fixed
 
@@ -93,6 +97,20 @@ Before, it held up the data that arrived after it on the same interface.
 - The shared instance counts a local client's traffic on the client's connection and adds it
   to the shared instance's own counters, as `process_incoming` and `process_outgoing` do
   (`LocalInterface.py:204-243`). Sent bytes count the HDLC-framed length, as Python's do.
+- The shared instance's own announces, path requests, and plain packets reach its local
+  clients. Python's `LocalServerInterface` copies its `OUT = True` onto each connection it
+  spawns (`LocalInterface.py:450`, `Reticulum.py:403`), so every loop in `Transport.outbound`
+  that sends on all interfaces reaches them (`Transport.py:1449`). This port left the
+  connections out of those loops. A program attached to a Swift shared instance never heard an
+  announce for a destination registered on the shared instance itself, and couldn't answer the
+  shared instance's path requests. All released versions behave this way.
+- A transport shared instance searching for a destination it doesn't know asks its local
+  clients too, as `Transport.py:3574-3583` does.
+- Plain broadcasts pass between the local clients and the shared instance's other interfaces,
+  as `Transport.py:1977-1991` relays them: from a local client to every other interface, and
+  from anywhere else to every local client. Before, a plain broadcast stopped at the shared
+  instance. Path requests and tunnel synthesis are control traffic, which this relay leaves to
+  their own handlers (`Transport.py:359`, `:365`).
 
 ### Deliberate differences from Python
 
