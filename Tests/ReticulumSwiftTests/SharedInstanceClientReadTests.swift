@@ -52,6 +52,15 @@ final class SharedInstanceClientReadTests: XCTestCase {
     throw XCTSkip("no free port available for the shared-instance server")
   }
 
+  /// Calls `handler` for every frame the server reads, from whichever connection.
+  ///
+  /// Each connection is an interface of its own, so the frames arrive on it, not on the server.
+  private func onEveryFrame(of server: PosixTCPServer, _ handler: @escaping () -> Void) {
+    server.onClientConnected = { connection in
+      connection.rawInboundHandler = { _, _ in handler() }
+    }
+  }
+
   private func frame(_ index: Int, size: Int) -> Packet {
     Packet(
       destinationType: .plain,
@@ -74,7 +83,7 @@ final class SharedInstanceClientReadTests: XCTestCase {
     var received = 0
     var target = 20
     var reached: XCTestExpectation? = expectation(description: "the first 20 frames arrived")
-    server.rawInboundHandler = { _, _ in
+    onEveryFrame(of: server) {
       lock.lock()
       received += 1
       let hit = received == target ? reached : nil
@@ -112,12 +121,18 @@ final class SharedInstanceClientReadTests: XCTestCase {
     let lock = NSLock()
     var received = 0
     let all = expectation(description: "all \(count) frames reached the server")
-    server.rawInboundHandler = { _, _ in
+    var connection: (any Interface)?
+    server.onClientConnected = { spawned in
       lock.lock()
-      received += 1
-      let done = received == count
+      connection = spawned
       lock.unlock()
-      if done { all.fulfill() }
+      spawned.rawInboundHandler = { _, _ in
+        lock.lock()
+        received += 1
+        let done = received == count
+        lock.unlock()
+        if done { all.fulfill() }
+      }
     }
 
     let client = LocalInterface(host: "127.0.0.1", port: server.port)
@@ -129,7 +144,10 @@ final class SharedInstanceClientReadTests: XCTestCase {
     _ = XCTWaiter().wait(for: [all], timeout: 5)
 
     XCTAssertEqual(server.clientCount, 1, "the server let go of a client whose socket is open")
-    try server.send(frame(0xEE, size: 64))
+    lock.lock()
+    let spawned = connection
+    lock.unlock()
+    try XCTUnwrap(spawned).send(frame(0xEE, size: 64))
     wait(for: [reply], timeout: 5)
   }
 
@@ -144,7 +162,7 @@ final class SharedInstanceClientReadTests: XCTestCase {
     var received = 0
     var detaches = 0
     let all = expectation(description: "all 20 frames reached the server")
-    server.rawInboundHandler = { _, _ in
+    onEveryFrame(of: server) {
       lock.lock()
       received += 1
       let done = received == 20
@@ -213,7 +231,7 @@ final class SharedInstanceClientReadTests: XCTestCase {
   func testAClientThatClosesItsSocketIsDetached() throws {
     let server = try startServer()
     let arrived = expectation(description: "the frame reached the server")
-    server.rawInboundHandler = { _, _ in arrived.fulfill() }
+    onEveryFrame(of: server) { arrived.fulfill() }
 
     let client = LocalInterface(host: "127.0.0.1", port: server.port)
     try client.start()

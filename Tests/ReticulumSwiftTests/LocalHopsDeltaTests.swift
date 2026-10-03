@@ -34,7 +34,7 @@ final class LocalHopsDeltaTests: XCTestCase {
     func send(_ packet: Packet) throws { sent.append(packet) }
   }
 
-  // Stands in for the shared-instance SERVER side (for example, PosixTCPServer): the
+  // Stands in for the shared-instance SERVER side (LocalServerClientInterface): the
   // interface a directly connected local client's traffic arrives on. This—not
   // LocalInterface (the client side)—is what Python treats as a
   // local-client interface (see TransportUtilityTests).

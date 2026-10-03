@@ -381,16 +381,15 @@ public protocol Interface: AnyObject {
   func stop()
 }
 
-/// An interface that can front multiple locally connected shared-instance
-/// clients (rnstatus, nomadnet, MeshChatX, …).
+/// An interface that carries a locally connected shared-instance client (rnstatus, nomadnet,
+/// MeshChatX, …).
 ///
-/// Mirrors Python's
-/// `Transport.local_client_interfaces`—a list of one per-connection
-/// `LocalClientInterface` spawned per accepted socket—collapsed here into
-/// a single object per listening server (for example, `PosixTCPServer`) since Swift
-/// fans a whole accept-loop out from one `Interface`. `clientCount` is the
-/// number of attached local clients; `Transport` only treats the
-/// interface as "serving local clients" while this is greater than zero.
+/// Mirrors a member of Python's `Transport.local_client_interfaces`: the
+/// `LocalClientInterface` spawned per accepted socket (`LocalInterface.py:447-460`). In this
+/// port that's `LocalServerClientInterface`, one per connection the shared-instance
+/// `PosixTCPServer` accepts. `clientCount` is the number of clients attached through it;
+/// `Transport` only treats the interface as "serving local clients" while this is greater
+/// than zero.
 public protocol LocalClientServingInterface: Interface {
   var clientCount: Int { get }
 }

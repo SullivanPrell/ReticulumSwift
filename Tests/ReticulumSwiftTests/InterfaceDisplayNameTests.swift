@@ -101,6 +101,10 @@ final class InterfaceDisplayNameTests: XCTestCase {
     case let i as LocalInterface:
       // LocalInterface.py:372-374—the port, not the name.
       return "LocalInterface[\(i.port)]"
+    case let i as LocalServerClientInterface:
+      // A spawned LocalClientInterface's target_port is the client's port
+      // (LocalInterface.py:453), which __str__ prints (:351-353).
+      return "LocalInterface[\(i.peerPort)]"
     case let i as PosixTCPServer:
       // Swift's PosixTCPServer is Python's LocalServerInterface, whose __str__ is
       // "Shared Instance[<bind_port>]" (LocalInterface.py:496-498)—a literal,

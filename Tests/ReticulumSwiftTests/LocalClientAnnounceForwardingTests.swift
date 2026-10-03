@@ -46,15 +46,15 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     }
   }
 
-  /// Stands in for `PosixTCPServer`: a server-side interface fronting one
-  /// or more locally connected shared-instance clients.
+  /// Stands in for `LocalServerClientInterface`: the shared instance's interface for one
+  /// locally connected client.
   final class RecordingLocalClientInterface: Interface, LocalClientServingInterface {
     var name: String
     var bitrate: Int = 0
     var isOnline: Bool = true
     var clientCount: Int = 1
-    // Mirrors PosixTCPServer: not a mesh routing endpoint—its own
-    // send() fans out to attached clients directly.
+    // Mirrors LocalServerClientInterface: not a mesh routing endpoint; Transport reaches
+    // it through its local-client paths.
     var isRoutingEndpoint: Bool { false }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     private(set) var sent: [Packet] = []
