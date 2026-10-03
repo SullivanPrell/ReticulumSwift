@@ -68,6 +68,10 @@ Before, it held up the data that arrived after it on the same interface.
   loop also started another read on every partial delivery, so a busy client's outstanding
   reads grew without bound. reticulum-interop had no cell in which a client of a Swift daemon
   sends more than 4 KB. All released versions behave this way.
+- Stopping the shared instance hangs up on its local clients. Closing a connection didn't
+  cancel the read still waiting on it, and `DispatchIO` waits for pending operations before it
+  closes, so each client's socket stayed open until the client itself hung up. 1.23.0 behaves
+  the same way.
 
 ### Deliberate differences from Python
 

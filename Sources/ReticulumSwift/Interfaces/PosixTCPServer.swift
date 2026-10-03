@@ -354,8 +354,12 @@ private final class PosixClient {
     channel.write(offset: 0, data: dd, queue: queue) { _, _, _ in }
   }
 
+  /// Hangs up on the client.
+  ///
+  /// `.stop` cancels the outstanding read. Without it `DispatchIO` waits for pending
+  /// operations, and the read ends only when the client hangs up, so the socket stayed open.
   func close() {
-    io?.close()
+    io?.close(flags: .stop)
     io = nil
   }
 }

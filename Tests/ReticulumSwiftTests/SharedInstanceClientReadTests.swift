@@ -175,6 +175,40 @@ final class SharedInstanceClientReadTests: XCTestCase {
     XCTAssertEqual(count, 1, "one hang-up was reported \(count) times, once per outstanding read")
   }
 
+  /// Stopping the server hangs up on its clients.
+  ///
+  /// `DispatchIO.close()` without `.stop` lets pending operations finish first, and the one
+  /// outstanding read finishes only when the client hangs up. So the server has to cancel
+  /// it, or a stopped shared instance leaves every client connected.
+  func testStoppingTheServerHangsUpOnItsClients() throws {
+    let server = try startServer()
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    XCTAssertGreaterThanOrEqual(fd, 0)
+    defer { close(fd) }
+    var addr = sockaddr_in()
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = server.port.bigEndian
+    inet_aton("127.0.0.1", &addr.sin_addr)
+    let rc = withUnsafePointer(to: &addr) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    XCTAssertEqual(rc, 0)
+    let deadline = Date().addingTimeInterval(5)
+    while server.clientCount != 1, Date() < deadline { usleep(20_000) }
+    XCTAssertEqual(server.clientCount, 1)
+
+    server.stop()
+
+    var timeout = timeval(tv_sec: 3, tv_usec: 0)
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    var byte: UInt8 = 0
+    let n = recv(fd, &byte, 1, 0)
+    XCTAssertEqual(
+      n, 0, "the client's socket stayed open after the server stopped (errno \(errno))")
+  }
+
   /// The client closing its socket still detaches it.
   func testAClientThatClosesItsSocketIsDetached() throws {
     let server = try startServer()
