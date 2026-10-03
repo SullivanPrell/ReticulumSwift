@@ -102,6 +102,8 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface,
     return acceptedDescriptors.last
   }
   var acceptedDescriptorHandlerForTesting: ((Int32) -> Void)?
+  /// Called each time a client's connection reports that it ended.
+  var clientDetachedHandlerForTesting: (() -> Void)?
 
   /// Python `LocalServerInterface.__str__` (`LocalInterface.py:496-498`) returns the literal
   /// `"Shared Instance["+str(bind_port)+"]"`.
@@ -264,6 +266,7 @@ public final class PosixTCPServer: Interface, LocalClientServingInterface,
         self.lock.lock()
         self.clients.removeAll { $0 === c }
         self.lock.unlock()
+        self.clientDetachedHandlerForTesting?()
       }
     )
     lock.lock()
@@ -314,11 +317,24 @@ private final class PosixClient {
     }
     channel.setLimit(lowWater: 1)
     io = channel
-    readLoop(channel)
+    readUntilClosed(channel)
   }
 
-  private func readLoop(_ channel: DispatchIO) {
-    channel.read(offset: 0, length: 4096, queue: queue) { [weak self] done, dispatchData, _ in
+  /// `dispatch_io_read`'s length for "read until end of file": `SIZE_MAX`.
+  private static let untilEndOfFile = Int(bitPattern: UInt(SIZE_MAX))
+
+  /// One read for the life of the connection, as Python's `read_loop` is one `recv` loop that
+  /// stops only when `recv` returns nothing (`LocalInterface.py:276-295`).
+  ///
+  /// A stream read also completes when it has delivered the length it asked for. This loop
+  /// asked for 4096 bytes and took that completion for a hang-up, so it dropped every client
+  /// after its first 4 KB and discarded everything sent to it afterwards. It also started a
+  /// new read on every partial delivery, so a busy client's outstanding reads grew without
+  /// bound. Reading until end of file leaves `done` with one meaning: the client hung up, or
+  /// the socket failed.
+  private func readUntilClosed(_ channel: DispatchIO) {
+    channel.read(offset: 0, length: Self.untilEndOfFile, queue: queue) {
+      [weak self] done, dispatchData, _ in
       guard let self else { return }
       if let dd = dispatchData, !dd.isEmpty {
         for frame in self.decoder.feed(Data(dd)) {
@@ -328,9 +344,7 @@ private final class PosixClient {
       if done {
         self.io = nil
         self.onClose(self)
-        return
       }
-      self.readLoop(channel)
     }
   }
 
