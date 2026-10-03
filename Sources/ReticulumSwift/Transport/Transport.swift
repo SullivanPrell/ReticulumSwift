@@ -671,6 +671,13 @@ public final class Transport {
   /// which replays a matching announce to every recorded interface as a path response.
   private var discoveryPathRequests: [Data: DiscoveryPathRequest] = [:]
 
+  /// When this node last sent a path request for each destination.
+  ///
+  /// `Transport.path_requests` (`Transport.py:187`). `requestPath` records every request it
+  /// sends, including those it forwards for peers, and the jobs loop culls an entry after
+  /// ``pathRequestGateTimeout``.
+  private var pathRequests: [Data: TimeInterval] = [:]
+
   /// Dedup keys for announces already seen—`destinationHash + randomHash`.
   ///
   /// Bounded to `announceCacheCap` entries (FIFO).
@@ -1277,6 +1284,12 @@ public final class Transport {
     return inflightPathRequests[destinationHash]
   }
 
+  func pathRequestTimestamp(for destinationHash: Data) -> TimeInterval? {
+    lock.lock()
+    defer { lock.unlock() }
+    return pathRequests[destinationHash]
+  }
+
   func discoveryPathRequest(for destinationHash: Data) -> DiscoveryPathRequest? {
     lock.lock()
     defer { lock.unlock() }
@@ -1342,16 +1355,17 @@ public final class Transport {
     return discoveryPathRequests.removeValue(forKey: destinationHash)
   }
 
-  /// Expire both path request tables.
+  /// Expire the three path request tables.
   ///
-  /// `Transport.py:993-1011` collects the stale keys and `:1107-1120` removes them. The two
-  /// tables age on different clocks—the in-flight marker on the fixed
-  /// ``pathRequestGateTimeout``, each waiting entry on its own deadline—so on a slow network
-  /// an entry outlives the marker that created it. A search that nothing ever answers would
-  /// otherwise block every later request for that destination for as long as the process runs.
+  /// `Transport.py:981-1011` collects the stale keys and `:1097-1120` removes them. The
+  /// sent requests and the in-flight markers age on the fixed ``pathRequestGateTimeout``,
+  /// each waiting entry on its own deadline, so on a slow network an entry outlives the
+  /// marker that created it. A search that nothing ever answers would otherwise block every
+  /// later request for that destination for as long as the process runs.
   func sweepPathRequestTables(now: TimeInterval = Date().timeIntervalSince1970) {
     lock.lock()
     defer { lock.unlock() }
+    pathRequests = pathRequests.filter { now <= $0.value + Transport.pathRequestGateTimeout }
     inflightPathRequests = inflightPathRequests.filter {
       now <= $0.value + Transport.pathRequestGateTimeout
     }
@@ -4916,18 +4930,16 @@ public final class Transport {
       paths[packet.destinationHash] != nil
       || registeredDestinations[packet.destinationHash] != nil
     // `if packet.destination_hash in Transport.path_requests or … in
-    // Transport.discovery_path_requests: pass` (`Transport.py:1819-1821`). This node
-    // asked the network for exactly this destination on a peer's behalf, so holding the
-    // answer behind the burst limiter would strand the very requestors the waiting entry
-    // holds open for—and the entry would then time out having achieved nothing.
-    //
-    // Upstream exempts its client-side `path_requests` table here too; this port has no
-    // such table, so this checks only the half that exists.
-    let awaitedByDiscovery = discoveryPathRequests[packet.destinationHash] != nil
+    // Transport.discovery_path_requests: pass` (`Transport.py:1819-1821`). This node asked
+    // the network for exactly this destination, for itself or on a peer's behalf, so the
+    // burst limiter doesn't hold the answer.
+    let awaited =
+      pathRequests[packet.destinationHash] != nil
+      || discoveryPathRequests[packet.destinationHash] != nil
     lock.unlock()
     // `elif packet.receiving_interface.should_ingress_limit(): hold_announce(packet); return`
     // (`Transport.py:1823-1825`).
-    if !isKnownDestination && !awaitedByDiscovery && shouldIngressLimit(on: interface) {
+    if !isKnownDestination && !awaited && shouldIngressLimit(on: interface) {
       holdAnnounce(packet, destinationHash: packet.destinationHash, on: interface)
       return nil
     }
@@ -5457,6 +5469,9 @@ public final class Transport {
   /// reach that already knows a path replies by re-broadcasting the
   /// cached announce.
   ///
+  /// For ``pathRequestGateTimeout`` after the request, the ingress hold lets an announce for
+  /// `destinationHash` through.
+  ///
   /// - Parameters:
   ///   - destinationHash: 16-byte truncated hash of the destination.
   ///   - onInterface: Limit the request to a single interface, or nil to broadcast on all.
@@ -5491,6 +5506,8 @@ public final class Transport {
       pathRequestTagSet.insert(dedupKey)
       pathRequestTags.append(dedupKey)
     }
+    // `Transport.path_requests[destination_hash] = time.time()` (`Transport.py:3321`).
+    pathRequests[destinationHash] = Date().timeIntervalSince1970
     lock.unlock()
 
     let packet = Packet(
