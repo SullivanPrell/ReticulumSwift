@@ -40,6 +40,14 @@ Before, it held up the data that arrived after it on the same interface.
 - A held announce re-enters as ingress-limited on release, as `Interface.py:296` does. A path
   request admitted as ingress-limited stays limited when the worker answers it, which ORs that
   with a second limiter reading (`Transport.py:3427`).
+- Each connection the shared instance accepts is a `LocalServerClientInterface`, which
+  `Transport` registers when the client connects and removes when it hangs up. Its name is the
+  client's port, and it reports as `LocalInterface[<port>]` and type `LocalClientInterface`,
+  with the shared instance as its parent, as Python's spawned interface does. `rnstatus -a`
+  lists one per attached program, and `rnstatus` hides them by that prefix, as Python's does
+  (`rnstatus.py:452`). `PosixTCPServer` no longer conforms to `LocalClientServingInterface`, its
+  `send` does nothing (`LocalInterface.py:462-463`), and `detachInterface` refuses it, as
+  `Reticulum.py:809-811` refuses `LocalServerInterface`.
 
 ### Fixed
 
@@ -72,6 +80,19 @@ Before, it held up the data that arrived after it on the same interface.
   cancel the read still waiting on it, and `DispatchIO` waits for pending operations before it
   closes, so each client's socket stayed open until the client itself hung up. 1.23.0 behaves
   the same way.
+- Two programs attached to one Swift shared instance can open a link to each other, and an
+  announce from one reaches the other. Python's `LocalServerInterface` gives each accepted
+  connection a `LocalClientInterface` of its own (`LocalInterface.py:447-460`). This port put
+  every connection behind the one `PosixTCPServer`, so a path between two local clients left
+  through the interface the link request arrived on, and `handleLinkRequest` dropped the
+  request as a loop. The announce fan-out to local clients also skipped the interface the
+  announce came in on, which was every client's. `rncp` between two clients of a Swift `rnsd`
+  timed out establishing its link. All released versions behave this way.
+- A packet the shared instance routes to one local client reaches that client only. Before,
+  `PosixTCPServer.send` wrote it to every connected client.
+- The shared instance counts a local client's traffic on the client's connection and adds it
+  to the shared instance's own counters, as `process_incoming` and `process_outgoing` do
+  (`LocalInterface.py:204-243`). Sent bytes count the HDLC-framed length, as Python's do.
 
 ### Deliberate differences from Python
 

@@ -204,9 +204,8 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 
   /// Broadcast to ALL connected clients.
   ///
-  /// Used only when a send must reach every peer
-  /// (for example, the PosixTCPServer shared-instance model). Transport routing uses the
-  /// per-client `TCPServerClientInterface.send()` instead.
+  /// Used only when a send must reach every peer. Transport routing uses the per-client
+  /// `TCPServerClientInterface.send()` instead.
   public func send(_ packet: Packet) throws {
     let raw = try packet.pack()
     let framed = HDLC.frame(wrapIfac(raw))

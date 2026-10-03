@@ -2171,7 +2171,9 @@ public final class Reticulum {
       Reticulum.log("Attempt to detach non-existing interface \"\(name)\"", level: .warning)
       return nil
     }
+    // `I2PInterface`, `LocalClientInterface` and `LocalServerInterface` (`Reticulum.py:809-811`).
     if iface is I2PInterface || iface is LocalInterface || iface is any LocalClientServingInterface
+      || iface is PosixTCPServer
     {
       return false
     }

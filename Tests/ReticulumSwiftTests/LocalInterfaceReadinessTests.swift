@@ -76,7 +76,9 @@ final class LocalInterfaceReadinessTests: XCTestCase {
   func testStartBlocksUntilTheInterfaceCanSend() throws {
     let server = try startServer()
     let received = expectation(description: "server received the frame")
-    server.rawInboundHandler = { _, _ in received.fulfill() }
+    server.onClientConnected = { connection in
+      connection.rawInboundHandler = { _, _ in received.fulfill() }
+    }
 
     let client = makeClient(port: server.port)
     try client.start()
@@ -170,6 +172,10 @@ final class LocalInterfaceReadinessTests: XCTestCase {
 
     XCTAssertEqual(
       daemon.hopsTo(destination.hash), 0, "a directly attached local client is zero hops away")
-    XCTAssertEqual(daemon.nextHopInterfaceName(for: destination.hash), server.name)
+    // The path leaves through the client's own connection, as Python's does through the
+    // `LocalClientInterface` the server spawned for it (`LocalInterface.py:447-460`).
+    let connection = try XCTUnwrap(
+      daemon.interfaces.first { ($0 as? any SpawnedInterface)?.spawningInterface === server })
+    XCTAssertEqual(daemon.nextHopInterfaceName(for: destination.hash), connection.name)
   }
 }

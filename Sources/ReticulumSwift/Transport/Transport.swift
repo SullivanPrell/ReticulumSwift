@@ -1394,10 +1394,10 @@ public final class Transport {
   ///
   /// Mirrors Python
   /// `Transport.is_local_client_interface(interface)`, which is true only for a
-  /// per-client connection whose `parent_interface.is_local_shared_instance`.
-  /// In Swift the per-client sockets are collapsed into a single
-  /// `LocalClientServingInterface` (for example, `PosixTCPServer` on the shared-instance
-  /// port), so that protocol conformance is exactly the "local client" marker.
+  /// per-client connection whose `parent_interface.is_local_shared_instance`
+  /// (`Transport.py:3608-3611`). That connection is a `LocalServerClientInterface`, which
+  /// conforms to `LocalClientServingInterface`; the listening `PosixTCPServer` doesn't, as
+  /// Python's server has no parent.
   ///
   /// NOTE: this is the opposite end from `LocalInterface`. A `LocalInterface` is
   /// *this* node's connection *to* a shared instance (the client side) and is
@@ -2835,6 +2835,17 @@ public final class Transport {
         self?.register(interface: clientIface)
       }
       tcpServer.onClientDisconnected = { [weak self] clientIface in
+        self?.deregister(interface: clientIface)
+      }
+    }
+    // The shared-instance server spawns one interface per accepted connection, which
+    // `incoming_connection` adds to `Transport.interfaces` and `local_client_interfaces`
+    // (`LocalInterface.py:457-458`), and `teardown` removes (`LocalInterface.py:329-332`).
+    if let sharedInstance = interface as? PosixTCPServer {
+      sharedInstance.onClientConnected = { [weak self] clientIface in
+        self?.register(interface: clientIface)
+      }
+      sharedInstance.onClientDisconnected = { [weak self] clientIface in
         self?.deregister(interface: clientIface)
       }
     }
