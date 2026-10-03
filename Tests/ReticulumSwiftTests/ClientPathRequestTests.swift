@@ -16,8 +16,9 @@ import XCTest
 /// each destination.
 ///
 /// `request_path` records it (`Transport.py:3321`), the jobs loop culls it after
-/// `PATH_REQUEST_GATE_TIMEOUT` (`Transport.py:981-1100`), and the ingress hold lets the
-/// answer through (`Transport.py:1819`).
+/// `PATH_REQUEST_GATE_TIMEOUT` (`Transport.py:981-1100`), and two readers consult it: the
+/// ingress hold, which lets the answer through (`Transport.py:1819`), and the path-table
+/// write, which marks the destination used (`Transport.py:2462-2463`).
 final class ClientPathRequestTests: XCTestCase {
 
   // MARK: - Fixtures
@@ -146,5 +147,60 @@ final class ClientPathRequestTests: XCTestCase {
     XCTAssertTrue(
       t.hasPath(to: dest.hash),
       "`... or packet.destination_hash in Transport.discovery_path_requests` (Transport.py:1819)")
+  }
+
+  // MARK: - Marking the destination used
+
+  func testAPathThisNodeRequestedMarksItsDestinationUsed() throws {
+    let (t, iface) = makeNode()
+    let dest = try remoteDestination()
+    try t.requestPath(for: dest.hash)
+
+    iface.inboundHandler?(try Announce.make(for: dest), iface)
+
+    XCTAssertTrue(t.hasPath(to: dest.hash))
+    XCTAssertNotNil(
+      t.knownDestinationLastUsed[dest.hash],
+      "`_used_destination_data(packet.destination_hash)` (Transport.py:2462-2463)")
+  }
+
+  func testAnUnrequestedPathLeavesItsDestinationUnused() throws {
+    let (t, iface) = makeNode()
+    let dest = try remoteDestination()
+
+    iface.inboundHandler?(try Announce.make(for: dest), iface)
+
+    XCTAssertTrue(t.hasPath(to: dest.hash))
+    XCTAssertNil(t.knownDestinationLastUsed[dest.hash])
+  }
+
+  func testADeclinedAnnounceLeavesItsDestinationUnused() throws {
+    // The mark sits inside `if should_add:` (`Transport.py:2298`, `:2462`).
+    let (t, iface) = makeNode()
+    let dest = try remoteDestination()
+    let now = Date().timeIntervalSince1970
+    iface.inboundHandler?(try Announce.make(for: dest, timestamp: now), iface)
+    try t.requestPath(for: dest.hash)
+
+    var stale = try Announce.make(for: dest, timestamp: now - 3600)
+    stale.hops = 3
+    iface.inboundHandler?(stale, iface)
+
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 0, "the stale announce must be declined")
+    XCTAssertNil(t.knownDestinationLastUsed[dest.hash])
+  }
+
+  func testASharedInstanceClientLeavesTheMarkToTheInstance() throws {
+    // `Reticulum._used_destination_data` sends the mark to the shared instance over RPC
+    // (`Reticulum.py:1436-1441`) and leaves the client's own table alone.
+    let (t, iface) = makeNode()
+    t.isConnectedToSharedInstance = true
+    let dest = try remoteDestination()
+    try t.requestPath(for: dest.hash)
+
+    iface.inboundHandler?(try Announce.make(for: dest), iface)
+
+    XCTAssertTrue(t.hasPath(to: dest.hash))
+    XCTAssertNil(t.knownDestinationLastUsed[dest.hash])
   }
 }

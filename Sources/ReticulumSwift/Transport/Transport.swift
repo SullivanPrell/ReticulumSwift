@@ -5202,6 +5202,7 @@ public final class Transport {
       } else {
         shouldUpdate = true  // no existing path (Python 1877-1880)
       }
+      var requestedPathWritten = false
       if shouldUpdate {
         // Cache the announce packet to disk so the path table survives restarts.
         // Mirrors Python: `Transport.cache(packet, force_cache=True, packet_type="announce")`
@@ -5242,6 +5243,7 @@ public final class Transport {
         pathStatesLock.lock()
         pathStates[decoded.destinationHash] = Transport.stateUnknown
         pathStatesLock.unlock()
+        requestedPathWritten = pathRequests[decoded.destinationHash] != nil
       }
       // If this announce arrived on a tunneled interface, record the path in
       // the tunnel entry so it can be restored if the tunnel reappears.
@@ -5251,6 +5253,14 @@ public final class Transport {
         tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
       }
       lock.unlock()
+
+      // `if packet.destination_hash in Transport.path_requests: _used_destination_data(...)`
+      // (`Transport.py:2462-2463`), inside `if should_add:`. A shared-instance client's call
+      // goes to the instance over RPC (`Reticulum.py:1436-1441`) and leaves the client's own
+      // table alone. This port doesn't send that RPC.
+      if requestedPathWritten && !isConnectedToSharedInstance {
+        markDestinationUsed(decoded.destinationHash)
+      }
 
       onAnnounceReceived?(decoded, interface)
       dispatchAnnounceHandlers(decoded)
@@ -5470,7 +5480,7 @@ public final class Transport {
   /// cached announce.
   ///
   /// For ``pathRequestGateTimeout`` after the request, the ingress hold lets an announce for
-  /// `destinationHash` through.
+  /// `destinationHash` through, and a path it installs marks the destination used.
   ///
   /// - Parameters:
   ///   - destinationHash: 16-byte truncated hash of the destination.
