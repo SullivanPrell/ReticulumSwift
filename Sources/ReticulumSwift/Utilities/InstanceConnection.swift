@@ -294,7 +294,6 @@ public final class InstanceConnection {
         shareInstance: config.reticulum.shareInstance,
         logLevel: logLevel
       ))
-    try reticulum.start()
 
     let sharedPort = config.reticulum.sharedInstancePort
     let controlPort = config.reticulum.instanceControlPort
@@ -302,6 +301,7 @@ public final class InstanceConnection {
     // Instance sharing disabled → private stack, nothing to attach to.
     // Python: the `else` branch of `if self.share_instance:`.
     guard config.reticulum.shareInstance else {
+      try reticulum.start()
       if requireSharedInstance {
         reticulum.stop()
         throw InstanceError.noSharedInstance
@@ -313,16 +313,45 @@ public final class InstanceConnection {
         rpc: nil, sharedInstanceServer: nil, localInterface: nil)
     }
 
-    // Try to become the shared instance by binding its port. Python does exactly this
-    // and treats the bind failure as "someone else is already the shared instance".
+    // `attach` decides the role before it starts the stack, because `start()` reads and writes
+    // the shared instance's state only outside a local client. Python binds the shared-instance
+    // port, or connects to the instance holding it, before `Transport.start`
+    // (`Reticulum.py:754` → `:399-458`, then `:353`), and treats the bind failure as "someone
+    // else is already the shared instance".
     let server = PosixTCPServer(name: "Shared Instance", port: sharedPort)
+    let isSharedInstance: Bool
     do {
-      reticulum.transport.register(interface: server)
-      try server.start()
+      try server.bind()
+      isSharedInstance = true
     } catch {
-      // --- Someone else owns the port: attach as a local client. ---
-      reticulum.transport.deregister(interface: server)
+      isSharedInstance = false
+    }
 
+    // Python: "Existing shared instance required, but this instance started as shared
+    // instance. Aborting startup." → detach and raise, before `Transport.start`
+    // (`Reticulum.py:410-413`, `:452-453`).
+    if isSharedInstance && requireSharedInstance {
+      server.stop()
+      throw InstanceError.noSharedInstance
+    }
+
+    // Python: `is_connected_to_shared_instance = True`, which Transport reads back
+    // as `Transport.owner.is_connected_to_shared_instance`. Without it a client
+    // re-applies work the shared instance has already done: `filterAndRecord` runs
+    // the HEADER_2 transport-id filter a second time and drops packets that were
+    // forwarded *to this node*, `shouldApplyDelta` re-applies the local hops delta, and
+    // rnprobe takes the standalone branch so it never reports RSSI/SNR/Link Quality.
+    // `start()` disables transport for it, as Python does (`Reticulum.py:440`).
+    reticulum.transport.isConnectedToSharedInstance = !isSharedInstance
+    do {
+      try reticulum.start()
+    } catch {
+      server.stop()
+      throw error
+    }
+
+    if !isSharedInstance {
+      // --- Someone else owns the port: attach as a local client. ---
       let localInterface = LocalInterface(host: "127.0.0.1", port: sharedPort)
       reticulum.transport.register(interface: localInterface)
       do {
@@ -333,18 +362,6 @@ public final class InstanceConnection {
         throw InstanceError.couldNotConnect(error)
       }
 
-      // Python disables transport, remote management and probes on a local client,
-      // because the shared instance is the one doing all of that.
-      reticulum.transport.transportEnabled = false
-
-      // Python: `is_connected_to_shared_instance = True`, which Transport reads back
-      // as `Transport.owner.is_connected_to_shared_instance`. Without it a client
-      // re-applies work the shared instance has already done: `filterAndRecord` runs
-      // the HEADER_2 transport-id filter a second time and drops packets that were
-      // forwarded *to this node*, `shouldApplyDelta` re-applies the local hops delta, and
-      // rnprobe takes the standalone branch so it never reports RSSI/SNR/Link Quality.
-      reticulum.transport.isConnectedToSharedInstance = true
-
       let rpc = try? RPCClient.forInstance(storagePath: storagePath, port: controlPort)
       return InstanceConnection(
         reticulum: reticulum, config: config,
@@ -354,13 +371,14 @@ public final class InstanceConnection {
     }
 
     // --- This instance became the shared instance. ---
-    // Python: "Existing shared instance required, but this instance started as shared
-    // instance. Aborting startup." → detach and raise.
-    if requireSharedInstance {
+    reticulum.transport.register(interface: server)
+    do {
+      try server.start()
+    } catch {
       server.stop()
       reticulum.transport.deregister(interface: server)
       reticulum.stop()
-      throw InstanceError.noSharedInstance
+      throw error
     }
 
     // Not `try?`. A shared instance with no control socket is a daemon every `rn*` utility

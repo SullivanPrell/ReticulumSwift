@@ -39,6 +39,11 @@ Before, it held up the data that arrived after it on the same interface.
   last request for the destination, except for a path that has gone.
 - The rediscovery requests queue, at most 32 and one per destination, and go out half a second
   apart (`Transport.py:196`, `:1226-1264`).
+- `PosixTCPServer.bind()` binds and listens without accepting, so a caller can learn whether
+  it holds the shared-instance port before it starts the stack. Connections wait in the listen
+  backlog until `start()`.
+- `Transport.savePathTable(to:)` and `saveTunnelTable(to:)`, which write nothing in a local
+  client (`Transport.py:3789`, `:3880`).
 
 ### Changed
 
@@ -73,6 +78,13 @@ Before, it held up the data that arrived after it on the same interface.
   it (`Transport.py:884`). `handleLinkRequest` records that timeout as Python does
   (`Transport.py:2061-2062`), with the request's hop count. Before, an unproved entry stayed
   for the link timeout, 15 minutes.
+- A local client runs with transport disabled from `start()` on, because Python disables it
+  before `Transport.start` (`Reticulum.py:440`). Its transport identity is ephemeral
+  (`Transport.py:332`). Set `Transport.isConnectedToSharedInstance` before
+  `Reticulum.start()`, as `InstanceConnection.attach` now does.
+- Without transport, `start()` restores no path, tunnel or packet-hashlist table, and `stop()`
+  writes no `packet_hashlist.raw` (`Transport.py:340`, `:404-408`, `:3747`). An app that runs
+  without transport, as RetiOS does by default, starts with an empty path table.
 
 ### Fixed
 
@@ -155,6 +167,24 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3521`), except on a shared-instance client.
 - A path request arriving on a roaming-mode interface gets no answer when the path leads back
   over that interface (`Transport.py:3468-3469`).
+- A program attached to a shared instance as a local client, such as `rnpath`, `rnstatus` or
+  `rnprobe`, no longer reads or writes the shared instance's state (`bugs/063`).
+  `InstanceConnection.attach` started the stack before it knew the role, so a client restored
+  the path, tunnel and hashlist tables from the shared storage, and wrote them back with
+  `known_destinations` and `blackhole/local` when it stopped. A path the shared instance had
+  dropped came back from the file, and `rnpath -w` reported it at once, on interface `None`.
+  The attach now binds the shared-instance port first, as Python decides the role before
+  `Transport.start` (`Reticulum.py:754`, `:353`). Each load and save carries Python's guard:
+  the path table (`Transport.py:404-408`, `:3789`), the tunnels (`:462`, `:3880`), the
+  hashlist (`:340`, `:3746-3747`), known destinations (`Identity.py:179`, `:616`), learned
+  ratchets (`:420`), the announce cache (`Transport.py:2457`) and the blackhole list, which a
+  client changes through the shared instance (`Reticulum.py:2017-2021`). A client removes no
+  ratchet file (`Reticulum.py:352`) and runs neither interface discovery nor the blackhole
+  updater (`:371-374`). 1.23.0 behaves the same way.
+- `rnstatus` or `rnpath` run while no shared instance is up no longer empties
+  `destination_table`. The attach started the stack, which holds restored paths until their
+  interfaces register (`bugs/041`), then stopped it and wrote the table without them. It now
+  gives up before it starts the stack, as Python does (`Reticulum.py:410-413`, `:452-453`).
 
 ### Deliberate differences from Python
 

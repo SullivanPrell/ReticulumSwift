@@ -16,7 +16,7 @@ import XCTest
 ///
 /// A local client reads none of the transport tables and writes none of the state files.
 /// Python decides the role before `Transport.start` (`Reticulum.py:754` → `:399-458`, then
-/// `:353`), and every load and save of that state is guarded on it:
+/// `:353`), and every load and save of that state checks it:
 ///
 /// | File | Load | Save |
 /// |---|---|---|
@@ -161,14 +161,14 @@ final class LocalClientStateTests: XCTestCase {
   // MARK: - Load side
 
   /// `Transport.py:404-408` and `:462`: the client restores neither table, so a destination
-  /// the shared instance once knew is not a path in the client.
+  /// the shared instance once knew isn't a path in the client.
   func testALocalClientRestoresNoTransportTable() throws {
     let (directory, sharedPort) = try makeConfigDirectory(enableTransport: true)
     let storage = InstanceConnection.storagePath(for: directory)
     _ = try attach(directory)
 
     // Through an interface named as the client's, so an entry the client did read would
-    // install as soon as the client registers it.
+    // install when the client registers it.
     let seeded = try seedTables(
       in: storage, through: LocalInterface(host: "127.0.0.1", port: sharedPort))
 
@@ -218,8 +218,11 @@ final class LocalClientStateTests: XCTestCase {
 
   // MARK: - Save side
 
+  /// A local client writes no state file through any of the three save paths.
+  ///
   /// `Transport.py:3980`, `:3789`, `:3880`, `:3746`; `Identity.py:179`, `:616`. A client also
-  /// runs no persist job (`Reticulum.py:399-458` starts `__jobs` only for the other two roles).
+  /// runs no persist job: Python starts `__jobs` only for the other two roles
+  /// (`Reticulum.py:420`, `:459`).
   func testALocalClientWritesNoStateFile() throws {
     let (directory, _) = try makeConfigDirectory(enableTransport: true)
     let storage = InstanceConnection.storagePath(for: directory)
@@ -240,8 +243,8 @@ final class LocalClientStateTests: XCTestCase {
     assertUntouched(sentinels, after: "stop()")
   }
 
-  /// Python raises before `Transport.start` when a shared instance was required and none is
-  /// running (`Reticulum.py:411-414`, `:453-454`), so neither the tables nor the files are touched.
+  /// Python raises before `Transport.start` when a program requires a shared instance and none
+  /// is running (`Reticulum.py:410-413`, `:452-453`), so the attach touches no table and no file.
   func testAUtilityThatFindsNoSharedInstanceTouchesNoStateFile() throws {
     let (directory, _) = try makeConfigDirectory(enableTransport: true)
     let storage = InstanceConnection.storagePath(for: directory)
@@ -298,7 +301,8 @@ final class LocalClientStateTests: XCTestCase {
       transport.handleIncoming(packet: announce, from: interface)
 
       XCTAssertNotNil(transport.paths[destination.hash], "client: \(client)")
-      let cached = directory
+      let cached =
+        directory
         .appendingPathComponent(StorageInventory.Entry.announceCache.fileName)
         .appendingPathComponent(Hashes.fullHash(try announce.hashablePart()).hexString)
       XCTAssertEqual(
@@ -306,8 +310,10 @@ final class LocalClientStateTests: XCTestCase {
     }
   }
 
-  /// `Reticulum.py:352`: only a non-client cleans the ratchet directory. A client still reads
-  /// what is valid, as `Identity.get_ratchet` does (`Identity.py:485-497`).
+  /// A local client removes no ratchet file, and still reads the valid ones.
+  ///
+  /// Only a non-client cleans the ratchet directory (`Reticulum.py:352`). A client reads as
+  /// `Identity.get_ratchet` does (`Identity.py:485-497`).
   func testALocalClientRemovesNoRatchetFile() throws {
     for client in [false, true] {
       let directory = try makeDirectory("clientratchetclean")

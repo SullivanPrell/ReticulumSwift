@@ -161,8 +161,13 @@ public final class PosixTCPServer: Interface, MtuAutoconfiguringInterface {
       label: "ReticulumSwift.PosixTCPServer.\(name)", attributes: .concurrent)
   }
 
-  /// Brings the interface online.
-  public func start() throws {
+  /// Binds and listens on the port without accepting.
+  ///
+  /// The bind decides whether this process is the shared instance, and Python decides that
+  /// before `Transport.start` (`Reticulum.py:754`, then `:353`). Connections wait in the listen
+  /// backlog until ``start()``. Does nothing when already bound.
+  public func bind() throws {
+    guard listenFD < 0 else { return }
     let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
     guard fd >= 0 else {
       throw PosixError.errno(Darwin.errno, "socket()")
@@ -200,10 +205,17 @@ public final class PosixTCPServer: Interface, MtuAutoconfiguringInterface {
     }
 
     listenFD = fd
+  }
+
+  /// Brings the interface online, binding first unless ``bind()`` already has.
+  public func start() throws {
+    try bind()
+    guard acceptSource == nil else { return }
+    let fd = listenFD
     isOnline = true
 
     let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-    src.setEventHandler { [weak self] in self?.acceptOne() }
+    src.setEventHandler { [weak self] in self?.acceptOne(on: fd) }
     src.setCancelHandler { Darwin.close(fd) }
     src.resume()
     acceptSource = src
@@ -211,8 +223,13 @@ public final class PosixTCPServer: Interface, MtuAutoconfiguringInterface {
 
   /// Takes the interface offline and releases its resources.
   public func stop() {
-    acceptSource?.cancel()
+    if let acceptSource {
+      acceptSource.cancel()
+    } else if listenFD >= 0 {
+      Darwin.close(listenFD)
+    }
     acceptSource = nil
+    listenFD = -1
     isOnline = false
     lock.lock()
     let all = clients
@@ -231,7 +248,7 @@ public final class PosixTCPServer: Interface, MtuAutoconfiguringInterface {
 
   // MARK: - Accept loop
 
-  private func acceptOne() {
+  private func acceptOne(on listenFD: Int32) {
     var clientAddr = sockaddr_in()
     var addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
     let clientFD = withUnsafeMutablePointer(to: &clientAddr) {
