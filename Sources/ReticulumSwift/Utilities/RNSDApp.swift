@@ -111,8 +111,8 @@ public enum RNSDApp {
   /// `os._exit(255)`.
   public enum ExitCode: Int32, Equatable, CaseIterable {
     case ok = 0
-    /// Reserved: the pre-parity Swift `rnsd` used 1 for stack bring-up failures. The port
-    /// now panics with 255 instead, matching Python; 1 is kept only so callers can name it.
+    /// The instance control socket couldn't be bound. Python's `rnsd` leaves the `OSError`
+    /// uncaught (`Reticulum.py:366`, `rnsd.py:84-88`), and the interpreter exits with 1.
     case fatalError = 1
     case argumentError = 2
     case panic = 255

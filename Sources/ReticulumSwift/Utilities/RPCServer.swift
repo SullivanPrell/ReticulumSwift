@@ -553,11 +553,24 @@ public final class RPCServer {
   }
 
   /// A failure raised while starting or serving the control socket.
-  public enum RPCError: Error {
+  public enum RPCError: Error, CustomStringConvertible {
     case invalidPort
     case invalidProtocol
     /// The control socket couldn't be bound or listened on. Carries the `POSIXError`.
     case listenerFailed(Error?)
+
+    /// A socket failure in the form Python prints an `OSError`: `[Errno 48] Address already in
+    /// use`.
+    public var description: String {
+      switch self {
+      case .invalidPort: return "invalid port"
+      case .invalidProtocol: return "invalid protocol"
+      case .listenerFailed(.some(let error as POSIXError)):
+        return "[Errno \(error.code.rawValue)] \(String(cString: strerror(error.code.rawValue)))"
+      case .listenerFailed(.some(let error)): return "\(error)"
+      case .listenerFailed(.none): return "the control socket could not listen"
+      }
+    }
   }
 }
 
