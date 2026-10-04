@@ -39,6 +39,9 @@ Before, it held up the data that arrived after it on the same interface.
   last request for the destination, except for a path that has gone.
 - The rediscovery requests queue, at most 32 and one per destination, and go out half a second
   apart (`Transport.py:196`, `:1226-1264`).
+- `SharedInstanceClientInterface`, which `LocalInterface` adopts. `interfaceToSharedInstance(_:)`
+  is true for a conformer, as Python's is for an interface with
+  `is_connected_to_shared_instance` (`Transport.py:3620-3622`).
 
 ### Changed
 
@@ -192,8 +195,8 @@ Before, it held up the data that arrived after it on the same interface.
   `pythonHops(of:)`, and so do the `path_table` RPC, `rnpath -t` and its `-m` filter, the remote
   `/path` handler, and a discovered interface's `hops` (`Discovery.py:373`). A mesh neighbour
   showed as 0 hops where Python shows 1, every path learned over a mesh interface showed one hop
-  short, and `-m` filtered on that count. `PathEntry.hops` still holds the wire count, which
-  the routing decisions compare. All released versions behave this way.
+  short, and `-m` filtered on that count. `PathEntry.hops` still holds the wire count. All
+  released versions behave this way.
 - `Link`'s expected hops and establishment timeout (`Link.py:281-283`), a packet receipt's
   default timeout (`Packet.py:433`), and the count `rnprobe` prints (`rnprobe.py:151`) use
   Python's count, so a link or a receipt over a mesh interface waits one hop's allowance longer,
@@ -202,6 +205,18 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3838`), and a restored entry reads it back as Python's count.
 - A link-request proof's hop count is the one `inbound` leaves on it, as `link.expected_hops`
   holds it (`Link.py:281`, `Transport.py:2700-2707`), and re-balancing stores it as Python's count.
+- Routing branches on Python's hop count through `pythonHops(of:)`, as it does on
+  `IDX_PT_HOPS`. A sent packet takes a transport header above 1 hop, or at 1 hop behind a
+  shared instance (`Transport.py:1396`, `:1416`). A relayed data packet or link request is
+  re-addressed above 1 remaining hop and loses its transport header at 1. At 0, a local
+  client, it keeps the header it arrived with unless `local_hops_delta` is on
+  (`Transport.py:2024-2054`). `for_local_client` is a path of 0 hops (`:1968`), and the
+  announce ladder compares the announce's count after `inbound` with the path's (`:2236`). Mesh
+  paths branched the same way on wire counts. A path through a local client didn't: a shared
+  instance stripped the header of a packet it relayed to a local client, and sent a transport
+  header toward a local client's path learned at 1 hop. An announce against a path of the
+  other locality took the wrong branch of the ladder: a mesh announce at wire 0 against a local
+  client's path is 1 hop against 0. All released versions behave this way.
 
 ### Deliberate differences from Python
 
