@@ -49,7 +49,7 @@ public struct PathStore {
     /// destination hash for an announce that arrived without one (`:1798`), and this mirrors
     /// that, so `nil` in memory and the fallback on disk stay the same value.
     public var receivedFrom: Data
-    /// 3—hop count.
+    /// 3—hop count as Python counts it, `IDX_PT_HOPS` (`Transport.py:3838`).
     public var hops: UInt8
     /// 4—wall-clock expiry, unix seconds.
     public var expires: TimeInterval
@@ -145,11 +145,12 @@ public struct PathStore {
       )
     }
 
-    /// Serialise a live path entry. `interfaceHash` is passed in rather than read off the
-    /// path, because a tunnel path carries its *tunnel's* interface hash
+    /// Serialise a live path entry of `transport`. `interfaceHash` is passed in rather than
+    /// read off the path, because a tunnel path carries its *tunnel's* interface hash
     /// (`Transport.py:3476`), not its own.
     public init(
       _ path: Transport.PathEntry,
+      of transport: Transport,
       destinationHash: Data,
       interfaceHash: Data?,
       announceHash: Data
@@ -158,7 +159,7 @@ public struct PathStore {
         destinationHash: destinationHash,
         timestamp: path.lastHeard.timeIntervalSince1970,
         receivedFrom: path.nextHopTransportID ?? destinationHash,
-        hops: path.hops,
+        hops: UInt8(clamping: transport.pythonHops(of: path)),
         expires: path.expires.timeIntervalSince1970,
         randomBlobs: Array(path.randomBlobs.suffix(Transport.persistRandomBlobs)),
         interfaceHash: interfaceHash,
@@ -166,19 +167,22 @@ public struct PathStore {
       )
     }
 
-    /// Rebuild the in-memory path, with the interface already resolved by the caller—the
-    /// destination table drops an entry whose interface is gone (`Transport.py:334`) while a
-    /// tunnel path keeps it (`:398`), so who may be `nil` is the caller's decision.
+    /// Rebuild the in-memory path for `transport`, with the interface already resolved by the
+    /// caller—the destination table drops an entry whose interface is gone
+    /// (`Transport.py:334`) while a tunnel path keeps it (`:398`), so who may be `nil` is the
+    /// caller's decision.
     public func pathEntry(
       interface: (any Interface)?,
-      identityHash: Data
+      identityHash: Data,
+      in transport: Transport
     ) -> Transport.PathEntry {
+      let wireHops = transport.wireHops(fromPythonHops: Int(hops), on: interface)
       var path: Transport.PathEntry
       if let interface {
         path = Transport.PathEntry(
           destinationHash: destinationHash,
           nextHopInterface: interface,
-          hops: hops,
+          hops: wireHops,
           lastHeard: Date(timeIntervalSince1970: timestamp),
           identityHash: identityHash,
           expires: Date(timeIntervalSince1970: expires),
@@ -189,7 +193,7 @@ public struct PathStore {
       } else {
         path = Transport.PathEntry(
           unattachedPathTo: destinationHash,
-          hops: hops,
+          hops: wireHops,
           lastHeard: Date(timeIntervalSince1970: timestamp),
           identityHash: identityHash,
           expires: Date(timeIntervalSince1970: expires),
@@ -245,6 +249,7 @@ public struct PathStore {
       entries.append(
         Entry(
           path,
+          of: transport,
           destinationHash: destHash,
           interfaceHash: interface.hash,
           announceHash: announceHash))
@@ -342,7 +347,7 @@ public struct PathStore {
       // `Reticulum.py:344` preceding `:346`. An entry for a destination with no known key
       // still routes; it just can't be displayed with an identity hash, same as Python.
       let identityHash = transport.recall(identity: entry.destinationHash)?.hash ?? Data()
-      let path = entry.pathEntry(interface: interface, identityHash: identityHash)
+      let path = entry.pathEntry(interface: interface, identityHash: identityHash, in: transport)
 
       // Skip entries that are already expired. Counted as installed so they aren't held
       // pending: an expired path doesn't become restorable when its interface appears.

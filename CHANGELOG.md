@@ -72,6 +72,15 @@ Before, it held up the data that arrived after it on the same interface.
   it (`Transport.py:884`). `handleLinkRequest` records that timeout as Python does
   (`Transport.py:2061-2062`), with the request's hop count. Before, an unproved entry stayed
   for the link timeout, 15 minutes.
+- `PathStore.Entry.init(_:of:destinationHash:interfaceHash:announceHash:)` and
+  `PathStore.Entry.pathEntry(interface:identityHash:in:)` take the transport, which converts
+  between the wire count and Python's.
+- `InterfaceAnnounceHandler.init` takes `hopsTo`. A handler built without one reports
+  `Transport.pathfinderM`, the count `hops_to` returns for a destination with no path
+  (`Transport.py:3141-3142`), where it reported 0.
+- A `destination_table` or `tunnels` file an earlier version wrote holds wire counts. This
+  version reads them as Python's, so a restored path learned over a mesh interface more than
+  one hop away reports one hop short until its destination announces again.
 
 ### Fixed
 
@@ -176,6 +185,23 @@ Before, it held up the data that arrived after it on the same interface.
   unmangled packet (`Transport.py:1554`, `:1561`). Data from a local client to a mesh
   neighbour takes the delta too: `to_local_client` needs a path Python counts as 0 hops
   (`Transport.py:1968`), which a neighbour isn't.
+- The path table reports hop counts as Python's does: one more than the count the announce
+  carried, except on a local client's interface or the interface to a shared instance
+  (`Transport.py:1800`, `:1937-1940`). Python stores that count as `IDX_PT_HOPS`
+  (`Transport.py:2333`). `hopsTo(_:)` and `getPathTable(maxHops:)` report it through
+  `pythonHops(of:)`, and so do the `path_table` RPC, `rnpath -t` and its `-m` filter, the remote
+  `/path` handler, and a discovered interface's `hops` (`Discovery.py:373`). A mesh neighbour
+  showed as 0 hops where Python shows 1, every path learned over a mesh interface showed one hop
+  short, and `-m` filtered on that count. `PathEntry.hops` still holds the wire count, which
+  the routing decisions compare. All released versions behave this way.
+- `Link`'s expected hops and establishment timeout (`Link.py:281-283`), a packet receipt's
+  default timeout (`Packet.py:433`), and the count `rnprobe` prints (`rnprobe.py:151`) use
+  Python's count, so a link or a receipt over a mesh interface waits one hop's allowance longer,
+  as Python's does.
+- The `destination_table` and `tunnels` files hold Python's count in field 3
+  (`Transport.py:3838`), and a restored entry reads it back as Python's count.
+- A link-request proof's hop count is the one `inbound` leaves on it, as `link.expected_hops`
+  holds it (`Link.py:281`, `Transport.py:2700-2707`), and re-balancing stores it as Python's count.
 
 ### Deliberate differences from Python
 

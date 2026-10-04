@@ -173,7 +173,11 @@ public final class Transport {
     /// listing (`Reticulum.py:1532`) and for nothing else. Never resolve a route from this
     ///—that's the preceding defect.
     public let nextHopInterfaceName: String
-    /// Hop count from this node to the destination.
+    /// Hop count of the announce that established this path, as it arrived on the wire.
+    ///
+    /// Python's path table holds that count plus one, except on a local client's interface
+    /// or the interface to a shared instance (`Transport.py:1800`, `:1937-1940`). Report it
+    /// through ``Transport/hopsTo(_:)`` or ``Transport/getPathTable(maxHops:)``.
     public var hops: UInt8
     /// Wall-clock time the announce backing this route was last heard.
     public var lastHeard: Date
@@ -1147,13 +1151,14 @@ public final class Transport {
     return paths[destinationHash] != nil
   }
 
-  /// Hop count to `destinationHash`, or nil when no path exists.
+  /// Hop count to `destinationHash` as Python counts it, or nil when no path exists.
   ///
-  /// Mirrors Python's `Transport.hops_to(destination_hash)`.
+  /// Mirrors Python's `Transport.hops_to(destination_hash)`, which returns `IDX_PT_HOPS`
+  /// (`Transport.py:3141`): ``pythonHops(of:)``.
   public func hopsTo(_ destinationHash: Data) -> UInt8? {
     lock.lock()
     defer { lock.unlock() }
-    return paths[destinationHash]?.hops
+    return paths[destinationHash].map { UInt8(clamping: pythonHops(of: $0)) }
   }
 
   /// The next-hop destination hash (transport ID) for a known path, or nil.
@@ -2552,7 +2557,7 @@ public final class Transport {
     /// `prettyhexrep(path["via"])` unguarded, so a null here is a TypeError in the
     /// Python client, not an empty column—hence non-optional.
     public let via: Data
-    /// Hop count from this node to the destination.
+    /// Hop count from this node to the destination as Python counts it, `IDX_PT_HOPS`.
     public let hops: UInt8
     /// Name of the interface the path was learned on.
     public let interfaceName: String
@@ -2563,6 +2568,9 @@ public final class Transport {
   }
 
   /// Returns the path table, optionally limited to routes within `maxHops`.
+  ///
+  /// Hop counts, and the `maxHops` filter, are Python's (`Reticulum.py:1737-1740`):
+  /// ``pythonHops(of:)``.
   public func getPathTable(maxHops: UInt8? = nil) -> [PathTableEntry] {
     lock.lock()
     defer { lock.unlock() }
@@ -2574,23 +2582,23 @@ public final class Transport {
     let displayNames = Dictionary(
       interfaces.map { ($0.name, $0.displayName) },
       uniquingKeysWith: { first, _ in first })
-    return paths.values
-      .filter { $0.hops <= (maxHops ?? .max) }
-      .map {
-        PathTableEntry(
-          destinationHash: $0.destinationHash,
-          // `nextHopTransportID` is nil exactly when the announce carried no
-          // transport id, which is the case where Python falls back to the
-          // destination's own hash.
-          via: $0.nextHopTransportID ?? $0.destinationHash,
-          hops: $0.hops,
-          // Fall back to the stored short name when nothing holds that name—a
-          // path restored from disk can outlive the interface that heard it.
-          interfaceName: displayNames[$0.nextHopInterfaceName] ?? $0.nextHopInterfaceName,
-          lastHeard: $0.lastHeard,
-          expires: $0.expires
-        )
-      }
+    return paths.values.compactMap { path in
+      let hops = UInt8(clamping: pythonHops(of: path))
+      guard hops <= (maxHops ?? .max) else { return nil }
+      return PathTableEntry(
+        destinationHash: path.destinationHash,
+        // `nextHopTransportID` is nil exactly when the announce carried no
+        // transport id, which is the case where Python falls back to the
+        // destination's own hash.
+        via: path.nextHopTransportID ?? path.destinationHash,
+        hops: hops,
+        // Fall back to the stored short name when nothing holds that name—a
+        // path restored from disk can outlive the interface that heard it.
+        interfaceName: displayNames[path.nextHopInterfaceName] ?? path.nextHopInterfaceName,
+        lastHeard: path.lastHeard,
+        expires: path.expires
+      )
+    }
   }
 
   /// Returns the number of entries in the link table.
@@ -4083,14 +4091,25 @@ public final class Transport {
       QueuedDiscoveryPathRequest(destinationHash: destinationHash, blockedInterface: blocked))
   }
 
-  /// The path's hop count as Python counts it.
+  /// The path's hop count as Python counts it, `IDX_PT_HOPS`.
   ///
   /// This port stores the wire value. Python adds one on receipt (`Transport.py:1800`) and
   /// takes it back on a local client's interface or the interface to a shared instance
-  /// (`Transport.py:1937-1940`).
+  /// (`Transport.py:1937-1940`). Every surface that reports a path's hop count, or compares
+  /// it with Python's, reads it here.
   func pythonHops(of path: PathEntry) -> Int {
     guard let iface = path.nextHopInterface else { return Int(path.hops) + 1 }
     return Transport.pythonInboundHops(path.hops, on: iface, transport: self)
+  }
+
+  /// The wire value this port stores for a path on `interface` that Python counts as `hops`.
+  ///
+  /// The inverse of ``pythonHops(of:)``, for a hop count read from the destination table
+  /// or taken from a link-request proof.
+  func wireHops(fromPythonHops hops: Int, on interface: (any Interface)?) -> UInt8 {
+    let arrivalHop =
+      interface.map { Transport.pythonInboundHops(0, on: $0, transport: self) } ?? 1
+    return UInt8(clamping: hops - arrivalHop)
   }
 
   /// A packet's hop count as Python's `inbound` leaves it, from the wire value.
@@ -4902,7 +4921,9 @@ public final class Transport {
 
   private func handleLinkRequestProof(_ packet: Packet, from interface: Interface) {
     if let link = lookupLink(packet.destinationHash) {
-      let proofHops = Int(packet.hops)
+      // `packet.hops` as `inbound` leaves it (`Transport.py:1800`, `:1937-1940`), the count
+      // `link.expected_hops` holds (`Link.py:281`).
+      let proofHops = Int(inboundHops(of: packet, on: interface))
       // Python's `hops_to` returns PATHFINDER_M for an unknown path, never
       // None, so `link.expected_hops` is always an int and a pathless link
       // compares against a sentinel that can never equal a real hop count—that is,
@@ -5014,6 +5035,9 @@ public final class Transport {
   ///
   /// Latched by `link.rebalanced` so each link re-balances at most once,
   /// matching Python's `if not link.rebalanced:` guard.
+  ///
+  /// `hops` is Python's count, which `path_entry[IDX_PT_HOPS] = packet.hops` stores
+  /// (`Transport.py:2707`).
   private func rebalancePath(for link: Link, toHops hops: Int) {
     // Claim the latch on the link first, under the link's own lock and
     // *before* taking `lock`: a read-then-write across two threads could
@@ -5023,8 +5047,8 @@ public final class Transport {
     lock.lock()
     defer { lock.unlock() }
     let destinationHash = link.destination.hash
-    if var entry = paths[destinationHash], entry.hops != UInt8(truncatingIfNeeded: hops) {
-      entry.hops = UInt8(truncatingIfNeeded: hops)
+    if var entry = paths[destinationHash], pythonHops(of: entry) != hops {
+      entry.hops = wireHops(fromPythonHops: hops, on: entry.nextHopInterface)
       paths[destinationHash] = entry
     }
   }
