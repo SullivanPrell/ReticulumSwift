@@ -159,10 +159,10 @@ final class LocalHopsDeltaTests: XCTestCase {
 
   func testRelayHopsIncrementsWhenDisabled() {
     let t = Transport()  // delta 0
-    let local = LocalInterface(name: "lo-relay-off")
+    let net = CapturingInterface(name: "net-relay-off")
     XCTAssertEqual(
-      t.relayHops(singleDataPacket(hops: 2), from: local, staysLocal: false), 3,
-      "With the feature off, relay always does hops+1")
+      t.relayHops(singleDataPacket(hops: 2), from: net, staysLocal: false), 3,
+      "With the feature off, a relay adds the arrival hop (Transport.py:1800)")
   }
 
   func testRelayHopsObfuscatesLocalClientTrafficLeavingDomain() {
@@ -179,8 +179,11 @@ final class LocalHopsDeltaTests: XCTestCase {
     t.localHopsDelta = 6
     let serving = ServingInterface(name: "serving-relay-stay")
     XCTAssertEqual(
-      t.relayHops(singleDataPacket(hops: 2), from: serving, staysLocal: true), 3,
-      "instance_local_link / proof_for_local_client / to_local_client keeps real hops")
+      t.relayHops(singleDataPacket(hops: 2), from: serving, staysLocal: true), 2,
+      """
+      instance_local_link / proof_for_local_client / to_local_client keeps real hops, which a \
+      local client's interface leaves at the wire value (Transport.py:1937-1940)
+      """)
   }
 
   func testRelayHopsIncrementsForNonLocalSource() {
