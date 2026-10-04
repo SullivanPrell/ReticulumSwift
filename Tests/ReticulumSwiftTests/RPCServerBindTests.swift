@@ -8,29 +8,15 @@
 // SPDX-License-Identifier: LicenseRef-Reticulum
 //===----------------------------------------------------------------------===//
 
-import Network
 import XCTest
 
 @testable import ReticulumSwift
 
-/// The instance-control listener must actually be listening, and must say so truthfully.
+/// The instance-control listener binds what Python's binds, and says so truthfully (`bugs/040`).
 ///
-/// Found by `tri-test`'s state round-trip cells (`bugs/040`): a Swift daemon restarted on a
-/// config directory whose control port had recently served clients logs "RPC server started on
-/// port N" and then has no socket there at all. `rnstatus`, `rnpath`, `rnprobe`, `rnid -r` and
-/// `rnx` all answer "Could not connect to instance control socket" against a daemon that's
-/// otherwise running and passing traffic.
-///
-/// Two independent defects at one site, and the second is what made the first invisible:
-///
-/// 1. The parameters carry no local-endpoint reuse, so the bind fails with `EADDRINUSE` against
-///    a `TIME_WAIT` socket from the previous run. Python's listener is a
-///    `multiprocessing.connection.Listener`, which sets `SO_REUSEADDR` (CPython
-///    `connection.py`, `SocketListener.__init__`), so a Python daemon rebinds where this one
-///    can't.
-/// 2. `NWListener.start(queue:)` is asynchronous and reports failure through
-///    `stateUpdateHandler`. None was set, so nothing observed the failure and the success line
-///    was logged unconditionally. Python raises: `except OSError: self._socket.close(); raise`.
+/// Python's listener is a BSD socket with `SO_REUSEADDR` bound to `("127.0.0.1", port)`
+/// (`Reticulum.py:359`, `:366`; CPython `multiprocessing/connection.py:638-651`), and a
+/// failed bind raises.
 final class RPCServerBindTests: XCTestCase {
 
   private func freePort() -> UInt16 {
@@ -53,30 +39,34 @@ final class RPCServerBindTests: XCTestCase {
     return UInt16(bigEndian: out.sin_port)
   }
 
-  /// The parameters handed to `NWListener` allow local endpoint reuse.
+  /// The listening socket sets `SO_REUSEADDR`, as Python's does.
   ///
-  /// Asserted on the object the code constructs, not read back from the framework—the whole
-  /// point of `bugs/013`'s `NWParameters` lesson is that
-  /// `defaultProtocolStack.transportProtocol` is a *different* instance that reports defaults.
-  /// `allowLocalEndpointReuse` is a plain property of the parameters object itself, so this is
-  /// the value that's really passed.
-  func testLocalParametersAllowEndpointReuse() {
-    XCTAssertTrue(
-      RNSSocketOptions.localParameters().parameters.allowLocalEndpointReuse,
+  /// CPython's `SocketListener` sets it before binding (`multiprocessing/connection.py:645-648`),
+  /// so a restarted daemon rebinds its control port over the previous run's `TIME_WAIT`
+  /// sockets. `getsockopt` reads a BSD socket's option back authoritatively.
+  func testTheListeningSocketSetsReuseAddress() throws {
+    let server = RPCServer(port: freePort(), authkey: Data(repeating: 0x05, count: 32))
+    try server.start()
+    defer { server.stop() }
+
+    var value: Int32 = 0
+    var length = socklen_t(MemoryLayout<Int32>.size)
+    let rc = getsockopt(
+      server.listeningDescriptorForTesting, SOL_SOCKET, SO_REUSEADDR, &value, &length)
+    XCTAssertEqual(rc, 0, "getsockopt failed on the listening descriptor, errno \(errno)")
+    XCTAssertNotEqual(
+      value, 0,
       """
-      the control listener must set local endpoint reuse, as Python's \
-      `multiprocessing.connection.Listener` sets `SO_REUSEADDR`. Without it a \
-      daemon restarted while the previous run's control connections are still in \
-      TIME_WAIT cannot bind, and every rn* utility loses the daemon while it \
-      keeps running.
+      the control listener must set SO_REUSEADDR, as Python's SocketListener \
+      does; without it a daemon restarted while its control port has TIME_WAIT \
+      sockets cannot bind
       """)
   }
 
   /// A listener that can't bind is a failure, not a log line.
   ///
-  /// Holding the port with a POSIX socket that does *not* set `SO_REUSEADDR` makes the bind
-  /// fail deterministically even with reuse enabled on the listener side, so this stays a real
-  /// assertion after the preceding fix rather than becoming unreachable.
+  /// A socket on the identical address blocks the bind even with `SO_REUSEADDR` on both sides;
+  /// only `SO_REUSEPORT` would let two sockets share it.
   func testStartThrowsWhenThePortCannotBeBound() throws {
     let port = freePort()
     let blocker = socket(AF_INET, SOCK_STREAM, 0)
@@ -99,12 +89,9 @@ final class RPCServerBindTests: XCTestCase {
     XCTAssertThrowsError(
       try server.start(),
       """
-      `NWListener.start(queue:)` returns before the bind is attempted and \
-      reports failure through `stateUpdateHandler`. With none set, a \
-      listener that never binds logged "RPC server started" and the daemon \
-      ran on with no control socket — a component reporting success it \
-      did not achieve, which is the shape this whole change is about. \
-      Python raises here (`SocketListener.__init__`).
+      a control socket that cannot bind must throw, as Python's \
+      SocketListener.__init__ raises; otherwise the daemon runs on with no \
+      control socket and every rn* utility reports it missing
       """)
     server.stop()
   }
@@ -135,6 +122,42 @@ final class RPCServerBindTests: XCTestCase {
         + "\"Could not connect to instance control socket\"")
   }
 
+  /// A port held on another local address doesn't stop the control socket binding 127.0.0.1.
+  ///
+  /// Python binds `("127.0.0.1", port)` with a BSD socket (`Reticulum.py:359`, `:366`; CPython
+  /// `multiprocessing/connection.py:638-651`), which conflicts only with a socket on
+  /// 127.0.0.1 or the wildcard. `NWListener` refuses a port held on any local address, so a
+  /// port that `bind(("127.0.0.1", 0))` reports free, and that another process holds on a LAN
+  /// address, failed with `EADDRINUSE` (`bugs/040`). A socket bound to `[::1]` holds the
+  /// port the same way and exists on every host.
+  func testStartBindsALoopbackPortHeldOnAnotherAddress() throws {
+    let port = freePort()
+    let holder = socket(AF_INET6, SOCK_STREAM, 0)
+    defer { close(holder) }
+    var one: Int32 = 1
+    setsockopt(holder, IPPROTO_IPV6, IPV6_V6ONLY, &one, socklen_t(MemoryLayout<Int32>.size))
+    var addr = sockaddr_in6()
+    addr.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+    addr.sin6_family = sa_family_t(AF_INET6)
+    addr.sin6_addr = in6addr_loopback
+    addr.sin6_port = port.bigEndian
+    let held = withUnsafePointer(to: &addr) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.bind(holder, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+      }
+    }
+    XCTAssertEqual(held, 0, "could not hold [::1]:\(port), errno \(errno)")
+
+    let server = RPCServer(port: port, authkey: Data(repeating: 0x04, count: 32))
+    XCTAssertNoThrow(
+      try server.start(),
+      """
+      127.0.0.1:\(port) is free, and Python's control listener binds it; \
+      [::1]:\(port) being held must not stop this one
+      """)
+    defer { server.stop() }
+  }
+
   /// The first non-loopback, non-link-local IPv4 address this host holds, or nil.
   private func nonLoopbackIPv4() -> String? {
     var list: UnsafeMutablePointer<ifaddrs>? = nil
@@ -162,8 +185,8 @@ final class RPCServerBindTests: XCTestCase {
 
   /// The bind must be loopback-**only**, which reachability alone can't prove.
   ///
-  /// Python's control listener is constructed on `("127.0.0.1", port)` (`Reticulum.py:352` →
-  /// `:359`), so it's unreachable off-host by construction. This is the negative assertion
+  /// Python's control listener is constructed on `("127.0.0.1", port)` (`Reticulum.py:359`,
+  /// `:366`), so it's unreachable off-host by construction. This is the negative assertion
   /// whose absence let a wildcard bind sit behind 3258 green tests: the preceding test proves
   /// 127.0.0.1 answers, and a listener on `*` passes that too. An authenticated management
   /// socket (path drops, blackholing) must not be reachable from every network the host is on.
@@ -198,7 +221,7 @@ final class RPCServerBindTests: XCTestCase {
       the listener is bound to the wildcard, so the instance-control RPC \
       port is reachable from every network this host is on, where Python's \
       identical listener binds ("127.0.0.1", port) and is unreachable \
-      off-host by construction (Reticulum.py:352, :359)
+      off-host by construction (Reticulum.py:359, :366)
       """)
   }
 }
