@@ -40,7 +40,7 @@ public final class RPCServer {
   private let connectionQueue = DispatchQueue(
     label: "ReticulumSwift.RPCServer.connection", attributes: .concurrent)
 
-  /// How long a connection's read or write may block before the connection is dropped.
+  /// How long a connection's read or write may block before the server drops the connection.
   private static let ioTimeoutSeconds = 10
 
   /// The listening descriptor, for tests that read its options back with `getsockopt`.
@@ -70,7 +70,7 @@ public final class RPCServer {
   /// Starts listening for control connections on `127.0.0.1:port`.
   ///
   /// A BSD socket with `SO_REUSEADDR`, bound to loopback, as Python's control listener is
-  /// (`Reticulum.py:359`, `:366`; CPython `multiprocessing/connection.py:638-651`). That bind
+  /// (`Reticulum.py:359`, `:366`, and CPython `multiprocessing/connection.py:638-651`). That bind
   /// conflicts only with a socket on 127.0.0.1 or the wildcard. `NWListener` refuses a port
   /// held on any local address, including one that `bind(("127.0.0.1", 0))` has just reported
   /// free (`bugs/040`).
@@ -557,7 +557,7 @@ public final class RPCServer {
   public enum RPCError: Error, CustomStringConvertible {
     case invalidPort
     case invalidProtocol
-    /// The control socket couldn't be bound or listened on. Carries the `POSIXError`.
+    /// Binding or listening on the control socket failed. Carries the `POSIXError`.
     case listenerFailed(Error?)
 
     /// A socket failure in the form Python prints an `OSError`: `[Errno 48] Address already in

@@ -15,7 +15,7 @@ import XCTest
 /// The instance-control listener binds what Python's binds, and says so truthfully (`bugs/040`).
 ///
 /// Python's listener is a BSD socket with `SO_REUSEADDR` bound to `("127.0.0.1", port)`
-/// (`Reticulum.py:359`, `:366`; CPython `multiprocessing/connection.py:638-651`), and a
+/// (`Reticulum.py:359`, `:366`, and CPython `multiprocessing/connection.py:638-651`), and a
 /// failed bind raises.
 final class RPCServerBindTests: XCTestCase {
 
@@ -124,7 +124,7 @@ final class RPCServerBindTests: XCTestCase {
 
   /// A port held on another local address doesn't stop the control socket binding 127.0.0.1.
   ///
-  /// Python binds `("127.0.0.1", port)` with a BSD socket (`Reticulum.py:359`, `:366`; CPython
+  /// Python binds `("127.0.0.1", port)` with a BSD socket (`Reticulum.py:359`, `:366`, and CPython
   /// `multiprocessing/connection.py:638-651`), which conflicts only with a socket on
   /// 127.0.0.1 or the wildcard. `NWListener` refuses a port held on any local address, so a
   /// port that `bind(("127.0.0.1", 0))` reports free, and that another process holds on a LAN
@@ -185,7 +185,7 @@ final class RPCServerBindTests: XCTestCase {
 
   /// The bind must be loopback-**only**, which reachability alone can't prove.
   ///
-  /// Python's control listener is constructed on `("127.0.0.1", port)` (`Reticulum.py:359`,
+  /// Python constructs its control listener on `("127.0.0.1", port)` (`Reticulum.py:359`,
   /// `:366`), so it's unreachable off-host by construction. This is the negative assertion
   /// whose absence let a wildcard bind sit behind 3258 green tests: the preceding test proves
   /// 127.0.0.1 answers, and a listener on `*` passes that too. An authenticated management
