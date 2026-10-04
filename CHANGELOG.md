@@ -52,6 +52,14 @@ Before, it held up the data that arrived after it on the same interface.
   shared instance's immediate copy (`Transport.py:2400-2429`), then its relay, one hop
   further. The immediate copy goes first, so the client takes the path's hop count from it, and
   the relay, the same announce one hop further, doesn't replace it.
+- `rnsd` exits with status 1 when it can't bind its instance control socket, and logs
+  `Could not start the instance control socket on port N: [Errno 48] Address already in use` at
+  CRITICAL. Python's `rnsd` ends on the uncaught `OSError` (`Reticulum.py:366`,
+  `rnsd.py:84-88`). `InstanceConnection.attach` stops the stack, releases the shared-instance
+  port and rethrows `RPCServer.RPCError.listenerFailed`, where it logged the failure and
+  carried on. `RPCServer.RPCError` prints a socket failure as Python prints an `OSError`.
+- `LocalInterface`'s dial doesn't set `allowLocalEndpointReuse`. Python's sets only
+  `TCP_NODELAY` (`LocalInterface.py:139-140`).
 
 ### Fixed
 
@@ -119,6 +127,12 @@ Before, it held up the data that arrived after it on the same interface.
   so during a burst the answer to this node's own request waited for a release.
 - A path installed for a requested destination marks the destination used, as Python's
   `_used_destination_data` call does (`Transport.py:2462-2463`).
+- The instance control socket binds a loopback port that another process holds on a LAN or
+  IPv6 address. It was an `NWListener`, which refuses a port held on any local address, so a
+  daemon given such a port had no control socket and every `rn*` utility reported it missing.
+  `RPCServer` binds `127.0.0.1:port` with a BSD socket carrying `SO_REUSEADDR`, as Python's
+  `multiprocessing.connection` listener does (`Reticulum.py:359`, `:366`, and CPython
+  `multiprocessing/connection.py:638-651`). See `bugs/040`.
 
 ### Deliberate differences from Python
 
