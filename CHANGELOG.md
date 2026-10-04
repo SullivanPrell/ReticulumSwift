@@ -111,6 +111,14 @@ Before, it held up the data that arrived after it on the same interface.
   from anywhere else to every local client. Before, a plain broadcast stopped at the shared
   instance. Path requests and tunnel synthesis are control traffic, which this relay leaves to
   their own handlers (`Transport.py:359`, `:365`).
+- For `PATH_REQUEST_GATE_TIMEOUT` after this node sends a path request, the ingress hold lets
+  an announce for that destination through, as Python's `path_requests` table does
+  (`Transport.py:1819`). `requestPath` records each request it sends, including those it
+  forwards for peers (`Transport.py:3321`), and the jobs loop culls the entry
+  (`Transport.py:981-1100`). Before, only a waiting discovery request exempted an announce,
+  so during a burst the answer to this node's own request waited for a release.
+- A path installed for a requested destination marks the destination used, as Python's
+  `_used_destination_data` call does (`Transport.py:2462-2463`).
 
 ### Deliberate differences from Python
 
@@ -128,6 +136,8 @@ Before, it held up the data that arrived after it on the same interface.
   then ignores it (`Transport.py:2175-2176`). reticulum-interop's `test_announce_threeway`
   failed 2 of 5 runs that way: the Swift listener's echo started the burst, and the Python
   announcer's announce came out a release interval later, after the listener's timeout.
+- A shared-instance client doesn't send Python's `destination_data` `used` RPC when a path it
+  requested arrives (`Reticulum.py:1436-1441`). Its own table stays unmarked, as in Python.
 
 ## [1.23.0]—interface management, and parity moves to 1.5.5
 
