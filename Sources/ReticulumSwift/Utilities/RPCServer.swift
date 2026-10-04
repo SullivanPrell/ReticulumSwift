@@ -137,7 +137,8 @@ public final class RPCServer {
     Darwin.setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, timeoutSize)
     Darwin.setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, timeoutSize)
 
-    let endpoint = "\(String(cString: inet_ntoa(peer.sin_addr))):\(UInt16(bigEndian: peer.sin_port))"
+    let host = String(cString: inet_ntoa(peer.sin_addr))
+    let endpoint = "\(host):\(UInt16(bigEndian: peer.sin_port))"
     connectionQueue.async { [weak self] in
       defer { Darwin.close(fd) }
       self?.serve(RPCSocket(fd: fd, endpoint: endpoint))
@@ -615,8 +616,9 @@ private struct RPCSocket {
     var buffer = [UInt8](repeating: 0, count: count)
     var offset = 0
     while offset < count {
-      let received = buffer.withUnsafeMutableBytes {
-        Darwin.read(fd, $0.baseAddress! + offset, count - offset)
+      let received = buffer.withUnsafeMutableBytes { bytes -> Int in
+        guard let base = bytes.baseAddress else { return 0 }
+        return Darwin.read(fd, base + offset, count - offset)
       }
       if received < 0 && errno == EINTR { continue }
       guard received > 0 else { return nil }
