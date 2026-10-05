@@ -147,7 +147,8 @@ final class LinkTableCountTests: XCTestCase {
         initiatorSideInterfaceName: iface.name,
         responderSideInterfaceName: iface.name,
         destinationHash: Data(repeating: 0x02, count: 16),
-        lastHeard: Date()))
+        lastHeard: Date(),
+        remainingHops: 1))
     XCTAssertEqual(
       t.getLinkCount(), 1,
       "a restored link-table entry counts, even though this node holds no "

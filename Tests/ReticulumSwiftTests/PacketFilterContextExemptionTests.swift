@@ -269,7 +269,8 @@ final class PacketFilterContextExemptionTests: XCTestCase {
         destinationHash: Data(
           repeating: 0x77,
           count: Constants.truncatedHashLength),
-        lastHeard: Date()))
+        lastHeard: Date(),
+        remainingHops: 1))
     XCTAssertTrue(t.filterAndRecord(packet: relayed))
     XCTAssertFalse(
       t.testContainsPacketHash(try relayed.packetHash()),
