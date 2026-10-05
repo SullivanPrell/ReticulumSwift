@@ -4109,6 +4109,21 @@ public final class Transport {
     path.map { pythonHops(of: $0) == 0 } ?? false
   }
 
+  /// Whether this node relays `packet` along `path`: Python's transport block
+  /// (`Transport.py:1997-2019`).
+  ///
+  /// A transport node, or a shared instance on behalf of a local client, relays only a packet
+  /// in transport to it, one whose `transport_id` is this node's. Python stamps that itself on
+  /// a packet for a local client (`:2006-2007`). A HEADER_1 packet for anyone else isn't
+  /// relayed, whichever interface it arrived on.
+  func relays(_ packet: Packet, from interface: any Interface, along path: PathEntry) -> Bool {
+    let forLocal = forLocalClient(path)
+    guard transportEnabled || fromLocalClient(interface: interface) || forLocal else {
+      return false
+    }
+    return (packet.transportID ?? (forLocal ? transportInstanceID : nil)) == transportInstanceID
+  }
+
   /// Addresses a packet this node carries toward `path`, by the hops that remain.
   ///
   /// Python's `remaining_hops` branches, which data and link requests share
@@ -4813,13 +4828,8 @@ public final class Transport {
 
     // Not for this node—forward toward the responder if a path is known, and
     // remember the link's two-sided routing so the proof/RTT/close
-    // packets that come back addressed to link_id can be steered. As with
-    // DATA relay, a non-transport shared instance still relays link requests
-    // to/from a directly connected local client (Python `transport_enabled or
-    // from_local_client or for_local_client_link`, Transport.py:1573).
-    let fromLocalLR = fromLocalClient(interface: interface)
-    let forLocalLR = forLocalClient(path)
-    guard transportEnabled || fromLocalLR || forLocalLR, let path else { return }
+    // packets that come back addressed to link_id can be steered.
+    guard let path, relays(packet, from: interface, along: path) else { return }
     guard packet.hops < propagationLimit else { return }
     guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
     guard outbound !== interface else { return }
@@ -4860,12 +4870,9 @@ public final class Transport {
     let instanceLocalLink = isLocalClientInterface(interface) && isLocalClientInterface(outbound)
     forwarded.hops = relayHops(packet, from: interface, staysLocal: instanceLocalLink)
 
-    // A link request in transport to this node takes the data branches
-    // (`Transport.py:2024-2054`). A responder accepts one addressed to it or to nobody
-    // (`:2541`).
-    if forwarded.headerType == .type2, forwarded.transportID == transportInstanceID {
-      addressRelayed(&forwarded, toward: path)
-    }
+    // A link request takes the data branches (`Transport.py:2024-2054`). A responder accepts
+    // one addressed to it or to nobody (`:2540`).
+    addressRelayed(&forwarded, toward: path)
 
     // Clamp/strip the link-request MTU signalling for the next hop (mirrors
     // Python's link-MTU handling in `Transport.inbound()`). This is safe for
@@ -5779,23 +5786,12 @@ public final class Transport {
       return
     }
 
-    // No local destination—relay if this node is transport-enabled, OR the packet
-    // is to/from a directly connected local (shared-instance) client. The
-    // local-client clauses mirror Python's inbound gate
-    // `transport_enabled or from_local_client or for_local_client`
-    // (Transport.py:1573): a non-transport shared instance must still carry
-    // its clients' traffic—outbound from a client to the mesh
-    // (from_local_client) and inbound from the mesh to a client whose
-    // destination is one hop away over the serving interface (for_local_client).
-    // This path forwards packets for single destinations only. `relayPlainBroadcast`
-    // carries plain broadcasts (Transport.py:1977-1991), and link packets have their own
-    // dispatchers.
-    let fromLocal = fromLocalClient(interface: interface)
-    let forLocal = forLocalClient(path)
-    guard transportEnabled || fromLocal || forLocal,
-      packet.destinationType == .single
+    // No local destination—relay a packet in transport to this node. This path forwards
+    // packets for single destinations only. `relayPlainBroadcast` carries plain broadcasts
+    // (Transport.py:1977-1991), and link packets have their own dispatchers.
+    guard packet.destinationType == .single, let path,
+      relays(packet, from: interface, along: path)
     else { return }
-    guard let path else { return }
     forward(packet, from: interface, path: path)
   }
 
