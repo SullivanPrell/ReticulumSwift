@@ -150,8 +150,8 @@ final class DeferredRestoreTests: XCTestCase {
   /// A tunnel restores whether or not its interface is present, so it's never parked.
   ///
   /// The reference restores a tunnel path with `receiving_interface = None` and gates only on
-  /// the announce (`Transport.py:398-400`), attaching an interface to every one of the tunnel's
-  /// paths when the endpoint reappears (`:2440-2447`). Deferring it would delay a tunnel that
+  /// the announce (`Transport.py:398-400`), and restores the tunnel's paths onto the interface
+  /// the endpoint reappears on (`:2839-2867`). Deferring it would delay a tunnel that
   /// was ready, and would leave `TunnelStore`'s share of the pending machinery permanently
   /// empty—dead code that reads as coverage.
   func testATunnelRestoresWithoutWaitingForAnInterface() throws {
