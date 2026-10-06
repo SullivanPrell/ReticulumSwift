@@ -4978,6 +4978,9 @@ public final class Transport {
         // and the link simply stays pending until it times out.
         guard (link.expectedHops ?? Transport.pathfinderM) == proofHops else { return }
       }
+      // A proof over the expected hops for a link in Python's `pending_links_map` enters the
+      // list (`Transport.py:2713-2717`).
+      if link.role == .initiator, link.status == .pending { addPacketHash(packet) }
       do {
         try link.validateProof(proof)
         // Fire the transport-level callback for the initiator side.
@@ -5169,24 +5172,30 @@ public final class Transport {
     //
     // Each direction travels only over its own count (`Transport.py:2133-2150`):
     // `IDX_LT_REM_HOPS` from the responder's side, `IDX_LT_HOPS` from the initiator's, and
-    // either when one interface serves both sides. `handleLinkRequestProof` already checked a
-    // proof's count (`:2641`), and Python's block exempts it (`:2123`).
+    // either when one interface serves both sides. Python's block exempts a proof (`:2123`),
+    // whose count `handleLinkRequestProof` already checked (`:2641`).
     let hops = Int(inboundHops(of: packet, on: sourceInterface))
-    let countsHops = packet.context != .lrproof
+    let linkTableTraffic = packet.context != .lrproof
     let outboundCandidate: (any Interface)?
     if let initIface, initIface === respIface {
-      guard !countsHops || hops == route.remainingHops || hops == route.takenHops else { return }
+      guard !linkTableTraffic || hops == route.remainingHops || hops == route.takenHops else {
+        return
+      }
       outboundCandidate = initIface
     } else if sourceInterface === respIface {
-      guard !countsHops || hops == route.remainingHops else { return }
+      guard !linkTableTraffic || hops == route.remainingHops else { return }
       outboundCandidate = initIface
     } else if sourceInterface === initIface {
-      guard !countsHops || hops == route.takenHops else { return }
+      guard !linkTableTraffic || hops == route.takenHops else { return }
       outboundCandidate = respIface
     } else {
       return
     }
-    guard let outbound = outboundCandidate, outbound.isOnline else { return }
+    guard let outbound = outboundCandidate else { return }
+    // The hash enters the list once the packet is this node's turn (`Transport.py:2152-2156`).
+    // The proof relay records nothing (`:2641-2669`).
+    if linkTableTraffic { addPacketHash(packet) }
+    guard outbound.isOnline else { return }
     var forwarded = packet
     // instance_local_link: both sides of this link are local clients, so the
     // traffic never leaves the local-client domain and must keep its real
@@ -6349,7 +6358,15 @@ public final class Transport {
   /// past the filter (`Transport.py:1959-1961`), so the list holds an exempt or PLAIN packet
   /// even though the filter never consults the entry. Callers must not hold `hashlistLock`.
   private func rememberPacketHash(_ packet: Packet) {
-    guard shouldRememberHash(of: packet), let hash = Self.packetHashlistKey(packet) else { return }
+    guard shouldRememberHash(of: packet) else { return }
+    addPacketHash(packet)
+  }
+
+  /// Python's `Transport.add_packet_hash` (`Transport.py:1619-1621`).
+  ///
+  /// A no-op on a shared instance's client. Callers must not hold `hashlistLock`.
+  private func addPacketHash(_ packet: Packet) {
+    guard !isConnectedToSharedInstance, let hash = Self.packetHashlistKey(packet) else { return }
     hashlistLock.lock()
     defer { hashlistLock.unlock() }
     insertPacketHashLocked(hash)

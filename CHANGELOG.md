@@ -224,6 +224,11 @@ Before, it held up the data that arrived after it on the same interface.
   leaves them (`Link.py:204`, `:525`). Before, it counted one hop fewer: its expected hops for
   an adjacent initiator were 0, and a relayed request's establishment timeout was one hop's
   allowance short. All released versions behave this way.
+- A relay adds a link packet's hash to the packet hashlist once the packet's hop count matches
+  its direction (`Transport.py:2152-2156`), so the filter drops a repeat. An initiator adds a
+  link-request proof's hash once its count matches the pending link's (`:2713-2717`). A packet
+  out of turn and a relayed proof stay out of the list (`:1953`, `:1958`). Before, a relay
+  carried every repeat of a link packet. All released versions behave this way.
 
 ### Deliberate differences from Python
 
