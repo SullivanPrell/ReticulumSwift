@@ -4763,7 +4763,13 @@ public final class Transport {
     // This is correct: each registered destination carries its private
     // identity, so the transport-wide ownerIdentity isn't needed here.
     // (ownerIdentity is still needed for tunnel synthesis—synthesizeTunnel.)
-    if let destination, let owner = destination.identity, destination.acceptsLinks {
+    //
+    // A local destination answers only a request carrying no transport ID or this node's
+    // (`Transport.py:2541`). A shared-instance client's filter passes one in transport to its
+    // instance (`:1627`).
+    if let destination, let owner = destination.identity, destination.acceptsLinks,
+      packet.transportID == nil || packet.transportID == transportInstanceID
+    {
       do {
         let link = try Link.answer(
           request: packet,

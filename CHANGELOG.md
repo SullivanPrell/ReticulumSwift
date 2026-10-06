@@ -155,6 +155,13 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3521`), except on a shared-instance client.
 - A path request arriving on a roaming-mode interface gets no answer when the path leads back
   over that interface (`Transport.py:3468-3469`).
+- A local destination answers a link request only when the request carries no transport ID or
+  this node's, as `Transport.py:2541` checks. A shared-instance client's packet filter passes
+  every packet (`Transport.py:1627`), and its transport identity is ephemeral
+  (`Transport.py:332-335`). A shared instance relays a link request to a local client with its
+  own transport ID still in place when the path has 0 hops remaining and `local_hops_delta` is
+  0 (`Transport.py:2038-2054`), and Python's client drops it. Before, this port's client
+  answered it. All released versions behave this way.
 
 ### Deliberate differences from Python
 
