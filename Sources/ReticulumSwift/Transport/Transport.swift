@@ -2970,16 +2970,17 @@ public final class Transport {
         self?.deregister(interface: clientIface)
       }
     }
-    // I2PInterface dials one I2PInterfacePeer per configured destination
-    // (mirrors Python registering each peer via Transport.add_interface).
-    // Peers register when their SAM tunnel comes up and deregister when
-    // it drops; each re-registration re-synthesizes the tunnel, matching
-    // Python's reconnect → synthesize_tunnel flow.
+    // I2PInterface dials one I2PInterfacePeer per configured destination, and Python adds
+    // each to `Transport.interfaces` (`I2PInterface.py:820`). A dialed peer registers when its
+    // SAM tunnel first comes up and stays registered while it redials, as Python's does
+    // (`I2PInterface.py:678-680`). Python removes only an accepted peer at teardown (`:712`),
+    // and this port removes a dialed one when `stop()` detaches it.
     if let i2p = interface as? I2PInterface {
       i2p.onPeerConnected = { [weak self] peerIface in
-        self?.register(interface: peerIface)
+        self?.i2pPeerConnected(peerIface)
       }
       i2p.onPeerDisconnected = { [weak self] peerIface in
+        if let peer = peerIface as? I2PInterfacePeer, peer.initiator, !peer.isDetached { return }
         self?.deregister(interface: peerIface)
       }
     }
@@ -3001,6 +3002,19 @@ public final class Transport {
     if wantsTunnel {
       synthesizeTunnel(interface)
     }
+  }
+
+  /// Registers an I2P peer whose tunnel came up, or synthesizes the tunnel again for a
+  /// registered peer that reconnected (`I2PInterface.py:533`).
+  private func i2pPeerConnected(_ peer: any Interface) {
+    lock.lock()
+    let registered = interfaces.contains { $0 === peer }
+    lock.unlock()
+    guard registered else {
+      register(interface: peer)
+      return
+    }
+    if peer.wantsTunnel { synthesizeTunnel(peer) }
   }
 
   // MARK: - Deferred restore
@@ -4176,13 +4190,29 @@ public final class Transport {
 
   // MARK: - Path expiry
 
-  /// Remove paths whose `expires` timestamp has passed.
+  /// Remove paths that have expired or whose interface is no longer attached.
   ///
-  /// Mirrors Python's path table expiry in `Transport.jobs()`.
+  /// The path table cull in Python's `Transport.jobs()` (`Transport.py:957-976`). A path
+  /// through an interface that was deregistered, or that no longer exists, goes on the next
+  /// pass. Entries parked for a deferred restore and the tunnel table's paths are held
+  /// elsewhere, and this leaves them alone, as Python does (`:1015-1060`).
   public func sweepExpiredPaths(now: Date = Date()) {
     lock.lock()
     defer { lock.unlock() }
-    let expired = paths.compactMap { $0.value.isExpired ? $0.key : nil }
+    let attached = attachedInterfaceIDs()
+    var expired: [Data] = []
+    for (destinationHash, path) in paths {
+      if path.isExpired {
+        expired.append(destinationHash)
+      } else if let iface = path.nextHopInterface, attached.contains(ObjectIdentifier(iface)) {
+        continue
+      } else {
+        expired.append(destinationHash)
+        Reticulum.log(
+          "Path to \(RNSUtilities.prettyhexrep(destinationHash)) was removed since the "
+            + "attached interface no longer exists", level: .pathing)
+      }
+    }
     for dh in expired {
       paths.removeValue(forKey: dh)
       // Drop the parallel cached announce so it can't outlive its path.
@@ -4199,6 +4229,21 @@ public final class Transport {
       for dh in expired { pathStates.removeValue(forKey: dh) }
       pathStatesLock.unlock()
     }
+  }
+
+  /// The interfaces Python would hold in `Transport.interfaces`.
+  ///
+  /// The registered interfaces, and the spawned interfaces that a registered
+  /// ``DemultiplexingInterface`` delivers on. The caller holds `lock`.
+  private func attachedInterfaceIDs() -> Set<ObjectIdentifier> {
+    var attached = Set<ObjectIdentifier>()
+    for iface in interfaces {
+      attached.insert(ObjectIdentifier(iface))
+      for child in (iface as? any DemultiplexingInterface)?.demultiplexedInterfaces ?? [] {
+        attached.insert(ObjectIdentifier(child))
+      }
+    }
+    return attached
   }
 
   /// Expire the path for a specific destination immediately.
