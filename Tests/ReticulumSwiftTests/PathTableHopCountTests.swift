@@ -219,6 +219,8 @@ final class PathTableHopCountTests: XCTestCase {
     defer { Reticulum.storedRemoteManagementEnabled = false }
     let (t, mesh, _) = makeTransport()
     t.transportIdentity = Identity()
+    // Inbound runs on this thread, so the path is in the table before the handler reads it.
+    t.usesInboundQueue = false
     try t.start()
     let dest = try destination("remote")
     try announce(dest, on: mesh)

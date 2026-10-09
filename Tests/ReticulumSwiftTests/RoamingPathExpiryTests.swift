@@ -145,12 +145,14 @@ final class RoamingPathExpiryTests: XCTestCase {
 
   func testNormalPathNotSweptAfterRoamingWindow() throws {
     let transport = Transport()
+    let iface = LoopbackInterface(name: "full")
+    transport.register(interface: iface)
     let hash = Data(repeating: 0xCD, count: 16)
 
     // 7-day path that's only 6 hours old—shouldn't be swept.
     let entry = Transport.PathEntry(
       destinationHash: hash,
-      nextHopInterfaceName: "full",
+      nextHopInterface: iface,
       hops: 1,
       lastHeard: Date().addingTimeInterval(-Transport.roamingPathExpiry - 60),
       identityHash: Data(repeating: 0x02, count: 16)
@@ -187,12 +189,14 @@ final class RoamingPathExpiryTests: XCTestCase {
 
   func testNormalPathNotSweptAfterApWindow() throws {
     let transport = Transport()
+    let iface = LoopbackInterface(name: "full2")
+    transport.register(interface: iface)
     let hash = Data(repeating: 0x12, count: 16)
 
     // 7-day path that's only 1 day old—must not be swept.
     let entry = Transport.PathEntry(
       destinationHash: hash,
-      nextHopInterfaceName: "full2",
+      nextHopInterface: iface,
       hops: 1,
       lastHeard: Date().addingTimeInterval(-Transport.apPathExpiry - 30),
       identityHash: Data(repeating: 0x04, count: 16)
