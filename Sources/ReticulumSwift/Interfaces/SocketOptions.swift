@@ -127,41 +127,11 @@ enum RNSSocketOptions {
 
   /// Parameters carrying ``localOptions()``, plus the options instance they were built from.
   ///
-  /// Also sets `allowLocalEndpointReuse`, the framework's `SO_REUSEADDR`. Every listener built
-  /// from these binds a fixed loopback port that a previous run of the same daemon may just
-  /// have released, and without reuse the bind fails with `EADDRINUSE` against a `TIME_WAIT`
-  /// socket. Python sets it on the equivalent listeners—`multiprocessing.connection`'s
-  /// `SocketListener.__init__` for the instance-control port, and `socketserver` for the
-  /// shared instance—so a Python daemon rebinds where this one couldn't (`bugs/040`).
-  ///
-  /// Unlike the preceding TCP options, this one *is* readable back off the object the framework is
-  /// handed, so `RPCServerBindTests` asserts it directly.
+  /// For `LocalInterface`'s dial, which Python opens with `TCP_NODELAY` and nothing else
+  /// (`LocalInterface.py:139-140`).
   static func localParameters() -> (parameters: NWParameters, options: NWProtocolTCP.Options) {
     let options = localOptions()
-    let parameters = NWParameters(tls: nil, tcp: options)
-    parameters.allowLocalEndpointReuse = true
-    return (parameters, options)
-  }
-
-  /// ``localParameters()`` constrained to a loopback **bind**—for listeners, never dials.
-  ///
-  /// Python's control listener is constructed on the address `("127.0.0.1", port)`
-  /// (`Reticulum.py:352` → `:359`), so it's unreachable off-host by construction. The Swift
-  /// listener took ``localParameters()``, which carries no local endpoint—Network.framework
-  /// then binds the wildcard, and the authenticated instance-control socket answered on every
-  /// network the host was attached to.
-  ///
-  /// A separate function rather than a flag on ``localParameters()`` because that one is shared
-  /// with `LocalInterface`'s outbound dial, where a required *local* endpoint would pin the
-  /// source address of a connect. The port lives in the endpoint, so a listener built from
-  /// these parameters uses `NWListener(using:)`—handing a port to the `on:` overload as well
-  /// would be two sources of truth for one bind.
-  static func localListenerParameters(port: NWEndpoint.Port)
-    -> (parameters: NWParameters, options: NWProtocolTCP.Options)
-  {
-    let (parameters, options) = localParameters()
-    parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: port)
-    return (parameters, options)
+    return (NWParameters(tls: nil, tcp: options), options)
   }
 
   /// A listener on `port` of `bindIP`, the address a Python server interface binds.

@@ -48,7 +48,8 @@ final class LinkWatchdogTests: XCTestCase {
     let transport = Transport()
     transport.restore(identity: dstIdentity, forDestination: dst.hash)
 
-    // Inject a 3-hop path.
+    // Inject a path whose announce arrived at 3 hops. Python's table holds 4 for it
+    // (`Transport.py:1800`), and `hops_to` returns that.
     transport.restore(
       path: Transport.PathEntry(
         destinationHash: dst.hash,
@@ -63,10 +64,10 @@ final class LinkWatchdogTests: XCTestCase {
     let link = try Link.initiate(destination: dst, transport: transport)
     // Python reference: establishment_timeout = get_first_hop_timeout(dst) + PER_HOP * max(1, hops)
     // No interface bitrate known → firstHopTimeout = defaultPerHopTimeout = 6.
-    // Expected: 6 (firstHopTimeout) + 6 * 3 (perHop * hops) = 24.
+    // Expected: 6 (firstHopTimeout) + 6 * 4 (perHop * hops) = 30.
     XCTAssertEqual(
       link.establishmentTimeout,
-      Link.establishmentTimeoutPerHop + Link.establishmentTimeoutPerHop * 3,
+      Link.establishmentTimeoutPerHop + Link.establishmentTimeoutPerHop * 4,
       accuracy: 0.01
     )
   }

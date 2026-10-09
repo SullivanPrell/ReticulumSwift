@@ -174,7 +174,12 @@ final class PathTableParityTests: XCTestCase {
       (Transport.py:1158). It is not the interface and not the destination.
       """)
 
-    XCTAssertEqual(fields[3], .uint(3), "field 3 is the hop count (Transport.py:3392)")
+    XCTAssertEqual(
+      fields[3], .uint(4),
+      """
+      field 3 is the hop count Python's table holds (Transport.py:3838): one more than the \
+      3 the announce carried on a mesh interface (Transport.py:1800).
+      """)
 
     guard case .double(let expires) = fields[4] else {
       return XCTFail("field 4 is `expires`, a unix timestamp. Got: \(fields[4])")

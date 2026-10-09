@@ -92,6 +92,8 @@ extension Transport {
     let handler = InterfaceAnnounceHandler(
       requiredValue: requiredValue,
       stampValidator: stampValidator,
+      // Python reads `RNS.Transport.hops_to` (`Discovery.py:373`).
+      hopsTo: { [weak self] hash in self?.hopsTo(hash).map(Int.init) ?? Transport.pathfinderM },
       callback: { [weak discovery] info in
         discovery?.interfaceDiscovered(info)
         // Python calls `autoconnect` on every discovery, right after persisting it
