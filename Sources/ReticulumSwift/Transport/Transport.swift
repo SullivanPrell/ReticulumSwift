@@ -118,8 +118,13 @@ public final class Transport {
   public static let pathRequestGateTimeout: TimeInterval = 45
   /// Minimum interval between automated path requests.
   ///
-  /// Python: `Transport.PATH_REQUEST_MI = 20`.
+  /// Python: `Transport.PATH_REQUEST_MI = 20`. The jobs loop's link rediscovery doesn't ask for
+  /// a path it asked for this recently (`Transport.py:716`, `:894`).
   public static let pathRequestMinInterval: TimeInterval = 20
+  /// The most discovery path requests the jobs loop keeps waiting to go out.
+  ///
+  /// Python: `Transport.max_queued_discovery_prs = 32` (`Transport.py:196`).
+  public static let maxQueuedDiscoveryPathRequests = 32
   /// Maximum local rebroadcasts of an announce.
   ///
   /// Python: `Transport.LOCAL_REBROADCASTS_MAX = 2`.
@@ -367,6 +372,20 @@ public final class Transport {
     /// Wall-clock time traffic for this link was last seen.
     public var lastHeard: Date
 
+    /// The link request's hop count on arrival, as Python counts it.
+    ///
+    /// Python's `link_table[link_id][IDX_LT_HOPS]`: `packet.hops` after the inbound
+    /// increment (`Transport.py:1800`, `:2096`). Zero means a local client sent the request,
+    /// and one means the initiator is adjacent.
+    public var takenHops: Int = 0
+
+    /// When the relay stops waiting for the link request's proof.
+    ///
+    /// Python's `link_table[link_id][IDX_LT_PROOF_TMO]` (`Transport.py:2061-2062`). An entry
+    /// whose proof hasn't validated leaves the table at this time, not at the link timeout
+    /// (`Transport.py:884`).
+    public var proofTimeout: Date = .distantFuture
+
     /// Whether a link-request proof for this route has passed signature validation.
     ///
     /// Mirrors Python's `link_table[link_id][IDX_LT_VALIDATED]`, which starts false and is
@@ -389,6 +408,8 @@ public final class Transport {
         && lhs.responderSideInterfaceName == rhs.responderSideInterfaceName
         && lhs.destinationHash == rhs.destinationHash
         && lhs.lastHeard == rhs.lastHeard
+        && lhs.takenHops == rhs.takenHops
+        && lhs.proofTimeout == rhs.proofTimeout
         && lhs.validated == rhs.validated
     }
   }
@@ -677,6 +698,55 @@ public final class Transport {
   /// sends, including those it forwards for peers, and the jobs loop culls an entry after
   /// ``pathRequestGateTimeout``.
   private var pathRequests: [Data: TimeInterval] = [:]
+
+  /// A path request the jobs loop's link rediscovery waits to send.
+  ///
+  /// One entry of Python's `Transport.pending_discovery_prs` (`Transport.py:1245`).
+  struct QueuedDiscoveryPathRequest {
+    /// The destination to ask for.
+    let destinationHash: Data
+    /// The interface the request skips, or nil to ask on every interface.
+    ///
+    /// Python's `blocked_if`: the interface a relayed link request arrived on, when the
+    /// destination or the initiator was one hop away (`Transport.py:918`, `:940`).
+    weak var blockedInterface: (any Interface)?
+  }
+
+  /// `Transport.pending_discovery_prs` (`Transport.py:1245`), sent one per
+  /// ``discoveryPathRequestTxThrottle``.
+  private var pendingDiscoveryPathRequests: [QueuedDiscoveryPathRequest] = []
+
+  /// True while the next send of ``pendingDiscoveryPathRequests`` waits on its throttle.
+  ///
+  /// Python's `discovery_pr_handle_lock`: one handler drains the queue at a time
+  /// (`Transport.py:1248`).
+  private var discoveryPathRequestsDraining = false
+
+  /// How long the handler waits before each queued discovery path request.
+  ///
+  /// Python's `Transport.discovery_pr_tx_throttle = 0.5` (`Transport.py:1242`). Internal and
+  /// settable so a test can shorten it.
+  var discoveryPathRequestTxThrottle: TimeInterval = 0.5
+
+  /// Destinations of initiator links that closed before activating and that
+  /// `unregister(link:)` has already removed.
+  ///
+  /// Python finds those links still in `pending_links` on its next pass (`Transport.py:699`).
+  /// The watchdog's establishment timeout leaves its link registered, so the jobs pass finds
+  /// that one in `links`.
+  private var closedPendingLinkDestinations: [Data] = []
+
+  /// `Transport.pending_local_path_requests` (`Transport.py:243`): the interface that asked
+  /// for a destination on one of this shared instance's local clients.
+  ///
+  /// `handlePathRequest` records it (`Transport.py:3438-3448`), and the client's path
+  /// response goes back to that interface (`Transport.py:2375-2395`).
+  private var pendingLocalPathRequests: [Data: WeakInterfaceReference] = [:]
+
+  /// Holds an interface without keeping it alive.
+  struct WeakInterfaceReference {
+    weak var interface: (any Interface)?
+  }
 
   /// Dedup keys for announces already seen—`destinationHash + randomHash`.
   ///
@@ -1370,6 +1440,43 @@ public final class Transport {
       now <= $0.value + Transport.pathRequestGateTimeout
     }
     discoveryPathRequests = discoveryPathRequests.filter { now <= $0.value.timeout }
+  }
+
+  /// The interface waiting for a local client's path response for `destinationHash`.
+  func pendingLocalPathRequest(for destinationHash: Data) -> (any Interface)? {
+    lock.lock()
+    defer { lock.unlock() }
+    return pendingLocalPathRequests[destinationHash]?.interface
+  }
+
+  /// Whether a request for `destinationHash` waits for a local client's path response.
+  func hasPendingLocalPathRequest(for destinationHash: Data) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return pendingLocalPathRequests[destinationHash] != nil
+  }
+
+  /// Removes the request waiting for a local client's path response for `destinationHash`,
+  /// and returns whether there was one.
+  ///
+  /// `Transport.pending_local_path_requests.pop(packet.destination_hash)` (`Transport.py:2381`).
+  private func takePendingLocalPathRequest(for destinationHash: Data) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return pendingLocalPathRequests.removeValue(forKey: destinationHash) != nil
+  }
+
+  /// Drops each waiting local path request whose interface has left.
+  ///
+  /// `Transport.py:836-847`.
+  func sweepPendingLocalPathRequests() {
+    lock.lock()
+    defer { lock.unlock() }
+    let registered = interfaces
+    pendingLocalPathRequests = pendingLocalPathRequests.filter { entry in
+      guard let iface = entry.value.interface else { return false }
+      return registered.contains { $0 === iface }
+    }
   }
 
   /// Discards every queued announce without sending it.
@@ -3472,11 +3579,27 @@ public final class Transport {
   }
 
   /// Stops tracking `link` and releases its routing state.
+  ///
+  /// An initiator link that closed before it activated stays for the next jobs pass, which
+  /// rediscovers its destination's path (`Transport.py:697-724`).
   public func unregister(link: Link) {
     guard let id = link.linkID else { return }
     lock.lock()
     defer { lock.unlock() }
-    links.removeValue(forKey: id)
+    guard links.removeValue(forKey: id) != nil else { return }
+    if Transport.closedBeforeActivating(link) {
+      closedPendingLinkDestinations.append(link.destination.hash)
+    }
+  }
+
+  /// Whether `link` is one this node initiated that closed before it activated.
+  ///
+  /// Python's `pending_links` holds an initiator's link until `activate_link` moves it to
+  /// `active_links`, and the jobs pass acts on the ones whose status is `CLOSED`
+  /// (`Transport.py:699-700`).
+  static func closedBeforeActivating(_ link: Link) -> Bool {
+    link.role == .initiator && link.establishedAt == nil
+      && (link.status == .closed || link.status == .failed)
   }
 
   /// Starts the transport: interfaces, jobs loop and management destinations.
@@ -3663,7 +3786,8 @@ public final class Transport {
     sweepExpiredReceipts()
     sweepKnownRatchets()
     sweepReverseTable()
-    sweepLinkRoutes()
+    runLinkJobs()
+    sweepPendingLocalPathRequests()
     processAnnounceRetries()
     drainAnnounceQueues()
     sampleInterfaceSpeeds()
@@ -3832,18 +3956,222 @@ public final class Transport {
     reverseTableLock.unlock()
   }
 
-  /// Drop link-relay routes whose last activity is older than the link timeout.
+  /// The jobs loop's link checks and link-table cull, and the path requests they queue.
   ///
-  /// Mirrors Python's `link_table` cull in `Transport.jobs()` (LINK_TIMEOUT =
-  /// STALE_TIME * 1.25). Without this a transport relay accumulates one permanent
-  /// `linkRoutes` entry per link it ever forwarded—an unbounded memory leak over
-  /// days/weeks. `lastHeard` is refreshed on every forwarded link packet
-  /// (including keepalives), so a live relayed link is never swept. Wire-neutral.
-  private func sweepLinkRoutes(now: Date = Date()) {
-    let maxAge = Link.staleTime * 1.25
+  /// Python checks the pending and active links (`Transport.py:694-745`), culls the link
+  /// table (`Transport.py:873-955`), and queues the path requests both ask for once the pass
+  /// ends (`Transport.py:1226-1236`). Tests pass `now` to step the clock.
+  func runLinkJobs(now: Date = Date()) {
+    var requests: [QueuedDiscoveryPathRequest] = []
+    checkLinks(now: now, requesting: &requests)
+    sweepLinkRoutes(now: now, requesting: &requests)
+    queueDiscoveryPathRequests(requests)
+  }
+
+  /// Drops closed links, and rediscovers the path of each initiator link that closed before
+  /// it activated.
+  ///
+  /// `Transport.py:697-724`. On a non-transport node the path expires, so a newly adjacent
+  /// transport instance's announce or a path with more hops can replace it. Unless a shared
+  /// instance asks on this node's behalf, the node asks for the path again, at most once per
+  /// ``pathRequestMinInterval``.
+  private func checkLinks(now: Date, requesting requests: inout [QueuedDiscoveryPathRequest]) {
+    lock.lock()
+    let closed = links.filter { $0.value.status == .closed || $0.value.status == .failed }
+    for id in closed.keys { links.removeValue(forKey: id) }
+    let unregistered = closedPendingLinkDestinations
+    closedPendingLinkDestinations = []
+    lock.unlock()
+
+    let pending =
+      closed.values.filter { Transport.closedBeforeActivating($0) }.map(\.destination.hash)
+      + unregistered
+    for destinationHash in pending where !transportEnabled {
+      expirePath(for: destinationHash)
+      guard !isConnectedToSharedInstance else { continue }
+      let lastRequest = pathRequestTimestamp(for: destinationHash) ?? 0
+      guard now.timeIntervalSince1970 - lastRequest > Transport.pathRequestMinInterval else {
+        continue
+      }
+      Transport.request(destinationHash, blocking: nil, in: &requests)
+    }
+  }
+
+  /// Culls the link table, and rediscovers the path of a link request nobody proved.
+  ///
+  /// Python's link-table cull (`Transport.py:873-955`, `LINK_TIMEOUT = STALE_TIME * 1.25`).
+  /// A validated entry leaves when its link goes quiet for the link timeout, or when either
+  /// of its interfaces leaves. Every forwarded link packet refreshes `lastHeard`, keepalives
+  /// included, so a live relayed link stays. An entry still waiting for its proof
+  /// leaves at its proof timeout, and asks for the destination's path again if
+  /// `rediscoveryForUnprovenLink` finds a reason to.
+  private func sweepLinkRoutes(
+    now: Date, requesting requests: inout [QueuedDiscoveryPathRequest]
+  ) {
+    let linkTimeout = Link.staleTime * 1.25
+    lock.lock()
+    let registered = interfaces
+    let isRegistered = { (iface: (any Interface)?) -> Bool in
+      guard let iface else { return false }
+      return registered.contains { $0 === iface }
+    }
+    var unproven: [LinkRoute] = []
+    for (linkID, route) in linkRoutes {
+      let stale: Bool
+      if route.validated {
+        stale =
+          now.timeIntervalSince(route.lastHeard) > linkTimeout
+          || !isRegistered(route.responderSideInterface)
+          || !isRegistered(route.initiatorSideInterface)
+      } else {
+        stale = now > route.proofTimeout
+        if stale { unproven.append(route) }
+      }
+      if stale { linkRoutes.removeValue(forKey: linkID) }
+    }
+    lock.unlock()
+
+    for route in unproven { rediscoverPath(forUnproven: route, now: now, requesting: &requests) }
+  }
+
+  /// Asks for the path of a relayed link request's destination again, when Python would.
+  ///
+  /// `Transport.py:887-955`. Python asks when:
+  ///
+  /// - the path has gone since the request passed through;
+  /// - a local client sent the request;
+  /// - the destination is one hop away, so it was probably local to an interface here and has
+  ///   roamed; or
+  /// - the initiator is one hop away, so the topology has probably changed.
+  ///
+  /// The last three wait ``pathRequestMinInterval`` after this node's previous request. The
+  /// two one-hop cases skip the interface the request arrived on, and a transport node marks
+  /// the path unresponsive unless that interface is in boundary mode. A non-transport node
+  /// expires the path, so a newly adjacent transport instance's announce can replace it.
+  private func rediscoverPath(
+    forUnproven route: LinkRoute, now: Date,
+    requesting requests: inout [QueuedDiscoveryPathRequest]
+  ) {
+    let destinationHash = route.destinationHash
+    let lastRequest = pathRequestTimestamp(for: destinationHash) ?? 0
+    let throttled = now.timeIntervalSince1970 - lastRequest < Transport.pathRequestMinInterval
+    lock.lock()
+    let path = paths[destinationHash]
+    lock.unlock()
+
+    var blocked: (any Interface)?
+    if let path {
+      guard !throttled else { return }
+      if route.takenHops == 0 {
+        blocked = nil
+      } else if pythonHops(of: path) == 1 || route.takenHops == 1 {
+        blocked = route.initiatorSideInterface
+        if transportEnabled, route.initiatorSideInterface?.mode != .boundary {
+          markPathUnresponsive(for: destinationHash)
+        }
+      } else {
+        return
+      }
+    }
+    Transport.request(destinationHash, blocking: blocked, in: &requests)
+    if !transportEnabled { expirePath(for: destinationHash) }
+  }
+
+  /// Adds a request for `destinationHash` to the pass's batch, unless the batch has one.
+  ///
+  /// Python's local `path_requests` dict keeps the first request for a destination
+  /// (`Transport.py:719`, `:948`).
+  private static func request(
+    _ destinationHash: Data, blocking blocked: (any Interface)?,
+    in requests: inout [QueuedDiscoveryPathRequest]
+  ) {
+    guard !requests.contains(where: { $0.destinationHash == destinationHash }) else { return }
+    requests.append(
+      QueuedDiscoveryPathRequest(destinationHash: destinationHash, blockedInterface: blocked))
+  }
+
+  /// The path's hop count as Python counts it.
+  ///
+  /// This port stores the wire value. Python adds one on receipt (`Transport.py:1800`) and
+  /// takes it back on a local client's interface or the interface to a shared instance
+  /// (`Transport.py:1937-1940`).
+  func pythonHops(of path: PathEntry) -> Int {
+    guard let iface = path.nextHopInterface else { return Int(path.hops) + 1 }
+    return Transport.pythonInboundHops(path.hops, on: iface, transport: self)
+  }
+
+  /// A packet's hop count as Python's `inbound` leaves it, from the wire value.
+  ///
+  /// `Transport.py:1800` and `:1937-1940`.
+  static func pythonInboundHops(
+    _ wireHops: UInt8, on interface: any Interface, transport: Transport
+  ) -> Int {
+    let local =
+      transport.isLocalClientInterface(interface) || transport.interfaceToSharedInstance(interface)
+    return Int(wireHops) + (local ? 0 : 1)
+  }
+
+  // MARK: - Discovery path requests
+
+  /// The discovery path requests waiting to go out, oldest first.
+  var queuedDiscoveryPathRequests: [QueuedDiscoveryPathRequest] {
     lock.lock()
     defer { lock.unlock() }
-    linkRoutes = linkRoutes.filter { now.timeIntervalSince($0.value.lastHeard) < maxAge }
+    return pendingDiscoveryPathRequests
+  }
+
+  /// Queues the path requests a jobs pass asks for, and starts sending them.
+  ///
+  /// `Transport.py:1226-1236`: a destination already waiting isn't queued twice, and the queue
+  /// holds at most ``maxQueuedDiscoveryPathRequests``.
+  func queueDiscoveryPathRequests(_ requests: [QueuedDiscoveryPathRequest]) {
+    lock.lock()
+    for request in requests
+    where !pendingDiscoveryPathRequests.contains(where: {
+      $0.destinationHash == request.destinationHash
+    }) {
+      guard pendingDiscoveryPathRequests.count < Transport.maxQueuedDiscoveryPathRequests else {
+        break
+      }
+      pendingDiscoveryPathRequests.append(request)
+    }
+    let start = !pendingDiscoveryPathRequests.isEmpty && !discoveryPathRequestsDraining
+    if start { discoveryPathRequestsDraining = true }
+    let throttle = discoveryPathRequestTxThrottle
+    lock.unlock()
+    if start { scheduleDiscoveryPathRequest(after: throttle) }
+  }
+
+  private func scheduleDiscoveryPathRequest(after delay: TimeInterval) {
+    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay) { [weak self] in
+      self?.sendNextDiscoveryPathRequest()
+    }
+  }
+
+  /// Sends the oldest queued discovery path request, then waits a throttle for the next.
+  ///
+  /// Python's `handle_disovery_path_requests` (`Transport.py:1247-1264`). A request with no
+  /// blocked interface goes out on every interface. Otherwise each other interface gets one.
+  private func sendNextDiscoveryPathRequest() {
+    lock.lock()
+    guard !pendingDiscoveryPathRequests.isEmpty else {
+      discoveryPathRequestsDraining = false
+      lock.unlock()
+      return
+    }
+    let next = pendingDiscoveryPathRequests.removeFirst()
+    let snapshot = interfaces
+    let throttle = discoveryPathRequestTxThrottle
+    lock.unlock()
+
+    if let blocked = next.blockedInterface {
+      for iface in snapshot where iface !== blocked && iface.isOnline && iface.isRoutingEndpoint {
+        try? requestPath(for: next.destinationHash, onInterface: iface)
+      }
+    } else {
+      try? requestPath(for: next.destinationHash)
+    }
+    scheduleDiscoveryPathRequest(after: throttle)
   }
 
   // MARK: - Path expiry
@@ -4479,6 +4807,12 @@ public final class Transport {
       return
     }
     let linkID = Hashes.truncatedHash(linkIDHashable)
+    let now = Date()
+    // `proof_timeout = extra_link_proof_timeout(outbound_interface) + now +
+    // ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, remaining_hops)` (`Transport.py:2061-2062`).
+    let proofTimeout = now.addingTimeInterval(
+      Transport.extraLinkProofTimeout(for: outbound)
+        + Link.establishmentTimeoutPerHop * TimeInterval(max(1, pythonHops(of: path))))
     let route = LinkRoute(
       linkID: linkID,
       initiatorSideInterface: interface,
@@ -4486,7 +4820,9 @@ public final class Transport {
       initiatorSideInterfaceName: interface.name,
       responderSideInterfaceName: outbound.name,
       destinationHash: packet.destinationHash,
-      lastHeard: Date()
+      lastHeard: now,
+      takenHops: Transport.pythonInboundHops(packet.hops, on: interface, transport: self),
+      proofTimeout: proofTimeout
     )
     lock.lock()
     linkRoutes[linkID] = route
@@ -5321,40 +5657,8 @@ public final class Transport {
         forwarded.hops = packet.hops &+ 1
         forwarded.headerType = .type2
         forwarded.transportID = transportInstanceID
-        let emitted = announceEmitted(forwarded)
         let now = Date().timeIntervalSince1970
-        for iface in interfaces
-        where iface.isOnline && iface.isRoutingEndpoint && iface !== interface {
-          // Interface-mode-based forwarding filter (mirrors Python Transport.outbound):
-          // - Announces received from ACCESS_POINT interfaces (clients talking "up")
-          //   must not be re-broadcast to other AP or BOUNDARY interfaces—AP
-          //   clients must not be able to reach each other via the AP.
-          // - Announces received from BOUNDARY interfaces must not be re-broadcast
-          //   to other BOUNDARY or ACCESS_POINT interfaces.
-          // - Announces received on FULL/GATEWAY/ROAMING/POINT_TO_POINT interfaces
-          //   are forwarded freely (including to AP and BOUNDARY interfaces).
-          guard
-            Transport.shouldForwardAnnounce(
-              outboundMode: iface.mode,
-              nextHopMode: interface.mode,
-              localDestination: false,
-              announcesFromInternal: iface.announcesFromInternal,
-              nextHopAnnouncesToInternal: interface.announcesToInternal
-            )
-          else { continue }
-          queueLock.lock()
-          let queue = announceQueues[iface.name, default: AnnounceQueue()]
-          announceQueues[iface.name] = queue
-          queueLock.unlock()
-          let canSend = queue.shouldTransmit(
-            packet: forwarded,
-            now: now,
-            bitrate: iface.bitrate,
-            announceCap: iface.announceCap,
-            emitted: emitted
-          )
-          if canSend { try? transmit(forwarded, on: iface) }
-        }
+        relayAnnounce(forwarded, receivedOn: interface, now: now)
 
         // Record this forwarded announce for a single retransmission
         // (Python `PATHFINDER_R = 1`). The first forward just went out
@@ -5378,6 +5682,25 @@ public final class Transport {
           receivingInterfaceAnnouncesToInternal: interface.announcesToInternal
         )
         lock.unlock()
+      }
+
+      // A local client's path response, when a path request for its destination reached it
+      // through this shared instance, goes out as an ordinary announce
+      // (`Transport.py:2375-2395`). Python queues it in the announce table for one send on the
+      // next jobs pass. The entry's attached interface is the one `:2336` cleared, not the
+      // interface that asked, so it goes to every interface, under the same mode filters and
+      // announce caps as a relayed announce. Its hop count is `packet.hops`, which for a local
+      // client is the wire value (`Transport.py:1937-1940`). This port sends it at once, as it
+      // does the relay of a local client's own announce.
+      if shouldUpdate, fromLocalClient, decoded.isPathResponse,
+        takePendingLocalPathRequest(for: decoded.destinationHash)
+      {
+        var answer = packet
+        answer.context = .none
+        answer.headerType = .type2
+        answer.transportType = .transport
+        answer.transportID = transportInstanceID
+        relayAnnounce(answer, receivedOn: interface, now: Date().timeIntervalSince1970)
       }
 
       // Answer the peers waiting on a search for this destination
@@ -5671,6 +5994,15 @@ public final class Transport {
     var answered = false
     defer { if answered { resolveInflightPathRequest(target) } }
 
+    // A destination on one of this shared instance's local clients: remember who asked, so
+    // the client's path response goes back there (`Transport.py:3438-3448`).
+    if let nextHop = pathEntry?.nextHopInterface, isLocalClientInterface(nextHop) {
+      lock.lock()
+      pendingLocalPathRequests[target] = WeakInterfaceReference(interface: interface)
+      lock.unlock()
+      markDestinationUsed(target)
+    }
+
     if isLocal {
       answered = true
       lock.lock()
@@ -5701,6 +6033,9 @@ public final class Transport {
       // doesn't fall through to the forward branches. Mirror that: return
       // without answering rather than dropping into recursive discovery.
       guard let cached = cachedAnnounce else { return }
+      // "Not answering path request on roaming-mode interface, since next hop is on same
+      // roaming-mode interface" (`Transport.py:3468-3469`).
+      if interface.mode == .roaming, entry.nextHopInterface === interface { return }
       // Suppress answer when the next hop along the path IS the requestor
       // (would create a routing loop). Mirrors Python's requestor_transport_id check.
       if let rID = requestorTransportID,
@@ -5721,6 +6056,9 @@ public final class Transport {
       response.transportType = .transport
       response.transportID = transportInstanceID
       try? transmit(response, on: interface)
+      // `if not Transport.owner.is_connected_to_shared_instance:
+      // RNS.Identity._used_destination_data(packet.destination_hash)` (`Transport.py:3521`).
+      if !isConnectedToSharedInstance { markDestinationUsed(target) }
       return
     }
 
@@ -6156,6 +6494,46 @@ public final class Transport {
     default:
       // FULL, GATEWAY, POINT_TO_POINT—forward freely.
       return true
+    }
+  }
+
+  /// Sends a relayed announce on every interface but `interface`, under Python's announce mode
+  /// filters and each interface's announce cap (`Transport.py:1440-1530`).
+  private func relayAnnounce(
+    _ forwarded: Packet, receivedOn interface: any Interface, now: TimeInterval
+  ) {
+    let emitted = announceEmitted(forwarded)
+    for iface in interfaces
+    where iface.isOnline && iface.isRoutingEndpoint && iface !== interface {
+      // Interface-mode-based forwarding filter (mirrors Python Transport.outbound):
+      // - Announces received from ACCESS_POINT interfaces (clients talking "up")
+      //   must not be re-broadcast to other AP or BOUNDARY interfaces—AP
+      //   clients must not be able to reach each other via the AP.
+      // - Announces received from BOUNDARY interfaces must not be re-broadcast
+      //   to other BOUNDARY or ACCESS_POINT interfaces.
+      // - Announces received on FULL/GATEWAY/ROAMING/POINT_TO_POINT interfaces
+      //   are forwarded freely (including to AP and BOUNDARY interfaces).
+      guard
+        Transport.shouldForwardAnnounce(
+          outboundMode: iface.mode,
+          nextHopMode: interface.mode,
+          localDestination: false,
+          announcesFromInternal: iface.announcesFromInternal,
+          nextHopAnnouncesToInternal: interface.announcesToInternal
+        )
+      else { continue }
+      queueLock.lock()
+      let queue = announceQueues[iface.name, default: AnnounceQueue()]
+      announceQueues[iface.name] = queue
+      queueLock.unlock()
+      let canSend = queue.shouldTransmit(
+        packet: forwarded,
+        now: now,
+        bitrate: iface.bitrate,
+        announceCap: iface.announceCap,
+        emitted: emitted
+      )
+      if canSend { try? transmit(forwarded, on: iface) }
     }
   }
 

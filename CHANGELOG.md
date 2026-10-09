@@ -28,6 +28,17 @@ Before, it held up the data that arrived after it on the same interface.
 - `Transport.usesInboundQueue`, `inboundQueueSnapshot()` and `inboundQueueLengths`. Set
   `usesInboundQueue = false` before `start()` to handle every packet on its reader thread,
   as Python does with `USE_INBOUND_QUEUE = False`.
+- Link-failure path rediscovery, from Python's jobs loop. When a link this node initiated
+  closes before it activates, a node without transport expires the destination's path, and
+  asks for it again unless a shared instance asks on its behalf (`Transport.py:697-724`).
+  When a relayed link request's proof hasn't arrived by its proof timeout, the relay asks
+  for the path again if the path has gone, a local client sent the request, or the destination
+  or the initiator is one hop away (`Transport.py:885-955`). In the two one-hop cases it skips
+  the interface the request arrived on, and with transport enabled marks the path unresponsive
+  unless that interface is in boundary mode. Both wait `PATH_REQUEST_MI` after this node's
+  last request for the destination, except for a path that has gone.
+- The rediscovery requests queue, at most 32 and one per destination, and go out half a second
+  apart (`Transport.py:196`, `:1226-1264`).
 
 ### Changed
 
@@ -60,6 +71,16 @@ Before, it held up the data that arrived after it on the same interface.
   carried on. `RPCServer.RPCError` prints a socket failure as Python prints an `OSError`.
 - `LocalInterface`'s dial doesn't set `allowLocalEndpointReuse`. Python's sets only
   `TCP_NODELAY` (`LocalInterface.py:139-140`).
+- `Link` no longer marks its destination's path. Python's `Link` never does. The transport
+  marks a path unresponsive only for a relayed link request nobody proved
+  (`Transport.py:931`, `:944`), and nothing marks one responsive. Before, a link that timed
+  out or went stale marked the path unresponsive, which let the same announce arriving over
+  another route replace it (`Transport.py:2288-2296`), and an established link marked it
+  responsive.
+- A relayed link request's link-table entry leaves at its proof timeout if no proof validates
+  it (`Transport.py:884`). `handleLinkRequest` records that timeout as Python does
+  (`Transport.py:2061-2062`), with the request's hop count. Before, an unproved entry stayed
+  for the link timeout, 15 minutes.
 
 ### Fixed
 
@@ -133,6 +154,21 @@ Before, it held up the data that arrived after it on the same interface.
   `RPCServer` binds `127.0.0.1:port` with a BSD socket carrying `SO_REUSEADDR`, as Python's
   `multiprocessing.connection` listener does (`Reticulum.py:359`, `:366`, and CPython
   `multiprocessing/connection.py:638-651`). See `bugs/040`.
+- The jobs loop drops closed links from `Transport.links`, as Python's does
+  (`Transport.py:697-745`). A link closed without a teardown, such as one whose establishment
+  timed out, stayed there for the life of the transport.
+- A validated link-table entry leaves when either of its interfaces does
+  (`Transport.py:880-881`).
+- A path request for a destination on one of the shared instance's local clients gets an
+  answer. The shared instance remembers the request and marks the destination used
+  (`Transport.py:3438-3448`), and the client's path response goes out as an announce on every
+  interface, at the client's hop count (`Transport.py:2375-2395`). Before, the shared instance
+  passed the request to its clients and dropped the client's answer, so a peer asking a
+  shared instance without transport for its client's destination got no answer.
+- Answering a path request from the path table marks the destination used
+  (`Transport.py:3521`), except on a shared-instance client.
+- A path request arriving on a roaming-mode interface gets no answer when the path leads back
+  over that interface (`Transport.py:3468-3469`).
 
 ### Deliberate differences from Python
 
@@ -152,6 +188,14 @@ Before, it held up the data that arrived after it on the same interface.
   announcer's announce came out a release interval later, after the listener's timeout.
 - A shared-instance client doesn't send Python's `destination_data` `used` RPC when a path it
   requested arrives (`Reticulum.py:1436-1441`). Its own table stays unmarked, as in Python.
+- A rediscovery request asks every interface when the path has gone or a local client sent the
+  link request. Python reuses whichever interface an earlier one-hop case in the same jobs
+  pass blocked, because `blocked_if` carries over between link-table entries
+  (`Transport.py:688`, `:918`, `:940`).
+- The jobs loop checks links every 5 seconds. Python checks them every second
+  (`Transport.py:250`), so a closed link's rediscovery can start up to 4 seconds later here.
+- A local client's answer to a waiting path request goes out as it arrives. Python queues it
+  for the next jobs pass (`Transport.py:2384-2395`).
 
 ## [1.23.0]—interface management, and parity moves to 1.5.5
 
