@@ -5,9 +5,23 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.24.0]—inbound queues, and hop counts as Python counts them
+
 Inbound packets queue by traffic class for one drain worker, as they do in Python since RNS
 1.5.0. A flood of announces or path requests now fills its own bounded queue and drops there.
 Before, it held up the data that arrived after it on the same interface.
+
+Hop counts read as Python's in the API, in saved files and in routing decisions: one more than
+the wire count, except on a local client's interface or the interface to a shared instance. A
+shared instance and its local clients behave as Python's do. A client keeps none of the shared
+instance's state, and two clients can open a link to each other. The parity target stays RNS
+1.5.5.
+
+**Upgrading a node with transport enabled:** delete `storage/destination_table` and
+`storage/tunnels` before 1.24.0 first starts. Earlier versions wrote wire hop counts there, and
+this version reads each restored path one hop short. A path to a destination two hops away then
+sends packets without a transport ID, and the Python transport node in between drops them until
+the destination announces again. A node without transport restores no paths and needs nothing.
 
 ### Added
 
@@ -104,7 +118,9 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3141-3142`), where it reported 0.
 - A `destination_table` or `tunnels` file an earlier version wrote holds wire counts. This
   version reads them as Python's, so a restored path learned over a mesh interface more than
-  one hop away reports one hop short until its destination announces again.
+  one hop away reports one hop short until its destination announces again. A destination two
+  hops away is unreachable until then, because packets toward it go out without a transport ID.
+  The upgrade note above says which files to delete.
 - A packet Transport hands to a link, a destination callback (`onPacketDelivered`,
   `Destination.onPacketReceived`) or a receipt's `proofPacket` carries Python's hop count: one
   more than the wire value, except on a local client's interface or the interface to a shared
