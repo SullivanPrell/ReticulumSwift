@@ -107,6 +107,13 @@ Before, it held up the data that arrived after it on the same interface.
 
 ### Fixed
 
+- `TCPServerInterface` and `UDPInterface` listen on the address `listen_ip` names, as Python
+  binds it (`TCPInterface.py:551`, `:567`, `:573`; `UDPInterface.py:101-103`). A host name
+  resolves to its IPv4 address where it has one, as `get_address_for_host` prefers
+  (`TCPInterface.py:490-497`). A `TCPServerInterface` with `device` binds the device's IPv4
+  address, and `0.0.0.0`, the default, still binds every address. Before, both listened on
+  every address, so a server configured with `listen_ip = 127.0.0.1` accepted connections and
+  datagrams from every network the host was on.
 - Each interface-jobs pass looks at the announce and path-request bursts before it releases a
   held announce, as Python's jobs loop does (`Transport.py:1150-1158`). Before, only arrivals
   looked. A burst that had subsided stayed active until the next unknown announce. When that
