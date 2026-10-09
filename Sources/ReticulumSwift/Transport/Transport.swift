@@ -281,8 +281,8 @@ public final class Transport {
     /// Deliberately distinct from the preceding name-only initializer, which records a name that
     /// couldn't be resolved. This one records that there is nothing to resolve *yet*: the
     /// reference restores a tunnel path with `receiving_interface = None`
-    /// (`Transport.py:396-400`) and `handle_tunnel` writes the live interface into every one
-    /// of the tunnel's paths when the endpoint comes back (`:2440-2447`). Dropping such paths
+    /// (`Transport.py:396-400`) and `handle_tunnel` restores the tunnel's paths onto the
+    /// interface the endpoint comes back on (`:2839-2867`). Dropping such paths
     /// instead would make the tunnel table useless in exactly the case it exists for.
     ///
     /// Not routable until attached—same as there, and the same reason
@@ -5721,13 +5721,12 @@ public final class Transport {
         pathStates[decoded.destinationHash] = Transport.stateUnknown
         pathStatesLock.unlock()
         requestedPathWritten = pathRequests[decoded.destinationHash] != nil
-      }
-      // If this announce arrived on a tunneled interface, record the path in
-      // the tunnel entry so it can be restored if the tunnel reappears.
-      // Mirrors Python's `Transport.announce_handler` tunnel path recording.
-      if let tunnelID = interface.tunnelID, tunnels[tunnelID] != nil {
-        tunnels[tunnelID]?.paths[decoded.destinationHash] = entry
-        tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
+        // The tunnel keeps the path it wrote, random blobs and announce hash included, for
+        // `handle_tunnel` to restore (`Transport.py:2465-2475`).
+        if let tunnelID = interface.tunnelID, tunnels[tunnelID] != nil {
+          tunnels[tunnelID]?.paths[decoded.destinationHash] = updatedEntry
+          tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
+        }
       }
       lock.unlock()
 
@@ -6892,21 +6891,61 @@ public final class Transport {
     handleTunnel(tunnelID: tunnelID, interface: interface)
   }
 
+  /// Attach the tunnel to `interface`, and restore its paths through it when the tunnel is
+  /// known—`Transport.handle_tunnel` (`Transport.py:2820-2874`).
+  ///
+  /// An unexpired tunnel path enters the path table when the table has no path to its
+  /// destination. Over an existing path, it enters when it has no more hops or the existing
+  /// path has expired, and its announce is no older. A path that doesn't enter leaves the
+  /// tunnel. Hop counts compare, and carry onto `interface`, as Python counts them.
   private func handleTunnel(tunnelID: Data, interface: any Interface) {
     let expires = Date().addingTimeInterval(Transport.tunnelTimeout)
     lock.lock()
     defer { lock.unlock() }
-    if tunnels[tunnelID] == nil {
+    interface.tunnelID = tunnelID
+    guard var tunnel = tunnels[tunnelID] else {
       tunnels[tunnelID] = TunnelEntry(
         tunnelID: tunnelID,
         iface: interface,
         paths: [:],
         expires: expires
       )
-    } else {
-      tunnels[tunnelID]?.iface = interface
-      tunnels[tunnelID]?.expires = expires
+      return
     }
-    interface.tunnelID = tunnelID
+    tunnel.iface = interface
+    tunnel.expires = expires
+    let now = Date()
+    for (destinationHash, path) in tunnel.paths {
+      let hops = pythonHops(of: path)
+      let shouldAdd: Bool
+      if let current = paths[destinationHash] {
+        shouldAdd =
+          (hops <= pythonHops(of: current) || now > current.expires)
+          && Transport.timebaseFromRandomBlobs(path.randomBlobs)
+            >= Transport.timebaseFromRandomBlobs(current.randomBlobs)
+      } else {
+        shouldAdd = now < path.expires
+      }
+      guard shouldAdd else {
+        tunnel.paths[destinationHash] = nil
+        continue
+      }
+      // `list(set(path_entry[4]))` (`:2843`).
+      var randomBlobs: [Data] = []
+      for blob in path.randomBlobs where !randomBlobs.contains(blob) { randomBlobs.append(blob) }
+      paths[destinationHash] = PathEntry(
+        destinationHash: destinationHash,
+        nextHopInterface: interface,
+        hops: wireHops(fromPythonHops: hops, on: interface),
+        lastHeard: now,
+        identityHash: path.identityHash,
+        expires: path.expires,
+        nextHopTransportID: path.nextHopTransportID,
+        announceEmittedAt: path.announceEmittedAt,
+        cachedAnnounceHash: path.cachedAnnounceHash,
+        randomBlobs: randomBlobs
+      )
+    }
+    tunnels[tunnelID] = tunnel
   }
 }

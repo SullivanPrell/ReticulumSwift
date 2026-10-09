@@ -248,6 +248,17 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3838`), and a restored entry reads it back as Python's count.
 - A link-request proof's hop count is the one `inbound` leaves on it, as `link.expected_hops`
   holds it (`Link.py:281`, `Transport.py:2700-2707`), and re-balancing stores it as Python's count.
+- A tunnel whose endpoint reappears restores its paths, as `Transport.handle_tunnel` does
+  (`Transport.py:2829-2874`). Before, the port re-attached the tunnel and left its paths unused.
+  An unexpired tunnel path enters the path table on the new interface when the table has no path
+  to its destination. Over an existing path, it enters when it has no more hops or the existing
+  path has expired, and its announce is no older. A path that doesn't enter leaves the tunnel.
+  Hop counts compare as Python's `IDX_PT_HOPS`, and a restored path keeps Python's count on the
+  new interface through `wireHops(fromPythonHops:on:)`.
+- A tunnel records an announce's path only when the announce enters the path table, and records
+  its random blobs and announce hash with it (`Transport.py:2465-2475`). Before, a rejected
+  announce replaced the tunnel's path, and the recorded path had no announce hash, so
+  `storage/tunnels` dropped it.
 - Routing branches on Python's hop count through `pythonHops(of:)`, as it does on
   `IDX_PT_HOPS`. A sent packet takes a transport header above 1 hop, or at 1 hop behind a
   shared instance (`Transport.py:1396`, `:1416`). A relayed data packet or link request is
