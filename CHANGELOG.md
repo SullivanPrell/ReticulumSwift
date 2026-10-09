@@ -39,6 +39,11 @@ Before, it held up the data that arrived after it on the same interface.
   last request for the destination, except for a path that has gone.
 - The rediscovery requests queue, at most 32 and one per destination, and go out half a second
   apart (`Transport.py:196`, `:1226-1264`).
+- `DemultiplexingInterface`, for an interface that delivers inbound traffic on spawned
+  interfaces that `Transport` doesn't register. `RNodeMultiInterface` conforms, so a path
+  through one of its sub-interfaces stays attached while the multi-interface is registered.
+  Python registers each sub-interface itself (`RNodeMultiInterface.py:381`).
+- `I2PInterfacePeer.isDetached`, Python's `detached`: whether `stop()` has ended redialing.
 
 ### Changed
 
@@ -81,6 +86,9 @@ Before, it held up the data that arrived after it on the same interface.
   it (`Transport.py:884`). `handleLinkRequest` records that timeout as Python does
   (`Transport.py:2061-2062`), with the request's hop count. Before, an unproved entry stayed
   for the link timeout, 15 minutes.
+- `I2PInterfacePeer.onDisconnected` fires when `stop()` detaches an offline peer too, so a
+  peer stopped while it redials leaves the transport. It used to fire on `stop()` only for an
+  online peer.
 
 ### Fixed
 
@@ -169,6 +177,16 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3521`), except on a shared-instance client.
 - A path request arriving on a roaming-mode interface gets no answer when the path leads back
   over that interface (`Transport.py:3468-3469`).
+- The jobs loop removes a path whose interface is no longer attached, as Python's does
+  (`Transport.py:972-976`): an interface that was deregistered or detached, or one that no
+  longer exists. Before, such a path stayed in the table until it expired, and one through a
+  detached interface that was still alive kept routing through it. The loop leaves alone an
+  entry still waiting for its interface after a restart, and the tunnel table's copy of a path,
+  which Python restores when the tunnel's endpoint returns (`Transport.py:2820-2867`).
+- An I2P peer this node dials stays registered while it redials, as Python's does
+  (`I2PInterface.py:678-680`, `:712`), so its paths survive the cull. When it reconnects,
+  the transport synthesizes its tunnel again (`I2PInterface.py:533`). Before, the transport
+  removed the peer each time its tunnel dropped and registered it again on reconnect.
 - A local destination answers a link request only when the request carries no transport ID or
   this node's, as `Transport.py:2541` checks. A shared-instance client's packet filter passes
   every packet (`Transport.py:1627`), and its transport identity is ephemeral
