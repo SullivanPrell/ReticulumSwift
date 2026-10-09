@@ -91,6 +91,19 @@ final class ProofForwardingTests: XCTestCase {
       forDestination: bDest.hash
     )
 
+    // A's path runs through R, so A sends in transport to R (`Transport.py:1396`).
+    aT.restore(
+      path: Transport.PathEntry(
+        destinationHash: bDest.hash,
+        nextHopInterface: aToR,
+        hops: 1,
+        lastHeard: Date(),
+        identityHash: bId.hash,
+        nextHopTransportID: rT.transportInstanceID
+      ),
+      forDestination: bDest.hash
+    )
+
     // A needs B's identity to encrypt
     aT.restore(identity: bId, forDestination: bDest.hash)
 

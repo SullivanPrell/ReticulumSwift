@@ -24,6 +24,17 @@ final class ForwardingTests: XCTestCase {
   /// frames a real peer would accept.
   private static let filler = Data("payload".utf8)
 
+  /// `packet` in transport to `relay`, as a sender with a path through it addresses it.
+  ///
+  /// A relay forwards nothing else (`Transport.py:1396`, `:2018-2019`).
+  private func inTransport(_ packet: Packet, to relay: Transport) -> Packet {
+    var p = packet
+    p.headerType = .type2
+    p.transportType = .transport
+    p.transportID = relay.transportInstanceID
+    return p
+  }
+
   final class RecordingInterface: Interface {
     var name: String
     var bitrate: Int = 0
@@ -94,7 +105,7 @@ final class ForwardingTests: XCTestCase {
       destinationHash: destHash,
       data: Data("payload".utf8)
     )
-    try r.upstream.send(packet)
+    try r.upstream.send(inTransport(packet, to: r.relay))
 
     XCTAssertEqual(r.destSide.sent.count, 1)
     XCTAssertEqual(r.destSide.sent.first?.hops, 1)
@@ -114,7 +125,7 @@ final class ForwardingTests: XCTestCase {
       data: Self.filler
     )
     packet.hops = 3
-    try r.upstream.send(packet)
+    try r.upstream.send(inTransport(packet, to: r.relay))
 
     XCTAssertEqual(r.destSide.sent.count, 0)
   }
@@ -128,7 +139,7 @@ final class ForwardingTests: XCTestCase {
       destinationType: .single, packetType: .data,
       destinationHash: destHash, data: Self.filler
     )
-    try r.upstream.send(packet)
+    try r.upstream.send(inTransport(packet, to: r.relay))
     XCTAssertEqual(r.destSide.sent.count, 0)
   }
 
