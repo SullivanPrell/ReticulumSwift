@@ -73,7 +73,8 @@ final class RelayLinkProofValidationTests: XCTestCase {
         initiatorSideInterfaceName: towardInitiator.name,
         responderSideInterfaceName: towardResponder.name,
         destinationHash: destinationHash,
-        lastHeard: Date()))
+        lastHeard: Date(),
+        remainingHops: 1))
 
     return Relay(
       transport: t, towardInitiator: towardInitiator, towardResponder: towardResponder,
@@ -218,7 +219,8 @@ final class RelayLinkProofValidationTests: XCTestCase {
         initiatorSideInterfaceName: towardInitiator.name,
         responderSideInterfaceName: towardResponder.name,
         destinationHash: destinationHash,
-        lastHeard: Date()))
+        lastHeard: Date(),
+        remainingHops: 1))
     let relay = Relay(
       transport: t, towardInitiator: towardInitiator, towardResponder: towardResponder,
       responder: responder, linkID: linkID, destinationHash: destinationHash)

@@ -138,7 +138,8 @@ final class RPCClientTests: XCTestCase {
     }
     XCTAssertEqual(fields["hash"], .bytes(destination))
     XCTAssertEqual(fields["via"], .bytes(via))
-    XCTAssertEqual(fields["hops"]?.asInt, 3)
+    // A path that arrived at 3 hops is 4 in Python's table (`Transport.py:1800`).
+    XCTAssertEqual(fields["hops"]?.asInt, 4)
     XCTAssertEqual(fields["interface"], .string("TestIface"))
   }
 

@@ -126,7 +126,8 @@ final class RNS138ParityTests: XCTestCase {
     let dest = try Destination(
       identity: id, direction: .out, kind: .single,
       appName: "test", aspects: ["expectedhops"])
-    // Inject a known path with hops = 3.
+    // Inject a path whose announce arrived at 3 hops on a mesh interface. Python's table
+    // holds 4 for it (`Transport.py:1800`).
     t.restore(
       path: Transport.PathEntry(
         destinationHash: dest.hash, nextHopInterface: iface,
@@ -135,7 +136,7 @@ final class RNS138ParityTests: XCTestCase {
 
     let link = try Link.initiate(destination: dest, transport: t)
     XCTAssertEqual(
-      link.expectedHops, 3,
+      link.expectedHops, 4,
       "Initiator expectedHops must equal the path-table hop count to the destination")
   }
 
