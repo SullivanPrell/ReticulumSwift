@@ -108,9 +108,20 @@ final class LinkTableCountTests: XCTestCase {
       path: Transport.PathEntry(
         destinationHash: bDest.hash,
         nextHopInterface: rToB,
-        hops: 1,
+        hops: 0,
         lastHeard: Date(),
         identityHash: bId.hash),
+      forDestination: bDest.hash)
+    // A sends the link request in transport to R (`Transport.py:1396`), which relays only
+    // that (`Transport.py:2018-2019`).
+    aT.restore(
+      path: Transport.PathEntry(
+        destinationHash: bDest.hash,
+        nextHopInterface: aToR,
+        hops: 1,
+        lastHeard: Date(),
+        identityHash: bId.hash,
+        nextHopTransportID: rT.transportInstanceID),
       forDestination: bDest.hash)
     // A relay validates the signature on every link-request proof it forwards, so it
     // needs the responder's identity. A real relay always has it: the announce that

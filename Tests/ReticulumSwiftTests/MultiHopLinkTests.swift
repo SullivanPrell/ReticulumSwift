@@ -75,9 +75,22 @@ final class MultiHopLinkTests: XCTestCase {
       path: Transport.PathEntry(
         destinationHash: bDestination.hash,
         nextHopInterface: rToB,
-        hops: 1,
+        hops: 0,
         lastHeard: Date(),
         identityHash: bIdentity.hash
+      ),
+      forDestination: bDestination.hash
+    )
+    // A's path runs through R, so A sends the link request in transport to R
+    // (`Transport.py:1396`), which relays only that (`Transport.py:2018-2019`).
+    aTransport.restore(
+      path: Transport.PathEntry(
+        destinationHash: bDestination.hash,
+        nextHopInterface: aToR,
+        hops: 1,
+        lastHeard: Date(),
+        identityHash: bIdentity.hash,
+        nextHopTransportID: rTransport.transportInstanceID
       ),
       forDestination: bDestination.hash
     )
