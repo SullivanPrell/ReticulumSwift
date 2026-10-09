@@ -162,6 +162,43 @@ final class InstanceConnectionTests: XCTestCase {
       "port should have been released by the aborted attach")
   }
 
+  /// A shared instance that can't bind its control port fails to start, as Python's does.
+  ///
+  /// Python constructs the control `Listener` unguarded (`Reticulum.py:366`), so the bind's
+  /// `OSError` propagates out of `Reticulum.__init__`. The aborted attach must release the
+  /// shared-instance port, or the next one finds an instance that isn't there.
+  func testAttach_controlPortHeld_throwsAndReleasesTheSharedPort() throws {
+    let shared = try XCTUnwrap(kernelAssignedLoopbackPort())
+    let control = try XCTUnwrap(kernelAssignedLoopbackPort())
+    let directory = try makeConfigDirectory(
+      shareInstance: true, sharedPort: shared, controlPort: control)
+
+    let holder = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    var addr = sockaddr_in()
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = control.bigEndian
+    Darwin.inet_aton("127.0.0.1", &addr.sin_addr)
+    let held = withUnsafePointer(to: &addr) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.bind(holder, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    XCTAssertEqual(held, 0, "could not hold 127.0.0.1:\(control), errno \(errno)")
+    Darwin.listen(holder, 1)
+
+    XCTAssertThrowsError(try attach(directory)) { error in
+      guard case RPCServer.RPCError.listenerFailed = error else {
+        return XCTFail("expected the control socket's bind failure, got \(error)")
+      }
+    }
+    Darwin.close(holder)
+
+    let connection = try attach(directory)
+    XCTAssertEqual(
+      connection.role, .sharedInstance,
+      "the aborted attach left the shared-instance port held")
+  }
+
   // MARK: - Attaching to an existing shared instance
 
   func testAttach_secondProcess_becomesLocalClient() throws {
