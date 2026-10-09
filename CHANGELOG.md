@@ -39,6 +39,11 @@ Before, it held up the data that arrived after it on the same interface.
   last request for the destination, except for a path that has gone.
 - The rediscovery requests queue, at most 32 and one per destination, and go out half a second
   apart (`Transport.py:196`, `:1226-1264`).
+- `DemultiplexingInterface`, for an interface that delivers inbound traffic on spawned
+  interfaces that `Transport` doesn't register. `RNodeMultiInterface` conforms, so a path
+  through one of its sub-interfaces stays attached while the multi-interface is registered.
+  Python registers each sub-interface itself (`RNodeMultiInterface.py:381`).
+- `I2PInterfacePeer.isDetached`, Python's `detached`: whether `stop()` has ended redialing.
 
 ### Changed
 
@@ -62,6 +67,14 @@ Before, it held up the data that arrived after it on the same interface.
 - With transport enabled, a local client receives an announce twice, as Python's do: the
   shared instance's immediate copy (`Transport.py:2400-2429`), then its relay, at the same hop
   count (`Transport.py:808`).
+- `rnsd` exits with status 1 when it can't bind its instance control socket, and logs
+  `Could not start the instance control socket on port N: [Errno 48] Address already in use` at
+  CRITICAL. Python's `rnsd` ends on the uncaught `OSError` (`Reticulum.py:366`,
+  `rnsd.py:84-88`). `InstanceConnection.attach` stops the stack, releases the shared-instance
+  port and rethrows `RPCServer.RPCError.listenerFailed`, where it logged the failure and
+  carried on. `RPCServer.RPCError` prints a socket failure as Python prints an `OSError`.
+- `LocalInterface`'s dial doesn't set `allowLocalEndpointReuse`. Python's sets only
+  `TCP_NODELAY` (`LocalInterface.py:139-140`).
 - `Link` no longer marks its destination's path. Python's `Link` never does. The transport
   marks a path unresponsive only for a relayed link request nobody proved
   (`Transport.py:931`, `:944`), and nothing marks one responsive. Before, a link that timed
@@ -72,6 +85,9 @@ Before, it held up the data that arrived after it on the same interface.
   it (`Transport.py:884`). `handleLinkRequest` records that timeout as Python does
   (`Transport.py:2061-2062`), with the request's hop count. Before, an unproved entry stayed
   for the link timeout, 15 minutes.
+- `I2PInterfacePeer.onDisconnected` fires when `stop()` detaches an offline peer too, so a
+  peer stopped while it redials leaves the transport. It used to fire on `stop()` only for an
+  online peer.
 - `PathStore.Entry.init(_:of:destinationHash:interfaceHash:announceHash:)` and
   `PathStore.Entry.pathEntry(interface:identityHash:in:)` take the transport, which converts
   between the wire count and Python's.
@@ -152,6 +168,12 @@ Before, it held up the data that arrived after it on the same interface.
   so during a burst the answer to this node's own request waited for a release.
 - A path installed for a requested destination marks the destination used, as Python's
   `_used_destination_data` call does (`Transport.py:2462-2463`).
+- The instance control socket binds a loopback port that another process holds on a LAN or
+  IPv6 address. It was an `NWListener`, which refuses a port held on any local address, so a
+  daemon given such a port had no control socket and every `rn*` utility reported it missing.
+  `RPCServer` binds `127.0.0.1:port` with a BSD socket carrying `SO_REUSEADDR`, as Python's
+  `multiprocessing.connection` listener does (`Reticulum.py:359`, `:366`, and CPython
+  `multiprocessing/connection.py:638-651`). See `bugs/040`.
 - The jobs loop drops closed links from `Transport.links`, as Python's does
   (`Transport.py:697-745`). A link closed without a teardown, such as one whose establishment
   timed out, stayed there for the life of the transport.
@@ -170,7 +192,7 @@ Before, it held up the data that arrived after it on the same interface.
 - The shared instance relays a local client's announce once, as Python does
   (`Transport.py:2356-2360`). Before, the jobs loop sent it again 5 to 10.5 seconds later.
   All released versions behave this way.
-- Relayed announces, path answers, and relayed data, link and proof packets carry the hop
+- Relayed announces, path answers, and relayed data, link, and proof packets carry the hop
   count Python's `inbound` leaves on the packet: one more than the wire value, except on a
   local client's interface or the interface to a shared instance, where it stays the wire
   value (`Transport.py:1800`, `:1937-1940`). `inboundHops(of:on:)` decides it for the
@@ -189,6 +211,23 @@ Before, it held up the data that arrived after it on the same interface.
   unmangled packet (`Transport.py:1554`, `:1561`). Data from a local client to a mesh
   neighbour takes the delta too: `to_local_client` needs a path Python counts as 0 hops
   (`Transport.py:1968`), which a neighbour isn't.
+- The jobs loop removes a path whose interface is no longer attached, as Python's does
+  (`Transport.py:972-976`): an interface that was deregistered or detached, or one that no
+  longer exists. Before, such a path stayed in the table until it expired, and one through a
+  detached interface that was still alive kept routing through it. The loop leaves alone an
+  entry still waiting for its interface after a restart, and the tunnel table's copy of a path,
+  which Python restores when the tunnel's endpoint returns (`Transport.py:2820-2867`).
+- An I2P peer this node dials stays registered while it redials, as Python's does
+  (`I2PInterface.py:678-680`, `:712`), so its paths survive the cull. When it reconnects,
+  the transport synthesizes its tunnel again (`I2PInterface.py:533`). Before, the transport
+  removed the peer each time its tunnel dropped and registered it again on reconnect.
+- A local destination answers a link request only when the request carries no transport ID or
+  this node's, as `Transport.py:2541` checks. A shared-instance client's packet filter passes
+  every packet (`Transport.py:1627`), and its transport identity is ephemeral
+  (`Transport.py:332-335`). A shared instance relays a link request to a local client with its
+  own transport ID still in place when the path has 0 hops remaining and `local_hops_delta` is
+  0 (`Transport.py:2038-2054`), and Python's client drops it. Before, this port's client
+  answered it. All released versions behave this way.
 - The path table reports hop counts as Python's does: one more than the count the announce
   carried, except on a local client's interface or the interface to a shared instance
   (`Transport.py:1800`, `:1937-1940`). Python stores that count as `IDX_PT_HOPS`
