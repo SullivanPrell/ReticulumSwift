@@ -134,6 +134,39 @@ enum RNSSocketOptions {
     return (NWParameters(tls: nil, tcp: options), options)
   }
 
+  /// A listener on `port` of `bindIP`, the address a Python server interface binds.
+  ///
+  /// Python's `TCPServerInterface` binds the address `listen_ip` resolves to
+  /// (`TCPInterface.py:551`, `:567`, `:573`), and `UDPInterface` binds `(bind_ip, bind_port)`
+  /// (`UDPInterface.py:101-103`). `NWListener(using:on:)` binds every address, so any other
+  /// address becomes a required local endpoint. A host name resolves first, to its IPv4 address
+  /// where it has one (`TCPInterface.py:490-497`): `NWListener` given a name there listens on an
+  /// arbitrary port.
+  static func listener(using parameters: NWParameters, bindIP: String, port: NWEndpoint.Port)
+    throws -> NWListener
+  {
+    if bindIP == "0.0.0.0" || bindIP == "::" { return try NWListener(using: parameters, on: port) }
+    var hints = addrinfo()
+    hints.ai_socktype = SOCK_STREAM
+    var info: UnsafeMutablePointer<addrinfo>?
+    var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+    guard getaddrinfo(bindIP, nil, &hints, &info) == 0, let first = info else {
+      throw NWError.posix(.EADDRNOTAVAIL)
+    }
+    defer { freeaddrinfo(info) }
+    let entry =
+      sequence(first: first) { $0.pointee.ai_next }.first { $0.pointee.ai_family == AF_INET }
+      ?? first
+    guard
+      getnameinfo(
+        entry.pointee.ai_addr, entry.pointee.ai_addrlen, &host, socklen_t(host.count), nil, 0,
+        NI_NUMERICHOST) == 0
+    else { throw NWError.posix(.EADDRNOTAVAIL) }
+    parameters.requiredLocalEndpoint = .hostPort(
+      host: NWEndpoint.Host(String(cString: host)), port: port)
+    return try NWListener(using: parameters)
+  }
+
   /// Parameters carrying ``i2pOptions()``, plus the options instance they were built from.
   static func i2pParameters() -> (parameters: NWParameters, options: NWProtocolTCP.Options) {
     let options = i2pOptions()
