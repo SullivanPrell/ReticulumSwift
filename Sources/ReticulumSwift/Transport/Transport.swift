@@ -177,7 +177,8 @@ public final class Transport {
     ///
     /// Python's path table holds that count plus one, except on a local client's interface
     /// or the interface to a shared instance (`Transport.py:1800`, `:1937-1940`). Report it
-    /// through ``Transport/hopsTo(_:)`` or ``Transport/getPathTable(maxHops:)``.
+    /// through ``Transport/hopsTo(_:)`` or ``Transport/getPathTable(maxHops:)``; routing
+    /// compares `pythonHops(of:)`.
     public var hops: UInt8
     /// Wall-clock time the announce backing this route was last heard.
     public var lastHeard: Date
@@ -1545,9 +1546,9 @@ public final class Transport {
   ///
   /// Mirrors Python
   /// `Transport.interface_to_shared_instance(interface)` (true when the interface
-  /// has `is_connected_to_shared_instance`). In Swift that's `LocalInterface`.
+  /// has `is_connected_to_shared_instance`): a ``SharedInstanceClientInterface``.
   public func interfaceToSharedInstance(_ interface: any Interface) -> Bool {
-    `interface` is LocalInterface
+    `interface` is any SharedInstanceClientInterface
   }
 
   /// Interfaces serving one or more locally connected shared-instance
@@ -4129,11 +4130,35 @@ public final class Transport {
   ///
   /// This port stores the wire value. Python adds one on receipt (`Transport.py:1800`) and
   /// takes it back on a local client's interface or the interface to a shared instance
-  /// (`Transport.py:1937-1940`). Every surface that reports a path's hop count, or compares
-  /// it with Python's, reads it here.
+  /// (`Transport.py:1937-1940`). Every surface that reports a path's hop count, and every
+  /// routing branch on it, reads it here.
   func pythonHops(of path: PathEntry) -> Int {
     guard let iface = path.nextHopInterface else { return Int(path.hops) + 1 }
     return Transport.pythonInboundHops(path.hops, on: iface, transport: self)
+  }
+
+  /// Whether `path` leads to a local client: Python's `for_local_client`, a path of 0 hops
+  /// (`Transport.py:1968`).
+  func forLocalClient(_ path: PathEntry?) -> Bool {
+    path.map { pythonHops(of: $0) == 0 } ?? false
+  }
+
+  /// Addresses a packet this node carries toward `path`, by the hops that remain.
+  ///
+  /// Python's `remaining_hops` branches, which data and link requests share
+  /// (`Transport.py:2024-2054`): more than one re-addresses the packet to the next transport
+  /// node, one strips the transport header, and zero, a local client, leaves the header as it
+  /// arrived unless hop obfuscation is on.
+  func addressRelayed(_ packet: inout Packet, toward path: PathEntry) {
+    let remaining = pythonHops(of: path)
+    if remaining > 1 {
+      packet.headerType = .type2
+      packet.transportID = path.nextHopTransportID ?? transportInstanceID
+    } else if remaining == 1 || (localHopsDelta != 0 && packet.headerType == .type2) {
+      packet.headerType = .type1
+      packet.transportType = .broadcast
+      packet.transportID = nil
+    }
   }
 
   /// The wire value this port stores for a path on `interface` that Python counts as `hops`.
@@ -4476,22 +4501,13 @@ public final class Transport {
         return receipt
       }
       var routed = packet
-      // A transport header is inserted only when the packet must be handed onward
-      // through another node—that is, the destination is at least one hop away and the
-      // path carries the next hop's transport ID (learned from a HEADER_2 announce).
-      // The `hops >= 1` guard is the fix: a destination *zero* hops away is directly
-      // reachable and must go out as-is (HEADER_1), even when a next-hop transport ID
-      // is on file. That 0-hop-with-transport-ID combination arises for exactly one
-      // topology—a shared instance's own local clients as seen from a sibling client,
-      // whose path is learned via the instance's HEADER_2 announce yet is delivered
-      // locally. Stamping HEADER_2 there published a stray transport header addressed to
-      // the shared instance; a Python peer drops such a packet (a local client isn't the
-      // addressed transport), so a Swift `rncp`/LXMF/NomadNet client's link request never
-      // reached a Python peer across a shared instance. A directly connected 1-hop peer
-      // learns its path from a HEADER_1 announce, leaving `nextHopTransportID` nil, so it
-      // still goes out HEADER_1; a 1-hop backbone-relayed path keeps its HEADER_2. Mirrors
-      // Python Transport.outbound()'s hop-count branches (Transport.py:1150-1188).
-      if let nhID = path.nextHopTransportID, path.hops >= 1 {
+      // A transport header goes in above one hop, or at one hop behind a shared instance,
+      // which must carry the packet onto the network (`Transport.py:1396`, `:1416`). A sibling
+      // client's destination is 0 hops away and goes out unchanged.
+      let remaining = pythonHops(of: path)
+      if let nhID = path.nextHopTransportID,
+        remaining > 1 || (remaining == 1 && isConnectedToSharedInstance)
+      {
         routed.headerType = .type2
         routed.transportID = nhID
       }
@@ -4873,10 +4889,7 @@ public final class Transport {
     // to/from a directly connected local client (Python `transport_enabled or
     // from_local_client or for_local_client_link`, Transport.py:1573).
     let fromLocalLR = fromLocalClient(interface: interface)
-    let forLocalLR: Bool = {
-      guard let p = path, p.hops == 0, let nh = p.nextHopInterface else { return false }
-      return isLocalClientInterface(nh)
-    }()
+    let forLocalLR = forLocalClient(path)
     guard transportEnabled || fromLocalLR || forLocalLR, let path else { return }
     guard packet.hops < propagationLimit else { return }
     guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
@@ -4920,32 +4933,11 @@ public final class Transport {
     let instanceLocalLink = isLocalClientInterface(interface) && isLocalClientInterface(outbound)
     forwarded.hops = relayHops(packet, from: interface, staysLocal: instanceLocalLink)
 
-    // If the incoming LINKREQUEST is HEADER_2 addressed to this node as relay,
-    // Transport must convert it before forwarding. Mirrors Python Transport lines 1565–1576:
-    //
-    //   remaining_hops > 1 → update transport_id to next hop, keep HEADER_2
-    //   remaining_hops == 1 → strip transport header, forward as HEADER_1
-    //
-    // Swift stores path.hops = raw wire hops (no inbound +1), so the
-    // equivalence is:
-    //   path.hops == 0  ↔  Python remaining_hops == 1  → strip headers
-    //   path.hops  > 0  ↔  Python remaining_hops  > 1  → update transport_id
-    //
-    // Without this conversion, the responder receives HEADER_2 with this node's
-    // transport_id, fails the identity check (transport_id ≠ responder's ID),
-    // and silently drops the link request.
+    // A link request in transport to this node takes the data branches
+    // (`Transport.py:2024-2054`). A responder accepts one addressed to it or to nobody
+    // (`:2541`).
     if forwarded.headerType == .type2, forwarded.transportID == transportInstanceID {
-      if path.hops == 0 {
-        // Destination is directly reachable on outbound interface.
-        // Strip the transport header so the responder receives a plain HEADER_1.
-        forwarded.headerType = .type1
-        forwarded.transportType = .broadcast
-        forwarded.transportID = nil
-      } else {
-        // More relay hops needed—replace this transport_id with the
-        // next relay's transport_id so that node forwards it onward.
-        forwarded.transportID = path.nextHopTransportID ?? transportInstanceID
-      }
+      addressRelayed(&forwarded, toward: path)
     }
 
     // Clamp/strip the link-request MTU signalling for the next hop (mirrors
@@ -5482,7 +5474,8 @@ public final class Transport {
         // the blob check). Without this unresponsive exception the
         // early return would swallow the reviving announce before the
         // ladder ever runs.
-        let existingHops = paths[decoded.destinationHash]?.hops ?? UInt8.max
+        // Both counts as Python's `inbound` leaves them, the ladder's comparison (`:2236`).
+        let existingHops = paths[decoded.destinationHash].map(pythonHops(of:)) ?? Int.max
         // pathStatesLock guards pathStates everywhere (mark*/
         // pathIsUnresponsive); read it under that lock even while holding
         // `lock` (order: lock > pathStatesLock, a pure leaf).
@@ -5520,7 +5513,7 @@ public final class Transport {
         let higherGravity =
           currentPathGravityLocked(decoded.destinationHash)
           .map { interface.gravity > $0 } ?? false
-        if packet.hops >= existingHops, !unresponsive, !higherGravity {
+        if Int(announceHops) >= existingHops, !unresponsive, !higherGravity {
           lock.unlock()
           return  // Already seen, not a better path, and path is responsive
         }
@@ -5624,7 +5617,7 @@ public final class Transport {
         // existing `timebaseFromRandomBlobs` helper is exact here.
         let pathTimebase = Transport.timebaseFromRandomBlobs(existing.randomBlobs)
         let blobSeen = randomBlob.map { existing.randomBlobs.contains($0) } ?? false
-        if packet.hops <= existing.hops {
+        if Int(announceHops) <= pythonHops(of: existing) {
           // Fewer-or-equal hops (Python 1820-1844): accept a fresh,
           // previously unheard announce that's more recently emitted…
           if !blobSeen && emittedAt > pathTimebase {
@@ -5910,10 +5903,7 @@ public final class Transport {
     // carries plain broadcasts (Transport.py:1977-1991), and link packets have their own
     // dispatchers.
     let fromLocal = fromLocalClient(interface: interface)
-    let forLocal: Bool = {
-      guard let p = path, p.hops == 0, let nextHop = p.nextHopInterface else { return false }
-      return isLocalClientInterface(nextHop)
-    }()
+    let forLocal = forLocalClient(path)
     guard transportEnabled || fromLocal || forLocal,
       packet.destinationType == .single
     else { return }
@@ -6783,26 +6773,8 @@ public final class Transport {
     // `to_local_client` holds for a path Python counts as 0 hops (`Transport.py:1968`), which
     // a local client's destination is and a mesh neighbour isn't.
     // Python: `if local_hops_delta != 0 and from_local_client and not to_local_client`.
-    forwarded.hops = relayHops(
-      packet, from: sourceInterface, staysLocal: pythonHops(of: path) == 0)
-    // Mirror Python's in-transport DATA rewrite (Transport.inbound, the
-    // `transport_id == Transport.identity.hash` branch):
-    //   • remaining_hops > 1  (Swift path.hops > 0): keep HEADER_2 and
-    //     address the next-hop transport so that node forwards onward.
-    //   • remaining_hops == 1 (Swift path.hops == 0): the destination is
-    //     directly reachable on the outbound interface—strip the
-    //     transport header and transmit HEADER_1. The endpoint filters on
-    //     transport_id (see filterAndRecord), so a HEADER_2 packet bearing
-    //     this relay's id would be dropped. Same logic as the LINKREQUEST
-    //     relay path in handleLinkRequest.
-    if path.hops > 0 {
-      forwarded.headerType = .type2
-      forwarded.transportID = path.nextHopTransportID ?? transportInstanceID
-    } else {
-      forwarded.headerType = .type1
-      forwarded.transportType = .broadcast
-      forwarded.transportID = nil
-    }
+    forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: forLocalClient(path))
+    addressRelayed(&forwarded, toward: path)
 
     // Store the reverse table entry BEFORE sending, so synchronous loopback
     // interfaces don't race: if the proof arrives in the same call stack (for example,

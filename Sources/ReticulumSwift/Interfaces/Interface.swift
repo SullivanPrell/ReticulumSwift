@@ -394,6 +394,14 @@ public protocol LocalClientServingInterface: Interface {
   var clientCount: Int { get }
 }
 
+/// The interface a shared-instance client reaches its instance through.
+///
+/// Mirrors Python's `interface_to_shared_instance`, true for an interface with an
+/// `is_connected_to_shared_instance` attribute (`Transport.py:3620-3622`), which only the
+/// connecting `LocalClientInterface` sets (`LocalInterface.py:144`). In this port that's
+/// `LocalInterface`.
+public protocol SharedInstanceClientInterface: Interface {}
+
 /// An interface whose hardware MTU follows its bitrate—Python's `AUTOCONFIGURE_MTU = True`
 /// classes, where `optimise_mtu()` writes `HW_MTU` at runtime (`Interface.py:205-217`).
 ///
