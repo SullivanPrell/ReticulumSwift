@@ -338,6 +338,7 @@ final class LinkPathRediscoveryTests: XCTestCase {
       responderSideInterfaceName: responderSide.name,
       destinationHash: destination.hash,
       lastHeard: lastHeard,
+      remainingHops: 1,
       takenHops: takenHops,
       proofTimeout: proofTimeout)
     route.validated = validated

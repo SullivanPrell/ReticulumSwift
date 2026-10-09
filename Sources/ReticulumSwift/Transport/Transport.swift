@@ -377,6 +377,14 @@ public final class Transport {
     /// Wall-clock time traffic for this link was last seen.
     public var lastHeard: Date
 
+    /// The path's hop count toward the responder, as Python counts it.
+    ///
+    /// Python's `link_table[link_id][IDX_LT_REM_HOPS]`: the path's `IDX_PT_HOPS` when the
+    /// relay forwarded the request (`Transport.py:2024`, `:2093`), re-balanced from the proof
+    /// (`:2632`). A proof or responder-side link packet travels only over this count
+    /// (`:2145`, `:2641`).
+    public var remainingHops: Int
+
     /// The link request's hop count on arrival, as Python counts it.
     ///
     /// Python's `link_table[link_id][IDX_LT_HOPS]`: `packet.hops` after the inbound
@@ -413,6 +421,7 @@ public final class Transport {
         && lhs.responderSideInterfaceName == rhs.responderSideInterfaceName
         && lhs.destinationHash == rhs.destinationHash
         && lhs.lastHeard == rhs.lastHeard
+        && lhs.remainingHops == rhs.remainingHops
         && lhs.takenHops == rhs.takenHops
         && lhs.proofTimeout == rhs.proofTimeout
         && lhs.validated == rhs.validated
@@ -1599,6 +1608,17 @@ public final class Transport {
   func inboundHops(of packet: Packet, on interface: any Interface) -> UInt8 {
     UInt8(
       truncatingIfNeeded: Transport.pythonInboundHops(packet.hops, on: interface, transport: self))
+  }
+
+  /// `packet` as Python's `inbound` hands it to a link, a destination or a receipt.
+  ///
+  /// Python rewrites `packet.hops` on arrival (`Transport.py:1800`, `:1937-1940`), so
+  /// `Link.py:204` and `:525` read that count. This port routes on the wire value, so every
+  /// packet Transport hands upward passes through here.
+  func received(_ packet: Packet, on interface: any Interface) -> Packet {
+    var inbound = packet
+    inbound.hops = inboundHops(of: packet, on: interface)
+    return inbound
   }
 
   /// Hop count to stamp when relaying `packet` (received on `sourceInterface`)
@@ -4845,7 +4865,7 @@ public final class Transport {
     {
       do {
         let link = try Link.answer(
-          request: packet,
+          request: received(packet, on: interface),
           destination: destination,
           owner: owner,
           transport: self
@@ -4886,9 +4906,10 @@ public final class Transport {
     let now = Date()
     // `proof_timeout = extra_link_proof_timeout(outbound_interface) + now +
     // ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, remaining_hops)` (`Transport.py:2061-2062`).
+    let remainingHops = pythonHops(of: path)
     let proofTimeout = now.addingTimeInterval(
       Transport.extraLinkProofTimeout(for: outbound)
-        + Link.establishmentTimeoutPerHop * TimeInterval(max(1, pythonHops(of: path))))
+        + Link.establishmentTimeoutPerHop * TimeInterval(max(1, remainingHops)))
     let route = LinkRoute(
       linkID: linkID,
       initiatorSideInterface: interface,
@@ -4897,6 +4918,7 @@ public final class Transport {
       responderSideInterfaceName: outbound.name,
       destinationHash: packet.destinationHash,
       lastHeard: now,
+      remainingHops: remainingHops,
       takenHops: Transport.pythonInboundHops(packet.hops, on: interface, transport: self),
       proofTimeout: proofTimeout
     )
@@ -4964,9 +4986,10 @@ public final class Transport {
 
   private func handleLinkRequestProof(_ packet: Packet, from interface: Interface) {
     if let link = lookupLink(packet.destinationHash) {
-      // `packet.hops` as `inbound` leaves it (`Transport.py:1800`, `:1937-1940`), the count
-      // `link.expected_hops` holds (`Link.py:281`).
-      let proofHops = Int(inboundHops(of: packet, on: interface))
+      // `packet.hops` as `inbound` leaves it, the count `link.expected_hops` holds
+      // (`Link.py:281`).
+      let proof = received(packet, on: interface)
+      let proofHops = Int(proof.hops)
       // Python's `hops_to` returns PATHFINDER_M for an unknown path, never
       // None, so `link.expected_hops` is always an int and a pathless link
       // compares against a sentinel that can never equal a real hop count—that is,
@@ -4988,7 +5011,7 @@ public final class Transport {
         // on `validateProof`, which hasn't run yet; a forged proof
         // therefore still can't move a path.
         if Transport.allowLinkPathRebalance, link.status == .pending,
-          link.proofSignatureIsValid(packet)
+          link.proofSignatureIsValid(proof)
         {
           rebalancePath(for: link, toHops: proofHops)
         }
@@ -4999,7 +5022,7 @@ public final class Transport {
         guard (link.expectedHops ?? Transport.pathfinderM) == proofHops else { return }
       }
       do {
-        try link.validateProof(packet)
+        try link.validateProof(proof)
         // Fire the transport-level callback for the initiator side.
         // The destination's onLinkEstablished is intentionally NOT
         // fired here—it belongs to the responder side and is wired
@@ -5010,31 +5033,39 @@ public final class Transport {
       }
       return
     }
-    // Relay path: a proof only gets forwarded once its signature checks out.
-    //
-    // Python guards the transmit with three conditions (`Transport.py:2641-2669`), and
-    // this is the one place a relayed proof can be examined, so all three live here rather
-    // than inside `forwardLinkTraffic`, which carries ordinary link traffic that has no
-    // signature to check.
+    // Relay path (`Transport.py:2612-2672`). The relay forwards a proof only over the remaining
+    // hops it expects, and only once the signature checks out. This is the one place the relay
+    // can examine a proof, so every condition lives here rather than inside
+    // `forwardLinkTraffic`, which carries ordinary link traffic that has no signature to check.
     lock.lock()
-    let route = linkRoutes[packet.destinationHash]
+    let stored = linkRoutes[packet.destinationHash]
     lock.unlock()
-    guard let route else { return }
+    guard var route = stored else { return }
+    let proofHops = Int(inboundHops(of: packet, on: interface))
 
-    // 1. Direction. A proof travels responder→initiator, so it must arrive on the side
-    //    facing the responder: `packet.receiving_interface == link_entry[IDX_LT_NH_IF]`.
-    //    Without this, anyone on the initiator side can replay a genuine proof back at the
-    //    responder, and `forwardLinkTraffic`'s "steer to the other side" would send it.
-    guard interface === route.responderSideInterface else { return }
+    // The signature's verdict, or nil when Python reaches none. A proof travels
+    // responder→initiator, so it must arrive on the side facing the responder:
+    // `packet.receiving_interface == link_entry[IDX_LT_NH_IF]` (`:2615`, `:2642`). Without
+    // this, anyone on the initiator side can replay a genuine proof back at the responder.
+    // Then the length (`:2617`, `:2644`). Then `RNS.Identity.recall`, whose `None` dies on
+    // `.get_public_key()` inside `except Exception` (`:2639`, `:2670`): logged, not
+    // transmitted, and no protocol violation, because the proof may be genuine and this node
+    // can't tell.
+    let proofLength = Constants.signatureLength + Constants.halfKeySize
+    let verdict: Bool? = {
+      guard interface === route.responderSideInterface,
+        packet.data.count == proofLength || packet.data.count == proofLength + 3,
+        let responderIdentity = recall(identity: route.destinationHash)
+      else { return nil }
+      return Link.proofSignatureIsValid(packet, responderIdentity: responderIdentity)
+    }()
 
-    // 2. Recall. Python calls `RNS.Identity.recall(link_entry[IDX_LT_DSTHASH])` and, when
-    //    that returns None, dies on `.get_public_key()` inside the enclosing
-    //    `except Exception` (`Transport.py:2671`)—logged, not transmitted, and no protocol
-    //    violation, because the proof may be genuine and this node simply can't tell.
-    guard let responderIdentity = recall(identity: route.destinationHash) else { return }
-
-    // 3. Signature.
-    guard Link.proofSignatureIsValid(packet, responderIdentity: responderIdentity) else {
+    if proofHops != route.remainingHops, Transport.allowLinkPathRebalance, verdict == true {
+      route = rebalanceRelayedPath(packet.destinationHash, toHops: proofHops) ?? route
+    }
+    // `Received link request proof with hop mismatch ... not transporting it` (`:2672`).
+    guard proofHops == route.remainingHops, let verdict else { return }
+    guard verdict else {
       notifyProtocolViolation(on: interface)
       return
     }
@@ -5061,6 +5092,23 @@ public final class Transport {
     // evict it while the link is active. Only fires when the destination hash
     // is already known (markDestinationUsed returns false otherwise).
     markDestinationUsed(route.destinationHash)
+  }
+
+  /// Moves a relayed link's remaining hops, and the path behind it, to a verified proof's
+  /// count (`Transport.py:2630-2634`).
+  ///
+  /// A route whose proof already validated keeps its count. Returns the route as it stands.
+  private func rebalanceRelayedPath(_ linkID: Data, toHops hops: Int) -> LinkRoute? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard var route = linkRoutes[linkID], !route.validated else { return linkRoutes[linkID] }
+    route.remainingHops = hops
+    linkRoutes[linkID] = route
+    if var entry = paths[route.destinationHash] {
+      entry.hops = wireHops(fromPythonHops: hops, on: entry.nextHopInterface)
+      paths[route.destinationHash] = entry
+    }
+    return route
   }
 
   /// Correct this link's hop expectation, and the path table entry behind it,
@@ -5098,7 +5146,7 @@ public final class Transport {
 
   private func handleLinkRTT(_ packet: Packet, from interface: Interface) {
     if let link = lookupLink(packet.destinationHash) {
-      try? link.receiveRTT(packet)
+      try? link.receiveRTT(received(packet, on: interface))
       return
     }
     forwardLinkTraffic(packet, from: interface)
@@ -5106,7 +5154,7 @@ public final class Transport {
 
   private func handleLinkData(_ packet: Packet, from interface: Interface) {
     if let link = lookupLink(packet.destinationHash) {
-      try? link.receive(packet, from: interface)
+      try? link.receive(received(packet, on: interface), from: interface)
       return
     }
     forwardLinkTraffic(packet, from: interface)
@@ -5114,7 +5162,7 @@ public final class Transport {
 
   private func handleLinkClose(_ packet: Packet, from interface: Interface) {
     if let link = lookupLink(packet.destinationHash) {
-      link.receiveTeardown(packet)
+      link.receiveTeardown(received(packet, on: interface))
       return
     }
     forwardLinkTraffic(packet, from: interface)
@@ -5139,7 +5187,7 @@ public final class Transport {
     // that may never complete, and anyone can arrange it by pushing a link request through
     // the node.
     //
-    // Upstream's condition excludes ANNOUNCE, LINKREQUEST and LRPROOF (`:2122`), and only
+    // Upstream's condition excludes ANNOUNCE, LINKREQUEST and LRPROOF (`:2123`), and only
     // the last can reach this function. A proof relayed from `handleLinkRequestProof`
     // arrives with the flag already up, so the exemption changes nothing on that path—but
     // it's upstream's condition, and it keeps a proof arriving by any other route (a
@@ -5161,11 +5209,23 @@ public final class Transport {
     // name. With names, a hairpin between two clients of one listening interface compares
     // two equal strings, matches the first branch, and sends the packet back out the
     // interface it arrived on (`bugs/027`).
+    //
+    // Each direction travels only over its own count (`Transport.py:2133-2150`):
+    // `IDX_LT_REM_HOPS` from the responder's side, `IDX_LT_HOPS` from the initiator's, and
+    // either when one interface serves both sides. `handleLinkRequestProof` already checked a
+    // proof's count (`:2641`), and Python's block exempts it (`:2123`).
+    let hops = Int(inboundHops(of: packet, on: sourceInterface))
+    let countsHops = packet.context != .lrproof
     let outboundCandidate: (any Interface)?
-    if sourceInterface === route.initiatorSideInterface {
-      outboundCandidate = route.responderSideInterface
-    } else if sourceInterface === route.responderSideInterface {
-      outboundCandidate = route.initiatorSideInterface
+    if let initIface, initIface === respIface {
+      guard !countsHops || hops == route.remainingHops || hops == route.takenHops else { return }
+      outboundCandidate = initIface
+    } else if sourceInterface === respIface {
+      guard !countsHops || hops == route.remainingHops else { return }
+      outboundCandidate = initIface
+    } else if sourceInterface === initIface {
+      guard !countsHops || hops == route.takenHops else { return }
+      outboundCandidate = respIface
     } else {
       return
     }
@@ -5221,7 +5281,7 @@ public final class Transport {
         // metadata (rssi/snr/quality) the interface stamped on it, which is what
         // Python's `receipt.proof_packet` exposes. Mirrors Python's
         // `receipt.validate_proof_packet(packet)` (Transport.py:2302).
-        match.validateExplicitProof(proofData, packet: packet)
+        match.validateExplicitProof(proofData, packet: received(packet, on: interface))
         return
       }
     } else if proofData.count == PacketReceipt.implicitProofLength {
@@ -5230,7 +5290,8 @@ public final class Transport {
       receiptsLock.lock()
       let snapshot = receipts
       receiptsLock.unlock()
-      for receipt in snapshot where receipt.validateImplicitProof(proofData, packet: packet) {
+      let inbound = received(packet, on: interface)
+      for receipt in snapshot where receipt.validateImplicitProof(proofData, packet: inbound) {
         receiptsLock.lock()
         receipts.removeAll { $0 === receipt }
         receiptsLock.unlock()
@@ -5815,7 +5876,7 @@ public final class Transport {
       // Stamp the receiving interface on the packet so the app can call
       // packet.prove(destination:) in its callback. Mirrors Python's
       // `packet.receiving_interface = receiving_interface`.
-      var deliveredPacket = packet
+      var deliveredPacket = received(packet, on: interface)
       deliveredPacket.receivingInterface = interface
 
       onPacketDelivered?(deliveredPacket, destination, interface)
