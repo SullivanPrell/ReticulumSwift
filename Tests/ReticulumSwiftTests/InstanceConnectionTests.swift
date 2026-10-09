@@ -283,6 +283,56 @@ final class InstanceConnectionTests: XCTestCase {
     XCTAssertEqual(client.role, .localClient)
   }
 
+  // MARK: - Stopping a shared instance
+
+  /// Stopping a shared instance closes its control socket.
+  ///
+  /// Python never closes the `Listener` (`Reticulum.py:366` is the only constructor, and
+  /// `exit_handler` at `:182-195` doesn't touch it); the process exit that follows releases the
+  /// socket. A Swift process outlives its stack, so `stop()` has to release it.
+  func testStop_closesTheControlSocket() throws {
+    let shared = try freeLoopbackPort()
+    let control = try freeLoopbackPort()
+    let directory = try makeConfigDirectory(
+      shareInstance: true, sharedPort: shared, controlPort: control)
+
+    let instance = try attach(directory)
+    XCTAssertEqual(instance.role, .sharedInstance)
+    XCTAssertEqual(
+      loopbackPortState(control), .accepting, "the shared instance must serve its control socket")
+
+    instance.stop()
+
+    XCTAssertEqual(
+      loopbackPortState(control), .refused,
+      "a stopped shared instance left its control socket listening")
+  }
+
+  /// A shared instance stopped and attached again in one process becomes the shared instance
+  /// again, and its control socket answers.
+  ///
+  /// The second `attach` binds the control port a second time. Before `Reticulum.stop()` stopped
+  /// the control server, that bind found the first server still listening and `attach` threw.
+  func testAttach_afterStop_becomesTheSharedInstanceAgain() throws {
+    let shared = try freeLoopbackPort()
+    let control = try freeLoopbackPort()
+    let directory = try makeConfigDirectory(
+      shareInstance: true, sharedPort: shared, controlPort: control)
+
+    let first = try attach(directory)
+    XCTAssertEqual(first.role, .sharedInstance)
+    first.stop()
+
+    let second = try attach(directory)
+    XCTAssertEqual(second.role, .sharedInstance)
+
+    let rpc = try RPCClient.forInstance(
+      storagePath: InstanceConnection.storagePath(for: directory), port: control)
+    XCTAssertNotNil(
+      try rpc.interfaceStats().asDictionary?["interfaces"],
+      "the restarted shared instance's control socket must answer")
+  }
+
   // MARK: - Config keys
 
   func testConfigParsesInstancePorts() throws {
