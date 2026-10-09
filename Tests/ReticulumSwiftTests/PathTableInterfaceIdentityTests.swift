@@ -338,7 +338,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
       routes nowhere until something attaches one. Its one legitimate caller is \
       the tunnel-path restore in `PathStore.swift`, where the reference does the \
       same and `handle_tunnel` attaches the interface when the endpoint \
-      reappears (Transport.py:2440-2447). Found at: \(sites.joined(separator: ", "))
+      reappears (Transport.py:2839-2867). Found at: \(sites.joined(separator: ", "))
       A new site almost certainly wants `PathEntry(destinationHash:nextHopInterface:…)`.
       """)
   }

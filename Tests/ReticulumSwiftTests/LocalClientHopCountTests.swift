@@ -235,7 +235,9 @@ final class LocalClientHopCountTests: XCTestCase {
       dest.hash, nextHop: Data(repeating: 0xBB, count: 16),
       receivedOn: mesh, hops: 2, announcePacketHash: nil)
 
-    serving.inboundHandler?(dataPacket(to: dest.hash, hops: 0), serving)
+    serving.inboundHandler?(
+      dataPacket(to: dest.hash, hops: 0, headerType: .type2, transportID: t.transportInstanceID),
+      serving)
 
     XCTAssertEqual(
       mesh.sent.filter { $0.destinationHash == dest.hash }.map(\.hops), [0],
@@ -311,7 +313,9 @@ final class LocalClientHopCountTests: XCTestCase {
     let dest = try destination("neighbour")
     t.injectPath(dest.hash, nextHop: dest.hash, receivedOn: mesh, hops: 0, announcePacketHash: nil)
 
-    serving.inboundHandler?(dataPacket(to: dest.hash, hops: 0), serving)
+    serving.inboundHandler?(
+      dataPacket(to: dest.hash, hops: 0, headerType: .type2, transportID: t.transportInstanceID),
+      serving)
 
     XCTAssertEqual(
       mesh.sent.filter { $0.destinationHash == dest.hash }.map(\.hops), [5],

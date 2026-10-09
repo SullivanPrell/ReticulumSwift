@@ -255,6 +255,17 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3838`), and a restored entry reads it back as Python's count.
 - A link-request proof's hop count is the one `inbound` leaves on it, as `link.expected_hops`
   holds it (`Link.py:281`, `Transport.py:2700-2707`), and re-balancing stores it as Python's count.
+- A tunnel whose endpoint reappears restores its paths, as `Transport.handle_tunnel` does
+  (`Transport.py:2829-2874`). Before, the port re-attached the tunnel and left its paths unused.
+  An unexpired tunnel path enters the path table on the new interface when the table has no path
+  to its destination. Over an existing path, it enters when it has no more hops or the existing
+  path has expired, and its announce is no older. A path that doesn't enter leaves the tunnel.
+  Hop counts compare as Python's `IDX_PT_HOPS`, and a restored path keeps Python's count on the
+  new interface through `wireHops(fromPythonHops:on:)`.
+- A tunnel records an announce's path only when the announce enters the path table, and records
+  its random blobs and announce hash with it (`Transport.py:2465-2475`). Before, a rejected
+  announce replaced the tunnel's path, and the recorded path had no announce hash, so
+  `storage/tunnels` dropped it.
 - Routing branches on Python's hop count through `pythonHops(of:)`, as it does on
   `IDX_PT_HOPS`. A sent packet takes a transport header above 1 hop, or at 1 hop behind a
   shared instance (`Transport.py:1396`, `:1416`). A relayed data packet or link request is
@@ -285,6 +296,23 @@ Before, it held up the data that arrived after it on the same interface.
   leaves them (`Link.py:204`, `:525`). Before, it counted one hop fewer: its expected hops for
   an adjacent initiator were 0, and a relayed request's establishment timeout was one hop's
   allowance short. All released versions behave this way.
+- A node relays a data packet or a link request along its path table only when the packet is
+  in transport to it, as Python's transport block does (`Transport.py:2018-2019`). The packet's
+  `transport_id` must be this node's, which the node stamps itself on a packet for a local
+  client, whose path is 0 hops (`:1968`, `:2006-2007`). `Transport.relays(_:from:along:)`
+  makes that decision for both. Before, a transport node relayed a HEADER_1 packet for any
+  destination it had a path to, and a shared instance relayed one from a local client. On a
+  shared medium, a transport node copied a packet between two neighbours onto another
+  interface, and recorded a link-table entry for a link request between them. A local client
+  with no path reached the mesh through a Swift shared instance. Python's drops that packet,
+  because a client with a path sends it in transport (`Transport.py:1396`, `:1416`). A
+  cache request is still answered before the check (`:2012-2013`), and link-table traffic
+  doesn't take it (`:2121-2160`). All released versions behave this way.
+- A relay adds a link packet's hash to the packet hashlist once the packet's hop count matches
+  its direction (`Transport.py:2152-2156`), so the filter drops a repeat. An initiator adds a
+  link-request proof's hash once its count matches the pending link's (`:2713-2717`). A packet
+  out of turn and a relayed proof stay out of the list (`:1953`, `:1958`). Before, a relay
+  carried every repeat of a link packet. All released versions behave this way.
 
 ### Deliberate differences from Python
 

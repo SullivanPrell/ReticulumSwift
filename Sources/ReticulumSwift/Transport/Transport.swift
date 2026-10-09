@@ -281,8 +281,8 @@ public final class Transport {
     /// Deliberately distinct from the preceding name-only initializer, which records a name that
     /// couldn't be resolved. This one records that there is nothing to resolve *yet*: the
     /// reference restores a tunnel path with `receiving_interface = None`
-    /// (`Transport.py:396-400`) and `handle_tunnel` writes the live interface into every one
-    /// of the tunnel's paths when the endpoint comes back (`:2440-2447`). Dropping such paths
+    /// (`Transport.py:396-400`) and `handle_tunnel` restores the tunnel's paths onto the
+    /// interface the endpoint comes back on (`:2839-2867`). Dropping such paths
     /// instead would make the tunnel table useless in exactly the case it exists for.
     ///
     /// Not routable until attached—same as there, and the same reason
@@ -4143,6 +4143,21 @@ public final class Transport {
     path.map { pythonHops(of: $0) == 0 } ?? false
   }
 
+  /// Whether this node relays `packet` along `path`: Python's transport block
+  /// (`Transport.py:1997-2019`).
+  ///
+  /// A transport node, or a shared instance on behalf of a local client, relays only a packet
+  /// in transport to it, one whose `transport_id` is this node's. Python stamps that itself on
+  /// a packet for a local client (`:2006-2007`). A HEADER_1 packet for anyone else isn't
+  /// relayed, whichever interface it arrived on.
+  func relays(_ packet: Packet, from interface: any Interface, along path: PathEntry) -> Bool {
+    let forLocal = forLocalClient(path)
+    guard transportEnabled || fromLocalClient(interface: interface) || forLocal else {
+      return false
+    }
+    return (packet.transportID ?? (forLocal ? transportInstanceID : nil)) == transportInstanceID
+  }
+
   /// Addresses a packet this node carries toward `path`, by the hops that remain.
   ///
   /// Python's `remaining_hops` branches, which data and link requests share
@@ -4884,13 +4899,8 @@ public final class Transport {
 
     // Not for this node—forward toward the responder if a path is known, and
     // remember the link's two-sided routing so the proof/RTT/close
-    // packets that come back addressed to link_id can be steered. As with
-    // DATA relay, a non-transport shared instance still relays link requests
-    // to/from a directly connected local client (Python `transport_enabled or
-    // from_local_client or for_local_client_link`, Transport.py:1573).
-    let fromLocalLR = fromLocalClient(interface: interface)
-    let forLocalLR = forLocalClient(path)
-    guard transportEnabled || fromLocalLR || forLocalLR, let path else { return }
+    // packets that come back addressed to link_id can be steered.
+    guard let path, relays(packet, from: interface, along: path) else { return }
     guard packet.hops < propagationLimit else { return }
     guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
     guard outbound !== interface else { return }
@@ -4933,12 +4943,9 @@ public final class Transport {
     let instanceLocalLink = isLocalClientInterface(interface) && isLocalClientInterface(outbound)
     forwarded.hops = relayHops(packet, from: interface, staysLocal: instanceLocalLink)
 
-    // A link request in transport to this node takes the data branches
-    // (`Transport.py:2024-2054`). A responder accepts one addressed to it or to nobody
-    // (`:2541`).
-    if forwarded.headerType == .type2, forwarded.transportID == transportInstanceID {
-      addressRelayed(&forwarded, toward: path)
-    }
+    // A link request takes the data branches (`Transport.py:2024-2054`). A responder accepts
+    // one addressed to it or to nobody (`:2540`).
+    addressRelayed(&forwarded, toward: path)
 
     // Clamp/strip the link-request MTU signalling for the next hop (mirrors
     // Python's link-MTU handling in `Transport.inbound()`). This is safe for
@@ -5021,6 +5028,9 @@ public final class Transport {
         // and the link simply stays pending until it times out.
         guard (link.expectedHops ?? Transport.pathfinderM) == proofHops else { return }
       }
+      // A proof over the expected hops for a link in Python's `pending_links_map` enters the
+      // list (`Transport.py:2713-2717`).
+      if link.role == .initiator, link.status == .pending { addPacketHash(packet) }
       do {
         try link.validateProof(proof)
         // Fire the transport-level callback for the initiator side.
@@ -5212,24 +5222,30 @@ public final class Transport {
     //
     // Each direction travels only over its own count (`Transport.py:2133-2150`):
     // `IDX_LT_REM_HOPS` from the responder's side, `IDX_LT_HOPS` from the initiator's, and
-    // either when one interface serves both sides. `handleLinkRequestProof` already checked a
-    // proof's count (`:2641`), and Python's block exempts it (`:2123`).
+    // either when one interface serves both sides. Python's block exempts a proof (`:2123`),
+    // whose count `handleLinkRequestProof` already checked (`:2641`).
     let hops = Int(inboundHops(of: packet, on: sourceInterface))
-    let countsHops = packet.context != .lrproof
+    let linkTableTraffic = packet.context != .lrproof
     let outboundCandidate: (any Interface)?
     if let initIface, initIface === respIface {
-      guard !countsHops || hops == route.remainingHops || hops == route.takenHops else { return }
+      guard !linkTableTraffic || hops == route.remainingHops || hops == route.takenHops else {
+        return
+      }
       outboundCandidate = initIface
     } else if sourceInterface === respIface {
-      guard !countsHops || hops == route.remainingHops else { return }
+      guard !linkTableTraffic || hops == route.remainingHops else { return }
       outboundCandidate = initIface
     } else if sourceInterface === initIface {
-      guard !countsHops || hops == route.takenHops else { return }
+      guard !linkTableTraffic || hops == route.takenHops else { return }
       outboundCandidate = respIface
     } else {
       return
     }
-    guard let outbound = outboundCandidate, outbound.isOnline else { return }
+    guard let outbound = outboundCandidate else { return }
+    // The hash enters the list once the packet is this node's turn (`Transport.py:2152-2156`).
+    // The proof relay records nothing (`:2641-2669`).
+    if linkTableTraffic { addPacketHash(packet) }
+    guard outbound.isOnline else { return }
     var forwarded = packet
     // instance_local_link: both sides of this link are local clients, so the
     // traffic never leaves the local-client domain and must keep its real
@@ -5705,13 +5721,12 @@ public final class Transport {
         pathStates[decoded.destinationHash] = Transport.stateUnknown
         pathStatesLock.unlock()
         requestedPathWritten = pathRequests[decoded.destinationHash] != nil
-      }
-      // If this announce arrived on a tunneled interface, record the path in
-      // the tunnel entry so it can be restored if the tunnel reappears.
-      // Mirrors Python's `Transport.announce_handler` tunnel path recording.
-      if let tunnelID = interface.tunnelID, tunnels[tunnelID] != nil {
-        tunnels[tunnelID]?.paths[decoded.destinationHash] = entry
-        tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
+        // The tunnel keeps the path it wrote, random blobs and announce hash included, for
+        // `handle_tunnel` to restore (`Transport.py:2465-2475`).
+        if let tunnelID = interface.tunnelID, tunnels[tunnelID] != nil {
+          tunnels[tunnelID]?.paths[decoded.destinationHash] = updatedEntry
+          tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
+        }
       }
       lock.unlock()
 
@@ -5891,23 +5906,12 @@ public final class Transport {
       return
     }
 
-    // No local destination—relay if this node is transport-enabled, OR the packet
-    // is to/from a directly connected local (shared-instance) client. The
-    // local-client clauses mirror Python's inbound gate
-    // `transport_enabled or from_local_client or for_local_client`
-    // (Transport.py:1573): a non-transport shared instance must still carry
-    // its clients' traffic—outbound from a client to the mesh
-    // (from_local_client) and inbound from the mesh to a client whose
-    // destination is one hop away over the serving interface (for_local_client).
-    // This path forwards packets for single destinations only. `relayPlainBroadcast`
-    // carries plain broadcasts (Transport.py:1977-1991), and link packets have their own
-    // dispatchers.
-    let fromLocal = fromLocalClient(interface: interface)
-    let forLocal = forLocalClient(path)
-    guard transportEnabled || fromLocal || forLocal,
-      packet.destinationType == .single
+    // No local destination—relay a packet in transport to this node. This path forwards
+    // packets for single destinations only. `relayPlainBroadcast` carries plain broadcasts
+    // (Transport.py:1977-1991), and link packets have their own dispatchers.
+    guard packet.destinationType == .single, let path,
+      relays(packet, from: interface, along: path)
     else { return }
-    guard let path else { return }
     forward(packet, from: interface, path: path)
   }
 
@@ -6390,7 +6394,15 @@ public final class Transport {
   /// past the filter (`Transport.py:1959-1961`), so the list holds an exempt or PLAIN packet
   /// even though the filter never consults the entry. Callers must not hold `hashlistLock`.
   private func rememberPacketHash(_ packet: Packet) {
-    guard shouldRememberHash(of: packet), let hash = Self.packetHashlistKey(packet) else { return }
+    guard shouldRememberHash(of: packet) else { return }
+    addPacketHash(packet)
+  }
+
+  /// Python's `Transport.add_packet_hash` (`Transport.py:1619-1621`).
+  ///
+  /// A no-op on a shared instance's client. Callers must not hold `hashlistLock`.
+  private func addPacketHash(_ packet: Packet) {
+    guard !isConnectedToSharedInstance, let hash = Self.packetHashlistKey(packet) else { return }
     hashlistLock.lock()
     defer { hashlistLock.unlock() }
     insertPacketHashLocked(hash)
@@ -6879,21 +6891,61 @@ public final class Transport {
     handleTunnel(tunnelID: tunnelID, interface: interface)
   }
 
+  /// Attach the tunnel to `interface`, and restore its paths through it when the tunnel is
+  /// known—`Transport.handle_tunnel` (`Transport.py:2820-2874`).
+  ///
+  /// An unexpired tunnel path enters the path table when the table has no path to its
+  /// destination. Over an existing path, it enters when it has no more hops or the existing
+  /// path has expired, and its announce is no older. A path that doesn't enter leaves the
+  /// tunnel. Hop counts compare, and carry onto `interface`, as Python counts them.
   private func handleTunnel(tunnelID: Data, interface: any Interface) {
     let expires = Date().addingTimeInterval(Transport.tunnelTimeout)
     lock.lock()
     defer { lock.unlock() }
-    if tunnels[tunnelID] == nil {
+    interface.tunnelID = tunnelID
+    guard var tunnel = tunnels[tunnelID] else {
       tunnels[tunnelID] = TunnelEntry(
         tunnelID: tunnelID,
         iface: interface,
         paths: [:],
         expires: expires
       )
-    } else {
-      tunnels[tunnelID]?.iface = interface
-      tunnels[tunnelID]?.expires = expires
+      return
     }
-    interface.tunnelID = tunnelID
+    tunnel.iface = interface
+    tunnel.expires = expires
+    let now = Date()
+    for (destinationHash, path) in tunnel.paths {
+      let hops = pythonHops(of: path)
+      let shouldAdd: Bool
+      if let current = paths[destinationHash] {
+        shouldAdd =
+          (hops <= pythonHops(of: current) || now > current.expires)
+          && Transport.timebaseFromRandomBlobs(path.randomBlobs)
+            >= Transport.timebaseFromRandomBlobs(current.randomBlobs)
+      } else {
+        shouldAdd = now < path.expires
+      }
+      guard shouldAdd else {
+        tunnel.paths[destinationHash] = nil
+        continue
+      }
+      // `list(set(path_entry[4]))` (`:2843`).
+      var randomBlobs: [Data] = []
+      for blob in path.randomBlobs where !randomBlobs.contains(blob) { randomBlobs.append(blob) }
+      paths[destinationHash] = PathEntry(
+        destinationHash: destinationHash,
+        nextHopInterface: interface,
+        hops: wireHops(fromPythonHops: hops, on: interface),
+        lastHeard: now,
+        identityHash: path.identityHash,
+        expires: path.expires,
+        nextHopTransportID: path.nextHopTransportID,
+        announceEmittedAt: path.announceEmittedAt,
+        cachedAnnounceHash: path.cachedAnnounceHash,
+        randomBlobs: randomBlobs
+      )
+    }
+    tunnels[tunnelID] = tunnel
   }
 }

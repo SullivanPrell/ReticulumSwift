@@ -87,12 +87,15 @@ final class PlainDestinationTests: XCTestCase {
     t.register(interface: out)
 
     let destHash = Data(repeating: 0xAA, count: 16)
-    let packet = Packet(
+    var packet = Packet(
       destinationType: .single,
       packetType: .data,
       destinationHash: destHash,
       data: Data(repeating: 0x00, count: 10)
     )
+    packet.headerType = .type2
+    packet.transportType = .transport
+    packet.transportID = t.transportInstanceID
 
     t.restore(
       path: Transport.PathEntry(

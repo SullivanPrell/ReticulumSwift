@@ -66,6 +66,15 @@ final class LinkHopCountTests: XCTestCase {
     var clientCount: Int = 1
   }
 
+  /// A `LoopHop` that also records what it sends.
+  final class TapLoop: LoopHop {
+    private(set) var sent: [Packet] = []
+    override func send(_ packet: Packet) throws {
+      sent.append(packet)
+      try super.send(packet)
+    }
+  }
+
   /// Transports hold interfaces weakly and links hold transports weakly.
   private var retained: [AnyObject] = []
   private var savedRebalance = Transport.allowLinkPathRebalance
@@ -298,6 +307,103 @@ final class LinkHopCountTests: XCTestCase {
       `if packet.hops == link_entry[IDX_LT_REM_HOPS] or packet.hops == link_entry[IDX_LT_HOPS]` \
       (Transport.py:2137)
       """)
+  }
+
+  // MARK: - The hashlist at a relay
+
+  func testARelayedLinkPacketEntersTheHashlist() throws {
+    let relay = makeRelay(pathHops: 1, remainingHops: 2, takenHops: 1, validated: true)
+    let packet = linkData(for: relay, hops: 0, tag: 1)
+
+    relay.transport.handleIncoming(packet: packet, from: relay.towardInitiator)
+    relay.transport.handleIncoming(packet: packet, from: relay.towardInitiator)
+
+    XCTAssertTrue(
+      relay.transport.testContainsPacketHash(try packet.packetHash()),
+      "`Transport.add_packet_hash(packet.packet_hash)` (Transport.py:2156)")
+    XCTAssertEqual(
+      relay.towardResponder.sent.map(\.hops), [1],
+      "`packet_filter` drops the repeat (Transport.py:1795)")
+  }
+
+  func testALinkPacketOutOfTurnStaysOutOfTheHashlist() throws {
+    let relay = makeRelay(pathHops: 1, remainingHops: 2, takenHops: 1, validated: true)
+    let early = linkData(for: relay, hops: 1, tag: 1)
+    let inTurn = linkData(for: relay, hops: 0, tag: 1)
+    XCTAssertEqual(
+      try early.packetHash(), try inTurn.packetHash(), "test premise: one packet, two counts")
+
+    relay.transport.handleIncoming(packet: early, from: relay.towardInitiator)
+    XCTAssertFalse(
+      relay.transport.testContainsPacketHash(try early.packetHash()),
+      "`remember_packet_hash = False` for a link-table packet (Transport.py:1953)")
+    relay.transport.handleIncoming(packet: inTurn, from: relay.towardInitiator)
+
+    XCTAssertEqual(
+      relay.towardResponder.sent.map(\.hops), [1],
+      "the copy that arrives at this node's turn still goes out (Transport.py:2149-2160)")
+  }
+
+  func testARelayedProofStaysOutOfTheHashlist() throws {
+    let relay = makeRelay(pathHops: 1, remainingHops: 2)
+    let lrproof = try proof(for: relay, hops: 1)
+
+    relay.transport.handleIncoming(packet: lrproof, from: relay.towardResponder)
+    relay.transport.handleIncoming(packet: lrproof, from: relay.towardResponder)
+
+    XCTAssertFalse(
+      relay.transport.testContainsPacketHash(try lrproof.packetHash()),
+      "the proof relay records nothing (Transport.py:1958, :2641-2669)")
+    XCTAssertEqual(
+      relay.towardInitiator.sent.map(\.hops), [2, 2],
+      "so a repeated proof goes out again")
+  }
+
+  /// Initiates a link from A to an adjacent B, returning B's proof and A's link.
+  ///
+  /// A's path to B's destination stores `pathHops` on the wire.
+  private func initiateAdjacent(pathHops: UInt8) throws -> (Transport, Packet, Link) {
+    let a = Transport()
+    let b = Transport()
+    let identity = Identity()
+    let destination = try Destination(
+      identity: identity, direction: .in, kind: .single, appName: "linkhops", aspects: ["tap"])
+    b.ownerIdentity = identity
+    b.register(destination: destination)
+    let ai = LoopHop(name: "A")
+    let bi = TapLoop(name: "B")
+    ai.paired = bi
+    bi.paired = ai
+    a.register(interface: ai)
+    b.register(interface: bi)
+    a.injectPath(
+      destination.hash, nextHop: b.transportInstanceID, receivedOn: ai, hops: pathHops,
+      announcePacketHash: nil)
+    retained += [a, b, ai, bi]
+
+    let link = try Link.initiate(destination: destination, transport: a)
+    let proof = try XCTUnwrap(bi.sent.first { $0.context == .lrproof })
+    return (a, proof, link)
+  }
+
+  func testAnInitiatorRecordsAProofOverItsExpectedHops() throws {
+    let (initiator, proof, link) = try initiateAdjacent(pathHops: 0)
+
+    XCTAssertEqual(link.status, .active, "test premise: the proof validated")
+    XCTAssertTrue(
+      initiator.testContainsPacketHash(try proof.packetHash()),
+      """
+      `if packet.hops == link.expected_hops: Transport.add_packet_hash(...)` \
+      (Transport.py:2713-2717)
+      """)
+  }
+
+  func testAnInitiatorDoesNotRecordAProofOverOtherHops() throws {
+    Transport.allowLinkPathRebalance = false
+    let (initiator, proof, link) = try initiateAdjacent(pathHops: 2)
+
+    XCTAssertEqual(link.status, .pending, "test premise: expected 3 hops, the proof took 1")
+    XCTAssertFalse(initiator.testContainsPacketHash(try proof.packetHash()))
   }
 
   // MARK: - A relayed link

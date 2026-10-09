@@ -89,20 +89,20 @@ final class PropagationLimitTests: XCTestCase {
     let t = Transport()
     t.transportEnabled = true
 
-    let destHash = Data(repeating: 0xAA, count: 16)
-    t.restore(
-      path: Transport.PathEntry(
-        destinationHash: destHash,
-        nextHopInterfaceName: "out",
-        hops: 1,
-        lastHeard: Date(),
-        identityHash: Data(repeating: 0x00, count: 16)
-      ), forDestination: destHash)
-
     let in1 = CapturingInterface(name: "in1")
     let out = CapturingInterface(name: "out")
     t.register(interface: in1)
     t.register(interface: out)
+
+    let destHash = Data(repeating: 0xAA, count: 16)
+    t.restore(
+      path: Transport.PathEntry(
+        destinationHash: destHash,
+        nextHopInterface: out,
+        hops: 1,
+        lastHeard: Date(),
+        identityHash: Data(repeating: 0x00, count: 16)
+      ), forDestination: destHash)
 
     var packet = Packet(
       destinationType: .single,
@@ -111,6 +111,10 @@ final class PropagationLimitTests: XCTestCase {
       data: Data(count: 10)
     )
     packet.hops = UInt8(t.propagationLimit)  // at the limit
+    // In transport to `t`, which relays nothing else (`Transport.py:2018-2019`).
+    packet.headerType = .type2
+    packet.transportType = .transport
+    packet.transportID = t.transportInstanceID
 
     in1.inboundHandler?(packet, in1)
 
