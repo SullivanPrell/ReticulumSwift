@@ -64,8 +64,10 @@ final class TransportPersistenceTests: XCTestCase {
     XCTAssertTrue(
       rns2.transport.hasPath(to: destHash),
       "path table must survive stop/start cycle")
+    // The announce arrived at 2 hops on a mesh interface, which Python's table holds as 3
+    // (`Transport.py:1800`).
     XCTAssertEqual(
-      rns2.transport.hopsTo(destHash), 2,
+      rns2.transport.hopsTo(destHash), 3,
       "hop count must be preserved across restart")
   }
 

@@ -80,6 +80,7 @@ public struct TunnelStore {
         // reuses the one computed for the preceding tunnel.
         return PathStore.Entry(
           path,
+          of: transport,
           destinationHash: destHash,
           interfaceHash: interfaceHash,
           announceHash: announceHash)
@@ -125,7 +126,8 @@ public struct TunnelStore {
         let identityHash = transport.recall(identity: path.destinationHash)?.hash ?? Data()
         paths[path.destinationHash] = path.pathEntry(
           interface: interface,
-          identityHash: identityHash)
+          identityHash: identityHash,
+          in: transport)
       }
       // `if len(tunnel_paths) > 0` (`Transport.py:402`)—a tunnel none of whose paths came
       // back isn't installed. An empty tunnel can route nothing.
