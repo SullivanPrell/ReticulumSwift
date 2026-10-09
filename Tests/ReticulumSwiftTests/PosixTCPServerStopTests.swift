@@ -20,6 +20,8 @@ import XCTest
 /// the first descriptor is still open.
 final class PosixTCPServerStopTests: XCTestCase {
 
+  /// A connect after `stop()` is refused.
+  ///
   /// The accept source's cancel handler closes the descriptor on the source's queue, after
   /// `cancel()` has returned. On an idle machine the handler usually wins, so the rounds run
   /// beside busy threads that delay it.

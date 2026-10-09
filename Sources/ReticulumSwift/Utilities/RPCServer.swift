@@ -30,6 +30,8 @@ public final class RPCServer {
   private let authkey: Data
   /// Reads the listening descriptor; its cancel handler closes the descriptor.
   private var acceptSource: DispatchSourceRead?
+  /// Signalled once the accept source's cancel handler has closed the descriptor.
+  private var acceptClosed: DispatchSemaphore?
   private var listenFD: Int32 = -1
   // Serial (not .concurrent): RPC call handlers touch the Transport,
   // whose accessors are individually synchronized but not mutually atomic.
@@ -105,16 +107,30 @@ public final class RPCServer {
     listenFD = fd
     let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: connectionQueue)
     source.setEventHandler { [weak self] in self?.acceptOne(from: fd) }
-    source.setCancelHandler { Darwin.close(fd) }
+    let closed = DispatchSemaphore(value: 0)
+    source.setCancelHandler {
+      Darwin.close(fd)
+      closed.signal()
+    }
     source.resume()
     acceptSource = source
+    acceptClosed = closed
     Reticulum.log("RPC server started on port \(port)", level: .info)
   }
 
   /// Stops listening and releases the socket.
+  ///
+  /// The descriptor is closed when this returns: the port can be bound again at once, and a
+  /// connect to it is refused. `cancel()` alone leaves the close to the cancel handler, which
+  /// runs on the source's queue after `cancel()` returns. Python never closes its control
+  /// `Listener` and leaves the release to process exit (`Reticulum.py:366`; the only other
+  /// references to it are `:302` and `:1368`), so this is a Swift-only concern.
   public func stop() {
-    acceptSource?.cancel()
+    guard let source = acceptSource else { return }
+    source.cancel()
+    acceptClosed?.wait()
     acceptSource = nil
+    acceptClosed = nil
     listenFD = -1
   }
 
