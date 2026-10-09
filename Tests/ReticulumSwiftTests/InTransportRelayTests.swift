@@ -250,7 +250,7 @@ final class InTransportRelayTests: XCTestCase {
     var route = Transport.LinkRoute(
       linkID: linkID, initiatorSideInterface: from, responderSideInterface: toward,
       initiatorSideInterfaceName: from.name, responderSideInterfaceName: toward.name,
-      destinationHash: destinationHash, lastHeard: Date())
+      destinationHash: destinationHash, lastHeard: Date(), remainingHops: 2, takenHops: 1)
     route.validated = true
     t.restore(linkRoute: route)
     let linkData = Packet(

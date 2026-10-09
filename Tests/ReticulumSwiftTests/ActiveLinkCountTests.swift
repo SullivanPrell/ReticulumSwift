@@ -43,7 +43,8 @@ final class ActiveLinkCountTests: XCTestCase {
       initiatorSideInterfaceName: iface.name,
       responderSideInterfaceName: iface.name,
       destinationHash: Data(repeating: id, count: Constants.truncatedHashLength),
-      lastHeard: Date())
+      lastHeard: Date(),
+      remainingHops: 1)
     r.validated = validated
     t.restore(linkRoute: r)
   }

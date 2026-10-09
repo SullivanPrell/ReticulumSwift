@@ -100,6 +100,10 @@ Before, it held up the data that arrived after it on the same interface.
 - A `destination_table` or `tunnels` file an earlier version wrote holds wire counts. This
   version reads them as Python's, so a restored path learned over a mesh interface more than
   one hop away reports one hop short until its destination announces again.
+- A packet Transport hands to a link, a destination callback (`onPacketDelivered`,
+  `Destination.onPacketReceived`) or a receipt's `proofPacket` carries Python's hop count: one
+  more than the wire value, except on a local client's interface or the interface to a shared
+  instance (`Transport.py:1800`, `:1937-1940`). It carried the wire value.
 
 ### Fixed
 
@@ -256,6 +260,24 @@ Before, it held up the data that arrived after it on the same interface.
   header toward a local client's path learned at 1 hop. An announce against a path of the
   other locality took the wrong branch of the ladder: a mesh announce at wire 0 against a local
   client's path is 1 hop against 0. All released versions behave this way.
+- A transport relay re-balances its path from a link-request proof that arrives over another
+  hop count than the path predicted, as `Transport.py:2614-2634` does under
+  `ALLOW_LINK_PATH_REBALANCE`. The proof's signature must verify against the responder's
+  identity, and a route whose proof already validated keeps its count. The link-table entry
+  holds Python's remaining hops as `LinkRoute.remainingHops`, and both it and the path take
+  the proof's count. Before, only the initiator re-balanced, so a relay kept a stale count
+  until the destination announced again. All released versions behave this way.
+- A relay forwards a link-request proof only over the remaining hops (`Transport.py:2641`,
+  `:2672`), and link traffic only over the count its direction expects: the remaining hops from
+  the responder's side, the request's hop count from the initiator's, and either when one
+  interface serves both sides (`Transport.py:2133-2150`). A proof over another count, or of
+  the wrong length, drops without a protocol violation (`:2644`). Before, the relay carried
+  every proof whose signature verified, and all link traffic, at any hop count. All released
+  versions behave this way.
+- A link responder reads the request's and the RTT packet's hop counts as Python's `inbound`
+  leaves them (`Link.py:204`, `:525`). Before, it counted one hop fewer: its expected hops for
+  an adjacent initiator were 0, and a relayed request's establishment timeout was one hop's
+  allowance short. All released versions behave this way.
 - A node relays a data packet or a link request along its path table only when the packet is
   in transport to it, as Python's transport block does (`Transport.py:2018-2019`). The packet's
   `transport_id` must be this node's, which the node stamps itself on a packet for a local
