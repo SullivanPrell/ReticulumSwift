@@ -502,6 +502,7 @@ final class I2PPeerReconnectTests: XCTestCase {
     wait(for: [online], timeout: 2)
 
     let offline = expectation(description: "watchdog killed stale socket")
+    offline.assertForOverFulfill = false  // peer.stop() below also disconnects
     peer.onDisconnected = { _ in offline.fulfill() }
     wait(for: [offline], timeout: 3)
     XCTAssertFalse(peer.isOnline)
@@ -579,41 +580,117 @@ final class I2PInterfacePeerSpawnTests: XCTestCase {
       "stop() clears spawned peers; start() respawns from config")
   }
 
-  func testTransportRegistersAndDeregistersDialedPeers() {
-    let stream = streamSocket()
-    let factory = MockSAMSocketFactory([sessionSocket(), stream])
-    let iface = makeInterface(peers: [fakeB64Dest], factory: factory)
-
-    let transport = Transport()
+  /// Starts `iface` on `transport` and waits for its one dialed peer to come up.
+  private func startOnTransport(
+    _ iface: I2PInterface, _ transport: Transport
+  ) -> I2PInterfacePeer {
     transport.register(interface: iface)
-
     let online = expectation(description: "peer online")
-    let existing = iface.onPeerConnected  // Transport's wiring
+    let wired = iface.onPeerConnected  // Transport's wiring
     iface.onPeerConnected = { peer in
-      existing?(peer)
+      wired?(peer)
       online.fulfill()
     }
-
     try? iface.start()
     wait(for: [online], timeout: 2)
+    iface.onPeerConnected = wired
+    return iface.peerInterfaces[0]
+  }
 
-    let peer = iface.peerInterfaces[0]
-    XCTAssertTrue(
-      transport.interfaces.contains { $0 === peer },
-      "Dialed peer must be registered with Transport as routing endpoint")
-
+  /// Closes `stream` and waits for Transport's disconnect handling to run.
+  private func dropStream(_ stream: MockSAMSocket, of iface: I2PInterface) {
     let offline = expectation(description: "peer offline")
-    let existingOff = iface.onPeerDisconnected
-    iface.onPeerDisconnected = { p in
-      existingOff?(p)
+    let wired = iface.onPeerDisconnected
+    iface.onPeerDisconnected = { peer in
+      wired?(peer)
       offline.fulfill()
     }
     stream.simulateRemoteClose()
     wait(for: [offline], timeout: 2)
+    iface.onPeerDisconnected = wired
+  }
+
+  /// The tunnel-synthesis packets HDLC-framed onto `stream`.
+  private func tunnelSyntheses(on stream: MockSAMSocket) -> Int {
+    HDLC.FrameDecoder().feed(stream.writtenBytes)
+      .compactMap { try? Packet.unpack($0) }
+      .filter { $0.destinationHash == Transport.tunnelSynthesizeHash }
+      .count
+  }
+
+  func testTransportRegistersADialedPeerWhenItComesUp() {
+    let factory = MockSAMSocketFactory([sessionSocket(), streamSocket()])
+    let iface = makeInterface(peers: [fakeB64Dest], factory: factory)
+    let transport = Transport()
+
+    let peer = startOnTransport(iface, transport)
+
+    XCTAssertTrue(
+      transport.interfaces.contains { $0 === peer },
+      "Dialed peer must be registered with Transport as routing endpoint")
+    iface.stop()
+  }
+
+  /// A dialed peer stays registered while it redials, and leaves when stopped.
+  ///
+  /// Python keeps a dialed peer in `Transport.interfaces` while it redials
+  /// (`I2PInterface.py:678-680`). Teardown removes only an accepted peer (`:712`).
+  func testADroppedDialedPeerStaysRegisteredAndKeepsItsPaths() throws {
+    let stream = streamSocket()
+    let factory = MockSAMSocketFactory([sessionSocket(), stream])
+    let iface = makeInterface(peers: [fakeB64Dest], factory: factory)
+    let transport = Transport()
+    let peer = startOnTransport(iface, transport)
+
+    let destination = try Destination(
+      identity: Identity(), direction: .in, kind: .single,
+      appName: "i2pdial", aspects: ["redial"])
+    stream.pushInbound(HDLC.frame(try Announce.make(for: destination).pack()))
+    XCTAssertTrue(transport.paths[destination.hash]?.nextHopInterface === peer)
+
+    dropStream(stream, of: iface)
+    transport.runJobs()
+
+    XCTAssertTrue(
+      transport.interfaces.contains { $0 === peer },
+      "a dialed peer stays registered while it redials")
+    XCTAssertNotNil(
+      transport.paths[destination.hash],
+      "the path through a redialing peer survives the path table cull (Transport.py:972-976)")
+
+    iface.stop()
+    transport.runJobs()
 
     XCTAssertFalse(
       transport.interfaces.contains { $0 === peer },
-      "Dropped peer must be deregistered from Transport")
+      "stopping the interface detaches its peers")
+    XCTAssertNil(transport.paths[destination.hash])
+  }
+
+  /// A reconnect synthesizes the tunnel again (`I2PInterface.py:533`) and doesn't register the
+  /// peer a second time.
+  func testAReconnectedPeerSynthesizesItsTunnelOnce() {
+    let stream1 = streamSocket()
+    let stream2 = streamSocket()
+    let factory = MockSAMSocketFactory([sessionSocket(), stream1, sessionSocket(), stream2])
+    let iface = makeInterface(peers: [fakeB64Dest], factory: factory)
+    let transport = Transport()
+    transport.ownerIdentity = Identity()
+    let peer = startOnTransport(iface, transport)
+    XCTAssertEqual(tunnelSyntheses(on: stream1), 1)
+
+    peer.retryInterval = 0.05
+    let online = expectation(description: "peer back online")
+    let wired = iface.onPeerConnected
+    iface.onPeerConnected = { peer in
+      wired?(peer)
+      online.fulfill()
+    }
+    stream1.simulateRemoteClose()
+    wait(for: [online], timeout: 3)
+
+    XCTAssertEqual(transport.interfaces.filter { $0 === peer }.count, 1)
+    XCTAssertEqual(tunnelSyntheses(on: stream2), 1)
     iface.stop()
   }
 }
