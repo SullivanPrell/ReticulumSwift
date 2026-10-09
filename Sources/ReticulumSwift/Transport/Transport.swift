@@ -758,15 +758,14 @@ public final class Transport {
 
   /// A forwarded announce pending a single retransmission.
   ///
-  /// Mirrors Python's
-  /// `Transport.announce_table` 9-tuple (`IDX_AT_*`). Swift forwards the first
-  /// copy immediately, then retransmits once more (`PATHFINDER_R`) after the
-  /// grace window unless neighbours carry the announce on.
+  /// Mirrors Python's `Transport.announce_table` 9-tuple (`IDX_AT_*`). Swift makes the first
+  /// send when it inserts the entry, so an entry holds what Python's holds after its first
+  /// jobs-loop send (`Transport.py:778-781`).
   struct AnnounceTableEntry {
     var timestamp: TimeInterval  // IDX_AT_TIMESTAMP—when forwarded
     var retransmitTimeout: TimeInterval  // IDX_AT_RTRNS_TMO—next retry time
-    var retries: Int  // IDX_AT_RETRIES—transmissions so far
-    var hops: Int  // IDX_AT_HOPS—raw wire hops at receipt
+    var retries: Int  // IDX_AT_RETRIES
+    var hops: Int  // IDX_AT_HOPS—`inboundHops(of:on:)` at receipt
     var packet: Packet  // IDX_AT_PACKET—the received announce
     var localRebroadcasts: Int  // IDX_AT_LCL_RBRD—sibling rebroadcasts heard
     var blockRebroadcasts: Bool  // IDX_AT_BLCK_RBRD—emit as PATH_RESPONSE
@@ -1588,22 +1587,29 @@ public final class Transport {
     return p
   }
 
+  /// `packet.hops` as Python's `inbound` leaves it, the hop count every relay sends.
+  ///
+  /// See ``pythonInboundHops(_:on:transport:)``.
+  func inboundHops(of packet: Packet, on interface: any Interface) -> UInt8 {
+    UInt8(
+      truncatingIfNeeded: Transport.pythonInboundHops(packet.hops, on: interface, transport: self))
+  }
+
   /// Hop count to stamp when relaying `packet` (received on `sourceInterface`)
   /// onward.
   ///
-  /// Normally the received hop count + 1, but obfuscated to
-  /// `localHopsDelta` when the packet came from a directly connected local
-  /// client and isn't staying within the local-client domain (and the feature
-  /// is enabled). `staysLocal` is the site-specific "don't obfuscate" condition
-  /// (`instance_local_link` for link traffic, `proof_for_local_client` for
-  /// proofs, `to_local_client` for data). Mirrors the
-  /// `packet.hops if not from_local_client or <staysLocal> or local_hops_delta == 0
-  /// else local_hops_delta` idiom in Python `Transport.inbound()`.
+  /// ``inboundHops(of:on:)``, obfuscated to a nonzero `localHopsDelta` when the packet came
+  /// from a directly connected local client and isn't staying within the local-client domain.
+  /// `staysLocal` is the site-specific "don't obfuscate" condition
+  /// (`instance_local_link` for link traffic, `proof_for_local_client` for proofs,
+  /// `to_local_client` for data). Mirrors the `packet.hops if not from_local_client or
+  /// <staysLocal> or local_hops_delta == 0 else local_hops_delta` idiom in Python
+  /// `Transport.inbound()`.
   func relayHops(_ packet: Packet, from sourceInterface: any Interface, staysLocal: Bool) -> UInt8 {
     if localHopsDelta != 0, isLocalClientInterface(sourceInterface), !staysLocal {
       return localHopsDelta
     }
-    return packet.hops &+ 1
+    return inboundHops(of: packet, on: sourceInterface)
   }
 
   /// Clear transient in-memory queues (held announces, receipts, reverse table).
@@ -3891,7 +3897,8 @@ public final class Transport {
     now: TimeInterval
   ) {
     var forwarded = entry.packet
-    forwarded.hops = UInt8(truncatingIfNeeded: entry.hops + 1)
+    // `new_packet.hops = announce_entry[4]` (`Transport.py:808`).
+    forwarded.hops = UInt8(truncatingIfNeeded: entry.hops)
     forwarded.headerType = .type2
     forwarded.transportID = transportInstanceID
     // A blocked rebroadcast goes out as a path response (Python sets
@@ -3903,48 +3910,34 @@ public final class Transport {
       && iface.name != entry.receivingInterfaceName
     {
       if let restrict = entry.attachedInterfaceName, iface.name != restrict { continue }
-      guard
-        Transport.shouldForwardAnnounce(
-          outboundMode: iface.mode,
-          nextHopMode: entry.receivingInterfaceMode,
-          localDestination: false,
-          announcesFromInternal: iface.announcesFromInternal,
-          nextHopAnnouncesToInternal: entry.receivingInterfaceAnnouncesToInternal
-        )
-      else { continue }
-      queueLock.lock()
-      let queue = announceQueues[iface.name, default: AnnounceQueue()]
-      announceQueues[iface.name] = queue
-      queueLock.unlock()
-      let canSend = queue.shouldTransmit(
-        packet: forwarded, now: now, bitrate: iface.bitrate,
-        announceCap: iface.announceCap, emitted: emitted
-      )
-      if canSend { try? transmit(forwarded, on: iface) }
+      emitRelayedAnnounce(
+        forwarded, on: iface, nextHopMode: entry.receivingInterfaceMode,
+        nextHopAnnouncesToInternal: entry.receivingInterfaceAnnouncesToInternal,
+        emitted: emitted, now: now)
     }
   }
 
   /// Receive-side cancel for a pending announce retransmission.
   ///
-  /// Called when a
-  /// forwarded (HEADER_2) announce arrives for a destination this node is about to
-  /// retransmit. Mirrors Python's `Transport.inbound()` announce_table block:
-  ///   - hops == stored + 1 → a sibling at this node's distance rebroadcast it;
+  /// Called when a forwarded (HEADER_2) announce arrives for a destination this node is about
+  /// to retransmit. `incomingHops` is ``inboundHops(of:on:)``. Mirrors Python's
+  /// `Transport.inbound()` announce_table block (`Transport.py:2186-2200`):
+  ///   - hops - 1 == stored → a sibling at this node's distance rebroadcast it;
   ///     once `LOCAL_REBROADCASTS_MAX` are heard the retry is dropped.
-  ///   - hops == stored + 2 → a downstream node passed this rebroadcast on;
+  ///   - hops - 1 == stored + 1 → a downstream node passed this rebroadcast on;
   ///     if it happened before the retry timer, no further tries are needed.
   private func noteAnnounceRebroadcastHeard(destinationHash: Data, incomingHops: Int) {
     lock.lock()
     defer { lock.unlock() }
     guard var entry = announceTable[destinationHash] else { return }
-    if incomingHops == entry.hops + 1 {
+    if incomingHops - 1 == entry.hops {
       entry.localRebroadcasts += 1
       if entry.retries > 0 && entry.localRebroadcasts >= Transport.localRebroadcastsMax {
         announceTable.removeValue(forKey: destinationHash)
         return
       }
       announceTable[destinationHash] = entry
-    } else if incomingHops == entry.hops + 2 && entry.retries > 0 {
+    } else if incomingHops - 1 == entry.hops + 1 && entry.retries > 0 {
       if Date().timeIntervalSince1970 < entry.retransmitTimeout {
         announceTable.removeValue(forKey: destinationHash)
       }
@@ -5362,6 +5355,9 @@ public final class Transport {
       // second verification the way Python's `announce_signature_validated` does
       // (`Identity.py:559`).
       let decoded = try Announce.validate(packet, signatureVerified: true)
+      // `announce_hops = packet.hops` (`Transport.py:2333`): the hop count every copy, relay
+      // and answer of this announce carries.
+      let announceHops = inboundHops(of: packet, on: interface)
 
       // Announce-retry cancel (mirrors Python `Transport.inbound()`'s
       // announce_table handling): if a retransmission is pending for
@@ -5372,7 +5368,7 @@ public final class Transport {
       if transportEnabled, packet.headerType == .type2, packet.transportID != nil {
         noteAnnounceRebroadcastHeard(
           destinationHash: decoded.destinationHash,
-          incomingHops: Int(packet.hops))
+          incomingHops: Int(announceHops))
       }
 
       // Dedup: same announce instance heard from any interface is
@@ -5659,17 +5655,12 @@ public final class Transport {
       // block: apps sharing this daemon's connection (nomadnet, rnstatus,
       // MeshChatX, …) must see every announce the daemon overhears, even
       // when this instance isn't itself acting as a mesh transport/relay
-      // node. Unlike the mesh-relay forward after it, this copy keeps the
-      // announce's hop count (Python: `new_announce.hops = packet.hops`).
-      //
-      // This copy goes first. The local clients are routing endpoints, so the relay reaches
-      // them as well, one hop further. Python's relay waits for the jobs loop, so its local
-      // clients take this copy's hop count, and the relay, the same announce one hop further,
-      // doesn't replace the path. Sending the relay first would leave each of them a hop
-      // further from the destination.
+      // node. `new_announce.hops = packet.hops` (`Transport.py:2417`, `:2428`). It goes out
+      // before the relay, which Python sends from the jobs loop.
       let localTargets = localClientServingInterfaces(excluding: interface)
       if shouldUpdate, !localTargets.isEmpty {
         var localForward = packet
+        localForward.hops = announceHops
         localForward.headerType = .type2
         localForward.transportID = transportInstanceID
         for iface in localTargets {
@@ -5705,25 +5696,25 @@ public final class Transport {
         interfaces.contains(where: { $0.isRoutingEndpoint })
       {
         var forwarded = packet
-        forwarded.hops = packet.hops &+ 1
+        forwarded.hops = announceHops
         forwarded.headerType = .type2
         forwarded.transportID = transportInstanceID
         let now = Date().timeIntervalSince1970
         relayAnnounce(forwarded, receivedOn: interface, now: now)
 
-        // Record this forwarded announce for a single retransmission
-        // (Python `PATHFINDER_R = 1`). The first forward just went out
-        // earlier, so the entry starts at `retries = 1`; the jobs loop
-        // retransmits once more after the grace window unless
-        // neighbours carry it on. Mirrors the announce_table insert
-        // inside Python's `if should_add:` block.
+        // The announce_table insert inside Python's `if should_add:` block, as it stands after
+        // the first jobs-loop send, which just went out: retries one past the initial count.
+        // That count is `PATHFINDER_R` for a local client (`Transport.py:2356-2360`), whose
+        // entry is then complete, and 0 otherwise, which leaves one retransmission after the
+        // grace window unless neighbours carry it on (`:778-781`).
+        let initialRetries = fromLocalClient ? Transport.pathRequestRetries : 0
         lock.lock()
         announceTable[decoded.destinationHash] = AnnounceTableEntry(
           timestamp: now,
           retransmitTimeout: now + Transport.pathfinderG
             + Double.random(in: 0..<Transport.pathfinderRW),
-          retries: 1,
-          hops: Int(packet.hops),
+          retries: initialRetries + 1,
+          hops: Int(announceHops),
           packet: packet,
           localRebroadcasts: 0,
           blockRebroadcasts: false,
@@ -5740,13 +5731,13 @@ public final class Transport {
       // (`Transport.py:2375-2395`). Python queues it in the announce table for one send on the
       // next jobs pass. The entry's attached interface is the one `:2336` cleared, not the
       // interface that asked, so it goes to every interface, under the same mode filters and
-      // announce caps as a relayed announce. Its hop count is `packet.hops`, which for a local
-      // client is the wire value (`Transport.py:1937-1940`). This port sends it at once, as it
-      // does the relay of a local client's own announce.
+      // announce caps as a relayed announce. Its hop count is `announce_hops` (`:2391`). This
+      // port sends it at once, as it does the relay of a local client's own announce.
       if shouldUpdate, fromLocalClient, decoded.isPathResponse,
         takePendingLocalPathRequest(for: decoded.destinationHash)
       {
         var answer = packet
+        answer.hops = announceHops
         answer.context = .none
         answer.headerType = .type2
         answer.transportType = .transport
@@ -5771,19 +5762,19 @@ public final class Transport {
         replay.headerType = .type2
         replay.transportType = .transport
         replay.transportID = transportInstanceID
-        // `new_announce.hops = packet.hops` (`:2454`), where upstream's `packet.hops`
-        // already counts this arrival (`:1800`). This port does no inbound increment,
-        // so the same wire value is one more than the hop count it stored—the
-        // adjustment the known-path answer makes as `entry.hops &+ 1`.
-        replay.hops = packet.hops &+ 1
+        // `new_announce.hops = packet.hops` (`:2454`).
+        replay.hops = announceHops
         // Upstream replays to every requesting interface (`:2439`); this port skips the
         // one the announce arrived on. Every other replay here excludes its source—the
         // mesh relay's `iface !== interface`, the local-client replay's
         // `localClientServingInterfaces(excluding:)`—and so does upstream's own
         // local-client replay. The skipped frame can only be redundant: the peer on that
         // interface is the one that just sent this announce.
+        //
+        // `new_announce.send()` (`:2455`) leaves through `Transport.outbound`, which applies
+        // `local_hops_delta` (`:1594-1597`).
         for target in waiting.requestingInterfaces where target !== interface {
-          try? transmit(replay, on: target)
+          try? transmit(deltaMangled(replay, for: target), on: target)
         }
       }
       // `# Resolve potential in-flight path requests` (`Transport.py:2478-2481`). The
@@ -6097,16 +6088,17 @@ public final class Transport {
       }
       var response = cached
       response.context = .pathResponse
-      // Python stores announce_hops = packet.hops AFTER its inbound +1. Swift
-      // does no inbound increment, so mimic it: hops = stored path hops + 1, so
-      // the requester computes the correct hops_to / expected_proof_hops.
-      response.hops = entry.hops &+ 1
+      // `packet.hops = Transport.path_table[destination_hash][IDX_PT_HOPS]`
+      // (`Transport.py:3473`).
+      response.hops = UInt8(truncatingIfNeeded: pythonHops(of: entry))
       // Path responses are always HEADER_2 carrying this instance's transport_id
       // so the requester stores received_from = this node and addresses traffic here.
       response.headerType = .type2
       response.transportType = .transport
       response.transportID = transportInstanceID
-      try? transmit(response, on: interface)
+      // Python's answer leaves through `Transport.outbound` (`:808-813`), which applies
+      // `local_hops_delta` (`:1594-1597`).
+      try? transmit(deltaMangled(response, for: interface), on: interface)
       // `if not Transport.owner.is_connected_to_shared_instance:
       // RNS.Identity._used_destination_data(packet.destination_hash)` (`Transport.py:3521`).
       if !isConnectedToSharedInstance { markDestinationUsed(target) }
@@ -6556,36 +6548,53 @@ public final class Transport {
     let emitted = announceEmitted(forwarded)
     for iface in interfaces
     where iface.isOnline && iface.isRoutingEndpoint && iface !== interface {
-      // Interface-mode-based forwarding filter (mirrors Python Transport.outbound):
-      // - Announces received from ACCESS_POINT interfaces (clients talking "up")
-      //   must not be re-broadcast to other AP or BOUNDARY interfaces—AP
-      //   clients must not be able to reach each other via the AP.
-      // - Announces received from BOUNDARY interfaces must not be re-broadcast
-      //   to other BOUNDARY or ACCESS_POINT interfaces.
-      // - Announces received on FULL/GATEWAY/ROAMING/POINT_TO_POINT interfaces
-      //   are forwarded freely (including to AP and BOUNDARY interfaces).
-      guard
-        Transport.shouldForwardAnnounce(
-          outboundMode: iface.mode,
-          nextHopMode: interface.mode,
-          localDestination: false,
-          announcesFromInternal: iface.announcesFromInternal,
-          nextHopAnnouncesToInternal: interface.announcesToInternal
-        )
-      else { continue }
-      queueLock.lock()
-      let queue = announceQueues[iface.name, default: AnnounceQueue()]
-      announceQueues[iface.name] = queue
-      queueLock.unlock()
-      let canSend = queue.shouldTransmit(
-        packet: forwarded,
-        now: now,
-        bitrate: iface.bitrate,
-        announceCap: iface.announceCap,
-        emitted: emitted
-      )
-      if canSend { try? transmit(forwarded, on: iface) }
+      emitRelayedAnnounce(
+        forwarded, on: iface, nextHopMode: interface.mode,
+        nextHopAnnouncesToInternal: interface.announcesToInternal, emitted: emitted, now: now)
     }
+  }
+
+  /// Sends a relayed announce on `iface`, as `Transport.outbound` sends one announce on one
+  /// interface: the mode filter, the announce cap, then `local_hops_delta`
+  /// (`Transport.py:1440-1597`).
+  ///
+  /// `nextHopMode` and `nextHopAnnouncesToInternal` describe the interface the announce
+  /// arrived on.
+  private func emitRelayedAnnounce(
+    _ packet: Packet, on iface: any Interface, nextHopMode: InterfaceMode,
+    nextHopAnnouncesToInternal: Bool?, emitted: TimeInterval, now: TimeInterval
+  ) {
+    // Interface-mode-based forwarding filter (mirrors Python Transport.outbound):
+    // - Announces received from ACCESS_POINT interfaces (clients talking "up")
+    //   must not be re-broadcast to other AP or BOUNDARY interfaces—AP
+    //   clients must not be able to reach each other via the AP.
+    // - Announces received from BOUNDARY interfaces must not be re-broadcast
+    //   to other BOUNDARY or ACCESS_POINT interfaces.
+    // - Announces received on FULL/GATEWAY/ROAMING/POINT_TO_POINT interfaces
+    //   are forwarded freely (including to AP and BOUNDARY interfaces).
+    guard
+      Transport.shouldForwardAnnounce(
+        outboundMode: iface.mode,
+        nextHopMode: nextHopMode,
+        localDestination: false,
+        announcesFromInternal: iface.announcesFromInternal,
+        nextHopAnnouncesToInternal: nextHopAnnouncesToInternal
+      )
+    else { return }
+    queueLock.lock()
+    let queue = announceQueues[iface.name, default: AnnounceQueue()]
+    announceQueues[iface.name] = queue
+    queueLock.unlock()
+    let canSend = queue.shouldTransmit(
+      packet: packet,
+      now: now,
+      bitrate: iface.bitrate,
+      announceCap: iface.announceCap,
+      emitted: emitted
+    )
+    // The queue keeps the unmangled packet: Python queues `packet.raw` (`:1554`, `:1561`)
+    // and applies the delta only to what it transmits at once (`:1594-1597`).
+    if canSend { try? transmit(deltaMangled(packet, for: iface), on: iface) }
   }
 
   /// Extract the emission timestamp from an announce's random hash
@@ -6686,11 +6695,11 @@ public final class Transport {
     guard let outbound = path.nextHopInterface, outbound.isOnline else { return }
     guard outbound !== sourceInterface else { return }  // never bounce
     var forwarded = packet
-    // to_local_client: a directly reachable destination (path.hops == 0) is a
-    // local client, so relayed data staying local keeps its real hop count;
-    // otherwise obfuscate hops for data relayed on behalf of a local client.
+    // `to_local_client` holds for a path Python counts as 0 hops (`Transport.py:1968`), which
+    // a local client's destination is and a mesh neighbour isn't.
     // Python: `if local_hops_delta != 0 and from_local_client and not to_local_client`.
-    forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: path.hops == 0)
+    forwarded.hops = relayHops(
+      packet, from: sourceInterface, staysLocal: pythonHops(of: path) == 0)
     // Mirror Python's in-transport DATA rewrite (Transport.inbound, the
     // `transport_id == Transport.identity.hash` branch):
     //   • remaining_hops > 1  (Swift path.hops > 0): keep HEADER_2 and

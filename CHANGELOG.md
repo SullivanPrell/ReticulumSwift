@@ -65,9 +65,8 @@ Before, it held up the data that arrived after it on the same interface.
   `send` does nothing (`LocalInterface.py:462-463`), and `detachInterface` refuses it, as
   `Reticulum.py:809-811` refuses `LocalServerInterface`.
 - With transport enabled, a local client receives an announce twice, as Python's do: the
-  shared instance's immediate copy (`Transport.py:2400-2429`), then its relay, one hop
-  further. The immediate copy goes first, so the client takes the path's hop count from it, and
-  the relay, the same announce one hop further, doesn't replace it.
+  shared instance's immediate copy (`Transport.py:2400-2429`), then its relay, at the same hop
+  count (`Transport.py:808`).
 - `rnsd` exits with status 1 when it can't bind its instance control socket, and logs
   `Could not start the instance control socket on port N: [Errno 48] Address already in use` at
   CRITICAL. Python's `rnsd` ends on the uncaught `OSError` (`Reticulum.py:366`,
@@ -177,6 +176,28 @@ Before, it held up the data that arrived after it on the same interface.
   (`Transport.py:3521`), except on a shared-instance client.
 - A path request arriving on a roaming-mode interface gets no answer when the path leads back
   over that interface (`Transport.py:3468-3469`).
+- The shared instance relays a local client's announce once, as Python does
+  (`Transport.py:2356-2360`). Before, the jobs loop sent it again 5 to 10.5 seconds later.
+  All released versions behave this way.
+- Relayed announces, path answers, and relayed data, link, and proof packets carry the hop
+  count Python's `inbound` leaves on the packet: one more than the wire value, except on a
+  local client's interface or the interface to a shared instance, where it stays the wire
+  value (`Transport.py:1800`, `:1937-1940`). `inboundHops(of:on:)` decides it for the
+  announce relay and its retransmission, the copy for local clients, the discovery-request
+  replay, the known-path answer, and `relayHops`. Plain broadcasts still go out unchanged, as
+  Python transmits their raw bytes (`Transport.py:1977-1991`).
+  Before, everything relayed from a local client went one hop further than Python sends it,
+  the copy of a mesh announce for local clients went one hop short, and the known-path answer
+  for a local client's destination said 1 hop where Python says 0. All released versions
+  behave this way.
+- The announce table holds Python's hop count, and a heard rebroadcast compares against it as
+  `Transport.py:2186-2200` does.
+- With `local_hops_delta` on, a relayed announce, a discovery-request replay or a known-path
+  answer leaving at hop count 0 takes the delta, as `Transport.outbound` applies it
+  (`Transport.py:1594-1611`). A queued announce keeps its real count, as Python queues the
+  unmangled packet (`Transport.py:1554`, `:1561`). Data from a local client to a mesh
+  neighbour takes the delta too: `to_local_client` needs a path Python counts as 0 hops
+  (`Transport.py:1968`), which a neighbour isn't.
 - The jobs loop removes a path whose interface is no longer attached, as Python's does
   (`Transport.py:972-976`): an interface that was deregistered or detached, or one that no
   longer exists. Before, such a path stayed in the table until it expired, and one through a
