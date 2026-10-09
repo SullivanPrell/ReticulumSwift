@@ -9,8 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 import CryptoKit
+import Darwin
 import Foundation
-import Network
 
 /// Python `multiprocessing.connection`-compatible RPC server.
 ///
@@ -28,12 +28,23 @@ import Network
 public final class RPCServer {
   private let port: UInt16
   private let authkey: Data
-  private var listener: NWListener?
-  // Serial (not .concurrent): RPC connection handlers touch the Transport,
+  /// Reads the listening descriptor; its cancel handler closes the descriptor.
+  private var acceptSource: DispatchSourceRead?
+  private var listenFD: Int32 = -1
+  // Serial (not .concurrent): RPC call handlers touch the Transport,
   // whose accessors are individually synchronized but not mutually atomic.
-  // Serializing connections keeps RPC handlers from racing each other; each is
+  // Serializing calls keeps RPC handlers from racing each other; each is
   // a one-shot low-volume management call, so throughput is a non-issue.
   private let queue = DispatchQueue(label: "ReticulumSwift.RPCServer")
+  /// Runs each connection's blocking I/O, so a stalled client holds only its own thread.
+  private let connectionQueue = DispatchQueue(
+    label: "ReticulumSwift.RPCServer.connection", attributes: .concurrent)
+
+  /// How long a connection's read or write may block before the server drops the connection.
+  private static let ioTimeoutSeconds = 10
+
+  /// The listening descriptor, for tests that read its options back with `getsockopt`.
+  var listeningDescriptorForTesting: Int32 { listenFD }
 
   /// Live transport reference—set by `Reticulum.startRPC` after creation.
   ///
@@ -56,216 +67,146 @@ public final class RPCServer {
     self.authkey = authkey
   }
 
-  /// Starts listening for control connections.
+  /// Starts listening for control connections on `127.0.0.1:port`.
+  ///
+  /// A BSD socket with `SO_REUSEADDR`, bound to loopback, as Python's control listener is
+  /// (`Reticulum.py:359`, `:366`, and CPython `multiprocessing/connection.py:638-651`). That bind
+  /// conflicts only with a socket on 127.0.0.1 or the wildcard. `NWListener` refuses a port
+  /// held on any local address, including one that `bind(("127.0.0.1", 0))` has just reported
+  /// free (`bugs/040`).
+  ///
+  /// The socket accepts connections once this returns.
+  ///
+  /// - Throws: `RPCError.listenerFailed` carrying the `POSIXError` when the socket can't be
+  ///   bound or listened on, where Python raises the `OSError`.
   public func start() throws {
-    guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-      throw RPCError.invalidPort
-    }
-    // A loopback control socket, so it takes the shared-instance option set—`TCP_NODELAY`,
-    // no keepalive—the same one `LocalInterface` uses. Python's RPC listener is a
-    // `multiprocessing.connection.Listener` and sets nothing, but this is still a socket this
-    // port opens, and it had the same defect as the rest: `.tcp` meant Nagle held small
-    // control frames behind the delayed-ACK timer. Found by the construction-site guard;
-    // not in `bugs/023` as filed.
-    //
-    // "Loopback" is a property of the parameters, not of intent: Python constructs its
-    // listener on `("127.0.0.1", port)` (`Reticulum.py:352`, `:359`), and parameters without
-    // a required local endpoint bind the wildcard—which put this authenticated management
-    // socket on every network the host was attached to. The port travels inside the
-    // endpoint, so no `on:` argument here.
-    let listener = try NWListener(
-      using: RNSSocketOptions.localListenerParameters(port: nwPort).parameters)
-    self.listener = listener
-    listener.newConnectionHandler = { [weak self] conn in self?.handleConnection(conn) }
+    let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else { throw RPCError.listenerFailed(Self.currentPOSIXError()) }
+    var one: Int32 = 1
+    let size = socklen_t(MemoryLayout<Int32>.size)
+    Darwin.setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, size)
+    Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, size)
 
-    // Wait for the listener to be ready, and throw if it fails.
-    //
-    // `NWListener.start(queue:)` returns before the bind is attempted and reports the result
-    // asynchronously through `stateUpdateHandler`. With no handler set, a listener that never
-    // bound still reached the log line below—so a daemon whose control port was taken
-    // announced "RPC server started on port N", ran normally, and answered every `rnstatus`,
-    // `rnpath`, `rnprobe`, `rnid -r` and `rnx` with "Couldn't connect to instance control
-    // socket". A component reporting success it didn't achieve; `bugs/040`.
-    //
-    // Python raises here—`SocketListener.__init__` does `except OSError: … raise`—and
-    // `rnsd` exits rather than running without a control socket. Blocking until the state is
-    // known also means a caller may connect as soon as `start()` returns, instead of racing
-    // the bind.
-    let settled = DispatchSemaphore(value: 0)
-    var failure: Error?
-    listener.stateUpdateHandler = { state in
-      switch state {
-      case .ready:
-        settled.signal()
-      case .failed(let error), .waiting(let error):
-        // `.waiting` is where an address conflict surfaces: the framework holds the
-        // listener in that state and retries, so treating it as "not yet ready" would
-        // hang for the settle timeout and then report success anyway.
-        failure = error
-        settled.signal()
-      case .cancelled:
-        settled.signal()
-      default:
-        break
+    var addr = sockaddr_in()
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = port.bigEndian
+    Darwin.inet_aton("127.0.0.1", &addr.sin_addr)
+    let bound = withUnsafePointer(to: &addr) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
       }
     }
-    listener.start(queue: queue)
+    guard bound == 0, Darwin.listen(fd, 16) == 0 else {
+      let error = Self.currentPOSIXError()
+      Darwin.close(fd)
+      throw RPCError.listenerFailed(error)
+    }
 
-    if settled.wait(timeout: .now() + RPCServer.bindTimeout) == .timedOut {
-      listener.cancel()
-      self.listener = nil
-      throw RPCError.listenerFailed(nil)
-    }
-    if let failure {
-      listener.cancel()
-      self.listener = nil
-      throw RPCError.listenerFailed(failure)
-    }
+    listenFD = fd
+    let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: connectionQueue)
+    source.setEventHandler { [weak self] in self?.acceptOne(from: fd) }
+    source.setCancelHandler { Darwin.close(fd) }
+    source.resume()
+    acceptSource = source
     Reticulum.log("RPC server started on port \(port)", level: .info)
   }
 
-  /// How long `start()` waits for the listener to reach a terminal state.
-  ///
-  /// Generous: this is a
-  /// loopback bind, so anything approaching it means the framework isn't going to answer.
-  private static let bindTimeout: DispatchTimeInterval = .seconds(5)
-
   /// Stops listening and releases the socket.
   public func stop() {
-    listener?.cancel()
-    listener = nil
+    acceptSource?.cancel()
+    acceptSource = nil
+    listenFD = -1
   }
 
   // MARK: - Connection lifecycle
 
-  private func handleConnection(_ conn: NWConnection) {
-    conn.stateUpdateHandler = { [weak self] state in
-      switch state {
-      case .ready: self?.deliverChallenge(conn)
-      case .failed: conn.cancel()
-      default: break
-      }
+  private func acceptOne(from listener: Int32) {
+    var peer = sockaddr_in()
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let fd = withUnsafeMutablePointer(to: &peer) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.accept(listener, $0, &length) }
     }
-    conn.start(queue: queue)
+    guard fd >= 0 else { return }
+    var one: Int32 = 1
+    Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+    // `TCP_NODELAY`, the shared-instance option set: without it Nagle holds small control
+    // frames behind the delayed-ACK timer.
+    RNSSocketOptions.applyLocalOptions(toFileDescriptor: fd)
+    var timeout = timeval(tv_sec: Self.ioTimeoutSeconds, tv_usec: 0)
+    let timeoutSize = socklen_t(MemoryLayout<timeval>.size)
+    Darwin.setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, timeoutSize)
+    Darwin.setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, timeoutSize)
+
+    let host = String(cString: inet_ntoa(peer.sin_addr))
+    let endpoint = "\(host):\(UInt16(bigEndian: peer.sin_port))"
+    connectionQueue.async { [weak self] in
+      defer { Darwin.close(fd) }
+      self?.serve(RPCSocket(fd: fd, endpoint: endpoint))
+    }
   }
 
-  private func deliverChallenge(_ conn: NWConnection) {
+  /// One connection: mutual authentication, then one call and its response.
+  private func serve(_ conn: RPCSocket) {
+    guard authenticate(conn) else { return }
+    guard let payload = conn.receiveFrame(limit: 1_048_576) else { return }
+    let response = queue.sync { respond(to: payload) }
+    _ = conn.sendFrame(response)
+  }
+
+  // MARK: - Mutual authentication
+
+  /// Delivers this server's challenge, then answers the client's.
+  ///
+  /// Python's `connection.Client` runs `answer_challenge` (the client proves itself to the
+  /// server) then `deliver_challenge` (the client verifies the server). The server must
+  /// answer that second challenge or every RPC call fails with `AuthenticationError` before
+  /// it starts.
+  private func authenticate(_ conn: RPCSocket) -> Bool {
     // Modern (CPython ≥ 3.12) challenge: "{sha256}" + 40 random bytes. Legacy
     // clients (≤ 3.11) answer this with a bare HMAC-MD5 over the whole message,
     // which `verifyChallenge` also accepts—so one challenge serves both.
     let message = MultiprocessingAuth.makeChallengeMessage(digest: .sha256)
-    let challenge = RPCServer.challengePrefix + message
-
-    sendBytes(challenge, over: conn) { [weak self] error in
-      if let error {
-        Reticulum.log("RPC challenge send failed: \(error)", level: .error)
-        conn.cancel()
-        return
-      }
-      self?.receiveBytes(from: conn) { digest, err in
-        guard let self, let digest, err == nil else {
-          conn.cancel()
-          return
-        }
-        if MultiprocessingAuth.verifyChallenge(
-          authkey: self.authkey,
-          message: message,
-          response: digest)
-        {
-          self.sendBytes(RPCServer.welcomeMessage, over: conn) { [weak self] _ in
-            Reticulum.log("RPC client auth OK from \(conn.endpoint)", level: .debug)
-            self?.answerChallenge(conn)
-          }
-        } else {
-          self.sendBytes(RPCServer.failureMessage, over: conn) { _ in
-            Reticulum.log("RPC auth failed from \(conn.endpoint)", level: .warning)
-            conn.cancel()
-          }
-        }
-      }
+    guard conn.sendFrame(RPCServer.challengePrefix + message) else {
+      Reticulum.log("RPC challenge send failed: \(Self.currentPOSIXError())", level: .error)
+      return false
     }
-  }
-
-  // MARK: - Mutual authentication (step 2 of 2)
-
-  // Python's connection.Client runs: answer_challenge (client proves itself to server)
-  // then deliver_challenge (client verifies the server). The server must respond to that second
-  // challenge or every RPC call fails with AuthenticationError before it starts.
-  private func answerChallenge(_ conn: NWConnection) {
-    receiveBytes(from: conn) { [weak self] challengeMsg, err in
-      guard let self, let challengeMsg, err == nil else {
-        conn.cancel()
-        return
-      }
-      let prefix = RPCServer.challengePrefix
-      // The client's challenge is 20 raw bytes on CPython ≤ 3.11 and
-      // "{sha256}" + 40 bytes on ≥ 3.12; accept either, and let
-      // `createResponse` pick the matching digest and reply framing.
-      guard challengeMsg.count > prefix.count,
-        challengeMsg.prefix(prefix.count) == prefix
-      else {
-        Reticulum.log("RPC: bad client challenge (\(challengeMsg.count) bytes)", level: .warning)
-        conn.cancel()
-        return
-      }
-      let nonce = Data(challengeMsg.dropFirst(prefix.count))
-      guard
-        let digest = try? MultiprocessingAuth.createResponse(authkey: self.authkey, message: nonce)
-      else {
-        Reticulum.log("RPC: unsupported client challenge format", level: .warning)
-        conn.cancel()
-        return
-      }
-      self.sendBytes(digest, over: conn) { [weak self] error in
-        if let error {
-          Reticulum.log("RPC: digest send failed: \(error)", level: .error)
-          conn.cancel()
-          return
-        }
-        self?.receiveBytes(from: conn) { [weak self] response, err in
-          guard let response, err == nil else {
-            conn.cancel()
-            return
-          }
-          if response == RPCServer.welcomeMessage {
-            Reticulum.log("RPC mutual auth OK from \(conn.endpoint)", level: .debug)
-            self?.readCall(conn)
-          } else {
-            Reticulum.log("RPC: server auth rejected by client", level: .warning)
-            conn.cancel()
-          }
-        }
-      }
+    guard let digest = conn.receiveFrame(limit: 65536) else { return false }
+    guard
+      MultiprocessingAuth.verifyChallenge(authkey: authkey, message: message, response: digest)
+    else {
+      _ = conn.sendFrame(RPCServer.failureMessage)
+      Reticulum.log("RPC auth failed from \(conn.endpoint)", level: .warning)
+      return false
     }
-  }
+    guard conn.sendFrame(RPCServer.welcomeMessage) else { return false }
+    Reticulum.log("RPC client auth OK from \(conn.endpoint)", level: .debug)
 
-  // MARK: - Call dispatch
-
-  private func readCall(_ conn: NWConnection) {
-    conn.receive(exactly: 4) { [weak self] data, _, isComplete, error in
-      if isComplete || error != nil {
-        conn.cancel()
-        return
-      }
-      guard let data, data.count == 4 else {
-        conn.cancel()
-        return
-      }
-      let length = Int(data.withUnsafeBytes { $0.load(as: Int32.self).bigEndian })
-      guard length > 0, length < 1_048_576 else {
-        conn.cancel()
-        return
-      }
-
-      conn.receive(exactly: length) { [weak self] payload, _, _, err in
-        guard let self, let payload, err == nil else {
-          conn.cancel()
-          return
-        }
-        let response = self.respond(to: payload)
-        self.sendBytes(response, over: conn) { _ in conn.cancel() }
-      }
+    // The client's challenge is 20 raw bytes on CPython ≤ 3.11 and
+    // "{sha256}" + 40 bytes on ≥ 3.12; accept either, and let
+    // `createResponse` pick the matching digest and reply framing.
+    guard let challenge = conn.receiveFrame(limit: 65536) else { return false }
+    let prefix = RPCServer.challengePrefix
+    guard challenge.count > prefix.count, challenge.prefix(prefix.count) == prefix else {
+      Reticulum.log("RPC: bad client challenge (\(challenge.count) bytes)", level: .warning)
+      return false
     }
+    let nonce = Data(challenge.dropFirst(prefix.count))
+    guard let response = try? MultiprocessingAuth.createResponse(authkey: authkey, message: nonce)
+    else {
+      Reticulum.log("RPC: unsupported client challenge format", level: .warning)
+      return false
+    }
+    guard conn.sendFrame(response) else {
+      Reticulum.log("RPC: digest send failed: \(Self.currentPOSIXError())", level: .error)
+      return false
+    }
+    guard let verdict = conn.receiveFrame(limit: 65536) else { return false }
+    guard verdict == RPCServer.welcomeMessage else {
+      Reticulum.log("RPC: server auth rejected by client", level: .warning)
+      return false
+    }
+    Reticulum.log("RPC mutual auth OK from \(conn.endpoint)", level: .debug)
+    return true
   }
 
   // MARK: - MsgPack dispatch
@@ -606,51 +547,83 @@ public final class RPCServer {
     return nil
   }
 
-  // MARK: - Wire helpers
+  // MARK: - Errors
 
-  private func sendBytes(
-    _ bytes: Data, over conn: NWConnection, completion: @escaping (Error?) -> Void
-  ) {
-    var length = Int32(bytes.count).bigEndian
-    let header = Data(bytes: &length, count: 4)
-    conn.send(content: header + bytes, completion: .contentProcessed { completion($0) })
-  }
-
-  private func receiveBytes(from conn: NWConnection, completion: @escaping (Data?, Error?) -> Void)
-  {
-    conn.receive(exactly: 4) { lengthData, _, _, error in
-      if let error {
-        completion(nil, error)
-        return
-      }
-      guard let lengthData, lengthData.count == 4 else {
-        completion(nil, RPCError.invalidProtocol)
-        return
-      }
-      let length = Int(lengthData.withUnsafeBytes { $0.load(as: Int32.self).bigEndian })
-      guard length > 0, length < 65536 else {
-        completion(nil, RPCError.invalidProtocol)
-        return
-      }
-      conn.receive(exactly: length) { payload, _, _, error in completion(payload, error) }
-    }
+  private static func currentPOSIXError() -> Error {
+    POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
   }
 
   /// A failure raised while starting or serving the control socket.
-  public enum RPCError: Error {
+  public enum RPCError: Error, CustomStringConvertible {
     case invalidPort
     case invalidProtocol
-    /// The listener never reached `.ready`. Carries the framework's error when there was
-    /// one, and `nil` when the state simply never settled (`bugs/040`).
+    /// Binding or listening on the control socket failed. Carries the `POSIXError`.
     case listenerFailed(Error?)
+
+    /// A socket failure in the form Python prints an `OSError`: `[Errno 48] Address already in
+    /// use`.
+    public var description: String {
+      switch self {
+      case .invalidPort: return "invalid port"
+      case .invalidProtocol: return "invalid protocol"
+      case .listenerFailed(.some(let error as POSIXError)):
+        return "[Errno \(error.code.rawValue)] \(String(cString: strerror(error.code.rawValue)))"
+      case .listenerFailed(.some(let error)): return "\(error)"
+      case .listenerFailed(.none): return "the control socket could not listen"
+      }
+    }
   }
 }
 
-extension NWConnection {
-  fileprivate func receive(
-    exactly count: Int,
-    completion: @escaping (Data?, NWConnection.ContentContext?, Bool, NWError?) -> Void
-  ) {
-    self.receive(minimumIncompleteLength: count, maximumLength: count, completion: completion)
+/// One accepted control connection: blocking frame I/O on its descriptor.
+///
+/// A frame is a 4-byte big-endian signed length and the payload, as
+/// `multiprocessing.connection`'s `send_bytes` and `recv_bytes` write and read it.
+private struct RPCSocket {
+  let fd: Int32
+  /// `host:port` of the client, for log lines.
+  let endpoint: String
+
+  func sendFrame(_ payload: Data) -> Bool {
+    var length = Int32(payload.count).bigEndian
+    return write(Data(bytes: &length, count: 4) + payload)
+  }
+
+  /// The next frame's payload, or `nil` on end of stream, an error, a timeout, or a length
+  /// outside `1..<limit`.
+  func receiveFrame(limit: Int) -> Data? {
+    guard let header = read(exactly: 4) else { return nil }
+    let length = Int(Int32(bitPattern: header.reduce(UInt32(0)) { $0 << 8 | UInt32($1) }))
+    guard length > 0, length < limit else { return nil }
+    return read(exactly: length)
+  }
+
+  private func write(_ data: Data) -> Bool {
+    data.withUnsafeBytes { bytes in
+      guard let base = bytes.baseAddress else { return true }
+      var offset = 0
+      while offset < bytes.count {
+        let written = Darwin.write(fd, base + offset, bytes.count - offset)
+        if written < 0 && errno == EINTR { continue }
+        guard written > 0 else { return false }
+        offset += written
+      }
+      return true
+    }
+  }
+
+  private func read(exactly count: Int) -> Data? {
+    var buffer = [UInt8](repeating: 0, count: count)
+    var offset = 0
+    while offset < count {
+      let received = buffer.withUnsafeMutableBytes { bytes -> Int in
+        guard let base = bytes.baseAddress else { return 0 }
+        return Darwin.read(fd, base + offset, count - offset)
+      }
+      if received < 0 && errno == EINTR { continue }
+      guard received > 0 else { return nil }
+      offset += received
+    }
+    return Data(buffer)
   }
 }
