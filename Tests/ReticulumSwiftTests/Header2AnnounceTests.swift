@@ -30,6 +30,19 @@ final class Header2AnnounceTests: XCTestCase {
     func send(_ packet: Packet) throws { sent.append(packet) }
   }
 
+  /// Stands in for `LocalInterface`, a client's connection to its shared instance.
+  final class SharedInstanceIface: SharedInstanceClientInterface {
+    var name: String
+    var bitrate: Int = 0
+    var isOnline: Bool = true
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    var sent: [Packet] = []
+    init(name: String) { self.name = name }
+    func start() throws {}
+    func stop() {}
+    func send(_ packet: Packet) throws { sent.append(packet) }
+  }
+
   func testAnnounceViaHeader2StoresTransportID() throws {
     let t = Transport()
     let iface = CapturingInterface(name: "in")
@@ -175,7 +188,7 @@ final class Header2AnnounceTests: XCTestCase {
   func testOutboundZeroHopSharedInstanceClientUsesHeader1() throws {
     let t = Transport()
     t.isConnectedToSharedInstance = true
-    let outIface = CapturingInterface(name: "local-to-instance")
+    let outIface = SharedInstanceIface(name: "local-to-instance")
     t.register(interface: outIface)
 
     let id = Identity()
