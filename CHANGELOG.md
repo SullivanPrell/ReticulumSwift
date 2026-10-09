@@ -278,6 +278,18 @@ Before, it held up the data that arrived after it on the same interface.
   leaves them (`Link.py:204`, `:525`). Before, it counted one hop fewer: its expected hops for
   an adjacent initiator were 0, and a relayed request's establishment timeout was one hop's
   allowance short. All released versions behave this way.
+- A node relays a data packet or a link request along its path table only when the packet is
+  in transport to it, as Python's transport block does (`Transport.py:2018-2019`). The packet's
+  `transport_id` must be this node's, which the node stamps itself on a packet for a local
+  client, whose path is 0 hops (`:1968`, `:2006-2007`). `Transport.relays(_:from:along:)`
+  makes that decision for both. Before, a transport node relayed a HEADER_1 packet for any
+  destination it had a path to, and a shared instance relayed one from a local client. On a
+  shared medium, a transport node copied a packet between two neighbours onto another
+  interface, and recorded a link-table entry for a link request between them. A local client
+  with no path reached the mesh through a Swift shared instance. Python's drops that packet,
+  because a client with a path sends it in transport (`Transport.py:1396`, `:1416`). A
+  cache request is still answered before the check (`:2012-2013`), and link-table traffic
+  doesn't take it (`:2121-2160`). All released versions behave this way.
 
 ### Deliberate differences from Python
 
