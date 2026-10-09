@@ -616,7 +616,16 @@ public final class Transport {
   /// case `filterAndRecord` must not re-filter (mirrors Python's
   /// `if Transport.owner.is_connected_to_shared_instance: return True`).
   /// Defaults to `false` for standalone / embedded transport nodes.
+  ///
+  /// A local client also reads none of the transport tables and writes none of the state files
+  /// in the shared storage directory, which belong to the shared instance. Set it before
+  /// `Reticulum.start()`, which reads it.
   public var isConnectedToSharedInstance: Bool = false
+
+  /// Whether start-up restores the path, tunnel and packet-hashlist tables.
+  ///
+  /// `Transport.py:340` and `:404-408`.
+  var restoresTransportTables: Bool { transportEnabled && !isConnectedToSharedInstance }
 
   /// Per-instance propagation limit; defaults to `pathfinderM`.
   public var propagationLimit: UInt8 = UInt8(Transport.pathfinderM)
@@ -3310,7 +3319,8 @@ public final class Transport {
   /// Drop learned ratchets whose `received` time is older than
   /// `ratchetExpiry`.
   ///
-  /// Mirrors Python's `Identity._clean_ratchets`.
+  /// Mirrors Python's `Identity._clean_ratchets`, which a local client doesn't run
+  /// (`Reticulum.py:352`): a client drops the ratchet and leaves the file.
   public func sweepKnownRatchets(now: Date = Date()) {
     lock.lock()
     defer { lock.unlock() }
@@ -3318,7 +3328,7 @@ public final class Transport {
     {
       knownRatchets.removeValue(forKey: hash)
       knownRatchetTimes.removeValue(forKey: hash)
-      if let dir = ratchetsDirectory {
+      if !isConnectedToSharedInstance, let dir = ratchetsDirectory {
         try? FileManager.default.removeItem(
           at: dir.appendingPathComponent(hash.hexString)
         )
@@ -3340,7 +3350,8 @@ public final class Transport {
   /// `:459-462,476`, and `loadKnownRatchets` below). Each side silently destroyed the other's
   /// forward-secrecy state on the first start after a switch.
   private func persistKnownRatchet(_ ratchet: Data, forDestination hash: Data, receivedAt: Date) {
-    guard let dir = ratchetsDirectory else { return }
+    // `Identity.py:420`: a local client remembers the ratchet without writing it.
+    guard !isConnectedToSharedInstance, let dir = ratchetsDirectory else { return }
     try? FileManager.default.createDirectory(
       at: dir, withIntermediateDirectories: true
     )
@@ -3357,11 +3368,13 @@ public final class Transport {
   /// dropping any whose `received` is older than `ratchetExpiry`.
   ///
   /// Mirrors `Identity.get_ratchet` (`:487-497`) for the read and `_clean_ratchets`
-  /// (`:452-482`) for the removal of expired and corrupt files.
+  /// (`:452-482`) for the removal of expired and corrupt files. A local client reads but
+  /// removes nothing, since it doesn't run `_clean_ratchets` (`Reticulum.py:352`).
   public func loadKnownRatchets() {
     guard let dir = ratchetsDirectory,
       let entries = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
     else { return }
+    let removesFiles = !isConnectedToSharedInstance
     let now = Date()
     lock.lock()
     defer { lock.unlock() }
@@ -3376,7 +3389,7 @@ public final class Transport {
         // the first start after `bugs/029`: unlike `paths.json` and its siblings, these
         // sit at a name the reference *does* use, so leaving them in place would only
         // leave a file a Python daemon deletes anyway.
-        try? FileManager.default.removeItem(at: url)
+        if removesFiles { try? FileManager.default.removeItem(at: url) }
         continue
       }
       var fields: [String: MsgPack.Value] = [:]
@@ -3387,12 +3400,12 @@ public final class Transport {
         ratchet.count == Constants.ratchetSize,
         let receivedAt = fields["received"]?.asDouble
       else {
-        try? FileManager.default.removeItem(at: url)
+        if removesFiles { try? FileManager.default.removeItem(at: url) }
         continue
       }
       let received = Date(timeIntervalSince1970: receivedAt)
       if now.timeIntervalSince(received) > ratchetExpiry {
-        try? FileManager.default.removeItem(at: url)
+        if removesFiles { try? FileManager.default.removeItem(at: url) }
         continue
       }
       knownRatchets[destHash] = ratchet
@@ -3443,6 +3456,8 @@ public final class Transport {
   /// `os.replace`. `Data.write(options: .atomic)` is that same write-then-rename, so a torn
   /// file isn't observable on either side.
   public func saveKnownDestinations(to url: URL) throws {
+    // `Identity.py:179`: the shared instance owns the file.
+    guard !isConnectedToSharedInstance else { return }
     lock.lock()
     let snapshot = knownIdentities
     let announcedAt = knownDestinationAnnouncedAt
@@ -5699,7 +5714,10 @@ public final class Transport {
         }
         paths[decoded.destinationHash] = updatedEntry
         lock.unlock()
-        try? cacheAnnounce(packet, receivingInterfaceName: interface.name)
+        // `Transport.py:2457`: the shared instance owns the announce cache.
+        if !isConnectedToSharedInstance {
+          try? cacheAnnounce(packet, receivingInterfaceName: interface.name)
+        }
         lock.lock()
         // Reset responsiveness state whenever the path table is updated.
         //
@@ -6419,6 +6437,24 @@ public final class Transport {
     }
   }
 
+  // MARK: - Path and tunnel table persistence
+
+  /// Writes the path table to `url`, as `Transport.save_path_table` does.
+  ///
+  /// A local client writes nothing (`Transport.py:3789`).
+  public func savePathTable(to url: URL) throws {
+    guard !isConnectedToSharedInstance else { return }
+    try PathStore.snapshot(of: self).write(to: url)
+  }
+
+  /// Writes the tunnel table to `url`, as `Transport.save_tunnel_table` does.
+  ///
+  /// A local client writes nothing (`Transport.py:3880`).
+  public func saveTunnelTable(to url: URL) throws {
+    guard !isConnectedToSharedInstance else { return }
+    try TunnelStore.snapshot(of: self).write(to: url)
+  }
+
   // MARK: - Packet hashlist persistence
 
   /// Persist the current packet hashlist to `storage/packet_hashlist.raw`.
@@ -6428,6 +6464,8 @@ public final class Transport {
   /// prefix, no encoding. The reader recovers records by fixed width, so the framing *is* the
   /// hash length.
   public func savePacketHashlist(to url: URL) throws {
+    // `Transport.py:3746-3747`.
+    guard !isConnectedToSharedInstance, transportEnabled else { return }
     hashlistLock.lock()
     let snapshot = packetHashlist.union(packetHashlistPrev)
     hashlistLock.unlock()

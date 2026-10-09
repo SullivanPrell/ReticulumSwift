@@ -22,11 +22,15 @@ import XCTest
 ///   Reticulum.start() restores all three.
 final class TransportPersistenceTests: XCTestCase {
 
+  /// A storage directory beside a config that enables transport, because only a transport
+  /// instance restores the path table and the packet hashlist (`Transport.py:340`, `:404-408`).
   private func makeTmpDir(tag: String) throws -> URL {
-    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
       .appendingPathComponent("RNSPersist-\(tag)-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    return dir
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try "[reticulum]\nenable_transport = Yes\n".write(
+      to: root.appendingPathComponent("config"), atomically: true, encoding: .utf8)
+    return root.appendingPathComponent("storage")
   }
 
   // MARK: - Path table survives stop/start

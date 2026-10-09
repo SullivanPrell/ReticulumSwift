@@ -976,6 +976,10 @@ public final class Reticulum {
       }
     }
 
+    // A local client leaves transport to the shared instance (`Reticulum.py:440`), before
+    // `Transport.start` chooses the transport identity and reads the tables (`:353`).
+    if transport.isConnectedToSharedInstance { transport.transportEnabled = false }
+
     // Load or create the persistent transport identity (full 64-byte private key).
     // Mirrors Python's Transport.identity loaded from `transport_identity`.
     let persistentIdentity: Identity
@@ -1023,12 +1027,85 @@ public final class Reticulum {
     transport.loadKnownRatchets()
     transport.sweepKnownRatchets()
 
+    // `Transport.py:340` and `:404-408`: only a transport instance that isn't a local client
+    // restores these. After known destinations, because a restored path resolves its identity
+    // through `Identity.recall` (`Reticulum.py:351` before `:353`).
+    if transport.restoresTransportTables { restoreTransportTables() }
+
+    // Load blackhole list from directory (mirrors Python's Transport.reload_blackhole()).
+    // Allows external sources listed in Reticulum.blackhole_sources().
+    let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
+    try? transport.reloadBlacklist(
+      fromDirectory: blackholePath,
+      allowedSources: Reticulum.blackholeSources())
+
+    try transport.start()
+
+    // Discovery and the blackhole updater run only in a shared or standalone instance
+    // (`Reticulum.py:371-374`); discovery writes `storage/discovery`.
+    if !transport.isConnectedToSharedInstance {
+      // Start announcing this instance's discoverable interfaces when any of them asked to be.
+      // Mirrors Python: if Reticulum.__discovery_enabled: RNS.Transport.enable_discovery()
+      // (`Reticulum.py:370`). The latch is set while parsing interface blocks, because no
+      // interface exists yet when the reticulum block is read.
+      if Reticulum.discoveryEnabled() {
+        if let stampGenerator = configuration.discoveryStampGenerator {
+          transport.enableDiscovery(stampGenerator: stampGenerator)
+        } else {
+          Reticulum.log(
+            "An interface is configured as discoverable, but no discovery "
+              + "stamp generator was supplied. Interfaces will not be announced.",
+            level: .error)
+        }
+      }
+
+      // Start interface discovery listener when configured.
+      // Mirrors Python: if Reticulum.__discover_interfaces: RNS.Transport.discover_interfaces()
+      // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
+      if let parsedCfg = config, parsedCfg.reticulum.discoverInterfaces,
+        let validator = configuration.discoveryStampValidator
+      {
+        let discoveryPath = StorageInventory.url(
+          .discoveredInterfaces, storage: configuration.storagePath
+        ).path
+        transport.discoverInterfaces(
+          storagePath: discoveryPath,
+          requiredValue: Reticulum.requiredDiscoveryValue(),
+          stampValidator: validator
+        )
+
+        // Python re-runs `_synthesize_interface` over `bootstrap_configs` when every
+        // auto-connected peer has gone (`Discovery.py:652-654`). The parsed config lives
+        // here rather than on `Transport`, so the clause is injected.
+        //
+        // Unowned-safe capture: `Reticulum` owns `transport`, which owns the discovery
+        // handler holding this closure, so a strong capture would be a cycle.
+        transport.discoveryHandler?.reenableBootstrapInterfaces = { [weak self] in
+          guard let self, let cfg = self.config else { return }
+          let bootstrapOnly = cfg.interfaces.filter {
+            $0.enabled && $0.bool("bootstrap_only") == true
+          }
+          guard !bootstrapOnly.isEmpty else { return }
+          var subset = cfg
+          subset.interfaces = bootstrapOnly
+          try? self.synthesizeInterfaces(from: subset)
+        }
+      }
+
+      // Start blackhole-list updater when sources are configured.
+      // Mirrors Python: if Reticulum.__blackhole_sources: RNS.Transport.enable_blackhole_updater()
+      if let parsedCfg = config, !parsedCfg.reticulum.blackholeSources.isEmpty {
+        Reticulum.storedBlackholeSources = parsedCfg.reticulum.blackholeSources
+        transport.enableBlackholeUpdater()
+      }
+    }
+
+    Reticulum.shared = self
+  }
+
+  /// Restores the path, tunnel and packet-hashlist tables from storage.
+  private func restoreTransportTables() {
     // Restore path table, dropping any expired entries.
-    //
-    // After known destinations and ratchets, deliberately: the reference's entry carries no
-    // identity material of its own and resolves it through `Identity.recall`, so
-    // `Reticulum.py:344` loads that file before `:346` starts Transport and reads this one.
-    // Restoring paths first would leave every restored entry without an identity hash.
     let pathStoreURL = StorageInventory.url(
       .destinationTable,
       storage: configuration.storagePath)
@@ -1036,7 +1113,7 @@ public final class Reticulum {
       do {
         try PathStore.read(from: pathStoreURL).apply(to: transport)
       } catch {
-        // `Transport.py:357-359`—log and start with an empty path table.
+        // `Transport.py:458-459`—log and start with an empty path table.
         Reticulum.log(
           "Could not load destination table from storage, the contained "
             + "exception was: \(error)", level: .error)
@@ -1044,14 +1121,14 @@ public final class Reticulum {
     }
 
     // Then the tunnel table, which the reference reads immediately after the destination
-    // table in the same block (`Transport.py:365-405`). A tunnel path is restored with no
+    // table in the same block (`Transport.py:462-509`). A tunnel path is restored with no
     // interface; `handleTunnel` re-attaches one when the endpoint reappears.
     let tunnelStoreURL = StorageInventory.url(.tunnels, storage: configuration.storagePath)
     if FileManager.default.fileExists(atPath: tunnelStoreURL.path) {
       do {
         try TunnelStore.read(from: tunnelStoreURL).apply(to: transport)
       } catch {
-        // `Transport.py:406-407`—log and start with an empty tunnel table.
+        // `Transport.py:507-508`—log and start with an empty tunnel table.
         Reticulum.log(
           "Could not load tunnel table from storage, the contained "
             + "exception was: \(error)", level: .error)
@@ -1064,75 +1141,12 @@ public final class Reticulum {
       .packetHashlist,
       storage: configuration.storagePath)
     try? transport.loadPacketHashlist(from: hashlistURL)
-
-    // Load blackhole list from directory (mirrors Python's Transport.reload_blackhole()).
-    // Allows external sources listed in Reticulum.blackhole_sources().
-    let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
-    try? transport.reloadBlacklist(
-      fromDirectory: blackholePath,
-      allowedSources: Reticulum.blackholeSources())
-
-    try transport.start()
-
-    // Start announcing this instance's discoverable interfaces when any of them asked to be.
-    // Mirrors Python: if Reticulum.__discovery_enabled: RNS.Transport.enable_discovery()
-    // (`Reticulum.py:370`). The latch is set while parsing interface blocks, because no
-    // interface exists yet when the reticulum block is read.
-    if Reticulum.discoveryEnabled() {
-      if let stampGenerator = configuration.discoveryStampGenerator {
-        transport.enableDiscovery(stampGenerator: stampGenerator)
-      } else {
-        Reticulum.log(
-          "An interface is configured as discoverable, but no discovery "
-            + "stamp generator was supplied. Interfaces will not be announced.",
-          level: .error)
-      }
-    }
-
-    // Start interface discovery listener when configured.
-    // Mirrors Python: if Reticulum.__discover_interfaces: RNS.Transport.discover_interfaces()
-    // A DiscoveryStampValidator must be injected (production: LXStamper from LXMFSwift).
-    if let parsedCfg = config, parsedCfg.reticulum.discoverInterfaces,
-      let validator = configuration.discoveryStampValidator
-    {
-      let discoveryPath = StorageInventory.url(
-        .discoveredInterfaces, storage: configuration.storagePath
-      ).path
-      transport.discoverInterfaces(
-        storagePath: discoveryPath,
-        requiredValue: Reticulum.requiredDiscoveryValue(),
-        stampValidator: validator
-      )
-
-      // Python re-runs `_synthesize_interface` over `bootstrap_configs` when every
-      // auto-connected peer has gone (`Discovery.py:652-654`). The parsed config lives
-      // here rather than on `Transport`, so the clause is injected.
-      //
-      // Unowned-safe capture: `Reticulum` owns `transport`, which owns the discovery
-      // handler holding this closure, so a strong capture would be a cycle.
-      transport.discoveryHandler?.reenableBootstrapInterfaces = { [weak self] in
-        guard let self, let cfg = self.config else { return }
-        let bootstrapOnly = cfg.interfaces.filter {
-          $0.enabled && $0.bool("bootstrap_only") == true
-        }
-        guard !bootstrapOnly.isEmpty else { return }
-        var subset = cfg
-        subset.interfaces = bootstrapOnly
-        try? self.synthesizeInterfaces(from: subset)
-      }
-    }
-
-    // Start blackhole-list updater when sources are configured.
-    // Mirrors Python: if Reticulum.__blackhole_sources: RNS.Transport.enable_blackhole_updater()
-    if let parsedCfg = config, !parsedCfg.reticulum.blackholeSources.isEmpty {
-      Reticulum.storedBlackholeSources = parsedCfg.reticulum.blackholeSources
-      transport.enableBlackholeUpdater()
-    }
-
-    Reticulum.shared = self
   }
 
   /// Tears links down, stops the interfaces and checkpoints persisted state.
+  ///
+  /// A local client writes no state file: they belong to the shared instance
+  /// (`Transport.py:3980`, `Identity.py:616`).
   public func stop() {
     // Tear links down first, while the interfaces can still carry the close.
     //
@@ -1156,12 +1170,10 @@ public final class Reticulum {
     // was called" while emitting nothing, which is the same silence the defect produced.
     transport.detachInterfaces()
     transport.stop()
-    let pathStoreURL = StorageInventory.url(
-      .destinationTable,
-      storage: configuration.storagePath)
-    try? PathStore.snapshot(of: transport).write(to: pathStoreURL)
-    try? TunnelStore.snapshot(of: transport)
-      .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
+    try? transport.savePathTable(
+      to: StorageInventory.url(.destinationTable, storage: configuration.storagePath))
+    try? transport.saveTunnelTable(
+      to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
     try? trackedIdentity?.writeRatchets(toFile: ratchetsURL)
     // Persist known destinations (mirrors Python's Identity.save_known_destinations).
     try? transport.saveKnownDestinations(to: knownDestinationsURL)
@@ -1287,12 +1299,10 @@ public final class Reticulum {
   /// Force-checkpoint the path table without stopping the stack—useful
   /// from `applicationWillResignActive` on iOS.
   public func checkpoint() throws {
-    let pathStoreURL = StorageInventory.url(
-      .destinationTable,
-      storage: configuration.storagePath)
-    try PathStore.snapshot(of: transport).write(to: pathStoreURL)
-    try TunnelStore.snapshot(of: transport)
-      .write(to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
+    try transport.savePathTable(
+      to: StorageInventory.url(.destinationTable, storage: configuration.storagePath))
+    try transport.saveTunnelTable(
+      to: StorageInventory.url(.tunnels, storage: configuration.storagePath))
     try trackedIdentity?.writeRatchets(toFile: ratchetsURL)
   }
 

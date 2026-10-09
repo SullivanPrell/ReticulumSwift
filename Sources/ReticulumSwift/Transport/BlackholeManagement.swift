@@ -157,7 +157,11 @@ extension Transport {
   /// `umsgpack.unpackb`. A JSON file written here makes a Python instance raise
   /// `TypeError: 'int' object is not iterable` on startup, because `{` decodes as the
   /// msgpack positive fixint 123.
+  ///
+  /// A local client writes nothing: it changes the list through the shared instance
+  /// (`Reticulum.py:2017-2021`), whose file this is.
   public func persistBlacklist(toDirectory directory: URL) throws {
+    guard !isConnectedToSharedInstance else { return }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let ownHash = ownerIdentity?.hash
     blackholeLock.lock()
