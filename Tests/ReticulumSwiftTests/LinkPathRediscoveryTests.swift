@@ -513,9 +513,12 @@ final class LinkPathRediscoveryTests: XCTestCase {
     let (identity, destination) = try remote()
     installPath(t, to: destination, identity: identity, via: b, hops: 2)
     let initiator = Identity()
-    let request = Packet(
+    var request = Packet(
       destinationType: .single, packetType: .linkRequest, destinationHash: destination.hash,
       data: initiator.publicKeyBytes)
+    request.headerType = .type2
+    request.transportType = .transport
+    request.transportID = t.transportInstanceID
 
     let before = Date()
     a.inboundHandler?(request, a)
