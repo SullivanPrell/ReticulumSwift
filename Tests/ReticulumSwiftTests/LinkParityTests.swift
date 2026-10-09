@@ -218,14 +218,13 @@ final class LinkParityTests: XCTestCase {
   // MARK: - 3. Responder establishmentTimeout = perHop * max(1,hops) + KEEPALIVE
 
   /// Python: `link.establishment_timeout = ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, packet.hops) + KEEPALIVE`
-  /// For a 1-hop loopback (packet.hops == 0 when received directly): timeout = 6 * 1 + 360 = 366.
+  /// For an adjacent initiator `packet.hops` is 1 (`Transport.py:1800`): timeout = 6 * 1 + 360 = 366.
+  /// `LinkHopCountTests` covers a relayed request, where the count matters.
   func testResponderEstablishmentTimeoutIncludesKeepalive() throws {
     let (_, bLink, aT, bT) = try establishLink()
     _ = (aT, bT)
-    // The LRR arrives at the responder with packet.hops == 0 (direct, no relay).
-    // establishment_timeout = perHop * max(1, 0) + KEEPALIVE = 6 + 360 = 366.
     let expected =
-      Link.establishmentTimeoutPerHop * TimeInterval(max(1, 0)) + Link.keepaliveInterval
+      Link.establishmentTimeoutPerHop * TimeInterval(max(1, 1)) + Link.keepaliveInterval
     XCTAssertEqual(
       bLink.establishmentTimeout, expected, accuracy: 0.001,
       "Responder establishment timeout must be perHop * max(1,hops) + KEEPALIVE = \(expected)")
@@ -246,14 +245,14 @@ final class LinkParityTests: XCTestCase {
   /// RNS 1.3.8 (commit b7068888): the responder must also record the link's
   /// hop count, taken from the incoming RTT packet.
   ///
-  /// In a direct loopback the
-  /// RTT packet arrives with hops == 0, so expectedHops must be 0 (not nil).
+  /// An adjacent initiator's RTT packet counts 1 hop on arrival (`Transport.py:1800`), so
+  /// expectedHops is 1.
   func testReceiveRTTSetsExpectedHopsOnResponder() throws {
     let (_, bLink, aT, bT) = try establishLink()
     _ = (aT, bT)
     XCTAssertEqual(
-      bLink.expectedHops, 0,
-      "Responder expectedHops must be set from the RTT packet's hop count (0 for direct loopback)")
+      bLink.expectedHops, 1,
+      "`self.expected_hops = packet.hops` (Link.py:525), counted on arrival (Transport.py:1800)")
   }
 
   /// The responder's rtt must be ≥ the time from requestTime to link activation.
