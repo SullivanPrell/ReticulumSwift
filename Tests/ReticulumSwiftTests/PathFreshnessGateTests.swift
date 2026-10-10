@@ -22,6 +22,8 @@ import XCTest
 /// timestamps are second-resolution, so same-second announces tie and neither
 /// displaces the other; hop-count convergence happens across successive (later)
 /// announces, not within one announce flood.
+///
+/// The assertions read `PathEntry.hops`: the wire count of the announce the table kept.
 final class PathFreshnessGateTests: XCTestCase {
 
   final class NamedInterface: Interface {
@@ -58,7 +60,7 @@ final class PathFreshnessGateTests: XCTestCase {
     var first = try Announce.make(for: dest, timestamp: baseTime)
     first.hops = 3
     a.inboundHandler?(first, a)
-    XCTAssertEqual(t.hopsTo(dest.hash), 3)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 3)
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "A")
 
     // Different announce (new blob), fewer hops, SAME second → rejected.
@@ -66,7 +68,7 @@ final class PathFreshnessGateTests: XCTestCase {
     second.hops = 1
     b.inboundHandler?(second, b)
     XCTAssertEqual(
-      t.hopsTo(dest.hash), 3,
+      t.paths[dest.hash]?.hops, 3,
       "a same-second fewer-hop announce must not replace the existing path")
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "A")
   }
@@ -87,13 +89,13 @@ final class PathFreshnessGateTests: XCTestCase {
     var first = try Announce.make(for: dest, timestamp: baseTime)
     first.hops = 3
     a.inboundHandler?(first, a)
-    XCTAssertEqual(t.hopsTo(dest.hash), 3)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 3)
 
     var second = try Announce.make(for: dest, timestamp: baseTime + 2)
     second.hops = 1
     b.inboundHandler?(second, b)
     XCTAssertEqual(
-      t.hopsTo(dest.hash), 1,
+      t.paths[dest.hash]?.hops, 1,
       "a later-emitted fewer-hop announce should optimize the path")
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "B")
   }
@@ -113,13 +115,13 @@ final class PathFreshnessGateTests: XCTestCase {
     var first = try Announce.make(for: dest, timestamp: baseTime)
     first.hops = 2
     a.inboundHandler?(first, a)
-    XCTAssertEqual(t.hopsTo(dest.hash), 2)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 2)
 
     var second = try Announce.make(for: dest, timestamp: baseTime + 5)
     second.hops = 4
     b.inboundHandler?(second, b)
     XCTAssertEqual(
-      t.hopsTo(dest.hash), 4,
+      t.paths[dest.hash]?.hops, 4,
       "a more-hops but newer announce should replace the path")
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "B")
   }
@@ -139,13 +141,13 @@ final class PathFreshnessGateTests: XCTestCase {
     var first = try Announce.make(for: dest, timestamp: baseTime + 5)
     first.hops = 2
     a.inboundHandler?(first, a)
-    XCTAssertEqual(t.hopsTo(dest.hash), 2)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 2)
 
     var second = try Announce.make(for: dest, timestamp: baseTime)
     second.hops = 4
     b.inboundHandler?(second, b)
     XCTAssertEqual(
-      t.hopsTo(dest.hash), 2,
+      t.paths[dest.hash]?.hops, 2,
       "a stale (older, more-hops) announce must not replace the path")
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "A")
   }
@@ -172,7 +174,7 @@ final class PathFreshnessGateTests: XCTestCase {
     viaA.hops = 2
     a.inboundHandler?(viaA, a)
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "A")
-    XCTAssertEqual(t.hopsTo(dest.hash), 2)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 2)
 
     // Shorter route dies.
     t.markPathUnresponsive(for: dest.hash)
@@ -185,7 +187,7 @@ final class PathFreshnessGateTests: XCTestCase {
     XCTAssertEqual(
       t.paths[dest.hash]?.nextHopInterfaceName, "B",
       "an unresponsive path must be revived by the same announce via an alternate route")
-    XCTAssertEqual(t.hopsTo(dest.hash), 3)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 3)
     XCTAssertFalse(
       t.pathIsUnresponsive(to: dest.hash),
       "responsiveness state should reset after the path is updated")
@@ -216,6 +218,6 @@ final class PathFreshnessGateTests: XCTestCase {
     XCTAssertEqual(
       t.paths[dest.hash]?.nextHopInterfaceName, "A",
       "a responsive path must not move to a longer route for the same announce")
-    XCTAssertEqual(t.hopsTo(dest.hash), 2)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 2)
   }
 }

@@ -203,7 +203,10 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
       transport: MockRNodeTransport(),
       subInterfaces: [sub])
 
+    let sharedInstance = PosixTCPServer(name: "Shared Instance", port: 4273)
     let spawned: [any SpawnedInterface] = [
+      LocalServerClientInterface(
+        name: "51002", parentServer: sharedInstance, peerHost: "127.0.0.1", peerPort: 51002),
       TCPServerClientInterface(
         name: "Client on tcpserver-parent", parentServer: server,
         peerHost: "10.0.0.9", peerPort: 51000),
@@ -235,7 +238,7 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
       }
       XCTAssertEqual(hash, Hashes.fullHash(Data(parent.displayName.utf8)))
     }
-    withExtendedLifetime((server, i2p, weave, multi)) {}
+    withExtendedLifetime((server, sharedInstance, i2p, weave, multi)) {}
   }
 
   /// The control, and the reason the keys are conditional: upstream omits them when the
@@ -268,6 +271,7 @@ final class InterfaceStatsConditionalKeyTests: XCTestCase {
       try spawnedConformerNames(),
       [
         "I2PInterfacePeer",
+        "LocalServerClientInterface",
         "RNodeSubInterface",
         "TCPServerClientInterface",
         "WeaveInterfacePeer",

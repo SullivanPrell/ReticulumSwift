@@ -71,10 +71,12 @@ final class PathExpiryTests: XCTestCase {
 
   func testSweepKeepsFreshPaths() throws {
     let transport = Transport()
+    let iface = LoopbackInterface(name: "eth0")
+    transport.register(interface: iface)
     let hash = Data(repeating: 0xBB, count: 16)
     let fresh = Transport.PathEntry(
       destinationHash: hash,
-      nextHopInterfaceName: "eth0",
+      nextHopInterface: iface,
       hops: 1,
       lastHeard: Date(),
       identityHash: Data(repeating: 0x01, count: 16)

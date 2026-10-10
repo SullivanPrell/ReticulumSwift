@@ -211,7 +211,9 @@ final class ProtocolViolationSiteTests: XCTestCase {
       initiatorSideInterfaceName: towardInitiator.name,
       responderSideInterfaceName: towardResponder.name,
       destinationHash: Data(repeating: 0x4D, count: Constants.truncatedHashLength),
-      lastHeard: Date())
+      lastHeard: Date(),
+      remainingHops: 1,
+      takenHops: 1)
     route.validated = validated
     t.restore(linkRoute: route)
 

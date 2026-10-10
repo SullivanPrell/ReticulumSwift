@@ -18,6 +18,8 @@ import XCTest
 /// - New announce with fewer hops should update the path
 /// - New announce with more hops shouldn't update the path
 /// - New announce with same hops should update (newer info)
+///
+/// The assertions read `PathEntry.hops`: the wire count of the announce the table kept.
 final class PathUpdateLogicTests: XCTestCase {
 
   final class LoopbackInterface: Interface {
@@ -68,14 +70,14 @@ final class PathUpdateLogicTests: XCTestCase {
 
     // First: 3-hop announce
     deliverAnnounce(packet: packet, hops: 3, to: t, on: iface)
-    XCTAssertEqual(t.hopsTo(dest.hash), 3, "initial path should be 3 hops")
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 3, "initial path should be 3 hops")
 
     // Second: 1-hop announce (better path)—must be a different, later announce
     // (different random hash + strictly newer emission second; a same-second
     // fewer-hop announce ties under the freshness gate and doesn't replace).
     let packet2 = try Announce.make(for: dest, timestamp: t0 + 2)
     deliverAnnounce(packet: packet2, hops: 1, to: t, on: iface)
-    XCTAssertEqual(t.hopsTo(dest.hash), 1, "1-hop path should replace 3-hop path")
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 1, "1-hop path should replace 3-hop path")
   }
 
   func testHigherHopAnnounceShould_NOT_UpdatePath() throws {
@@ -88,12 +90,12 @@ final class PathUpdateLogicTests: XCTestCase {
     // First: 1-hop announce (good path)
     let packet1 = try Announce.make(for: dest)
     deliverAnnounce(packet: packet1, hops: 1, to: t, on: iface)
-    XCTAssertEqual(t.hopsTo(dest.hash), 1)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 1)
 
     // Second: 5-hop announce (worse path)—shouldn't update
     let packet2 = try Announce.make(for: dest)
     deliverAnnounce(packet: packet2, hops: 5, to: t, on: iface)
-    XCTAssertEqual(t.hopsTo(dest.hash), 1, "better path should NOT be replaced by worse one")
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 1, "better path should NOT be replaced by worse one")
   }
 
   func testSameHopAnnounceUpdatesPath() throws {
@@ -105,11 +107,11 @@ final class PathUpdateLogicTests: XCTestCase {
 
     let packet1 = try Announce.make(for: dest)
     deliverAnnounce(packet: packet1, hops: 2, to: t, on: iface)
-    XCTAssertEqual(t.hopsTo(dest.hash), 2)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 2)
 
     // Same hop count—should update (newer announce has fresh timestamp)
     let packet2 = try Announce.make(for: dest)
     deliverAnnounce(packet: packet2, hops: 2, to: t, on: iface)
-    XCTAssertEqual(t.hopsTo(dest.hash), 2, "same-hop path should still be stored")
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 2, "same-hop path should still be stored")
   }
 }

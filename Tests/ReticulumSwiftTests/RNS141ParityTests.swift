@@ -461,9 +461,11 @@ final class RNS141ParityTests: XCTestCase {
   func testLinkRebalancesBeforeEstablishedCallbackFires() throws {
     let (aLink, _, hopsAtCallback) = try establishRebalancingLink()
     XCTAssertNotNil(aLink.rebalanced, "link was never marked re-balanced")
-    XCTAssertEqual(aLink.expectedHops, 0, "expectedHops was not corrected to the proof's hop count")
+    // The proof arrives at 0 hops on a mesh interface, so `inbound` leaves it at 1
+    // (`Transport.py:1800`).
+    XCTAssertEqual(aLink.expectedHops, 1, "expectedHops was not corrected to the proof's hop count")
     XCTAssertEqual(
-      hopsAtCallback, 0,
+      hopsAtCallback, 1,
       "the established callback observed the pre-re-balance hop count")
   }
 

@@ -17,7 +17,7 @@ import XCTest
 ///
 /// Mirrors Python's inbound
 /// relay gate `transport_enabled or from_local_client or for_local_client`
-/// (RNS/Transport.py:1573).
+/// (RNS/Transport.py:1997).
 final class LocalClientDataRelayTests: XCTestCase {
 
   final class MeshIface: Interface {
@@ -38,7 +38,6 @@ final class LocalClientDataRelayTests: XCTestCase {
     var bitrate: Int = 0
     var isOnline: Bool = true
     var clientCount: Int = 1
-    var isRoutingEndpoint: Bool { false }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     var sent: [Packet] = []
     init(name: String) { self.name = name }
@@ -106,8 +105,9 @@ final class LocalClientDataRelayTests: XCTestCase {
     serving.sent.removeAll()
     mesh.sent.removeAll()
 
-    // The local client sends DATA for E.
-    serving.inboundHandler?(dataPacket(to: dest.hash), serving)
+    // The local client sends DATA for E in transport to this node (Transport.py:1396).
+    serving.inboundHandler?(
+      dataPacket(to: dest.hash, headerType: .type2, transportID: t.transportInstanceID), serving)
 
     let forwarded = mesh.sent.filter { $0.destinationHash == dest.hash && $0.packetType == .data }
     XCTAssertEqual(

@@ -91,8 +91,8 @@ final class Header2BindingTests: XCTestCase {
 
   func testForwardedDataPacketStampsNextHopTransportID() throws {
     // Relay knows a path (via prior announce) where next-hop
-    // transport ID is X. When a non-local data packet arrives for
-    // that destination, the relay rewrites HEADER_2 with X.
+    // transport ID is X. When a data packet in transport to the relay arrives
+    // for that destination, the relay rewrites HEADER_2 with X.
     let relay = Transport()
     let inIface = RecordingInterface(name: "in")
     let outIface = RecordingInterface(name: "out")
@@ -119,12 +119,15 @@ final class Header2BindingTests: XCTestCase {
       forDestination: destHash
     )
 
-    let pkt = Packet(
+    var pkt = Packet(
       destinationType: .single,
       packetType: .data,
       destinationHash: destHash,
       data: Data("hi".utf8)
     )
+    pkt.headerType = .type2
+    pkt.transportType = .transport
+    pkt.transportID = relay.transportInstanceID
     try inPair.send(pkt)
 
     XCTAssertEqual(outIface.sent.count, 1)

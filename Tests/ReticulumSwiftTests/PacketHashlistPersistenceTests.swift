@@ -92,6 +92,9 @@ final class PacketHashlistPersistenceTests: XCTestCase {
   func testReticulumStopSavesHashlistAndStartLoadsIt() throws {
     let dir = tmpDir.appendingPathComponent("rns-lifecycle")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    // Only a transport instance writes and restores the hashlist (`Transport.py:340`, `:3747`).
+    try "[reticulum]\nenable_transport = Yes\n".write(
+      to: dir.appendingPathComponent("config"), atomically: true, encoding: .utf8)
     let config = Reticulum.Configuration(storagePath: dir.appendingPathComponent("storage"))
 
     let rns = try Reticulum(configuration: config)

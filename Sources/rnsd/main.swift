@@ -117,6 +117,13 @@ do {
     configDirectory: paths.configDir,
     logLevel: bootstrapped.logLevel,
     synthesizeInterfaces: false)
+} catch let error as RPCServer.RPCError {
+  // Python's `rnsd` catches only `KeyboardInterrupt` (`rnsd.py:84-88`), so the control
+  // listener's `OSError` (`Reticulum.py:366`) ends it with status 1.
+  Reticulum.log(
+    "Could not start the instance control socket on port "
+      + "\(bootstrapped.config.reticulum.instanceControlPort): \(error)", level: .critical)
+  exit(RNSDApp.ExitCode.fatalError.rawValue)
 } catch {
   // Python: `__start_local_interface` logs these two lines (Reticulum.py:436-437). It then
   // degrades to a standalone instance; this port can't re-drive the bring-up from here, so

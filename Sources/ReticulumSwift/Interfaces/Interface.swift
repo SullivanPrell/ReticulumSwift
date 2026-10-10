@@ -381,19 +381,26 @@ public protocol Interface: AnyObject {
   func stop()
 }
 
-/// An interface that can front multiple locally connected shared-instance
-/// clients (rnstatus, nomadnet, MeshChatX, …).
+/// An interface that carries a locally connected shared-instance client (rnstatus, nomadnet,
+/// MeshChatX, …).
 ///
-/// Mirrors Python's
-/// `Transport.local_client_interfaces`—a list of one per-connection
-/// `LocalClientInterface` spawned per accepted socket—collapsed here into
-/// a single object per listening server (for example, `PosixTCPServer`) since Swift
-/// fans a whole accept-loop out from one `Interface`. `clientCount` is the
-/// number of attached local clients; `Transport` only treats the
-/// interface as "serving local clients" while this is greater than zero.
+/// Mirrors a member of Python's `Transport.local_client_interfaces`: the
+/// `LocalClientInterface` spawned per accepted socket (`LocalInterface.py:447-460`). In this
+/// port that's `LocalServerClientInterface`, one per connection the shared-instance
+/// `PosixTCPServer` accepts. `clientCount` is the number of clients attached through it;
+/// `Transport` only treats the interface as "serving local clients" while this is greater
+/// than zero.
 public protocol LocalClientServingInterface: Interface {
   var clientCount: Int { get }
 }
+
+/// The interface a shared-instance client reaches its instance through.
+///
+/// Mirrors Python's `interface_to_shared_instance`, true for an interface with an
+/// `is_connected_to_shared_instance` attribute (`Transport.py:3620-3622`), which only the
+/// connecting `LocalClientInterface` sets (`LocalInterface.py:144`). In this port that's
+/// `LocalInterface`.
+public protocol SharedInstanceClientInterface: Interface {}
 
 /// An interface whose hardware MTU follows its bitrate—Python's `AUTOCONFIGURE_MTU = True`
 /// classes, where `optimise_mtu()` writes `HW_MTU` at runtime (`Interface.py:205-217`).

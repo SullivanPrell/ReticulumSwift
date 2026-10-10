@@ -193,8 +193,17 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
   /// Fired when the peer comes online (tunnel + stream established).
   public var onConnected: ((I2PInterfacePeer) -> Void)?
-  /// Fired when an online peer loses its tunnel (also on `stop()`).
+  /// Fired when an online peer loses its tunnel, and when `stop()` detaches the peer.
   public var onDisconnected: ((I2PInterfacePeer) -> Void)?
+
+  /// Whether `stop()` has run, which ends redialing.
+  ///
+  /// Python's `I2PInterfacePeer.detached`.
+  public var isDetached: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return detached
+  }
 
   // MARK: - Private state (guarded by `lock`)
 
@@ -264,8 +273,8 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
   /// Python: `detach()` + the `self.detached` guard in read_loop.
   public func stop() {
     lock.lock()
+    let wasDetached = detached
     detached = true
-    let wasOnline = isOnline
     isOnline = false
     let sockets = [controlSocket, streamSocket].compactMap { $0 }
     controlSocket = nil
@@ -274,7 +283,8 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 
     stopWatchdog()
     for socket in sockets { socket.close() }
-    if wasOnline { onDisconnected?(self) }
+    // Also while redialing: Transport keeps a redialing peer registered until it detaches.
+    if !wasDetached { onDisconnected?(self) }
   }
 
   // MARK: - Outbound send

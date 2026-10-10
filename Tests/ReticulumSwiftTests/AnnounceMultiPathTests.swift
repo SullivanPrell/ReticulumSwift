@@ -21,6 +21,8 @@ import XCTest
 /// is the announce replay/loop protection. Hop-count optimization happens across
 /// DIFFERENT announces (the source re-announces periodically), not within a
 /// single announce flood.
+///
+/// The assertions read `PathEntry.hops`: the wire count of the announce the table kept.
 final class AnnounceMultiPathTests: XCTestCase {
 
   final class LoopbackInterface: Interface {
@@ -59,7 +61,7 @@ final class AnnounceMultiPathTests: XCTestCase {
     var p3 = packet
     p3.hops = 3
     if1.inboundHandler?(p3, if1)
-    XCTAssertEqual(t.hopsTo(dest.hash), 3, "initial path should be 3 hops")
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 3, "initial path should be 3 hops")
 
     // Second arrival: 1 hop via if2—but it's the SAME announce (same blob),
     // so it's rejected as a replay and the first-heard path is kept.
@@ -67,7 +69,7 @@ final class AnnounceMultiPathTests: XCTestCase {
     p1.hops = 1
     if2.inboundHandler?(p1, if2)
     XCTAssertEqual(
-      t.hopsTo(dest.hash), 3,
+      t.paths[dest.hash]?.hops, 3,
       "a replayed copy of the same announce must not move/optimize the path")
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "if1")
   }
@@ -92,7 +94,7 @@ final class AnnounceMultiPathTests: XCTestCase {
     var first = try Announce.make(for: dest, timestamp: t0)
     first.hops = 3
     if1.inboundHandler?(first, if1)
-    XCTAssertEqual(t.hopsTo(dest.hash), 3)
+    XCTAssertEqual(t.paths[dest.hash]?.hops, 3)
 
     // A fresh announce (new random blob) at 1 hop optimizes the path. A genuine
     // re-announce is emitted later, so it carries a strictly newer timestamp—required
@@ -101,7 +103,7 @@ final class AnnounceMultiPathTests: XCTestCase {
     second.hops = 1
     if2.inboundHandler?(second, if2)
     XCTAssertEqual(
-      t.hopsTo(dest.hash), 1,
+      t.paths[dest.hash]?.hops, 1,
       "a fresh announce with fewer hops should update to the better path")
     XCTAssertEqual(t.paths[dest.hash]?.nextHopInterfaceName, "if2")
   }

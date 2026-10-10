@@ -888,5 +888,10 @@ public final class RNodeMultiInterface: Interface {
   }
 }
 
+extension RNodeMultiInterface: DemultiplexingInterface {
+  /// The sub-interfaces, which `dispatchInboundData` names as each frame's receiving interface.
+  public var demultiplexedInterfaces: [any Interface] { subInterfaces }
+}
+
 // RNodeSubInterfaceProxy was removed: RNodeSubInterface now conforms to Interface directly,
 // so it can be passed as `any Interface` and downcast back by callers.

@@ -22,7 +22,9 @@ import Network
 /// transport.register(interface: local)
 /// try local.start()
 /// ```
-public final class LocalInterface: Interface, MtuAutoconfiguringInterface {
+public final class LocalInterface: Interface, MtuAutoconfiguringInterface,
+  SharedInstanceClientInterface
+{
   /// Per-interface mutable configuration (mode, announce rate control, ingress/egress
   /// control, the `ic_*` tunables).
   ///

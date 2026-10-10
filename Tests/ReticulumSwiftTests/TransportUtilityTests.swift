@@ -64,13 +64,14 @@ final class TransportUtilityTests: XCTestCase {
   // interface_to_shared_instance):
   //   * is_local_client_interface  → the SERVER side: an interface serving a
   //     locally connected shared-instance client. In Swift that's a
-  //     `LocalClientServingInterface` (for example, PosixTCPServer on port 37428).
+  //     `LocalClientServingInterface`: a `LocalServerClientInterface`, one per connection
+  //     the shared instance on port 37428 accepts.
   //   * interface_to_shared_instance → the CLIENT side: this node's own
   //     connection *to* a shared instance. In Swift that's `LocalInterface`.
   // A `LocalInterface` is therefore NOT a local-client interface (it's the
   // client end), and a serving interface isn't an interface-to-shared-instance.
 
-  /// Minimal stand-in for PosixTCPServer's serving role.
+  /// Minimal stand-in for the serving role of a `LocalServerClientInterface`.
   private final class MockServingInterface: Interface, LocalClientServingInterface {
     var name: String
     var bitrate: Int = 0

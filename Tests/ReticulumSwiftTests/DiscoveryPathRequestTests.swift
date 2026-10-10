@@ -456,9 +456,7 @@ final class DiscoveryPathRequestTests: XCTestCase {
       """
       `new_announce.hops = packet.hops` (Transport.py:2454), where Python's \
       `packet.hops` has already been incremented on arrival \
-      (Transport.py:1800). This port does no inbound increment, so the same \
-      wire value is one more than the hop count it stored — the same \
-      adjustment the known-path answer makes with `entry.hops &+ 1`
+      (Transport.py:1800)
       """)
   }
 

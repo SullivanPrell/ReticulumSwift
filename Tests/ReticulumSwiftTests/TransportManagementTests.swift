@@ -43,7 +43,8 @@ final class TransportManagementTests: XCTestCase {
     let table = transport.getPathTable()
     XCTAssertEqual(table.count, 1)
     XCTAssertEqual(table[0].destinationHash, destHash)
-    XCTAssertEqual(table[0].hops, 2)
+    // A path that arrived at 2 hops is 3 in Python's table (`Transport.py:1800`).
+    XCTAssertEqual(table[0].hops, 3)
     XCTAssertEqual(table[0].interfaceName, "eth0")
   }
 

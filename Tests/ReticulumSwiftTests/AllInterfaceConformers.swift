@@ -42,6 +42,7 @@ enum InterfaceConformers {
     "I2PInterfacePeer",
     "KISSInterface",
     "LocalInterface",
+    "LocalServerClientInterface",
     "PosixTCPServer",
     "RNodeInterface",
     "RNodeMultiInterface",
@@ -65,7 +66,11 @@ enum InterfaceConformers {
     all.append(BackboneInterface(name: "backbone0", host: "10.0.0.1", port: 4242))
     all.append(BLEMeshInterface(name: "ble0", transport: RegistryBLEMeshTransport()))
     all.append(LocalInterface(name: "local0", port: 37428))
-    all.append(PosixTCPServer(name: "posix0", port: 4243))
+    let sharedInstance = PosixTCPServer(name: "posix0", port: 4243)
+    all.append(sharedInstance)
+    all.append(
+      LocalServerClientInterface(
+        name: "51001", parentServer: sharedInstance, peerHost: "127.0.0.1", peerPort: 51001))
     all.append(TCPClientInterface(name: "tcp0", host: "127.0.0.1", port: 4242))
     all.append(UDPInterface(name: "udp0", listenPort: 4244))
 

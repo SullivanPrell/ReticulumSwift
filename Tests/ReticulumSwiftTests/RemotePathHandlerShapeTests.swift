@@ -137,8 +137,9 @@ final class RemotePathHandlerShapeTests: XCTestCase {
     XCTAssertEqual(unfiltered.count, 2)
 
     let limited = try invokePathHandler(transport, request: [.string("table"), .nil, .uint(2)])
-    XCTAssertEqual(limited.count, 1, "max_hops = 2 should exclude the 5-hop path")
-    XCTAssertEqual(limited.first?.asDictionary?["hops"]?.asInt, 1)
+    // Python's table holds one more than the wire count (`Transport.py:1800`): 2 and 6.
+    XCTAssertEqual(limited.count, 1, "max_hops = 2 should exclude the 6-hop path")
+    XCTAssertEqual(limited.first?.asDictionary?["hops"]?.asInt, 2)
   }
 
   func testTableFiltersByDestinationHash() throws {

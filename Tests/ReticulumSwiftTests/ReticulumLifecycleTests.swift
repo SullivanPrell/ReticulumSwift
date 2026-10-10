@@ -50,6 +50,9 @@ final class ReticulumLifecycleTests: XCTestCase {
 
   func testPathTablePersistedAndRestored() throws {
     let storage = tmpDir.appendingPathComponent("storage")
+    // Only a transport instance restores the path table (`Transport.py:404-408`).
+    try "[reticulum]\nenable_transport = Yes\n".write(
+      to: tmpDir.appendingPathComponent("config"), atomically: true, encoding: .utf8)
     let config = Reticulum.Configuration(storagePath: storage)
 
     // First run: create a path

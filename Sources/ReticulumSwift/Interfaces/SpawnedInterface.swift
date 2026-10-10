@@ -28,3 +28,14 @@ public protocol SpawnedInterface: Interface {
   /// `interface.parent_interface != None` guard has the same effect once Python collects it.
   var spawningInterface: (any Interface)? { get }
 }
+
+/// An interface that delivers inbound traffic on spawned interfaces that Transport doesn't
+/// register.
+///
+/// Python registers each of these with Transport (`RNodeMultiInterface.py:381`). This port
+/// registers only the parent, so Transport counts the parent's spawned interfaces as attached
+/// while the parent is registered.
+public protocol DemultiplexingInterface: Interface {
+  /// The spawned interfaces this interface delivers inbound traffic on.
+  var demultiplexedInterfaces: [any Interface] { get }
+}

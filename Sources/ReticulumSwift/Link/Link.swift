@@ -1440,10 +1440,6 @@ public final class Link {
       data: rttCiphertext
     )
     try transportSnap?.send(rttPacket)
-
-    // Mark path responsive on successful link establishment.
-    // Mirrors Python: Transport.mark_path_responsive(self.destination.hash)
-    transportSnap?.markPathResponsive(for: destination.hash)
     onEstablished?(self)
   }
 
@@ -1529,9 +1525,8 @@ public final class Link {
   /// Closes the link and tells the far end.
   public func close() {
     // Snapshot the terminal decision + clear the session key atomically under the
-    // lock; run stopWatchdog / markPathUnresponsive / onClosed OUTSIDE it.
+    // lock; run stopWatchdog / onClosed OUTSIDE it.
     stateLock.lock()
-    let wasTimeout = (unsafeTeardownReason == .timeout)
     // Preserve .failed/.stale status set by the watchdog; only override to .closed
     // for explicit clean closes.
     if unsafeStatus != .failed && unsafeStatus != .stale { unsafeStatus = .closed }
@@ -1541,9 +1536,6 @@ public final class Link {
     stateLock.unlock()
 
     stopWatchdog()
-    // Mark path unresponsive on timeout teardown.
-    // Mirrors Python: link_closed() → if teardown_reason == TIMEOUT: mark_path_unresponsive
-    if wasTimeout { transport?.markPathUnresponsive(for: destination.hash) }
     onClosed?(self)
   }
 
@@ -1707,7 +1699,7 @@ public final class Link {
   private func watchdogTick() {
     // Snapshot the state machine under the lock and do the one-shot terminal
     // check-and-set (status + teardownReason together) atomically; then release
-    // BEFORE every callout (markPathUnresponsive / onTimeout / close / teardown /
+    // BEFORE every callout (onTimeout / close / teardown /
     // sendKeepalive) so the lock is never held across a callback or Transport call.
     stateLock.lock()
     guard unsafeStatus != .closed && unsafeStatus != .failed else {
@@ -1728,9 +1720,8 @@ public final class Link {
         unsafeOnTimeout = nil
         stateLock.unlock()
         stopWatchdog()
-        // Mark path unresponsive on timeout.
-        // Mirrors Python: Transport.mark_path_unresponsive(destination.hash)
-        transport?.markPathUnresponsive(for: destination.hash)
+        // Python's watchdog closes the link and leaves the path alone (`Link.py:722-730`).
+        // The transport's next jobs pass rediscovers the path (`Transport.py:697-724`).
         DispatchQueue.global(qos: .utility).async { cb?(self) }
         close()
         return
@@ -1797,7 +1788,6 @@ public final class Link {
       // Mirrors Python's STALE watchdog branch (RNS/Link.py:761-765).
       unsafeTeardownReason = .timeout
       stateLock.unlock()
-      transport?.markPathUnresponsive(for: destination.hash)
       try? teardown()
       return
 

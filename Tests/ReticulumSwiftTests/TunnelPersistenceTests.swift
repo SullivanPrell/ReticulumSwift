@@ -211,6 +211,9 @@ final class TunnelPersistenceTests: XCTestCase {
   func testReticulumStopWritesTunnelsAndStartRestoresThem() throws {
     let dir = tmpDir.appendingPathComponent("lifecycle")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    // Only a transport instance restores the tunnel table (`Transport.py:404`, `:462`).
+    try "[reticulum]\nenable_transport = Yes\n".write(
+      to: tmpDir.appendingPathComponent("config"), atomically: true, encoding: .utf8)
     let config = Reticulum.Configuration(storagePath: dir)
     let tunnelID = Hashes.fullHash(Data("lifecycle".utf8))
     var destHash = Data()

@@ -22,17 +22,23 @@ import XCTest
 /// orphans: not read, not deleted, documented as safe to remove.
 final class StorageStartupTests: XCTestCase {
 
+  private var root: URL!
   private var dir: URL!
 
   override func setUp() {
     super.setUp()
-    dir = FileManager.default.temporaryDirectory
+    root = FileManager.default.temporaryDirectory
       .appendingPathComponent("rns-startup-\(UUID().uuidString)")
+    dir = root.appendingPathComponent("storage")
     try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    // Only a transport instance reads the path, tunnel and hashlist tables
+    // (`Transport.py:340`, `:404-408`), so these tests enable it.
+    try! "[reticulum]\nenable_transport = Yes\n".write(
+      to: root.appendingPathComponent("config"), atomically: true, encoding: .utf8)
   }
 
   override func tearDown() {
-    try? FileManager.default.removeItem(at: dir)
+    try? FileManager.default.removeItem(at: root)
     super.tearDown()
   }
 

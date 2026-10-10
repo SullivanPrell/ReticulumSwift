@@ -46,16 +46,13 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     }
   }
 
-  /// Stands in for `PosixTCPServer`: a server-side interface fronting one
-  /// or more locally connected shared-instance clients.
+  /// Stands in for `LocalServerClientInterface`: the shared instance's interface for one
+  /// locally connected client.
   final class RecordingLocalClientInterface: Interface, LocalClientServingInterface {
     var name: String
     var bitrate: Int = 0
     var isOnline: Bool = true
     var clientCount: Int = 1
-    // Mirrors PosixTCPServer: not a mesh routing endpoint—its own
-    // send() fans out to attached clients directly.
-    var isRoutingEndpoint: Bool { false }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     private(set) var sent: [Packet] = []
 
@@ -89,7 +86,8 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
       localClient.sent.count, 1, "announce must reach the local shared-instance client")
     XCTAssertEqual(localClient.sent.first?.packetType, .announce)
     XCTAssertEqual(
-      localClient.sent.first?.hops, 0, "local-client forward passes hops through unchanged")
+      localClient.sent.first?.hops, 1,
+      "`new_announce.hops = packet.hops` (Transport.py:2428), incremented on arrival (:1800)")
     XCTAssertEqual(localClient.sent.first?.headerType, .type2)
   }
 
@@ -143,7 +141,7 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
   /// the wider mesh—otherwise no peer ever learns the client's destination.
   ///
   /// Mirrors Python `if (transport_enabled or is_from_local_client) and
-  /// context != PATH_RESPONSE:` (Transport.py:1935) with immediate retransmit
+  /// context != PATH_RESPONSE:` (Transport.py:2351) with immediate retransmit
   /// for local-client announces (retries = PATHFINDER_R).
   func testLocalClientAnnounceForwardedToMeshWhenTransportDisabled() throws {
     let transport = Transport()
@@ -167,7 +165,9 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
       mesh.sent.count, 1,
       "local client's announce must be propagated to the mesh even with transport disabled")
     XCTAssertEqual(mesh.sent.first?.packetType, .announce)
-    XCTAssertEqual(mesh.sent.first?.hops, 1, "forwarded announce is hops+1")
+    XCTAssertEqual(
+      mesh.sent.first?.hops, 0,
+      "`announce_hops = packet.hops` (Transport.py:2333), the wire value here (:1937-1940)")
     XCTAssertEqual(mesh.sent.first?.headerType, .type2)
     XCTAssertEqual(mesh.sent.first?.transportID, transport.transportInstanceID)
   }
@@ -202,7 +202,9 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
 
   func testAnnounceStillForwardedToLocalClientWhenTransportEnabled() throws {
     // Regression guard: enabling transport must not disturb the
-    // separate, unconditional local-client forward.
+    // separate, unconditional local-client forward. The relay reaches the local client
+    // too, as Python's announce-table retransmission does through `Transport.outbound`
+    // (`Transport.py:1449`), after the immediate copy.
     let transport = Transport()
     transport.transportEnabled = true
 
@@ -221,6 +223,11 @@ final class LocalClientAnnounceForwardingTests: XCTestCase {
     )
     try upstream.send(try Announce.make(for: destination))
 
-    XCTAssertEqual(localClient.sent.count, 1)
+    XCTAssertEqual(
+      localClient.sent.map(\.hops), [1, 1],
+      """
+      the immediate copy, then the relay, both at `packet.hops` after the arrival increment \
+      (Transport.py:2428, :808, :1800)
+      """)
   }
 }

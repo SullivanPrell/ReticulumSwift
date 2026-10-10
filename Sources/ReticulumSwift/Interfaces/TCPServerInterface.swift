@@ -39,12 +39,10 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
   public let name: String
   /// TCP port the server listens on.
   public let port: UInt16
-  /// The address reported as the listener's bind address.
+  /// The address the listener binds.
   ///
-  /// Python resolves `listen_ip`
-  /// into `self.bind_ip` and prints it in `__str__` (`TCPInterface.py:518`, `:552`);
-  /// `NWListener` always binds every address, so this is a reporting-only value that
-  /// defaults to Python's `0.0.0.0`.
+  /// Python resolves `listen_ip` into `self.bind_ip`, binds it, and prints it in `__str__`
+  /// (`TCPInterface.py:551-555`, `:691-693`). The default, `0.0.0.0`, binds every address.
   public let bindIP: String
   /// Interface bitrate in bits per second.
   public var bitrate: Int = 10_000_000
@@ -164,7 +162,8 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     let socketOptions = RNSSocketOptions.tcpParameters()
     handedOverTCPOptionsForTesting = socketOptions.options
     handedOverParametersForTesting = socketOptions.parameters
-    let listener = try NWListener(using: socketOptions.parameters, on: nwPort)
+    let listener = try RNSSocketOptions.listener(
+      using: socketOptions.parameters, bindIP: bindIP, port: nwPort)
     self.listener = listener
 
     listener.newConnectionHandler = { [weak self] conn in
@@ -204,9 +203,8 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 
   /// Broadcast to ALL connected clients.
   ///
-  /// Used only when a send must reach every peer
-  /// (for example, the PosixTCPServer shared-instance model). Transport routing uses the
-  /// per-client `TCPServerClientInterface.send()` instead.
+  /// Used only when a send must reach every peer. Transport routing uses the per-client
+  /// `TCPServerClientInterface.send()` instead.
   public func send(_ packet: Packet) throws {
     let raw = try packet.pack()
     let framed = HDLC.frame(wrapIfac(raw))

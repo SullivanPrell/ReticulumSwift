@@ -80,6 +80,7 @@ public struct TunnelStore {
         // reuses the one computed for the preceding tunnel.
         return PathStore.Entry(
           path,
+          of: transport,
           destinationHash: destHash,
           interfaceHash: interfaceHash,
           announceHash: announceHash)
@@ -99,8 +100,7 @@ public struct TunnelStore {
   /// Unlike ``PathStore/apply(to:)`` this needs no deferral for a late interface, because a
   /// tunnel path doesn't depend on one: the reference restores it with
   /// `receiving_interface = None` and gates only on the announce (`Transport.py:398-400`), then
-  /// attaches an interface to every one of the tunnel's paths when the endpoint reappears
-  /// (`:2440-2447`).
+  /// restores the tunnel's paths onto the interface the endpoint reappears on (`:2839-2867`).
   ///
   /// So every entry here is resolved on the spot—installed or finally
   /// dropped—and nothing is parked.
@@ -125,7 +125,8 @@ public struct TunnelStore {
         let identityHash = transport.recall(identity: path.destinationHash)?.hash ?? Data()
         paths[path.destinationHash] = path.pathEntry(
           interface: interface,
-          identityHash: identityHash)
+          identityHash: identityHash,
+          in: transport)
       }
       // `if len(tunnel_paths) > 0` (`Transport.py:402`)—a tunnel none of whose paths came
       // back isn't installed. An empty tunnel can route nothing.

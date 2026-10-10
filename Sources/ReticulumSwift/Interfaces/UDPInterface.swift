@@ -94,10 +94,10 @@ public final class UDPInterface: Interface {
     return "UDPInterface[\(name)/\(ip):\(port)]"
   }
 
-  /// The configured `listen_ip`.
+  /// The address the listener binds, the configured `listen_ip`.
   ///
-  /// Python's `bind_ip`; reporting-only here, since
-  /// `NWListener` binds every address.
+  /// Python's `bind_ip` (`UDPInterface.py:92`, `:101-103`). The default, `0.0.0.0`, binds
+  /// every address.
   public let bindIP: String
 
   /// Creates a UDP interface that listens, forwards, or both.
@@ -119,7 +119,7 @@ public final class UDPInterface: Interface {
   /// Brings the interface online.
   public func start() throws {
     if let listenPort, let port = NWEndpoint.Port(rawValue: listenPort) {
-      let listener = try NWListener(using: .udp, on: port)
+      let listener = try RNSSocketOptions.listener(using: .udp, bindIP: bindIP, port: port)
       listener.newConnectionHandler = { [weak self] conn in
         guard let self else {
           conn.cancel()

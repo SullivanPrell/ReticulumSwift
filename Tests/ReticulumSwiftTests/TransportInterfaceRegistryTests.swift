@@ -59,4 +59,26 @@ final class TransportInterfaceRegistryTests: XCTestCase {
     XCTAssertFalse(transport.interfaces.contains { $0 === iface1 })
     XCTAssertTrue(transport.interfaces.contains { $0 === iface2 })
   }
+
+  /// `stop()` and `detachInterfaces()` race no concurrent `deregister(interface:)`.
+  ///
+  /// A shared instance's local client deregisters itself on a network-callback thread while the
+  /// transport stops. Run under `--sanitize=thread`: a plain run doesn't report the data race.
+  func testStoppingRacesNoConcurrentDeregister() {
+    for round in 0..<20 {
+      let transport = Transport()
+      let ifaces = (0..<32).map { StubIface("stub\($0)") }
+      for iface in ifaces { transport.register(interface: iface) }
+      DispatchQueue.concurrentPerform(iterations: 2) { worker in
+        if worker == 1 {
+          for iface in ifaces { transport.deregister(interface: iface) }
+        } else if round.isMultiple(of: 2) {
+          transport.stop()
+        } else {
+          transport.detachInterfaces()
+        }
+      }
+      XCTAssertTrue(transport.interfaces.isEmpty)
+    }
+  }
 }

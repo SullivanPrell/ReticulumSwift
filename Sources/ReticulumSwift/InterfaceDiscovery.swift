@@ -390,19 +390,27 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
   /// Minimum stamp value an announce must carry to be accepted.
   public let requiredValue: Int
   private let stampValidator: DiscoveryStampValidator
+  /// Hop count to a destination, as `RNS.Transport.hops_to` returns it.
+  private let hopsTo: (Data) -> Int
   /// Called with each accepted interface announce.
   public var callback: ((DiscoveredInterfaceInfo) -> Void)?
 
   // MARK: - Init
 
   /// Creates a handler validating stamps with `stampValidator`.
+  ///
+  /// `hopsTo` gives the hop count an accepted announce reports (`Discovery.py:373`). The
+  /// default is `Transport.PATHFINDER_M`, the count `hops_to` returns for a destination
+  /// with no path (`Transport.py:3141-3142`).
   public init(
     requiredValue: Int = defaultRequiredValue,
     stampValidator: DiscoveryStampValidator,
+    hopsTo: @escaping (Data) -> Int = { _ in Transport.pathfinderM },
     callback: ((DiscoveredInterfaceInfo) -> Void)? = nil
   ) {
     self.requiredValue = requiredValue
     self.stampValidator = stampValidator
+    self.hopsTo = hopsTo
     self.callback = callback
   }
 
@@ -504,7 +512,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
       type: interfaceType, transport: transport, name: name,
       received: now, stamp: stamp, value: value,
       transportID: transportIDHex, networkID: networkIDHex,
-      hops: 0,
+      hops: hopsTo(destinationHash),
       latitude: latitude, longitude: longitude, height: height,
       ifacNetname: nil, ifacNetkey: nil,
       reachableOn: nil, port: nil,
