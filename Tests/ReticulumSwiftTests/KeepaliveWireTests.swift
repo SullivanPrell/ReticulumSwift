@@ -100,6 +100,55 @@ final class KeepaliveWireTests: XCTestCase {
     }
   }
 
+  /// An initiator drops a probe before counting it as inbound (`Link.py:938`).
+  func testInitiatorIgnoresPythonsProbe() throws {
+    let (aLink, _, aI, _) = try establishLink()
+    let lastInbound = aLink.lastInbound
+    let rx = aLink.rx
+    Thread.sleep(forTimeInterval: 0.01)
+    aI.inboundHandler?(
+      try Packet.unpack(try pythonPacket(Self.pythonProbe, linkID: aLink.linkID!)), aI)
+    XCTAssertEqual(aLink.lastInbound, lastInbound)
+    XCTAssertEqual(aLink.rx, rx)
+  }
+
+  /// A link packet counts as inbound data before its decrypt, so one that fails to
+  /// decrypt still refreshes the link (`Link.py:942-946`).
+  func testUndecryptablePacketCountsAsInbound() throws {
+    let (aLink, _, aI, _) = try establishLink()
+    try assertCountsAsInboundData(
+      aLink, on: aI, packetType: .data, context: .none, data: Data(repeating: 0xAB, count: 64))
+  }
+
+  /// A resource part and a resource proof count as inbound data, as every non-keepalive
+  /// link packet does (`Link.py:942-945`).
+  func testResourcePacketsCountAsInboundData() throws {
+    let (aLink, _, aI, _) = try establishLink()
+    try assertCountsAsInboundData(
+      aLink, on: aI, packetType: .data, context: .resource, data: Data(repeating: 0x01, count: 40))
+    try assertCountsAsInboundData(
+      aLink, on: aI, packetType: .proof, context: .resourceProof,
+      data: Data(repeating: 0x02, count: 96))
+  }
+
+  private func assertCountsAsInboundData(
+    _ link: Link, on interface: RecordingLoopback, packetType: Packet.PacketType,
+    context: Packet.Context, data: Data, line: UInt = #line
+  ) throws {
+    let packet = Packet(
+      destinationType: .link, packetType: packetType, destinationHash: link.linkID!,
+      context: context, data: data)
+    let (rx, rxBytes) = (link.rx, link.rxBytes)
+    let lastInbound = link.lastInbound ?? .distantPast
+    let lastData = link.lastData ?? .distantPast
+    Thread.sleep(forTimeInterval: 0.01)
+    interface.inboundHandler?(try Packet.unpack(try packet.pack()), interface)
+    XCTAssertGreaterThan(link.lastInbound ?? .distantPast, lastInbound, "lastInbound", line: line)
+    XCTAssertGreaterThan(link.lastData ?? .distantPast, lastData, "lastData", line: line)
+    XCTAssertEqual(link.rx, rx + 1, "rx", line: line)
+    XCTAssertEqual(link.rxBytes, rxBytes + data.count, "rxBytes", line: line)
+  }
+
   /// A responder that has sent nothing for a keepalive interval answers a Python probe
   /// with Python's echo (`Link.py:1131-1135`).
   func testIdleResponderAnswersPythonsProbe() throws {

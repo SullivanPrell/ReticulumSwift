@@ -15,6 +15,15 @@ All notable changes to ReticulumSwift are documented here. This project follows
   traffic, went stale and closed the link about 15 s after its last data. An idle link from a
   Python initiator to a Swift responder closed the same way. A Swift RRC
   client lost its Go hub this way off localhost (`bugs/064`).
+- Every link packet counts as inbound before its decrypt, as in Python's `Link.__receive`
+  (`Link.py:942-946`): it sets `lastInbound`, sets `lastData` unless it's a keepalive, and
+  counts toward `rx` and `rxBytes`. Before, a packet that failed to decrypt counted for none of
+  them, a channel, identify or resource packet left `lastData` alone, and a resource proof
+  didn't count toward `rx`. `noDataFor()` grew on a link that carried only channel or resource
+  traffic, where Python's `no_data_for()` stays near zero.
+- A link initiator drops an inbound keepalive probe (`0xFF`) before it counts as traffic
+  (`Link.py:938`). Before, the probe set `lastInbound`, counted toward `rx` and moved a stale
+  link back to active.
 - `Reticulum.stop()` closes the instance-control socket. Python never closes its control
   `Listener` (`Reticulum.py:366`; `exit_handler` at `:182-195` doesn't touch it) and refuses a
   second `Reticulum` in one process (`:225-226`), so process exit releases the port. A Swift
