@@ -491,7 +491,16 @@ public final class Transport {
   }
 
   /// Interfaces registered with this transport, in registration order.
-  public private(set) var interfaces: [Interface] = []
+  ///
+  /// A snapshot: register and deregister change the list on network-callback threads.
+  public var interfaces: [Interface] { interfacesLock.withLock { registeredInterfaces } }
+  /// Written under both `lock` and `interfacesLock`, and read only through ``interfaces``.
+  private var registeredInterfaces: [Interface] = []
+  /// Guards `registeredInterfaces`, and is the innermost lock: its holder takes no other.
+  ///
+  /// Mirrors Python's `Transport.interfaces_lock` (`Transport.py:200`), which `add_interface`,
+  /// `remove_interface` and `prioritize_interfaces` take (`:543`, `:549`, `:565`).
+  private let interfacesLock = NSLock()
 
   /// Lowest bitrate (bits/s) among online interfaces, or `nil` before the first successful
   /// computation. `Transport.lowest_interface_bitrate` (`Transport.py:294`), refreshed by
@@ -1299,17 +1308,18 @@ public final class Transport {
     // registration order. Swift's `sort(by:)` isn't stable and this now runs on every jobs
     // pass, so the index is folded into the comparator: without it, same-bitrate interfaces
     // would be reshuffled every five seconds and announce emission order with them.
-    interfaces = interfaces.enumerated()
+    let sorted = interfaces.enumerated()
       .sorted { l, r in
         l.element.bitrate == r.element.bitrate
           ? l.offset < r.offset
           : l.element.bitrate > r.element.bitrate
       }
       .map(\.element)
+    interfacesLock.withLock { registeredInterfaces = sorted }
     // `if interface.online and interface.bitrate` (`Transport.py:568`)—Python's `bitrate`
     // is falsy for both `None` and `0`, so an interface that hasn't reported one isn't a
     // candidate for "slowest".
-    let candidates = interfaces.filter { $0.isOnline && $0.bitrate > 0 }.map(\.bitrate)
+    let candidates = sorted.filter { $0.isOnline && $0.bitrate > 0 }.map(\.bitrate)
     // Python's `min()` over an empty generator raises and the `except` leaves the previous
     // value standing (`:569`). Mirrored: a node with nothing online has no paths to resolve
     // either, so clearing it would only make the utilities give up sooner on a dead network.
@@ -2925,8 +2935,8 @@ public final class Transport {
     //
     // `lock` is the outer lock; the per-interface leaf locks are acquired
     // nested inside it (global order: lock > ingressLock > trackersLock,
-    // lock > metricsLock). No leaf-lock holder ever acquires `lock`, so this
-    // introduces no cycle. `synthesizeTunnel` is the one callout—snapshot
+    // lock > metricsLock, any > interfacesLock). No leaf-lock holder ever acquires
+    // `lock`, so this introduces no cycle. `synthesizeTunnel` is the one callout—snapshot
     // its trigger under `lock`, then run it after releasing (act-outside).
     let key = ObjectIdentifier(interface)
     lock.lock()
@@ -3028,7 +3038,7 @@ public final class Transport {
         self?.deregister(interface: peerIface)
       }
     }
-    interfaces.append(interface)
+    interfacesLock.withLock { registeredInterfaces.append(interface) }
     // Create a frequency tracker for this interface.
     trackersLock.lock()
     ifaceFreqTrackers[key] = InterfaceFreqTracker()
@@ -3159,7 +3169,7 @@ public final class Transport {
     // nested inside `lock`.
     let key = ObjectIdentifier(iface)
     lock.lock()
-    interfaces.removeAll { $0 === iface }
+    interfacesLock.withLock { registeredInterfaces.removeAll { $0 === iface } }
     trackersLock.lock()
     ifaceFreqTrackers.removeValue(forKey: key)
     trackersLock.unlock()

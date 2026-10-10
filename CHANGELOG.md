@@ -19,6 +19,15 @@ All notable changes to ReticulumSwift are documented here. This project follows
   afterwards on the source's queue. A connect straight after `stop()` was accepted, and a bind
   of the same port could fail with `Address already in use`. `PosixTCPServer.stop()` must not be
   called from `onClientConnected`, which runs inside the accept source's event handler.
+- `Transport.interfaces` returns a snapshot taken under its own lock, as Python guards the list
+  with `Transport.interfaces_lock` (`Transport.py:200`). `register(interface:)`,
+  `deregister(interface:)` and `prioritizeInterfaces()` change the list under it, as
+  `add_interface`, `remove_interface` and `prioritize_interfaces` do (`:543`, `:549`, `:565`).
+  Before, 15 sites in `Transport` and 13 callers outside it read the list without `lock`,
+  among them `stop()`, `detachInterfaces()`, `start()`, the broadcast paths of `send`, and
+  `InterfaceDiscovery`. A shared instance that stopped while a local client was attached raced
+  the client's `deregister(interface:)` on a network-callback thread, which ThreadSanitizer
+  reports as a Swift access race.
 
 ## [1.24.0]—inbound queues, and hop counts as Python counts them
 
