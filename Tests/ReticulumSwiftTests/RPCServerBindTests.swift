@@ -158,6 +158,34 @@ final class RPCServerBindTests: XCTestCase {
     defer { server.stop() }
   }
 
+  /// The listening socket is closed by the time `stop()` returns.
+  ///
+  /// The accept source's cancel handler closes the descriptor on the source's queue, after
+  /// `cancel()` has returned. A caller that stops a server and binds its port again, as a
+  /// restarted shared instance does, can find the port still held. On an idle machine the
+  /// handler usually wins, so the rounds run beside busy threads that delay it.
+  func testStopClosesTheSocketBeforeItReturns() throws {
+    let port = try freeLoopbackPort()
+    let finished = LockedFlag(false)
+    defer { finished.value = true }
+    for _ in 0..<(ProcessInfo.processInfo.activeProcessorCount * 2) {
+      Thread.detachNewThread { while !finished.value {} }
+    }
+
+    for round in 1...2_000 {
+      let server = RPCServer(port: port, authkey: Data(repeating: 0x06, count: 32))
+      do {
+        try server.start()
+      } catch {
+        return XCTFail("round \(round): the previous server's socket was still open: \(error)")
+      }
+      server.stop()
+      guard loopbackPortState(port) == .refused else {
+        return XCTFail("round \(round): a connect after stop() was not refused")
+      }
+    }
+  }
+
   /// The first non-loopback, non-link-local IPv4 address this host holds, or nil.
   private func nonLoopbackIPv4() -> String? {
     var list: UnsafeMutablePointer<ifaddrs>? = nil

@@ -93,6 +93,8 @@ public final class PosixTCPServer: Interface, MtuAutoconfiguringInterface {
 
   private var listenFD: Int32 = -1
   private var acceptSource: DispatchSourceRead?
+  /// Signalled once the accept source's cancel handler has closed the listening descriptor.
+  private var acceptClosed: DispatchSemaphore?
   private let queue: DispatchQueue
   /// Serial queue that all inbound frame deliveries funnel through, so the
   /// inbound handlers are never invoked concurrently by multiple client connections.
@@ -216,19 +218,31 @@ public final class PosixTCPServer: Interface, MtuAutoconfiguringInterface {
 
     let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
     src.setEventHandler { [weak self] in self?.acceptOne(on: fd) }
-    src.setCancelHandler { Darwin.close(fd) }
+    let closed = DispatchSemaphore(value: 0)
+    src.setCancelHandler {
+      Darwin.close(fd)
+      closed.signal()
+    }
     src.resume()
     acceptSource = src
+    acceptClosed = closed
   }
 
   /// Takes the interface offline and releases its resources.
+  ///
+  /// The listening descriptor is closed when this returns, so the port can be bound again at
+  /// once. Python leaves that release to process exit. Don't call it from `onClientConnected`:
+  /// that runs inside the accept source's event handler, and the cancel handler can't run until
+  /// it returns.
   public func stop() {
     if let acceptSource {
       acceptSource.cancel()
+      acceptClosed?.wait()
     } else if listenFD >= 0 {
       Darwin.close(listenFD)
     }
     acceptSource = nil
+    acceptClosed = nil
     listenFD = -1
     isOnline = false
     lock.lock()

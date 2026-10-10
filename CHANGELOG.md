@@ -7,6 +7,18 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- `Reticulum.stop()` closes the instance-control socket. Python never closes its control
+  `Listener` (`Reticulum.py:366`; `exit_handler` at `:182-195` doesn't touch it) and refuses a
+  second `Reticulum` in one process (`:225-226`), so process exit releases the port. A Swift
+  process outlives its stack. Before, `stop()` left `rpcServer` listening. A shared instance
+  stopped and attached again in one process failed its second control-socket bind with
+  `Address already in use`, and a test process kept a listener for every shared instance it
+  had stopped, which a later pick of a port could land on.
+- `RPCServer.stop()` and `PosixTCPServer.stop()` close the listening socket before they return.
+  Before, each cancelled its accept source and left the close to the cancel handler, which runs
+  afterwards on the source's queue. A connect straight after `stop()` was accepted, and a bind
+  of the same port could fail with `Address already in use`. `PosixTCPServer.stop()` must not be
+  called from `onClientConnected`, which runs inside the accept source's event handler.
 - `Transport.interfaces` returns a snapshot taken under its own lock, as Python guards the list
   with `Transport.interfaces_lock` (`Transport.py:200`). `register(interface:)`,
   `deregister(interface:)` and `prioritizeInterfaces()` change the list under it, as

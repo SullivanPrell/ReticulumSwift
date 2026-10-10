@@ -1148,7 +1148,16 @@ public final class Reticulum {
   /// A local client writes no state file: they belong to the shared instance
   /// (`Transport.py:3980`, `Identity.py:616`).
   public func stop() {
-    // Tear links down first, while the interfaces can still carry the close.
+    // Close the control socket before anything else, so a `manage` call can't attach an
+    // interface to a transport that is stopping, and the port is free when `stop()` returns.
+    //
+    // Python never closes its `Listener` (`Reticulum.py:366`, `:182-195`): process exit releases
+    // it, and a second `Reticulum` in one process is refused (`:225-226`). A Swift process
+    // outlives its stack, and every shared instance it stops would otherwise keep the port.
+    rpcServer?.stop()
+    rpcServer = nil
+
+    // Tear links down before the interfaces stop, while they can still carry the close.
     //
     // Mirrors `Reticulum.py:196-205`, where both signal handlers call
     // `Transport.detach_interfaces()` before anything else: each established link is closed,
