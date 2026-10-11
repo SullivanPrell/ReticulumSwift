@@ -43,6 +43,7 @@ enum InterfaceConformers {
     "KISSInterface",
     "LocalInterface",
     "LocalServerClientInterface",
+    "PipeInterface",
     "PosixTCPServer",
     "RNodeInterface",
     "RNodeMultiInterface",
@@ -92,6 +93,8 @@ enum InterfaceConformers {
       WeaveInterface(
         name: "weave0", port: "/dev/null",
         transport: MockSerialPort()))
+    all.append(
+      PipeInterface(name: "pipe0", command: "cat", transport: PipeInterfaceTests.FakeChild()))
 
     // RNode family.
     all.append(RNodeInterface(name: "rnode0", transport: MockRNodeTransport()))

@@ -5,6 +5,32 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- `PipeInterface`, on macOS (`Reticulum.py:1154-1156`). A Python config with a
+  `type = PipeInterface` block now brings the interface up on a Swift `rnsd`. It starts
+  `command`, split as `shlex.split` splits it (`PipeInterface.py:106`), writes each packet to
+  the child's standard input as an HDLC frame (`:128-135`), reads frames from its standard
+  output (`:138-170`), and starts the child again `respawn_delay` seconds after it exits, 5 by
+  default (`:68-74`, `:193-204`). A block without `command`, or with a `respawn_delay` that
+  isn't a number, fails construction, and a child that won't start makes `rnsd` exit with the
+  panic code, as `Reticulum.py:1211-1215` does. Before, the block took the unknown-type path,
+  so a Swift node couldn't join a topology bridged by pipes (`bugs/059`). On iOS, tvOS and
+  watchOS it still does, because those platforms can't start a child process. Four
+  differences from Python remain:
+  - Detaching or reloading the interface kills the child. Python's `PipeInterface` inherits
+    the empty `Interface.detach()` (`Interface.py:437-438`), so a detached Python pipe leaves
+    its child running and keeps passing what the child writes to `Transport.inbound`
+    (`PipeInterface.py:125`).
+  - A frame longer than `HW_MTU` plus the IFAC size is dropped. Python delivers its first
+    1064 bytes (`PipeInterface.py:160`). A sender that frames as Python does never emits one.
+  - The port unmasks any byte after an escape byte, and resets the escape state at each frame.
+    Python unmasks only `0x5E` and `0x5D` and carries the state across a frame end
+    (`PipeInterface.py:161-169`). Frames Python writes decode the same.
+  - When the child's output closes before the child exits, the log reads
+    `Subprocess terminated`, and `panic_on_interface_error` isn't honored. Python logs a pipe
+    error there (`PipeInterface.py:175-188`). Both start the child again.
+
 ### Changed
 
 - Interface discovery auto-connects only to an endpoint whose announce says `transport` is
@@ -21,6 +47,23 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- A link keepalive travels unencrypted, as Python packs it (`Packet.py:209-212`), and its byte
+  is read raw: a responder that has sent nothing for a keepalive interval answers `0xFF` with
+  `0xFE` (`Link.py:1130-1135`). Before, `Link` encrypted both and decrypted every inbound
+  keepalive. A Python peer never answered the Swift probe, and the Swift link dropped the
+  Python or Go peer's reply as undecryptable, so an idle Swift initiator saw no inbound
+  traffic, went stale and closed the link about 15 s after its last data. An idle link from a
+  Python initiator to a Swift responder closed the same way. A Swift RRC
+  client lost its Go hub this way off localhost (`bugs/064`).
+- Every link packet counts as inbound before its decrypt, as in Python's `Link.__receive`
+  (`Link.py:942-946`): it sets `lastInbound`, sets `lastData` unless it's a keepalive, and
+  counts toward `rx` and `rxBytes`. Before, a packet that failed to decrypt counted for none of
+  them, a channel, identify or resource packet left `lastData` alone, and a resource proof
+  didn't count toward `rx`. `noDataFor()` grew on a link that carried only channel or resource
+  traffic, where Python's `no_data_for()` stays near zero.
+- A link initiator drops an inbound keepalive probe (`0xFF`) before it counts as traffic
+  (`Link.py:938`). Before, the probe set `lastInbound`, counted toward `rx` and moved a stale
+  link back to active.
 - `Reticulum.stop()` closes the instance-control socket. Python never closes its control
   `Listener` (`Reticulum.py:366`; `exit_handler` at `:182-195` doesn't touch it) and refuses a
   second `Reticulum` in one process (`:225-226`), so process exit releases the port. A Swift

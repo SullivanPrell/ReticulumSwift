@@ -73,10 +73,10 @@ tested, not parity in every case.
 ### Interfaces
 
 TCP client/server · UDP · AutoInterface (mDNS) · Backbone · Local · RNode (LoRa) ·
-RNodeMulti · I2P (embedded i2pd) · Serial · KISS · AX.25 KISS · Weave.
+RNodeMulti · I2P (embedded i2pd) · Serial · KISS · AX.25 KISS · Weave · Pipe (macOS).
 Weave support is experimental because its wire protocol is still changing upstream. Backbone
-runs as a client only on Apple platforms. `PipeInterface` is out of scope on Apple
-platforms.
+runs as a client only on Apple platforms. `PipeInterface` runs on macOS only, because iOS,
+tvOS and watchOS can't start a child process.
 
 See [docs/INTERFACES.md](docs/INTERFACES.md) for configuration of each.
 

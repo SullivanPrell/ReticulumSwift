@@ -502,7 +502,7 @@ public final class InterfaceAnnouncer {
   ///
   /// Python gates the whole mechanism on `not is_windows()` (`Discovery.py:111`, `:157`).
   /// The equivalent gate here is `os(macOS)`: `Foundation.Process` doesn't exist on iOS,
-  /// tvOS or watchOS, which is the same reason `PipeInterface` is deferred. On those
+  /// tvOS or watchOS, which is the same reason `PipeInterface` is macOS only. On those
   /// platforms a configured value is always taken literally—and a config that points at a
   /// script there couldn't have worked anyway.
   static func runIfExecutable(_ path: String) -> ScriptResult {

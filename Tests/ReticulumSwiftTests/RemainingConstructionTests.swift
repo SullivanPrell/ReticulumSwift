@@ -24,9 +24,8 @@ import XCTest
 /// `type = WeaveInterface` config entries (`InterfaceDiscovery.swift`, mirroring
 /// `Discovery.py:380-392`) that its own config path then rejected.
 ///
-/// `PipeInterface` is the one documented divergence: not implemented by design (macOS/Linux
-/// subprocess pipes, no mobile use case—`docs/INTERFACES.md`), so its block takes
-/// the loud unknown-type path, pinned here so the divergence stays recorded.
+/// `PipeInterface` (`Reticulum.py:1154-1156`) builds from its block too, through the `pipe`
+/// transport factory, which exists only on macOS.
 final class RemainingConstructionTests: XCTestCase {
 
   private final class StubSerialPort: SerialPortTransport {
@@ -51,12 +50,14 @@ final class RemainingConstructionTests: XCTestCase {
 
   private var savedSerial: ((String) throws -> SerialPortTransport)?
   private var savedRNode: ((String) throws -> RNodeTransport)?
+  private var savedPipe: (() throws -> PipeProcessTransport)?
   private var tempDir: URL!
 
   override func setUp() {
     super.setUp()
     savedSerial = InterfaceTransportFactories.serial
     savedRNode = InterfaceTransportFactories.rnode
+    savedPipe = InterfaceTransportFactories.pipe
     InterfaceTransportFactories.serial = { _ in StubSerialPort() }
     InterfaceTransportFactories.rnode = { _ in StubRNodeTransport() }
     tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -67,6 +68,7 @@ final class RemainingConstructionTests: XCTestCase {
   override func tearDown() {
     InterfaceTransportFactories.serial = savedSerial
     InterfaceTransportFactories.rnode = savedRNode
+    InterfaceTransportFactories.pipe = savedPipe
     try? FileManager.default.removeItem(at: tempDir)
     super.tearDown()
   }
@@ -269,22 +271,106 @@ final class RemainingConstructionTests: XCTestCase {
         + "ValueError(\"No subinterfaces enabled\")")
   }
 
-  // MARK: - The one recorded divergence
+  // MARK: - PipeInterface
 
-  func testAPipeBlockTakesTheLoudUnknownTypePathByDesign() throws {
+  private func pipeBlock(_ extra: String = "") -> ReticulumConfig {
+    parse(
+      """
+        [[Pipes]]
+          type = PipeInterface
+          enabled = yes
+          command = netcat -l 5757
+      \(extra)
+      """)
+  }
+
+  func testAPipeBlockBuildsAPipeInterface() throws {
+    let child = PipeInterfaceTests.FakeChild()
+    InterfaceTransportFactories.pipe = { child }
     let stack = makeStack()
-    try stack.synthesizeInterfaces(
-      from: parse(
-        """
-          [[Pipes]]
-            type = PipeInterface
-            enabled = yes
-            command = netcat -l 5757
-        """))
-    XCTAssertFalse(
-      stack.transport.interfaces.contains { $0.name == "Pipes" },
-      "PipeInterface is deliberately unimplemented (POSIX subprocess pipes, "
-        + "no mobile use case — docs/INTERFACES.md); its block must keep taking the loud "
-        + "unknown-type ERROR path, not construct something else")
+    try stack.synthesizeInterfaces(from: pipeBlock("      respawn_delay = 2.5"))
+    let pipe = try XCTUnwrap(
+      stack.transport.interfaces.first { $0.name == "Pipes" } as? PipeInterface)
+    defer { pipe.stop() }
+    XCTAssertEqual(pipe.command, "netcat -l 5757")
+    XCTAssertEqual(pipe.respawnDelay, 2.5, "c.as_float(\"respawn_delay\"), PipeInterface.py:68")
+    XCTAssertEqual(child.spawned, [["netcat", "-l", "5757"]])
+    XCTAssertTrue(pipe.isOnline)
+  }
+
+  func testAPipeBlockRespawnsEveryFiveSecondsByDefault() throws {
+    InterfaceTransportFactories.pipe = { PipeInterfaceTests.FakeChild() }
+    let stack = makeStack()
+    try stack.synthesizeInterfaces(from: pipeBlock())
+    let pipe = try XCTUnwrap(
+      stack.transport.interfaces.first { $0.name == "Pipes" } as? PipeInterface)
+    defer { pipe.stop() }
+    XCTAssertEqual(pipe.respawnDelay, 5, "PipeInterface.py:73-74")
+  }
+
+  func testAPipeBlockWithoutACommandFailsConstruction() {
+    InterfaceTransportFactories.pipe = { PipeInterfaceTests.FakeChild() }
+    let stack = makeStack()
+    XCTAssertThrowsError(
+      try stack.synthesizeInterfaces(
+        from: parse(
+          """
+            [[Pipes]]
+              type = PipeInterface
+              enabled = yes
+          """)),
+      "ValueError(\"No command specified for PipeInterface\"), PipeInterface.py:70-71"
+    ) { error in
+      XCTAssertEqual(
+        error as? InterfaceConstructionError,
+        .missingKey(interface: "Pipes", key: "command"))
+    }
+    XCTAssertTrue(stack.transport.interfaces.isEmpty)
+  }
+
+  func testAPipeBlockWithAnUnreadableRespawnDelayFailsConstruction() {
+    InterfaceTransportFactories.pipe = { PipeInterfaceTests.FakeChild() }
+    let stack = makeStack()
+    XCTAssertThrowsError(
+      try stack.synthesizeInterfaces(from: pipeBlock("      respawn_delay = soon")),
+      "as_float raises ValueError"
+    ) { error in
+      XCTAssertEqual(
+        error as? InterfaceConstructionError,
+        .invalidValue(interface: "Pipes", key: "respawn_delay", value: "soon"))
+    }
+    XCTAssertTrue(stack.transport.interfaces.isEmpty)
+  }
+
+  func testAPipeWhoseChildWontSpawnFailsConstruction() {
+    let child = PipeInterfaceTests.FakeChild()
+    child.spawnError = PipeInterfaceTests.SpawnFailure()
+    InterfaceTransportFactories.pipe = { child }
+    let stack = makeStack()
+    XCTAssertThrowsError(
+      try stack.synthesizeInterfaces(from: pipeBlock()),
+      "PipeInterface.__init__ re-raises, and Reticulum.py panics")
+    XCTAssertTrue(
+      stack.transport.interfaces.isEmpty, "the failed interface isn't left registered")
+  }
+
+  /// Off macOS there's no `pipe` factory, and the block takes the unknown-type path: an ERROR
+  /// log naming it, and the other interfaces still come up.
+  func testAPipeBlockOnAPlatformWithoutSubprocessesTakesTheUnknownTypePath() throws {
+    InterfaceTransportFactories.pipe = nil
+    let savedHandler = Reticulum.logHandler
+    defer { Reticulum.logHandler = savedHandler }
+    let lock = NSLock()
+    var errors: [String] = []
+    Reticulum.logHandler = { message, level in
+      if level == .error { lock.withLock { errors.append(message) } }
+    }
+    let stack = makeStack()
+    XCTAssertNoThrow(try stack.synthesizeInterfaces(from: pipeBlock()))
+    XCTAssertTrue(stack.transport.interfaces.isEmpty)
+    XCTAssertTrue(
+      lock.withLock { errors }.contains {
+        $0.hasPrefix("Unsupported interface type 'PipeInterface' for interface 'Pipes'")
+      })
   }
 }

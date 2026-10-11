@@ -51,6 +51,11 @@ public enum InterfaceTransportFactories {
   /// CI2PD xcframework ships in this package.
   public static var i2pDaemon: (() throws -> I2PDaemonProtocol)? = { I2PDaemon() }
 
+  /// `PipeInterface`: the child process its block's `command` starts.
+  ///
+  /// macOS only, because `Process` doesn't exist on iOS, tvOS or watchOS.
+  public static var pipe: (() throws -> PipeProcessTransport)? = defaultPipeFactory
+
   /// What construction throws when a family has no registered factory, or the registered one
   /// can't serve the device string.
   ///
@@ -76,6 +81,15 @@ public enum InterfaceTransportFactories {
   static var defaultSerialFactory: ((String) throws -> SerialPortTransport)? {
     #if os(macOS)
     return { _ in POSIXSerialPort() }
+    #else
+    return nil
+    #endif
+  }
+
+  /// A `Foundation.Process` child on macOS; nothing elsewhere.
+  static var defaultPipeFactory: (() throws -> PipeProcessTransport)? {
+    #if os(macOS)
+    return { ProcessPipeTransport() }
     #else
     return nil
     #endif

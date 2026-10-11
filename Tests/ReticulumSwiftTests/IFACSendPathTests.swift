@@ -96,6 +96,24 @@ final class IFACSendPathTests: XCTestCase {
       "without IFAC, framing must be identity (no flag, no mask)")
   }
 
+  // MARK: - PipeInterface
+
+  func testPipeSendAppliesIfac() throws {
+    let child = PipeInterfaceTests.FakeChild()
+    let iface = PipeInterface(name: "P0", command: "cat", transport: child)
+    configureIfacFromConfigBlock(on: iface, netname: netname)
+    try iface.start()
+    defer { iface.stop() }
+
+    let raw = try makePacket().pack()
+    try iface.send(makePacket())
+
+    let wrapped = try XCTUnwrap(
+      HDLC.FrameDecoder().feed(child.written).first,
+      "send must write a complete HDLC frame to the child")
+    assertIfacWrapped(wrapped, unwrapsTo: raw, via: iface)
+  }
+
   // MARK: - KISSInterface
 
   func testKISSSendAppliesIfac() throws {
