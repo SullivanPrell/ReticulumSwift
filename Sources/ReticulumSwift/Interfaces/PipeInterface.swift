@@ -227,13 +227,17 @@ public final class PipeInterface: Interface {
   }
 
   /// Kill the child and take the interface offline.
+  ///
+  /// Runs on `lifecycle`, so a respawn already under way finishes first and its child is killed.
   public func stop() {
-    stateLock.withLock {
-      stopped = true
-      generation += 1
+    lifecycle.sync {
+      stateLock.withLock {
+        stopped = true
+        generation += 1
+      }
+      transport.kill()
+      isOnline = false
     }
-    transport.kill()
-    isOnline = false
   }
 
   /// Python `open_pipe()` (`PipeInterface.py:102-109`).

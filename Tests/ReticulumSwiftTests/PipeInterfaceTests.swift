@@ -273,6 +273,31 @@ final class PipeInterfaceTests: XCTestCase {
     XCTAssertFalse(pipe.isOnline)
   }
 
+  func testStopDuringARespawnLeavesTheInterfaceOffline() throws {
+    final class SlowChild: FakeChild {
+      let entered = DispatchSemaphore(value: 0)
+      let release = DispatchSemaphore(value: 0)
+      override func spawn(arguments: [String]) throws {
+        if spawned.count == 1 {
+          entered.signal()
+          release.wait()
+        }
+        try super.spawn(arguments: arguments)
+      }
+    }
+    let child = SlowChild()
+    let pipe = makePipe(respawnDelay: 0.01, child: child)
+    try pipe.start()
+    child.exit()
+    XCTAssertEqual(child.entered.wait(timeout: .now() + 3), .success, "the respawn is spawning")
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { child.release.signal() }
+    pipe.stop()
+    usleep(500_000)
+    XCTAssertEqual(child.spawned.count, 2)
+    XCTAssertFalse(pipe.isOnline, "a child spawned as the interface stopped is killed")
+    XCTAssertEqual(child.kills, 2, "the exited child, then the respawned one")
+  }
+
   // MARK: - A real child process
 
   #if os(macOS)
