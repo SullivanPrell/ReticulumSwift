@@ -33,7 +33,7 @@ Two paths bring an interface up:
 | `KISSInterface` | ✅ | KISS TNCs |
 | `AX25KISSInterface` | ✅ | AX.25 over KISS |
 | `WeaveInterface` | ✅ | Weave links |
-| `PipeInterface` | ⏭ not supported | POSIX subprocess pipes—no Apple-platform use case |
+| `PipeInterface` | ✅ macOS | HDLC frames over a child process's standard input and output. Elsewhere the block takes the unknown-type path |
 
 ## Common config example
 

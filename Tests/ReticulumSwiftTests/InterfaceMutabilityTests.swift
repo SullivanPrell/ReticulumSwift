@@ -134,7 +134,8 @@ final class InterfaceMutabilityTests: XCTestCase {
 
   /// Python's IFAC defaults are per interface class, not one global value: the radio and serial
   /// classes declare 8 (`RNodeInterface.py:110`, `RNodeMultiInterface.py:137`,
-  /// `SerialInterface.py:53`, `KISSInterface.py:63`, `AX25KISSInterface.py:70`) where
+  /// `SerialInterface.py:53`, `KISSInterface.py:63`, `AX25KISSInterface.py:70`,
+  /// `PipeInterface.py:57`) where
   /// TCP/UDP/Auto/Backbone/I2P/Weave declare 16.
   ///
   /// Applied at `Reticulum.py:918` / `:1110`.
@@ -147,7 +148,7 @@ final class InterfaceMutabilityTests: XCTestCase {
   func testDefaultIfacSizeIsPerInterfaceClass() throws {
     let expectEight: Set<String> = [
       "RNodeInterface", "RNodeMultiInterface", "RNodeSubInterface",
-      "SerialInterface", "KISSInterface", "AX25KISSInterface",
+      "SerialInterface", "KISSInterface", "AX25KISSInterface", "PipeInterface",
       "BLEMeshInterface",
     ]
 

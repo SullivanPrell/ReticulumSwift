@@ -110,12 +110,11 @@ final class InterfaceManagementTests: XCTestCase {
   func testAttachingATypeThisPortDoesNotBuildIsRefused() throws {
     try """
     [interfaces]
-      [[Pipe]]
-        type = PipeInterface
+      [[Plugin]]
+        type = ExternalModuleInterface
         interface_enabled = True
-        command = cat
     """.write(to: dir.appendingPathComponent("config"), atomically: true, encoding: .utf8)
-    XCTAssertEqual(reticulum.attachInterface(named: "Pipe"), false, "nothing was attached")
+    XCTAssertEqual(reticulum.attachInterface(named: "Plugin"), false, "nothing was attached")
   }
 
   func testAttachingWithAnUnreadableConfigReturnsNil() {
