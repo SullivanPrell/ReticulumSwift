@@ -502,7 +502,7 @@ extension Interface {
   /// `AX25KISSInterface[…]` (`:400-401`), `RNodeInterface[…]` (`:1247-1248`),
   /// `RNodeMultiInterface[…]` (`:923-924`), `I2PInterface[…]` (`:890`),
   /// `I2PInterfacePeer[…]` (`:713-714`), `AutoInterface[…]` (`:609`),
-  /// `WeaveInterface[…]` (`:1005-1006`).
+  /// `WeaveInterface[…]` (`:1005-1006`), `PipeInterface[…]` (`PipeInterface.py:206-207`).
   ///
   /// It composes `statsTypeName`, which is already the RNS class name, so a new interface type
   /// gets the correct shape by declaring nothing. **The previous default was the bare `name`**,

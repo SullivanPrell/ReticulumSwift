@@ -21,32 +21,32 @@ final class PipeInterfaceTests: XCTestCase {
     var terminationHandler: (() -> Void)?
 
     private let lock = NSLock()
-    private var _spawned: [[String]] = []
-    private var _written = Data()
-    private var _kills = 0
-    private var _spawnError: Error?
+    private var spawnLog: [[String]] = []
+    private var writeLog = Data()
+    private var killCount = 0
+    private var pendingSpawnError: Error?
 
-    var spawned: [[String]] { lock.withLock { _spawned } }
-    var written: Data { lock.withLock { _written } }
-    var kills: Int { lock.withLock { _kills } }
+    var spawned: [[String]] { lock.withLock { spawnLog } }
+    var written: Data { lock.withLock { writeLog } }
+    var kills: Int { lock.withLock { killCount } }
     var spawnError: Error? {
-      get { lock.withLock { _spawnError } }
-      set { lock.withLock { _spawnError = newValue } }
+      get { lock.withLock { pendingSpawnError } }
+      set { lock.withLock { pendingSpawnError = newValue } }
     }
 
     func spawn(arguments: [String]) throws {
       try lock.withLock {
-        if let error = _spawnError { throw error }
-        _spawned.append(arguments)
+        if let error = pendingSpawnError { throw error }
+        spawnLog.append(arguments)
       }
     }
 
     func write(_ data: Data) throws -> Int {
-      lock.withLock { _written.append(data) }
+      lock.withLock { writeLog.append(data) }
       return data.count
     }
 
-    func kill() { lock.withLock { _kills += 1 } }
+    func kill() { lock.withLock { killCount += 1 } }
 
     /// The child writes `bytes` to its stdout.
     func emit(_ bytes: [UInt8]) { readHandler?(Data(bytes)) }
@@ -276,63 +276,64 @@ final class PipeInterfaceTests: XCTestCase {
   // MARK: - A real child process
 
   #if os(macOS)
-    func testARealChildEchoesAFrameBack() throws {
-      let pipe = PipeInterface(
-        name: "Echo", command: "cat", respawnDelay: 5, transport: ProcessPipeTransport())
-      let received = expectation(description: "frame")
-      var frames: [Data] = []
-      pipe.rawInboundHandler = { frame, _ in
-        frames.append(frame)
-        received.fulfill()
-      }
-      try pipe.start()
-      defer { pipe.stop() }
-      let payload = Data([0x01, 0x7E, 0x02, 0x7D, 0x03] + Array(repeating: 0x55, count: 400))
-      try pipe.processOutgoing(payload)
-      wait(for: [received], timeout: 5)
-      XCTAssertEqual(frames, [payload])
+  func testARealChildEchoesAFrameBack() throws {
+    let pipe = PipeInterface(
+      name: "Echo", command: "cat", respawnDelay: 5, transport: ProcessPipeTransport())
+    let received = expectation(description: "frame")
+    var frames: [Data] = []
+    pipe.rawInboundHandler = { frame, _ in
+      frames.append(frame)
+      received.fulfill()
     }
+    try pipe.start()
+    defer { pipe.stop() }
+    let payload = Data([0x01, 0x7E, 0x02, 0x7D, 0x03] + Array(repeating: 0x55, count: 400))
+    try pipe.processOutgoing(payload)
+    wait(for: [received], timeout: 5)
+    XCTAssertEqual(frames, [payload])
+  }
 
-    func testABurstOfFramesFromManyThreadsComesBackWhole() throws {
-      let pipe = PipeInterface(
-        name: "Echo", command: "cat", respawnDelay: 5, transport: ProcessPipeTransport())
-      let lock = NSLock()
-      var frames: [Data] = []
-      let all = expectation(description: "frames")
-      all.expectedFulfillmentCount = 200
-      pipe.rawInboundHandler = { frame, _ in
-        lock.withLock { frames.append(frame) }
-        all.fulfill()
-      }
-      try pipe.start()
-      defer { pipe.stop() }
-      let sent = (0..<200).map { i in Data((0..<450).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ i) }) }
-      DispatchQueue.concurrentPerform(iterations: 4) { worker in
-        for i in stride(from: worker, to: 200, by: 4) { try? pipe.processOutgoing(sent[i]) }
-      }
-      wait(for: [all], timeout: 10)
-      XCTAssertEqual(Set(frames), Set(sent))
+  func testABurstOfFramesFromManyThreadsComesBackWhole() throws {
+    let pipe = PipeInterface(
+      name: "Echo", command: "cat", respawnDelay: 5, transport: ProcessPipeTransport())
+    let lock = NSLock()
+    var frames: [Data] = []
+    let all = expectation(description: "frames")
+    all.expectedFulfillmentCount = 200
+    pipe.rawInboundHandler = { frame, _ in
+      lock.withLock { frames.append(frame) }
+      all.fulfill()
     }
+    try pipe.start()
+    defer { pipe.stop() }
+    let sent = (0..<200).map { i in Data((0..<450).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ i) })
+    }
+    DispatchQueue.concurrentPerform(iterations: 4) { worker in
+      for i in stride(from: worker, to: 200, by: 4) { try? pipe.processOutgoing(sent[i]) }
+    }
+    wait(for: [all], timeout: 10)
+    XCTAssertEqual(Set(frames), Set(sent))
+  }
 
-    func testARealChildThatCannotBeFoundFailsTheStart() {
-      let pipe = PipeInterface(
-        name: "Missing", command: "no-such-command-\(UUID().uuidString)", respawnDelay: 5,
-        transport: ProcessPipeTransport())
-      XCTAssertThrowsError(try pipe.start(), "Popen raises FileNotFoundError")
-      XCTAssertFalse(pipe.isOnline)
-    }
+  func testARealChildThatCannotBeFoundFailsTheStart() {
+    let pipe = PipeInterface(
+      name: "Missing", command: "no-such-command-\(UUID().uuidString)", respawnDelay: 5,
+      transport: ProcessPipeTransport())
+    XCTAssertThrowsError(try pipe.start(), "Popen raises FileNotFoundError")
+    XCTAssertFalse(pipe.isOnline)
+  }
 
-    func testARealChildThatExitsIsReportedAndRespawned() throws {
-      let pipe = PipeInterface(
-        name: "Brief", command: "/usr/bin/true", respawnDelay: 0.1,
-        transport: ProcessPipeTransport())
-      try pipe.start()
-      defer { pipe.stop() }
-      waitUntil {
-        self.logs(at: .notice).contains("Subprocess terminated on PipeInterface[Brief]")
-          && self.logs(at: .verbose).contains(
-            "Attempting to respawn subprocess for PipeInterface[Brief]...")
-      }
+  func testARealChildThatExitsIsReportedAndRespawned() throws {
+    let pipe = PipeInterface(
+      name: "Brief", command: "/usr/bin/true", respawnDelay: 0.1,
+      transport: ProcessPipeTransport())
+    try pipe.start()
+    defer { pipe.stop() }
+    waitUntil {
+      self.logs(at: .notice).contains("Subprocess terminated on PipeInterface[Brief]")
+        && self.logs(at: .verbose).contains(
+          "Attempting to respawn subprocess for PipeInterface[Brief]...")
     }
+  }
   #endif
 }

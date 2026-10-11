@@ -65,6 +65,9 @@ final class InterfaceDisplayNameTests: XCTestCase {
     case let i as SerialInterface:
       // SerialInterface.py:226-227
       return "SerialInterface[\(i.name)]"
+    case let i as PipeInterface:
+      // PipeInterface.py:206-207
+      return "PipeInterface[\(i.name)]"
     case let i as WeaveInterface:
       // WeaveInterface.py:1005-1006
       return "WeaveInterface[\(i.name)]"

@@ -162,9 +162,6 @@ public final class PipeInterface: Interface {
   /// Identifier of the transport tunnel established over this interface.
   public var tunnelID: Data? = nil
 
-  /// Python `PipeInterface.__str__` (`PipeInterface.py:206-207`).
-  public var displayName: String { "PipeInterface[\(name)]" }
-
   // MARK: - Pipe configuration
 
   /// The command line the interface runs, split into words as `shlex.split` does.
@@ -340,126 +337,127 @@ public final class PipeInterface: Interface {
 // MARK: - The real child process
 
 #if os(macOS)
-  /// A child process started with `Foundation.Process`, as Python's
-  /// `subprocess.Popen(shlex.split(command), stdin=PIPE, stdout=PIPE)` starts one.
-  ///
-  /// The child's standard error stays the parent's, as `Popen` leaves it. A dedicated thread
-  /// reads the child's standard output. `Process` exists only on macOS.
-  public final class ProcessPipeTransport: PipeProcessTransport {
-    /// Called with the bytes the child writes to its standard output.
-    public var readHandler: ((Data) -> Void)?
-    /// Called once the child's standard output closes, unless `kill()` ended the child first.
-    public var terminationHandler: (() -> Void)?
+/// A child process started with `Foundation.Process`, as Python's
+/// `subprocess.Popen(shlex.split(command), stdin=PIPE, stdout=PIPE)` starts one.
+///
+/// The child's standard error stays the parent's, as `Popen` leaves it. A dedicated thread
+/// reads the child's standard output. `Process` exists only on macOS.
+public final class ProcessPipeTransport: PipeProcessTransport {
+  /// Called with the bytes the child writes to its standard output.
+  public var readHandler: ((Data) -> Void)?
+  /// Called once the child's standard output closes, unless `kill()` ended the child first.
+  public var terminationHandler: (() -> Void)?
 
-    private let lock = NSLock()
-    private let writeLock = NSLock()
-    private var current: Process?
-    private var stdinHandle: FileHandle?
+  private let lock = NSLock()
+  private let writeLock = NSLock()
+  private var current: Process?
+  private var stdinHandle: FileHandle?
 
-    /// Creates a transport with no child running.
-    public init() {}
+  /// Creates a transport with no child running.
+  public init() {}
 
-    /// Starts `arguments[0]`, searching `PATH` for a bare name as `execvp` does.
-    public func spawn(arguments: [String]) throws {
-      guard let program = arguments.first else { throw PipeInterfaceError.emptyCommand }
-      let process = Process()
-      process.executableURL = try Self.resolve(program)
-      process.arguments = Array(arguments.dropFirst())
-      let input = Pipe()
-      let output = Pipe()
-      process.standardInput = input
-      process.standardOutput = output
-      // A child that stops reading would otherwise raise SIGPIPE in this process, where
-      // Python ignores the signal and the write raises instead.
-      _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
-      try process.run()
-      try? output.fileHandleForWriting.close()
-      try? input.fileHandleForReading.close()
-      lock.withLock {
-        current = process
-        stdinHandle = input.fileHandleForWriting
-      }
-      let reader = output.fileHandleForReading
-      let thread = Thread { [weak self] in self?.readLoop(reader, process: process) }
-      thread.name = "ReticulumSwift.PipeInterface.read"
-      thread.start()
+  /// Starts `arguments[0]`, searching `PATH` for a bare name as `execvp` does.
+  public func spawn(arguments: [String]) throws {
+    guard let program = arguments.first else { throw PipeInterfaceError.emptyCommand }
+    let process = Process()
+    process.executableURL = try Self.resolve(program)
+    process.arguments = Array(arguments.dropFirst())
+    let input = Pipe()
+    let output = Pipe()
+    process.standardInput = input
+    process.standardOutput = output
+    // A child that stops reading would otherwise raise SIGPIPE in this process, where
+    // Python ignores the signal and the write raises instead.
+    _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+    try process.run()
+    try? output.fileHandleForWriting.close()
+    try? input.fileHandleForReading.close()
+    lock.withLock {
+      current = process
+      stdinHandle = input.fileHandleForWriting
     }
+    let reader = output.fileHandleForReading
+    let thread = Thread { [weak self] in self?.readLoop(reader, process: process) }
+    thread.name = "ReticulumSwift.PipeInterface.read"
+    thread.start()
+  }
 
-    /// Writes all of `data`, as `stdin.write` followed by `flush()` does.
-    public func write(_ data: Data) throws -> Int {
-      guard let handle = lock.withLock({ stdinHandle }) else {
-        throw PipeInterfaceError.notRunning
-      }
-      return try writeLock.withLock {
-        try data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> Int in
-          guard let base = buffer.baseAddress else { return 0 }
-          var offset = 0
-          while offset < buffer.count {
-            let n = Darwin.write(handle.fileDescriptor, base + offset, buffer.count - offset)
-            if n < 0 {
-              if errno == EINTR { continue }
-              throw PipeInterfaceError.writeFailed(errno)
-            }
-            offset += n
+  /// Writes all of `data`, as `stdin.write` followed by `flush()` does.
+  public func write(_ data: Data) throws -> Int {
+    guard let handle = lock.withLock({ stdinHandle }) else {
+      throw PipeInterfaceError.notRunning
+    }
+    return try writeLock.withLock {
+      try data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> Int in
+        guard let base = buffer.baseAddress else { return 0 }
+        var offset = 0
+        while offset < buffer.count {
+          let n = Darwin.write(handle.fileDescriptor, base + offset, buffer.count - offset)
+          if n < 0 {
+            if errno == EINTR { continue }
+            throw PipeInterfaceError.writeFailed(errno)
           }
-          return offset
+          offset += n
         }
+        return offset
       }
-    }
-
-    /// Sends the child `SIGKILL`, as Python's `Popen.kill()` does.
-    public func kill() {
-      let (process, handle) = lock.withLock { () -> (Process?, FileHandle?) in
-        defer {
-          current = nil
-          stdinHandle = nil
-        }
-        return (current, stdinHandle)
-      }
-      try? handle?.close()
-      guard let process, process.isRunning else { return }
-      _ = Darwin.kill(process.processIdentifier, SIGKILL)
-    }
-
-    private func readLoop(_ handle: FileHandle, process: Process) {
-      let fd = handle.fileDescriptor
-      var buffer = [UInt8](repeating: 0, count: PipeInterface.maxChunk)
-      while true {
-        let n = read(fd, &buffer, buffer.count)
-        if n > 0 {
-          readHandler?(Data(buffer[0..<n]))
-        } else if n < 0 && errno == EINTR {
-          continue
-        } else {
-          break
-        }
-      }
-      try? handle.close()
-      let isCurrent = lock.withLock { current === process }
-      if isCurrent { terminationHandler?() }
-    }
-
-    /// `execvp`'s lookup: a name with a slash is used as given, and a bare name is searched
-    /// for along `PATH`.
-    static func resolve(_ program: String) throws -> URL {
-      let fileManager = FileManager.default
-      if program.contains("/") {
-        guard fileManager.fileExists(atPath: program) else {
-          throw PipeInterfaceError.notFound(program)
-        }
-        guard fileManager.isExecutableFile(atPath: program) else {
-          throw PipeInterfaceError.permissionDenied(program)
-        }
-        return URL(fileURLWithPath: program)
-      }
-      let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
-      for directory in path.split(separator: ":", omittingEmptySubsequences: false) {
-        let candidate = (directory.isEmpty ? "." : String(directory)) + "/" + program
-        if fileManager.isExecutableFile(atPath: candidate) {
-          return URL(fileURLWithPath: candidate)
-        }
-      }
-      throw PipeInterfaceError.notFound(program)
     }
   }
+
+  /// Sends the child `SIGKILL`, as Python's `Popen.kill()` does.
+  public func kill() {
+    let (process, handle) = lock.withLock { () -> (Process?, FileHandle?) in
+      defer {
+        current = nil
+        stdinHandle = nil
+      }
+      return (current, stdinHandle)
+    }
+    try? handle?.close()
+    guard let process, process.isRunning else { return }
+    _ = Darwin.kill(process.processIdentifier, SIGKILL)
+  }
+
+  private func readLoop(_ handle: FileHandle, process: Process) {
+    let fd = handle.fileDescriptor
+    var buffer = [UInt8](repeating: 0, count: PipeInterface.maxChunk)
+    while true {
+      let n = read(fd, &buffer, buffer.count)
+      if n > 0 {
+        readHandler?(Data(buffer[0..<n]))
+      } else if n < 0 && errno == EINTR {
+        continue
+      } else {
+        break
+      }
+    }
+    try? handle.close()
+    let isCurrent = lock.withLock { current === process }
+    if isCurrent { terminationHandler?() }
+  }
+
+  /// Resolves `program` as `execvp` does.
+  ///
+  /// A name with a slash is used as given, and a bare name is searched for along `PATH`.
+  static func resolve(_ program: String) throws -> URL {
+    let fileManager = FileManager.default
+    if program.contains("/") {
+      guard fileManager.fileExists(atPath: program) else {
+        throw PipeInterfaceError.notFound(program)
+      }
+      guard fileManager.isExecutableFile(atPath: program) else {
+        throw PipeInterfaceError.permissionDenied(program)
+      }
+      return URL(fileURLWithPath: program)
+    }
+    let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+    for directory in path.split(separator: ":", omittingEmptySubsequences: false) {
+      let candidate = (directory.isEmpty ? "." : String(directory)) + "/" + program
+      if fileManager.isExecutableFile(atPath: candidate) {
+        return URL(fileURLWithPath: candidate)
+      }
+    }
+    throw PipeInterfaceError.notFound(program)
+  }
+}
 #endif

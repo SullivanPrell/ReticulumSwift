@@ -354,14 +354,23 @@ final class RemainingConstructionTests: XCTestCase {
       stack.transport.interfaces.isEmpty, "the failed interface isn't left registered")
   }
 
-  func testAPipeBlockOnAPlatformWithoutSubprocessesFailsConstruction() {
+  /// Off macOS there's no `pipe` factory, and the block takes the unknown-type path: an ERROR
+  /// log naming it, and the other interfaces still come up.
+  func testAPipeBlockOnAPlatformWithoutSubprocessesTakesTheUnknownTypePath() throws {
     InterfaceTransportFactories.pipe = nil
-    let stack = makeStack()
-    XCTAssertThrowsError(try stack.synthesizeInterfaces(from: pipeBlock())) { error in
-      guard case .unavailable(let family, _, _)? = error as? InterfaceTransportFactories.FactoryError
-      else { return XCTFail("\(error)") }
-      XCTAssertEqual(family, "pipe")
+    let savedHandler = Reticulum.logHandler
+    defer { Reticulum.logHandler = savedHandler }
+    let lock = NSLock()
+    var errors: [String] = []
+    Reticulum.logHandler = { message, level in
+      if level == .error { lock.withLock { errors.append(message) } }
     }
+    let stack = makeStack()
+    XCTAssertNoThrow(try stack.synthesizeInterfaces(from: pipeBlock()))
     XCTAssertTrue(stack.transport.interfaces.isEmpty)
+    XCTAssertTrue(
+      lock.withLock { errors }.contains {
+        $0.hasPrefix("Unsupported interface type 'PipeInterface' for interface 'Pipes'")
+      })
   }
 }

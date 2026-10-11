@@ -1984,7 +1984,8 @@ public final class Reticulum {
       iface = WeaveInterface(
         name: ifCfg.name, port: device, transport: try serialFactory(device))
 
-    case "PipeInterface":
+    // Without a `pipe` factory (no subprocesses off macOS) the block takes the unknown-type path.
+    case "PipeInterface" where InterfaceTransportFactories.pipe != nil:
       // `PipeInterface.py:66-74`: `command` is required, and `respawn_delay` is a float that
       // defaults to 5. A value `as_float` can't read raises.
       guard let command = ifCfg["command"] else {
@@ -1998,11 +1999,7 @@ public final class Reticulum {
         }
         respawnDelay = value
       }
-      guard let pipeFactory = InterfaceTransportFactories.pipe else {
-        throw InterfaceTransportFactories.FactoryError.unavailable(
-          family: "pipe", device: command,
-          hint: "this platform can't start subprocesses")
-      }
+      guard let pipeFactory = InterfaceTransportFactories.pipe else { return nil }
       iface = PipeInterface(
         name: ifCfg.name, command: command, respawnDelay: respawnDelay,
         transport: try pipeFactory())
