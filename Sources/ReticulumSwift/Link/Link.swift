@@ -924,10 +924,12 @@ public final class Link {
     if countPacket { counters.addTx(bytes: bytes) }
   }
 
-  /// Record inbound lastInbound + rx/rxBytes under `stateLock`.
-  private func recordInbound(bytes: Int, at ts: Date = Date()) {
+  /// Record inbound lastInbound, lastData + rx/rxBytes under `stateLock` (Link.py:942-945).
+  private func recordInbound(bytes: Int, isData: Bool) {
     stateLock.lock()
+    let ts = Date()
     lastInbound = ts
+    if isData { lastData = ts }
     stateLock.unlock()
     counters.addRx(bytes: bytes)
   }
@@ -1894,6 +1896,8 @@ public final class Link {
   /// decryption (resource handles its own encryption); decrypts all others.
   /// The optional `receivingInterface` is used to update PHY stats when `trackPhyStats` is true.
   public func receive(_ packet: Packet, from receivingInterface: (any Interface)? = nil) throws {
+    // An initiator drops a keepalive probe before any accounting (Link.py:938).
+    if role == .initiator, packet.context == .keepalive, packet.data == Data([0xFF]) { return }
     // A stale link still processes inbound traffic, and any inbound packet
     // promotes it back to active—Python accepts every non-CLOSED status
     // and recovers with `if self.status == Link.STALE: self.status =
@@ -1906,35 +1910,14 @@ public final class Link {
     guard curStatus == .active else { throw LinkError.notActive }
     updatePhyStats(from: receivingInterface)
 
-    // RESOURCE data parts—pre-encrypted by the resource layer; pass raw.
-    if packet.context == .resource {
-      recordInbound(bytes: packet.data.count)
-      let data = packet.data
-      for rt in snapshotIncomingResources() { rt.receivePart(data) }
-      return
-    }
-
-    // RESOURCE_PRF proof—sent unencrypted (Python: "not encrypted").
-    if packet.packetType == .proof, packet.context == .resourceProof {
-      stateLock.lock()
-      lastInbound = Date()
-      stateLock.unlock()
-      let proofData = packet.data
-      guard proofData.count >= Constants.hashLength else { return }
-      let resourceHash = proofData.prefix(Constants.hashLength)
-      for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
-        rt.validateProof(proofData)
-      }
-      return
-    }
-
     // Explicit link-data PROOF (context .none)—proof_data is
     // `[full hash][signature]` and isn't link-encrypted (like RESOURCE_PRF).
     // Sent by a peer's `prove_packet` to acknowledge a CHANNEL packet; match
     // it to the pending `ChannelPacketHandle` so the sender's Channel window
     // advances. Mirrors Python's Transport matching a link-DATA proof to the
     // sending packet's receipt. Must be handled BEFORE the link-decrypt below,
-    // which would otherwise fail on the cleartext proof bytes.
+    // which would otherwise fail on the cleartext proof bytes. Python never
+    // routes this proof through `Link.__receive`, so it skips the accounting below.
     if packet.packetType == .proof, packet.context == .none {
       stateLock.lock()
       lastInbound = Date()
@@ -1948,18 +1931,36 @@ public final class Link {
       return
     }
 
+    // Every other link packet counts before any decrypt (Link.py:942-946).
+    recordInbound(bytes: packet.data.count, isData: packet.context != .keepalive)
+
+    // RESOURCE data parts—pre-encrypted by the resource layer; pass raw.
+    if packet.context == .resource {
+      let data = packet.data
+      for rt in snapshotIncomingResources() { rt.receivePart(data) }
+      return
+    }
+
+    // RESOURCE_PRF proof—sent unencrypted (Python: "not encrypted").
+    if packet.packetType == .proof, packet.context == .resourceProof {
+      let proofData = packet.data
+      guard proofData.count >= Constants.hashLength else { return }
+      let resourceHash = proofData.prefix(Constants.hashLength)
+      for rt in snapshotOutgoingResources() where rt.resourceHash == Data(resourceHash) {
+        rt.validateProof(proofData)
+      }
+      return
+    }
+
     // A keepalive arrives unencrypted, and Python reads its byte raw
-    // (Packet.py:209-212, Link.py:1130-1135). It doesn't update lastData.
+    // (Packet.py:209-212, Link.py:1130-1135).
     if packet.context == .keepalive {
-      recordInbound(bytes: packet.data.count)
       handleKeepalive(packet.data)
       return
     }
 
     // All other packets use link-level encryption.
     let plaintext = try decrypt(packet.data)
-    let now = Date()
-    recordInbound(bytes: packet.data.count, at: now)
 
     switch packet.context {
     case .channel:
@@ -2088,9 +2089,6 @@ public final class Link {
       // The hash is computed from the raw packet bytes (header nibble + dest hash +
       // context + ciphertext), not from the plaintext, so the id matches what the
       // initiator stored regardless of implementation language.
-      stateLock.lock()
-      lastData = now
-      stateLock.unlock()
       // RNS 1.4.1 `Destination.max_request_size`: drop an oversized request
       // before unpacking its msgpack body—the point of the cap is to keep
       // a hostile peer from forcing an allocation on its say-so. Python logs
@@ -2108,16 +2106,9 @@ public final class Link {
     case .response:
       // RESPONSE packet: deliver to the pending RequestReceipt that sent the
       // matching request. request_id is embedded in the msgpack response body.
-      stateLock.lock()
-      lastData = now
-      stateLock.unlock()
       handleIncomingResponse(plaintext)
       onPacketReceived?(plaintext, packet.packetType, packet.context, self)
     default:
-      // Non-keepalive DATA: update lastData (mirrors Python last_data = last_inbound)
-      stateLock.lock()
-      lastData = now
-      stateLock.unlock()
       onPacketReceived?(plaintext, packet.packetType, packet.context, self)
       // Only fire the data callback for actual DATA packets with no special
       // context—not for PROOF packets that happen to have context .none
