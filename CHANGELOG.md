@@ -7,6 +7,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- A link keepalive travels unencrypted, as Python packs it (`Packet.py:209-212`), and its byte
+  is read raw: a responder that has sent nothing for a keepalive interval answers `0xFF` with
+  `0xFE` (`Link.py:1130-1135`). Before, `Link` encrypted both and decrypted every inbound
+  keepalive. A Python peer never answered the Swift probe, and the Swift link dropped the
+  Python or Go peer's reply as undecryptable, so an idle Swift initiator saw no inbound
+  traffic, went stale and closed the link about 15 s after its last data. An idle link from a
+  Python initiator to a Swift responder closed the same way. A Swift RRC
+  client lost its Go hub this way off localhost (`bugs/064`).
 - `Reticulum.stop()` closes the instance-control socket. Python never closes its control
   `Listener` (`Reticulum.py:366`; `exit_handler` at `:182-195` doesn't touch it) and refuses a
   second `Reticulum` in one process (`:225-226`), so process exit releases the port. A Swift

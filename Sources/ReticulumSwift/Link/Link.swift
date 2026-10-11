@@ -1842,7 +1842,8 @@ public final class Link {
   public func send(_ plaintext: Data, context: Packet.Context = .none) throws -> PacketReceipt? {
     guard status == .active else { throw LinkError.notActive }
     guard let linkID, let transport else { throw LinkError.invalidState }
-    let ciphertext = try encrypt(plaintext)
+    // Python packs a keepalive without encryption (Packet.py:209-212).
+    let ciphertext = context == .keepalive ? plaintext : try encrypt(plaintext)
     let packet = Packet(
       destinationType: .link,
       packetType: .data,
@@ -1947,15 +1948,20 @@ public final class Link {
       return
     }
 
+    // A keepalive arrives unencrypted, and Python reads its byte raw
+    // (Packet.py:209-212, Link.py:1130-1135). It doesn't update lastData.
+    if packet.context == .keepalive {
+      recordInbound(bytes: packet.data.count)
+      handleKeepalive(packet.data)
+      return
+    }
+
     // All other packets use link-level encryption.
     let plaintext = try decrypt(packet.data)
     let now = Date()
     recordInbound(bytes: packet.data.count, at: now)
 
     switch packet.context {
-    case .keepalive:
-      handleKeepalive(plaintext)
-    // Keepalives don't update lastData (matches Python had_outbound(is_keepalive=True))
     case .channel:
       // Prove the channel packet back to the sender so its Channel can
       // advance the send window (mirrors Python Link.receive CHANNEL branch:
@@ -2396,7 +2402,8 @@ public final class Link {
   {
     guard status == .active else { throw LinkError.notActive }
     guard let linkID, let transport else { throw LinkError.invalidState }
-    let ciphertext = try encrypt(plaintext)
+    // Python packs a keepalive without encryption (Packet.py:209-212).
+    let ciphertext = context == .keepalive ? plaintext : try encrypt(plaintext)
     let packet = Packet(
       destinationType: .link,
       packetType: packetType,
