@@ -104,4 +104,73 @@ final class RNS137EphemeralTransportIdentityTests: XCTestCase {
       a.transportHash, b.transportHash,
       "ephemeral transport identity must be regenerated each run")
   }
+
+  // MARK: - RNS 1.5.6: a discoverable interface keeps the identity static
+
+  /// `Reticulum.py:993`.
+  private let discoverableWarning =
+    "Discoverable interface was configured, enabling static transport identity on non-transport instance"
+
+  private func discoverableConfig(
+    transport: Bool = false, staticIdentity: Bool = false, enabled: Bool = true,
+    discoverable: Bool = true
+  ) -> String {
+    """
+    [reticulum]
+    enable_transport = \(transport ? "True" : "False")
+    static_transport_identity = \(staticIdentity ? "True" : "False")
+
+    [interfaces]
+      [[Discoverable]]
+        type = TCPServerInterface
+        interface_enabled = \(enabled ? "Yes" : "No")
+        listen_ip = 127.0.0.1
+        listen_port = 4242
+        discoverable = \(discoverable ? "Yes" : "No")
+    """
+  }
+
+  /// Whether the node ran under its persistent identity, and the warnings `start()` logged.
+  private func startNode(_ configText: String) throws -> (persistent: Bool, warnings: [String]) {
+    var warnings: [String] = []
+    let saved = Reticulum.logHandler
+    Reticulum.logHandler = { message, level in if level == .warning { warnings.append(message) } }
+    defer { Reticulum.logHandler = saved }
+    let r = try makeReticulum(
+      storage: tmp.appendingPathComponent("storage"), configText: configText)
+    try r.start()
+    defer { r.stop() }
+    return (r.transport.internalIdentity?.hash == r.transport.transportIdentity?.hash, warnings)
+  }
+
+  func testADiscoverableInterfaceKeepsANonTransportIdentityStatic() throws {
+    let node = try startNode(discoverableConfig())
+    XCTAssertTrue(node.persistent, "Reticulum.py:992-994 sets static_transport_identity")
+    XCTAssertEqual(node.warnings.filter { $0 == discoverableWarning }.count, 1)
+  }
+
+  func testAnInterfaceThatIsNotDiscoverableLeavesTheIdentityEphemeral() throws {
+    let node = try startNode(discoverableConfig(discoverable: false))
+    XCTAssertFalse(node.persistent)
+    XCTAssertFalse(node.warnings.contains(discoverableWarning))
+  }
+
+  func testATransportNodeWithADiscoverableInterfaceLogsNoWarning() throws {
+    let node = try startNode(discoverableConfig(transport: true))
+    XCTAssertTrue(node.persistent)
+    XCTAssertFalse(node.warnings.contains(discoverableWarning))
+  }
+
+  func testAConfiguredStaticIdentityWithADiscoverableInterfaceLogsNoWarning() throws {
+    let node = try startNode(discoverableConfig(staticIdentity: true))
+    XCTAssertTrue(node.persistent)
+    XCTAssertFalse(node.warnings.contains(discoverableWarning))
+  }
+
+  /// The `discoverable` block (`Reticulum.py:988-994`) runs before the enabled check (`:1108`).
+  func testADisabledDiscoverableInterfaceStillKeepsTheIdentityStatic() throws {
+    let node = try startNode(discoverableConfig(enabled: false))
+    XCTAssertTrue(node.persistent)
+    XCTAssertEqual(node.warnings.filter { $0 == discoverableWarning }.count, 1)
+  }
 }

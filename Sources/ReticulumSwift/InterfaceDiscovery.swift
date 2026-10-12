@@ -1154,10 +1154,12 @@ public final class InterfaceDiscovery {
 
   /// Whether `info` meets the auto-connect criteria.
   ///
-  /// Its announce names an implementation in `autoconnectImpls` at `autoconnectMinVersion`
-  /// or later, unless `autoconnect_unverified_implementations` is set. Mirrors Python
-  /// `autoconnect_qualified(info)` (`Discovery.py:782-790`).
+  /// Its announce comes from a transport instance and names an implementation in
+  /// `autoconnectImpls` at `autoconnectMinVersion` or later, unless
+  /// `autoconnect_unverified_implementations` is set. Mirrors Python
+  /// `autoconnect_qualified(info)` (`Discovery.py:782-791`, RNS 1.5.6).
   public func autoconnectQualified(_ info: DiscoveredInterfaceInfo) -> Bool {
+    guard info.transport else { return false }
     if Reticulum.shouldAutoconnectUnverifiedImplementations() { return true }
     guard let impl = info.implName, Self.autoconnectImpls.contains(impl) else { return false }
     guard let version = info.version, !version.isEmpty,

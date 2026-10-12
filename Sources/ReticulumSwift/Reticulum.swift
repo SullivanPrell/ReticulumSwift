@@ -995,8 +995,20 @@ public final class Reticulum {
     // `static_transport_identity` is configured. Mirrors RNS 1.3.7
     // `Transport.start()`.
     transport.internalIdentity = persistentIdentity
+    var staticTransportIdentity = config?.reticulum.staticTransportIdentity ?? false
+    // A shared or standalone instance reads `discoverable` from every interface block, enabled
+    // or not, and keeps a static identity for it (`Reticulum.py:756-763`, `:988-994`, `:1108`).
+    if !transport.transportEnabled && !staticTransportIdentity
+      && !transport.isConnectedToSharedInstance
+      && (config?.interfaces.contains { $0.bool("discoverable") == true } ?? false)
+    {
+      Reticulum.log(
+        "Discoverable interface was configured, enabling static transport identity on "
+          + "non-transport instance", level: .warning)
+      staticTransportIdentity = true
+    }
     let transportIdentity: Identity
-    if !transport.transportEnabled && !(config?.reticulum.staticTransportIdentity ?? false) {
+    if !transport.transportEnabled && !staticTransportIdentity {
       transportIdentity = Identity()
     } else {
       transportIdentity = persistentIdentity

@@ -63,11 +63,11 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
   private func discovered(
     type: String = "BackboneInterface", reachableOn: String = "hub.example.net",
     port: Int = 4965, name: String = "Example hub",
-    implName: String? = "RNS", version: String? = "1.5.5"
+    implName: String? = "RNS", version: String? = "1.5.5", transport: Bool = true
   ) -> DiscoveredInterfaceInfo {
     let now = Date().timeIntervalSince1970
     var info = DiscoveredInterfaceInfo(
-      type: type, transport: true, name: name, received: now,
+      type: type, transport: transport, name: name, received: now,
       stamp: Data(repeating: 0xAB, count: 32), value: 16,
       transportID: String(repeating: "a", count: 32),
       networkID: String(repeating: "b", count: 32), hops: 1,
@@ -135,6 +135,23 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
 
   func testUnverifiedImplementationsAreDialledWhenAllowed() {
     Reticulum.storedAutoconnectUnverifiedImplementations = true
+    discovery.autoconnect(discovered(implName: nil, version: nil))
+    XCTAssertEqual(dialled.count, 1)
+  }
+
+  // MARK: - Transport (RNS 1.5.6)
+
+  func testANonTransportAnnounceIsNotDialled() {
+    discovery.autoconnect(discovered(version: "1.5.2", transport: false))
+    XCTAssertTrue(dialled.isEmpty, "Discovery.py:783 requires transport == True")
+    discovery.autoconnect(discovered(version: "1.5.2"))
+    XCTAssertEqual(dialled.count, 1)
+  }
+
+  func testANonTransportAnnounceIsNotDialledWhenUnverifiedImplementationsAreAllowed() {
+    Reticulum.storedAutoconnectUnverifiedImplementations = true
+    discovery.autoconnect(discovered(implName: nil, version: nil, transport: false))
+    XCTAssertTrue(dialled.isEmpty, "the transport check precedes the switch (Discovery.py:783-784)")
     discovery.autoconnect(discovered(implName: nil, version: nil))
     XCTAssertEqual(dialled.count, 1)
   }

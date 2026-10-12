@@ -31,6 +31,20 @@ All notable changes to ReticulumSwift are documented here. This project follows
     `Subprocess terminated`, and `panic_on_interface_error` isn't honored. Python logs a pipe
     error there (`PipeInterface.py:175-188`). Both start the child again.
 
+### Changed
+
+- Interface discovery auto-connects only to an endpoint whose announce says `transport` is
+  true, as RNS 1.5.6 does (`Discovery.py:783`). The check comes before
+  `autoconnect_unverified_implementations`, so that switch doesn't bypass it. Before, a
+  qualifying announce from a non-transport instance was dialled.
+- A non-transport shared or standalone instance with a `discoverable` interface block keeps its
+  persistent transport identity and logs the RNS 1.5.6 warning "Discoverable interface was
+  configured, enabling static transport identity on non-transport instance"
+  (`Reticulum.py:992-994`). A block with `interface_enabled = No` counts too, because Python
+  reads `discoverable` (`:988`) before it checks whether the interface is enabled (`:1108`).
+  Before, such a node ran behind an ephemeral transport identity unless
+  `static_transport_identity` was set.
+
 ### Fixed
 
 - A link keepalive travels unencrypted, as Python packs it (`Packet.py:209-212`), and its byte
@@ -71,6 +85,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `InterfaceDiscovery`. A shared instance that stopped while a local client was attached raced
   the client's `deregister(interface:)` on a network-callback thread, which ThreadSanitizer
   reports as a Swift access race.
+
+### Deliberate differences from Python
+
+- RNS 1.5.7 resets an interface's egress-control state after the egress-control dead-time
+  teardown (`_dp_ec_reset`, `BackboneInterface.py:411-417`, called at `:445`). This port has no
+  `TransmitBuffer`, `tx_stalled` gate or egress-control job, so there's nothing to reset.
 
 ## [1.24.0]—inbound queues, and hop counts as Python counts them
 
