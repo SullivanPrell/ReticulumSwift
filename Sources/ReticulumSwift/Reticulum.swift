@@ -26,7 +26,7 @@ public final class Reticulum {
   /// (releases are cut to mirror the RNS version they reach parity with) but
   /// advance independently—a patch release fixes the port without changing
   /// the protocol it targets.
-  public static let version = "1.24.0"
+  public static let version = "1.25.0"
 
   /// The Python RNS release whose wire protocol and behavior this port matches.
   ///
@@ -34,7 +34,7 @@ public final class Reticulum {
   /// a single version string for both its library and its protocol). Bump only
   /// when parity is verified against a new RNS release. Informational only.
   ///
-  /// `reticulum-interop` verifies the match. Its `make test-utilities` drives Python 1.5.5's
+  /// `reticulum-interop` verifies the match. Its `make test-utilities` drives Python 1.5.7's
   /// utilities against this port's daemon, and both directions agree, including the key order
   /// of `rnstatus -j`. Its `make test-rngit` serves one repository from a Python and a Swift
   /// `rngit` node, compares every page each browser reads, and clones the repository through
@@ -79,6 +79,10 @@ public final class Reticulum {
   ///    and unnamed entries. `rngit` sends a Markdown file converted to Micron, the serial
   ///    interfaces redial a port that won't open, and an RNode turns its radio off as it's
   ///    detached.
+  ///  - **1.5.6 and 1.5.7**, discovery. Auto-connect dials only an endpoint whose announce
+  ///    says `transport` is true, and a non-transport instance with a discoverable interface
+  ///    keeps a static transport identity. 1.5.7's egress-control reset has nothing to reset
+  ///    here, because this port has no `TransmitBuffer`.
   ///
   /// Inbound packets queue by traffic class for one drain worker, as in Python
   /// (``Transport/TrafficClass``, ``InboundQueues``). Two areas are deliberately not ported
@@ -92,7 +96,7 @@ public final class Reticulum {
   /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,
   /// ``autoconnectsDiscoveredInterfaces``), and batches `discovery_path_requests` together
   /// with the announce replay that answers the requestors it batches.
-  public static let rnsProtocolVersion = "1.5.5"
+  public static let rnsProtocolVersion = "1.5.7"
 
   /// Log severity levels, ordered from `none` through `extreme`.
   public enum LogLevel: Int, Comparable, Sendable {

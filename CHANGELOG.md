@@ -5,6 +5,23 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.25.0]—idle links that stay up, PipeInterface, and parity moves to 1.5.7
+
+An idle link to a Python or Go peer stays up: keepalives travel unencrypted, as Python sends
+them. `PipeInterface` runs on macOS. Interface discovery follows the RNS 1.5.6 rules, which
+covers every code change in RNS 1.5.6 and 1.5.7, so `rnsProtocolVersion` moves to 1.5.7.
+
+### Reference parity moves to RNS 1.5.7
+
+`Reticulum.rnsProtocolVersion` reads `1.5.7`, up from `1.5.5`.
+
+RNS 1.5.6 and 1.5.7 change three things in code. The two discovery changes from 1.5.6 are under
+Changed. The 1.5.7 egress-control reset is under Deliberate differences from Python.
+
+reticulum-interop ran against this tree's discovery changes (#94) with RNS 1.5.7 and with 1.5.5.
+Under both, `make test-utilities` passed 154 tests with 1 expected failure, and
+`make test-rngit` passed 9 of 9.
+
 ### Added
 
 - `PipeInterface`, on macOS (`Reticulum.py:1154-1156`). A Python config with a
