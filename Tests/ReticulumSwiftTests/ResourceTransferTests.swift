@@ -237,46 +237,31 @@ final class ResourceTransferTests: XCTestCase {
     }
   }
 
-  func testResourceAssemblyWithMetadata() throws {
-    let (_, _, aLink, bLink) = try makeLinkedPair()
+  /// A received segment that decompresses past the bound fails the transfer.
+  ///
+  /// Python rejects it at `max_decompressed_size` (`Resource.py:368`, `:699-704`). One segment
+  /// of `autoCompressMaxSize + 1` zero bytes compresses to a few kilobytes, as a hostile
+  /// sender's would.
+  func testAReceivedSegmentDecompressingPastTheBoundFails() throws {
+    let (aT, bT, aLink, bLink) = try makeLinkedPair()
+    _ = (aT, bT)
 
-    let meta = Data([0xCA, 0xFE])
-    let payload = Data("body".utf8)
-    let resource = try Resource(link: aLink, payload: payload, metadata: meta)
+    let failed = expectation(description: "receiver fails the transfer")
+    let delivered = expectation(description: "payload delivered")
+    delivered.isInverted = true
 
-    // Verify the advertisement has hasMetadata=true.
-    XCTAssertTrue(resource.hasMetadata)
+    let bRx = ResourceTransfer(link: bLink)
+    bRx.bindAsReceiver()
+    bRx.onFailed = { _, _ in failed.fulfill() }
+    bRx.onPayloadReceived = { _, _ in delivered.fulfill() }
 
-    // Manually assemble using the receiver-side link.
-    let result = Resource.assemble(
-      encryptedParts: resource.encryptedSegments,
-      randomHash: resource.randomHash,
-      resourceHash: resource.resourceHash,
-      compressed: resource.isCompressed,
-      hasMetadata: true,
-      link: bLink
-    )
-    XCTAssertNotNil(result)
-    XCTAssertEqual(result?.payload, payload)
-    XCTAssertEqual(result?.metadata, meta)
-  }
+    let aTx = ResourceTransfer(link: aLink)
+    let size = Resource.autoCompressMaxSize + 1
+    aTx.testSegmentSizeOverride = size
+    try aTx.send(payload: Data(count: size), autoCompress: .upTo(size))
 
-  func testResourceAssemblyWithoutMetadataBackwardsCompatible() throws {
-    let (_, _, aLink, bLink) = try makeLinkedPair()
-
-    let payload = Data("no meta".utf8)
-    let resource = try Resource(link: aLink, payload: payload)
-
-    let result = Resource.assemble(
-      encryptedParts: resource.encryptedSegments,
-      randomHash: resource.randomHash,
-      resourceHash: resource.resourceHash,
-      compressed: resource.isCompressed,
-      link: bLink
-    )
-    XCTAssertNotNil(result)
-    XCTAssertEqual(result?.payload, payload)
-    XCTAssertNil(result?.metadata)
+    wait(for: [failed], timeout: 60)
+    wait(for: [delivered], timeout: 0.1)
   }
 
   func testResourceAdvertisementRoundTrip() throws {

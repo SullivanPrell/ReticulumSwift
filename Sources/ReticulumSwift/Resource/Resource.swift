@@ -238,6 +238,10 @@ public final class Resource {
   /// and separates metadata from payload when `hasMetadata` is true.
   ///
   /// Mirrors Python `Resource.__assemble` + the metadata extraction path.
+  ///
+  /// Nothing in the package calls it. A received resource assembles in ``ResourceTransfer``,
+  /// which reads metadata from the first segment only (`Resource.py:709`).
+  @available(*, deprecated, message: "Receive through ResourceTransfer.")
   public static func assemble(
     encryptedParts: [Data],
     randomHash: Data,
@@ -528,6 +532,9 @@ public struct ResourceAdvertisement: Equatable {
     guard adv.transferSize <= UInt64(ResourceTransfer.maxEfficientSize * 3) else {
       throw MsgPack.Error.typeMismatch
     }
+    // Python's `int` is unbounded; the receive path converts these with `Int(_:)`.
+    let counts = [adv.dataSize, adv.partCount, adv.segmentIndex, adv.totalSegments]
+    guard counts.allSatisfy({ $0 <= UInt64(Int.max) }) else { throw MsgPack.Error.typeMismatch }
     return adv
   }
 }
