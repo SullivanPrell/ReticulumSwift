@@ -253,6 +253,13 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
   /// recorded because it's the only thing assertable—see ``RNSSocketOptions``.
   private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
 
+  /// The connection currently in use, for tests that check the dropped one is cancelled.
+  var currentConnectionForTesting: NWConnection? {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return connection
+  }
+
   private func openConnection() {
     let endpoint = NWEndpoint.hostPort(
       host: NWEndpoint.Host(host),
@@ -271,11 +278,14 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
       stateLock.unlock()
       return
     }
+    let superseded = connection
     connection = conn
     stateLock.unlock()
+    // A peer that sent FIN leaves the replaced connection in CLOSE_WAIT until it's cancelled.
+    superseded?.cancel()
 
     conn.stateUpdateHandler = { [weak self] state in
-      guard let self, !self.isStopped else { return }
+      guard let self, !self.isStopped, self.isCurrent(conn) else { return }
       switch state {
       case .ready:
         self.isOnline = true
@@ -293,6 +303,17 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
           "BackboneInterface \(self.name) connection failed: \(error)",
           level: .warning)
         self.isOnline = false
+        conn.cancel()
+        self.scheduleReconnect()
+
+      case .waiting(let error):
+        // A refused or unreachable peer. Network.framework retries it only when the network
+        // path changes, so cancel and redial on Python's clock (`BackboneInterface.py:1004-1031`).
+        Reticulum.log(
+          "BackboneInterface \(self.name) connection attempt failed: \(error)",
+          level: .debug)
+        self.isOnline = false
+        conn.cancel()
         self.scheduleReconnect()
 
       case .cancelled:
@@ -304,6 +325,16 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     }
 
     conn.start(queue: queue)
+  }
+
+  /// Whether `conn` is still the connection in use.
+  ///
+  /// A replaced connection's callbacks keep arriving, and acting on them would take the live
+  /// one offline.
+  private func isCurrent(_ conn: NWConnection) -> Bool {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return connection === conn
   }
 
   private func scheduleReconnect() {
@@ -362,18 +393,18 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
         }
       }
 
-      if let error = error {
-        Reticulum.log("BackboneInterface \(self.name) receive error: \(error)", level: .warning)
+      if error != nil || isComplete {
+        // A receive that completes on a replaced connection must not touch the live one.
+        guard let conn, self.isCurrent(conn) else { return }
+        if let error {
+          Reticulum.log("BackboneInterface \(self.name) receive error: \(error)", level: .warning)
+        } else {
+          Reticulum.log(
+            "BackboneInterface \(self.name) connection closed by remote, reconnecting…",
+            level: .warning)
+        }
         self.isOnline = false
-        self.scheduleReconnect()
-        return
-      }
-
-      if isComplete {
-        Reticulum.log(
-          "BackboneInterface \(self.name) connection closed by remote, reconnecting…",
-          level: .warning)
-        self.isOnline = false
+        conn.cancel()
         self.scheduleReconnect()
         return
       }

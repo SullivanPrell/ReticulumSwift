@@ -5,6 +5,23 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A `BackboneInterface` client whose peer refused a dial never redialled. Network.framework
+  reports a refused dial as `.waiting` and retries only when the network path changes, so a
+  client that started while its hub was down, or redialled while the hub restarted, stayed
+  offline until then. It now cancels and redials every `reconnectWait`, as Python's
+  `reconnect()` does (`BackboneInterface.py:1004-1031`). `maxReconnectTries` now caps these
+  attempts too.
+- A `BackboneInterface` client cancels the connection it drops. Before, each peer hang-up left
+  a socket in `CLOSE_WAIT` for the life of the process: the `bugs/013` leak, fixed in
+  `TCPClientInterface` but not here. Callbacks from a replaced connection no longer reach
+  the live one.
+- `NWSAMSocket.connect` fails at once when the SAM bridge refuses, as Python's
+  `asyncio.open_connection` does (`i2plib/aiosam.py:26`). It waited out its timeout instead,
+  which `I2PInterfacePeer` sets to 180 s, so an I2P peer that dialled before i2pd's SAM bridge
+  was listening sat idle for 3 minutes before its 15 s retry.
+
 ## [1.26.0]—hostile peer input, and HDLC recovery after a lost FLAG
 
 A peer can no longer stop the process with an integer past `Int.max`, or hold hundreds of

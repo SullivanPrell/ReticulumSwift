@@ -694,3 +694,19 @@ final class I2PInterfacePeerSpawnTests: XCTestCase {
     iface.stop()
   }
 }
+
+/// `NWSAMSocket` against a real loopback port.
+final class NWSAMSocketConnectTests: XCTestCase {
+
+  /// A bridge that isn't listening yet fails the dial at once.
+  ///
+  /// Python's `asyncio.open_connection` does (`i2plib/aiosam.py:26`). Network.framework
+  /// reports a refusal as `.waiting`, and `connect` used to wait out the whole timeout, which
+  /// `I2PInterfacePeer.handshake` sets to 180 s.
+  func testARefusedBridgeFailsAtOnce() throws {
+    let socket = NWSAMSocket(port: try freeLoopbackPort())
+    let began = Date()
+    XCTAssertThrowsError(try socket.connect(timeout: 5))
+    XCTAssertLessThan(Date().timeIntervalSince(began), 1, "a refused dial waited for the timeout")
+  }
+}
