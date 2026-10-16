@@ -203,7 +203,7 @@ final class TransportDiscoveryIntegrationTests: XCTestCase {
 
 // MARK: - Private helpers
 
-private final class AlwaysPassValidator: DiscoveryStampValidator {
+final class AlwaysPassValidator: DiscoveryStampValidator {
   var stampSize: Int { 32 }
   func stampWorkblock(material: Data, expandRounds: Int) -> Data { Data(repeating: 0, count: 32) }
   func stampValue(workblock: Data, stamp: Data) -> Int { 255 }

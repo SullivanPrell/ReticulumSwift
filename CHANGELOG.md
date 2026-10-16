@@ -21,6 +21,22 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `asyncio.open_connection` does (`i2plib/aiosam.py:26`). It waited out its timeout instead,
   which `I2PInterfacePeer` sets to 180 s, so an I2P peer that dialled before i2pd's SAM bridge
   was listening sat idle for 3 minutes before its 15 s retry.
+- `TCPClientInterface.start()` and `BackboneInterface.start()` return once the initial dial
+  has connected or failed, waiting up to `initialConnectTimeout` (5 s), as Python's
+  constructors do (`SYNCHRONOUS_START`, `TCPInterface.py:162-165`,
+  `BackboneInterface.py:909-912`). `send()` drops packets while the interface is offline, so an
+  announce, path request or link request sent on the line after `start()` was lost. An RRC
+  client that requested its hub's path at startup waited 40 s and failed with "Hub identity
+  unknown". A refused peer returns at once. Neither method throws. Don't call them from the
+  main thread: a peer that never answers holds the caller for the full timeout.
+- Discovery autoconnect runs off the inbound path, and `discoverInterfaces` dials the persisted
+  endpoints in the background. Python runs each announce handler on its own thread
+  (`Transport.py:2508-2512`) and starts `connect_discovered` on another (`Discovery.py:516`).
+  With the wait above, a discovered peer that never answered would otherwise have held up packet
+  processing, or `Reticulum.start()`, for 5 s per peer.
+- Two `TCPClientInterfaceReconnectTests` dropped the listener's connections before the listener
+  had accepted one. `testRedialsAfterAnEstablishedConnectionDrops` could then pass without a
+  drop happening. Both now wait for the accept.
 
 ## [1.26.0]—hostile peer input, and HDLC recovery after a lost FLAG
 

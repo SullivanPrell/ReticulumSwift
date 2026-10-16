@@ -99,8 +99,14 @@ extension Transport {
         // Python calls `autoconnect` on every discovery, right after persisting it
         // (`Discovery.py:598`): an endpoint heard for the first time is dialled without
         // waiting for a restart. Every gate is inside `autoconnect`.
-        discovery?.autoconnect(info)
-        callback?(info)
+        //
+        // Python runs the handler on a thread of its own (`Transport.py:2508-2512`). This one
+        // runs on the inbound path, and the dial can wait `initialConnectTimeout` for a peer
+        // that never answers.
+        DispatchQueue.global(qos: .utility).async {
+          discovery?.autoconnect(info)
+          callback?(info)
+        }
       }
     )
 
@@ -109,8 +115,9 @@ extension Transport {
     discoveryAnnounceHandler = handler
 
     // Dial what was already persisted, so a restart doesn't have to re-hear every peer
-    // (`Discovery.py:678-689`, called from `InterfaceDiscovery.__init__`).
-    discovery.connectDiscovered()
+    // (`Discovery.py:678-689`), on a thread of its own as `InterfaceDiscovery.__init__` starts
+    // it (`Discovery.py:516`): each dial can wait `initialConnectTimeout`.
+    DispatchQueue.global(qos: .utility).async { discovery.connectDiscovered() }
   }
 
   /// Stop listening for interface discovery announces and release all associated state.
