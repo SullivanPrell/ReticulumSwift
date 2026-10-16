@@ -5,6 +5,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A level passed as `Reticulum.Configuration.logLevel` now wins over the config file's
+  `loglevel`, which applies only when none is passed (`Reticulum.py:310-316`, `:465`). Before,
+  `start()` always applied the file's level, 4 when the file sets none, and never read
+  `logLevel`. `logLevel` is now optional and defaults to `nil`. `rnstatus`, `rnsd`, `rnir` and
+  `rnpkg` no longer set the level again after `start()`.
+
 ## [1.26.0]—hostile peer input, and HDLC recovery after a lost FLAG
 
 A peer can no longer stop the process with an integer past `Int.max`, or hold hundreds of
