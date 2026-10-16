@@ -5,6 +5,17 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.26.0]—hostile peer input, and HDLC recovery after a lost FLAG
+
+A peer can no longer stop the process with an integer past `Int.max`, or hold hundreds of
+megabytes with a few kilobytes of compressed resource data. A TCP, backbone, or local interface
+recovers from a lost FLAG byte without reconnecting. This is a minor release because
+`Resource.assemble` is deprecated.
+
+reticulum-interop's distributed run against #96 matched the 1.25.0 release. Force-route passed 3
+of 4 chains and the matrix 7 of 9 cases. The two failing matrix cells failed the same way on
+1.25.0, and the failing chain has no Swift node.
+
 ### Fixed
 
 - A resource advertisement with a data size, part count, segment index or segment total past
