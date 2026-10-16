@@ -386,11 +386,11 @@ extension MsgPack.Value {
 
   /// Integer value, accepting both signed and unsigned encodings.
   ///
-  /// Returns `nil` for non-integer values, or for unsigned values above `Int.max`.
+  /// Returns `nil` for non-integer values, or for values outside the range of `Int`.
   public var asInt: Int? {
     switch self {
-    case .int(let n): return Int(n)
-    case .uint(let n): return n <= UInt64(Int.max) ? Int(n) : nil
+    case .int(let n): return Int(exactly: n)
+    case .uint(let n): return Int(exactly: n)
     default: return nil
     }
   }

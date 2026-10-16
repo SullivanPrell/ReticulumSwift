@@ -5,6 +5,33 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A resource advertisement with a data size, part count, segment index or segment total past
+  `Int.max` is refused. Python's `int` has no upper bound (`Resource.py:1352-1376`), and the
+  receive path converted these with `Int(_:)`, so a peer could stop the process with one
+  advertisement on any link that accepts resources.
+- A received resource segment that decompresses past 64 MiB fails the transfer, as Python's
+  `max_decompressed_size` does (`Resource.py:368`, `:699-704`). The receive path decompressed
+  without a bound, up to 256 MiB, so a few kilobytes on the wire held hundreds of megabytes of
+  memory.
+- Every HDLC FLAG opens a frame, as in Python's `TCPInterface` read loop, which keeps the closing
+  FLAG as the next frame's opening one (`TCPInterface.py:394-412`). The decoder treated the FLAG
+  after a frame as outside one. After a lost FLAG byte, or a body discarded at `2 * hwMtu`, every
+  later frame decoded as empty and the interface dropped all traffic until it reconnected. TCP,
+  backbone, local, serial, pipe, Weave and BLE mesh interfaces use this decoder.
+- An interface discovery announce with a port, spreading factor, coding rate or channel past
+  `Int.max` no longer stops the process. The port drops the announce, and the radio fields read
+  as unset.
+- `MsgPack.Value.asInt` returns `nil` for an `int` value outside the range of `Int`. On a
+  platform with a 32-bit `Int`, it trapped.
+
+### Deprecated
+
+- `Resource.assemble(encryptedParts:randomHash:resourceHash:compressed:hasMetadata:maxDecompressedSize:link:)`.
+  Nothing in the package calls it, and it reads metadata from every segment, where Python reads
+  it from the first (`Resource.py:709`). Receive through `ResourceTransfer`.
+
 ## [1.25.0]—idle links that stay up, PipeInterface, and parity moves to 1.5.7
 
 An idle link to a Python or Go peer stays up: keepalives travel unencrypted, as Python sends

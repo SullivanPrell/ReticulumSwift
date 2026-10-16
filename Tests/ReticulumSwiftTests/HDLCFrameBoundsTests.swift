@@ -68,4 +68,33 @@ final class HDLCFrameBoundsTests: XCTestCase {
     let frames = decoder.feed(HDLC.frame(payload), hwMtu: hwMtu, ifacSize: ifacSize)
     XCTAssertEqual(frames, [payload], "decoder must resync after discarding a runaway frame")
   }
+
+  // MARK: - Every FLAG opens a frame (`TCPInterface.py:394-412`)
+
+  private let a = Data(repeating: 0x0A, count: 20)
+  private let b = Data(repeating: 0x0B, count: 20)
+  private let c = Data(repeating: 0x0C, count: 20)
+
+  /// Python keeps the closing FLAG as the next frame's opening one (`frame_buffer[frame_end:]`).
+  func testAClosingFlagAlsoOpensTheNextFrame() {
+    let decoder = HDLC.FrameDecoder()
+    let stream = Data([HDLC.flag]) + a + Data([HDLC.flag]) + b + Data([HDLC.flag])
+    XCTAssertEqual(decoder.feed(stream, hwMtu: hwMtu, ifacSize: ifacSize), [a, b])
+  }
+
+  /// A runaway body closed by a FLAG leaves the frames after it decodable.
+  func testFramesAfterAClosedRunawayBodyDecode() {
+    let decoder = HDLC.FrameDecoder()
+    let runaway =
+      Data([HDLC.flag]) + Data(repeating: 0x55, count: hwMtu * 2 + 10) + Data([HDLC.flag])
+    let stream = runaway + HDLC.frame(a) + HDLC.frame(b) + HDLC.frame(c)
+    XCTAssertEqual(decoder.feed(stream, hwMtu: hwMtu, ifacSize: ifacSize), [a, b, c])
+  }
+
+  /// A frame that lost its closing FLAG leaves the frames after it decodable.
+  func testFramesAfterALostFlagDecode() {
+    let decoder = HDLC.FrameDecoder()
+    let stream = Data([HDLC.flag]) + a + HDLC.frame(b) + HDLC.frame(c)
+    XCTAssertEqual(decoder.feed(stream, hwMtu: hwMtu, ifacSize: ifacSize), [a, b, c])
+  }
 }

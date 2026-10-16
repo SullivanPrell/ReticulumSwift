@@ -543,13 +543,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
       guard let ron = extractOptionalString(d[DiscoveryFieldKey.reachableOn.rawValue]),
         InterfaceDiscoveryHelpers.isIPAddress(ron) || InterfaceDiscoveryHelpers.isHostname(ron)
       else { return nil }
-      guard let portV = d[DiscoveryFieldKey.port.rawValue] else { return nil }
-      let portNum: Int
-      switch portV {
-      case .int(let n): portNum = Int(n)
-      case .uint(let n): portNum = Int(n)
-      default: return nil
-      }
+      guard let portNum = d[DiscoveryFieldKey.port.rawValue]?.asInt else { return nil }
       info.reachableOn = ron
       info.port = portNum
       info.configEntry = buildBackboneConfigEntry(
@@ -767,12 +761,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
   }
 
   private func extractOptionalInt(_ v: MsgPack.Value?) -> Int? {
-    guard let v else { return nil }
-    switch v {
-    case .int(let n): return Int(n)
-    case .uint(let n): return Int(n)
-    default: return nil
-    }
+    v?.asInt
   }
 }
 
@@ -1487,12 +1476,7 @@ public final class InterfaceDiscovery {
     }
   }
   private func intVal(_ v: MsgPack.Value?) -> Int? {
-    guard let v else { return nil }
-    switch v {
-    case .int(let n): return Int(n)
-    case .uint(let n): return Int(n)
-    default: return nil
-    }
+    v?.asInt
   }
   private func bytesVal(_ v: MsgPack.Value?) -> Data? {
     guard let v, case .bytes(let d) = v else { return nil }

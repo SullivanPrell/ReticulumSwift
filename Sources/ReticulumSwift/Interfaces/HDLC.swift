@@ -108,22 +108,20 @@ public enum HDLC {
       var frames: [Data] = []
       for byte in bytes {
         if byte == HDLC.flag {
-          if inFrame {
-            if !buffer.isEmpty {
-              let frame = HDLC.unescape(buffer)
-              if let hwMtu, frame.count > hwMtu + ifacSize {
-                // Oversized frame—drop it (Python check_frame_len
-                // upper bound). Small frames are still emitted and
-                // rejected downstream by Packet.unpack.
-              } else {
-                frames.append(frame)
-              }
+          // A closing FLAG also opens the next frame: Python keeps it in the buffer
+          // (`frame_buffer = frame_buffer[frame_end:]`, `TCPInterface.py:406`).
+          if inFrame, !buffer.isEmpty {
+            let frame = HDLC.unescape(buffer)
+            if let hwMtu, frame.count > hwMtu + ifacSize {
+              // Oversized frame—drop it (Python check_frame_len
+              // upper bound). Small frames are still emitted and
+              // rejected downstream by Packet.unpack.
+            } else {
+              frames.append(frame)
             }
-            buffer.removeAll(keepingCapacity: true)
-            inFrame = false
-          } else {
-            inFrame = true
           }
+          buffer.removeAll(keepingCapacity: true)
+          inFrame = true
         } else if inFrame {
           buffer.append(byte)
           // Bound a runaway/unterminated partial frame.

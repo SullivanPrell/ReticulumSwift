@@ -1367,11 +1367,17 @@ public final class ResourceTransfer {
     let body = Data(decrypted.dropFirst(Resource.randomHashSize))
     let assembledPlaintext: Data
     if adv.compressed {
-      guard let d = Resource.compressor.decompress(body) else {
+      // `max_decompressed_size` (`Resource.py:368`, `:699-704`).
+      switch Resource.compressor.decompress(body, maxLength: Resource.autoCompressMaxSize) {
+      case .success(let d):
+        assembledPlaintext = d
+      case .exceededMaxLength:
+        fail("assembly: decompressed size exceeds \(Resource.autoCompressMaxSize) bytes")
+        return
+      case .error:
         fail("assembly: decompression failed (body=\(body.count)B)")
         return
       }
-      assembledPlaintext = d
     } else {
       assembledPlaintext = body
     }
