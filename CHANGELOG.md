@@ -5,6 +5,19 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
+
+`TCPClientInterface.start()` and `BackboneInterface.start()` wait up to 5 s for the first dial,
+as Python's constructors do, so a packet sent right after `start()` reaches the wire. A Backbone
+client redials a refused peer on Python's clock. A level passed in `Reticulum.Configuration` wins
+over the config file. This is a minor release because `Configuration.logLevel` is now optional.
+
+Startup now waits for each configured client in turn, so three peers that never answer add 15 s.
+Call `start()` off the main thread.
+
+reticulum-interop's `RRC py→swift` cell, in Docker, passed 5 of 5 with these changes. On 1.26.0
+it passed 1 of 5, then 0 of 3.
+
 ### Fixed
 
 - A `BackboneInterface` client whose peer refused a dial never redialled. Network.framework
