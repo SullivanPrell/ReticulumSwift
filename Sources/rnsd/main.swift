@@ -135,11 +135,6 @@ do {
   exit(RNSDApp.ExitCode.panic.rawValue)
 }
 
-// `Reticulum.applyConfig` overwrites globalLogLevel from the config file during `start()`,
-// which would silently undo -v/-q. Python treats the verbosity as a delta *on* that value
-// (Reticulum.py:452-458), so re-assert the level the arithmetic produced.
-Reticulum.globalLogLevel = bootstrapped.logLevel
-
 if connection.role != .localClient {
   // Python: LOG_VERBOSE fences around interface synthesis (Reticulum.py:937, 950).
   Reticulum.log("Bringing up system interfaces...", level: .verbose)

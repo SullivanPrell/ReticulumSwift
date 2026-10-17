@@ -81,7 +81,6 @@ do {
     configDirectory: paths.configDir,
     logLevel: bootstrapped.logLevel,
     synthesizeInterfaces: false)
-  Reticulum.globalLogLevel = bootstrapped.logLevel
   connection.stop()
 } catch {
   Reticulum.log(

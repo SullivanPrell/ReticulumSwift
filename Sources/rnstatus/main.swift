@@ -149,11 +149,6 @@ do {
   fail("No shared RNS instance available to get status from", .noSharedInstance)
 }
 
-// Again after start(), because `Reticulum.applyConfig` overwrites globalLogLevel from the
-// config file's `loglevel`, which Python applies only when no level was requested
-// (Reticulum.py:465).
-Reticulum.globalLogLevel = logLevel
-
 // MARK: - Interface management (--attach / --detach / --reload)
 
 // Python: rnstatus.py:179-207. Monitor mode never passes these to program_setup
