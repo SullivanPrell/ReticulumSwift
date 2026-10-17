@@ -26,6 +26,28 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `start()` always applied the file's level, 4 when the file sets none, and never read
   `logLevel`. `logLevel` is now optional and defaults to `nil`. `rnstatus`, `rnsd`, `rnir` and
   `rnpkg` no longer set the level again after `start()`.
+- `TCPClientInterface.start()` and `BackboneInterface.start()` return once the initial dial
+  has connected or failed, waiting up to `initialConnectTimeout` (5 s), as Python's
+  constructors do (`SYNCHRONOUS_START`, `TCPInterface.py:162-165`,
+  `BackboneInterface.py:909-912`). `send()` drops packets while the interface is offline, so an
+  announce, path request or link request sent on the line after `start()` was lost. An RRC
+  client that requested its hub's path at startup waited 40 s and failed with "Hub identity
+  unknown". A refused peer returns at once. Neither method throws. Don't call them from the
+  main thread: a peer that never answers holds the caller for the full timeout. With three
+  such peers in the config, `synthesizeInterfaces` takes 15 s, one peer after another, as
+  Python's constructors do.
+- Every `TCPClientInterface` and `BackboneInterface` dial gives up after 5 s, as Python's socket
+  timeout does on every connect (`TCPInterface.py:241`, `BackboneInterface.py:976`). A peer that
+  never answered held each dial until macOS's own TCP timeout, so the reconnect loop never ran
+  on Python's clock.
+- Discovery autoconnect runs off the inbound path, and `discoverInterfaces` dials the persisted
+  endpoints in the background. Python runs each announce handler on its own thread
+  (`Transport.py:2508-2512`) and starts `connect_discovered` on another (`Discovery.py:516`).
+  With the wait above, a discovered peer that never answered would otherwise have held up packet
+  processing, or `Reticulum.start()`, for 5 s per peer.
+- Two `TCPClientInterfaceReconnectTests` dropped the listener's connections before the listener
+  had accepted one. `testRedialsAfterAnEstablishedConnectionDrops` could then pass without a
+  drop happening. Both now wait for the accept.
 
 ## [1.26.0]—hostile peer input, and HDLC recovery after a lost FLAG
 

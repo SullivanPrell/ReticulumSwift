@@ -61,6 +61,11 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
   /// IFAC authentication field size in bytes.
   public var ifacSize: Int = Constants.defaultIfacSize
 
+  /// Seconds `start()` waits for the initial connect.
+  ///
+  /// Python: `TCPClientInterface.INITIAL_CONNECT_TIMEOUT = 5`.
+  public static let initialConnectTimeout: TimeInterval = 5
+
   /// Seconds between reconnection attempts.
   ///
   /// Python: `TCPClientInterface.RECONNECT_WAIT = 5`.
@@ -141,19 +146,24 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     self.queue = DispatchQueue(label: "ReticulumSwift.TCPClientInterface.\(name)")
   }
 
-  /// Python's `__init__` runs `initial_connect()` inline (`SYNCHRONOUS_START = True`) and,
-  /// if that fails, starts the `reconnect()` thread rather than raising—a configured
-  /// interface whose peer is down comes up unconnected and keeps trying.
+  /// Python's `__init__` runs `initial_connect()` inline (`SYNCHRONOUS_START = True`,
+  /// `TCPInterface.py:162-165`) and, if that fails, starts the `reconnect()` thread rather
+  /// than raising—a configured interface whose peer is down comes up unconnected and keeps
+  /// trying.
   ///
-  /// This returns as
-  /// soon as the dial is in flight, which reaches the same state without stalling
-  /// interface synthesis for `INITIAL_CONNECT_TIMEOUT` per unreachable peer.
+  /// This waits the same way, up to ``initialConnectTimeout``, for the initial dial to
+  /// connect or fail. `send()` drops packets while offline, so an announce or path request
+  /// on the line after `start()` would otherwise never reach the wire. It never throws.
+  /// Don't call it from the main thread: a peer that never answers holds it for the full
+  /// timeout, as in Python.
   public func start() throws {
     stateLock.lock()
     stopped = false
     reconnectCount = 0
     stateLock.unlock()
-    connect()
+    let outcome = DispatchSemaphore(value: 0)
+    connect(signalling: outcome)
+    _ = outcome.wait(timeout: .now() + Self.initialConnectTimeout)
   }
 
   /// Takes the interface offline and releases its resources.
@@ -198,7 +208,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
 
   // MARK: - Connect / reconnect
 
-  private func connect() {
+  private func connect(signalling outcome: DispatchSemaphore? = nil) {
     let endpoint = NWEndpoint.hostPort(
       host: NWEndpoint.Host(host),
       port: .orAny(port)
@@ -210,7 +220,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
       stateLock.unlock()
       return
     }
-    let socketOptions = RNSSocketOptions.tcpParameters()
+    let socketOptions = RNSSocketOptions.tcpParameters(connectTimeout: Self.initialConnectTimeout)
     handedOverTCPOptionsForTesting = socketOptions.options
     let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
     // Cancel whatever is being replaced. A reconnect fires from a timer, not from
@@ -255,6 +265,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
           Reticulum.log("Interface \(self.name) is up", level: .verbose)
         }
         self.beginReceiveLoop()
+        outcome?.signal()
 
       case .waiting(let err):
         // A refused or unreachable peer surfaces as .waiting, not .failed, and
@@ -266,11 +277,13 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
           level: .debug)
         self.isOnline = false
         self.dropAndScheduleReconnect(conn)
+        outcome?.signal()
 
       case .failed(let err):
         Reticulum.log("Connection for \(self.displayName) failed: \(err)", level: .debug)
         self.isOnline = false
         self.dropAndScheduleReconnect(conn)
+        outcome?.signal()
 
       case .cancelled:
         self.isOnline = false

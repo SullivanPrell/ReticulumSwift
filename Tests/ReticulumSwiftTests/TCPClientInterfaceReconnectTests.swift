@@ -166,6 +166,9 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     let iface = makeClient(port: listener.port)
     try iface.start()
     waitUntil("the interface to come up", timeout: 5) { iface.isOnline }
+    // The client is ready once the handshake completes, which can be before the listener's
+    // accept handler runs. Dropping before then drops nothing.
+    waitUntil("the listener to accept") { listener.acceptCount >= 1 }
 
     let acceptsBeforeDrop = listener.acceptCount
     listener.dropAll()
@@ -180,6 +183,9 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     let iface = makeClient(port: listener.port)
     try iface.start()
     waitUntil("the interface to come up", timeout: 5) { iface.isOnline }
+    // The client is ready once the handshake completes, which can be before the listener's
+    // accept handler runs. Dropping before then drops nothing.
+    waitUntil("the listener to accept") { listener.acceptCount >= 1 }
 
     let firstConnection = try XCTUnwrap(iface.currentConnectionForTesting)
     let acceptsBeforeDrop = listener.acceptCount

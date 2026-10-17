@@ -66,6 +66,9 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     // pass. Left running it outlives the test and interleaves its output with the next
     // suite's.
     discovery.stopMonitoring()
+    transport.stopDiscoverInterfaces()
+    // A dialled peer keeps redialling until stopped.
+    for iface in transport.interfaces { iface.stop() }
     Reticulum.storedMaxAutoconnectedInterfaces = 0
     Reticulum.storedAutoconnectInterfaceMode = nil
     Reticulum.storedAutoconnectInterfaceGravity = nil
@@ -409,5 +412,46 @@ final class DiscoveryAutoconnectTests: XCTestCase {
 
     XCTAssertEqual(transport.interfaces.count, 1)
     XCTAssertTrue(discovery.initialAutoconnectRan)
+  }
+
+  // MARK: - Off the caller's thread
+
+  /// Only 127.0.0.1 is on macOS's loopback interface, so a dial to 127.0.0.2 gets no answer
+  /// and `start()` waits out `initialConnectTimeout`.
+  private let silentHost = "127.0.0.2"
+
+  private func waitForTheDial() {
+    let dialled = expectation(
+      for: NSPredicate { [unowned self] _, _ in
+        self.dialledEndpoints().first?.host == self.silentHost
+      }, evaluatedWith: nil)
+    wait(for: [dialled], timeout: 5)
+  }
+
+  /// An announce for an endpoint that never answers doesn't hold up the inbound path.
+  ///
+  /// Python runs each announce handler on a thread of its own (`Transport.py:2508-2512`). Swift
+  /// calls handlers inline, so the dial moves to a background queue.
+  func testAnEndpointThatNeverAnswersDoesNotHoldUpTheAnnounce() throws {
+    transport.discoverInterfaces(storagePath: storage.path, stampValidator: AlwaysPassValidator())
+    let announced = try XCTUnwrap(transport.discoveryAnnounceHandler?.callback)
+
+    let began = Date()
+    announced(discovered(reachableOn: silentHost))
+    XCTAssertLessThan(Date().timeIntervalSince(began), 1, "the announce waited for the dial")
+    waitForTheDial()
+  }
+
+  /// Python dials the persisted endpoints on a thread of its own (`Discovery.py:516`), and
+  /// `Reticulum.start()` calls `discoverInterfaces`.
+  func testDiallingThePersistedEndpointsDoesNotHoldUpStartup() {
+    var info = discovered(reachableOn: silentHost)
+    info.configEntry = nil
+    discovery.interfaceDiscovered(info)
+
+    let began = Date()
+    transport.discoverInterfaces(storagePath: storage.path, stampValidator: AlwaysPassValidator())
+    XCTAssertLessThan(Date().timeIntervalSince(began), 1, "startup waited for the dial")
+    waitForTheDial()
   }
 }

@@ -119,9 +119,13 @@ enum RNSSocketOptions {
   ///
   /// Both are returned because the options object is the only one whose values can be read
   /// back—see the type comment. A caller keeps `options` so a test can assert on the exact
-  /// instance the framework was handed.
-  static func tcpParameters() -> (parameters: NWParameters, options: NWProtocolTCP.Options) {
+  /// instance the framework was handed. A client passes `connectTimeout`, the socket timeout
+  /// Python sets on every dial (`TCPInterface.py:241`, `BackboneInterface.py:976`).
+  static func tcpParameters(connectTimeout: TimeInterval? = nil)
+    -> (parameters: NWParameters, options: NWProtocolTCP.Options)
+  {
     let options = tcpOptions()
+    if let connectTimeout { options.connectionTimeout = Int(connectTimeout) }
     return (NWParameters(tls: nil, tcp: options), options)
   }
 

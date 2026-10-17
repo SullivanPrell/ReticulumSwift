@@ -44,6 +44,11 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
   /// Python: `BackboneClientInterface.BITRATE_GUESS = 100_000_000`.
   public static let bitrateGuess: Int = 100_000_000
 
+  /// Seconds `start()` waits for the initial connect.
+  ///
+  /// Python: `BackboneClientInterface.INITIAL_CONNECT_TIMEOUT = 5`.
+  public static let initialConnectTimeout: TimeInterval = 5
+
   /// Time in seconds to wait between reconnect attempts.
   ///
   /// Python: `BackboneClientInterface.RECONNECT_WAIT = 5`.
@@ -199,13 +204,22 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
 
   // MARK: - Interface lifecycle
 
-  /// Brings the interface online.
+  /// Brings the interface online, waiting up to ``initialConnectTimeout`` for the initial
+  /// dial to connect or fail.
+  ///
+  /// Python's `__init__` runs `initial_connect()` inline (`SYNCHRONOUS_START = True`,
+  /// `BackboneInterface.py:909-912`), and `send()` drops packets while offline, so an
+  /// announce on the line after `start()` must find the connection up. It never throws.
+  /// Don't call it from the main thread: a peer that never answers holds it for the full
+  /// timeout, as in Python.
   public func start() throws {
     stateLock.lock()
     unsafeIsStopped = false
     reconnectAttempts = 0
     stateLock.unlock()
-    openConnection()
+    let outcome = DispatchSemaphore(value: 0)
+    openConnection(signalling: outcome)
+    _ = outcome.wait(timeout: .now() + Self.initialConnectTimeout)
   }
 
   /// Takes the interface offline and releases its resources.
@@ -260,7 +274,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     return connection
   }
 
-  private func openConnection() {
+  private func openConnection(signalling outcome: DispatchSemaphore? = nil) {
     let endpoint = NWEndpoint.hostPort(
       host: NWEndpoint.Host(host),
       port: .orAny(port)
@@ -269,7 +283,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     // (BackboneInterface.py:626-627, :655-660)—the same options the TCP client uses,
     // for the same reason: without keepalive a peer that vanished without sending FIN
     // leaves this connection `.ready` forever and the reconnect below never fires.
-    let socketOptions = RNSSocketOptions.tcpParameters()
+    let socketOptions = RNSSocketOptions.tcpParameters(connectTimeout: Self.initialConnectTimeout)
     handedOverTCPOptionsForTesting = socketOptions.options
     let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
     // Re-check stopped and publish the connection atomically (see LocalInterface).
@@ -294,6 +308,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
         self.reconnectAttempts = 0
         self.stateLock.unlock()
         self.beginReceiveLoop()
+        outcome?.signal()
         Reticulum.log(
           "BackboneInterface \(self.name) connected to \(self.host):\(self.port)",
           level: .debug)
@@ -305,6 +320,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
         self.isOnline = false
         conn.cancel()
         self.scheduleReconnect()
+        outcome?.signal()
 
       case .waiting(let error):
         // A refused or unreachable peer. Network.framework retries it only when the network
@@ -315,6 +331,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
         self.isOnline = false
         conn.cancel()
         self.scheduleReconnect()
+        outcome?.signal()
 
       case .cancelled:
         self.isOnline = false
