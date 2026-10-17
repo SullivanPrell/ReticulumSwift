@@ -21,6 +21,11 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `asyncio.open_connection` does (`i2plib/aiosam.py:26`). It waited out its timeout instead,
   which `I2PInterfacePeer` sets to 180 s, so an I2P peer that dialled before i2pd's SAM bridge
   was listening sat idle for 3 minutes before its 15 s retry.
+- A level passed as `Reticulum.Configuration.logLevel` now wins over the config file's
+  `loglevel`, which applies only when none is passed (`Reticulum.py:310-316`, `:465`). Before,
+  `start()` always applied the file's level, 4 when the file sets none, and never read
+  `logLevel`. `logLevel` is now optional and defaults to `nil`. `rnstatus`, `rnsd`, `rnir` and
+  `rnpkg` no longer set the level again after `start()`.
 
 ## [1.26.0]—hostile peer input, and HDLC recovery after a lost FLAG
 

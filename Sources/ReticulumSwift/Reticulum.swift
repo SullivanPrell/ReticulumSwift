@@ -208,7 +208,10 @@ public final class Reticulum {
     /// Whether this instance serves or joins a shared instance.
     public var shareInstance: Bool
     /// Minimum severity a message must have to be logged.
-    public var logLevel: LogLevel
+    ///
+    /// Overrides the config file's `loglevel`. When nil, the config file sets it
+    /// (`Reticulum.py:310-316`, `:465`).
+    public var logLevel: LogLevel?
     /// Optional stamp validator for interface discovery.
     ///
     /// When `discover_interfaces = Yes` is set in the config file and this
@@ -227,7 +230,7 @@ public final class Reticulum {
     /// Creates a configuration, leaving both discovery stamp hooks unset.
     public init(
       storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true,
-      logLevel: LogLevel = .notice
+      logLevel: LogLevel? = nil
     ) {
       self.storagePath = storagePath
       self.configPath = configPath
@@ -963,6 +966,9 @@ public final class Reticulum {
 
   /// Brings the stack up: storage, config, identity, interfaces and the shared instance.
   public func start() throws {
+    // Python sets a requested level before it reads the config (`Reticulum.py:316`).
+    if let requested = configuration.logLevel { Reticulum.globalLogLevel = requested }
+
     // Create storage directories.
     try FileManager.default.createDirectory(
       at: configuration.storagePath,
@@ -2364,7 +2370,8 @@ public final class Reticulum {
     // LOG_EXTREME is reachable from a config file at all); clamp to match,
     // instead of silently leaving the level at its default.
     let clamped = min(max(cfg.logging.logLevel, 0), LogLevel.extreme.rawValue)
-    if let level = LogLevel(rawValue: clamped) {
+    // Only when the caller requested no level (`Reticulum.py:465`).
+    if configuration.logLevel == nil, let level = LogLevel(rawValue: clamped) {
       Reticulum.globalLogLevel = level
     }
     Reticulum.logTimestamps = cfg.logging.logTimestamps
