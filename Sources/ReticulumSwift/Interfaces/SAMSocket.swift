@@ -127,6 +127,13 @@ public final class NWSAMSocket: SAMSocket {
         self.receiveLoop(connection)
       case .failed, .cancelled:
         self.markClosed()
+      case .waiting:
+        // A refused bridge. Network.framework retries it only when the network path changes,
+        // so the dial fails here, as Python's `open_connection` does (`i2plib/aiosam.py:26`).
+        self.cond.lock()
+        if !self.ready { self.failed = true }
+        self.cond.broadcast()
+        self.cond.unlock()
       default:
         break
       }
