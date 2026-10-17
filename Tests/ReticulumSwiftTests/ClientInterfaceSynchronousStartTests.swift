@@ -55,7 +55,9 @@ final class ClientInterfaceSynchronousStartTests: XCTestCase {
       data: Data("startup".utf8))
   }
 
-  /// Once `start()` returns, the first `send()` reaches the peer. No sleep, no polling.
+  /// Once `start()` returns, the first `send()` reaches the peer.
+  ///
+  /// No sleep, no polling.
   private func assertFirstSendArrives(_ make: (UInt16) -> any Interface) throws {
     let server = try startServer()
     let received = expectation(description: "server received the frame")
@@ -108,5 +110,50 @@ final class ClientInterfaceSynchronousStartTests: XCTestCase {
   func testInitialConnectTimeoutMatchesPython() {
     XCTAssertEqual(TCPClientInterface.initialConnectTimeout, 5)
     XCTAssertEqual(BackboneInterface.initialConnectTimeout, 5)
+  }
+
+  /// Python gives every dial, not only the first, a 5 s socket timeout (`TCPInterface.py:241`,
+  /// `BackboneInterface.py:976`).
+  func testEveryDialTimesOutAtTheInitialConnectTimeout() throws {
+    let port = try freeLoopbackPort()
+    let tcp = TCPClientInterface(name: "client", host: "127.0.0.1", port: port)
+    let backbone = BackboneInterface(name: "client", host: "127.0.0.1", port: port)
+    clients += [tcp, backbone]
+    try tcp.start()
+    try backbone.start()
+    XCTAssertEqual(tcp.handedOverTCPOptionsForTesting?.connectionTimeout, 5)
+    XCTAssertEqual(backbone.handedOverTCPOptionsForTesting?.connectionTimeout, 5)
+  }
+
+  /// A refused start leaves the reconnect loop running (`TCPInterface.py:170-173`).
+  func testTCPClientRedialsAfterARefusedStart() throws {
+    let client = TCPClientInterface(name: "client", host: "127.0.0.1", port: try freeLoopbackPort())
+    client.reconnectWait = 0.3
+    clients.append(client)
+    try client.start()
+    waitUntil("a redial", timeout: 5) { client.dialCountForTesting >= 2 }
+  }
+
+  /// A peer that never answers holds `start()` for the full timeout.
+  ///
+  /// The dial then gives up, as Python's socket timeout does, and the reconnect loop takes over.
+  func testTCPClientRedialsAPeerThatNeverAnswers() throws {
+    // Only 127.0.0.1 is on macOS's loopback, so a SYN to 127.0.0.2 gets no answer.
+    let client = TCPClientInterface(name: "client", host: "127.0.0.2", port: 4242)
+    client.reconnectWait = 0.3
+    clients.append(client)
+    let began = Date()
+    XCTAssertNoThrow(try client.start())
+    XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(began), 4.5)
+    XCTAssertFalse(client.isOnline)
+    waitUntil("a redial", timeout: 5) { client.dialCountForTesting >= 2 }
+  }
+
+  private func waitUntil(
+    _ what: String, timeout: TimeInterval, _ condition: @escaping () -> Bool
+  ) {
+    let met = expectation(for: NSPredicate { _, _ in condition() }, evaluatedWith: nil)
+    met.expectationDescription = what
+    wait(for: [met], timeout: timeout)
   }
 }

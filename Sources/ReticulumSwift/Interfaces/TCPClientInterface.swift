@@ -220,7 +220,7 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
       stateLock.unlock()
       return
     }
-    let socketOptions = RNSSocketOptions.tcpParameters()
+    let socketOptions = RNSSocketOptions.tcpParameters(connectTimeout: Self.initialConnectTimeout)
     handedOverTCPOptionsForTesting = socketOptions.options
     let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
     // Cancel whatever is being replaced. A reconnect fires from a timer, not from

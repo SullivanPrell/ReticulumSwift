@@ -428,8 +428,10 @@ final class DiscoveryAutoconnectTests: XCTestCase {
     wait(for: [dialled], timeout: 5)
   }
 
-  /// Python runs each announce handler on a thread of its own (`Transport.py:2508-2512`), so
-  /// the dial never holds up the inbound path. Swift calls handlers inline.
+  /// An announce for an endpoint that never answers doesn't hold up the inbound path.
+  ///
+  /// Python runs each announce handler on a thread of its own (`Transport.py:2508-2512`). Swift
+  /// calls handlers inline, so the dial moves to a background queue.
   func testAnEndpointThatNeverAnswersDoesNotHoldUpTheAnnounce() throws {
     transport.discoverInterfaces(storagePath: storage.path, stampValidator: AlwaysPassValidator())
     let announced = try XCTUnwrap(transport.discoveryAnnounceHandler?.callback)

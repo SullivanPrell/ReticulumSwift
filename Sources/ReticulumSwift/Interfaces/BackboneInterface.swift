@@ -283,7 +283,7 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     // (BackboneInterface.py:626-627, :655-660)—the same options the TCP client uses,
     // for the same reason: without keepalive a peer that vanished without sending FIN
     // leaves this connection `.ready` forever and the reconnect below never fires.
-    let socketOptions = RNSSocketOptions.tcpParameters()
+    let socketOptions = RNSSocketOptions.tcpParameters(connectTimeout: Self.initialConnectTimeout)
     handedOverTCPOptionsForTesting = socketOptions.options
     let conn = NWConnection(to: endpoint, using: socketOptions.parameters)
     // Re-check stopped and publish the connection atomically (see LocalInterface).

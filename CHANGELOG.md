@@ -28,7 +28,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   announce, path request or link request sent on the line after `start()` was lost. An RRC
   client that requested its hub's path at startup waited 40 s and failed with "Hub identity
   unknown". A refused peer returns at once. Neither method throws. Don't call them from the
-  main thread: a peer that never answers holds the caller for the full timeout.
+  main thread: a peer that never answers holds the caller for the full timeout. With three
+  such peers in the config, `synthesizeInterfaces` takes 15 s, one peer after another, as
+  Python's constructors do.
+- Every `TCPClientInterface` and `BackboneInterface` dial gives up after 5 s, as Python's socket
+  timeout does on every connect (`TCPInterface.py:241`, `BackboneInterface.py:976`). A peer that
+  never answered held each dial until macOS's own TCP timeout, so the reconnect loop never ran
+  on Python's clock.
 - Discovery autoconnect runs off the inbound path, and `discoverInterfaces` dials the persisted
   endpoints in the background. Python runs each announce handler on its own thread
   (`Transport.py:2508-2512`) and starts `connect_discovered` on another (`Discovery.py:516`).
