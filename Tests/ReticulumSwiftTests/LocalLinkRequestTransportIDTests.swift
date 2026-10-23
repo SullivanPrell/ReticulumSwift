@@ -113,6 +113,7 @@ final class LocalLinkRequestTransportIDTests: XCTestCase {
       try receiveLinkRequest(transportID: nil, destinationType: type)
     }
 
-    XCTAssertEqual(linkProofs.count, 0, "destination.type == packet.destination_type (Transport.py:2543)")
+    XCTAssertEqual(
+      linkProofs.count, 0, "destination.type == packet.destination_type (Transport.py:2543)")
   }
 }
