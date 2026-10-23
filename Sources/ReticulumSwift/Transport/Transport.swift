@@ -80,6 +80,8 @@ public final class Transport {
   /// Mirrors Python's periodic clean-jobs scheduler in `Reticulum.__clean_caches`
   /// (RNS commit b408699e). Defaults to 1 hour to amortise the table walk.
   public static let knownDestinationsCleanInterval: TimeInterval = 60 * 60
+  /// Python's `mgmt_announce_interval` (`Transport.py:266`).
+  public static let managementAnnounceInterval: TimeInterval = 2 * 60 * 60
   /// Maximum receipts tracked simultaneously.
   public static let maxReceipts: Int = 1024
   /// Maximum number of hops Reticulum transports a packet.
@@ -280,8 +282,8 @@ public final class Transport {
     ///
     /// Deliberately distinct from the preceding name-only initializer, which records a name that
     /// couldn't be resolved. This one records that there is nothing to resolve *yet*: the
-    /// reference restores a tunnel path with `receiving_interface = None`
-    /// (`Transport.py:396-400`) and `handle_tunnel` restores the tunnel's paths onto the
+    /// reference restores a tunnel path even when `find_interface_from_hash` finds no interface
+    /// (`Transport.py:483`, `:498`) and `handle_tunnel` restores the tunnel's paths onto the
     /// interface the endpoint comes back on (`:2839-2867`). Dropping such paths
     /// instead would make the tunnel table useless in exactly the case it exists for.
     ///
@@ -584,10 +586,10 @@ public final class Transport {
   /// traffic sampler can be driven at fixed timestamps without running a jobs loop.
   public internal(set) var startTime: TimeInterval = 0
 
-  /// Identity used to answer incoming link requests on registered
-  /// destinations.
+  /// An identity the host can attach to its transport.
   ///
-  /// The host sets this when it knows its local identity.
+  /// Transport reads nothing from it: Python's blackhole source and tunnel signer are
+  /// `Transport.identity` (`Transport.py:2767`, `:3995`), ported as `transportIdentity`.
   public var ownerIdentity: Identity?
 
   /// Optional network identity, used for remote management and interface discovery.
@@ -689,13 +691,14 @@ public final class Transport {
     [:]
   private let reverseTableLock = NSLock()
 
-  /// Bounded FIFO of dedup keys for path requests already processed.
-  ///
-  /// Each key is a destination hash followed by the request tag.
-  private var pathRequestTags: [Data] = []
-  private var pathRequestTagSet: Set<Data> = []
-  /// Maximum number of path-request dedup keys retained.
-  public var pathRequestCacheCap: Int = 4096
+  /// Dedup keys (destination hash + tag) of path requests already processed, in two
+  /// generations: Python's `discovery_pr_tags` and `discovery_pr_tags_prev`
+  /// (`Transport.py:193-194`). ``rotatePathRequestTags()`` ages them.
+  private var pathRequestTags: Set<Data> = []
+  private var pathRequestTagsPrev: Set<Data> = []
+  /// Size past which the jobs loop starts a new generation: Python's `max_pr_tags`
+  /// (`Transport.py:195`).
+  public var pathRequestCacheCap: Int = 16000
 
   /// A destination this node searches for on a peer's behalf, and the peers waiting on that
   /// search.
@@ -1065,6 +1068,8 @@ public final class Transport {
   public private(set) var probeDestination: Destination?
   /// Remote management destination, present only while remote management is enabled.
   public private(set) var remoteManagementDestination: Destination?
+  /// Python's `Transport.blackhole_destination`, present only while `publish_blackhole` is on.
+  public private(set) var blackholeDestination: Destination?
   /// Identities permitted to reach the remote management destination.
   public var remoteManagementAllowed: [Identity] = []
 
@@ -1124,6 +1129,10 @@ public final class Transport {
   ///
   /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
   private var lastKnownDestinationsClean: Date = .distantPast
+  /// Python's `last_mgmt_announce` (`Transport.py:265`).
+  var lastManagementAnnounce: TimeInterval = 0
+  /// Python's `mgmt_destinations`, in its order (`Transport.py:371`, `:383-384`, `:515`).
+  private var managementDestinations: [Destination] = []
   /// When the jobs loop last culled the packet cache.
   ///
   /// Python's `last_cache_clean` starts at 0.
@@ -1191,6 +1200,14 @@ public final class Transport {
     lock.lock()
     defer { lock.unlock() }
     return paths[destinationHash].map { UInt8(clamping: pythonHops(of: $0)) }
+  }
+
+  /// Python's `Transport.hops_to` in full: the hop count, or ``pathfinderM`` when no path is
+  /// known (`Transport.py:3141-3143`).
+  ///
+  /// Every timeout that scales by hops reads this.
+  public func hopsToOrUnknown(_ destinationHash: Data) -> Int {
+    hopsTo(destinationHash).map(Int.init) ?? Transport.pathfinderM
   }
 
   /// The next-hop destination hash (transport ID) for a known path, or nil.
@@ -1514,6 +1531,16 @@ public final class Transport {
       guard let iface = entry.value.interface else { return false }
       return registered.contains { $0 === iface }
     }
+  }
+
+  /// Starts a new generation of path-request tags once the current one passes the cap
+  /// (`Transport.py:849-853`).
+  func rotatePathRequestTags() {
+    lock.lock()
+    defer { lock.unlock() }
+    guard pathRequestTags.count > pathRequestCacheCap else { return }
+    pathRequestTagsPrev = pathRequestTags
+    pathRequestTags = []
   }
 
   /// Discards every queued announce without sending it.
@@ -3081,8 +3108,8 @@ public final class Transport {
   /// interface they name wasn't registered at the time.
   ///
   /// Only the path table needs this. A tunnel path doesn't depend on an interface being
-  /// present—the reference restores it with `receiving_interface = None`
-  /// (`Transport.py:398-400`)—so `TunnelStore` resolves every entry on the spot.
+  /// present—the reference restores it even when no interface matches its hash
+  /// (`Transport.py:483`)—so `TunnelStore` resolves every entry on the spot.
   ///
   /// **This exists because of an ordering difference from the reference, not as an
   /// optimisation.** Python builds every configured interface in `__apply_config()` and only
@@ -3259,7 +3286,7 @@ public final class Transport {
   }
 
   /// Bulk-load a tunnel entry—used by `TunnelStore.apply` to rehydrate `storage/tunnels` at
-  /// start (`Transport.py:403`).
+  /// start (`Transport.py:498`).
   public func restore(tunnel: TunnelEntry) {
     lock.lock()
     defer { lock.unlock() }
@@ -3692,6 +3719,8 @@ public final class Transport {
     // up, so `isOnline` is meaningful when the lowest bitrate is taken.
     prioritizeInterfaces()
     setupManagementDestinations()
+    // The first management round goes 15 s in (`Transport.py:397`).
+    lastManagementAnnounce = startTime - Transport.managementAnnounceInterval + 15
     isRunning = true
     startJobsLoop()
   }
@@ -3700,10 +3729,13 @@ public final class Transport {
   ///
   /// Mirrors Python's Transport.start() destination setup block.
   private func setupManagementDestinations() {
-    guard let identity = transportIdentity else { return }
+    // A shared-instance client leaves all of these to its instance (`Transport.py:367`,
+    // `:375`, `:382`).
+    guard !isConnectedToSharedInstance, let identity = transportIdentity else { return }
 
-    // Probe destination: responds to PROVE_ALL, no links.
-    if Reticulum.probeDestinationEnabled() {
+    // Probe destination: responds to PROVE_ALL, no links. Python builds it only with
+    // transport on (`Transport.py:404`, `:511`).
+    if transportEnabled, Reticulum.probeDestinationEnabled() {
       if let probe = try? Destination(
         identity: identity, direction: .in, kind: .single,
         appName: "rnstransport", aspects: ["probe"])
@@ -3805,15 +3837,39 @@ public final class Transport {
       }
     }
 
+    // Blackhole list publisher for anyone (`Transport.py:375-380`). Native, so rnpath gets
+    // the dict it checks for (`rnpath.py:161`).
+    if Reticulum.publishBlackholeEnabled(),
+      let blackhole = try? Destination(
+        identity: identity, direction: .in, kind: .single,
+        appName: "rnstransport", aspects: ["info", "blackhole"])
+    {
+      blackhole.registerNativeRequestHandler(path: "/list", allow: .all) {
+        [weak self] _, _, _, _, _ in self?.blackholeListValue()
+      }
+      blackholeDestination = blackhole
+      register(destination: blackhole)
+      Reticulum.log(
+        "Enabled blackhole list publishing for transport identity "
+          + RNSUtilities.prettyhexrep(identity.hash), level: .notice)
+    }
+
     // Network/instance destinations when networkIdentity is set.
-    setupNetworkDestinations()
+    managementDestinations =
+      [remoteManagementDestination, blackholeDestination].compactMap { $0 }
+      + setupNetworkDestinations()
+      + [probeDestination].compactMap { $0 }
   }
 
   /// Creates `rnstransport.network` and `rnstransport.network.instance.<hex>` destinations.
   ///
   /// Mirrors Python's `Transport.instance_destination` and `Transport.network_destination` setup.
-  public func setupNetworkDestinations() {
-    guard let netIdentity = networkIdentity else { return }
+  ///
+  /// - Returns: The destinations built, instance first.
+  @discardableResult
+  public func setupNetworkDestinations() -> [Destination] {
+    guard let netIdentity = networkIdentity else { return [] }
+    var built: [Destination] = []
     let hexHash = netIdentity.hash.map { String(format: "%02x", $0) }.joined()
     if let instanceDest = try? Destination(
       identity: netIdentity, direction: .in, kind: .single,
@@ -3821,12 +3877,27 @@ public final class Transport {
       aspects: ["network", "instance", hexHash])
     {
       register(destination: instanceDest)
+      built.append(instanceDest)
     }
     if let netDest = try? Destination(
       identity: netIdentity, direction: .in, kind: .single,
       appName: "rnstransport", aspects: ["network"])
     {
       register(destination: netDest)
+      built.append(netDest)
+    }
+    return built
+  }
+
+  /// Announces every management destination once `managementAnnounceInterval` has passed
+  /// since the last round (`Transport.py:1178-1187`).
+  func announceManagementDestinations(now: TimeInterval = Date().timeIntervalSince1970) {
+    guard now > lastManagementAnnounce + Transport.managementAnnounceInterval else { return }
+    lastManagementAnnounce = now
+    for destination in managementDestinations {
+      do { try announce(destination: destination) } catch {
+        Reticulum.log("Error while sending management announces: \(error)", level: .error)
+      }
     }
   }
 
@@ -3861,11 +3932,13 @@ public final class Transport {
     sweepPendingRestores()
     sweepExpiredPaths()
     sweepPathRequestTables()
+    sweepTunnels()
     sweepExpiredReceipts()
     sweepKnownRatchets()
     sweepReverseTable()
     runLinkJobs()
     sweepPendingLocalPathRequests()
+    rotatePathRequestTags()
     processAnnounceRetries()
     drainAnnounceQueues()
     sampleInterfaceSpeeds()
@@ -3882,6 +3955,7 @@ public final class Transport {
       cleanKnownDestinations(now: now)
       lastKnownDestinationsClean = now
     }
+    announceManagementDestinations()
     // `Reticulum.__jobs` culls the packet cache every `CLEAN_INTERVAL` (`Reticulum.py:388-392`).
     if now.timeIntervalSince(lastPacketCacheClean) > Transport.cleanInterval {
       cleanPacketCache(now: now)
@@ -4352,6 +4426,52 @@ public final class Transport {
     }
   }
 
+  /// Culls the tunnel table, as Python's jobs loop does (`Transport.py:1015-1064`,
+  /// `:1127-1131`).
+  ///
+  /// A tunnel goes when it has expired or expires more than twice ``tunnelTimeout`` ahead. A
+  /// live tunnel forgets an interface that's no longer attached, and drops each path older
+  /// than ``tunnelPathTimeout`` or superseded by a later announce in the path table. A tunnel
+  /// left with no paths stays, as Python's does.
+  func sweepTunnels(now: Date = Date()) {
+    var removed: [String] = []
+    lock.lock()
+    let attached = attachedInterfaceIDs()
+    for (tunnelID, var tunnel) in tunnels {
+      let hex = RNSUtilities.prettyhexrep(tunnelID)
+      if tunnel.expires > now.addingTimeInterval(Transport.tunnelTimeout * 2) {
+        tunnels.removeValue(forKey: tunnelID)
+        removed.append("Tunnel \(hex) with excessive expiry was removed")
+        continue
+      }
+      if now > tunnel.expires {
+        tunnels.removeValue(forKey: tunnelID)
+        removed.append("Tunnel \(hex) timed out and was removed")
+        continue
+      }
+      if let iface = tunnel.iface, !attached.contains(ObjectIdentifier(iface)) {
+        removed.append("Removing non-existent tunnel interface \(iface.name)")
+        tunnel.iface = nil
+      }
+      for (destinationHash, path) in tunnel.paths {
+        let pathHex = RNSUtilities.prettyhexrep(destinationHash)
+        if now > path.lastHeard.addingTimeInterval(Transport.tunnelPathTimeout) {
+          tunnel.paths.removeValue(forKey: destinationHash)
+          removed.append("Tunnel path to \(pathHex) timed out and was removed")
+        } else if let active = paths[destinationHash],
+          Transport.timebaseFromRandomBlobs(active.randomBlobs)
+            > Transport.timebaseFromRandomBlobs(path.randomBlobs)
+        {
+          tunnel.paths.removeValue(forKey: destinationHash)
+          removed.append("Tunnel path to \(pathHex) was removed due to more recent active path")
+        }
+      }
+      tunnels[tunnelID] = tunnel
+    }
+    lock.unlock()
+    for line in removed { Reticulum.log(line, level: .extreme) }
+  }
+
   /// The interfaces Python would hold in `Transport.interfaces`.
   ///
   /// The registered interfaces, and the spawned interfaces that a registered
@@ -4656,15 +4776,11 @@ public final class Transport {
     return try send(packet, generateReceipt: false)
   }
 
-  /// Default receipt timeout for a destination.
-  ///
-  /// Uses hop count if a path
-  /// is known; otherwise falls back to a single-hop estimate.
-  /// Mirrors Python's `get_first_hop_timeout` + `TIMEOUT_PER_HOP`.
+  /// Default receipt timeout for a destination: `get_first_hop_timeout + TIMEOUT_PER_HOP *
+  /// hops_to` (`Packet.py:432-433`).
   private func defaultTimeout(for destinationHash: Data) -> TimeInterval {
-    let perHop: TimeInterval = 6
-    let hops = TimeInterval(hopsTo(destinationHash) ?? 1)
-    return max(perHop, hops * perHop)
+    firstHopTimeout(for: destinationHash) + Constants.defaultPerHopTimeout
+      * TimeInterval(hopsToOrUnknown(destinationHash))
   }
 
   // MARK: - Inbound
@@ -4921,13 +5037,13 @@ public final class Transport {
 
     // Use the destination's own identity to answer the link request.
     // This is correct: each registered destination carries its private
-    // identity, so the transport-wide ownerIdentity isn't needed here.
-    // (ownerIdentity is still needed for tunnel synthesis—synthesizeTunnel.)
+    // identity, so no transport-wide identity is needed here.
     //
     // A local destination answers only a request carrying no transport ID or this node's
-    // (`Transport.py:2541`). A shared-instance client's filter passes one in transport to its
-    // instance (`:1627`).
+    // (`Transport.py:2541`), and whose header names the destination's type (`:2543`). A
+    // shared-instance client's filter passes one in transport to its instance (`:1627`).
     if let destination, let owner = destination.identity, destination.acceptsLinks,
+      destination.kind.rawValue == packet.destinationType.rawValue,
       packet.transportID == nil || packet.transportID == transportInstanceID
     {
       do {
@@ -6023,10 +6139,7 @@ public final class Transport {
     // request when it bounces back from an interface's local echo.
     let dedupKey = destinationHash + tag
     lock.lock()
-    if !pathRequestTagSet.contains(dedupKey) {
-      pathRequestTagSet.insert(dedupKey)
-      pathRequestTags.append(dedupKey)
-    }
+    pathRequestTags.insert(dedupKey)
     // `Transport.path_requests[destination_hash] = time.time()` (`Transport.py:3321`).
     pathRequests[destinationHash] = Date().timeIntervalSince1970
     lock.unlock()
@@ -6089,15 +6202,11 @@ public final class Transport {
     let dedupKey = target + tag
 
     lock.lock()
-    let alreadySeen = pathRequestTagSet.contains(dedupKey)
-    if !alreadySeen {
-      pathRequestTagSet.insert(dedupKey)
-      pathRequestTags.append(dedupKey)
-      while pathRequestTags.count > pathRequestCacheCap {
-        let evicted = pathRequestTags.removeFirst()
-        pathRequestTagSet.remove(evicted)
-      }
-    }
+    // `if not unique_tag in discovery_pr_tags and not unique_tag in discovery_pr_tags_prev`
+    // (`Transport.py:1850`).
+    let alreadySeen =
+      pathRequestTags.contains(dedupKey) || pathRequestTagsPrev.contains(dedupKey)
+    if !alreadySeen { pathRequestTags.insert(dedupKey) }
     lock.unlock()
     if alreadySeen { return nil }
 
@@ -6921,7 +7030,7 @@ public final class Transport {
 
   /// Synthesizes a tunnel endpoint for `interface` and re-announces its paths.
   public func synthesizeTunnel(_ interface: any Interface) {
-    guard let identity = ownerIdentity else { return }
+    guard let identity = transportIdentity else { return }
 
     let publicKey = identity.publicKeyBytes  // 64 bytes
     let ifaceHash = Hashes.fullHash(Data(interface.name.utf8))  // 32 bytes

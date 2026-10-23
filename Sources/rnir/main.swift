@@ -87,18 +87,17 @@ do {
   // `synthesizeInterfaces: false`: rnir constructs a stack and immediately tears it down,
   // so opening every configured interface—an AutoInterface, a listening TCP server—only
   // to close it a moment later would be disruptive for no benefit. Python's own gate
-  // (`Reticulum.py:936`) already skips synthesis whenever an instance is already running.
+  // (`Reticulum.py:756`) already skips synthesis whenever an instance is already running.
   let connection = try InstanceConnection.attach(
     configDirectory: paths.configDir,
     logLevel: bootstrapped.logLevel,
     synthesizeInterfaces: false)
   connection.stop()
 } catch {
-  Reticulum.log(
-    "Local shared instance appears to be running, but it could not be connected",
-    level: .error)
-  Reticulum.log("The contained exception was: \(error)", level: .error)
-  exit(RNSDApp.ExitCode.panic.rawValue)
+  // `attach` falls back to standalone itself. Python leaves any other startup exception
+  // uncaught, and the interpreter exits with 1.
+  Reticulum.log("Could not start Reticulum: \(error)", level: .critical)
+  exit(RNSDApp.ExitCode.fatalError.rawValue)
 }
 
 // Python: `exit(0)` immediately after the constructor returns (`rnir.py:50`).

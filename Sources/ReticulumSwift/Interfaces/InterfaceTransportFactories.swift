@@ -169,6 +169,8 @@ enum NetworkDeviceAddress {
 public enum InterfaceConstructionError: Error, LocalizedError, Equatable {
   case missingKey(interface: String, key: String)
   case invalidValue(interface: String, key: String, value: String)
+  /// The interface type can't run on this platform, for the reason Python gives.
+  case unsupportedPlatform(interface: String, reason: String)
 
   /// Human-readable description of the construction failure.
   public var errorDescription: String? {
@@ -177,6 +179,8 @@ public enum InterfaceConstructionError: Error, LocalizedError, Equatable {
       return "interface '\(interface)' is missing required key '\(key)'"
     case .invalidValue(let interface, let key, let value):
       return "interface '\(interface)' has an invalid value '\(value)' for '\(key)'"
+    case .unsupportedPlatform(_, let reason):
+      return reason
     }
   }
 }

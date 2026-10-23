@@ -177,7 +177,7 @@ final class RPCClientTests: XCTestCase {
     // Returning a bare `true` per hash would break that rendering.
     let client = try startServer()
     let owner = Identity()
-    try XCTUnwrap(transport).ownerIdentity = owner
+    try XCTUnwrap(transport).transportIdentity = owner
 
     let identityHash = randomHash()
     let until = Date().timeIntervalSince1970 + 3600

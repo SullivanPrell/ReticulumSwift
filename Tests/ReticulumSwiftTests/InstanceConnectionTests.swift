@@ -32,9 +32,9 @@ final class InstanceConnectionTests: XCTestCase {
 
   /// Create a throwaway config directory containing a config file that pins the
   /// shared-instance and control ports well away from the real 37428/37429.
-  private func makeConfigDirectory(shareInstance: Bool, sharedPort: UInt16, controlPort: UInt16)
-    throws -> URL
-  {
+  private func makeConfigDirectory(
+    shareInstance: Bool, sharedPort: UInt16, controlPort: UInt16, interfaces: String = ""
+  ) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("instconn-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -51,6 +51,7 @@ final class InstanceConnectionTests: XCTestCase {
       loglevel = 1
 
       [interfaces]
+      \(interfaces)
       """
     try text.write(
       to: directory.appendingPathComponent("config"), atomically: true, encoding: .utf8)
@@ -64,12 +65,13 @@ final class InstanceConnectionTests: XCTestCase {
 
   private func attach(
     _ directory: URL,
-    requireSharedInstance: Bool = false
+    requireSharedInstance: Bool = false,
+    synthesizeInterfaces: Bool = false
   ) throws -> InstanceConnection {
     let connection = try InstanceConnection.attach(
       configDirectory: directory,
       requireSharedInstance: requireSharedInstance,
-      synthesizeInterfaces: false)
+      synthesizeInterfaces: synthesizeInterfaces)
     connections.append(connection)
     return connection
   }
@@ -122,6 +124,73 @@ final class InstanceConnectionTests: XCTestCase {
         return XCTFail("expected noSharedInstance, got \(error)")
       }
     }
+  }
+
+  // MARK: - Falling back to standalone
+
+  /// A config whose shared instance can be neither bound nor reached, with one interface.
+  ///
+  /// Port 1 gets there at once: a non-root process can't bind it on 127.0.0.1, and nothing
+  /// listens on it, so the connect is refused.
+  private func unreachableSharedInstanceConfig() throws -> URL {
+    let probe = PosixTCPServer(name: "port 1 probe", port: 1)
+    let bound = (try? probe.bind()) != nil
+    probe.stop()
+    try XCTSkipIf(bound, "this process can bind 127.0.0.1:1")
+    try XCTSkipUnless(loopbackPortState(1) == .refused, "something listens on port 1")
+    return try makeConfigDirectory(
+      shareInstance: true, sharedPort: 1, controlPort: try freeLoopbackPort(),
+      interfaces: """
+          [[Fallback TCP Server]]
+            type = TCPServerInterface
+            interface_enabled = True
+            listen_ip = 127.0.0.1
+            listen_port = \(try freeLoopbackPort())
+        """)
+  }
+
+  private func attachLogging(_ body: () throws -> InstanceConnection) rethrows
+    -> (InstanceConnection, [String])
+  {
+    let lock = NSLock()
+    var lines: [String] = []
+    let saved = Reticulum.logHandler
+    Reticulum.logHandler = { message, level in
+      guard level == .error else { return }
+      lock.withLock { lines.append(message) }
+    }
+    defer { Reticulum.logHandler = saved }
+    let connection = try body()
+    return (connection, lock.withLock { lines })
+  }
+
+  /// Python's third branch: the bind fails, so does the connect, and the stack runs
+  /// standalone with the config's interfaces (`Reticulum.py:445-450`, `:756`).
+  func testAttach_unreachableSharedInstance_fallsBackToStandalone() throws {
+    let directory = try unreachableSharedInstanceConfig()
+    let (connection, errors) = try attachLogging {
+      try attach(directory, synthesizeInterfaces: true)
+    }
+    XCTAssertEqual(connection.role, .standalone)
+    XCTAssertFalse(connection.reticulum.transport.isConnectedToSharedInstance)
+    XCTAssertTrue(
+      connection.reticulum.transport.interfaces.contains {
+        $0.name.contains("Fallback TCP Server")
+      },
+      "\(connection.reticulum.transport.interfaces.map(\.name))")
+    XCTAssertEqual(
+      errors.first, "Local shared instance appears to be running, but it could not be connected")
+    XCTAssertEqual(
+      errors.dropFirst().first?.hasPrefix("The contained exception was: "), true, "\(errors)")
+  }
+
+  /// Python raises only when this process became the shared instance (`Reticulum.py:452-453`),
+  /// so a caller that requires one still gets a standalone stack here.
+  func testAttach_unreachableSharedInstance_requireShared_isStandaloneToo() throws {
+    let directory = try unreachableSharedInstanceConfig()
+    let connection = try attach(directory, requireSharedInstance: true)
+    XCTAssertEqual(connection.role, .standalone)
+    XCTAssertNil(connection.rpc)
   }
 
   // MARK: - Becoming the shared instance

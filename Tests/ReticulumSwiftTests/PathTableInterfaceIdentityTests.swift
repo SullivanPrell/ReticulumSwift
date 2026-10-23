@@ -302,7 +302,7 @@ final class PathTableInterfaceIdentityTests: XCTestCase {
   /// reach for it.
   ///
   /// The reference has exactly one place that produces a path with `receiving_interface = None`
-  ///—the tunnel-table restore at `Transport.py:396-400`—so the port has exactly one too.
+  ///—the tunnel-table restore at `Transport.py:483`—so the port has exactly one too.
   /// Anywhere else, an unattached path is a route that silently goes nowhere.
   func testOnlyTheTunnelRestoreBuildsAnUnattachedPath() throws {
     let sourcesDir = URL(fileURLWithPath: #filePath)

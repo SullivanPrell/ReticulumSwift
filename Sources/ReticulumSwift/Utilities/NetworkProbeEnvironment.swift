@@ -92,11 +92,9 @@ public final class TransportProbeNetwork: ProbeNetwork {
     try? transport.requestPath(for: destinationHash)
   }
 
-  /// Python: `RNS.Transport.hops_to(dh)` returns `PATHFINDER_M` (128) for an unknown
-  /// destination, where Swift's `hopsTo` returns nil.
+  /// Python: `RNS.Transport.hops_to(dh)`, `PATHFINDER_M` (128) for an unknown destination.
   public func hops(to destinationHash: Data) -> Int {
-    guard let hops = transport.hopsTo(destinationHash) else { return Transport.pathfinderM }
-    return Int(hops)
+    transport.hopsToOrUnknown(destinationHash)
   }
 
   /// Returns the next hop toward the destination, or `nil` when no path is known.

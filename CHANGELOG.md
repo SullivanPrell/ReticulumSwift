@@ -5,8 +5,90 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- `InterfaceConstructionError.unsupportedPlatform(interface:reason:)`, thrown for an interface
+  type Python can't run on this platform.
+- `Transport.hopsToOrUnknown(_:)`, Python's `hops_to`: the hop count, or `pathfinderM` (128)
+  when no path is known (`Transport.py:3141-3143`).
+- `Packet.contextByte`, the context byte as it travels. It differs from `context.rawValue` only
+  for a packet that arrived with a byte `Packet.Context` doesn't name, whose `context` reads
+  `.none`.
+- A node with `publish_blackhole` on now serves its blackhole list at
+  `rnstransport.info.blackhole` on the transport identity, so `rnpath -p` against it works.
+  The `/list` request answers anyone with every entry, as Python's does (`Transport.py:375-380`,
+  `:4091-4097`).
+- The jobs loop now announces the management destinations 15 s after start, then every 2
+  hours (`Transport.py:397`, `:1178-1187`). Before this, other nodes learned a path to a Swift
+  node's remote-management, blackhole, network, and probe destinations only by asking for one.
+- `Transport.cache(_:)`, `Transport.getCachedPacket(hash:)`,
+  `Transport.cacheRequest(packetHash:link:)`, and `Transport.cleanPacketCache(now:)`.
+
 ### Fixed
 
+- A local destination answers a link request only when the request's header names the
+  destination's type, as Python checks `destination.type == packet.destination_type`
+  (`Transport.py:2543`). A request marked PLAIN, GROUP or LINK for a SINGLE destination's hash
+  got a proof from this port and nothing from Python.
+- `rngit` reads a `doc_id` or `var_page` sent as a byte string the way Python's `int` reads one:
+  ASCII text with only ASCII whitespace stripped, so `int(b"42")` is 42 (`server.py:3810`,
+  `:3819`, `:3825`, `:3943`, `pages.py:578`, `:857`). The port refused every byte string, so a
+  work request carrying a binary `doc_id` got "Invalid request" and a binary `var_page` showed
+  page 0.
+- A `BackboneInterface` block with no `remote` or `target_host` fails to build, as it does in
+  Python off Linux: that block is the listener, whose constructor raises "BackboneInterface is
+  only supported on Linux-based operating systems" (`Reticulum.py:1128-1130`,
+  `BackboneInterface.py:127-128`), and `rnsd` exits 255. The port skipped the block and logged
+  nothing, so a daemon configured to listen ran without the interface.
+- An interface block that fails to build logs Python's two lines, naming the interface: `The
+  interface "<name>" could not be created. Check your configuration file for errors!` and `The
+  contained exception was: <error>` (`Reticulum.py:1215-1217`). `rnsd` logged them without the
+  name, and a stack started through `InstanceConnection` logged nothing.
+- A link to a destination with no known path gave up after `firstHopTimeout + 6` s. Python
+  allows `first_hop_timeout + 6 * 128`, 774 s at the default, because `hops_to` answers 128
+  (`Link.py:280-282`). Swift now does too, and `expectedHops` is 128 rather than nil.
+- A packet receipt's default timeout was `max(6, 6 * hops)`, with 6 s for an unknown path. It
+  is now `first_hop_timeout + 6 * hops_to`, as Python computes it (`Packet.py:432-433`), so a
+  known path gains its first-hop term and an unknown one waits for 128 hops.
+- A path-request tag was forgotten after 4,096 newer ones, so a request circulating longer was
+  answered again where Python drops it. Tags now live in two generations of up to 16,000, as
+  Python's `discovery_pr_tags` and `discovery_pr_tags_prev` do (`Transport.py:193-195`,
+  `:1849-1851`), and the jobs loop rotates them (`:850-853`). Eviction no longer shifts an
+  array under the transport lock for every request. Swift's jobs loop runs every 5 s, where
+  Python's runs every 0.25 s, so a flood can grow the current generation past the cap for up
+  to 5 s before it rotates. A tag is never forgotten sooner than in Python.
+- Nothing removed a tunnel or a tunnel path, so `tunnels` and `storage/tunnels` grew for the
+  life of a node. The jobs loop now culls the table as Python's does (`Transport.py:1015-1064`,
+  `:1127-1131`). It drops a tunnel that has expired or expires more than twice
+  `tunnelTimeout` ahead, clears a live tunnel's interface once it's detached, and drops a
+  tunnel path older than `tunnelPathTimeout` or superseded by a later announce in the path
+  table. A tunnel left with no paths stays, as in Python.
+- `Packet.unpack` refused a context byte that `Packet.Context` doesn't name, so every Swift
+  node on a path dropped a packet carrying a context a newer peer adds. Python stores any byte
+  (`Packet.py:264`, `:271`). Swift now keeps it, hashes it, and relays it unchanged. A link
+  counts such a packet and delivers nothing, as Python's `Link.__receive` does
+  (`Link.py:942-950`). The enum stays, so an exhaustive `switch` over it still compiles.
+- A shared-instance client built its own probe, remote-management, network, and instance
+  destinations when its config asked for them. Python leaves all of them to the instance
+  (`Transport.py:367`, `:382`, and `Reticulum.py:440-442` for probes), so Swift now builds
+  none in a client. Python also builds the probe destination only with transport on
+  (`Transport.py:404`, `:511`), and Swift now does the same on any node.
+- Blackhole entries, the `local` blackhole file, and tunnel synthesis read `ownerIdentity`,
+  which nothing in the package sets. Every entry had no source, so Python's `rnpath -b` and
+  `rnpath -p` stopped on the list (`rnpath.py:192`). `local` was saved but never loaded, so
+  a node's own blackholes didn't survive a restart. No tunnel was synthesized unless the host
+  set `ownerIdentity`. All three now use the transport identity, as Python does
+  (`Transport.py:2767`, `:3995`, `:4036`, `:4104`). `ownerIdentity` stays, and Transport reads
+  nothing from it.
+- When another process holds the shared-instance port but can't be reached, a stack now runs
+  standalone with the config's interfaces, as Python's does (`Reticulum.py:445-450`, `:756`).
+  `InstanceConnection.attach` logs Python's two error lines and returns `.standalone`, so
+  `rnstatus` reports its own interfaces and exits 0. Before, `attach` threw: `rnsd`, `rnir`, and
+  `rnpkg` exited 255, and `rnstatus` printed `No shared RNS instance available`. `attach` now
+  connects to the instance before the stack starts, as Python does. A required shared instance
+  that isn't running still throws `noSharedInstance` (`:452-453`).
+- `rnsd`, `rnir`, and `rnpkg` now exit 1 when the stack can't start for another reason, as an
+  uncaught Python exception does. They printed the could-not-connect lines for any error.
 - A resource whose proof is lost on the link now recovers through the packet cache, as
   Python's does. The receiver caches the proof it sends (`Resource.py:772-773`,
   `Transport.py:3053-3067`). A sender still waiting for it asks with a plaintext
@@ -22,10 +104,16 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `Reticulum.__clean_caches` does (`Reticulum.py:388-392`, `:1346-1357`). It leaves
   `announces/` alone.
 
-### Added
+### Deprecated
 
-- `Transport.cache(_:)`, `Transport.getCachedPacket(hash:)`,
-  `Transport.cacheRequest(packetHash:link:)`, and `Transport.cleanPacketCache(now:)`.
+- `InstanceConnection.InstanceError.couldNotConnect`. Nothing throws it.
+
+### Deliberate differences from Python
+
+- A `TCPClientInterface` block with no `target_host` builds nothing. Python registers an
+  interface that never connects (`TCPInterface.py:102-103`, `:138-151`).
+- A failed `rnstatus --attach` logs the error and answers false. Python's `_synthesize_interface`
+  calls `RNS.panic()` there too (`Reticulum.py:1219`), so a broken block stops the daemon.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
