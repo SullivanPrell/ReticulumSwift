@@ -66,7 +66,7 @@ extension Transport {
       return nil
     }
     blackholedIdentities[identityHash] = BlackholeEntry(
-      source: ownerIdentity?.hash,
+      source: transportIdentity?.hash,
       until: until,
       reason: reason
     )
@@ -180,7 +180,7 @@ extension Transport {
   public func persistBlacklist(toDirectory directory: URL) throws {
     guard !isConnectedToSharedInstance else { return }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let ownHash = ownerIdentity?.hash
+    let ownHash = transportIdentity?.hash
     blackholeLock.lock()
     let local = blackholedIdentities.filter { $0.value.source == ownHash }
     blackholeLock.unlock()
@@ -203,7 +203,7 @@ extension Transport {
 
   /// Load blackhole entries from a directory, matching Python's multi-source logic.
   ///
-  /// - `<directory>/local`—own entries (source = ownerIdentity.hash)
+  /// - `<directory>/local`—own entries (source = transportIdentity.hash)
   /// - `<directory>/<identity-hash-hex>`—external source files;
   ///   only loaded when the source identity hash is in `allowedSources`.
   ///
@@ -214,7 +214,7 @@ extension Transport {
   public func reloadBlacklist(fromDirectory directory: URL, allowedSources: [Data]) throws {
     guard FileManager.default.fileExists(atPath: directory.path) else { return }
     let now = Date().timeIntervalSince1970
-    let ownHash = ownerIdentity?.hash
+    let ownHash = transportIdentity?.hash
     let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
     for filename in files {
       let fileURL = directory.appendingPathComponent(filename)

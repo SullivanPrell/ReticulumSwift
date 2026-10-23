@@ -26,7 +26,6 @@ final class BlackholePublishTests: XCTestCase {
     savedPublish = Reticulum.storedPublishBlackholeEnabled
     Reticulum.storedPublishBlackholeEnabled = true
     transport.transportIdentity = Identity()
-    transport.ownerIdentity = transport.transportIdentity
     transport.register(interface: sink)
   }
 

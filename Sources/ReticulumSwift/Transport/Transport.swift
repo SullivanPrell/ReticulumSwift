@@ -586,10 +586,10 @@ public final class Transport {
   /// traffic sampler can be driven at fixed timestamps without running a jobs loop.
   public internal(set) var startTime: TimeInterval = 0
 
-  /// Identity used to answer incoming link requests on registered
-  /// destinations.
+  /// An identity the host can attach to its transport.
   ///
-  /// The host sets this when it knows its local identity.
+  /// Transport reads nothing from it: Python's blackhole source and tunnel signer are
+  /// `Transport.identity` (`Transport.py:2767`, `:3995`), ported as `transportIdentity`.
   public var ownerIdentity: Identity?
 
   /// Optional network identity, used for remote management and interface discovery.
@@ -4947,8 +4947,7 @@ public final class Transport {
 
     // Use the destination's own identity to answer the link request.
     // This is correct: each registered destination carries its private
-    // identity, so the transport-wide ownerIdentity isn't needed here.
-    // (ownerIdentity is still needed for tunnel synthesis—synthesizeTunnel.)
+    // identity, so no transport-wide identity is needed here.
     //
     // A local destination answers only a request carrying no transport ID or this node's
     // (`Transport.py:2541`). A shared-instance client's filter passes one in transport to its
@@ -6935,7 +6934,7 @@ public final class Transport {
 
   /// Synthesizes a tunnel endpoint for `interface` and re-announces its paths.
   public func synthesizeTunnel(_ interface: any Interface) {
-    guard let identity = ownerIdentity else { return }
+    guard let identity = transportIdentity else { return }
 
     let publicKey = identity.publicKeyBytes  // 64 bytes
     let ifaceHash = Hashes.fullHash(Data(interface.name.utf8))  // 32 bytes

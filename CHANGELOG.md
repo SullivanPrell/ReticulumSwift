@@ -22,6 +22,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   (`Transport.py:367`, `:382`, and `Reticulum.py:440-442` for probes), so Swift now builds
   none in a client. Python also builds the probe destination only with transport on
   (`Transport.py:404`, `:511`), and Swift now does the same on any node.
+- Blackhole entries, the `local` blackhole file, and tunnel synthesis read `ownerIdentity`,
+  which nothing in the package sets. Every entry had no source, so Python's `rnpath -b` and
+  `rnpath -p` stopped on the list (`rnpath.py:192`). `local` was saved but never loaded, so
+  a node's own blackholes didn't survive a restart. No tunnel was synthesized unless the host
+  set `ownerIdentity`. All three now use the transport identity, as Python does
+  (`Transport.py:2767`, `:3995`, `:4036`, `:4104`). `ownerIdentity` stays, and Transport reads
+  nothing from it.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 

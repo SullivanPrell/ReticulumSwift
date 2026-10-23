@@ -57,7 +57,7 @@ final class TunnelRequestTests: XCTestCase {
 
   private func makeTransport() -> Transport {
     let transport = Transport()
-    transport.ownerIdentity = Identity()
+    transport.transportIdentity = Identity()
     return transport
   }
 

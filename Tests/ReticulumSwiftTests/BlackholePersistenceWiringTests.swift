@@ -39,11 +39,11 @@ final class BlackholePersistenceWiringTests: XCTestCase {
   func testPersistBlacklistSavesOwnEntriesToLocalFile() throws {
     let ownIdentity = Identity()
     let t = Transport()
-    t.ownerIdentity = ownIdentity
+    t.transportIdentity = ownIdentity
 
     let id1 = Identity()
     let id2 = Identity()
-    // Add own-sourced entries (source == ownerIdentity.hash).
+    // Add own-sourced entries (source == transportIdentity.hash).
     t.blackholedIdentities[id1.hash] = Transport.BlackholeEntry(
       source: ownIdentity.hash, until: nil, reason: nil)
     t.blackholedIdentities[id2.hash] = Transport.BlackholeEntry(
@@ -58,7 +58,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
 
     // Reload into a fresh transport and verify entries are present.
     let t2 = Transport()
-    t2.ownerIdentity = ownIdentity
+    t2.transportIdentity = ownIdentity
     try t2.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [])
 
     XCTAssertTrue(t2.isBlackholed(id1.hash), "id1 must be present after reload")
@@ -71,7 +71,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     let ownIdentity = Identity()
     let externalSource = Identity()
     let t = Transport()
-    t.ownerIdentity = ownIdentity
+    t.transportIdentity = ownIdentity
 
     let ownId = Identity()
     let extId = Identity()
@@ -87,7 +87,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
 
     // Reload—only own entries should come back from "local".
     let t2 = Transport()
-    t2.ownerIdentity = ownIdentity
+    t2.transportIdentity = ownIdentity
     try t2.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [])
 
     XCTAssertTrue(
@@ -116,7 +116,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     try extData.write(to: extFile)
 
     let t = Transport()
-    t.ownerIdentity = ownIdentity
+    t.transportIdentity = ownIdentity
     // allowedSources includes the external source hash.
     try t.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [externalSource.hash])
 
@@ -143,7 +143,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     try extData.write(to: extFile)
 
     let t = Transport()
-    t.ownerIdentity = ownIdentity
+    t.transportIdentity = ownIdentity
     // allowedSources is empty—external source isn't allowed.
     try t.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [])
 
@@ -157,7 +157,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
   func testReloadBlacklistSkipsExpiredEntries() throws {
     let ownIdentity = Identity()
     let t = Transport()
-    t.ownerIdentity = ownIdentity
+    t.transportIdentity = ownIdentity
 
     let expiredId = Identity()
     let validId = Identity()
@@ -173,7 +173,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     try t.persistBlacklist(toDirectory: tmpDir)
 
     let t2 = Transport()
-    t2.ownerIdentity = ownIdentity
+    t2.transportIdentity = ownIdentity
     try t2.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [])
 
     XCTAssertFalse(
@@ -189,7 +189,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
   func testReloadBlacklistLoadsPermanentEntries() throws {
     let ownIdentity = Identity()
     let t = Transport()
-    t.ownerIdentity = ownIdentity
+    t.transportIdentity = ownIdentity
 
     let permanentId = Identity()
     t.blackholedIdentities[permanentId.hash] = Transport.BlackholeEntry(
@@ -198,7 +198,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     try t.persistBlacklist(toDirectory: tmpDir)
 
     let t2 = Transport()
-    t2.ownerIdentity = ownIdentity
+    t2.transportIdentity = ownIdentity
     try t2.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [])
 
     XCTAssertTrue(
@@ -230,7 +230,7 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     try localData.write(to: localFile)
 
     let t = Transport()
-    t.ownerIdentity = ownIdentity
+    t.transportIdentity = ownIdentity
     try t.reloadBlacklist(fromDirectory: tmpDir, allowedSources: [externalSource.hash])
 
     // Own entry must be kept (not overwritten by external).
@@ -252,15 +252,11 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     let blackholePath = storagePath.appendingPathComponent("blackhole")
     try FileManager.default.createDirectory(at: blackholePath, withIntermediateDirectories: true)
 
-    let ownIdentity = Identity()
-    r.transport.ownerIdentity = ownIdentity
-
+    // `start()` picks the transport identity (ephemeral here, `Transport.py:331-335`), and an
+    // entry blackholed afterwards carries it as its source, so `stop()` saves it.
     let id1 = Identity()
-    r.transport.blackholedIdentities[id1.hash] = Transport.BlackholeEntry(
-      source: ownIdentity.hash, until: nil, reason: nil)
-
-    // stop() should persist to <storagePath>/blackhole/local.
     try r.start()
+    r.transport.blackholeIdentity(id1.hash)
     r.stop()
 
     let localFile = blackholePath.appendingPathComponent("local")
@@ -271,7 +267,6 @@ final class BlackholePersistenceWiringTests: XCTestCase {
     // A fresh Reticulum.start() should reload the saved list.
     let r2 = Reticulum(
       configuration: Reticulum.Configuration(storagePath: storagePath, shareInstance: false))
-    r2.transport.ownerIdentity = ownIdentity
     try r2.start()
     defer { r2.stop() }
 
