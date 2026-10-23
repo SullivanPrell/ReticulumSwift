@@ -7,6 +7,8 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Added
 
+- `InterfaceConstructionError.unsupportedPlatform(interface:reason:)`, thrown for an interface
+  type Python can't run on this platform.
 - `Transport.hopsToOrUnknown(_:)`, Python's `hops_to`: the hop count, or `pathfinderM` (128)
   when no path is known (`Transport.py:3141-3143`).
 - `Packet.contextByte`, the context byte as it travels. It differs from `context.rawValue` only
@@ -15,6 +17,24 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- A local destination answers a link request only when the request's header names the
+  destination's type, as Python checks `destination.type == packet.destination_type`
+  (`Transport.py:2543`). A request marked PLAIN, GROUP or LINK for a SINGLE destination's hash
+  got a proof from this port and nothing from Python.
+- `rngit` reads a `doc_id` or `var_page` sent as a byte string the way Python's `int` reads one:
+  ASCII text with only ASCII whitespace stripped, so `int(b"42")` is 42 (`server.py:3810`,
+  `:3819`, `:3825`, `:3943`, `pages.py:578`, `:857`). The port refused every byte string, so a
+  work request carrying a binary `doc_id` got "Invalid request" and a binary `var_page` showed
+  page 0.
+- A `BackboneInterface` block with no `remote` or `target_host` fails to build, as it does in
+  Python off Linux: that block is the listener, whose constructor raises "BackboneInterface is
+  only supported on Linux-based operating systems" (`Reticulum.py:1128-1130`,
+  `BackboneInterface.py:127-128`), and `rnsd` exits 255. The port skipped the block and logged
+  nothing, so a daemon configured to listen ran without the interface.
+- An interface block that fails to build logs Python's two lines, naming the interface: `The
+  interface "<name>" could not be created. Check your configuration file for errors!` and `The
+  contained exception was: <error>` (`Reticulum.py:1215-1217`). `rnsd` logged them without the
+  name, and a stack started through `InstanceConnection` logged nothing.
 - A link to a destination with no known path gave up after `firstHopTimeout + 6` s. Python
   allows `first_hop_timeout + 6 * 128`, 774 s at the default, because `hops_to` answers 128
   (`Link.py:280-282`). Swift now does too, and `expectedHops` is 128 rather than nil.
@@ -39,6 +59,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   (`Packet.py:264`, `:271`). Swift now keeps it, hashes it, and relays it unchanged. A link
   counts such a packet and delivers nothing, as Python's `Link.__receive` does
   (`Link.py:942-950`). The enum stays, so an exhaustive `switch` over it still compiles.
+
+### Deliberate differences from Python
+
+- A `TCPClientInterface` block with no `target_host` builds nothing. Python registers an
+  interface that never connects (`TCPInterface.py:102-103`, `:138-151`).
+- A failed `rnstatus --attach` logs the error and answers false. Python's `_synthesize_interface`
+  calls `RNS.panic()` there too (`Reticulum.py:1219`), so a broken block stops the daemon.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 

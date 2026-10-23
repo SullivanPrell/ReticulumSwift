@@ -584,8 +584,10 @@ extension String {
   /// to be, or `nil` where Python raises for it.
   ///
   /// The digits are gathered toward the sign they carry, so the lowest `Int` is read exactly.
-  private func pythonIntegerRead() -> (value: Int, clamped: Bool)? {
-    var scalars = Array(pythonStripped.unicodeScalars)[...]
+  /// `stripping` takes off the whitespace `str` strips; a caller that stripped already passes
+  /// `false`.
+  fileprivate func pythonIntegerRead(stripping: Bool = true) -> (value: Int, clamped: Bool)? {
+    var scalars = Array((stripping ? pythonStripped : self).unicodeScalars)[...]
     var negative = false
     if let first = scalars.first, first == "+" || first == "-" {
       negative = first == "-"
@@ -626,9 +628,10 @@ extension String {
 
 extension MsgPack.Value {
 
-  /// What `int` answers for this value, or `nil` where Python raises for it.
+  /// What `int` answers for this value, or `nil` where Python raises for it or answers a
+  /// number `Int` cannot hold.
   ///
-  /// A byte string is refused, as `int` refuses one given no base to read it in.
+  /// A byte string reads as ASCII text, as `int(b"42")` reads 42.
   public var pythonInteger: Int? {
     switch self {
     case .bool(let flag): return flag ? 1 : 0
@@ -642,8 +645,29 @@ extension MsgPack.Value {
       }
       return Int(truncated)
     case .string(let text): return text.pythonInteger
-    case .nil, .bytes, .array, .map: return nil
+    case .bytes(let data):
+      guard let read = Self.pythonIntegerRead(data), !read.clamped else { return nil }
+      return read.value
+    case .nil, .array, .map: return nil
     }
+  }
+
+  /// What `int` answers for this value, with text and byte strings held to the range of `Int`,
+  /// or `nil` where Python raises for it.
+  public var pythonIntegerClamped: Int? {
+    switch self {
+    case .string(let text): return text.pythonIntegerClamped
+    case .bytes(let data): return Self.pythonIntegerRead(data)?.value
+    default: return pythonInteger
+    }
+  }
+
+  /// What `int` reads a byte string as: ASCII text stripped of the six ASCII whitespace
+  /// characters alone, so an information separator, a no-break space or a non-ASCII digit
+  /// raises.
+  private static func pythonIntegerRead(_ data: Data) -> (value: Int, clamped: Bool)? {
+    guard data.allSatisfy({ $0 < 0x80 }) else { return nil }
+    return String(decoding: data.pythonStripped, as: UTF8.self).pythonIntegerRead(stripping: false)
   }
 
   /// What `hexrep` writes for this value with no delimiter, or `nil` where Python raises.
