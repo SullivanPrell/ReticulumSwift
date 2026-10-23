@@ -177,19 +177,17 @@ final class LinkParityTests: XCTestCase {
     let remoteId = Identity()
     let dest = try Destination(identity: remoteId, direction: .in, kind: .single, appName: "t")
 
-    // No path known → hops = 1, firstHopTimeout = defaultPerHopTimeout = 6.
-    // Expected after fix: 6 + 6 * 1 = 12 seconds.
+    // No path known → hops_to = PATHFINDER_M (128), firstHopTimeout = defaultPerHopTimeout = 6.
     let link = try Link.initiate(destination: dest, transport: transport)
     let expected =
       Transport.firstHopTimeout(for: dest.hash, in: transport)
-      + Link.establishmentTimeoutPerHop * TimeInterval(max(1, 1))
+      + Link.establishmentTimeoutPerHop * TimeInterval(Transport.pathfinderM)
     XCTAssertEqual(
       link.establishmentTimeout, expected, accuracy: 0.001,
       "Initiator establishment timeout must equal firstHopTimeout + perHop * max(1, hops)")
-    // Concrete expectation: 12.0 when no interface bitrate is known.
     XCTAssertEqual(
-      link.establishmentTimeout, 12.0, accuracy: 0.001,
-      "Without bitrate data, firstHopTimeout = 6, so total = 6 + 6 = 12 seconds")
+      link.establishmentTimeout, 774.0, accuracy: 0.001,
+      "Without bitrate data, firstHopTimeout = 6, so total = 6 + 6 * 128 = 774 seconds")
   }
 
   // MARK: - 2. Responder requestTime is set in answer()

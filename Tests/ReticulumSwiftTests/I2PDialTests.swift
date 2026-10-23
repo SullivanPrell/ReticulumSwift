@@ -675,7 +675,7 @@ final class I2PInterfacePeerSpawnTests: XCTestCase {
     let factory = MockSAMSocketFactory([sessionSocket(), stream1, sessionSocket(), stream2])
     let iface = makeInterface(peers: [fakeB64Dest], factory: factory)
     let transport = Transport()
-    transport.ownerIdentity = Identity()
+    transport.transportIdentity = Identity()
     let peer = startOnTransport(iface, transport)
     XCTAssertEqual(tunnelSyntheses(on: stream1), 1)
 

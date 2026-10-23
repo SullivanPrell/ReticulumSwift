@@ -101,7 +101,9 @@ final class InterfaceSynthesisTests: XCTestCase {
     XCTAssertEqual(r.transport.interfaces.first?.name, "AliasBackbone")
   }
 
-  func testBackboneInterfaceWithoutAnyHostIsSkipped() throws {
+  /// With no host, the block is Python's Linux-only listener, which raises here
+  /// (`BackboneInterface.py:127-128`).
+  func testBackboneInterfaceWithoutAnyHostFailsAndRegistersNothing() throws {
     var cfg = ReticulumConfig()
     cfg.interfaces = [
       ReticulumConfig.InterfaceConfig(
@@ -112,7 +114,7 @@ final class InterfaceSynthesisTests: XCTestCase {
       )
     ]
     let r = try makeRns(config: cfg)
-    try r.synthesizeInterfaces(from: cfg)
+    XCTAssertThrowsError(try r.synthesizeInterfaces(from: cfg))
     XCTAssertEqual(r.transport.interfaces.count, 0)
   }
 

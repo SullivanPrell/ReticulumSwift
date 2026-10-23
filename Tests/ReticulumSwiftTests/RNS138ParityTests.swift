@@ -140,7 +140,8 @@ final class RNS138ParityTests: XCTestCase {
       "Initiator expectedHops must equal the path-table hop count to the destination")
   }
 
-  func testInitiatorExpectedHopsNilWhenNoPath() throws {
+  /// `expected_hops = hops_to(...)` (`Link.py:280`), which answers `PATHFINDER_M` for no path.
+  func testInitiatorExpectedHopsIsPathfinderMWhenNoPath() throws {
     let t = Transport()
     let iface = NoopInterface(name: "nh2")
     t.register(interface: iface)
@@ -149,8 +150,8 @@ final class RNS138ParityTests: XCTestCase {
       identity: id, direction: .out, kind: .single,
       appName: "test", aspects: ["nopath"])
     let link = try Link.initiate(destination: dest, transport: t)
-    XCTAssertNil(
-      link.expectedHops,
-      "expectedHops must be nil when no path to the destination is known")
+    XCTAssertEqual(
+      link.expectedHops, Transport.pathfinderM,
+      "expectedHops must be PATHFINDER_M when no path to the destination is known")
   }
 }
