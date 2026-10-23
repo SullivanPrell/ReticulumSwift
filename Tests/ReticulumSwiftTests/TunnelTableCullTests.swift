@@ -13,7 +13,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// The tunnel-table cull in Python's jobs loop (`Transport.py:1015-1064`, popped at
-/// `:1127-1131`, RNS 1.5.5).
+/// `:1127-1131`, RNS 1.5.7).
 final class TunnelTableCullTests: XCTestCase {
 
   private let transport = Transport()

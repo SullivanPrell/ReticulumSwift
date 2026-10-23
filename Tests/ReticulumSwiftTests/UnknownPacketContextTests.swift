@@ -12,7 +12,7 @@ import XCTest
 
 @testable import ReticulumSwift
 
-/// `Packet.unpack` stores whatever context byte arrives (`Packet.py:264`, `:271`, RNS 1.5.5),
+/// `Packet.unpack` stores whatever context byte arrives (`Packet.py:264`, `:271`, RNS 1.5.7),
 /// so a context a newer peer adds crosses an older node instead of being dropped there.
 final class UnknownPacketContextTests: XCTestCase {
 

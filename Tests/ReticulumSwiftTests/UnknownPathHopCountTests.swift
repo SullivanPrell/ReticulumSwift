@@ -13,7 +13,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// `Transport.hops_to` answers `PATHFINDER_M` (128) for a destination with no path
-/// (`Transport.py:3141-3143`, RNS 1.5.5), and both timeouts built on it scale by that count.
+/// (`Transport.py:3141-3143`, RNS 1.5.7), and both timeouts built on it scale by that count.
 final class UnknownPathHopCountTests: XCTestCase {
 
   private let perHop: TimeInterval = 6

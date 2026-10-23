@@ -16,7 +16,7 @@ import XCTest
 /// `discovery_pr_tags_prev`, capped by `max_pr_tags = 16000` (`Transport.py:193-195`).
 ///
 /// A request is new only when its tag is in neither (`:1849-1851`), and the jobs loop rotates the
-/// sets once the current one passes the cap (`:849-853`), RNS 1.5.5.
+/// sets once the current one passes the cap (`:849-853`), RNS 1.5.7.
 ///
 /// A request counts toward `prxc` only once it passes the duplicate check (`:1857`), so the
 /// count is the observable. Each resend names a different requesting transport, which leaves
