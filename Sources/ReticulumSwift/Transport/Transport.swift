@@ -3696,10 +3696,13 @@ public final class Transport {
   ///
   /// Mirrors Python's Transport.start() destination setup block.
   private func setupManagementDestinations() {
-    guard let identity = transportIdentity else { return }
+    // A shared-instance client leaves all of these to its instance (`Transport.py:367`,
+    // `:375`, `:382`).
+    guard !isConnectedToSharedInstance, let identity = transportIdentity else { return }
 
-    // Probe destination: responds to PROVE_ALL, no links.
-    if Reticulum.probeDestinationEnabled() {
+    // Probe destination: responds to PROVE_ALL, no links. Python builds it only with
+    // transport on (`Transport.py:404`, `:511`).
+    if transportEnabled, Reticulum.probeDestinationEnabled() {
       if let probe = try? Destination(
         identity: identity, direction: .in, kind: .single,
         appName: "rnstransport", aspects: ["probe"])

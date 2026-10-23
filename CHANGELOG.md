@@ -5,6 +5,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A shared-instance client built its own probe, remote-management, network, and instance
+  destinations when its config asked for them. Python leaves all of them to the instance
+  (`Transport.py:367`, `:382`, and `Reticulum.py:440-442` for probes), so Swift now builds
+  none in a client. Python also builds the probe destination only with transport on
+  (`Transport.py:404`, `:511`), and Swift now does the same on any node.
+
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
 `TCPClientInterface.start()` and `BackboneInterface.start()` wait up to 5 s for the first dial,
