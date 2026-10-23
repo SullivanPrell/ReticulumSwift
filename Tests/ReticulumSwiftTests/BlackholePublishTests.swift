@@ -14,7 +14,7 @@ import XCTest
 
 /// With `publish_blackhole` on, `Transport.start` builds `rnstransport.info.blackhole` on the
 /// transport identity, answers `/list` for anyone with `blackholed_identities`, and adds the
-/// destination to the management announces (`Transport.py:375-380`, `:4091-4097`), RNS 1.5.5.
+/// destination to the management announces (`Transport.py:375-380`, `:4091-4097`), RNS 1.5.7.
 final class BlackholePublishTests: XCTestCase {
 
   private var savedPublish = false
@@ -82,7 +82,7 @@ final class BlackholePublishTests: XCTestCase {
       .map([(.string("source"), source), (.string("until"), .nil), (.string("reason"), .nil)]))
   }
 
-  /// Bytes from RNS 1.5.5's `umsgpack.packb` for `{b1…: {"source": a5…, "until": 1.9e9,
+  /// Bytes from RNS 1.5.7's `umsgpack.packb` for `{b1…: {"source": a5…, "until": 1.9e9,
   /// "reason": "spam"}}` and for an entry with no expiry or reason.
   func testTheListEncodesAsPythonsDoes() {
     let source = Data(repeating: 0xA5, count: 16)

@@ -14,7 +14,7 @@ import XCTest
 
 /// The jobs loop announces every destination in `mgmt_destinations` once
 /// `mgmt_announce_interval` (2 h) has passed since the last round (`Transport.py:1178-1184`), and
-/// `start` dates the last round so the first one goes 15 s in (`:397`), RNS 1.5.5.
+/// `start` dates the last round so the first one goes 15 s in (`:397`), RNS 1.5.7.
 final class ManagementAnnounceTests: XCTestCase {
 
   private var savedProbes = false

@@ -16,7 +16,7 @@ import XCTest
 /// them. `Transport.start` gates remote management and the network destinations on `not
 /// Transport.owner.is_connected_to_shared_instance` (`Transport.py:367`, `:382`), and the probe
 /// destination on `transport_enabled()` (`:404`, `:511`), which a client turns off
-/// (`Reticulum.py:440`), RNS 1.5.5.
+/// (`Reticulum.py:440`), RNS 1.5.7.
 final class ClientManagementDestinationTests: XCTestCase {
 
   private var savedProbes = false
