@@ -5,6 +5,16 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- A node with `publish_blackhole` on now serves its blackhole list at
+  `rnstransport.info.blackhole` on the transport identity, so `rnpath -b -R` against it works.
+  The `/list` request answers anyone with every entry, as Python's does (`Transport.py:375-380`,
+  `:4091-4097`).
+- The jobs loop now announces the management destinations 15 s after start, then every 2
+  hours (`Transport.py:397`, `:1178-1187`). Before this, other nodes learned a path to a Swift
+  node's remote-management, blackhole, network, and probe destinations only by asking for one.
+
 ### Fixed
 
 - A shared-instance client built its own probe, remote-management, network, and instance

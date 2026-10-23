@@ -26,6 +26,23 @@ extension Transport {
     public var until: TimeInterval?
     /// Why the identity was blackholed.
     public var reason: String?
+
+    /// The entry dict Python stores (`Transport.py:3995`).
+    var msgPackValue: MsgPack.Value {
+      .map([
+        (.string("source"), source.map { .bytes($0) } ?? .nil),
+        (.string("until"), until.map { .double($0) } ?? .nil),
+        (.string("reason"), reason.map { .string($0) } ?? .nil),
+      ])
+    }
+  }
+
+  /// Python's `blackholed_identities`, as `rnpath -b` reads it from the RPC or `/list`.
+  func blackholeListValue() -> MsgPack.Value {
+    blackholeLock.lock()
+    let entries = blackholedIdentities
+    blackholeLock.unlock()
+    return .map(entries.map { (.bytes($0.key), $0.value.msgPackValue) })
   }
 
   // MARK: - Public API (mirrors Python Transport.blackhole_identity / unblackhole_identity)
@@ -170,16 +187,7 @@ extension Transport {
     let pairs: [(MsgPack.Value, MsgPack.Value)] =
       local
       .sorted { $0.key.hexString < $1.key.hexString }  // deterministic file bytes
-      .map { hash, entry in
-        (
-          .bytes(hash),
-          .map([
-            (.string("source"), entry.source.map { .bytes($0) } ?? .nil),
-            (.string("until"), entry.until.map { .double($0) } ?? .nil),
-            (.string("reason"), entry.reason.map { .string($0) } ?? .nil),
-          ])
-        )
-      }
+      .map { (.bytes($0.key), $0.value.msgPackValue) }
     let data = MsgPack.encode(.map(pairs))
     let localFile = directory.appendingPathComponent(
       StorageInventory.Entry.blackholeLocal.fileName)

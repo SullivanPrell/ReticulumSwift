@@ -510,7 +510,7 @@ public final class Reticulum {
   /// Returns whether blackhole list publishing is enabled.
   ///
   /// Mirrors Python's `Reticulum.publish_blackhole_enabled()`.
-  public private(set) static var storedPublishBlackholeEnabled: Bool = false
+  public internal(set) static var storedPublishBlackholeEnabled: Bool = false
   /// Returns whether blackhole list publishing is enabled.
   public static func publishBlackholeEnabled() -> Bool { storedPublishBlackholeEnabled }
 
