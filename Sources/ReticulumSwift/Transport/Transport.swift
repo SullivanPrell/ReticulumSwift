@@ -689,13 +689,14 @@ public final class Transport {
     [:]
   private let reverseTableLock = NSLock()
 
-  /// Bounded FIFO of dedup keys for path requests already processed.
-  ///
-  /// Each key is a destination hash followed by the request tag.
-  private var pathRequestTags: [Data] = []
-  private var pathRequestTagSet: Set<Data> = []
-  /// Maximum number of path-request dedup keys retained.
-  public var pathRequestCacheCap: Int = 4096
+  /// Dedup keys (destination hash + tag) of path requests already processed, in two
+  /// generations: Python's `discovery_pr_tags` and `discovery_pr_tags_prev`
+  /// (`Transport.py:193-194`). ``rotatePathRequestTags()`` ages them.
+  private var pathRequestTags: Set<Data> = []
+  private var pathRequestTagsPrev: Set<Data> = []
+  /// Size past which the jobs loop starts a new generation: Python's `max_pr_tags`
+  /// (`Transport.py:195`).
+  public var pathRequestCacheCap: Int = 16000
 
   /// A destination this node searches for on a peer's behalf, and the peers waiting on that
   /// search.
@@ -1516,6 +1517,16 @@ public final class Transport {
       guard let iface = entry.value.interface else { return false }
       return registered.contains { $0 === iface }
     }
+  }
+
+  /// Starts a new generation of path-request tags once the current one passes the cap
+  /// (`Transport.py:849-853`).
+  func rotatePathRequestTags() {
+    lock.lock()
+    defer { lock.unlock() }
+    guard pathRequestTags.count > pathRequestCacheCap else { return }
+    pathRequestTagsPrev = pathRequestTags
+    pathRequestTags = []
   }
 
   /// Discards every queued announce without sending it.
@@ -3868,6 +3879,7 @@ public final class Transport {
     sweepReverseTable()
     runLinkJobs()
     sweepPendingLocalPathRequests()
+    rotatePathRequestTags()
     processAnnounceRetries()
     drainAnnounceQueues()
     sampleInterfaceSpeeds()
@@ -5986,10 +5998,7 @@ public final class Transport {
     // request when it bounces back from an interface's local echo.
     let dedupKey = destinationHash + tag
     lock.lock()
-    if !pathRequestTagSet.contains(dedupKey) {
-      pathRequestTagSet.insert(dedupKey)
-      pathRequestTags.append(dedupKey)
-    }
+    pathRequestTags.insert(dedupKey)
     // `Transport.path_requests[destination_hash] = time.time()` (`Transport.py:3321`).
     pathRequests[destinationHash] = Date().timeIntervalSince1970
     lock.unlock()
@@ -6052,15 +6061,11 @@ public final class Transport {
     let dedupKey = target + tag
 
     lock.lock()
-    let alreadySeen = pathRequestTagSet.contains(dedupKey)
-    if !alreadySeen {
-      pathRequestTagSet.insert(dedupKey)
-      pathRequestTags.append(dedupKey)
-      while pathRequestTags.count > pathRequestCacheCap {
-        let evicted = pathRequestTags.removeFirst()
-        pathRequestTagSet.remove(evicted)
-      }
-    }
+    // `if not unique_tag in discovery_pr_tags and not unique_tag in discovery_pr_tags_prev`
+    // (`Transport.py:1850`).
+    let alreadySeen =
+      pathRequestTags.contains(dedupKey) || pathRequestTagsPrev.contains(dedupKey)
+    if !alreadySeen { pathRequestTags.insert(dedupKey) }
     lock.unlock()
     if alreadySeen { return nil }
 

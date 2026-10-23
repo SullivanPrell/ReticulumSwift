@@ -18,6 +18,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - A packet receipt's default timeout was `max(6, 6 * hops)`, with 6 s for an unknown path. It
   is now `first_hop_timeout + 6 * hops_to`, as Python computes it (`Packet.py:432-433`), so a
   known path gains its first-hop term and an unknown one waits for 128 hops.
+- A path-request tag was forgotten after 4,096 newer ones, so a request circulating longer was
+  answered again where Python drops it. Tags now live in two generations of up to 16,000, as
+  Python's `discovery_pr_tags` and `discovery_pr_tags_prev` do (`Transport.py:193-195`,
+  `:1849-1851`), and the jobs loop rotates them (`:850-853`). Eviction no longer shifts an
+  array under the transport lock for every request. Swift's jobs loop runs every 5 s, where
+  Python's runs every 0.25 s, so a flood can grow the current generation past the cap for up
+  to 5 s before it rotates. A tag is never forgotten sooner than in Python.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
