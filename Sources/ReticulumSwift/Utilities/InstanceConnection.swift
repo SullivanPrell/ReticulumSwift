@@ -256,15 +256,17 @@ public final class InstanceConnection {
   ///
   /// - Parameters:
   ///   - explicitConfigDirectory: explicit config directory, or `nil` to resolve as Python does.
-  ///   - requireSharedInstance: when true, fail unless an instance is *already* running.
-  ///     Python: `RNS.Reticulum(require_shared_instance=True)`, used by `rnstatus` and
-  ///     `rnpath`, which only read state that a running daemon owns.
+  ///   - requireSharedInstance: when true, fail rather than become the shared instance.
+  ///     Python: `RNS.Reticulum(require_shared_instance=True)`, which `rnstatus` passes for
+  ///     a local status. An instance that holds the port but can't be reached still yields
+  ///     a standalone stack (`Reticulum.py:445-453`).
   ///   - logLevel: log verbosity for the stack this call brings up.
   ///   - synthesizeInterfaces: whether to bring up the interfaces named in the config
   ///     file. A utility attaching as a local client must not, since the shared instance
   ///     already owns them—this mirrors Python only adding the `LocalClientInterface`.
   /// - Returns: A connection owning the stack the utility runs against.
-  /// - Throws: `InstanceError` when no instance is available, or the stack cannot start.
+  /// - Throws: `InstanceError.noSharedInstance` when one is required and none runs, or the
+  ///   error that stopped the stack starting.
   public static func attach(
     configDirectory explicitConfigDirectory: URL? = nil,
     requireSharedInstance: Bool = false,
@@ -335,6 +337,24 @@ public final class InstanceConnection {
       throw InstanceError.noSharedInstance
     }
 
+    // Someone else owns the port: connect to it, and run standalone when that fails too
+    // (`Reticulum.py:422-450`). Python connects before `Transport.start`. The interface is
+    // registered only after `start()`, which would otherwise start it a second time. The
+    // instance sends a new client nothing unprompted (`LocalInterface.py:416-458`).
+    var localInterface: LocalInterface?
+    if !isSharedInstance {
+      let client = LocalInterface(host: "127.0.0.1", port: sharedPort)
+      do {
+        try client.start()
+        localInterface = client
+      } catch {
+        Reticulum.log(
+          "Local shared instance appears to be running, but it could not be connected",
+          level: .error)
+        Reticulum.log("The contained exception was: \(error)", level: .error)
+      }
+    }
+
     // Python: `is_connected_to_shared_instance = True`, which Transport reads back
     // as `Transport.owner.is_connected_to_shared_instance`. Without it a client
     // re-applies work the shared instance has already done: `filterAndRecord` runs
@@ -342,32 +362,33 @@ public final class InstanceConnection {
     // forwarded *to this node*, `shouldApplyDelta` re-applies the local hops delta, and
     // rnprobe takes the standalone branch so it never reports RSSI/SNR/Link Quality.
     // `start()` disables transport for it, as Python does (`Reticulum.py:440`).
-    reticulum.transport.isConnectedToSharedInstance = !isSharedInstance
+    reticulum.transport.isConnectedToSharedInstance = localInterface != nil
     do {
       try reticulum.start()
     } catch {
       server.stop()
+      localInterface?.stop()
       throw error
     }
 
-    if !isSharedInstance {
-      // --- Someone else owns the port: attach as a local client. ---
-      let localInterface = LocalInterface(host: "127.0.0.1", port: sharedPort)
+    if let localInterface {
       reticulum.transport.register(interface: localInterface)
-      do {
-        try localInterface.start()
-      } catch {
-        reticulum.transport.deregister(interface: localInterface)
-        reticulum.stop()
-        throw InstanceError.couldNotConnect(error)
-      }
-
       let rpc = try? RPCClient.forInstance(storagePath: storagePath, port: controlPort)
       return InstanceConnection(
         reticulum: reticulum, config: config,
         configDirectory: configDirectory, role: .localClient,
         rpc: rpc, sharedInstanceServer: nil,
         localInterface: localInterface)
+    }
+
+    // Python raises only when this process became the shared instance (`Reticulum.py:452-453`),
+    // so a caller that requires one gets a standalone stack too.
+    if !isSharedInstance {
+      if synthesizeInterfaces { try reticulum.synthesizeInterfaces(from: config) }
+      return InstanceConnection(
+        reticulum: reticulum, config: config,
+        configDirectory: configDirectory, role: .standalone,
+        rpc: nil, sharedInstanceServer: nil, localInterface: nil)
     }
 
     // --- This instance became the shared instance. ---
@@ -416,18 +437,16 @@ public final class InstanceConnection {
     /// No instance was already running, and the caller required one.
     /// Python prints "No shared RNS instance available to get status from" and exits 1.
     case noSharedInstance
-    /// A shared instance appears to be running but couldn't be connected to.
+    /// Nothing throws this: an instance that can't be reached yields a standalone stack.
+    @available(*, deprecated, message: "attach falls back to standalone (Reticulum.py:445-450)")
     case couldNotConnect(Error)
 
     /// The message printed for this failure.
     public var description: String {
-      switch self {
-      case .noSharedInstance:
-        return "No shared RNS instance available"
-      case .couldNotConnect(let underlying):
-        return
-          "Local shared instance appears to be running, but it could not be connected: \(underlying)"
+      guard case .noSharedInstance = self else {
+        return "Local shared instance appears to be running, but it could not be connected"
       }
+      return "No shared RNS instance available"
     }
   }
 }

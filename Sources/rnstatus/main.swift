@@ -126,8 +126,10 @@ signal(SIGINT) { _ in
 // MARK: - Stack
 
 // Python: `if remote: require_shared = False else: require_shared = True` (rnstatus.py:159).
-// Local status only ever reports on a daemon that's already running; remote status stands
-// up its own stack to make the link.
+// Local status reports on a daemon that's already running; remote status stands up its own
+// stack to make the link. When the port is held but the instance can't be reached, Python runs
+// standalone and reports its own interfaces (`Reticulum.py:445-450`, `:756`), so `attach`
+// brings them up.
 let requireSharedInstance = (remoteHex == nil)
 
 // Python: `loglevel=3+verbosity` (rnstatus.py:173), capped at LOG_EXTREME
@@ -143,8 +145,7 @@ do {
   connection = try InstanceConnection.attach(
     configDirectory: configDirectory,
     requireSharedInstance: requireSharedInstance,
-    logLevel: logLevel,
-    synthesizeInterfaces: !requireSharedInstance)
+    logLevel: logLevel)
 } catch {
   fail("No shared RNS instance available to get status from", .noSharedInstance)
 }
