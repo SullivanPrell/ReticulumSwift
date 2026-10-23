@@ -5,6 +5,22 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- When another process holds the shared-instance port but can't be reached, a stack now runs
+  standalone with the config's interfaces, as Python's does (`Reticulum.py:445-450`, `:756`).
+  `InstanceConnection.attach` logs Python's two error lines and returns `.standalone`, so
+  `rnstatus` reports its own interfaces and exits 0. Before, `attach` threw: `rnsd`, `rnir`, and
+  `rnpkg` exited 255, and `rnstatus` printed `No shared RNS instance available`. `attach` now
+  connects to the instance before the stack starts, as Python does. A required shared instance
+  that isn't running still throws `noSharedInstance` (`:452-453`).
+- `rnsd`, `rnir`, and `rnpkg` now exit 1 when the stack can't start for another reason, as an
+  uncaught Python exception does. They printed the could-not-connect lines for any error.
+
+### Deprecated
+
+- `InstanceConnection.InstanceError.couldNotConnect`. Nothing throws it.
+
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
 `TCPClientInterface.start()` and `BackboneInterface.start()` wait up to 5 s for the first dial,

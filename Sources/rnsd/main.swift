@@ -111,7 +111,7 @@ do {
   // grabs 37428 and then conflicts with the TCPServerInterface on 42422.
   //
   // Interface synthesis is deliberately deferred: Python gates it on
-  // `is_shared_instance or is_standalone_instance` (Reticulum.py:936), so a process that
+  // `is_shared_instance or is_standalone_instance` (Reticulum.py:756), so a process that
   // attached to somebody else's shared instance must bring up no config interfaces at all.
   connection = try InstanceConnection.attach(
     configDirectory: paths.configDir,
@@ -125,18 +125,14 @@ do {
       + "\(bootstrapped.config.reticulum.instanceControlPort): \(error)", level: .critical)
   exit(RNSDApp.ExitCode.fatalError.rawValue)
 } catch {
-  // Python: `__start_local_interface` logs these two lines (Reticulum.py:436-437). It then
-  // degrades to a standalone instance; this port can't re-drive the bring-up from here, so
-  // it panics instead—see the release notes.
-  Reticulum.log(
-    "Local shared instance appears to be running, but it could not be connected",
-    level: .error)
-  Reticulum.log("The contained exception was: \(error)", level: .error)
-  exit(RNSDApp.ExitCode.panic.rawValue)
+  // `attach` falls back to standalone itself (`Reticulum.py:445-450`). Python's `rnsd` leaves
+  // any other startup exception uncaught (`rnsd.py:84-88`), and the interpreter exits with 1.
+  Reticulum.log("Could not start Reticulum: \(error)", level: .critical)
+  exit(RNSDApp.ExitCode.fatalError.rawValue)
 }
 
 if connection.role != .localClient {
-  // Python: LOG_VERBOSE fences around interface synthesis (Reticulum.py:937, 950).
+  // Python: LOG_VERBOSE fences around interface synthesis (Reticulum.py:757, 769).
   Reticulum.log("Bringing up system interfaces...", level: .verbose)
   // Python logs this per skipped entry from inside the synthesis loop (Reticulum.py:1045).
   for interface in bootstrapped.config.interfaces where !interface.enabled {
