@@ -662,7 +662,7 @@ public final class Link {
     return quality
   }
 
-  private weak var transport: Transport?
+  private(set) weak var transport: Transport?
   private var token: Token?
   private var watchdogTimer: DispatchSourceTimer?
 
@@ -962,6 +962,9 @@ public final class Link {
       data: proofData
     )
     try transport.send(packet, generateReceipt: false)
+    // `RNS.Transport.cache(proof_packet, force_cache=True)`, so a sender that loses it can ask
+    // again (`Resource.py:772-773`).
+    try? transport.cache(packet)
     recordOutbound(bytes: 0, countPacket: false, isData: false)
   }
 

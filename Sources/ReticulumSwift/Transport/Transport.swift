@@ -1124,6 +1124,10 @@ public final class Transport {
   ///
   /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
   private var lastKnownDestinationsClean: Date = .distantPast
+  /// When the jobs loop last culled the packet cache.
+  ///
+  /// Python's `last_cache_clean` starts at 0.
+  private var lastPacketCacheClean: Date = .distantPast
 
   /// A packet waiting for the drain worker, with the class it queued under.
   struct InboundPacket {
@@ -3878,6 +3882,11 @@ public final class Transport {
       cleanKnownDestinations(now: now)
       lastKnownDestinationsClean = now
     }
+    // `Reticulum.__jobs` culls the packet cache every `CLEAN_INTERVAL` (`Reticulum.py:388-392`).
+    if now.timeIntervalSince(lastPacketCacheClean) > Transport.cleanInterval {
+      cleanPacketCache(now: now)
+      lastPacketCacheClean = now
+    }
   }
 
   /// Runs the per-interface step of the interface-jobs pass (`Transport.py:1150-1158`).
@@ -4181,6 +4190,21 @@ public final class Transport {
       return false
     }
     return (packet.transportID ?? (forLocal ? transportInstanceID : nil)) == transportInstanceID
+  }
+
+  /// Whether `packet` enters Python's transport block (`Transport.py:1997`): on a transport
+  /// node, from a local client, or, for anything but an announce, toward one by path or by link
+  /// (`:1967-1975`).
+  func entersTransportBlock(_ packet: Packet, from interface: any Interface) -> Bool {
+    if transportEnabled || fromLocalClient(interface: interface) { return true }
+    guard packet.packetType != .announce else { return false }
+    lock.lock()
+    let path = paths[packet.destinationHash]
+    let route = linkRoutes[packet.destinationHash]
+    lock.unlock()
+    let linkTouchesLocalClient = [route?.initiatorSideInterface, route?.responderSideInterface]
+      .contains { $0.map(isLocalClientInterface) ?? false }
+    return forLocalClient(path) || linkTouchesLocalClient
   }
 
   /// Addresses a packet this node carries toward `path`, by the hops that remain.
@@ -4840,10 +4864,13 @@ public final class Transport {
 
     relayPlainBroadcast(packet, from: interface)
 
-    // CACHE_REQUEST: serve cached announce packet if available.
-    // Mirrors Python: `if packet.context == CACHE_REQUEST: if cache_request_packet(packet): return`
-    if packet.packetType == .data, packet.context == .cacheRequest {
-      if cacheRequestPacket(packet) { return }
+    // `if packet.context == CACHE_REQUEST: if cache_request_packet(packet): return`, inside the
+    // transport block (`Transport.py:1997`, `:2012-2013`). Outside it, a link's request reaches
+    // `handleLinkData`, which answers on the link.
+    if packet.context == .cacheRequest, entersTransportBlock(packet, from: interface),
+      cacheRequestPacket(packet)
+    {
+      return
     }
 
     if isPathRequest(packet) {
@@ -5189,6 +5216,18 @@ public final class Transport {
 
   private func handleLinkData(_ packet: Packet, from interface: Interface) {
     if let link = lookupLink(packet.destinationHash) {
+      // A link's CACHE_REQUEST is a plaintext packet hash, answered from the packet cache on
+      // the link (`Transport.py:2575-2581`).
+      if packet.packetType == .data, packet.context == .cacheRequest {
+        if let cached = getCachedPacket(hash: packet.data) {
+          try? send(
+            Packet(
+              destinationType: .link, packetType: cached.packetType,
+              destinationHash: packet.destinationHash, context: cached.context, data: cached.data),
+            generateReceipt: false)
+        }
+        return
+      }
       try? link.receive(received(packet, on: interface), from: interface)
       return
     }
@@ -5203,7 +5242,7 @@ public final class Transport {
     forwardLinkTraffic(packet, from: interface)
   }
 
-  private func lookupLink(_ linkID: Data) -> Link? {
+  func lookupLink(_ linkID: Data) -> Link? {
     lock.lock()
     defer { lock.unlock() }
     return links[linkID]

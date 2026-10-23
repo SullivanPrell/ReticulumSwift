@@ -48,10 +48,10 @@ final class ResourceProofCacheTests: XCTestCase {
     /// Returns true for a packet the link loses.
     var drops: ((Packet) -> Bool)?
     private let lock = NSLock()
-    private var _sent: [Packet] = []
-    private var _dropped: [Packet] = []
-    var sent: [Packet] { locked { _sent } }
-    var dropped: [Packet] { locked { _dropped } }
+    private var sentPackets: [Packet] = []
+    private var droppedPackets: [Packet] = []
+    var sent: [Packet] { locked { sentPackets } }
+    var dropped: [Packet] { locked { droppedPackets } }
     private func locked<T>(_ body: () -> T) -> T {
       lock.lock()
       defer { lock.unlock() }
@@ -63,10 +63,10 @@ final class ResourceProofCacheTests: XCTestCase {
     func send(_ packet: Packet) throws {
       let copy = try Packet.unpack(packet.pack())
       if drops?(copy) == true {
-        locked { _dropped.append(copy) }
+        locked { droppedPackets.append(copy) }
         return
       }
-      locked { _sent.append(copy) }
+      locked { sentPackets.append(copy) }
       paired?.inboundHandler?(copy, paired!)
     }
   }
@@ -251,10 +251,41 @@ final class ResourceProofCacheTests: XCTestCase {
 
   // MARK: - cache_request_packet
 
+  /// A non-transport node checks its cache only for a packet from, or toward, a local client
+  /// (`Transport.py:1967-1975`, `:1997`).
+  func testANonTransportNodeEntersTheTransportBlockOnlyForALocalClient() {
+    let t = Transport()
+    transports = [t]
+    t.transportEnabled = false
+    let mesh = LoopbackInterface(name: "mesh")
+    let serving = InTransportRelayTests.ServingIface(name: "client")
+    let toClient = Data(repeating: 0xC1, count: Constants.truncatedHashLength)
+    let clientLink = Data(repeating: 0xC2, count: Constants.truncatedHashLength)
+    t.injectPath(toClient, nextHop: toClient, receivedOn: serving, hops: 0, announcePacketHash: nil)
+    t.restore(
+      linkRoute: Transport.LinkRoute(
+        linkID: clientLink, initiatorSideInterface: serving, responderSideInterface: mesh,
+        initiatorSideInterfaceName: serving.name, responderSideInterfaceName: mesh.name,
+        destinationHash: toClient, lastHeard: Date(), remainingHops: 1, takenHops: 0))
+    func request(_ type: Packet.PacketType, to hash: Data) -> Packet {
+      Packet(
+        destinationType: .single, packetType: type, destinationHash: hash, context: .cacheRequest,
+        data: Self.proofHash)
+    }
+
+    XCTAssertFalse(t.entersTransportBlock(request(.data, to: Self.vectorLinkID), from: mesh))
+    XCTAssertTrue(t.entersTransportBlock(request(.data, to: Self.vectorLinkID), from: serving))
+    XCTAssertTrue(t.entersTransportBlock(request(.data, to: toClient), from: mesh), ":1968")
+    XCTAssertTrue(t.entersTransportBlock(request(.data, to: clientLink), from: mesh), ":1975")
+    XCTAssertFalse(t.entersTransportBlock(request(.announce, to: toClient), from: mesh))
+  }
+
   func testCacheRequestPacketReadsThePacketCacheNotTheAnnounceCache() throws {
     let t = Transport()
     transports = [t]
     t.cacheDirectory = try makeDirectory()
+    // An interface to replay on, so only the lookup can make the request go unanswered.
+    t.register(interface: LoopbackInterface(name: "eth0"))
     let announce = try Announce.make(
       for: Destination(identity: Identity(), direction: .in, kind: .single, appName: "creq"))
     try t.cacheAnnounce(announce)

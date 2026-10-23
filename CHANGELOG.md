@@ -5,6 +5,28 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A resource whose proof is lost on the link now recovers through the packet cache, as
+  Python's does. The receiver caches the proof it sends (`Resource.py:772-773`,
+  `Transport.py:3053-3067`). A sender still waiting for it asks with a plaintext
+  `CACHE_REQUEST` on the link when its watchdog fires (`Resource.py:652-672`), and the
+  receiver answers from its cache on the link (`Transport.py:2575-2581`). Before this, a
+  Python sender timed out against a Swift receiver, and a Swift sender never asked.
+- `cacheRequestPacket` and `cacheRequest(packetHash:destination:)` read `announces/` and
+  replayed onto the first interface. They now read the packet cache and replay on the
+  interface the packet arrived on (`Transport.py:3070-3124`). `processInbound` checks the cache
+  only inside Python's transport block (`:1997`, `:2012-2013`), so a leaf node answers a link's
+  request on the link instead.
+- The jobs loop culls packet-cache entries older than seven days every 15 minutes, as
+  `Reticulum.__clean_caches` does (`Reticulum.py:388-392`, `:1346-1357`). It leaves
+  `announces/` alone.
+
+### Added
+
+- `Transport.cache(_:)`, `Transport.getCachedPacket(hash:)`,
+  `Transport.cacheRequest(packetHash:link:)`, and `Transport.cleanPacketCache(now:)`.
+
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
 `TCPClientInterface.start()` and `BackboneInterface.start()` wait up to 5 s for the first dial,
