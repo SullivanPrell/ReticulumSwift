@@ -500,7 +500,9 @@ final class RNS141ParityTests: XCTestCase {
     aT.onLinkEstablished = { _ in established = true }
     let aLink = try Link.initiate(destination: bDest, transport: aT)
 
-    XCTAssertNil(aLink.expectedHops, "test premise: no path entry, so hops disagree")
+    XCTAssertEqual(
+      aLink.expectedHops, Transport.pathfinderM,
+      "test premise: no path entry, so hops_to answers PATHFINDER_M and the hops disagree")
     XCTAssertFalse(established, "a proof whose hops disagree must not establish the link")
     XCTAssertEqual(aLink.status, .pending)
     XCTAssertNil(aLink.rebalanced)

@@ -1632,8 +1632,26 @@ public final class Reticulum {
   /// whether a disabled block is built: `synthesizeInterfaces` skips it, and
   /// `attachInterface(named:)` builds it anyway, as Python's `force_attach` does
   /// (`Reticulum.py:1104`).
+  ///
+  /// A block that can't be built logs Python's two `LOG_ERROR` lines, naming the interface and
+  /// the error, before the error reaches the caller (`Reticulum.py:1215-1217`). Python then
+  /// calls `RNS.panic()` (`:1215`); `rnsd` exits 255 on the thrown error.
   @discardableResult
   func synthesizeInterface(_ ifCfg: ReticulumConfig.InterfaceConfig) throws -> (any Interface)? {
+    do {
+      return try constructInterface(ifCfg)
+    } catch {
+      Reticulum.log(
+        "The interface \"\(ifCfg.name)\" could not be created. Check your configuration file "
+          + "for errors!", level: .error)
+      Reticulum.log("The contained exception was: \(error.localizedDescription)", level: .error)
+      throw error
+    }
+  }
+
+  private func constructInterface(
+    _ ifCfg: ReticulumConfig.InterfaceConfig
+  ) throws -> (any Interface)? {
     let iface: (any Interface)?
     switch ifCfg.type {
     case "LocalInterface":
@@ -1651,6 +1669,15 @@ public final class Reticulum {
       // the one RNS's own discovery emits for a backbone peer—use
       // `remote`/`port`, so without the aliases the entry parsed to
       // nothing and the interface was silently skipped.
+      //
+      // A `BackboneInterface` block with no target builds the listener, whose constructor
+      // raises on anything but Linux or Android (`Reticulum.py:1128-1130`,
+      // `BackboneInterface.py:127-128`).
+      if ifCfg.type == "BackboneInterface", ifCfg["target_host"] ?? ifCfg["remote"] == nil {
+        throw InterfaceConstructionError.unsupportedPlatform(
+          interface: ifCfg.name,
+          reason: "BackboneInterface is only supported on Linux-based operating systems")
+      }
       guard let host = ifCfg["target_host"] ?? ifCfg["remote"],
         let port = ifCfg.int("target_port") ?? ifCfg.int("port")
       else { return nil }
