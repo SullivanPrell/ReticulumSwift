@@ -11,6 +11,11 @@ All notable changes to ReticulumSwift are documented here. This project follows
   destination's type, as Python checks `destination.type == packet.destination_type`
   (`Transport.py:2543`). A request marked PLAIN, GROUP or LINK for a SINGLE destination's hash
   got a proof from this port and nothing from Python.
+- `rngit` reads a `doc_id` or `var_page` sent as a byte string the way Python's `int` reads one:
+  ASCII text with only ASCII whitespace stripped, so `int(b"42")` is 42 (`server.py:3810`,
+  `:3819`, `:3825`, `:3943`, `pages.py:578`, `:857`). The port refused every byte string, so a
+  work request carrying a binary `doc_id` got "Invalid request" and a binary `var_page` showed
+  page 0.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 

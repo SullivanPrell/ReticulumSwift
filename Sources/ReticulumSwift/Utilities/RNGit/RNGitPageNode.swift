@@ -83,12 +83,11 @@ struct RNGitPageRequest {
   /// The page `var_page` asks for, which is the first where `int` raises for it, and never
   /// before the first.
   ///
-  /// Python's integer has no bounds, so text naming a page past the range of `Int` is read as
-  /// the last page `Int` holds, which is as far past the last page as the reference's is.
+  /// Python's integer has no bounds, so text or a byte string naming a page past the range of
+  /// `Int` is read as the last page `Int` holds, which is as far past the last page as the
+  /// reference's is (`pages.py:578`, `:857`).
   var page: Int {
-    let value = fields?["var_page"] ?? .string("0")
-    if case .string(let text) = value { return max(0, text.pythonIntegerClamped ?? 0) }
-    return max(0, value.pythonInteger ?? 0)
+    max(0, (fields?["var_page"] ?? .string("0")).pythonIntegerClamped ?? 0)
   }
 }
 
