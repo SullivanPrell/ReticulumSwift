@@ -1191,7 +1191,9 @@ public final class Transport {
   }
 
   /// Python's `Transport.hops_to` in full: the hop count, or ``pathfinderM`` when no path is
-  /// known (`Transport.py:3141-3143`). Every timeout that scales by hops reads this.
+  /// known (`Transport.py:3141-3143`).
+  ///
+  /// Every timeout that scales by hops reads this.
   public func hopsToOrUnknown(_ destinationHash: Data) -> Int {
     hopsTo(destinationHash).map(Int.init) ?? Transport.pathfinderM
   }

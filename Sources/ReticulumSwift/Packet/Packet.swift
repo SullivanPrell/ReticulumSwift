@@ -101,7 +101,9 @@ public struct Packet: Equatable {
   public var destinationHash: Data  // 16 bytes
   /// Context byte qualifying the payload, or `.none` for a byte `Context` doesn't name.
   public var context: Context { didSet { contextByte = context.rawValue } }
-  /// The context byte as it travels. Python stores any byte (`Packet.py:264`, `:271`), so a
+  /// The context byte as it travels.
+  ///
+  /// Python stores any byte (`Packet.py:264`, `:271`), so a
   /// packet that arrived with a context this port doesn't name keeps it here, and a relay
   /// forwards it unchanged. Otherwise it's `context.rawValue`.
   public private(set) var contextByte: UInt8

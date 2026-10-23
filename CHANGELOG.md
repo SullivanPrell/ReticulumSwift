@@ -36,7 +36,7 @@ All notable changes to ReticulumSwift are documented here. This project follows
   table. A tunnel left with no paths stays, as in Python.
 - `Packet.unpack` refused a context byte that `Packet.Context` doesn't name, so every Swift
   node on a path dropped a packet carrying a context a newer peer adds. Python stores any byte
-  (`Packet.py:264`, `:271`). Swift now keeps it, hashes it and relays it unchanged. A link
+  (`Packet.py:264`, `:271`). Swift now keeps it, hashes it, and relays it unchanged. A link
   counts such a packet and delivers nothing, as Python's `Link.__receive` does
   (`Link.py:942-950`). The enum stays, so an exhaustive `switch` over it still compiles.
 
