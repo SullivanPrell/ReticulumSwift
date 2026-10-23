@@ -1634,7 +1634,7 @@ public final class Reticulum {
   /// (`Reticulum.py:1104`).
   ///
   /// A block that can't be built logs Python's two `LOG_ERROR` lines, naming the interface and
-  /// the error, before the error reaches the caller (`Reticulum.py:1211-1213`). Python then
+  /// the error, before the error reaches the caller (`Reticulum.py:1215-1217`). Python then
   /// calls `RNS.panic()` (`:1215`); `rnsd` exits 255 on the thrown error.
   @discardableResult
   func synthesizeInterface(_ ifCfg: ReticulumConfig.InterfaceConfig) throws -> (any Interface)? {
@@ -1671,7 +1671,7 @@ public final class Reticulum {
       // nothing and the interface was silently skipped.
       //
       // A `BackboneInterface` block with no target builds the listener, whose constructor
-      // raises on anything but Linux or Android (`Reticulum.py:1124-1126`,
+      // raises on anything but Linux or Android (`Reticulum.py:1128-1130`,
       // `BackboneInterface.py:127-128`).
       if ifCfg.type == "BackboneInterface", ifCfg["target_host"] ?? ifCfg["remote"] == nil {
         throw InterfaceConstructionError.unsupportedPlatform(

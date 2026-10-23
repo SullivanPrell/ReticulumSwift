@@ -23,12 +23,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
   page 0.
 - A `BackboneInterface` block with no `remote` or `target_host` fails to build, as it does in
   Python off Linux: that block is the listener, whose constructor raises "BackboneInterface is
-  only supported on Linux-based operating systems" (`Reticulum.py:1124-1126`,
+  only supported on Linux-based operating systems" (`Reticulum.py:1128-1130`,
   `BackboneInterface.py:127-128`), and `rnsd` exits 255. The port skipped the block and logged
   nothing, so a daemon configured to listen ran without the interface.
 - An interface block that fails to build logs Python's two lines, naming the interface: `The
   interface "<name>" could not be created. Check your configuration file for errors!` and `The
-  contained exception was: <error>` (`Reticulum.py:1211-1213`). `rnsd` logged them without the
+  contained exception was: <error>` (`Reticulum.py:1215-1217`). `rnsd` logged them without the
   name, and a stack started through `InstanceConnection` logged nothing.
 
 ### Deliberate differences from Python
@@ -36,7 +36,7 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - A `TCPClientInterface` block with no `target_host` builds nothing. Python registers an
   interface that never connects (`TCPInterface.py:102-103`, `:138-151`).
 - A failed `rnstatus --attach` logs the error and answers false. Python's `_synthesize_interface`
-  calls `RNS.panic()` there too (`Reticulum.py:1215`), so a broken block stops the daemon.
+  calls `RNS.panic()` there too (`Reticulum.py:1219`), so a broken block stops the daemon.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 

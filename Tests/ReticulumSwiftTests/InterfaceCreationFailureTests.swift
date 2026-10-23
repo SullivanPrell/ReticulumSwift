@@ -14,7 +14,7 @@ import XCTest
 
 /// An interface block that can't be built fails the way `_synthesize_interface` fails it: two
 /// `LOG_ERROR` lines naming the interface and the exception, then `RNS.panic()`
-/// (`Reticulum.py:1211-1215`, RNS 1.5.5).
+/// (`Reticulum.py:1215-1219`, RNS 1.5.7).
 final class InterfaceCreationFailureTests: XCTestCase {
 
   private var tempDir: URL!
@@ -55,7 +55,7 @@ final class InterfaceCreationFailureTests: XCTestCase {
   }
 
   /// On anything but Linux or Android, `BackboneInterface.__init__` raises (`BackboneInterface.py:127-128`),
-  /// and a block with no `target_host` builds that class (`Reticulum.py:1124-1126`).
+  /// and a block with no `target_host` builds that class (`Reticulum.py:1128-1130`).
   func testABackboneListenerBlockFailsAsItDoesOffLinux() {
     XCTAssertThrowsError(
       try synthesize(

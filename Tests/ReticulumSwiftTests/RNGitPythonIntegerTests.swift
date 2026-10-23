@@ -12,7 +12,7 @@ import XCTest
 
 @testable import ReticulumSwift
 
-/// Text and byte strings read as Python 3.14.5 reads them with `int`, under RNS 1.5.5.
+/// Text and byte strings read as Python 3.14.5 reads them with `int`, under RNS 1.5.7.
 final class RNGitPythonIntegerTests: XCTestCase {
 
   /// Each text with what `int` answered for it, exactly and held to the range of `Int`.

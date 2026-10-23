@@ -146,7 +146,7 @@ if connection.role != .localClient {
     try connection.reticulum.synthesizeInterfaces(from: bootstrapped.config)
   } catch {
     // `synthesizeInterface` logged Python's two lines; Python then calls `RNS.panic()`
-    // (`Reticulum.py:1211-1215`).
+    // (`Reticulum.py:1215-1219`).
     exit(RNSDApp.ExitCode.panic.rawValue)
   }
   Reticulum.log("System interfaces are ready", level: .verbose)
