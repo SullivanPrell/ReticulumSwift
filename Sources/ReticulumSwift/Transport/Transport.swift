@@ -1189,6 +1189,12 @@ public final class Transport {
     return paths[destinationHash].map { UInt8(clamping: pythonHops(of: $0)) }
   }
 
+  /// Python's `Transport.hops_to` in full: the hop count, or ``pathfinderM`` when no path is
+  /// known (`Transport.py:3141-3143`). Every timeout that scales by hops reads this.
+  public func hopsToOrUnknown(_ destinationHash: Data) -> Int {
+    hopsTo(destinationHash).map(Int.init) ?? Transport.pathfinderM
+  }
+
   /// The next-hop destination hash (transport ID) for a known path, or nil.
   ///
   /// Mirrors Python's `Transport.next_hop(destination_hash)`.
@@ -4632,15 +4638,11 @@ public final class Transport {
     return try send(packet, generateReceipt: false)
   }
 
-  /// Default receipt timeout for a destination.
-  ///
-  /// Uses hop count if a path
-  /// is known; otherwise falls back to a single-hop estimate.
-  /// Mirrors Python's `get_first_hop_timeout` + `TIMEOUT_PER_HOP`.
+  /// Default receipt timeout for a destination: `get_first_hop_timeout + TIMEOUT_PER_HOP *
+  /// hops_to` (`Packet.py:432-433`).
   private func defaultTimeout(for destinationHash: Data) -> TimeInterval {
-    let perHop: TimeInterval = 6
-    let hops = TimeInterval(hopsTo(destinationHash) ?? 1)
-    return max(perHop, hops * perHop)
+    firstHopTimeout(for: destinationHash) + Constants.defaultPerHopTimeout
+      * TimeInterval(hopsToOrUnknown(destinationHash))
   }
 
   // MARK: - Inbound

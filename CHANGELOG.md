@@ -5,6 +5,20 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- `Transport.hopsToOrUnknown(_:)`, Python's `hops_to`: the hop count, or `pathfinderM` (128)
+  when no path is known (`Transport.py:3141-3143`).
+
+### Fixed
+
+- A link to a destination with no known path gave up after `firstHopTimeout + 6` s. Python
+  allows `first_hop_timeout + 6 * 128`, 774 s at the default, because `hops_to` answers 128
+  (`Link.py:280-282`). Swift now does too, and `expectedHops` is 128 rather than nil.
+- A packet receipt's default timeout was `max(6, 6 * hops)`, with 6 s for an unknown path. It
+  is now `first_hop_timeout + 6 * hops_to`, as Python computes it (`Packet.py:432-433`), so a
+  known path gains its first-hop term and an unknown one waits for 128 hops.
+
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
 `TCPClientInterface.start()` and `BackboneInterface.start()` wait up to 5 s for the first dial,

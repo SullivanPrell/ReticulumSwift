@@ -1040,10 +1040,10 @@ public final class Link {
     // Mirrors Python Link.__init__ lines 283–284:
     //   self.establishment_timeout  = RNS.Reticulum.get_instance().get_first_hop_timeout(destination.hash)
     //   self.establishment_timeout += Link.ESTABLISHMENT_TIMEOUT_PER_HOP * max(1, hops_to(destination.hash))
-    let hops = transport.hopsTo(destination.hash) ?? 1
+    let hops = transport.hopsToOrUnknown(destination.hash)
     // Record hop distance to the destination on the initiator side.
     // Python: self.expected_hops = RNS.Transport.hops_to(self.destination.hash)
-    link.expectedHops = transport.hopsTo(destination.hash).map(Int.init)
+    link.expectedHops = hops
     let fht = transport.firstHopTimeout(for: destination.hash)
     link.establishmentTimeout = fht + Link.establishmentTimeoutPerHop * TimeInterval(max(1, hops))
     transport.register(link: link)
