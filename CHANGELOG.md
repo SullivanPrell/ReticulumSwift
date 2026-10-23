@@ -25,6 +25,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
   array under the transport lock for every request. Swift's jobs loop runs every 5 s, where
   Python's runs every 0.25 s, so a flood can grow the current generation past the cap for up
   to 5 s before it rotates. A tag is never forgotten sooner than in Python.
+- Nothing removed a tunnel or a tunnel path, so `tunnels` and `storage/tunnels` grew for the
+  life of a node. The jobs loop now culls the table as Python's does (`Transport.py:1015-1064`,
+  `:1127-1131`). It drops a tunnel that has expired or expires more than twice
+  `tunnelTimeout` ahead, clears a live tunnel's interface once it's detached, and drops a
+  tunnel path older than `tunnelPathTimeout` or superseded by a later announce in the path
+  table. A tunnel left with no paths stays, as in Python.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
