@@ -9,6 +9,11 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 - `InterfaceConstructionError.unsupportedPlatform(interface:reason:)`, thrown for an interface
   type Python can't run on this platform.
+- `Transport.hopsToOrUnknown(_:)`, Python's `hops_to`: the hop count, or `pathfinderM` (128)
+  when no path is known (`Transport.py:3141-3143`).
+- `Packet.contextByte`, the context byte as it travels. It differs from `context.rawValue` only
+  for a packet that arrived with a byte `Packet.Context` doesn't name, whose `context` reads
+  `.none`.
 
 ### Fixed
 
@@ -30,6 +35,30 @@ All notable changes to ReticulumSwift are documented here. This project follows
   interface "<name>" could not be created. Check your configuration file for errors!` and `The
   contained exception was: <error>` (`Reticulum.py:1215-1217`). `rnsd` logged them without the
   name, and a stack started through `InstanceConnection` logged nothing.
+- A link to a destination with no known path gave up after `firstHopTimeout + 6` s. Python
+  allows `first_hop_timeout + 6 * 128`, 774 s at the default, because `hops_to` answers 128
+  (`Link.py:280-282`). Swift now does too, and `expectedHops` is 128 rather than nil.
+- A packet receipt's default timeout was `max(6, 6 * hops)`, with 6 s for an unknown path. It
+  is now `first_hop_timeout + 6 * hops_to`, as Python computes it (`Packet.py:432-433`), so a
+  known path gains its first-hop term and an unknown one waits for 128 hops.
+- A path-request tag was forgotten after 4,096 newer ones, so a request circulating longer was
+  answered again where Python drops it. Tags now live in two generations of up to 16,000, as
+  Python's `discovery_pr_tags` and `discovery_pr_tags_prev` do (`Transport.py:193-195`,
+  `:1849-1851`), and the jobs loop rotates them (`:850-853`). Eviction no longer shifts an
+  array under the transport lock for every request. Swift's jobs loop runs every 5 s, where
+  Python's runs every 0.25 s, so a flood can grow the current generation past the cap for up
+  to 5 s before it rotates. A tag is never forgotten sooner than in Python.
+- Nothing removed a tunnel or a tunnel path, so `tunnels` and `storage/tunnels` grew for the
+  life of a node. The jobs loop now culls the table as Python's does (`Transport.py:1015-1064`,
+  `:1127-1131`). It drops a tunnel that has expired or expires more than twice
+  `tunnelTimeout` ahead, clears a live tunnel's interface once it's detached, and drops a
+  tunnel path older than `tunnelPathTimeout` or superseded by a later announce in the path
+  table. A tunnel left with no paths stays, as in Python.
+- `Packet.unpack` refused a context byte that `Packet.Context` doesn't name, so every Swift
+  node on a path dropped a packet carrying a context a newer peer adds. Python stores any byte
+  (`Packet.py:264`, `:271`). Swift now keeps it, hashes it, and relays it unchanged. A link
+  counts such a packet and delivers nothing, as Python's `Link.__receive` does
+  (`Link.py:942-950`). The enum stays, so an exhaustive `switch` over it still compiles.
 
 ### Deliberate differences from Python
 
