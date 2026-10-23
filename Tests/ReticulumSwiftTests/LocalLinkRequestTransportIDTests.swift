@@ -59,19 +59,21 @@ final class LocalLinkRequestTransportIDTests: XCTestCase {
     destination = nil
   }
 
-  private func receiveLinkRequest(transportID: Data?) throws {
+  private func receiveLinkRequest(
+    transportID: Data?, destinationType: Packet.DestinationType = .single
+  ) throws {
     let keys =
       Curve25519.KeyAgreement.PrivateKey().publicKey.rawRepresentation
       + Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
     let request: Packet
     if let transportID {
       request = Packet(
-        headerType: .type2, transportType: .transport, destinationType: .single,
+        headerType: .type2, transportType: .transport, destinationType: destinationType,
         packetType: .linkRequest, transportID: transportID,
         destinationHash: destination.hash, data: keys)
     } else {
       request = Packet(
-        destinationType: .single, packetType: .linkRequest,
+        destinationType: destinationType, packetType: .linkRequest,
         destinationHash: destination.hash, data: keys)
     }
     toInstance.inboundHandler?(try Packet.unpack(request.pack()), toInstance)
@@ -103,5 +105,14 @@ final class LocalLinkRequestTransportIDTests: XCTestCase {
     try receiveLinkRequest(transportID: client.transportInstanceID)
 
     XCTAssertEqual(linkProofs.count, 1)
+  }
+
+  /// `if destination and destination.type == packet.destination_type` (`Transport.py:2543`).
+  func testALinkRequestWhoseHeaderNamesAnotherTypeGetsNoProof() throws {
+    for type in [Packet.DestinationType.plain, .group, .link] {
+      try receiveLinkRequest(transportID: nil, destinationType: type)
+    }
+
+    XCTAssertEqual(linkProofs.count, 0, "destination.type == packet.destination_type (Transport.py:2543)")
   }
 }

@@ -4898,9 +4898,10 @@ public final class Transport {
     // (ownerIdentity is still needed for tunnel synthesis—synthesizeTunnel.)
     //
     // A local destination answers only a request carrying no transport ID or this node's
-    // (`Transport.py:2541`). A shared-instance client's filter passes one in transport to its
-    // instance (`:1627`).
+    // (`Transport.py:2541`), and whose header names the destination's type (`:2543`). A
+    // shared-instance client's filter passes one in transport to its instance (`:1627`).
     if let destination, let owner = destination.identity, destination.acceptsLinks,
+      destination.kind.rawValue == packet.destinationType.rawValue,
       packet.transportID == nil || packet.transportID == transportInstanceID
     {
       do {

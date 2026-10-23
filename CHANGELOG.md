@@ -5,6 +5,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A local destination answers a link request only when the request's header names the
+  destination's type, as Python checks `destination.type == packet.destination_type`
+  (`Transport.py:2543`). A request marked PLAIN, GROUP or LINK for a SINGLE destination's hash
+  got a proof from this port and nothing from Python.
+
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 
 `TCPClientInterface.start()` and `BackboneInterface.start()` wait up to 5 s for the first dial,
