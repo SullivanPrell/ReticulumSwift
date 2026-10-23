@@ -80,6 +80,8 @@ public final class Transport {
   /// Mirrors Python's periodic clean-jobs scheduler in `Reticulum.__clean_caches`
   /// (RNS commit b408699e). Defaults to 1 hour to amortise the table walk.
   public static let knownDestinationsCleanInterval: TimeInterval = 60 * 60
+  /// Python's `mgmt_announce_interval` (`Transport.py:266`).
+  public static let managementAnnounceInterval: TimeInterval = 2 * 60 * 60
   /// Maximum receipts tracked simultaneously.
   public static let maxReceipts: Int = 1024
   /// Maximum number of hops Reticulum transports a packet.
@@ -584,10 +586,10 @@ public final class Transport {
   /// traffic sampler can be driven at fixed timestamps without running a jobs loop.
   public internal(set) var startTime: TimeInterval = 0
 
-  /// Identity used to answer incoming link requests on registered
-  /// destinations.
+  /// An identity the host can attach to its transport.
   ///
-  /// The host sets this when it knows its local identity.
+  /// Transport reads nothing from it: Python's blackhole source and tunnel signer are
+  /// `Transport.identity` (`Transport.py:2767`, `:3995`), ported as `transportIdentity`.
   public var ownerIdentity: Identity?
 
   /// Optional network identity, used for remote management and interface discovery.
@@ -1066,6 +1068,8 @@ public final class Transport {
   public private(set) var probeDestination: Destination?
   /// Remote management destination, present only while remote management is enabled.
   public private(set) var remoteManagementDestination: Destination?
+  /// Python's `Transport.blackhole_destination`, present only while `publish_blackhole` is on.
+  public private(set) var blackholeDestination: Destination?
   /// Identities permitted to reach the remote management destination.
   public var remoteManagementAllowed: [Identity] = []
 
@@ -1125,6 +1129,10 @@ public final class Transport {
   ///
   /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
   private var lastKnownDestinationsClean: Date = .distantPast
+  /// Python's `last_mgmt_announce` (`Transport.py:265`).
+  var lastManagementAnnounce: TimeInterval = 0
+  /// Python's `mgmt_destinations`, in its order (`Transport.py:371`, `:383-384`, `:515`).
+  private var managementDestinations: [Destination] = []
 
   /// A packet waiting for the drain worker, with the class it queued under.
   struct InboundPacket {
@@ -3707,6 +3715,8 @@ public final class Transport {
     // up, so `isOnline` is meaningful when the lowest bitrate is taken.
     prioritizeInterfaces()
     setupManagementDestinations()
+    // The first management round goes 15 s in (`Transport.py:397`).
+    lastManagementAnnounce = startTime - Transport.managementAnnounceInterval + 15
     isRunning = true
     startJobsLoop()
   }
@@ -3715,10 +3725,13 @@ public final class Transport {
   ///
   /// Mirrors Python's Transport.start() destination setup block.
   private func setupManagementDestinations() {
-    guard let identity = transportIdentity else { return }
+    // A shared-instance client leaves all of these to its instance (`Transport.py:367`,
+    // `:375`, `:382`).
+    guard !isConnectedToSharedInstance, let identity = transportIdentity else { return }
 
-    // Probe destination: responds to PROVE_ALL, no links.
-    if Reticulum.probeDestinationEnabled() {
+    // Probe destination: responds to PROVE_ALL, no links. Python builds it only with
+    // transport on (`Transport.py:404`, `:511`).
+    if transportEnabled, Reticulum.probeDestinationEnabled() {
       if let probe = try? Destination(
         identity: identity, direction: .in, kind: .single,
         appName: "rnstransport", aspects: ["probe"])
@@ -3820,15 +3833,39 @@ public final class Transport {
       }
     }
 
+    // Blackhole list publisher for anyone (`Transport.py:375-380`). Native, so rnpath gets
+    // the dict it checks for (`rnpath.py:161`).
+    if Reticulum.publishBlackholeEnabled(),
+      let blackhole = try? Destination(
+        identity: identity, direction: .in, kind: .single,
+        appName: "rnstransport", aspects: ["info", "blackhole"])
+    {
+      blackhole.registerNativeRequestHandler(path: "/list", allow: .all) {
+        [weak self] _, _, _, _, _ in self?.blackholeListValue()
+      }
+      blackholeDestination = blackhole
+      register(destination: blackhole)
+      Reticulum.log(
+        "Enabled blackhole list publishing for transport identity "
+          + RNSUtilities.prettyhexrep(identity.hash), level: .notice)
+    }
+
     // Network/instance destinations when networkIdentity is set.
-    setupNetworkDestinations()
+    managementDestinations =
+      [remoteManagementDestination, blackholeDestination].compactMap { $0 }
+      + setupNetworkDestinations()
+      + [probeDestination].compactMap { $0 }
   }
 
   /// Creates `rnstransport.network` and `rnstransport.network.instance.<hex>` destinations.
   ///
   /// Mirrors Python's `Transport.instance_destination` and `Transport.network_destination` setup.
-  public func setupNetworkDestinations() {
-    guard let netIdentity = networkIdentity else { return }
+  ///
+  /// - Returns: The destinations built, instance first.
+  @discardableResult
+  public func setupNetworkDestinations() -> [Destination] {
+    guard let netIdentity = networkIdentity else { return [] }
+    var built: [Destination] = []
     let hexHash = netIdentity.hash.map { String(format: "%02x", $0) }.joined()
     if let instanceDest = try? Destination(
       identity: netIdentity, direction: .in, kind: .single,
@@ -3836,12 +3873,27 @@ public final class Transport {
       aspects: ["network", "instance", hexHash])
     {
       register(destination: instanceDest)
+      built.append(instanceDest)
     }
     if let netDest = try? Destination(
       identity: netIdentity, direction: .in, kind: .single,
       appName: "rnstransport", aspects: ["network"])
     {
       register(destination: netDest)
+      built.append(netDest)
+    }
+    return built
+  }
+
+  /// Announces every management destination once `managementAnnounceInterval` has passed
+  /// since the last round (`Transport.py:1178-1187`).
+  func announceManagementDestinations(now: TimeInterval = Date().timeIntervalSince1970) {
+    guard now > lastManagementAnnounce + Transport.managementAnnounceInterval else { return }
+    lastManagementAnnounce = now
+    for destination in managementDestinations {
+      do { try announce(destination: destination) } catch {
+        Reticulum.log("Error while sending management announces: \(error)", level: .error)
+      }
     }
   }
 
@@ -3899,6 +3951,7 @@ public final class Transport {
       cleanKnownDestinations(now: now)
       lastKnownDestinationsClean = now
     }
+    announceManagementDestinations()
   }
 
   /// Runs the per-interface step of the interface-jobs pass (`Transport.py:1150-1158`).
@@ -4957,8 +5010,7 @@ public final class Transport {
 
     // Use the destination's own identity to answer the link request.
     // This is correct: each registered destination carries its private
-    // identity, so the transport-wide ownerIdentity isn't needed here.
-    // (ownerIdentity is still needed for tunnel synthesis—synthesizeTunnel.)
+    // identity, so no transport-wide identity is needed here.
     //
     // A local destination answers only a request carrying no transport ID or this node's
     // (`Transport.py:2541`), and whose header names the destination's type (`:2543`). A
@@ -6939,7 +6991,7 @@ public final class Transport {
 
   /// Synthesizes a tunnel endpoint for `interface` and re-announces its paths.
   public func synthesizeTunnel(_ interface: any Interface) {
-    guard let identity = ownerIdentity else { return }
+    guard let identity = transportIdentity else { return }
 
     let publicKey = identity.publicKeyBytes  // 64 bytes
     let ifaceHash = Hashes.fullHash(Data(interface.name.utf8))  // 32 bytes

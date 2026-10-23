@@ -53,7 +53,7 @@ final class BlackholePersistenceFormatTests: XCTestCase {
 
   private func makeTransport(owner: Identity) -> Transport {
     let transport = Transport()
-    transport.ownerIdentity = owner
+    transport.transportIdentity = owner
     return transport
   }
 

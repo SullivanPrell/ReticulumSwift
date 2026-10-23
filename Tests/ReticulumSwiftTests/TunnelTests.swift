@@ -35,7 +35,7 @@ final class TunnelTests: XCTestCase {
   func testSynthesizeTunnelSendsDataPacketOnInterface() throws {
     let transport = Transport()
     let identity = Identity()
-    transport.ownerIdentity = identity
+    transport.transportIdentity = identity
 
     let iface = TunnelTestIface(name: "tun0")
     let exp = expectation(description: "packet sent")
@@ -60,7 +60,7 @@ final class TunnelTests: XCTestCase {
 
   func testSynthesizeTunnelNilIdentityDoesNothing() {
     let transport = Transport()
-    // No ownerIdentity set—shouldn't crash or send
+    // No transportIdentity set—shouldn't crash or send
     let iface = TunnelTestIface(name: "no-id")
     transport.synthesizeTunnel(iface)
     XCTAssertNil(iface.lastSentPacket)
@@ -68,7 +68,7 @@ final class TunnelTests: XCTestCase {
 
   func testSynthesizeTunnelClearsWantsTunnel() throws {
     let transport = Transport()
-    transport.ownerIdentity = Identity()
+    transport.transportIdentity = Identity()
     let iface = TunnelTestIface(name: "tun-clr")
     iface.wantsTunnel = true
     iface.onSend = { _ in }
@@ -162,7 +162,7 @@ final class TunnelTests: XCTestCase {
 
   func testRegisterInterfaceWithWantsTunnelAutoSynthesizes() throws {
     let transport = Transport()
-    transport.ownerIdentity = Identity()
+    transport.transportIdentity = Identity()
 
     let iface = TunnelTestIface(name: "auto-tun")
     iface.wantsTunnel = true

@@ -417,21 +417,7 @@ public final class RPCServer {
       // identity hash to the full entry dict {"source", "until", "reason"}
       // (Transport.py `blackhole_identity`). rnpath reads all three fields off it,
       // so emitting a bare `true` here would break `rnpath -b`.
-      guard let t = transport else { return msgpack(.map([])) }
-      t.blackholeLock.lock()
-      let entries = t.blackholedIdentities
-      t.blackholeLock.unlock()
-      let pairs: [(MsgPack.Value, MsgPack.Value)] = entries.map { hash, entry in
-        (
-          .bytes(hash),
-          .map([
-            (.string("source"), entry.source.map { .bytes($0) } ?? .nil),
-            (.string("until"), entry.until.map { .double($0) } ?? .nil),
-            (.string("reason"), entry.reason.map { .string($0) } ?? .nil),
-          ])
-        )
-      }
-      return msgpack(.map(pairs))
+      return msgpack(transport?.blackholeListValue() ?? .map([]))
 
     case "is_blackholed":
       if let t = transport, let hash = binValue(kv["identity_hash"]) {

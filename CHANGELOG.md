@@ -14,6 +14,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - `Packet.contextByte`, the context byte as it travels. It differs from `context.rawValue` only
   for a packet that arrived with a byte `Packet.Context` doesn't name, whose `context` reads
   `.none`.
+- A node with `publish_blackhole` on now serves its blackhole list at
+  `rnstransport.info.blackhole` on the transport identity, so `rnpath -p` against it works.
+  The `/list` request answers anyone with every entry, as Python's does (`Transport.py:375-380`,
+  `:4091-4097`).
+- The jobs loop now announces the management destinations 15 s after start, then every 2
+  hours (`Transport.py:397`, `:1178-1187`). Before this, other nodes learned a path to a Swift
+  node's remote-management, blackhole, network, and probe destinations only by asking for one.
 
 ### Fixed
 
@@ -59,6 +66,18 @@ All notable changes to ReticulumSwift are documented here. This project follows
   (`Packet.py:264`, `:271`). Swift now keeps it, hashes it, and relays it unchanged. A link
   counts such a packet and delivers nothing, as Python's `Link.__receive` does
   (`Link.py:942-950`). The enum stays, so an exhaustive `switch` over it still compiles.
+- A shared-instance client built its own probe, remote-management, network, and instance
+  destinations when its config asked for them. Python leaves all of them to the instance
+  (`Transport.py:367`, `:382`, and `Reticulum.py:440-442` for probes), so Swift now builds
+  none in a client. Python also builds the probe destination only with transport on
+  (`Transport.py:404`, `:511`), and Swift now does the same on any node.
+- Blackhole entries, the `local` blackhole file, and tunnel synthesis read `ownerIdentity`,
+  which nothing in the package sets. Every entry had no source, so Python's `rnpath -b` and
+  `rnpath -p` stopped on the list (`rnpath.py:192`). `local` was saved but never loaded, so
+  a node's own blackholes didn't survive a restart. No tunnel was synthesized unless the host
+  set `ownerIdentity`. All three now use the transport identity, as Python does
+  (`Transport.py:2767`, `:3995`, `:4036`, `:4104`). `ownerIdentity` stays, and Transport reads
+  nothing from it.
 
 ### Deliberate differences from Python
 
