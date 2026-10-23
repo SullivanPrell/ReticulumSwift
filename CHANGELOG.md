@@ -9,6 +9,9 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 - `Transport.hopsToOrUnknown(_:)`, Python's `hops_to`: the hop count, or `pathfinderM` (128)
   when no path is known (`Transport.py:3141-3143`).
+- `Packet.contextByte`, the context byte as it travels. It differs from `context.rawValue` only
+  for a packet that arrived with a byte `Packet.Context` doesn't name, whose `context` reads
+  `.none`.
 
 ### Fixed
 
@@ -31,6 +34,11 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `tunnelTimeout` ahead, clears a live tunnel's interface once it's detached, and drops a
   tunnel path older than `tunnelPathTimeout` or superseded by a later announce in the path
   table. A tunnel left with no paths stays, as in Python.
+- `Packet.unpack` refused a context byte that `Packet.Context` doesn't name, so every Swift
+  node on a path dropped a packet carrying a context a newer peer adds. Python stores any byte
+  (`Packet.py:264`, `:271`). Swift now keeps it, hashes it and relays it unchanged. A link
+  counts such a packet and delivers nothing, as Python's `Link.__receive` does
+  (`Link.py:942-950`). The enum stays, so an exhaustive `switch` over it still compiles.
 
 ## [1.27.0]—client interfaces start as Python's do, and Backbone clients redial a refused peer
 

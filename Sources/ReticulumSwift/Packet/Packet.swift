@@ -99,8 +99,12 @@ public struct Packet: Equatable {
   public var transportID: Data?  // present only when headerType == .type2
   /// Address the packet is bound for.
   public var destinationHash: Data  // 16 bytes
-  /// Context byte qualifying the payload.
-  public var context: Context
+  /// Context byte qualifying the payload, or `.none` for a byte `Context` doesn't name.
+  public var context: Context { didSet { contextByte = context.rawValue } }
+  /// The context byte as it travels. Python stores any byte (`Packet.py:264`, `:271`), so a
+  /// packet that arrived with a context this port doesn't name keeps it here, and a relay
+  /// forwards it unchanged. Otherwise it's `context.rawValue`.
+  public private(set) var contextByte: UInt8
   /// Payload, encrypted or plaintext according to the destination type.
   public var data: Data  // payload (encrypted or plaintext per rules)
 
@@ -166,6 +170,7 @@ public struct Packet: Equatable {
     self.transportID = transportID
     self.destinationHash = destinationHash
     self.context = context
+    self.contextByte = context.rawValue
     self.data = data
   }
 
@@ -253,7 +258,7 @@ public struct Packet: Equatable {
       raw.append(destinationHash)
     }
 
-    raw.append(context.rawValue)
+    raw.append(contextByte)
     raw.append(data)
     return raw
   }
@@ -315,7 +320,7 @@ public struct Packet: Equatable {
     guard destinationHash.count == dstLen else { throw UnpackError.malformed }
 
     guard cursor < raw.endIndex else { throw UnpackError.malformed }
-    guard let context = Context(rawValue: raw[cursor]) else { throw UnpackError.malformed }
+    let contextByte = raw[cursor]
     cursor += 1
 
     let data = raw.subdata(in: cursor..<raw.endIndex)
@@ -337,9 +342,10 @@ public struct Packet: Equatable {
       hops: hops,
       transportID: transportID,
       destinationHash: destinationHash,
-      context: context,
+      context: Context(rawValue: contextByte) ?? .none,
       data: data
     )
+    packet.contextByte = contextByte
     // A packet that arrived is transmissible at its own size, so a relay can forward it
     // without the base cap refusing a link packet from an upgraded link it knows nothing
     // about. Python reaches the same place by forwarding `packet.raw` rather than

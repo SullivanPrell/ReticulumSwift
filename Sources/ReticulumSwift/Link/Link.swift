@@ -1959,6 +1959,10 @@ public final class Link {
       return
     }
 
+    // Python's `Link.__receive` has no branch for a context it doesn't name, so such a packet
+    // is counted and goes no further (`Link.py:942-950`).
+    guard packet.contextByte == packet.context.rawValue else { return }
+
     // All other packets use link-level encryption.
     let plaintext = try decrypt(packet.data)
 
