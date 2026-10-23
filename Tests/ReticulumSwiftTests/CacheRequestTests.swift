@@ -35,7 +35,7 @@ final class CacheRequestTests: XCTestCase {
 
   // MARK: - cache_request_packet: serves cached announce
 
-  func testCacheRequestPacketServesMatchingAnnounce() throws {
+  func testCacheRequestPacketServesAPacketFromThePacketCache() throws {
     let t = Transport()
     t.cacheDirectory = tmpDir
 
@@ -57,10 +57,11 @@ final class CacheRequestTests: XCTestCase {
     let iface = CountingIface()
     t.register(interface: iface)
 
-    // Cache an announce.
+    // Cache an announce where `get_cached_packet(packet.data)` looks: `cachepath`, not
+    // `cachepath/announces` (`Transport.py:3100`).
     let ann = try Announce.make(for: dest)
     let announceHash = Hashes.fullHash(try ann.hashablePart())
-    try t.cacheAnnounce(ann)
+    try t.cache(ann)
 
     // Build a CACHE_REQUEST packet whose payload is the 32-byte announce hash.
     let cacheReqPacket = Packet(
@@ -72,7 +73,7 @@ final class CacheRequestTests: XCTestCase {
     )
 
     let served = t.cacheRequestPacket(cacheReqPacket)
-    XCTAssertTrue(served, "cache_request_packet must return true when announce is found in cache")
+    XCTAssertTrue(served, "cache_request_packet returns True for a cached packet (:3108)")
   }
 
   // MARK: - Returns false for unknown hash

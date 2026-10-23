@@ -68,7 +68,7 @@ final class CacheRequestOutboundTests: XCTestCase {
 
     let ann = try Announce.make(for: dest)
     let announceHash = Hashes.fullHash(try ann.hashablePart())
-    try t.cacheAnnounce(ann)
+    try t.cache(ann)  // `get_cached_packet` reads `cachepath` (`Transport.py:3115`)
 
     let queryDest = try Destination(
       identity: Identity(), direction: .in, kind: .single,

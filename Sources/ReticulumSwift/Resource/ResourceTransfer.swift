@@ -494,6 +494,7 @@ public final class ResourceTransfer {
       lastActivity = Date()
       let snapStatus = unsafeStatus
       let adv = unsafeAdvertisement
+      let expectedProofData = unsafeResourceHash + expectedProof
       stateLock.unlock()
 
       // ACT OUTSIDE LOCK—every branch below calls into Link.
@@ -505,8 +506,15 @@ public final class ResourceTransfer {
         // Receiver: outstanding parts not received—resend REQ.
         sendRequest()
       case .awaitingProof:
-        // All parts sent but no proof—nothing to do (proof may arrive late).
-        break
+        // All parts sent but no proof: ask the receiver's packet cache for the proof packet
+        // it should have sent (`Resource.py:663-669`).
+        guard let linkID = link.linkID,
+          let hashable = try? Packet(
+            destinationType: .link, packetType: .proof, destinationHash: linkID,
+            context: .resourceProof, data: expectedProofData
+          ).hashablePart()
+        else { break }
+        link.transport?.cacheRequest(packetHash: Hashes.fullHash(hashable), link: link)
       default:
         break
       }

@@ -207,8 +207,10 @@ final class InTransportRelayTests: XCTestCase {
     let (t, from, toward) = try cachingTransportNode()
     let cached = try Destination(
       identity: Identity(), direction: .in, kind: .single, appName: "intransport")
-    let announce = try Announce.make(for: cached)
-    try t.cacheAnnounce(announce)
+    // In `cachepath` with the interface it arrived on, which the replay restores (`:3107`).
+    var announce = try Announce.make(for: cached)
+    announce.receivingInterface = from
+    try t.cache(announce)
     let request = packet(
       .data, to: destinationHash, context: .cacheRequest,
       data: Hashes.fullHash(try announce.hashablePart()))
