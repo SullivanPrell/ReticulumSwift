@@ -280,6 +280,11 @@ public final class InstanceConnection {
     let configPath = configPath(for: configDirectory)
 
     try DaemonBootstrap.createStorageTree(DaemonBootstrap.Paths(configDir: configDirectory))
+    // Python writes a missing config, and says so, before it touches the shared instance
+    // (`Reticulum.py:341-345`, then `:754`).
+    if !FileManager.default.fileExists(atPath: configPath.path) {
+      try Reticulum.createDefaultConfig(at: configPath)
+    }
 
     let config: ReticulumConfig
     if let loaded = ReticulumConfig.load(from: configPath) {

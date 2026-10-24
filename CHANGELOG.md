@@ -85,8 +85,9 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `InstanceConnection.attach` logs Python's two error lines and returns `.standalone`, so
   `rnstatus` reports its own interfaces and exits 0. Before, `attach` threw: `rnsd`, `rnir`, and
   `rnpkg` exited 255, and `rnstatus` printed `No shared RNS instance available`. `attach` now
-  connects to the instance before the stack starts, as Python does. A required shared instance
-  that isn't running still throws `noSharedInstance` (`:452-453`).
+  writes a missing config and connects to the instance before the stack starts, in Python's
+  order (`:341-345`, then `:754`). A required shared instance that isn't running still throws
+  `noSharedInstance` (`:452-453`).
 - `rnsd`, `rnir`, and `rnpkg` now exit 1 when the stack can't start for another reason, as an
   uncaught Python exception does. They printed the could-not-connect lines for any error.
 - A resource whose proof is lost on the link now recovers through the packet cache, as
