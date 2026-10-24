@@ -351,9 +351,14 @@ final class PathTableHopCountTests: XCTestCase {
   func testADiscoveredInterfaceReportsItsPathsCount() throws {
     let (t, mesh, _) = makeTransport()
     var discovered: DiscoveredInterfaceInfo?
+    let heard = expectation(description: "the discovery announce was accepted")
     t.discoverInterfaces(
       storagePath: tmpDir.appendingPathComponent("discovery").path,
-      stampValidator: PassthroughStamps(), callback: { discovered = $0 })
+      stampValidator: PassthroughStamps(),
+      callback: {
+        discovered = $0
+        heard.fulfill()
+      })
     let identity = Identity()
     let announcer = try Destination(
       identity: identity, direction: .in, kind: .single,
@@ -371,7 +376,9 @@ final class PathTableHopCountTests: XCTestCase {
 
     try announce(announcer, on: mesh, appData: appData)
 
-    let received = try XCTUnwrap(discovered, "the discovery announce was not accepted")
+    // The callback runs on a global queue, after autoconnect.
+    wait(for: [heard], timeout: 5)
+    let received = try XCTUnwrap(discovered)
     XCTAssertEqual(
       received.hops, 1, "`\"hops\": RNS.Transport.hops_to(destination_hash)` (Discovery.py:373)")
   }
