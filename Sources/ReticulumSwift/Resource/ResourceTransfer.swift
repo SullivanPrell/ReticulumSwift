@@ -68,6 +68,8 @@ public final class ResourceTransfer {
   static let mapHashLength: Int = 4  // MAPHASH_LEN
   static let hashmapIsNotExhausted: UInt8 = 0x00
   static let hashmapIsExhausted: UInt8 = 0xFF
+  /// `HASHMAP_IS_EMPTY`: the advertisement carried no hashmap (`Resource.py:142`).
+  static let hashmapIsEmpty: UInt8 = 0xFE
   static let windowInitial: Int = 4  // WINDOW
   static let windowMin: Int = 2  // WINDOW_MIN
   static let windowMax: Int = 10  // WINDOW_MAX_SLOW
@@ -146,6 +148,9 @@ public final class ResourceTransfer {
       stateLock.unlock()
     }
   }
+
+  /// The sender's application flag, Python's `resource.app_flag` (`Resource.py:186`).
+  public var appFlag: Bool { advertisement?.appFlag ?? false }
 
   /// True when this transfer is the RECEIVER of an incoming resource (set once an
   /// advertisement is received).
@@ -418,6 +423,7 @@ public final class ResourceTransfer {
   private var segmentRequestID: Data?
   private var segmentIsRequest: Bool = false
   private var segmentIsResponse: Bool = false
+  private var segmentAppFlag: Bool = false
   private var segmentMetadata: Data?
   private var segmentAutoCompress: Resource.AutoCompress = .enabled
 
@@ -501,7 +507,7 @@ public final class ResourceTransfer {
       switch snapStatus {
       case .advertised:
         // No REQ received—retransmit ADV.
-        if let adv { try? link.send(adv.pack(), context: .resourceAdvertisement) }
+        if let adv { try? link.send(adv.pack(mdu: link.mdu), context: .resourceAdvertisement) }
       case .transferring:
         // Receiver: outstanding parts not received—resend REQ.
         sendRequest()
@@ -564,13 +570,16 @@ public final class ResourceTransfer {
     requestID: Data? = nil,
     isRequest: Bool = false,
     isResponse: Bool = false,
-    autoCompress: Resource.AutoCompress = .enabled
+    autoCompress: Resource.AutoCompress = .enabled,
+    /// Carried to the receiver on every segment for the application's own use
+    /// (`Resource.py:262`).
+    appFlag: Bool = false
   ) throws {
     guard !payload.isEmpty else { throw Error.payloadEmpty }
     try send(
       source: .memory(payload), dataSize: payload.count, metadata: metadata,
       segmentSize: segmentSize, requestID: requestID, isRequest: isRequest,
-      isResponse: isResponse, autoCompress: autoCompress)
+      isResponse: isResponse, autoCompress: autoCompress, appFlag: appFlag)
   }
 
   /// Prepare and advertise a resource whose payload is a file on disk.
@@ -590,7 +599,8 @@ public final class ResourceTransfer {
     requestID: Data? = nil,
     isRequest: Bool = false,
     isResponse: Bool = false,
-    autoCompress: Resource.AutoCompress = .enabled
+    autoCompress: Resource.AutoCompress = .enabled,
+    appFlag: Bool = false
   ) throws {
     let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
     let dataSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
@@ -600,7 +610,7 @@ public final class ResourceTransfer {
       try send(
         source: .file(handle), dataSize: dataSize, metadata: metadata,
         segmentSize: segmentSize, requestID: requestID, isRequest: isRequest,
-        isResponse: isResponse, autoCompress: autoCompress)
+        isResponse: isResponse, autoCompress: autoCompress, appFlag: appFlag)
     } catch {
       try? handle.close()
       throw error
@@ -635,7 +645,7 @@ public final class ResourceTransfer {
   private func send(
     source: SegmentSource, dataSize: Int, metadata: Data?, segmentSize: Int?,
     requestID: Data?, isRequest: Bool, isResponse: Bool,
-    autoCompress: Resource.AutoCompress
+    autoCompress: Resource.AutoCompress, appFlag: Bool
   ) throws {
     guard link.status == .active else { throw Error.linkNotActive }
 
@@ -661,6 +671,7 @@ public final class ResourceTransfer {
     segmentIsRequest = isRequest
     segmentIsResponse = isResponse
     segmentAutoCompress = autoCompress
+    segmentAppFlag = appFlag
     stateLock.unlock()
 
     guard let first = try readNextSegment() else { throw Error.payloadEmpty }
@@ -747,6 +758,7 @@ public final class ResourceTransfer {
     let reqIDSnapshot = requestID ?? segmentRequestID
     let isReqSnapshot = isRequest || segmentIsRequest
     let isRespSnapshot = isResponse || segmentIsResponse
+    let appFlagSnapshot = segmentAppFlag
     stateLock.unlock()
 
     let adv = ResourceAdvertisement(
@@ -765,7 +777,8 @@ public final class ResourceTransfer {
       split: totalSegSnapshot > 1,
       isRequest: isReqSnapshot,
       isResponse: isRespSnapshot,
-      hasMetadata: resource.hasMetadata
+      hasMetadata: resource.hasMetadata,
+      appFlag: appFlagSnapshot
     )
 
     stateLock.lock()
@@ -777,7 +790,7 @@ public final class ResourceTransfer {
 
     link.registerOutgoingResource(self)
     guard ensureLinkActive() else { return }
-    try link.send(adv.pack(), context: .resourceAdvertisement)
+    try link.send(adv.pack(mdu: link.mdu), context: .resourceAdvertisement)
     startWatchdog()
   }
 
@@ -785,8 +798,11 @@ public final class ResourceTransfer {
   internal func handleRequest(_ data: Data) {
     guard !data.isEmpty else { return }
 
-    let wantsMoreHashmap = data[0] == ResourceTransfer.hashmapIsExhausted
-    let pad = wantsMoreHashmap ? 1 + ResourceTransfer.mapHashLength : 1
+    // `HASHMAP_IS_EMPTY` asks for the first segment with no last map hash to pivot on
+    // (`Resource.py:1021-1030`).
+    let hashmapIsEmpty = data[0] == ResourceTransfer.hashmapIsEmpty
+    let wantsMoreHashmap = data[0] == ResourceTransfer.hashmapIsExhausted || hashmapIsEmpty
+    let pad = data[0] == ResourceTransfer.hashmapIsExhausted ? 1 + ResourceTransfer.mapHashLength : 1
     // Zero requested hashes is valid: the receiver only wants the next hashmap segment.
     guard data.count >= pad + Constants.hashLength else { return }
 
@@ -843,8 +859,11 @@ public final class ResourceTransfer {
       // After the loop `partIndex` is (index of lastMapHash) + 1—the first part
       // of the next hashmap segment. Mirrors Python `Resource.request`.
       var partIndex = receiverMinConsecutiveHeight
-      let pivotEnd = min(
-        receiverMinConsecutiveHeight + ResourceAdvertisement.collisionGuardSize, mapHashes.count)
+      let pivotEnd =
+        hashmapIsEmpty
+        ? receiverMinConsecutiveHeight
+        : min(
+          receiverMinConsecutiveHeight + ResourceAdvertisement.collisionGuardSize, mapHashes.count)
       for idx in receiverMinConsecutiveHeight..<pivotEnd {
         partIndex += 1
         if mapHashes[idx] == lastMapHash { break }
@@ -852,7 +871,7 @@ public final class ResourceTransfer {
       receiverMinConsecutiveHeight = max(partIndex - 1 - ResourceTransfer.windowMaxFast, 0)
 
       let hml = ResourceAdvertisement.hashmapMaxLength
-      if partIndex % hml != 0 {
+      if !hashmapIsEmpty && partIndex % hml != 0 {
         // Next segment isn't aligned to a HASHMAP_MAX_LEN boundary—the
         // receiver's request is out of sequence. Abort, as Python does.
         cancelReason = "resource sequencing error"
@@ -1239,7 +1258,7 @@ public final class ResourceTransfer {
 
     // An HMU carrying fewer than one full map-hash is invalid—abort the
     // transfer. Mirrors Python `hashmap_update` (`if hashes < 1: cancel()`).
-    guard hmap.count >= ResourceTransfer.mapHashLength else {
+    guard hmap.count >= ResourceTransfer.mapHashLength || segIdx == 0 else {
       stateLock.unlock()
       cancel(reason: "invalid HMU received")
       return
@@ -1305,10 +1324,12 @@ public final class ResourceTransfer {
     var hashmapExhausted = false
     var lastKnownHash = Data()
 
+    // "Initial advertisement-carried hashmap was empty" (`Resource.py:958-961`).
+    let hashmapIsEmpty = hashmap.first.map { $0 == nil } ?? false
     let searchStart = max(0, consecutiveCompletedHeight + 1)
     var i = searchStart
     var count = 0
-    while i < totalParts, count < window {
+    while !hashmapIsEmpty, i < totalParts, count < window {
       if parts[i] == nil {
         guard let mh = hashmap[i] else {
           // Hashmap entry unknown—request more hashmap.
@@ -1330,7 +1351,10 @@ public final class ResourceTransfer {
     }
 
     var reqData = Data()
-    if hashmapExhausted {
+    if hashmapIsEmpty {
+      reqData.append(ResourceTransfer.hashmapIsEmpty)
+      waitingForHMU = true
+    } else if hashmapExhausted {
       reqData.append(ResourceTransfer.hashmapIsExhausted)
       reqData.append(contentsOf: lastKnownHash.prefix(ResourceTransfer.mapHashLength))
       waitingForHMU = true

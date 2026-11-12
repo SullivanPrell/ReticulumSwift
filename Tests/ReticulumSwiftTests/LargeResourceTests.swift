@@ -147,7 +147,7 @@ final class LargeResourceTests: XCTestCase {
     let adv = ResourceAdvertisement(
       transferSize: 99_999, dataSize: 99_999, partCount: UInt64(parts),
       resourceHash: Data(repeating: 0x11, count: 32),
-      randomHash: Data(repeating: 0x22, count: 32),
+      randomHash: Data(repeating: 0x22, count: 4),  // `RANDOM_HASH_SIZE = 4` (Resource.py:105)
       originalHash: Data(repeating: 0x33, count: 32),
       segmentIndex: 1, totalSegments: 1,
       hashmap: fullHashmap, encrypted: true

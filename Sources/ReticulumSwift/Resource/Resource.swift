@@ -389,6 +389,7 @@ public struct ResourceAdvertisement: Equatable {
   //   bit 3 (0x08) u–is request
   //   bit 4 (0x10) p–is response
   //   bit 5 (0x20) x–has metadata
+  //   bit 6 (0x40) a–application flag (RNS 1.6.0)
   /// Whether the payload is encrypted.
   public var encrypted: Bool
   /// Whether the payload is compressed.
@@ -401,6 +402,8 @@ public struct ResourceAdvertisement: Equatable {
   public var isResponse: Bool
   /// Whether the resource carries a metadata block.
   public var hasMetadata: Bool
+  /// A flag the sending application sets for its own use (`Resource.py:1325`).
+  public var appFlag: Bool
 
   /// Creates an advertisement describing a resource transfer.
   public init(
@@ -409,7 +412,8 @@ public struct ResourceAdvertisement: Equatable {
     segmentIndex: UInt64, totalSegments: UInt64,
     requestID: Data? = nil, hashmap: Data = Data(),
     encrypted: Bool = false, compressed: Bool = false, split: Bool = false,
-    isRequest: Bool = false, isResponse: Bool = false, hasMetadata: Bool = false
+    isRequest: Bool = false, isResponse: Bool = false, hasMetadata: Bool = false,
+    appFlag: Bool = false
   ) {
     self.transferSize = transferSize
     self.dataSize = dataSize
@@ -427,6 +431,7 @@ public struct ResourceAdvertisement: Equatable {
     self.isRequest = isRequest
     self.isResponse = isResponse
     self.hasMetadata = hasMetadata
+    self.appFlag = appFlag
   }
 
   /// Flag byte packing the boolean fields of the advertisement.
@@ -438,6 +443,7 @@ public struct ResourceAdvertisement: Equatable {
     if isRequest { f |= 0x08 }
     if isResponse { f |= 0x10 }
     if hasMetadata { f |= 0x20 }
+    if appFlag { f |= 0x40 }
     return f
   }
 
@@ -450,7 +456,10 @@ public struct ResourceAdvertisement: Equatable {
   /// `HASHMAP_MAX_LEN` (74) hashes—otherwise large resources would produce an
   /// advertisement exceeding the link MDU and the segment offsets would not line up
   /// with the receiver's HMU indexing.
-  public func pack(segment: Int = 0) -> Data {
+  ///
+  /// An advertisement still larger than `mdu` goes out with no hashmap, and the receiver asks
+  /// for the first segment by HMU (`Resource.py:1375-1380`).
+  public func pack(segment: Int = 0, mdu: Int = Constants.linkMdu) -> Data {
     let hml = ResourceAdvertisement.hashmapMaxLength
     let mhl = ResourceAdvertisement.mapHashLength
     let hm = Data(hashmap)  // 0-based copy for safe slicing
@@ -459,7 +468,8 @@ public struct ResourceAdvertisement: Equatable {
     let segmentHashmap = hm.subdata(in: startByte..<endByte)
 
     let q: MsgPack.Value = requestID.map { .bytes($0) } ?? .nil
-    let map: MsgPack.Value = .map([
+    func packed(_ segmentHashmap: Data) -> Data {
+      MsgPack.encode(.map([
       (.string("t"), .uint(transferSize)),
       (.string("d"), .uint(dataSize)),
       (.string("n"), .uint(partCount)),
@@ -471,8 +481,10 @@ public struct ResourceAdvertisement: Equatable {
       (.string("q"), q),
       (.string("f"), .uint(UInt64(flags))),
       (.string("m"), .bytes(segmentHashmap)),
-    ])
-    return MsgPack.encode(map)
+      ]))
+    }
+    let full = packed(segmentHashmap)
+    return full.count > mdu ? packed(Data()) : full
   }
 
   /// Decodes an advertisement from its packed representation.
@@ -523,7 +535,8 @@ public struct ResourceAdvertisement: Equatable {
       split: (f & 0x04) != 0,
       isRequest: (f & 0x08) != 0,
       isResponse: (f & 0x10) != 0,
-      hasMetadata: (f & 0x20) != 0
+      hasMetadata: (f & 0x20) != 0,
+      appFlag: (f & 0x40) != 0
     )
     // Sanity cap against corrupt/hostile advertisements: a single transfer's
     // declared size can't legitimately exceed 3× the max efficient (segment)
