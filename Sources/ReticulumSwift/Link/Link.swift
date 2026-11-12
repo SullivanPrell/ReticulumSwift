@@ -54,6 +54,7 @@ public final class Link {
     case timeout  // watchdog: establishment or stale timeout
     case initiatorClosed  // local (initiator) or remote (responder) called teardown()
     case destinationClosed  // remote (initiator) received a close packet
+    case stampFailure  // `STAMP_FAILURE`: the initiator couldn't grind its key in time
   }
   /// Set when the link enters `.closed` or `.failed`.
   ///
@@ -304,7 +305,10 @@ public final class Link {
 
   /// Initiator's ephemeral X25519 (key agreement) and Ed25519 (signing,
   /// only used by responder side, where it's the owning identity's key).
-  public let prv: Curve25519.KeyAgreement.PrivateKey
+  ///
+  /// An initiator replaces it with a stamped key before its request goes out when the
+  /// destination asks for one (`Link.py:363-378`).
+  public private(set) var prv: Curve25519.KeyAgreement.PrivateKey
   /// Signing key this end proves its identity with.
   public let sigPrv: Curve25519.Signing.PrivateKey
 
@@ -321,6 +325,10 @@ public final class Link {
   public private(set) var peerSigPub: Curve25519.Signing.PublicKey?
   /// Signing key of the far end, as wire bytes.
   public private(set) var peerSigPubBytes: Data?
+
+  /// The initiator key's stamp: the cost it was ground to on the initiator, its measured
+  /// value on the responder, nil when unstamped (`Link.py:199`, `310-311`).
+  public private(set) var stampCost: Double?
 
   /// Link identifier, derived once the handshake completes.
   public private(set) var linkID: Data?
@@ -1000,6 +1008,9 @@ public final class Link {
     case invalidSignature
     case invalidState
     case notActive
+    /// The initiator's key falls short of the destination's link cost under
+    /// `LR_STAMPS_ENFORCED` (`Link.py:195`).
+    case insufficientStamp
   }
 
   // MARK: - Initiator
@@ -1016,6 +1027,54 @@ public final class Link {
     let link = Link(role: .initiator, destination: destination)
     link.transport = transport
 
+    // A destination that announced a link cost, or any destination under `ALWAYS_STAMP_LRS`,
+    // gets a key ground to that cost before the request goes out (`Link.py:310-313`).
+    let stamps = transport.stamps
+    link.stampCost =
+      transport.recallLinkCost(forDestination: destination.hash)
+      ?? (stamps.alwaysStampLRs ? stamps.lrCost : nil)
+    guard let cost = link.stampCost, cost > 0, stamps.stampLRs else {
+      try link.sendRequest(on: transport)
+      return link
+    }
+    DispatchQueue.global(qos: .utility).async {
+      link.stampAndSendRequest(cost: cost, timeout: stamps.linkStampTimeout, on: transport)
+    }
+    return link
+  }
+
+  /// `Link.__initiate` with deferred keys (`Link.py:345-382`).
+  private func stampAndSendRequest(cost: Double, timeout: TimeInterval, on transport: Transport) {
+    let deadline = Date().addingTimeInterval(timeout)
+    guard
+      let key = Stamps.generateStampedKey(
+        material: destination.hash + sigPubBytes, stampCost: cost,
+        isCancelled: { [weak self] in Date() > deadline || self?.status != .pending }),
+      let stamped = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: key.privateKey)
+    else {
+      Reticulum.log(
+        "Stamp generation failed for link request to \(destination.hexHash)", level: .notice)
+      return stampFailed()
+    }
+    prv = stamped
+    guard status == .pending else { return }
+    try? sendRequest(on: transport)
+  }
+
+  /// `Link.__stamp_failed` (`Link.py:337-342`).
+  private func stampFailed() {
+    stateLock.lock()
+    let open = unsafeStatus != .closed
+    if open { unsafeTeardownReason = .stampFailure }
+    stateLock.unlock()
+    if open { close() }
+  }
+
+  /// Builds, registers and sends the link request (`Link.py:389-408`).
+  private func sendRequest(on transport: Transport) throws {
+    let link = self
+    let destination = self.destination
+
     // Link.py:305-309: signal the next hop's hardware MTU when link MTU discovery is on,
     // and Reticulum.MTU otherwise.
     var signaledMtu = Constants.mtu
@@ -1024,7 +1083,7 @@ public final class Link {
     {
       signaledMtu = hwMtu
     }
-    let body = link.pubBytes + link.sigPubBytes + mtuSignallingBytes(mtu: signaledMtu)
+    let body = link.pubBytes + link.sigPubBytes + Link.mtuSignallingBytes(mtu: signaledMtu)
     let packet = Packet(
       destinationType: .single,
       packetType: .linkRequest,
@@ -1053,7 +1112,6 @@ public final class Link {
 
     try transport.send(packet, generateReceipt: false)
     link.startWatchdog()
-    return link
   }
 
   // MARK: - Responder
@@ -1086,6 +1144,17 @@ public final class Link {
     let initiatorEnc = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: initiatorEncRaw)
     let initiatorSig = try Curve25519.Signing.PublicKey(rawRepresentation: initiatorSigRaw)
 
+    // The initiator's X25519 key is its stamp over `destination.hash + sig_pub`
+    // (`Link.py:192-195`).
+    let stampMaterial = destination.hash + Data(initiatorSigRaw)
+    if transport.stamps.lrEnforced,
+      !Stamps.stampValid(
+        stamp: Data(initiatorEncRaw), targetCost: destination.getLinkCost(transport.stamps),
+        workblock: stampMaterial)
+    {
+      throw LinkError.insufficientStamp
+    }
+
     // Responder's ephemeral X25519 is fresh. Its signing key is the
     // owning identity's Ed25519 key—that's what the initiator already
     // knows, so the link id is signed with it.
@@ -1100,6 +1169,7 @@ public final class Link {
     link.peerPubBytes = Data(initiatorEncRaw)
     link.peerSigPub = initiatorSig
     link.peerSigPubBytes = Data(initiatorSigRaw)
+    link.stampCost = Stamps.stampValue(workblock: stampMaterial, stamp: Data(initiatorEncRaw))
 
     // Mirror Python's link_id_from_lr_packet: strip any signalling bytes (beyond ECPUBSIZE)
     // from the hashable part so both sides agree on the link_id regardless of signalling.
