@@ -16,7 +16,7 @@ import XCTest
 ///
 /// `bugs/029`—the port writes `storage/paths.json`, a JSON document whose entries inline the
 /// destination's public key and ratchet. The reference writes `storage/destination_table`,
-/// msgpack, whose entries are an 8-element list carrying a *reference* to a cached announce and
+/// msgpack, whose entries are a 9-element list carrying a *reference* to a cached announce and
 /// nothing else about the identity: the public key comes back through `known_destinations` and the
 /// ratchet through `storage/ratchets/`. Re-encoding the port's shape as msgpack under the
 /// reference's name would produce a file Python still can't read, which is why the shape changes
@@ -115,7 +115,7 @@ final class PathTableParityTests: XCTestCase {
   // MARK: - The shape
 
   /// `Transport.save_path_table`: `umsgpack.packb(serialised_destinations)` written to
-  /// `storagepath+"/destination_table"`, each entry the 8-element list at
+  /// `storagepath+"/destination_table"`, each entry the 9-element list at
   /// `Transport.py:3390-3397`.
   func testDestinationTableIsReferenceShape() throws {
     let fixture = try makeFixture(
@@ -145,14 +145,14 @@ final class PathTableParityTests: XCTestCase {
       return XCTFail("each entry is a msgpack list, not \(entries[0])")
     }
     XCTAssertEqual(
-      fields.count, 8,
+      fields.count, 9,
       """
-      an entry is the 8-element list at Transport.py:3390-3397: \
+      an entry is the 9-element list at Transport.py:4348-4356: \
       destination_hash, timestamp, received_from, hops, expires, random_blobs, \
-      interface_hash, packet_hash. Python indexes these positionally \
-      (:317-327), so a differing arity is a differing file.
+      interface_hash, packet_hash, used. Python indexes these positionally \
+      (:546-557), so a differing arity is a differing file.
       """)
-    guard fields.count == 8 else { return }
+    guard fields.count == 9 else { return }
 
     XCTAssertEqual(
       fields[0], .bytes(fixture.destinationHash),
@@ -218,7 +218,7 @@ final class PathTableParityTests: XCTestCase {
 
     let decoded = try MsgPack.decode(Data(contentsOf: tableURL))
     guard case .array(let entries) = decoded, case .array(let fields) = entries.first,
-      fields.count == 8, case .bytes(let announceHash) = fields[7]
+      fields.count == 9, case .bytes(let announceHash) = fields[7]
     else {
       return XCTFail("entry does not carry an announce hash at field 7")
     }

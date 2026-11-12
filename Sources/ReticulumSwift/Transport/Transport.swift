@@ -73,6 +73,29 @@ public final class Transport {
   ///
   /// Python: `Transport.AP_PATH_TIME = 60*60*24`.
   public static let apPathExpiry: TimeInterval = 60 * 60 * 24
+
+  /// `path_timeout_from_interface` (`Transport.py:3617-3621`).
+  static func pathTimeout(for interface: (any Interface)?) -> TimeInterval {
+    switch interface?.mode {
+    case .roaming: return roamingPathExpiry
+    case .accessPoint: return apPathExpiry
+    default: return pathExpiry
+    }
+  }
+
+  /// How long a never-used path lingers on a transport node. Python: `UNUSED_PATH_LINGER`.
+  public static let unusedPathLinger: TimeInterval = 60 * 60 * 1.75
+  /// How long a never-used path lingers on a leaf node. Python: `UNUSED_PATH_LINGER_LEAF`.
+  public static let unusedPathLingerLeaf: TimeInterval = 60 * 12
+  /// Never-used paths above this many are culled. Python: `PATH_POOL_UNUSED_TARGET`.
+  public static let pathPoolUnusedTarget = 2048
+  /// Below this bitrate an interface is slow. Python: `PATH_SLOW_BITRATE`.
+  public static let pathSlowBitrate = 25000
+  /// A slow interface's never-used paths linger this many times longer.
+  /// Python: `PATH_SLOW_LINGER_FACTOR`.
+  public static let pathSlowLingerFactor: Double = 10
+  /// How often the never-used pool is counted. Python: `pool_size_check_interval`.
+  public static let poolSizeCheckInterval: TimeInterval = 5 * 60
   /// How often the jobs loop runs (seconds).
   public static let jobInterval: TimeInterval = 5
   /// How often the jobs loop invokes `cleanKnownDestinations`.
@@ -226,6 +249,10 @@ public final class Transport {
     /// already present is a replay and is rejected (prevents path forging /
     /// network loops via captured announces).
     public var randomBlobs: [Data] = []
+    /// When this path last carried traffic, `nil` if it never has: Python's `IDX_PT_USED`,
+    /// where `0` means never (`Transport.py:1618`, `2387`, `2440`). A never-used path is
+    /// culled after ``Transport/unusedPathLinger`` (`:1145`).
+    public var used: Date?
 
     /// A routable path through `nextHopInterface`.
     ///
@@ -343,6 +370,7 @@ public final class Transport {
         && lhs.announceEmittedAt == rhs.announceEmittedAt
         && lhs.cachedAnnounceHash == rhs.cachedAnnounceHash
         && lhs.randomBlobs == rhs.randomBlobs
+        && lhs.used == rhs.used
     }
   }
 
@@ -727,6 +755,8 @@ public final class Transport {
   /// Mirrors Python's `Transport.path_states` dict.
   private var pathStates: [Data: UInt8] = [:]
   private let pathStatesLock = NSLock()
+  /// The first pool count waits a check interval after start (`Transport.py:259-260`).
+  private var poolSizeLastChecked = Date()
 
   /// Reverse lookup table for multi-hop proof forwarding.
   ///
@@ -2826,20 +2856,35 @@ public final class Transport {
     return true
   }
 
-  /// Mark a known path as responsive.
+  /// Mark a known path as responsive, refreshing its timestamp, expiry and use time.
   ///
-  /// Returns true if the path exists.
-  /// Mirrors Python's `Transport.mark_path_responsive`.
+  /// Returns true if the path exists. Only an event that proves the destination live
+  /// should call this (`Transport.py:3632-3646`).
   @discardableResult
   public func markPathResponsive(for destinationHash: Data) -> Bool {
     lock.lock()
-    let exists = paths[destinationHash] != nil
-    lock.unlock()
-    guard exists else { return false }
+    defer { lock.unlock() }
+    return markPathResponsiveLocked(destinationHash)
+  }
+
+  /// ``markPathResponsive(for:)`` for a caller holding `lock`.
+  private func markPathResponsiveLocked(_ destinationHash: Data) -> Bool {
+    guard var entry = paths[destinationHash] else { return false }
+    let now = Date()
+    entry.lastHeard = now
+    entry.expires = now.addingTimeInterval(Transport.pathTimeout(for: entry.nextHopInterface))
+    entry.used = now
+    paths[destinationHash] = entry
     pathStatesLock.lock()
     pathStates[destinationHash] = Transport.stateResponsive
     pathStatesLock.unlock()
     return true
+  }
+
+  private func markPathUsed(_ destinationHash: Data) {
+    lock.lock()
+    paths[destinationHash]?.used = Date()
+    lock.unlock()
   }
 
   /// Reset responsiveness state to unknown.
@@ -4465,29 +4510,58 @@ public final class Transport {
 
   // MARK: - Path expiry
 
-  /// Remove paths that have expired or whose interface is no longer attached.
+  /// Remove paths that have expired, whose interface is no longer attached, or that were
+  /// never used.
   ///
-  /// The path table cull in Python's `Transport.jobs()` (`Transport.py:957-976`). A path
+  /// The path table cull in Python's `Transport.jobs()` (`Transport.py:1118-1159`). A path
   /// through an interface that was deregistered, or that no longer exists, goes on the next
-  /// pass. Entries parked for a deferred restore and the tunnel table's paths are held
+  /// pass. A never-used path goes after ``unusedPathLinger`` (×10 on a slow interface), and
+  /// every ``poolSizeCheckInterval`` the never-used pool is cut to ``pathPoolUnusedTarget``.
+  /// Entries parked for a deferred restore and the tunnel table's paths are held
   /// elsewhere, and this leaves them alone, as Python does (`:1015-1060`).
   public func sweepExpiredPaths(now: Date = Date()) {
     lock.lock()
     defer { lock.unlock() }
     let attached = attachedInterfaceIDs()
+    // `unused_path_linger` (`Transport.py:451-454`).
+    let linger =
+      transportEnabled && !isConnectedToSharedInstance
+      ? Transport.unusedPathLinger : Transport.unusedPathLingerLeaf
+    let checkUnused = now > poolSizeLastChecked.addingTimeInterval(Transport.poolSizeCheckInterval)
+    var unused: [(slow: Int, expires: Date, destinationHash: Data)] = []
     var expired: [Data] = []
     for (destinationHash, path) in paths {
-      if path.isExpired {
+      let bitrate = path.nextHopInterface?.bitrate ?? 0
+      let slow = 0 < bitrate && bitrate < Transport.pathSlowBitrate
+      if checkUnused && path.used == nil {
+        unused.append((slow ? 1 : 0, path.expires, destinationHash))
+      }
+      if now > path.expires {
         expired.append(destinationHash)
-      } else if let iface = path.nextHopInterface, attached.contains(ObjectIdentifier(iface)) {
-        continue
-      } else {
+      } else if path.nextHopInterface.map({ !attached.contains(ObjectIdentifier($0)) }) ?? true {
         expired.append(destinationHash)
         Reticulum.log(
           "Path to \(RNSUtilities.prettyhexrep(destinationHash)) was removed since the "
             + "attached interface no longer exists", level: .pathing)
+      } else if path.used == nil,
+        now > path.lastHeard.addingTimeInterval(linger * (slow ? Transport.pathSlowLingerFactor : 1))
+      {
+        expired.append(destinationHash)
+        Reticulum.log(
+          "Removing never used path to \(RNSUtilities.prettyhexrep(destinationHash))",
+          level: .pathing)
       }
     }
+    if unused.count > Transport.pathPoolUnusedTarget {
+      // Python sorts `(slow, expiry, destination_hash)` tuples.
+      unused.sort { a, b in
+        if a.slow != b.slow { return a.slow < b.slow }
+        if a.expires != b.expires { return a.expires < b.expires }
+        return a.destinationHash.lexicographicallyPrecedes(b.destinationHash)
+      }
+      expired += unused.prefix(unused.count - Transport.pathPoolUnusedTarget).map(\.destinationHash)
+    }
+    if checkUnused { poolSizeLastChecked = now }
     for dh in expired {
       paths.removeValue(forKey: dh)
       // Drop the parallel cached announce so it can't outlive its path.
@@ -4778,12 +4852,10 @@ public final class Transport {
       // Local hop-count obfuscation: hide that this packet originated here.
       if shouldApplyDelta(packet, interface: outbound) { routed.hops = localHopsDelta }
       try transmit(routed, on: outbound)
-      // Update path timestamp on successful send (mirrors Python's path_entry[IDX_PT_TIMESTAMP]).
+      // `path_entry[IDX_PT_USED] = outbound_time` (`Transport.py:1618`). Since 1.6.0 only
+      // proven liveness refreshes the timestamp.
       lock.lock()
-      if var updated = paths[packet.destinationHash] {
-        updated.lastHeard = Date()
-        paths[packet.destinationHash] = updated
-      }
+      paths[packet.destinationHash]?.used = Date()
       lock.unlock()
     } else {
       for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
@@ -5225,6 +5297,7 @@ public final class Transport {
     clampRelayedLinkRequestMtu(&forwarded, prevHop: interface, nextHop: outbound)
 
     try? transmit(forwarded, on: outbound)
+    markPathUsed(packet.destinationHash)
   }
 
   /// Clamp or strip the 3-byte MTU signalling tail of a relayed LINKREQUEST so
@@ -5305,6 +5378,7 @@ public final class Transport {
       if link.role == .initiator, link.status == .pending { addPacketHash(packet) }
       do {
         try link.validateProof(proof)
+        markPathResponsive(for: link.destination.hash)  // `Link.py:513`
         // Fire the transport-level callback for the initiator side.
         // The destination's onLinkEstablished is intentionally NOT
         // fired here—it belongs to the responder side and is wired
@@ -5374,6 +5448,7 @@ public final class Transport {
     // evict it while the link is active. Only fires when the destination hash
     // is already known (markDestinationUsed returns false otherwise).
     markDestinationUsed(route.destinationHash)
+    if !isConnectedToSharedInstance { markPathResponsive(for: route.destinationHash) }  // `:2938`
   }
 
   /// Moves a relayed link's remaining hops, and the path behind it, to a verified proof's
@@ -5390,6 +5465,7 @@ public final class Transport {
       entry.hops = wireHops(fromPythonHops: hops, on: entry.nextHopInterface)
       paths[route.destinationHash] = entry
     }
+    _ = markPathResponsiveLocked(route.destinationHash)  // `Transport.py:2907`
     return route
   }
 
@@ -5424,6 +5500,7 @@ public final class Transport {
       entry.hops = wireHops(fromPythonHops: hops, on: entry.nextHopInterface)
       paths[destinationHash] = entry
     }
+    _ = markPathResponsiveLocked(destinationHash)  // `Transport.py:2983`
   }
 
   private func handleLinkRTT(_ packet: Packet, from interface: Interface) {
@@ -5542,6 +5619,7 @@ public final class Transport {
     route.lastHeard = Date()
     lock.lock()
     linkRoutes[packet.destinationHash] = route
+    paths[route.destinationHash]?.used = route.lastHeard  // `Transport.py:2437-2440`
     lock.unlock()
   }
 
@@ -5838,17 +5916,8 @@ public final class Transport {
       let emittedAt = announceEmitted(packet)
       let randomBlob = announceRandomBlob(packet)
       let now = Date()
-      // Paths learned via ROAMING interfaces expire after 6 hours, paths via
-      // ACCESS_POINT interfaces expire after 1 hour, and all others use the
-      // normal 7-day expiry. Mirrors Python's ROAMING_PATH_EXPIRY /
-      // AP_PATH_EXPIRY checks in Transport.announce_handler.
-      let pathLifetime: TimeInterval
-      switch interface.mode {
-      case .roaming: pathLifetime = Transport.roamingPathExpiry
-      case .accessPoint: pathLifetime = Transport.apPathExpiry
-      default: pathLifetime = Transport.pathExpiry
-      }
-      let entry = PathEntry(
+      let pathLifetime = Transport.pathTimeout(for: interface)
+      var entry = PathEntry(
         destinationHash: decoded.destinationHash,
         nextHopInterface: interface,
         hops: packet.hops,
@@ -5900,6 +5969,8 @@ public final class Transport {
       let isUnresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
       pathStatesLock.unlock()
       let existingBlobs = paths[decoded.destinationHash]?.randomBlobs ?? []
+      // A replacing announce keeps `path_used` (`Transport.py:2510`, `2726`).
+      entry.used = paths[decoded.destinationHash]?.used
       if let existing = paths[decoded.destinationHash] {
         // Path-table freshness gate—a faithful port of Python's
         // `should_add` ladder (Transport.inbound, Transport.py:1801-1875).
@@ -7166,6 +7237,7 @@ public final class Transport {
     }
 
     try? transmit(forwarded, on: outbound)
+    markPathUsed(packet.destinationHash)
   }
 
   // MARK: - Tunnel synthesis
@@ -7312,6 +7384,7 @@ public final class Transport {
         cachedAnnounceHash: path.cachedAnnounceHash,
         randomBlobs: randomBlobs
       )
+      paths[destinationHash]?.used = path.used  // `Transport.py:1273-1274`
     }
     tunnels[tunnelID] = tunnel
   }
