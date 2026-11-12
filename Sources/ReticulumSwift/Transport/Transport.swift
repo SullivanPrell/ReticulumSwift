@@ -141,6 +141,16 @@ public final class Transport {
   /// Mirrors Python's `Transport.UNUSED_DESTINATION_LINGER`.
   public static let unusedDestinationLinger: TimeInterval = 6 * 60
 
+  /// Hard cap on any stamp cost, keeping 14-byte stamps searchable.
+  ///
+  /// Python: `Transport.STAMP_COST_CAP = 100` (RNS 1.6.0).
+  public static let stampCostCap: Int = 100
+
+  /// Hard cap on a link-request cost.
+  ///
+  /// Python: `Transport.LINK_COST_CAP = 40`.
+  public static let linkCostCap: Int = 40
+
   // Path responsiveness state values.
   /// Responsiveness of a path that has not been probed yet.
   public static let stateUnknown: UInt8 = 0x00

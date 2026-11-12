@@ -354,6 +354,26 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
   ///
   /// Mirrors Python `Identity.NAME_HASH_LENGTH = 80`.
   public static let nameHashLength: Int = Constants.nameHashLengthBits  // 80 bits
+  /// Announce and path-request stamp length in bytes.
+  ///
+  /// Python: `Identity.STAMPLENGTH = 14` (RNS 1.6.0).
+  public static let stampLength: Int = 14
+  /// Length of the marker and flags byte that open an announce stamp trailer.
+  ///
+  /// Python: `Identity.EXTHEADERLENGTH = 2`.
+  public static let extHeaderLength: Int = 2
+  /// Length of the link-request cost an announce stamp trailer ends with.
+  ///
+  /// Python: `Identity.LRCOSTLENGTH = 2`.
+  public static let lrCostLength: Int = 2
+  /// Length of the stamp trailer an announce's app data may end with.
+  ///
+  /// Python: `Identity.EXTPAYLOADLENGTH`.
+  public static let extPayloadLength: Int = extHeaderLength + stampLength + lrCostLength
+  /// The byte that opens a stamp trailer. msgpack never emits it, so it can't end real app data.
+  ///
+  /// Python: `Identity.EXTPAYLOADMARKER = 0xC1`.
+  public static let extPayloadMarker: UInt8 = 0xC1
   /// AES-256 block size in bytes (16).
   ///
   /// Mirrors Python `Identity.AES256_BLOCKSIZE = 16`.
