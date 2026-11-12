@@ -49,3 +49,18 @@ for app_data in [b"hello", None]:
     packet.pack()
     print("announce", packet.raw.hex(), repr(destination.stamp_value), destination.stamp.hex())
 print("identity_value", identity.get_value())
+
+# A stamped path-request extension (`Transport.py:4020-4049`) at the shipped PR_VALUE, for
+# PathRequestStampTests. Material is `destination_hash+tag` (`Transport.py:4009`).
+pr_dst, pr_tag = bytes([0xA1]) * 16, bytes([0xB2]) * 16
+_, pr_ext = RNS.Transport.stamp_path_request(pr_dst, tag=pr_tag, return_payload=True)
+pr_value = Stamps.stamp_value(Stamps.stamp_workblock(pr_dst + pr_tag, expand_rounds=0), pr_ext[2:])
+print("pr_ext", pr_ext.hex(), repr(pr_value))
+
+# A link request's X25519 key valued as its stamp over `destination.hash + sig_pub`
+# (`Link.py:193-196`), for LinkStampTests. The keys come from fixed private bytes.
+from RNS.Cryptography import Ed25519PrivateKey, X25519PrivateKey
+lr_pub = X25519PrivateKey.from_private_bytes(bytes(range(32))).public_key().public_bytes()
+lr_sig = Ed25519PrivateKey.from_private_bytes(bytes(range(32, 64))).public_key().public_bytes()
+lr_value = Stamps.stamp_value(destination.hash + lr_sig, lr_pub)
+print("lr_value", destination.hash.hex(), lr_pub.hex(), lr_sig.hex(), repr(lr_value))

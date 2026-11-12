@@ -13,8 +13,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for path request packet format matching Python reference.
-/// Python: if transport_enabled: body = destHash + transport_id + tag
-///         else:                  body = destHash + tag
+/// From RNS 1.6.0 every request is `destHash + transport_id + tag` (`Transport.py:3700-3703`).
 final class PathRequestFormatTests: XCTestCase {
 
   final class CapturingInterface: Interface {
@@ -48,7 +47,7 @@ final class PathRequestFormatTests: XCTestCase {
       Data(body[16..<32]), t.transportInstanceID, "next 16 bytes must be transport instance ID")
   }
 
-  func testPathRequestOmitsTransportIDWhenDisabled() throws {
+  func testPathRequestIncludesTransportIDWhenDisabled() throws {
     let t = Transport()
     t.transportEnabled = false
     let iface = CapturingInterface()
@@ -60,9 +59,9 @@ final class PathRequestFormatTests: XCTestCase {
     let sent = try XCTUnwrap(iface.captured.first)
     let body = sent.data
 
-    // When transport disabled: body = destHash(16) + tag(16) = 32 bytes
-    XCTAssertEqual(body.count, 32, "transport-disabled path request body must be 32 bytes")
+    XCTAssertEqual(body.count, 48, "a 1.6.0 request carries the transport ID either way")
     XCTAssertEqual(Data(body.prefix(16)), destHash, "first 16 bytes must be destination hash")
+    XCTAssertEqual(Data(body[16..<32]), t.transportInstanceID)
   }
 
   func testPathRequestSentAsPlainBroadcast() throws {

@@ -180,21 +180,21 @@ final class PathRequestIngressLimitTests: XCTestCase {
     iface.sent.filter { $0.packetType == .announce && $0.context == .pathResponse }
   }
 
-  func testTagsDifferingOnlyPastTheSixteenthByteAreOneRequest() throws {
-    // `if len(tag_bytes) > TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`—the
-    // dedup key is built from the truncated tag. Keying on the untruncated bytes lets a
-    // sender defeat deduplication for free by varying a tail Python never reads, turning
-    // one path request into as many answers as it cares to ask for.
+  func testRequestsDifferingOnlyInTheExtensionAreOneRequest() throws {
+    // From RNS 1.6.0 the 16 bytes past the tag are the stamp extension
+    // (`Transport.py:3988-3989`), and the dedup key is `destination_hash+tag_bytes` (`:2088`).
+    // Keying on more lets a sender defeat deduplication for free by varying bytes nothing
+    // reads, turning one path request into as many answers as it cares to ask for.
     let (t, ingress, _) = makePair()
     let local = try answerableRequest(on: t)
     let head = Data(repeating: 0x01, count: 16)
 
     ingress.inboundHandler?(
-      request(for: local.hash, on: t, tag: head + Data([0xAA, 0xBB, 0xCC, 0xDD])), ingress)
+      request(for: local.hash, on: t, tag: head + Data(repeating: 0xAA, count: 16)), ingress)
     XCTAssertEqual(pathResponses(ingress).count, 1, "the first request is answered")
 
     ingress.inboundHandler?(
-      request(for: local.hash, on: t, tag: head + Data([0x11, 0x22, 0x33, 0x44])), ingress)
+      request(for: local.hash, on: t, tag: head + Data(repeating: 0x11, count: 16)), ingress)
     XCTAssertEqual(
       pathResponses(ingress).count, 1,
       "the second request carries the same 16-byte tag and must be a duplicate")

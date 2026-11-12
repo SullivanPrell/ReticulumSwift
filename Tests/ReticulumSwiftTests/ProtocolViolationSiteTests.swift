@@ -110,19 +110,15 @@ final class ProtocolViolationSiteTests: XCTestCase {
     XCTAssertEqual(try violations(t, on: hop), 0)
   }
 
-  /// Upstream truncates an oversized tag to the hash length and counts a violation.
+  /// A request one byte past the plain 48-byte form is "Invalid path request size".
   ///
-  /// It then carries on with the request (`Transport.py:1843-1845`). The truncation matters on its own
-  /// (an untruncated tag in the dedup key lets a sender defeat deduplication by varying a
-  /// tail nothing reads), and the counter is the only trace it leaves for the operator.
+  /// RNS 1.6.0 accepts only 32, 48 and 64 bytes and counts a violation for anything else
+  /// (`Transport.py:2084-2086`). Before 1.6.0 upstream truncated the tag and carried on.
   func testAnExcessivePathRequestTagCountsAProtocolViolation() throws {
     let t = Transport()
     let hop = RecordingHop(name: "pr-fat-tag")
     t.register(interface: hop)
 
-    // Upstream reads a body past 32 bytes as [target || requesting transport ID || tag], so the
-    // tag only starts at 32. 16 + 16 + 17 puts it one byte past the ceiling; a 33-byte
-    // body would take the same branch and yield a one-byte tag, testing nothing.
     let body =
       Data(repeating: 0xA1, count: 16)
       + Data(repeating: 0xC3, count: 16)

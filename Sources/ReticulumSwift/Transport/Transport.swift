@@ -596,6 +596,18 @@ public final class Transport {
     interface?.prCost ?? stamps.prCost
   }
 
+  /// Python's `pr_stamp_cache`: path-request stamps keyed on `dst+tag`, at most 256
+  /// (`Transport.py:216-217`).
+  private var prStampCache: [Data: Data] = [:]
+
+  /// `PR_LEGACY_LENGTH`, `PR_LENGTH` and `PR_STAMPED_LENGTH` (`Transport.py:3974-3980`).
+  static let pathRequestLengths: Set<Int> = [32, 48, 64]
+
+  /// The extension a stamping node adds when it relays an unstamped request
+  /// (`Transport.py:3935-3936`).
+  static let lenientPathRequestExtension =
+    Data([Identity.extPayloadMarker, 0xFF]) + Data(count: Identity.stampLength)
+
   /// Optional directory where learned ratchets are persisted, one
   /// file per destination (`<dir>/<desthex>`), matching Python's
   /// `<storagepath>/ratchets/<hex>` layout.
@@ -4422,7 +4434,7 @@ public final class Transport {
 
   /// Sends the oldest queued discovery path request, then waits a throttle for the next.
   ///
-  /// Python's `handle_disovery_path_requests` (`Transport.py:1247-1264`). A request with no
+  /// Python's `handle_disovery_path_requests` (`Transport.py:4051-4075`). A request with no
   /// blocked interface goes out on every interface. Otherwise each other interface gets one.
   private func sendNextDiscoveryPathRequest() {
     lock.lock()
@@ -4437,8 +4449,13 @@ public final class Transport {
     lock.unlock()
 
     if let blocked = next.blockedInterface {
-      for iface in snapshot where iface !== blocked && iface.isOnline && iface.isRoutingEndpoint {
-        try? requestPath(for: next.destinationHash, onInterface: iface)
+      // One tag on every interface, stamped once under `STAMP_PRS` (`Transport.py:4062-4075`).
+      let tag = SecureRandom.bytes(Constants.truncatedHashLength)
+      let ext = stamps.stampPRs ? pathRequestStamp(next.destinationHash, tag: tag) : nil
+      if !stamps.stampPRs || ext != nil {
+        for iface in snapshot where iface !== blocked && iface.isOnline && iface.isRoutingEndpoint {
+          try? requestPath(for: next.destinationHash, onInterface: iface, tag: tag, extPayload: ext)
+        }
       }
     } else {
       try? requestPath(for: next.destinationHash)
@@ -6213,22 +6230,45 @@ public final class Transport {
   ///     Mirrors Python's `Transport.request_path(recursive=False)`.
   ///     Reserved for future use (Python's recursive handling is
   ///     performed by the receiving transport, not the sender).
+  ///   - extPayload: A stamp extension to carry, as a relay forwards it. Without one,
+  ///     `stamps.stampPRs` grinds a stamp first and sends once it's ready.
   /// - Throws: An error raised by the interface the request is sent on.
   public func requestPath(
     for destinationHash: Data,
     onInterface: (any Interface)? = nil,
     tag: Data? = nil,
-    recursive: Bool = false
+    recursive: Bool = false,
+    extPayload: Data? = nil
   ) throws {
     guard destinationHash.count == Constants.truncatedHashLength else { return }
-    let tag = tag ?? SecureRandom.bytes(Constants.truncatedHashLength)
+    let tag = Data(
+      (tag ?? SecureRandom.bytes(Constants.truncatedHashLength)).prefix(
+        Constants.truncatedHashLength))
     _ = recursive  // the receiving transport node handles forwarded recursion
-    // Mirrors Python: if transport_enabled: body = destHash + transport_id + tag
-    //                 else:                  body = destHash + tag
-    let body =
-      transportEnabled
-      ? destinationHash + transportInstanceID + tag
-      : destinationHash + tag
+    // "From version 1.6.0, path requests always carry transport ID" (`Transport.py:3700-3703`).
+    var body = destinationHash + transportInstanceID + tag
+    if let extPayload {
+      body += extPayload
+    } else if stamps.stampPRs {
+      // Send at once with a cached stamp, otherwise grind on the stamper
+      // (`Transport.py:3705-3719`).
+      lock.lock()
+      let cached = prStampCache[destinationHash + tag]
+      if cached == nil { pathRequests[destinationHash] = Date().timeIntervalSince1970 }
+      lock.unlock()
+      guard let cached else {
+        // shortcut: one serial stamper with no PR priority lane or queue cap, as Python's
+        // STAMPER_*_QUEUE_LENGTH has; add them if announce grinding is seen delaying requests.
+        stampQueue.async { [weak self] in
+          guard let self, let ext = self.pathRequestStamp(destinationHash, tag: tag) else { return }
+          try? self.requestPath(
+            for: destinationHash, onInterface: onInterface, tag: tag, recursive: recursive,
+            extPayload: ext)
+        }
+        return
+      }
+      body += Data([Identity.extPayloadMarker, 0x00]) + cached
+    }
 
     // Pre-seed the local dedup entry so this node never re-processes its own
     // request when it bounces back from an interface's local echo.
@@ -6258,43 +6298,56 @@ public final class Transport {
     }
   }
 
+  /// `stamp_path_request` (`Transport.py:4020-4049`): the `0xC1 0x00` extension for a stamp
+  /// over `dst+tag` at `PR_VALUE`, from the cache or ground within `PR_STAMP_TIMEOUT`.
+  func pathRequestStamp(_ destinationHash: Data, tag: Data) -> Data? {
+    let material = destinationHash + tag
+    lock.lock()
+    var stamp = prStampCache[material]
+    lock.unlock()
+    if stamp == nil {
+      let deadline = Date().addingTimeInterval(stamps.prStampTimeout)
+      stamp =
+        Stamps.generateStamp(
+          material, stampCost: stamps.prValue, expandRounds: 0, size: Identity.stampLength,
+          isCancelled: { Date() > deadline })?.stamp
+    }
+    guard let stamp else {
+      Reticulum.log(
+        "Could not generate path request stamp for \(destinationHash.hexString), path request "
+          + "emission cancelled", level: .warning)
+      return nil
+    }
+    lock.lock()
+    prStampCache[material] = stamp
+    // shortcut: evicts an arbitrary entry where Python evicts the oldest; a cache miss only
+    // costs a re-grind.
+    if prStampCache.count > 256 { prStampCache.remove(at: prStampCache.startIndex) }
+    lock.unlock()
+    return Data([Identity.extPayloadMarker, 0x00]) + stamp
+  }
+
   /// The path-request half of `preprocess_inbound` (`Transport.py:1827-1886`).
   ///
   /// Returns `.ingressLimited` when the receiving interface's path-request limiter is
   /// active, `.pathRequest` otherwise, or `nil` when the request stops here.
   private func admitPathRequest(_ packet: Packet, from interface: Interface) -> TrafficClass? {
-    let hashLen = Constants.truncatedHashLength
-    // `if not len(packet.data) >= TRUNCATED_HASHLENGTH//8: return` (`Transport.py:1830`).
+    let length = packet.data.count
+    // `if not len(packet.data) >= TRUNCATED_HASHLENGTH//8: return` (`Transport.py:2072`).
     // Too short to name a destination, so upstream returns before it looks for a tag and
     // charges nothing.
-    guard let fields = pathRequestFields(packet.data) else { return nil }
-    // `if tag_bytes == None: ... protocol_violation("Tagless path request")`
-    // (`:1838-1840`). One byte longer than the preceding case, and upstream treats it very
-    // differently: a tag is what makes a request distinguishable from a replay of itself,
-    // so nothing can deduplicate a request without one, and upstream declines to act.
-    guard !fields.rawTag.isEmpty else {
+    guard length >= Constants.truncatedHashLength else { return nil }
+    // "Excessive path request size" past 64 bytes (`Transport.py:2074`), "Tagless path
+    // request" (`:2077`), and "Invalid path request size" for anything but 32, 48 or 64 bytes
+    // (`:2084-2086`). A tag is what makes a request distinguishable from a replay of itself,
+    // and a fixed length keeps a sender from defeating deduplication with a tail nothing reads.
+    guard let fields = pathRequestFields(packet.data), Self.pathRequestLengths.contains(length)
+    else {
       notifyProtocolViolation(on: interface)
       return nil
     }
     let target = fields.target
-    let rawTag = fields.rawTag
-    // `if len(tag_bytes) > RNS.Identity.TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`
-    // (`Transport.py:1842-1843`). The excess isn't merely ignored—it must not reach the
-    // dedup key. Keyed on the untruncated bytes, a sender defeats deduplication for free by
-    // varying a tail nothing reads, turning one path request into as many recursive
-    // fan-outs as it cares to send. The truncated tag is also what gets forwarded, so every
-    // hop agrees on the identity of the request.
-    // `protocol_violation("Excessive path request tag size")` accompanies the truncation
-    // (`:1845`). Upstream truncates and carries on, so this is a counter rather than a
-    // rejection—but it's the only trace a peer doing it leaves for the operator.
-    let tag: Data
-    if rawTag.count > hashLen {
-      notifyProtocolViolation(on: interface)
-      tag = Data(rawTag.prefix(hashLen))
-    } else {
-      tag = rawTag
-    }
-    let dedupKey = target + tag
+    let dedupKey = target + fields.tag
 
     lock.lock()
     // `if not unique_tag in discovery_pr_tags and not unique_tag in discovery_pr_tags_prev`
@@ -6304,6 +6357,12 @@ public final class Transport {
     if !alreadySeen { pathRequestTags.insert(dedupKey) }
     lock.unlock()
     if alreadySeen { return nil }
+
+    // `if not stamp_ok: if Transport.STAMPS_ENFORCED: return` (`Transport.py:2097-2131`).
+    // Unenforced, upstream only logs the stamp's value.
+    if stamps.enabled, stamps.enforced, !pathRequestStampValid(fields, on: interface) {
+      return nil
+    }
 
     // `interface.received_path_request(size=len(raw))` (`Transport.py:1857`). Upstream
     // counts here, below the length guard, both tag checks and the duplicate check, so the
@@ -6336,24 +6395,36 @@ public final class Transport {
     return ingressLimited ? .ingressLimited : .pathRequest
   }
 
-  /// Splits a path-request body into its target, the requesting transport instance and the
-  /// untruncated tag (`Transport.py:3385-3402`).
+  /// `parse_path_request` (`Transport.py:3982-4005`): the target, the requesting transport
+  /// instance, the tag (at most 16 bytes) and the stamp extension of a 64-byte request.
   ///
-  /// The body is `target || tag` or `target || transport id || tag`. Returns `nil` for a
-  /// body too short to name a destination.
+  /// Returns `nil` for a body with no tag.
   private func pathRequestFields(_ body: Data) -> (
-    target: Data, requestorTransportID: Data?, rawTag: Data
+    target: Data, requestorTransportID: Data?, tag: Data, ext: Data?
   )? {
-    let hashLen = Constants.truncatedHashLength
-    guard body.count >= hashLen else { return nil }
-    let target = Data(body.prefix(hashLen))
-    if body.count > hashLen * 2 {
-      return (
-        target, Data(body[body.startIndex + hashLen..<body.startIndex + hashLen * 2]),
-        Data(body.suffix(from: body.startIndex + hashLen * 2))
-      )
+    let n = Constants.truncatedHashLength
+    let bytes = [UInt8](body)
+    guard bytes.count > n else { return nil }
+    let target = Data(bytes[..<n])
+    if bytes.count == 64 {
+      return (target, Data(bytes[n..<2 * n]), Data(bytes[2 * n..<3 * n]), Data(bytes[(3 * n)...]))
     }
-    return (target, nil, Data(body.suffix(from: body.startIndex + hashLen)))
+    if bytes.count > 2 * n {
+      return (target, Data(bytes[n..<2 * n]), Data(bytes[(2 * n)...].prefix(n)), nil)
+    }
+    return (target, nil, Data(bytes[n...]), nil)
+  }
+
+  /// `validate_pr_stamp` against the receiving interface's `pr_cost`
+  /// (`Transport.py:2099-2104`, `4011-4016`).
+  private func pathRequestStampValid(
+    _ fields: (target: Data, requestorTransportID: Data?, tag: Data, ext: Data?),
+    on interface: Interface
+  ) -> Bool {
+    guard let ext = fields.ext, ext.first == Identity.extPayloadMarker else { return false }
+    return Stamps.stampValid(
+      stamp: Data(ext.dropFirst(2)), targetCost: prCost(for: interface),
+      workblock: fields.target + fields.tag)
   }
 
   /// `path_request_handler` and `path_request` (`Transport.py:3380-3599`), for a request
@@ -6364,9 +6435,8 @@ public final class Transport {
     guard let fields = pathRequestFields(packet.data) else { return }
     let target = fields.target
     let requestorTransportID = fields.requestorTransportID
-    // Truncated as `path_request_handler` truncates it (`Transport.py:3404-3405`). Admission
-    // already counted the excess as a protocol violation.
-    let tag = Data(fields.rawTag.prefix(Constants.truncatedHashLength))
+    let tag = fields.tag
+    let ext = fields.ext
     // `should_ingress_limit = ingress_limited or attached_interface.should_ingress_limit_pr()`
     // (`Transport.py:3427`). For a queued request the second call reads the limiter as it
     // stands when the worker reaches the request, not as it stood on arrival.
@@ -6454,15 +6524,14 @@ public final class Transport {
       return
     }
 
-    // Branch 3 (Python Transport.py:3032): the request is from a local client
+    // Branch 3 (Python Transport.py:3871-3878): the request is from a local client
     // and this node couldn't answer it—forward it to the mesh on every
-    // other interface (one shared random tag) so an upstream transport can
+    // other interface, under the client's own tag and extension, so an upstream transport can
     // resolve it. Runs regardless of transportEnabled: carrying its clients'
     // path requests onto the network is the whole point of a shared instance.
     if fromLocal {
-      let requestTag = SecureRandom.bytes(Constants.truncatedHashLength)
       for iface in interfaces where iface !== interface && iface.isOnline {
-        try? requestPath(for: target, onInterface: iface, tag: requestTag)
+        try? requestPath(for: target, onInterface: iface, tag: tag, extPayload: ext)
       }
       return
     }
@@ -6497,6 +6566,10 @@ public final class Transport {
       }
     }
     if shouldDiscover {
+      // "Sentinel check for potential enforcement logic leaks" (`Transport.py:3895-3900`):
+      // reachable only with stamps disabled but enforced, which skips the ingress check.
+      if ext == nil && stamps.enforced { return }
+
       // "Abort recursive path request if receiving interface has PR burst active, or
       // should otherwise ingress limit path requests" (`Transport.py:3543-3550`).
       //
@@ -6516,21 +6589,25 @@ public final class Transport {
       // already engaged means someone else is running it.
       if engageDiscoveryPathRequest(target, on: interface) { return }
 
+      // A stamping node marks an unstamped request it relays (`Transport.py:3930-3936`).
+      let forwardExt = ext ?? (stamps.stampPRs ? Self.lenientPathRequestExtension : nil)
       let now = Date().timeIntervalSince1970
       for iface in interfaces where iface !== interface && iface.isOnline && iface.isRoutingEndpoint
       {
         if let filter = searchModeFilter, !filter.contains(iface.mode) { continue }
         if shouldEgressLimitPR(on: iface, now: now) { continue }
-        try? requestPath(for: target, onInterface: iface, tag: tag)
+        try? requestPath(
+          for: target, onInterface: iface, tag: tag, recursive: true, extPayload: forwardExt)
       }
       return
     }
 
-    // Branch 5 (Python Transport.py:3069): this node isn't the client's origin, but
-    // this node serves local clients—forward the request down to them so a connected
-    // client that owns the destination can answer.
+    // Branch 5 (Python Transport.py:3950-3963): this node isn't the client's origin, but
+    // this node serves local clients—forward the request down to them, under its own tag and
+    // extension, so a connected client that owns the destination can answer.
+    let forwardExt = ext ?? (stamps.stampPRs ? Self.lenientPathRequestExtension : nil)
     for iface in localClientServingInterfaces(excluding: interface) {
-      try? requestPath(for: target, onInterface: iface)
+      try? requestPath(for: target, onInterface: iface, tag: tag, extPayload: forwardExt)
     }
   }
 
