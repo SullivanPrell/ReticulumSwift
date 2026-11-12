@@ -1035,6 +1035,7 @@ public final class Reticulum {
 
     transport.ratchetsDirectory = StorageInventory.url(
       .ratchets, storage: configuration.storagePath)
+    transport.stampsDirectory = StorageInventory.url(.stamps, storage: configuration.storagePath)
 
     // Set cache directory for disk-based packet (announce) cache.
     // Mirrors Python's `RNS.Reticulum.cachepath`.

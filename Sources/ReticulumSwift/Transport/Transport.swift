@@ -545,6 +545,9 @@ public final class Transport {
   /// a positional list—a missing field 1 shifts the public key into the slot the reader takes
   /// as app data.
   var knownDestinationPacketHash: [Data: Data] = [:]
+  /// Fields 5-7 of a known-destinations entry (RNS 1.6.0, `Identity.py:114`): the announce's
+  /// stamp and its value, valid or not, and the link-request cost it announced when valid.
+  var knownDestinationStamps: [Data: (stamp: Data?, value: Double?, lrCost: Double?)] = [:]
   /// Destinations explicitly marked as retained—never swept by `cleanKnownDestinations`.
   ///
   /// Mirrors Python's last_use == -1 sentinel.
@@ -570,6 +573,28 @@ public final class Transport {
   /// Defaults to 30 days,
   /// matching `Identity.RATCHET_EXPIRY`.
   public var ratchetExpiry: TimeInterval = 60 * 60 * 24 * 30
+
+  /// Stamping switches and costs, Python's `Transport` class attributes (RNS 1.6.0).
+  public var stamps = StampSettings()
+
+  /// Where this node's own destination stamps persist, Python's `<storagepath>/stamps`.
+  ///
+  /// Nil keeps stamps in memory only.
+  public var stampsDirectory: URL?
+
+  /// Python's stamper thread: one serial queue, so stamp work never runs on a caller's thread.
+  private let stampQueue = DispatchQueue(label: "ReticulumSwift.Transport.stamper", qos: .utility)
+
+  /// The stamp value an announce received on `interface` needs: the interface's
+  /// `destination_cost`, else the transport's (`Interface.py:350-353`).
+  func destinationCost(for interface: Interface?) -> Double {
+    interface?.destinationCost ?? stamps.destinationCost
+  }
+
+  /// The stamp value a path request received on `interface` needs (`Interface.py:355-358`).
+  func prCost(for interface: Interface?) -> Double {
+    interface?.prCost ?? stamps.prCost
+  }
 
   /// Optional directory where learned ratchets are persisted, one
   /// file per destination (`<dir>/<desthex>`), matching Python's
@@ -2937,6 +2962,27 @@ public final class Transport {
     return knownIdentities[destinationHash]?.appData
   }
 
+  /// The stamp value of the last announce heard for `destinationHash`, 0 when it carried no
+  /// stamp, or `nil` for an unknown destination.
+  ///
+  /// Mirrors Python's `Identity.recall_stamp_value` (RNS 1.6.0).
+  public func recallStampValue(forDestination destinationHash: Data) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard knownIdentities[destinationHash] != nil else { return nil }
+    return knownDestinationStamps[destinationHash]?.value ?? 0
+  }
+
+  /// The link-request cost `destinationHash` announced with a valid stamp, or `nil` when it
+  /// announced none or is unknown.
+  ///
+  /// Mirrors Python's `Identity.recall_link_cost` (RNS 1.6.0).
+  public func recallLinkCost(forDestination destinationHash: Data) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    return knownDestinationStamps[destinationHash]?.lrCost ?? nil
+  }
+
   /// Get the 10-byte ratchet ID of the known ratchet for a destination.
   ///
   /// Returns nil when no ratchet exists. Mirrors Python's `Identity.current_ratchet_id()`.
@@ -3515,6 +3561,7 @@ public final class Transport {
     let lastUsed = knownDestinationLastUsed
     let retained = retainedDestinations
     let packetHashes = knownDestinationPacketHash
+    let stampFields = knownDestinationStamps
     lock.unlock()
 
     let pairs: [(MsgPack.Value, MsgPack.Value)] = snapshot.map { destHash, identity in
@@ -3531,6 +3578,9 @@ public final class Transport {
           .bytes(identity.publicKeyBytes),
           identity.appData.map(MsgPack.Value.bytes) ?? .nil,
           lastUse,
+          stampFields[destHash]?.stamp.map(MsgPack.Value.bytes) ?? .nil,
+          stampFields[destHash]?.value.map(MsgPack.Value.double) ?? .int(0),
+          stampFields[destHash]?.lrCost.map(MsgPack.Value.double) ?? .nil,
         ])
       )
     }
@@ -3554,10 +3604,11 @@ public final class Transport {
         case .array(var fields) = value
       else { continue }
       // `[e[0], e[1], e[2], e[3], 0]` (:226-229)—an entry written by an older reference
-      // has four fields and is backfilled with a zero `last_use`, not discarded.
+      // has four fields and is backfilled with a zero `last_use`, not discarded. RNS 1.6.0
+      // pads anything short of eight with `None, 0, None` (`Identity.py:332-339`).
       if fields.count == 4 { fields.append(.double(0)) }
-      guard fields.count == 5,
-        case .bytes(let publicKey) = fields[2],
+      while fields.count < 8 { fields.append(fields.count == 6 ? .int(0) : .nil) }
+      guard case .bytes(let publicKey) = fields[2],
         publicKey.count == Constants.keySize,
         let identity = try? Identity(publicKeyBytes: publicKey)
       else { continue }
@@ -3570,6 +3621,7 @@ public final class Transport {
       if case .bytes(let packetHash) = fields[1] {
         knownDestinationPacketHash[destHash] = packetHash
       }
+      knownDestinationStamps[destHash] = (fields[5].asData, fields[6].asDouble, fields[7].asDouble)
       // 0 is "never used", a negative value is the retention sentinel, and anything else is
       // a use time (`Identity.py:314-324`). Reading it back is what keeps a pinned
       // destination pinned across a restart.
@@ -3639,6 +3691,7 @@ public final class Transport {
       knownIdentities.removeValue(forKey: h)
       knownDestinationAnnouncedAt.removeValue(forKey: h)
       knownDestinationLastUsed.removeValue(forKey: h)
+      knownDestinationStamps.removeValue(forKey: h)
     }
     lock.unlock()
 
@@ -4777,8 +4830,32 @@ public final class Transport {
     isPathResponse: Bool = false,
     onInterface: (any Interface)? = nil
   ) throws -> PacketReceipt? {
+    var trailer: Data?
+    if stamps.stampDestinations {
+      // Python grinds a missing stamp on its stamper thread and announces once it's ready
+      // (`Destination.py:297-301`). A persisted stamp loads on that thread too, so the first
+      // announce after a start is asynchronous here even when no work is needed.
+      if destination.stamp == nil {
+        let (settings, directory) = (stamps, stampsDirectory)
+        stampQueue.async { [weak self] in
+          guard destination.awaitStamp(settings, directory: directory) else {
+            Reticulum.log(
+              "Could not generate destination stamp for \(destination.hexHash), announce "
+                + "emission cancelled", level: .warning)
+            return
+          }
+          _ = try? self?.announce(
+            destination: destination, appData: appData, ratchet: ratchet,
+            isPathResponse: isPathResponse, onInterface: onInterface)
+        }
+        return nil
+      }
+      guard destination.awaitStamp(stamps, directory: stampsDirectory) else { return nil }
+      trailer = destination.stampTrailer(stamps)
+    }
     let packet = try Announce.make(
-      for: destination, appData: appData, ratchet: ratchet, isPathResponse: isPathResponse)
+      for: destination, appData: appData, ratchet: ratchet, isPathResponse: isPathResponse,
+      stampTrailer: trailer)
     if let iface = onInterface {
       try transmit(packet, on: iface)
       return nil
@@ -5566,9 +5643,12 @@ public final class Transport {
     // Order 1-before-2 is observable: it decides whether a blackholed peer
     // sending a bad signature shows up in the protocol-violation counter.
     switch Identity.validateAnnounce(
-      packet, onlyValidateSignature: true, isBlackholed: { self.isBlackholed($0) }
+      packet, onlyValidateSignature: true, stamps: stamps,
+      requiredValue: destinationCost(for: interface), isBlackholed: { self.isBlackholed($0) }
     ) {
-    case .blackholed:
+    // An enforced stamp shortfall drops silently, like a blackholed announcer
+    // (`Transport.py:2047-2049`).
+    case .blackholed, .noStamp, .invalidStamp:
       return nil
     case .invalid:
       notifyProtocolViolation(on: interface)
@@ -5637,7 +5717,9 @@ public final class Transport {
       // `admitAnnounce` already verified this signature over these same bytes, so skip the
       // second verification the way Python's `announce_signature_validated` does
       // (`Identity.py:559`).
-      let decoded = try Announce.validate(packet, signatureVerified: true)
+      let decoded = try Announce.validate(
+        packet, signatureVerified: true, stamps: stamps,
+        requiredValue: destinationCost(for: interface))
       // `announce_hops = packet.hops` (`Transport.py:2333`): the hop count every copy, relay
       // and answer of this announce carries.
       let announceHops = inboundHops(of: packet, on: interface)
@@ -5779,6 +5861,9 @@ public final class Transport {
       // the known-destinations entry (`:107`).
       knownDestinationPacketHash[decoded.destinationHash] =
         (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
+      knownDestinationStamps[decoded.destinationHash] = (
+        decoded.stamp, decoded.stampValue, decoded.lrCost
+      )
       cachedAnnounces[decoded.destinationHash] = packet
       if let ratchet = decoded.ratchet {
         let now = Date()
@@ -6316,8 +6401,7 @@ public final class Transport {
       let localDest = registeredDestinations[target]
       lock.unlock()
       if let dest = localDest, dest.identity?.hasPrivateKey == true {
-        let pkt = try? Announce.make(for: dest, isPathResponse: true)
-        if let pkt { try? transmit(pkt, on: interface) }
+        _ = try? announce(destination: dest, isPathResponse: true, onInterface: interface)
       }
       onPathRequested?(target, interface)
       return

@@ -11,6 +11,47 @@
 import CryptoKit
 import Foundation
 
+/// The stamping switches and costs Python keeps as `Transport` class attributes
+/// (`Transport.py:191-206`), set from the `[stamps]` config section.
+///
+/// Every value defaults to RNS 1.6.0's.
+public struct StampSettings: Equatable {
+  /// Python: `STAMPS_ENABLED`, whether announces and path requests are checked for stamps.
+  public var enabled = true
+  /// Python: `STAMPS_ENFORCED`, whether an announce or path request without a sufficient stamp
+  /// is dropped.
+  public var enforced = false
+  /// Python: `LR_STAMPS_ENFORCED`, whether a link request without a sufficient stamp is refused.
+  public var lrEnforced = false
+  /// Python: `STAMP_DESTINATIONS`, whether this node stamps its own announces.
+  public var stampDestinations = false
+  /// Python: `STAMP_PRS`, whether this node stamps its own path requests.
+  public var stampPRs = false
+  /// Python: `STAMP_LRS`, whether this node stamps link requests to destinations that
+  /// announced a cost.
+  public var stampLRs = true
+  /// Python: `ALWAYS_STAMP_LRS`, whether link requests are stamped even without an announced
+  /// cost.
+  public var alwaysStampLRs = false
+  /// Python: `DESTINATION_COST`, the value an announce stamp needs unless the receiving
+  /// interface sets its own.
+  public var destinationCost = 23.5
+  /// Python: `DESTINATION_VALUE`, the value this node stamps its announces to.
+  public var destinationValue = 25.0
+  /// Python: `PR_COST`, the value a path-request stamp needs unless the interface sets its own.
+  public var prCost = 15.8
+  /// Python: `PR_VALUE`, the value this node stamps its path requests to.
+  public var prValue = 15.8
+  /// Python: `LR_COST`, the link-request cost announced when a destination sets none.
+  public var lrCost = 12.5
+  /// Python: `LINK_STAMP_TIMEOUT`.
+  public var linkStampTimeout: TimeInterval = 15
+  /// Python: `PR_STAMP_TIMEOUT`.
+  public var prStampTimeout: TimeInterval = 15
+
+  public init() {}
+}
+
 /// Proof-of-work stamps with fixed-point costs, from `RNS/Stamps.py` (RNS 1.6.0).
 ///
 /// A cost is held as a fixed-point integer with eight fractional bits, so `12.5` is `3200`. A

@@ -36,3 +36,16 @@ for n in range(24):
 
 print("workblock", hashlib.sha256(Stamps.stamp_workblock(b"material", expand_rounds=3)).hexdigest())
 print("workblock_noexpand", Stamps.stamp_workblock(b"material", expand_rounds=0).hex())
+
+# Stamped announces (`Destination.py:348-357`), at a low DESTINATION_VALUE so capture is quick.
+RNS.Transport.STAMP_DESTINATIONS = True
+RNS.Transport.DESTINATION_VALUE = 8
+RNS.Transport.register_destination = staticmethod(lambda destination: None)  # no running Transport
+identity = RNS.Identity.from_bytes(bytes(range(64)))
+destination = RNS.Destination(identity, RNS.Destination.IN, RNS.Destination.SINGLE, "rs160", "stamped")
+destination.set_link_cost(7.25)
+for app_data in [b"hello", None]:
+    packet = destination._announce(app_data=app_data, send=False)
+    packet.pack()
+    print("announce", packet.raw.hex(), repr(destination.stamp_value), destination.stamp.hex())
+print("identity_value", identity.get_value())

@@ -278,6 +278,28 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     self.signingPublicKey = sig.publicKey
   }
 
+  /// Create a fresh identity whose X25519 key stamps its Ed25519 key at `value`.
+  ///
+  /// Mirrors Python's `Identity(value=)` (`Identity.py:1060-1077`).
+  ///
+  /// - Returns: `nil` when `value` is past `Transport.stampCostCap`.
+  public convenience init?(value: Double) {
+    let sig = Curve25519.Signing.PrivateKey()
+    guard
+      let key = Stamps.generateStampedKey(
+        material: sig.publicKey.rawRepresentation, stampCost: value)
+    else { return nil }
+    try? self.init(privateKeyBytes: key.privateKey + sig.rawRepresentation)
+  }
+
+  /// The stamp value of this identity's X25519 key over its Ed25519 key.
+  ///
+  /// Mirrors Python's `Identity.get_value()`.
+  public func getValue() -> Double {
+    Stamps.stampValue(
+      workblock: signingPublicKey.rawRepresentation, stamp: encryptionPublicKey.rawRepresentation)
+  }
+
   /// Reconstruct from the 64-byte concatenated private-key blob produced
   /// by `privateKeyBytes`.
   public init(privateKeyBytes: Data) throws {
@@ -421,6 +443,11 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
     /// The announcing identity is on the blackhole list. Tested *before* the
     /// signature, so a blackholed peer costs no verification.
     case blackholed
+    /// Stamps are enforced and the announce carries none (Python's `"no_stamp"`). Tested
+    /// before the blackhole list (`Identity.py:883-886`).
+    case noStamp
+    /// Stamps are enforced and the announce's stamp is short (Python's `"invalid_stamp"`).
+    case invalidStamp
   }
 
   /// Validate an announce packet, reporting blackholed announcers separately.
@@ -435,6 +462,9 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
   ///   - onlyValidateSignature: When true, stop after the signature and skip the
   ///     `truncated_hash(name_hash || identity_hash)` check on the destination
   ///     hash. This is what the transport's admission gate uses.
+  ///   - stamps: The stamping settings, Python's `Transport` class attributes.
+  ///   - requiredValue: The value an announce stamp must reach, `stamps.destinationCost`
+  ///     when nil. Python takes the receiving interface's `destination_cost`.
   ///   - isBlackholed: Tests an announced identity hash against the blackhole
   ///     list. Python reads the global `RNS.Transport.blackholed_identities`
   ///     here; this port has a per-instance transport, so the caller supplies
@@ -443,10 +473,13 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
   public static func validateAnnounce(
     _ packet: Packet,
     onlyValidateSignature: Bool = false,
+    stamps: StampSettings = StampSettings(),
+    requiredValue: Double? = nil,
     isBlackholed: (Data) -> Bool
   ) -> AnnounceAdmission {
     do {
       let parsed = try Announce.parse(packet)
+      _ = try Announce.checkStamp(parsed, stamps: stamps, requiredValue: requiredValue)
 
       if isBlackholed(parsed.identity.hash) { return .blackholed }
 
@@ -457,8 +490,12 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
         return verified ? .valid : .invalid
       }
 
-      _ = try Announce.validate(packet)
+      _ = try Announce.validate(packet, stamps: stamps, requiredValue: requiredValue)
       return .valid
+    } catch Announce.AnnounceError.noStamp {
+      return .noStamp
+    } catch Announce.AnnounceError.invalidStamp {
+      return .invalidStamp
     } catch {
       return .invalid
     }
@@ -520,6 +557,21 @@ public final class Identity: Equatable, Hashable, @unchecked Sendable {
   /// Mirrors Python's `RNS.Identity.recall(target_hash)`.
   public static func recall(destinationHash: Data) -> Identity? {
     Reticulum.shared?.transport.recall(identity: destinationHash)
+  }
+
+  /// Recall the last heard announce stamp value for a destination hash from the shared
+  /// Reticulum instance.
+  ///
+  /// Mirrors Python's `RNS.Identity.recall_stamp_value(destination_hash)`.
+  public static func recallStampValue(forDestination destinationHash: Data) -> Double? {
+    Reticulum.shared?.transport.recallStampValue(forDestination: destinationHash)
+  }
+
+  /// Recall the link-request cost a destination announced, from the shared Reticulum instance.
+  ///
+  /// Mirrors Python's `RNS.Identity.recall_link_cost(destination_hash)`.
+  public static func recallLinkCost(forDestination destinationHash: Data) -> Double? {
+    Reticulum.shared?.transport.recallLinkCost(forDestination: destinationHash)
   }
 
   /// Recall the last heard `appData` for a destination hash from the shared

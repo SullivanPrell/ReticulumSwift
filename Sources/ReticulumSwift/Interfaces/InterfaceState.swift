@@ -96,6 +96,12 @@ public final class InterfaceState {
     var wantsTunnel: Bool = false
     var tunnelID: Data?
 
+    /// Python `interface._destination_cost` and `_pr_cost` (`Interface.py:177-178`, RNS
+    /// 1.6.0): the stamp values this interface requires of announces and path requests, nil
+    /// for the transport-wide costs. A spawned interface inherits both.
+    var destinationCost: Double?
+    var prCost: Double?
+
     /// Python `interface.ifac_netname` (`Reticulum.py:955`)—the IFAC segment's name.
     ///
     /// Lives on the box rather than as a per-conformer stored property because it's a
@@ -358,6 +364,18 @@ public final class InterfaceState {
   public var tunnelID: Data? {
     get { read(\.tunnelID) }
     set { write(\.tunnelID, newValue) }
+  }
+
+  /// Python: `interface._destination_cost`, nil for the transport's `destinationCost`.
+  public var destinationCost: Double? {
+    get { read(\.destinationCost) }
+    set { write(\.destinationCost, newValue) }
+  }
+
+  /// Python: `interface._pr_cost`, nil for the transport's `prCost`.
+  public var prCost: Double? {
+    get { read(\.prCost) }
+    set { write(\.prCost, newValue) }
   }
 
   // MARK: - Interface discovery, publish side

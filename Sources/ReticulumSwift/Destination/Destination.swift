@@ -540,6 +540,98 @@ public final class Destination {
   /// Hexadecimal rendering of the destination hash.
   public var hexHash: String { hash.map { String(format: "%02x", $0) }.joined() }
 
+  // MARK: - Stamps (RNS 1.6.0, `Destination.py:263-417`)
+
+  /// The stamp this destination's announces carry, once loaded or generated.
+  ///
+  /// Mirrors Python's `Destination.stamp`.
+  public var stamp: Data?
+  /// Value of `stamp`. Mirrors Python's `Destination.stamp_value`.
+  public var stampValue: Double?
+  /// Python: `_target_value`, nil until `setValue(_:)`.
+  private var targetValueSetting: Double?
+  /// Python: `_link_cost`, nil until `setLinkCost(_:)`.
+  private var linkCostSetting: Double?
+  /// Python: `stamp_generation_lock`.
+  private let stampLock = NSLock()
+
+  /// `destination_hash + public_key + name_hash`, what this destination's stamp is over.
+  ///
+  /// Mirrors Python's `Destination.stamp_material()`.
+  public var stampMaterial: Data { hash + (identity?.publicKeyBytes ?? Data()) + nameHash }
+
+  /// Sets the value this destination's announces are stamped to.
+  ///
+  /// Mirrors Python's `Destination.set_value(value)`.
+  public func setValue(_ value: Double) {
+    targetValueSetting = min(Double(Transport.stampCostCap), value)
+  }
+
+  /// The value announces are stamped to, never below `stamps.destinationValue`.
+  ///
+  /// Mirrors Python's `Destination.target_value`.
+  public func targetValue(_ stamps: StampSettings) -> Double {
+    let value = targetValueSetting ?? stamps.destinationValue
+    return min(Double(Transport.stampCostCap), max(value, stamps.destinationValue))
+  }
+
+  /// Sets the link-request cost this destination announces. 0 asks for unstamped requests.
+  ///
+  /// Mirrors Python's `Destination.set_link_cost(cost)`.
+  public func setLinkCost(_ cost: Double) {
+    linkCostSetting = max(0, min(cost, Double(Transport.linkCostCap)))
+  }
+
+  /// The link-request cost this destination announces, `stamps.lrCost` when none was set.
+  ///
+  /// Mirrors Python's `Destination.get_link_cost()`.
+  public func getLinkCost(_ stamps: StampSettings) -> Double {
+    max(0, min(linkCostSetting ?? stamps.lrCost, Double(Transport.stampCostCap)))
+  }
+
+  /// Makes sure a stamp meeting the target value is held, loading one persisted in
+  /// `directory` or generating one.
+  ///
+  /// Mirrors Python's `Destination._await_stamp()`.
+  ///
+  /// - Returns: Whether a stamp is held.
+  @discardableResult
+  public func awaitStamp(_ stamps: StampSettings, directory: URL?) -> Bool {
+    stampLock.lock()
+    defer { stampLock.unlock() }
+    let target = targetValue(stamps)
+    if stamp == nil || (stampValue ?? 0) < Stamps.quantizeCost(target) {
+      if let directory,
+        let stored = Stamps.loadDestinationStamp(
+          hash, material: stampMaterial, requiredValue: target, in: directory)
+      {
+        stamp = stored.stamp
+        stampValue = stored.value
+      } else {
+        guard
+          let found = Stamps.generateStamp(
+            stampMaterial, stampCost: target, expandRounds: 0, size: Identity.stampLength)
+        else { return false }
+        stamp = found.stamp
+        stampValue = found.value
+        if let directory {
+          Stamps.storeDestinationStamp(hash, stamp: found.stamp, value: found.value, in: directory)
+        }
+      }
+    }
+    return stamp != nil
+  }
+
+  /// The 18-byte trailer an announce appends to its app data: marker, flags, stamp, then the
+  /// link cost's fraction and integer bytes (`Destination.py:354-357`).
+  ///
+  /// - Returns: `nil` until a stamp is held.
+  public func stampTrailer(_ stamps: StampSettings) -> Data? {
+    guard let stamp else { return nil }
+    let cost = Stamps.costToBytes(getLinkCost(stamps))
+    return Data([Identity.extPayloadMarker, 0x00]) + stamp + Data([cost[1], cost[0]])
+  }
+
   /// Compute destination hash for an identity, app name, and aspects.
   ///
   /// Mirrors Python's `Destination.hash(identity, app_name, *aspects)`.

@@ -45,6 +45,13 @@ public enum Announce {
     ///
     /// Mirrors Python's `packet.packet_hash` (also known as `packet.getTruncatedHash()`).
     public let packetHash: Data
+    /// The stamp the announce's trailer carried, valid or not (`Identity.py:861`).
+    public var stamp: Data? = nil
+    /// Value of `stamp`, valid or not (`Identity.py:864`).
+    public var stampValue: Double? = nil
+    /// Link-request cost the trailer announced, set only when the stamp was valid
+    /// (`Identity.py:870`).
+    public var lrCost: Double? = nil
   }
 
   /// Errors raised while building or parsing an announce.
@@ -53,6 +60,10 @@ public enum Announce {
     case malformed
     case signatureInvalid
     case destinationHashMismatch
+    /// Stamps are enforced and the announce carries none (`Identity.py:883-886`).
+    case noStamp
+    /// Stamps are enforced and the announce's stamp is below the required value.
+    case invalidStamp
   }
 
   /// Builds an announce packet for an inbound `single` destination.
@@ -65,6 +76,8 @@ public enum Announce {
   ///   - isPathResponse: When true the packet context is set to `.pathResponse`, marking
   ///     the announce as answering a path request. Path responses are not forwarded to
   ///     other interfaces. Mirrors `Destination.announce(path_response=True)`.
+  ///   - stampTrailer: The 18-byte stamp trailer to append to the app data before signing,
+  ///     from `Destination.stampTrailer(_:)` (`Destination.py:348-357`).
   /// - Returns: The packed announce packet.
   /// - Throws: `AnnounceError` when the destination cannot be announced.
   public static func make(
@@ -72,7 +85,8 @@ public enum Announce {
     appData: Data? = nil,
     ratchet: Data? = nil,
     timestamp: TimeInterval = Date().timeIntervalSince1970,
-    isPathResponse: Bool = false
+    isPathResponse: Bool = false,
+    stampTrailer: Data? = nil
   ) throws -> Packet {
     guard destination.kind == .single, destination.direction == .in else {
       throw AnnounceError.wrongPacketType
@@ -88,7 +102,8 @@ public enum Announce {
     // Resolve effective app data: explicit arg takes precedence, then
     // destination.effectiveAppData (callable or static), matching
     // Python's Destination.announce() behaviour.
-    let appData = appData ?? destination.effectiveAppData
+    var appData = appData ?? destination.effectiveAppData
+    if let stampTrailer { appData = (appData ?? Data()) + stampTrailer }
 
     var ratchetBytes = ratchet
     if destination.ratchetsEnabled {
@@ -174,6 +189,14 @@ public enum Announce {
     /// `destination_hash + public_key + name_hash + random_hash + ratchet + app_data`,
     /// the buffer the announce signature covers (`Identity.py:539`).
     public let signedData: Data
+    /// The stamp and link-request cost from an app-data trailer in the known format, or `nil`
+    /// when the app data ends in none (`Identity.py:840-857`).
+    public let stampTrailer: (stamp: Data, lrCost: Double)?
+    /// `destination_hash + public_key + name_hash`, what an announce stamp is over
+    /// (`Identity.py:862`).
+    public var stampMaterial: Data { destinationHash + publicKey + nameHash }
+    /// The announced destination hash.
+    public let destinationHash: Data
   }
 
   /// Read an announce body into its fields without verifying the signature.
@@ -229,6 +252,21 @@ public enum Announce {
     if let ratchet { signedData.append(ratchet) }
     if let appData { signedData.append(appData) }
 
+    // The trailer ends in the link cost's fraction byte, then its integer byte, whose top bit
+    // is reserved. A set bit, a wrong marker or a cost past the cap means no stamp.
+    var stampTrailer: (stamp: Data, lrCost: Double)? = nil
+    if let appData, appData.count >= Identity.extPayloadLength {
+      let ext = Data(appData.suffix(Identity.extPayloadLength))
+      let anchor = ext[ext.count - 1]
+      let lrCost = Stamps.costFromBytes(Data([anchor & 0x7F, ext[ext.count - 2]]))
+      if ext[0] == Identity.extPayloadMarker, anchor & 0x80 == 0,
+        lrCost <= Double(Transport.stampCostCap)
+      {
+        let start = Identity.extHeaderLength
+        stampTrailer = (ext.subdata(in: start..<start + Identity.stampLength), lrCost)
+      }
+    }
+
     return Parsed(
       identity: try Identity(publicKeyBytes: publicKey),
       publicKey: publicKey,
@@ -237,8 +275,39 @@ public enum Announce {
       ratchet: ratchet,
       signature: signature,
       appData: appData,
-      signedData: signedData
+      signedData: signedData,
+      stampTrailer: stampTrailer,
+      destinationHash: packet.destinationHash
     )
+  }
+
+  /// The stamp half of Python's `Identity.validate_announce` (`Identity.py:836-889`).
+  ///
+  /// A trailer's stamp is valued whatever its validity. Only a valid one is stripped from the
+  /// app data and has its link cost taken, so an insufficient stamp leaves the app data as
+  /// signed.
+  ///
+  /// - Parameter requiredValue: The value the stamp must reach, `stamps.destinationCost` when
+  ///   nil. Python takes the receiving interface's `destination_cost`.
+  /// - Throws: ``AnnounceError/noStamp`` or ``AnnounceError/invalidStamp`` when
+  ///   `stamps.enforced` and the stamp is missing or short.
+  static func checkStamp(
+    _ parsed: Parsed, stamps: StampSettings, requiredValue: Double?
+  ) throws -> (stamp: Data?, value: Double?, lrCost: Double?, appData: Data?) {
+    guard stamps.enabled else { return (nil, nil, nil, parsed.appData) }
+    guard let trailer = parsed.stampTrailer else {
+      if stamps.enforced { throw AnnounceError.noStamp }
+      return (nil, nil, nil, parsed.appData)
+    }
+    let material = parsed.stampMaterial
+    let value = Stamps.stampValue(workblock: material, stamp: trailer.stamp)
+    let required = requiredValue ?? stamps.destinationCost
+    guard Stamps.stampValid(stamp: trailer.stamp, targetCost: required, workblock: material) else {
+      if stamps.enforced { throw AnnounceError.invalidStamp }
+      return (trailer.stamp, value, nil, parsed.appData)
+    }
+    let stripped = parsed.appData.map { Data($0.dropLast(Identity.extPayloadLength)) }
+    return (trailer.stamp, value, trailer.lrCost, stripped?.isEmpty == false ? stripped : nil)
   }
 
   /// Validate an announce packet, returning the announced identity and
@@ -246,8 +315,15 @@ public enum Announce {
   ///
   /// Verifies the Ed25519 signature *and* that the
   /// destination hash matches `truncated_hash(name_hash || identity_hash)`.
-  public static func validate(_ packet: Packet) throws -> Decoded {
-    try validate(packet, signatureVerified: false)
+  ///
+  /// - Parameters:
+  ///   - stamps: The stamping settings to check the stamp trailer under.
+  ///   - requiredValue: The value an announce stamp must reach, `stamps.destinationCost` when
+  ///     nil.
+  public static func validate(
+    _ packet: Packet, stamps: StampSettings = StampSettings(), requiredValue: Double? = nil
+  ) throws -> Decoded {
+    try validate(packet, signatureVerified: false, stamps: stamps, requiredValue: requiredValue)
   }
 
   /// The same validation, with the option to skip the signature because the
@@ -265,7 +341,10 @@ public enum Announce {
   /// runs, the destination-hash check included: a signature is valid over
   /// whatever destination hash the signer chose, so it says nothing about
   /// whether that hash is the one this announce claims.
-  static func validate(_ packet: Packet, signatureVerified: Bool) throws -> Decoded {
+  static func validate(
+    _ packet: Packet, signatureVerified: Bool, stamps: StampSettings = StampSettings(),
+    requiredValue: Double? = nil
+  ) throws -> Decoded {
     // Only SINGLE destination announces are valid (Python drops PLAIN/GROUP announces).
     guard packet.destinationType == .single else {
       throw AnnounceError.wrongPacketType
@@ -276,7 +355,8 @@ public enum Announce {
     let nameHash = parsed.nameHash
     let randomHash = parsed.randomHash
     let ratchet = parsed.ratchet
-    let appData = parsed.appData
+    let checked = try checkStamp(parsed, stamps: stamps, requiredValue: requiredValue)
+    let appData = checked.appData
 
     if !signatureVerified {
       guard identity.validate(signature: parsed.signature, for: parsed.signedData) else {
@@ -304,7 +384,10 @@ public enum Announce {
       ratchet: ratchet,
       appData: appData,
       isPathResponse: packet.context == .pathResponse,
-      packetHash: packetHash
+      packetHash: packetHash,
+      stamp: checked.stamp,
+      stampValue: checked.value,
+      lrCost: checked.lrCost
     )
   }
 }

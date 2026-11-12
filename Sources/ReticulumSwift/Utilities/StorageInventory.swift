@@ -348,6 +348,14 @@ extension StorageInventory.Entry {
     authority: .reference("I2PInterface.py:90-91")
   )
 
+  /// `storage/stamps`—this node's own destination stamps, one `<hash>.dstamp` each.
+  ///
+  /// Python: `Stamps.py:872-886` (RNS 1.6.0).
+  public static let stamps = StorageInventory.Entry(
+    ["storage", "stamps"], .directory,
+    authority: .reference("Stamps.py:872-886")
+  )
+
   /// Every entry in the inventory, in the order a fresh storage tree is laid out.
   public static let all: [StorageInventory.Entry] = [
     config, storage, interfaceModules,
@@ -355,6 +363,6 @@ extension StorageInventory.Entry {
     knownDestinations, destinationTable, tunnels, packetHashlist,
     cache, announceCache, resources, identities,
     blackhole, blackholeLocal, blackholeLocalTemp, i2p,
-    discovery, discoveredInterfaces,
+    discovery, discoveredInterfaces, stamps,
   ]
 }

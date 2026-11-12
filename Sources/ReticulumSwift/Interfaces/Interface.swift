@@ -219,6 +219,14 @@ public protocol Interface: AnyObject {
   /// Mirrors Python's `Interface.tunnel_id`.
   var tunnelID: Data? { get set }
 
+  /// Stamp value this interface requires of announces, nil for the transport-wide cost.
+  /// Mirrors Python's `interface._destination_cost` (RNS 1.6.0).
+  var destinationCost: Double? { get set }
+
+  /// Stamp value this interface requires of path requests, nil for the transport-wide cost.
+  /// Mirrors Python's `interface._pr_cost` (RNS 1.6.0).
+  var prCost: Double? { get set }
+
   /// When true, this interface is used only to bootstrap the path table on startup.
   /// Mirrors Python's `Interface.bootstrap_only`.
   var bootstrapOnly: Bool { get set }
@@ -621,6 +629,16 @@ extension Interface {
   public var tunnelID: Data? {
     get { interfaceState.tunnelID }
     set { interfaceState.tunnelID = newValue }
+  }
+
+  public var destinationCost: Double? {
+    get { interfaceState.destinationCost }
+    set { interfaceState.destinationCost = newValue }
+  }
+
+  public var prCost: Double? {
+    get { interfaceState.prCost }
+    set { interfaceState.prCost = newValue }
   }
   public var bootstrapOnly: Bool {
     get { interfaceState.bootstrapOnly }
