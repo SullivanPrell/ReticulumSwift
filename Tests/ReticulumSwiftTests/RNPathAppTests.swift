@@ -299,39 +299,49 @@ final class RNPathTruncateTests: XCTestCase {
 
 final class RNPathPathLineTests: XCTestCase {
 
-  private func entry(hops: UInt8, via: Data? = hashB) -> RNPathTableEntry {
+  private let now: TimeInterval = 1_700_000_000
+
+  private func entry(
+    hops: UInt8, via: Data? = hashB, expiresIn: TimeInterval = 303.9, value: Double? = 21,
+    lrCost: Double? = nil
+  ) -> RNPathTableEntry {
     RNPathTableEntry(
-      destinationHash: hashA, timestamp: 1_700_000_000, via: via,
-      hops: hops, expires: 0, interfaceName: "TCPInterface[Client on 1.2.3.4:4242]")
+      destinationHash: hashA, timestamp: now, via: via,
+      hops: hops, expires: now + expiresIn, interfaceName: "TCPInterface[Client on 1.2.3.4:4242]",
+      value: value, used: 0, lrCost: lrCost)
   }
 
-  func testOneHopHasTheDoubleSpaceQuirk() {
-    // Python: m_str is a SPACE when hops == 1 (rnpath.py:287), so the line reads
-    // "is 1 hop  away via" with two spaces.
-    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 1)).contains("is 1 hop  away via"))
-  }
-
-  func testPluralHops() {
-    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 2)).contains("is 2 hops away via"))
-    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 0)).contains("is 0 hops away via"))
-  }
-
+  /// Python 1.6.0: `f"{prettyhexrep(hash)} {hops:>3}h via {prettyhexrep(via)} on {interface}
+  /// expires in {prettytime(expires-now, compact=True)} (dv:{prettycost(value)}/lc:{prettycost(lr_cost)})"`
+  /// (rnpath.py:302). The expected strings came from Python's own `prettytime` and
+  /// `prettycost`.
   func testFullLineShape() {
-    // Python: RNS.timestamp_str(0) → "1969-12-31 18:00:00" in America/Chicago; pinned to UTC
-    // here so the assertion is machine-independent.
-    let line = RNPathFormatter.pathTableLine(entry(hops: 3), timeZone: utc)
     XCTAssertEqual(
-      line,
-      "<aabbccddeeff00112233445566778899> is 3 hops away via "
+      RNPathFormatter.pathTableLine(entry(hops: 3), now: now),
+      "<aabbccddeeff00112233445566778899>   3h via "
         + "<0102030405060708090a0b0c0d0e0f10> on TCPInterface[Client on 1.2.3.4:4242] "
-        + "expires 1970-01-01 00:00:00")
+        + "expires in 5m and 3s (dv:21.000/lc:n)")
+  }
+
+  /// `{hops:>3}` right-aligns in three columns, and a wider count just widens the field.
+  func testHopsAreRightAlignedInThreeColumns() {
+    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 1), now: now).contains(">   1h via <"))
+    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 128), now: now).contains("> 128h via <"))
+  }
+
+  /// An expired path prints a negative time, and the link cost is quantized like the value.
+  func testAnExpiredPathAndALinkCost() {
+    XCTAssertTrue(
+      RNPathFormatter.pathTableLine(
+        entry(hops: 2, expiresIn: -303.4, value: nil, lrCost: 9.1), now: now
+      ).hasSuffix("expires in -5m and 3s (dv:n/lc:9.102)"))
   }
 
   /// Python's `via` is never None (Transport.py:1796 stores the destination hash itself
   /// for a direct peer), so a nil Swift `via` must render the destination hash.
   func testNilViaFallsBackToTheDestinationHash() {
-    let line = RNPathFormatter.pathTableLine(entry(hops: 1, via: nil))
-    XCTAssertTrue(line.contains("away via <aabbccddeeff00112233445566778899>"))
+    let line = RNPathFormatter.pathTableLine(entry(hops: 1, via: nil), now: now)
+    XCTAssertTrue(line.contains("h via <aabbccddeeff00112233445566778899>"))
     XCTAssertFalse(line.contains("<>"))
     XCTAssertEqual(entry(hops: 1, via: nil).resolvedVia, hashA)
   }
@@ -647,6 +657,22 @@ final class RNPathModelCodecTests: XCTestCase {
       ])
   }
 
+  /// RNS 1.6.0 inserts `value`, `used` and `lr_cost` before `interface`
+  /// (`Reticulum.py:1881-1888`), and the three survive a round trip.
+  func testA160PathEntryCarriesItsStampAndUsageKeys() throws {
+    let entry = RNPathTableEntry(
+      destinationHash: hashA, timestamp: 1.5, via: hashB, hops: 2, expires: 9.0,
+      interfaceName: "Iface[x]", value: 21.5, used: 0, lrCost: 9.1)
+    guard case .map(let pairs) = entry.msgpackValue() else { return XCTFail("expected a map") }
+
+    XCTAssertEqual(
+      pairs.compactMap { $0.0.asString },
+      ["hash", "timestamp", "via", "hops", "expires", "value", "used", "lr_cost", "interface"])
+    XCTAssertEqual(pairs[6].1, .uint(0), "Python stores an int 0 for a never-used path")
+    XCTAssertEqual(
+      RNPathTableEntry.decode(try MsgPack.decode(MsgPack.encode(entry.msgpackValue()))), entry)
+  }
+
   func testRateEntryRoundTrip() throws {
     let entry = RNPathRateEntry(
       destinationHash: hashA, last: 1.5, rateViolations: 2,
@@ -862,6 +888,18 @@ final class RNPathJSONTests: XCTestCase {
       RNPathFormatter.pathTableJSON(entries),
       #"[{"hash": "aabbccddeeff00112233445566778899", "timestamp": 1.5, "via": "0102030405060708090a0b0c0d0e0f10", "hops": 2, "expires": 9.0, "interface": "TCPInterface[x]"}, "#
         + #"{"hash": "0102030405060708090a0b0c0d0e0f10", "timestamp": 0.0, "via": "0102030405060708090a0b0c0d0e0f10", "hops": 1, "expires": 2.25, "interface": "LocalInterface[1]"}]"#
+    )
+  }
+
+  /// `json.dumps` of a 1.6.0 row: the int 0 Python stores for a never-used path, and null
+  /// for an absent link cost.
+  func testA160PathRowCarriesValueUsedAndLinkCost() {
+    let entry = RNPathTableEntry(
+      destinationHash: hashA, timestamp: 1.5, via: hashB, hops: 2, expires: 9.0,
+      interfaceName: "TCPInterface[x]", value: 21.5, used: 0, lrCost: nil)
+    XCTAssertEqual(
+      RNPathFormatter.pathTableJSON([entry]),
+      #"[{"hash": "aabbccddeeff00112233445566778899", "timestamp": 1.5, "via": "0102030405060708090a0b0c0d0e0f10", "hops": 2, "expires": 9.0, "value": 21.5, "used": 0, "lr_cost": null, "interface": "TCPInterface[x]"}]"#
     )
   }
 
@@ -1167,8 +1205,41 @@ final class RNPathRunnerTableTests: XCTestCase {
     XCTAssertEqual(makeRunner(options, management: management, recorder: recorder).run(), .ok)
     XCTAssertEqual(recorder.lines.count, 3)
     XCTAssertTrue(recorder.lines[0].contains("AInterface[a]"))
-    XCTAssertTrue(recorder.lines[1].contains("is 1 hop  away"))
-    XCTAssertTrue(recorder.lines[2].contains("is 3 hops away"))
+    XCTAssertTrue(recorder.lines[1].contains(">   1h via"))
+    XCTAssertTrue(recorder.lines[2].contains(">   3h via"))
+  }
+
+  /// `-u` re-sorts by last use, newest first, keeping ties in table order
+  /// (`sorted(table, key=lambda e: e["used"], reverse=True)`, rnpath.py:288-289).
+  func testUsageSortsByLastUseNewestFirst() {
+    var options = RNPathOptions()
+    options.table = true
+    options.usage = true
+    let management = fixture()
+    management.paths[0].used = 0
+    management.paths[1].used = 500
+    management.paths[2].used = 0
+    let recorder = OutputRecorder()
+
+    XCTAssertEqual(makeRunner(options, management: management, recorder: recorder).run(), .ok)
+    XCTAssertEqual(
+      recorder.lines.map { String($0.prefix(34)) },
+      ["<0102030405060708090a0b0c0d0e0f10>", "<5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a>",
+       "<aabbccddeeff00112233445566778899>"])
+  }
+
+  /// A row without `"used"`, from a daemon before 1.6.0, raises inside Python's `try`, so
+  /// the table keeps its interface-then-hops order.
+  func testUsageLeavesTheOrderAloneWhenARowHasNoUseTime() {
+    var options = RNPathOptions()
+    options.table = true
+    options.usage = true
+    let management = fixture()
+    management.paths[1].used = 500
+    let recorder = OutputRecorder()
+
+    XCTAssertEqual(makeRunner(options, management: management, recorder: recorder).run(), .ok)
+    XCTAssertTrue(recorder.lines[0].contains("AInterface[a]"))
   }
 
   func testDestinationFilterSuppressesOtherRows() {

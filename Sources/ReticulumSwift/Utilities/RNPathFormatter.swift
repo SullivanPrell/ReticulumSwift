@@ -88,23 +88,24 @@ public enum RNPathFormatter {
 
   // MARK: - Path table (-t)
 
-  /// Python: rnpath.py:289.
+  /// Python 1.6.0: rnpath.py:302.
   ///
   /// ```
-  /// print(prettyhexrep(hash)+" is "+str(hops)+" hop"+m_str+" away via "
-  ///       +prettyhexrep(via)+" on "+interface+" expires "+timestamp_str(expires))
+  /// print(f"{prettyhexrep(path['hash'])} {path['hops']:>3}h via {prettyhexrep(path['via'])}
+  ///       on {path['interface']} expires in {prettytime(path['expires']-now, compact=True)}
+  ///       (dv:{prettycost(path['value'])}/lc:{prettycost(path['lr_cost'])})")
   /// ```
   ///
-  /// `m_str` is a **space** for one hop and `"s"` otherwise (rnpath.py:287-288), so a
-  /// one-hop row reads `… is 1 hop  away via …` with two spaces. That's a quirk of the
-  /// original, not a typo here.
-  public static func pathTableLine(_ entry: RNPathTableEntry, timeZone: TimeZone? = nil) -> String {
-    let plural = entry.hops == 1 ? " " : "s"
-    return RNSUtilities.prettyhexrep(entry.destinationHash)
-      + " is \(entry.hops) hop\(plural) away via "
+  /// The `u_str` usage text Python builds on the lines above is never printed; `-u` only
+  /// re-sorts.
+  public static func pathTableLine(_ entry: RNPathTableEntry, now: TimeInterval) -> String {
+    let hops = String(entry.hops)
+    return RNSUtilities.prettyhexrep(entry.destinationHash) + " "
+      + String(repeating: " ", count: max(0, 3 - hops.count)) + hops + "h via "
       + RNSUtilities.prettyhexrep(entry.resolvedVia)
-      + " on \(entry.interfaceName) expires "
-      + timestampString(entry.expires, timeZone: timeZone)
+      + " on \(entry.interfaceName) expires in "
+      + RNSUtilities.prettytime(entry.expires - now, compact: true)
+      + " (dv:\(RNSUtilities.prettycost(entry.value))/lc:\(RNSUtilities.prettycost(entry.lrCost)))"
   }
 
   // MARK: - Rate table (-r)
@@ -267,21 +268,30 @@ public enum RNPathFormatter {
   ///
   /// Hand-rolled because `JSONSerialization` preserves neither Python's key order nor its
   /// float formatting. Key order is Python's dict-insertion order—hash, timestamp, via,
-  /// hops, expires, interface—which is deliberately *not* the order Swift's own
-  /// ``RPCServer`` happens to emit.
+  /// hops, expires, value, used, lr_cost, interface.
   ///
   /// A nil `via` is serialised as the destination hash, never `null`: Python's `via` is
   /// never `None` (Transport.py:1796).
   public static func pathTableJSON(_ entries: [RNPathTableEntry]) -> String {
     let objects = entries.map { entry -> String in
-      [
+      let fields = [
         "\"hash\": " + jsonString(RNSUtilities.hexrep(entry.destinationHash, delimit: false)),
         "\"timestamp\": " + jsonNumber(entry.timestamp),
         "\"via\": " + jsonString(RNSUtilities.hexrep(entry.resolvedVia, delimit: false)),
         "\"hops\": \(entry.hops)",
         "\"expires\": " + jsonNumber(entry.expires),
-        "\"interface\": " + jsonString(entry.interfaceName),
-      ].joined(separator: ", ")
+      ]
+      // A row from a daemon before RNS 1.6.0 carries none of the three.
+      let usage =
+        entry.used.map { used in
+          [
+            "\"value\": " + (entry.value.map(jsonCost) ?? "null"),
+            "\"used\": " + jsonCost(used),
+            "\"lr_cost\": " + (entry.lrCost.map(jsonCost) ?? "null"),
+          ]
+        } ?? []
+      return (fields + usage + ["\"interface\": " + jsonString(entry.interfaceName)])
+        .joined(separator: ", ")
     }
     return "[" + objects.map { "{\($0)}" }.joined(separator: ", ") + "]"
   }
@@ -302,6 +312,9 @@ public enum RNPathFormatter {
     }
     return "[" + objects.map { "{\($0)}" }.joined(separator: ", ") + "]"
   }
+
+  /// Python's int 0 for "never used" or "no stamp", a float otherwise.
+  static func jsonCost(_ value: Double) -> String { value == 0 ? "0" : jsonNumber(value) }
 
   /// Python's `repr(float)`—the shortest representation that round-trips.
   ///

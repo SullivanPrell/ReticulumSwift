@@ -21,6 +21,10 @@ public struct RNPathOptions: Equatable {
   ///
   /// `-t` / `--table`
   public var table: Bool = false
+  /// Whether `-t` re-sorts the table by last use, newest first.
+  ///
+  /// `-u` / `--usage`
+  public var usage: Bool = false
   /// Highest hop count included in the table.
   ///
   /// `-m` / `--max`
@@ -467,10 +471,17 @@ public final class RNPathRunner {
       return .ok
     }
 
+    // Python sorts inside a `try`, so a row without "used" leaves the order alone.
+    if options.usage, table.allSatisfy({ $0.used != nil }) {
+      table = table.enumerated()
+        .sorted { ($0.element.used!, $1.offset) > ($1.element.used!, $0.offset) }
+        .map(\.element)
+    }
+    let reference = now().timeIntervalSince1970
     var displayed = 0
     for entry in table where destinationHash == nil || destinationHash == entry.destinationHash {
       displayed += 1
-      output(RNPathFormatter.pathTableLine(entry))
+      output(RNPathFormatter.pathTableLine(entry, now: reference))
     }
     if destinationHash != nil, displayed == 0 {
       output("No path known")

@@ -1090,6 +1090,15 @@ public final class Transport {
   /// Mirrors Python `Transport.tx_packets`
   /// (`Transport.py:1329`).
   public private(set) var txPackets: Int = 0
+  /// Announces received, sent, and path requests received and sent: Python's
+  /// `announce_rxc`, `announce_txc`, `pr_rxc` and `pr_txc` (RNS 1.6.0, `Transport.py:379-384`).
+  public private(set) var announceRxCount: Int = 0
+  /// Announces sent (`Transport.py:1827`).
+  public private(set) var announceTxCount: Int = 0
+  /// Path requests received (`Transport.py:2132`).
+  public private(set) var prRxCount: Int = 0
+  /// Path requests sent (`Transport.py:1828`).
+  public private(set) var prTxCount: Int = 0
   /// Inbound packets per second over the last sampling interval.
   ///
   /// Python `Transport.rx_pps`.
@@ -1903,6 +1912,19 @@ public final class Transport {
     public let rxPPS: Int
     /// Packets sent per second over the last sampling interval.
     public let txPPS: Int
+    /// `rxpkts`, `txpkts`, `arxpkts`, `atxpkts`, `prxpkts` and `ptxpkts` (RNS 1.6.0,
+    /// `Reticulum.py:1823-1828`).
+    public let rxPackets: Int
+    /// Packets sent.
+    public let txPackets: Int
+    /// Announces received.
+    public let announceRxCount: Int
+    /// Announces sent.
+    public let announceTxCount: Int
+    /// Path requests received.
+    public let prRxCount: Int
+    /// Path requests sent.
+    public let prTxCount: Int
   }
 
   /// Returns aggregate transport-level traffic statistics.
@@ -1927,7 +1949,13 @@ public final class Transport {
       prFreqRx: prFreqRx,
       prFreqTx: prFreqTx,
       rxPPS: rxPPS,
-      txPPS: txPPS
+      txPPS: txPPS,
+      rxPackets: rxPackets,
+      txPackets: txPackets,
+      announceRxCount: announceRxCount,
+      announceTxCount: announceTxCount,
+      prRxCount: prRxCount,
+      prTxCount: prTxCount
     )
   }
 
@@ -2582,6 +2610,9 @@ public final class Transport {
   /// Mirrors Python's `interface.received_announce()` call in `Transport.inbound`.
   public func notifyIncomingAnnounce(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordIncomingAnnounce(size: size)
+    metricsLock.lock()
+    announceRxCount += 1
+    metricsLock.unlock()
   }
 
   /// Overload accepting an explicit timestamp—used by tests and internally.
@@ -2597,6 +2628,9 @@ public final class Transport {
   /// Mirrors Python's `interface.sent_announce()` call in `Transport.outbound`.
   public func notifyOutgoingAnnounce(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordOutgoingAnnounce(size: size)
+    metricsLock.lock()
+    announceTxCount += 1
+    metricsLock.unlock()
   }
 
   /// Notifies that `interface` sent an announce at `t`.
@@ -2612,6 +2646,9 @@ public final class Transport {
   /// Mirrors Python's `interface.received_path_request()` call.
   public func notifyIncomingPathRequest(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordIncomingPathRequest(size: size)
+    metricsLock.lock()
+    prRxCount += 1
+    metricsLock.unlock()
   }
 
   /// Notifies that `interface` received a path request at `t`.
@@ -2627,6 +2664,9 @@ public final class Transport {
   /// Mirrors Python's `interface.sent_path_request()` call.
   public func notifyOutgoingPathRequest(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordOutgoingPathRequest(size: size)
+    metricsLock.lock()
+    prTxCount += 1
+    metricsLock.unlock()
   }
 
   /// Notifies that `interface` sent a path request at `t`.
@@ -2732,6 +2772,13 @@ public final class Transport {
     public let lastHeard: Date
     /// Wall-clock time the path expires.
     public let expires: Date
+    /// The destination's last announce stamp value, `known_destinations[dst][6]`: 0 when it
+    /// carried none, nil for a destination with no known identity (`Reticulum.py:1881-1888`).
+    public var value: Double? = nil
+    /// When the path last carried traffic, `path_table[dst][7]`; nil when never used.
+    public var used: Date? = nil
+    /// The link-request cost the destination announced, `known_destinations[dst][7]`.
+    public var lrCost: Double? = nil
   }
 
   /// Returns the path table, optionally limited to routes within `maxHops`.
@@ -2763,9 +2810,21 @@ public final class Transport {
         // path restored from disk can outlive the interface that heard it.
         interfaceName: displayNames[path.nextHopInterfaceName] ?? path.nextHopInterfaceName,
         lastHeard: path.lastHeard,
-        expires: path.expires
+        expires: path.expires,
+        value: knownIdentities[path.destinationHash] == nil
+          ? nil : knownDestinationStamps[path.destinationHash]?.value ?? 0,
+        used: path.used,
+        lrCost: knownDestinationStamps[path.destinationHash]?.lrCost ?? nil
       )
     }
+  }
+
+  /// The path table's size and how many of its paths never carried traffic, Python's
+  /// `Transport.path_pool_counts()` (RNS 1.6.0, `Transport.py:3565-3569`).
+  public func pathPoolCounts() -> (total: Int, unused: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (paths.count, paths.values.filter { $0.used == nil }.count)
   }
 
   /// Returns the number of entries in the link table.
@@ -3941,17 +4000,8 @@ public final class Transport {
             let table = self.getPathTable(maxHops: maxHops)
             let filtered =
               filterHash == nil ? table : table.filter { $0.destinationHash == filterHash }
-            let entries = filtered.map { e -> MsgPack.Value in
-              .map([
-                (.string("hash"), .bytes(e.destinationHash)),
-                (.string("timestamp"), .double(e.lastHeard.timeIntervalSince1970)),
-                (.string("via"), .bytes(e.via)),
-                (.string("hops"), .int(Int64(e.hops))),
-                (.string("expires"), .double(e.expires.timeIntervalSince1970)),
-                (.string("interface"), .string(e.interfaceName)),
-              ])
-            }
-            return MsgPack.encode(.array(entries))
+            return MsgPack.encode(
+              .array(filtered.map { RNPathTableEntry($0, resolvingNamesWith: nil).msgpackValue() }))
           case "rates":
             // Likewise: rnpath computes an announce rate from
             // `entry["timestamps"]` and reads `entry["blocked_until"]`.

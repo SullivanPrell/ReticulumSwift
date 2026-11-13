@@ -38,7 +38,9 @@ public enum InterfaceStatsPayload {
     for key in ["arxs", "atxs", "arxf", "atxf"] { pairs.append((.string(key), .double(0))) }
     for key in ["prxb", "ptxb"] { pairs.append((.string(key), .int(0))) }
     for key in ["prxs", "ptxs", "prxf", "ptxf"] { pairs.append((.string(key), .double(0))) }
-    for key in ["rxpps", "txpps"] { pairs.append((.string(key), .int(0))) }
+    for key in ["rxpps", "txpps", "rxpkts", "txpkts", "arxpkts", "atxpkts", "prxpkts", "ptxpkts"] {
+      pairs.append((.string(key), .int(0)))
+    }
     for key in [
       "rxqt", "rxqd", "rxqa", "rxqp", "rxqil",
       "rxqtd", "rxqdd", "rxqad", "rxqpd", "rxqild",
@@ -49,6 +51,9 @@ public enum InterfaceStatsPayload {
       pairs.append((.string(key), .double(0)))
     }
     pairs.append((.string("txq"), .nil))
+    for key in ["tlinks", "alinks", "plinks", "tpcount", "unupcount", "actpcount"] {
+      pairs.append((.string(key), .int(0)))
+    }
     pairs.append((.string("rss"), .nil))
     return .map(pairs)
   }
@@ -99,6 +104,25 @@ public enum InterfaceStatsPayload {
         kv("i2p_connectable", .bool(i2p.connectable))
         kv("i2p_b32", i2p.b32.map { .string($0 + ".b32.i2p") } ?? .nil)
         kv("tunnelstate", i2p.tunnelState.map { .string($0) } ?? .nil)
+      }
+
+      // Radio parameters, each behind its own `hasattr` upstream (`Reticulum.py:1652-1661`).
+      // A sub-interface gains `r_stat_q` only with its first quality report
+      // (`RNodeMultiInterface.py:734`), and a multi-radio parent holds just the three
+      // statistics, which only its sub-interfaces ever update (`:270-272`).
+      if let radio = iface as? any RadioParameterReporting {
+        kv("rssi", radio.rStatRssi.map { .int(Int64($0)) } ?? .nil)
+        kv("snr", radio.rStatSnr.map { .double(Double($0)) } ?? .nil)
+        if radio.rStatQ != nil || !(iface is RNodeSubInterface) {
+          kv("signal_quality", radio.rStatQ.map { .double($0) } ?? .nil)
+        }
+        kv("frequency", radio.rFrequency.map { .int(Int64($0)) } ?? .nil)
+        kv("bandwidth", radio.rBandwidth.map { .int(Int64($0)) } ?? .nil)
+        kv("txpower", radio.rTxPower.map { .int(Int64($0)) } ?? .nil)
+        kv("sf", radio.rSf.map { .int(Int64($0)) } ?? .nil)
+        kv("cr", radio.rCr.map { .int(Int64($0)) } ?? .nil)
+      } else if iface is RNodeMultiInterface {
+        for key in ["rssi", "snr", "signal_quality"] { kv(key, .nil) }
       }
 
       // RNodeInterface: airtime, channel load, noise, interference, then battery.
@@ -308,6 +332,13 @@ public enum InterfaceStatsPayload {
       (.string("ptxf"), .double(tStats.prFreqTx)),
       (.string("rxpps"), .int(Int64(tStats.rxPPS))),
       (.string("txpps"), .int(Int64(tStats.txPPS))),
+      // RNS 1.6.0's running totals (`Reticulum.py:1823-1828`).
+      (.string("rxpkts"), .int(Int64(tStats.rxPackets))),
+      (.string("txpkts"), .int(Int64(tStats.txPackets))),
+      (.string("arxpkts"), .int(Int64(tStats.announceRxCount))),
+      (.string("atxpkts"), .int(Int64(tStats.announceTxCount))),
+      (.string("prxpkts"), .int(Int64(tStats.prRxCount))),
+      (.string("ptxpkts"), .int(Int64(tStats.prTxCount))),
     ]
 
     // Inbound queue depths and pressures, read by `rnstatus -q` (`rnstatus.py:784-800`),
@@ -346,6 +377,18 @@ public enum InterfaceStatsPayload {
     // `stats["txq"] = None` unconditionally in Python too (`Reticulum.py:1613`).
     topPairs.append((.string("txq"), .nil))
 
+    // Link and path-pool counts (`Reticulum.py:1845-1850`). Python's `active_link_count`
+    // iterates `link_table`'s keys, so it tests a byte of each link ID rather than the
+    // validated flag; this counts validated links, as the function intends.
+    let (links, activeLinks) = (t.getLinkCount(), t.getActiveLinkCount())
+    let (paths, unusedPaths) = t.pathPoolCounts()
+    for (key, value) in [
+      ("tlinks", links), ("alinks", activeLinks), ("plinks", links - activeLinks),
+      ("tpcount", paths), ("unupcount", unusedPaths), ("actpcount", paths - unusedPaths),
+    ] {
+      topPairs.append((.string(key), .int(Int64(value))))
+    }
+
     if t.transportEnabled, let tid = t.transportIdentity {
       topPairs.append((.string("transport_id"), .bytes(tid.hash)))
       if let netID = t.networkIdentity {
@@ -371,3 +414,19 @@ public enum InterfaceStatsPayload {
     return .map(topPairs)
   }
 }
+
+/// An interface that reports its radio's parameters and signal statistics, the attributes
+/// Python's `get_interface_stats` reaches with `hasattr` (`Reticulum.py:1652-1659`).
+protocol RadioParameterReporting: AnyObject {
+  var rStatRssi: Int? { get }
+  var rStatSnr: Float? { get }
+  var rStatQ: Double? { get }
+  var rFrequency: UInt32? { get }
+  var rBandwidth: UInt32? { get }
+  var rTxPower: Int? { get }
+  var rSf: Int? { get }
+  var rCr: Int? { get }
+}
+
+extension RNodeInterface: RadioParameterReporting {}
+extension RNodeSubInterface: RadioParameterReporting {}

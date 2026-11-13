@@ -75,6 +75,7 @@ parser.option(
   ["--config"], metavar: "CONFIG", help: "path to alternative Reticulum config directory")
 parser.flag(["--version"], help: "show program's version number and exit")
 parser.flag(["-t", "--table"], help: "show all known paths")
+parser.flag(["-u", "--usage"], help: "show path usage time")
 parser.option(["-m", "--max"], metavar: "hops", help: "maximum hops to filter path table by")
 parser.flag(["-r", "--rates"], help: "show announce rate info")
 parser.flag(["-d", "--drop"], help: "remove the path to a destination")
@@ -145,6 +146,7 @@ func requireNumber<T>(
 var options = RNPathOptions()
 options.configDirectory = parsed.value("--config").map { DaemonBootstrap.expandTildeURL($0) }
 options.table = parsed.flag("--table")
+options.usage = parsed.flag("--usage")
 options.rates = parsed.flag("--rates")
 options.drop = parsed.flag("--drop")
 options.dropAnnounces = parsed.flag("--drop-announces")
@@ -223,6 +225,9 @@ do {
   emit("Could not connect to Reticulum: \(error)")
   exit(RNPathApp.Result.setupFailure.rawValue)
 }
+// `rnpath.py:109-110`: a `required_only` shared instance keeps these announces for us.
+connection.reticulum.wantsDestinationType("rnstransport.remote.management")
+connection.reticulum.wantsDestinationType("rnstransport.info.blackhole")
 
 // Reticulum.applyConfig assigns globalLogLevel from the config file during start(), so the
 // explicit -v level has to be re-applied afterwards. Python's explicit loglevel argument

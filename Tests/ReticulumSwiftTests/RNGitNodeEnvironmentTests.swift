@@ -12,7 +12,7 @@ import XCTest
 
 @testable import ReticulumSwift
 
-/// Where a node keeps its files, as Python RNS 1.5.4 resolves them.
+/// Where a node keeps its files, as Python RNS 1.6.0 resolves them (`rngit/server.py:2017-2023`).
 final class RNGitNodeEnvironmentTests: XCTestCase {
 
   /// One recorded resolution of the configuration directory.
@@ -43,7 +43,7 @@ final class RNGitNodeEnvironmentTests: XCTestCase {
     Case(
       given: nil,
       standing: ["directory:" + home + "/.config/rngit", "file:" + home + "/.config/rngit/config"],
-      directory: home + "/.rngit/reticulum"),
+      directory: home + "/.config/rngit"),
     Case(
       given: nil,
       standing: ["file:/etc/rngit/config"],
@@ -62,7 +62,7 @@ final class RNGitNodeEnvironmentTests: XCTestCase {
         "file:/etc/rngit/config", "directory:" + home + "/.config/rngit",
         "file:" + home + "/.config/rngit/config",
       ],
-      directory: home + "/.rngit/reticulum"),
+      directory: home + "/.config/rngit"),
     Case(
       given: nil,
       standing: ["directory:/etc/rngit"],
@@ -81,7 +81,7 @@ final class RNGitNodeEnvironmentTests: XCTestCase {
         "directory:/etc/rngit", "directory:" + home + "/.config/rngit",
         "file:" + home + "/.config/rngit/config",
       ],
-      directory: home + "/.rngit/reticulum"),
+      directory: home + "/.config/rngit"),
     Case(
       given: nil,
       standing: ["directory:/etc/rngit", "file:/etc/rngit/config"],
