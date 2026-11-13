@@ -123,8 +123,10 @@ final class ResourceAdvertisement160Tests: XCTestCase {
     XCTAssertTrue(receiver.appFlag)
   }
 
-  /// On a 450-byte link (MDU 367) a full first hashmap doesn't fit. The advertisement goes out
-  /// without one, the receiver asks with `0xFE`, and the transfer completes on the HMU.
+  /// On a 450-byte link (MDU 367) a full first hashmap doesn't fit.
+  ///
+  /// The advertisement goes out without one, the receiver asks with `0xFE`, and the transfer
+  /// completes on the HMU.
   func testADeferredHashmapIsRequestedAndServed() throws {
     let (aLink, bLink, aI, bI) = try linkPair()
     aLink.establishedMtu = 450

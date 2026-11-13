@@ -83,18 +83,29 @@ public final class Transport {
     }
   }
 
-  /// How long a never-used path lingers on a transport node. Python: `UNUSED_PATH_LINGER`.
+  /// How long a never-used path lingers on a transport node.
+  ///
+  /// Python: `UNUSED_PATH_LINGER`.
   public static let unusedPathLinger: TimeInterval = 60 * 60 * 1.75
-  /// How long a never-used path lingers on a leaf node. Python: `UNUSED_PATH_LINGER_LEAF`.
+  /// How long a never-used path lingers on a leaf node.
+  ///
+  /// Python: `UNUSED_PATH_LINGER_LEAF`.
   public static let unusedPathLingerLeaf: TimeInterval = 60 * 12
-  /// Never-used paths above this many are culled. Python: `PATH_POOL_UNUSED_TARGET`.
+  /// Never-used paths above this many are culled.
+  ///
+  /// Python: `PATH_POOL_UNUSED_TARGET`.
   public static let pathPoolUnusedTarget = 2048
-  /// Below this bitrate an interface is slow. Python: `PATH_SLOW_BITRATE`.
+  /// Below this bitrate an interface is slow.
+  ///
+  /// Python: `PATH_SLOW_BITRATE`.
   public static let pathSlowBitrate = 25000
   /// A slow interface's never-used paths linger this many times longer.
+  ///
   /// Python: `PATH_SLOW_LINGER_FACTOR`.
   public static let pathSlowLingerFactor: Double = 10
-  /// How often the never-used pool is counted. Python: `pool_size_check_interval`.
+  /// How often the never-used pool is counted.
+  ///
+  /// Python: `pool_size_check_interval`.
   public static let poolSizeCheckInterval: TimeInterval = 5 * 60
   /// How often the jobs loop runs (seconds).
   public static let jobInterval: TimeInterval = 5
@@ -250,8 +261,9 @@ public final class Transport {
     /// network loops via captured announces).
     public var randomBlobs: [Data] = []
     /// When this path last carried traffic, `nil` if it never has: Python's `IDX_PT_USED`,
-    /// where `0` means never (`Transport.py:1618`, `2387`, `2440`). A never-used path is
-    /// culled after ``Transport/unusedPathLinger`` (`:1145`).
+    /// where `0` means never (`Transport.py:1618`, `2387`, `2440`).
+    ///
+    /// A never-used path is culled after ``Transport/unusedPathLinger`` (`:1145`).
     public var used: Date?
 
     /// A routable path through `nextHopInterface`.
@@ -729,7 +741,9 @@ public final class Transport {
   public let applicationIdentity = Identity()
 
   /// Python's `destination_filters_lock` and the three type tables it guards, keyed by name
-  /// hash (`Transport.py:4615-4620`). A client type maps to the requesters that want it.
+  /// hash (`Transport.py:4615-4620`).
+  ///
+  /// A client type maps to the requesters that want it.
   let destinationFiltersLock = NSLock()
   var blockedDestinationTypes: Set<Data> = []
   var allowedDestinationTypes: Set<Data> = []
@@ -4616,7 +4630,8 @@ public final class Transport {
           "Path to \(RNSUtilities.prettyhexrep(destinationHash)) was removed since the "
             + "attached interface no longer exists", level: .pathing)
       } else if path.used == nil,
-        now > path.lastHeard.addingTimeInterval(linger * (slow ? Transport.pathSlowLingerFactor : 1))
+        now
+          > path.lastHeard.addingTimeInterval(linger * (slow ? Transport.pathSlowLingerFactor : 1))
       {
         expired.append(destinationHash)
         Reticulum.log(

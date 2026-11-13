@@ -82,9 +82,10 @@ final class RNS160SurfaceTests: XCTestCase {
     return pairs
   }
 
-  /// `"value"`, `"used"` and `"lr_cost"` sit between `"expires"` and `"interface"`. A
-  /// never-used path reports 0, and an unstamped announce a value of 0 with no link cost
-  /// (`Reticulum.py:1881-1888`, `Identity.py:109-110`).
+  /// `"value"`, `"used"` and `"lr_cost"` sit between `"expires"` and `"interface"`.
+  ///
+  /// A never-used path reports 0, and an unstamped announce a value of 0 with no link
+  /// cost (`Reticulum.py:1881-1888`, `Identity.py:109-110`).
   func testTheRPCPathTableCarriesValueUsedAndLinkCost() throws {
     let (a, hash) = try learnedPath()
 
@@ -93,7 +94,8 @@ final class RNS160SurfaceTests: XCTestCase {
     XCTAssertEqual(
       pairs.compactMap { $0.0.asString },
       ["hash", "timestamp", "via", "hops", "expires", "value", "used", "lr_cost", "interface"])
-    let row = Dictionary(uniqueKeysWithValues: pairs.compactMap { k, v in k.asString.map { ($0, v) } })
+    let row = Dictionary(
+      uniqueKeysWithValues: pairs.compactMap { k, v in k.asString.map { ($0, v) } })
     XCTAssertEqual(row["hash"], .bytes(hash))
     XCTAssertEqual(row["value"]?.asDouble, 0)
     XCTAssertEqual(row["used"]?.asInt, 0)
@@ -149,7 +151,8 @@ final class RNS160SurfaceTests: XCTestCase {
     let t = Transport()
     t.register(interface: iface)
     defer { t.deregister(interface: iface) }
-    let interfaces = try XCTUnwrap(InterfaceStatsPayload.build(t).asDictionary?["interfaces"]?.asArray)
+    let interfaces = try XCTUnwrap(
+      InterfaceStatsPayload.build(t).asDictionary?["interfaces"]?.asArray)
     guard case .map(let pairs)? = interfaces.first else {
       XCTFail("no interface row")
       return []
@@ -171,7 +174,10 @@ final class RNS160SurfaceTests: XCTestCase {
     let start = try XCTUnwrap(keys.firstIndex(of: "rssi"))
     XCTAssertEqual(
       Array(keys[start...].prefix(9)),
-      ["rssi", "snr", "signal_quality", "frequency", "bandwidth", "txpower", "sf", "cr", "airtime_short"])
+      [
+        "rssi", "snr", "signal_quality", "frequency", "bandwidth", "txpower", "sf", "cr",
+        "airtime_short",
+      ])
     let row = Dictionary(uniqueKeysWithValues: pairs)
     XCTAssertEqual(row["rssi"]?.asInt, -90)
     XCTAssertEqual(row["snr"]?.asDouble, 7.25)

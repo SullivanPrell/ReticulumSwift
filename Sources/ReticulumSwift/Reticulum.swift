@@ -1327,8 +1327,10 @@ public final class Reticulum {
     return sharedInstanceFilterCall("unwants_all_destination_types", .bool(true), requester)
   }
 
-  /// Sets announce filtering to required types only. Only a shared-instance client may, so an
-  /// application can't squelch announces for the node as a whole (`Reticulum.py:2213-2222`).
+  /// Sets announce filtering to required types only.
+  ///
+  /// Only a shared-instance client may, so an application can't squelch announces for the node as a
+  /// whole (`Reticulum.py:2213-2222`).
   @discardableResult
   public func requiredAnnouncesOnly(_ enabled: Bool = true) -> Bool {
     guard transport.isConnectedToSharedInstance else { return false }

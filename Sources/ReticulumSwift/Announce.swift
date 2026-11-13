@@ -287,8 +287,13 @@ public enum Announce {
   /// app data and has its link cost taken, so an insufficient stamp leaves the app data as
   /// signed.
   ///
-  /// - Parameter requiredValue: The value the stamp must reach, `stamps.destinationCost` when
-  ///   nil. Python takes the receiving interface's `destination_cost`.
+  /// - Parameters:
+  ///   - parsed: The announce's parsed fields.
+  ///   - stamps: The stamping settings to check the trailer under.
+  ///   - requiredValue: The value the stamp must reach, `stamps.destinationCost` when nil.
+  ///     Python takes the receiving interface's `destination_cost`.
+  /// - Returns: The stamp, its value, the link cost it announces, and the app data without a
+  ///   valid stamp's trailer.
   /// - Throws: ``AnnounceError/noStamp`` or ``AnnounceError/invalidStamp`` when
   ///   `stamps.enforced` and the stamp is missing or short.
   static func checkStamp(
@@ -317,9 +322,13 @@ public enum Announce {
   /// destination hash matches `truncated_hash(name_hash || identity_hash)`.
   ///
   /// - Parameters:
+  ///   - packet: The announce packet.
   ///   - stamps: The stamping settings to check the stamp trailer under.
   ///   - requiredValue: The value an announce stamp must reach, `stamps.destinationCost` when
   ///     nil.
+  /// - Returns: The announced identity and its metadata.
+  /// - Throws: ``AnnounceError`` when the announce is malformed, its signature or destination
+  ///   hash doesn't verify, or an enforced stamp is missing or short.
   public static func validate(
     _ packet: Packet, stamps: StampSettings = StampSettings(), requiredValue: Double? = nil
   ) throws -> Decoded {

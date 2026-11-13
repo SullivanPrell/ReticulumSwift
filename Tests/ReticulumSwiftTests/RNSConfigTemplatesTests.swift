@@ -134,7 +134,9 @@ final class RNSConfigTemplatesTests: XCTestCase {
   func testDefaultConfigBoundaries() {
     XCTAssertTrue(
       RNSConfigTemplates.defaultConfig
-        .hasPrefix("##########################################################\n# This is the default Reticulum config file.\n"))
+        .hasPrefix(
+          "##########################################################\n# This is the default Reticulum config file.\n"
+        ))
     XCTAssertTrue(
       RNSConfigTemplates.defaultConfig
         .hasSuffix("  [[Default Interface]]\n    type = AutoInterface\n    enabled = Yes\n\n"))

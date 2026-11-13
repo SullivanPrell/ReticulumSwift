@@ -225,7 +225,7 @@ do {
   emit("Could not connect to Reticulum: \(error)")
   exit(RNPathApp.Result.setupFailure.rawValue)
 }
-// `rnpath.py:109-110`: a `required_only` shared instance keeps these announces for us.
+// `rnpath.py:109-110`: a `required_only` shared instance keeps these announces for this client.
 connection.reticulum.wantsDestinationType("rnstransport.remote.management")
 connection.reticulum.wantsDestinationType("rnstransport.info.blackhole")
 

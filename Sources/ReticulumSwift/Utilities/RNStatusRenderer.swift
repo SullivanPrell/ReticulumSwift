@@ -701,7 +701,8 @@ public struct RNStatusRenderer {
 
       out +=
         Self.pad(name, 25) + " " + Self.pad(type, 10) + " " + Self.pad(statusDisplay, 12)
-        + " " + Self.pad(lastHeardDisplay, 12) + " " + Self.pad(RNSUtilities.prettycost(info.value), 7)
+        + " " + Self.pad(lastHeardDisplay, 12) + " "
+        + Self.pad(RNSUtilities.prettycost(info.value), 7)
         + " " + Self.pad(running, 16) + " " + Self.pad(location, 15) + "\n"
     }
     return out

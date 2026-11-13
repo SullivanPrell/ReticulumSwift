@@ -120,8 +120,10 @@ final class PathTableUsageTests: XCTestCase {
     let hop = Hop(name: "leaf")
     t.register(interface: hop)
     let now = Date()
-    t.restore(path: path(1, via: hop, heard: now.addingTimeInterval(-13 * 60)), forDestination: dst(1))
-    t.restore(path: path(2, via: hop, heard: now.addingTimeInterval(-11 * 60)), forDestination: dst(2))
+    t.restore(
+      path: path(1, via: hop, heard: now.addingTimeInterval(-13 * 60)), forDestination: dst(1))
+    t.restore(
+      path: path(2, via: hop, heard: now.addingTimeInterval(-11 * 60)), forDestination: dst(2))
 
     t.sweepExpiredPaths(now: now)
 
@@ -136,8 +138,11 @@ final class PathTableUsageTests: XCTestCase {
     t.register(interface: slow)
     let now = Date()
     let linger = Transport.unusedPathLinger
-    t.restore(path: path(1, via: slow, heard: now.addingTimeInterval(-linger - 1)), forDestination: dst(1))
-    t.restore(path: path(2, via: slow, heard: now.addingTimeInterval(-linger * 10 - 1)), forDestination: dst(2))
+    t.restore(
+      path: path(1, via: slow, heard: now.addingTimeInterval(-linger - 1)), forDestination: dst(1))
+    t.restore(
+      path: path(2, via: slow, heard: now.addingTimeInterval(-linger * 10 - 1)),
+      forDestination: dst(2))
 
     t.sweepExpiredPaths(now: now)
 
@@ -163,7 +168,8 @@ final class PathTableUsageTests: XCTestCase {
       path: path(target + 1, via: slow, heard: now, expires: now.addingTimeInterval(3600)),
       forDestination: dst(target + 1))
     t.restore(
-      path: path(target + 2, via: fast, heard: now, expires: now.addingTimeInterval(3600), used: now),
+      path: path(
+        target + 2, via: fast, heard: now, expires: now.addingTimeInterval(3600), used: now),
       forDestination: dst(target + 2))
 
     t.sweepExpiredPaths(now: now)

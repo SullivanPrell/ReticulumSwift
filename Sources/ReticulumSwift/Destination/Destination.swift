@@ -546,7 +546,9 @@ public final class Destination {
   ///
   /// Mirrors Python's `Destination.stamp`.
   public var stamp: Data?
-  /// Value of `stamp`. Mirrors Python's `Destination.stamp_value`.
+  /// Value of `stamp`.
+  ///
+  /// Mirrors Python's `Destination.stamp_value`.
   public var stampValue: Double?
   /// Python: `_target_value`, nil until `setValue(_:)`.
   private var targetValueSetting: Double?

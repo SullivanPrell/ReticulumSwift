@@ -325,8 +325,9 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
 
   // MARK: - Probe table
 
-  /// Keys Python's own templates advertise where Python itself never reads them. The port
-  /// ignores them too: honouring one would make a Swift node act on a line a Python node
+  /// Keys Python's own templates advertise where Python itself never reads them.
+  ///
+  /// The port ignores them too: honouring one would make a Swift node act on a line a Python node
   /// treats as inert.
   private static let ignoredByPython: [String: String] = [
     "reticulum.hop_limiter":

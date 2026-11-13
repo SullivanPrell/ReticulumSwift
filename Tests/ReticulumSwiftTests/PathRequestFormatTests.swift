@@ -13,6 +13,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Tests for path request packet format matching Python reference.
+///
 /// From RNS 1.6.0 every request is `destHash + transport_id + tag` (`Transport.py:3700-3703`).
 final class PathRequestFormatTests: XCTestCase {
 

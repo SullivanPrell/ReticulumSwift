@@ -56,8 +56,9 @@ extension Transport {
     return true
   }
 
-  /// Python's `_unwants_destination_type`: `true` only when `requester` wanted the type. The
-  /// type goes once no requester wants it.
+  /// Python's `_unwants_destination_type`: `true` only when `requester` wanted the type.
+  ///
+  /// The type goes once no requester wants it.
   @discardableResult
   public func unwantsDestinationType(_ fullName: String, requester: Data) -> Bool {
     unwants(Self.destinationTypeHash(fullName), requester: requester)

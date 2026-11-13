@@ -75,7 +75,9 @@ final class PathRequestStampTests: XCTestCase {
   // MARK: - Ingress
 
   /// `Transport.py:2072-2086`: past 64 bytes is "Excessive path request size", and any length
-  /// other than 32, 48 or 64 is "Invalid path request size". Both count a violation and stop.
+  /// other than 32, 48 or 64 is "Invalid path request size".
+  ///
+  /// Both count a violation and stop.
   func testOnlyLegacyPlainAndStampedLengthsAreAccepted() throws {
     for (length, accepted) in [
       (32, true), (48, true), (64, true), (17, false), (31, false), (33, false), (47, false),

@@ -228,9 +228,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testDecodeBackboneAnnounce() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: backboneInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -246,9 +248,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testDecodeRNodeAnnounce() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: rnodeInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -264,9 +268,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testDecodeI2PAnnounce() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: i2pInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -279,9 +285,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testDecodeWeaveAnnounce() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: weaveInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -295,9 +303,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testDecodeKISSAnnounce() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: kissInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -323,9 +333,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
     Reticulum.storedInterfaceDiscoverySources = [authorized.hash]
 
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: backboneInfo())
 
     handler.receivedAnnounce(
@@ -348,9 +360,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
     Reticulum.storedInterfaceDiscoverySources = []
 
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
       identity: makeIdentity(), appData: makePayload(info: backboneInfo()),
@@ -360,9 +374,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testInvalidInterfaceTypeIgnored() {
     var called = false
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) { _ in
-      called = true
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: { _ in
+        called = true
+      })
     let badInfo: [(MsgPack.Value, MsgPack.Value)] = [
       (.uint(0x00), .string("GhostInterface")),
       (.uint(0x01), .bool(false)),
@@ -381,8 +397,8 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
   func testStampValidationFailureBlocksCallback() {
     var called = false
     let handler = InterfaceAnnounceHandler(
-      requiredValue: 14, stampValidator: RejectStampValidator(), hopsTo: { _ in 1 }
-    ) { _ in called = true }
+      requiredValue: 14, stampValidator: RejectStampValidator(), hopsTo: { _ in 1 },
+      callback: { _ in called = true })
     let payload = makePayload(info: backboneInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -393,9 +409,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testPayloadTooShortIgnored() {
     var called = false
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) { _ in
-      called = true
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: { _ in
+        called = true
+      })
     // Only 3 bytes—shorter than flags(1) + stamp(32)
     let shortPayload = Data([0x00, 0x01, 0x02])
     handler.receivedAnnounce(
@@ -407,9 +425,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testNilAppDataIgnored() {
     var called = false
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) { _ in
-      called = true
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: { _ in
+        called = true
+      })
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
       identity: Identity(), appData: nil,
@@ -418,15 +438,18 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
   }
 
   func testAspectFilter() {
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 })
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 })
     XCTAssertEqual(handler.aspectFilter, "rnstransport.discovery.interface")
   }
 
   func testTransportIDStoredAsHex() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: backboneInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -438,9 +461,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testDiscoveryHashComputed() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: backboneInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -457,9 +482,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testBackboneConfigEntryContainsHost() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: backboneInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -475,9 +502,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testRNodeConfigEntryContainsFrequency() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = makePayload(info: rnodeInfo())
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
@@ -490,9 +519,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testIFACNetNameStoredInInfo() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     var info = backboneInfo()
     info.append((.uint(0x07), .string("MyNetwork")))  // IFAC_NETNAME
     info.append((.uint(0x08), .string("secret123")))  // IFAC_NETKEY
@@ -507,9 +538,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
 
   func testTCPServerAnnounce() {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     var info = backboneInfo()
     // Change type to TCPServerInterface
     info[0] = (.uint(0x00), .string("TCPServerInterface"))
@@ -525,9 +558,11 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
   func testFlagEncryptedSkipped() {
     // Encrypted payloads without a network identity available should be silently skipped
     var called = false
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 }) { _ in
-      called = true
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: passthrough, hopsTo: { _ in 1 },
+      callback: { _ in
+        called = true
+      })
     let packed = MsgPack.encode(.map(backboneInfo()))
     let stamp = Data(repeating: 0xAB, count: 32)
     let flagEncrypted: UInt8 = 0b00000010

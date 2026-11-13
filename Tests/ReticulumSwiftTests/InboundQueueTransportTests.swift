@@ -307,7 +307,8 @@ final class InboundQueueTransportTests: XCTestCase {
   /// A path request queues as `TC_PATH_REQUEST` (`Transport.py:1829`).
   func testAPathRequestQueuesInThePathRequestClass() throws {
     let held = try heldTransport()
-    held.interface.deliver(pathRequest(for: Data(repeating: 0x11, count: 16), tag: Data(repeating: 1, count: 16)))
+    held.interface.deliver(
+      pathRequest(for: Data(repeating: 0x11, count: 16), tag: Data(repeating: 1, count: 16)))
     XCTAssertEqual(held.transport.inboundQueueSnapshot()?.heights, [0, 0, 1, 0])
   }
 
@@ -316,7 +317,8 @@ final class InboundQueueTransportTests: XCTestCase {
   func testAPathRequestFromALimitedInterfaceQueuesAsIngressLimited() throws {
     let held = try heldTransport()
     floodPathRequests(held.transport, on: held.interface)
-    held.interface.deliver(pathRequest(for: Data(repeating: 0x22, count: 16), tag: Data(repeating: 2, count: 16)))
+    held.interface.deliver(
+      pathRequest(for: Data(repeating: 0x22, count: 16), tag: Data(repeating: 2, count: 16)))
     XCTAssertEqual(held.transport.inboundQueueSnapshot()?.heights, [0, 0, 0, 1])
   }
 
@@ -548,7 +550,8 @@ final class InboundQueueTransportTests: XCTestCase {
     let destination = try plainDestination("stats")
     for n in 0..<3 { held.interface.deliver(plainPacket(to: destination, "d\(n)")) }
     for n in 0..<3 { held.interface.deliver(try remoteAnnounce("stats\(n)")) }
-    held.interface.deliver(pathRequest(for: Data(repeating: 0x33, count: 16), tag: Data(repeating: 3, count: 16)))
+    held.interface.deliver(
+      pathRequest(for: Data(repeating: 0x33, count: 16), tag: Data(repeating: 3, count: 16)))
 
     let stats = try XCTUnwrap(InterfaceStatsPayload.build(held.transport).asDictionary)
 

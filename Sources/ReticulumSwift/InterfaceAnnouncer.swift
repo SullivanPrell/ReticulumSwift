@@ -90,7 +90,9 @@ public final class InterfaceAnnouncer {
 
   private let lock = NSLock()
   /// A timer rather than a sleeping loop, so a running announcer holds no thread between
-  /// passes. Every stack with a discoverable interface runs one.
+  /// passes.
+  ///
+  /// Every stack with a discoverable interface runs one.
   private var timer: DispatchSourceTimer?
 
   // MARK: - Init

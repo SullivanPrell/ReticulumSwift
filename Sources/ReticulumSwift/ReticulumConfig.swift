@@ -295,7 +295,9 @@ public struct ReticulumConfig {
 
   // MARK: - [stamps] section
 
-  /// The `[stamps]` section (`Reticulum.py:505-555`). The switches only ever turn on.
+  /// The `[stamps]` section (`Reticulum.py:505-555`).
+  ///
+  /// The switches only ever turn on.
   public struct StampsSection {
     /// `enforce_stamps`: enforces announce, path-request and link-request stamps.
     public var enforceStamps = false

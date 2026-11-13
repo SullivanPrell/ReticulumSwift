@@ -469,19 +469,20 @@ public struct ResourceAdvertisement: Equatable {
 
     let q: MsgPack.Value = requestID.map { .bytes($0) } ?? .nil
     func packed(_ segmentHashmap: Data) -> Data {
-      MsgPack.encode(.map([
-      (.string("t"), .uint(transferSize)),
-      (.string("d"), .uint(dataSize)),
-      (.string("n"), .uint(partCount)),
-      (.string("h"), .bytes(resourceHash)),
-      (.string("r"), .bytes(randomHash)),
-      (.string("o"), .bytes(originalHash)),
-      (.string("i"), .uint(segmentIndex)),
-      (.string("l"), .uint(totalSegments)),
-      (.string("q"), q),
-      (.string("f"), .uint(UInt64(flags))),
-      (.string("m"), .bytes(segmentHashmap)),
-      ]))
+      MsgPack.encode(
+        .map([
+          (.string("t"), .uint(transferSize)),
+          (.string("d"), .uint(dataSize)),
+          (.string("n"), .uint(partCount)),
+          (.string("h"), .bytes(resourceHash)),
+          (.string("r"), .bytes(randomHash)),
+          (.string("o"), .bytes(originalHash)),
+          (.string("i"), .uint(segmentIndex)),
+          (.string("l"), .uint(totalSegments)),
+          (.string("q"), q),
+          (.string("f"), .uint(UInt64(flags))),
+          (.string("m"), .bytes(segmentHashmap)),
+        ]))
     }
     let full = packed(segmentHashmap)
     return full.count > mdu ? packed(Data()) : full

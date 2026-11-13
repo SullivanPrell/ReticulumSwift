@@ -313,7 +313,9 @@ final class RNPathPathLineTests: XCTestCase {
 
   /// Python 1.6.0: `f"{prettyhexrep(hash)} {hops:>3}h via {prettyhexrep(via)} on {interface}
   /// expires in {prettytime(expires-now, compact=True)} (dv:{prettycost(value)}/lc:{prettycost(lr_cost)})"`
-  /// (rnpath.py:302). The expected strings came from Python's own `prettytime` and
+  /// (rnpath.py:302).
+  ///
+  /// The expected strings came from Python's own `prettytime` and
   /// `prettycost`.
   func testFullLineShape() {
     XCTAssertEqual(
@@ -326,7 +328,8 @@ final class RNPathPathLineTests: XCTestCase {
   /// `{hops:>3}` right-aligns in three columns, and a wider count just widens the field.
   func testHopsAreRightAlignedInThreeColumns() {
     XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 1), now: now).contains(">   1h via <"))
-    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 128), now: now).contains("> 128h via <"))
+    XCTAssertTrue(
+      RNPathFormatter.pathTableLine(entry(hops: 128), now: now).contains("> 128h via <"))
   }
 
   /// An expired path prints a negative time, and the link cost is quantized like the value.
@@ -1224,8 +1227,10 @@ final class RNPathRunnerTableTests: XCTestCase {
     XCTAssertEqual(makeRunner(options, management: management, recorder: recorder).run(), .ok)
     XCTAssertEqual(
       recorder.lines.map { String($0.prefix(34)) },
-      ["<0102030405060708090a0b0c0d0e0f10>", "<5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a>",
-       "<aabbccddeeff00112233445566778899>"])
+      [
+        "<0102030405060708090a0b0c0d0e0f10>", "<5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a>",
+        "<aabbccddeeff00112233445566778899>",
+      ])
   }
 
   /// A row without `"used"`, from a daemon before 1.6.0, raises inside Python's `try`, so

@@ -40,10 +40,10 @@ final class WireIntegerRangeTests: XCTestCase {
   private func discover(_ fields: [(MsgPack.Value, MsgPack.Value)]) -> DiscoveredInterfaceInfo? {
     var result: DiscoveredInterfaceInfo?
     let handler = InterfaceAnnounceHandler(
-      requiredValue: 14, stampValidator: AcceptAnyStamp(), hopsTo: { _ in 1 }
-    ) {
-      result = $0
-    }
+      requiredValue: 14, stampValidator: AcceptAnyStamp(), hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
       identity: Identity(),

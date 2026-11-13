@@ -264,7 +264,9 @@ public struct DiscoveredInterfaceInfo {
   /// `info["version"]` (`Discovery.py:349`, `365`).
   public var version: String? = nil
   /// The interface's quantized destination stamp cost, from `DST_COST` (RNS 1.6.0,
-  /// `Discovery.py:345`, `369`). Nil from a peer that didn't publish one.
+  /// `Discovery.py:345`, `369`).
+  ///
+  /// Nil from a peer that didn't publish one.
   public var dstCost: Double? = nil
   /// The interface's quantized path-request stamp cost, from `PR_COST` (`Discovery.py:346`).
   public var prCost: Double? = nil

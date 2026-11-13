@@ -514,7 +514,10 @@ public final class RPCServer {
 
   private func buildPathTable(_ t: Transport, maxHops: UInt8?) -> MsgPack.Value {
     // `getPathTable` already resolves display names.
-    .array(t.getPathTable(maxHops: maxHops).map { RNPathTableEntry($0, resolvingNamesWith: nil).msgpackValue() })
+    .array(
+      t.getPathTable(maxHops: maxHops).map {
+        RNPathTableEntry($0, resolvingNamesWith: nil).msgpackValue()
+      })
   }
 
   // MARK: - rate_table builder

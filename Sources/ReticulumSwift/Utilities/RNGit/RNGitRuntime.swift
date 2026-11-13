@@ -408,7 +408,8 @@ public enum RNGitRuntime {
     let reticulum = try InstanceConnection.attach(
       configDirectory: configDir, logLevel: bootstrapped.logLevel
     ).reticulum
-    reticulum.wantsDestinationType("\(RNGitDestination.appName).\(RNGitDestination.aspect)")  // server.py:68
+    // Python: `server.py:68`.
+    reticulum.wantsDestinationType("\(RNGitDestination.appName).\(RNGitDestination.aspect)")
     return reticulum
   }
 }

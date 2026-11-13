@@ -802,7 +802,8 @@ public final class ResourceTransfer {
     // (`Resource.py:1021-1030`).
     let hashmapIsEmpty = data[0] == ResourceTransfer.hashmapIsEmpty
     let wantsMoreHashmap = data[0] == ResourceTransfer.hashmapIsExhausted || hashmapIsEmpty
-    let pad = data[0] == ResourceTransfer.hashmapIsExhausted ? 1 + ResourceTransfer.mapHashLength : 1
+    let pad =
+      data[0] == ResourceTransfer.hashmapIsExhausted ? 1 + ResourceTransfer.mapHashLength : 1
     // Zero requested hashes is valid: the receiver only wants the next hashmap segment.
     guard data.count >= pad + Constants.hashLength else { return }
 

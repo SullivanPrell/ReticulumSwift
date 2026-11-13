@@ -157,7 +157,8 @@ public struct RNGitHelperRuntime {
     let reticulum = try InstanceConnection.attach(
       configDirectory: configDir, logLevel: Reticulum.globalLogLevel
     ).reticulum
-    reticulum.wantsDestinationType("\(RNGitDestination.appName).\(RNGitDestination.aspect)")  // client.py:157
+    // Python: `client.py:157`.
+    reticulum.wantsDestinationType("\(RNGitDestination.appName).\(RNGitDestination.aspect)")
     return reticulum
   }
 }

@@ -46,10 +46,10 @@ final class DiscoveryImplementationInfoTests: XCTestCase {
   private func receive(_ fields: [(MsgPack.Value, MsgPack.Value)]) -> DiscoveredInterfaceInfo? {
     var result: DiscoveredInterfaceInfo?
     let handler = InterfaceAnnounceHandler(
-      requiredValue: 14, stampValidator: Passthrough(), hopsTo: { _ in 1 }
-    ) {
-      result = $0
-    }
+      requiredValue: 14, stampValidator: Passthrough(), hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     let payload = Data([0x00]) + MsgPack.encode(.map(fields)) + Data(repeating: 0xAB, count: 32)
     handler.receivedAnnounce(
       destinationHash: Data(count: 16), identity: Identity(), appData: payload,

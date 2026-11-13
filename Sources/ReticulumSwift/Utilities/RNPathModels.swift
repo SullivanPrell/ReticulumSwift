@@ -51,8 +51,10 @@ public struct RNPathTableEntry: Equatable {
   /// Python key `"value"`—the stamp value of the destination's last announce, 0 when it
   /// carried none, nil when the destination is unknown.
   public var value: Double?
-  /// Python key `"used"`—when the path was last used, 0 when never. Nil only for a row from a
-  /// daemon before RNS 1.6.0, which sends none of the three stamp and usage keys.
+  /// Python key `"used"`—when the path was last used, 0 when never.
+  ///
+  /// Nil only for a row from a daemon before RNS 1.6.0, which sends none of the three stamp and
+  /// usage keys.
   public var used: TimeInterval?
   /// Python key `"lr_cost"`—the link-request cost the destination announced, if any.
   public var lrCost: Double?

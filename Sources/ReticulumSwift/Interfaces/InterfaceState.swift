@@ -98,7 +98,9 @@ public final class InterfaceState {
 
     /// Python `interface._destination_cost` and `_pr_cost` (`Interface.py:177-178`, RNS
     /// 1.6.0): the stamp values this interface requires of announces and path requests, nil
-    /// for the transport-wide costs. A spawned interface inherits both.
+    /// for the transport-wide costs.
+    ///
+    /// A spawned interface inherits both.
     var destinationCost: Double?
     var prCost: Double?
 

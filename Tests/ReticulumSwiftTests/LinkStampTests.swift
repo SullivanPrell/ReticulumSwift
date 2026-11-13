@@ -36,7 +36,9 @@ final class LinkStampTests: XCTestCase {
     func start() throws {}
     func stop() {}
     func send(_ packet: Packet) throws { lock.withLock { packets.append(packet) } }
-    var linkRequests: [Packet] { lock.withLock { packets.filter { $0.packetType == .linkRequest } } }
+    var linkRequests: [Packet] {
+      lock.withLock { packets.filter { $0.packetType == .linkRequest } }
+    }
   }
 
   private func inbound() throws -> (Identity, Destination) {

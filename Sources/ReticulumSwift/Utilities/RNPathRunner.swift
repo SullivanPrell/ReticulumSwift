@@ -474,7 +474,10 @@ public final class RNPathRunner {
     // Python sorts inside a `try`, so a row without "used" leaves the order alone.
     if options.usage, table.allSatisfy({ $0.used != nil }) {
       table = table.enumerated()
-        .sorted { ($0.element.used!, $1.offset) > ($1.element.used!, $0.offset) }
+        .sorted {
+          ($0.element.used ?? 0, $1.offset)
+            > ($1.element.used ?? 0, $0.offset)
+        }
         .map(\.element)
     }
     let reference = now().timeIntervalSince1970

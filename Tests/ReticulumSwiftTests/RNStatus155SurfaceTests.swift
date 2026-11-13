@@ -238,7 +238,9 @@ final class RNStatus155SurfaceTests: XCTestCase {
 
   /// A discovery file holds the keys in the order Python's `info` dict gains them
   /// (`Discovery.py:363-463`, then `606-608`), since Python's own `rnstatus -d -j` prints a
-  /// file straight from disk. An entry from before 1.6.0 has no cost keys and keeps none.
+  /// file straight from disk.
+  ///
+  /// An entry from before 1.6.0 has no cost keys and keeps none.
   func testAPersistedEntryKeepsPythonsKeyOrder() throws {
     var weave = Fixtures.discoveredFixtures()[1]
     weave.type = "WeaveInterface"

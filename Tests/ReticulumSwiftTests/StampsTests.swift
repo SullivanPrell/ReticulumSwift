@@ -62,14 +62,35 @@ final class StampsTests: XCTestCase {
     let workblock = Data(SHA256.hash(data: Data("rs-160-stamps".utf8)))
     // stamp, value, then (cost, valid) at the value, one grid step above it, and its floor.
     let cases: [(String, Double, [(Double, Bool)])] = [
-      ("6a41a1484e89d2dc18856a0d2446", 2.359375, [(2.359375, true), (2.36328125, false), (2, true)]),
-      ("0887373724e2a70860325d82c58b", 5.68359375, [(5.68359375, true), (5.6875, false), (5, true)]),
-      ("2deaf6d10874126f87ea46f38b8b", 7.921875, [(7.921875, true), (7.92578125, false), (7, true)]),
-      ("e136c624d3484f7a83f155fe246e", 12.015625, [(12.015625, true), (12.01953125, false), (12, true)]),
-      ("44809fb4416e6e928ae0b77ab272", 14.4765625, [(14.4765625, true), (14.48046875, false), (14, true)]),
+      (
+        "6a41a1484e89d2dc18856a0d2446", 2.359375,
+        [(2.359375, true), (2.36328125, false), (2, true)]
+      ),
+      (
+        "0887373724e2a70860325d82c58b", 5.68359375,
+        [(5.68359375, true), (5.6875, false), (5, true)]
+      ),
+      (
+        "2deaf6d10874126f87ea46f38b8b", 7.921875,
+        [(7.921875, true), (7.92578125, false), (7, true)]
+      ),
+      (
+        "e136c624d3484f7a83f155fe246e", 12.015625,
+        [(12.015625, true), (12.01953125, false), (12, true)]
+      ),
+      (
+        "44809fb4416e6e928ae0b77ab272", 14.4765625,
+        [(14.4765625, true), (14.48046875, false), (14, true)]
+      ),
       ("6899afa82fac159f936c0c5df4a3", 0, [(0, true), (0.00390625, false), (1, false)]),
-      ("98908628e46ff42cddb8ea720e28", 1.2890625, [(1.2890625, true), (1.29296875, false), (1, true)]),
-      ("6bc394536ef66c716fcbbe7f74eb", 14.859375, [(14.859375, true), (14.86328125, false), (14, true)]),
+      (
+        "98908628e46ff42cddb8ea720e28", 1.2890625,
+        [(1.2890625, true), (1.29296875, false), (1, true)]
+      ),
+      (
+        "6bc394536ef66c716fcbbe7f74eb", 14.859375,
+        [(14.859375, true), (14.86328125, false), (14, true)]
+      ),
     ]
     for (hex, value, checks) in cases {
       let stamp = Data(hex: hex)!
@@ -92,12 +113,14 @@ final class StampsTests: XCTestCase {
 
   func testGeneratedStampMeetsItsCost() throws {
     let material = Data("generate".utf8)
-    let found = try XCTUnwrap(Stamps.generateStamp(material, stampCost: 6.5, expandRounds: 0, size: 14))
+    let found = try XCTUnwrap(
+      Stamps.generateStamp(material, stampCost: 6.5, expandRounds: 0, size: 14))
     XCTAssertEqual(found.stamp.count, 14)
     XCTAssertTrue(Stamps.stampValid(stamp: found.stamp, targetCost: 6.5, workblock: material))
     XCTAssertEqual(found.value, Stamps.stampValue(workblock: material, stamp: found.stamp))
     XCTAssertNil(Stamps.generateStamp(material, stampCost: 101, expandRounds: 0))
-    XCTAssertNil(Stamps.generateStamp(material, stampCost: 40, expandRounds: 0, isCancelled: { true }))
+    XCTAssertNil(
+      Stamps.generateStamp(material, stampCost: 40, expandRounds: 0, isCancelled: { true }))
   }
 
   func testGeneratedKeyCarriesItsStamp() throws {
@@ -114,7 +137,8 @@ final class StampsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: dir) }
     let hash = Data(repeating: 0xAB, count: 16)
     let material = Data("dst".utf8)
-    let found = try XCTUnwrap(Stamps.generateStamp(material, stampCost: 5, expandRounds: 0, size: 14))
+    let found = try XCTUnwrap(
+      Stamps.generateStamp(material, stampCost: 5, expandRounds: 0, size: 14))
     XCTAssertNil(Stamps.loadDestinationStamp(hash, material: material, requiredValue: 5, in: dir))
 
     XCTAssertTrue(
