@@ -2095,13 +2095,13 @@ final class RNPathArgumentParsingTests: XCTestCase {
     XCTAssertThrowsError(try makeParser().parse(["-m"]))
   }
 
-  /// The literal must stay byte-identical to argparse's own 80-column rendering—the
-  /// captured `rnpath --help` from Python 3.11.3.
+  /// The literal must stay byte-identical to argparse's own 80-column rendering: RNS 1.6.0's
+  /// `rnpath --help`, with `-m` in the Python 3.10–3.12 form the literal is pinned to.
   func testHelpTextMatchesArgparse() {
     let expected = """
-      usage: rnpath [-h] [--config CONFIG] [--version] [-t] [-m hops] [-r] [-d] [-D]
-                    [-x] [-w seconds] [-R hash] [-i path] [-W seconds] [-b] [-B]
-                    [-U] [--duration DURATION] [--reason REASON] [-p] [-j] [-v]
+      usage: rnpath [-h] [--config CONFIG] [--version] [-t] [-u] [-m hops] [-r] [-d]
+                    [-D] [-x] [-w seconds] [-R hash] [-i path] [-W seconds] [-b]
+                    [-B] [-U] [--duration DURATION] [--reason REASON] [-p] [-j] [-v]
                     [destination] [list_filter]
 
       Reticulum Path Management Utility
@@ -2115,6 +2115,7 @@ final class RNPathArgumentParsingTests: XCTestCase {
         --config CONFIG       path to alternative Reticulum config directory
         --version             show program's version number and exit
         -t, --table           show all known paths
+        -u, --usage           show path usage time
         -m hops, --max hops   maximum hops to filter path table by
         -r, --rates           show announce rate info
         -d, --drop            remove the path to a destination
