@@ -112,7 +112,7 @@ final class IFACNoneValueTests: XCTestCase {
   // MARK: - The announce
 
   private final class FixedStamp: DiscoveryStampGenerator {
-    func generateStamp(material: Data, targetCost: Int, expandRounds: Int) -> Data? {
+    func generateStamp(material: Data, targetCost: Double, expandRounds: Int) -> Data? {
       Data(repeating: 0xAB, count: 32)
     }
   }

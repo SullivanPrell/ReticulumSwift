@@ -69,8 +69,8 @@ final class PathTableHopCountTests: XCTestCase {
   final class PassthroughStamps: DiscoveryStampValidator {
     let stampSize = 32
     func stampWorkblock(material: Data, expandRounds: Int) -> Data { Data(count: 256) }
-    func stampValue(workblock: Data, stamp: Data) -> Int { 99 }
-    func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+    func stampValue(workblock: Data, stamp: Data) -> Double { 99 }
+    func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
   }
 
   /// Transports hold interfaces weakly and links hold transports weakly.

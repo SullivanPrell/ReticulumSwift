@@ -97,10 +97,11 @@ final class DiscoveryAutoconnectTests: XCTestCase {
       modulation: nil, channel: nil, configEntry: nil,
       discoveryHash: Data(repeating: 0xCD, count: 32),
       discovered: now, lastHeard: now, heardCount: 1)
-    // An announce that meets the RNS 1.5.5 criteria; DiscoveryAutoconnectCriteriaTests
-    // covers the ones that don't.
+    // An announce that meets the criteria, whose minimum is RNS 1.5.7 since 1.6.0
+    // (`Discovery.py` `AUTOCONNECT_MIN_V`); DiscoveryAutoconnectCriteriaTests covers the
+    // ones that don't.
     info.implName = "RNS"
-    info.version = "1.5.5"
+    info.version = "1.5.7"
     return info
   }
 

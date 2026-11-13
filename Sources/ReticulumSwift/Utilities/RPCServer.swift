@@ -341,6 +341,20 @@ public final class RPCServer {
       return msgpack(.nil)
     }
 
+    // RNS 1.6.0's destination-type registration (`Reticulum.py:1514-1529`). The signature
+    // is carried but, as in Python, not checked.
+    if let t = transport, let requester = binValue(kv["requester"]) {
+      if case .string(let name)? = kv["wants_destination_type"] {
+        return msgpack(.bool(t.wantsDestinationType(name, requester: requester)))
+      }
+      if case .string(let name)? = kv["unwants_destination_type"] {
+        return msgpack(.bool(t.unwantsDestinationType(name, requester: requester)))
+      }
+      if kv["unwants_all_destination_types"] != nil {
+        return msgpack(.bool(t.unwantsAllDestinationTypes(requester: requester)))
+      }
+    }
+
     Reticulum.log(
       "RPC: unrecognised call (\(payload.count) bytes) \(payload.prefix(32).map { String(format: "%02x", $0) }.joined())",
       level: .warning)

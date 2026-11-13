@@ -25,8 +25,8 @@ final class DiscoveryImplementationInfoTests: XCTestCase {
   private final class Passthrough: DiscoveryStampValidator {
     let stampSize = 32
     func stampWorkblock(material: Data, expandRounds: Int) -> Data { Data(count: 256) }
-    func stampValue(workblock: Data, stamp: Data) -> Int { 99 }
-    func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+    func stampValue(workblock: Data, stamp: Data) -> Double { 99 }
+    func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
   }
 
   private var tempDir: URL!
@@ -45,7 +45,9 @@ final class DiscoveryImplementationInfoTests: XCTestCase {
 
   private func receive(_ fields: [(MsgPack.Value, MsgPack.Value)]) -> DiscoveredInterfaceInfo? {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: Passthrough()) {
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: Passthrough(), hopsTo: { _ in 1 }
+    ) {
       result = $0
     }
     let payload = Data([0x00]) + MsgPack.encode(.map(fields)) + Data(repeating: 0xAB, count: 32)

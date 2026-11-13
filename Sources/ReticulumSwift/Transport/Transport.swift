@@ -716,6 +716,25 @@ public final class Transport {
   /// Per-instance propagation limit; defaults to `pathfinderM`.
   public var propagationLimit: UInt8 = UInt8(Transport.pathfinderM)
 
+  /// Python's `HOP_LIMITER`: a packet arriving with this many hops or more is dropped before
+  /// the packet filter (`Transport.py:207`, `2022`). `[filter] hop_limiter` sets it.
+  public var hopLimiter = Transport.pathfinderM
+
+  /// Python's `required_destinations_only`: announce ingress admits only allowed and
+  /// client-wanted destination types (`Transport.py:272`, `2036-2042`).
+  public var requiredDestinationsOnly = false
+
+  /// Python's `application_identity`, the requester this application registers its wanted
+  /// destination types as (`Transport.py:449`).
+  public let applicationIdentity = Identity()
+
+  /// Python's `destination_filters_lock` and the three type tables it guards, keyed by name
+  /// hash (`Transport.py:4615-4620`). A client type maps to the requesters that want it.
+  let destinationFiltersLock = NSLock()
+  var blockedDestinationTypes: Set<Data> = []
+  var allowedDestinationTypes: Set<Data> = []
+  var clientDestinationTypes: [Data: Set<Data>] = [:]
+
   /// Whether a link-request proof arriving with an unexpected hop count may
   /// correct the path table (after its signature validates).
   ///
@@ -4025,6 +4044,9 @@ public final class Transport {
   public func stop() {
     jobsTimer?.cancel()
     jobsTimer = nil
+    // Python's daemon threads die with the process; a Swift stack can be restarted in one.
+    disableDiscovery()
+    disableBlackholeUpdater()
     for interface in interfaces { interface.stop() }
     stopInboundWorker()
     isRunning = false
@@ -5120,6 +5142,9 @@ public final class Transport {
     }
     metricsLock.unlock()
 
+    // `if not packet.hops < Transport.HOP_LIMITER: return` (`Transport.py:2022`).
+    guard Int(packet.hops) < hopLimiter else { return nil }
+
     // `if not Transport.packet_filter(packet): return interface.packet_filter_hit()`
     // (`Transport.py:1795`). The verdict only: `_inbound` records the hash
     // (`Transport.py:1957-1960`), which `processInbound` does.
@@ -5721,6 +5746,8 @@ public final class Transport {
   private func admitAnnounce(
     _ packet: Packet, from interface: Interface, trafficClass: TrafficClass
   ) -> TrafficClass? {
+    guard admitsDestinationType(of: packet, from: interface) else { return nil }
+
     // Python's announce admission gate (`Transport.py:1806-1811`). Three
     // decisions, in this order, before anything else looks at the announce:
     //
@@ -7181,6 +7208,7 @@ public final class Transport {
     for handler in handlers {
       // Mirrors Python: skip path-response announces unless handler opted in.
       if decoded.isPathResponse && !handler.receivePathResponses { continue }
+      if handler.paused { continue }  // `Transport.py:2769`
 
       guard let filter = handler.aspectFilter else {
         handler.receivedAnnounce(

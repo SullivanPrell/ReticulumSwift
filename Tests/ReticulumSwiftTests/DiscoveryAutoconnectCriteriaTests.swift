@@ -15,7 +15,7 @@ import XCTest
 /// The auto-connect rules RNS 1.5.5 added (`Discovery.py:483-490`, `772-876`).
 ///
 /// Only a discovered `BackboneInterface` is dialled, and only when its announce names the
-/// `RNS` implementation at 1.5.2 or later, unless `autoconnect_unverified_implementations` is
+/// `RNS` implementation at 1.5.7 or later (RNS 1.6.0's `AUTOCONNECT_MIN_V`), unless `autoconnect_unverified_implementations` is
 /// set. A name already in use gets a sequence number. Where Backbone isn't supported, which
 /// includes Darwin, the endpoint is dialled as a `TCPClientInterface`. The monitor drops an
 /// interface someone detached by hand.
@@ -63,7 +63,8 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
   private func discovered(
     type: String = "BackboneInterface", reachableOn: String = "hub.example.net",
     port: Int = 4965, name: String = "Example hub",
-    implName: String? = "RNS", version: String? = "1.5.5", transport: Bool = true
+    implName: String? = "RNS", version: String? = "1.5.7", transport: Bool = true,
+    dstCost: Double? = nil, prCost: Double? = nil
   ) -> DiscoveredInterfaceInfo {
     let now = Date().timeIntervalSince1970
     var info = DiscoveredInterfaceInfo(
@@ -80,6 +81,8 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
       discovered: now, lastHeard: now, heardCount: 1)
     info.implName = implName
     info.version = version
+    info.dstCost = dstCost
+    info.prCost = prCost
     return info
   }
 
@@ -118,6 +121,7 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
   }
 
   func testAVersionBelowTheMinimumIsNotDialled() {
+    discovery.autoconnect(discovered(version: "1.5.6"))
     discovery.autoconnect(discovered(version: "1.5.1"))
     discovery.autoconnect(discovered(version: "1.4.9"))
     discovery.autoconnect(discovered(version: "1.5"))
@@ -125,7 +129,7 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
   }
 
   func testTheMinimumVersionAndLaterAreDialled() {
-    for (i, v) in ["1.5.2", "1.10.0", "2.0", "1.5.2rc1"].enumerated() {
+    for (i, v) in ["1.5.7", "1.10.0", "2.0", "1.5.7rc1"].enumerated() {
       var info = discovered(reachableOn: "hub\(i).example.net", name: "hub\(i)", version: v)
       info.discoveryHash = Data(repeating: UInt8(i), count: 32)
       discovery.autoconnect(info)
@@ -139,12 +143,32 @@ final class DiscoveryAutoconnectCriteriaTests: XCTestCase {
     XCTAssertEqual(dialled.count, 1)
   }
 
+  // MARK: - Costs (RNS 1.6.0)
+
+  /// An interface whose destinations or path requests cost more than this node values is
+  /// skipped (`Discovery.py:805-814`).
+  func testAnInterfaceCostingMoreThanThisNodeValuesIsNotDialled() {
+    let stamps = transport.stamps
+    var info = discovered(dstCost: stamps.destinationValue + 1, prCost: 0)
+    discovery.autoconnect(info)
+    info = discovered(reachableOn: "hub2.example.net", dstCost: 0, prCost: stamps.prValue + 1)
+    info.discoveryHash = Data(repeating: 2, count: 32)
+    discovery.autoconnect(info)
+    XCTAssertTrue(dialled.isEmpty)
+
+    info = discovered(
+      reachableOn: "hub3.example.net", dstCost: stamps.destinationValue, prCost: stamps.prValue)
+    info.discoveryHash = Data(repeating: 3, count: 32)
+    discovery.autoconnect(info)
+    XCTAssertEqual(dialled.count, 1, "a cost equal to the value is affordable")
+  }
+
   // MARK: - Transport (RNS 1.5.6)
 
   func testANonTransportAnnounceIsNotDialled() {
-    discovery.autoconnect(discovered(version: "1.5.2", transport: false))
+    discovery.autoconnect(discovered(transport: false))
     XCTAssertTrue(dialled.isEmpty, "Discovery.py:783 requires transport == True")
-    discovery.autoconnect(discovered(version: "1.5.2"))
+    discovery.autoconnect(discovered())
     XCTAssertEqual(dialled.count, 1)
   }
 

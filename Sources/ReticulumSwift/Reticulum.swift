@@ -227,7 +227,16 @@ public final class Reticulum {
     /// `discoveryStampValidator`, and typically backed by the same `LXStamper`.
     public var discoveryStampGenerator: (any DiscoveryStampGenerator)?
 
-    /// Creates a configuration, leaving both discovery stamp hooks unset.
+    /// Python's `Reticulum(enable_stamping=True)`: stamps this node's announces, path
+    /// requests and link requests (`Reticulum.py:353-357`).
+    public var enableStamping = false
+
+    /// Python's `Reticulum(enforce_stamps=True)`: enforces announce, path-request and
+    /// link-request stamps (`Reticulum.py:359-362`).
+    public var enforceStamps = false
+
+    /// Creates a configuration with the built-in ``DiscoveryStamper`` as both discovery
+    /// stamp hooks, as RNS 1.6.0 stamps with `RNS.Stamps` (`Discovery.py:52`).
     public init(
       storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true,
       logLevel: LogLevel? = nil
@@ -236,8 +245,8 @@ public final class Reticulum {
       self.configPath = configPath
       self.shareInstance = shareInstance
       self.logLevel = logLevel
-      self.discoveryStampValidator = nil
-      self.discoveryStampGenerator = nil
+      self.discoveryStampValidator = DiscoveryStamper()
+      self.discoveryStampGenerator = DiscoveryStamper()
     }
   }
 
@@ -503,9 +512,9 @@ public final class Reticulum {
   /// Returns the required stamp value for interface discovery validation.
   ///
   /// Mirrors Python's `Reticulum.required_discovery_value()`.
-  public private(set) static var storedRequiredDiscoveryValue: Int = 16
+  public private(set) static var storedRequiredDiscoveryValue: Double = 16
   /// Returns the required stamp value for interface discovery validation.
-  public static func requiredDiscoveryValue() -> Int { storedRequiredDiscoveryValue }
+  public static func requiredDiscoveryValue() -> Double { storedRequiredDiscoveryValue }
 
   /// Returns whether blackhole list publishing is enabled.
   ///
@@ -986,6 +995,17 @@ public final class Reticulum {
       }
     }
 
+    // After the config, so the constructor flags win (`Reticulum.py:353-362`).
+    if configuration.enableStamping {
+      transport.stamps.stampDestinations = true
+      transport.stamps.stampPRs = true
+      transport.stamps.stampLRs = true
+    }
+    if configuration.enforceStamps {
+      transport.stamps.enforced = true
+      transport.stamps.lrEnforced = true
+    }
+
     // A local client leaves transport to the shared instance (`Reticulum.py:440`), before
     // `Transport.start` chooses the transport identity and reads the tables (`:353`).
     if transport.isConnectedToSharedInstance { transport.transportEnabled = false }
@@ -1171,6 +1191,10 @@ public final class Reticulum {
   /// A local client writes no state file: they belong to the shared instance
   /// (`Transport.py:3980`, `Identity.py:616`).
   public func stop() {
+    // The exit handler's first act (`Reticulum.py:189`). A client tells its shared instance
+    // while the control socket is still reachable.
+    unwantsAllDestinationTypes()
+
     // Close the control socket before anything else, so a `manage` call can't attach an
     // interface to a transport that is stopping, and the port is free when `stop()` returns.
     //
@@ -1266,6 +1290,67 @@ public final class Reticulum {
   @discardableResult
   public func dropAllVia(transportHash: Data) -> Int {
     transport.dropAllPaths(via: transportHash)
+  }
+
+  // MARK: - Destination-type filter (RNS 1.6.0)
+
+  /// Registers that `requester` wants announces of `fullName` (`app.aspect…`), so a
+  /// `required_only` node admits them.
+  ///
+  /// The requester defaults to ``Transport/applicationIdentity``. A shared-instance client
+  /// registers locally and with its shared instance, and returns the instance's answer.
+  /// Mirrors Python's `Reticulum.wants_destination_type` (`Reticulum.py:2224-2237`).
+  @discardableResult
+  public func wantsDestinationType(_ fullName: String, requester: Data? = nil) -> Bool {
+    let requester = requester ?? transport.applicationIdentity.hash
+    let local = transport.wantsDestinationType(fullName, requester: requester)
+    guard transport.isConnectedToSharedInstance else { return local }
+    return sharedInstanceFilterCall("wants_destination_type", .string(fullName), requester)
+  }
+
+  /// Withdraws a ``wantsDestinationType(_:requester:)`` registration
+  /// (`Reticulum.py:2239-2252`).
+  @discardableResult
+  public func unwantsDestinationType(_ fullName: String, requester: Data? = nil) -> Bool {
+    let requester = requester ?? transport.applicationIdentity.hash
+    let local = transport.unwantsDestinationType(fullName, requester: requester)
+    guard transport.isConnectedToSharedInstance else { return local }
+    return sharedInstanceFilterCall("unwants_destination_type", .string(fullName), requester)
+  }
+
+  /// Withdraws every registration `requester` made (`Reticulum.py:2254-2267`).
+  @discardableResult
+  public func unwantsAllDestinationTypes(requester: Data? = nil) -> Bool {
+    let requester = requester ?? transport.applicationIdentity.hash
+    let local = transport.unwantsAllDestinationTypes(requester: requester)
+    guard transport.isConnectedToSharedInstance else { return local }
+    return sharedInstanceFilterCall("unwants_all_destination_types", .bool(true), requester)
+  }
+
+  /// Sets announce filtering to required types only. Only a shared-instance client may, so an
+  /// application can't squelch announces for the node as a whole (`Reticulum.py:2213-2222`).
+  @discardableResult
+  public func requiredAnnouncesOnly(_ enabled: Bool = true) -> Bool {
+    guard transport.isConnectedToSharedInstance else { return false }
+    transport.requiredDestinationsOnly = enabled
+    return true
+  }
+
+  /// One filter call to the shared instance; `false` when it can't be reached, as Python's
+  /// `except` returns.
+  private func sharedInstanceFilterCall(_ key: String, _ value: MsgPack.Value, _ requester: Data)
+    -> Bool
+  {
+    guard let authkey = rpcAuthenticationKey() else { return false }
+    let client = RPCClient(
+      port: config?.reticulum.instanceControlPort ?? RPCClient.defaultControlPort,
+      authkey: authkey)
+    let request = MsgPack.Value.map([
+      (.string(key), value), (.string("requester"), .bytes(requester)),
+      (.string("signature"), .nil),
+    ])
+    guard case .bool(let answer)? = try? client.call(request) else { return false }
+    return answer
   }
 
   /// Blackhole an identity hash, preventing its announces from being forwarded.
@@ -1448,6 +1533,11 @@ public final class Reticulum {
     interface.optimiseMtu()
 
     interface.ingressControl = block.bool("ingress_control") ?? true
+
+    // Clamped to `STAMP_COST_CAP` (`Reticulum.py:963-971`, `1157-1158`).
+    let costCap = Double(Transport.stampCostCap)
+    interface.destinationCost = block.double("destination_cost").map { max(0, min($0, costCap)) }
+    interface.prCost = block.double("pr_cost").map { max(0, min($0, costCap)) }
 
     // Present-only, so an absent key leaves the class default (`Reticulum.py:942-953`).
     let state = interface.interfaceState
@@ -2319,6 +2409,8 @@ public final class Reticulum {
 
   private func applyConfig(_ cfg: ReticulumConfig) {
     transport.transportEnabled = cfg.reticulum.enableTransport
+    cfg.filter.apply(to: transport)
+    cfg.stamps.apply(to: &transport.stamps)
     Reticulum.allowProbes = cfg.reticulum.allowProbes
     Reticulum.storedRemoteManagementEnabled = cfg.reticulum.remoteManagementEnabled
     Reticulum.storedInterfaceManagementEnabled = cfg.reticulum.enableInterfaceManagement

@@ -122,7 +122,8 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
         return body
       }.joined(separator: "\n")
 
-      for key in ReticulumConfig.parse(uncommented).unrecognisedKeys {
+      for key in ReticulumConfig.parse(uncommented).unrecognisedKeys
+      where Self.ignoredByPython[key] == nil {
         discarded.append("  \(key)  (\(label) config)")
       }
     }
@@ -156,6 +157,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
         continue
       }
       guard case .value(let probeValue) = probe else { continue }
+      if Self.ignoredByPython[templateKey.qualified] != nil { continue }
 
       let baseline = ReticulumConfig.parse("[\(templateKey.section)]\n")
       let probed = ReticulumConfig.parse(
@@ -311,7 +313,7 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
   /// not resolve 4.4 the other way.
   func testTheTemplatesRemainPythonsOwnBytes() {
     XCTAssertEqual(
-      RNSConfigTemplates.exampleConfig.utf8.count, 15926,
+      RNSConfigTemplates.exampleConfig.utf8.count, 18342,
       "the example config is Python's literal; trimming keys from it is a "
         + "divergence, not a fix (task 4.4)")
     for documented in ["rpc_key", "instance_name", "shared_instance_type", "network_identity"] {
@@ -322,6 +324,14 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
   }
 
   // MARK: - Probe table
+
+  /// Keys Python's own templates advertise where Python itself never reads them. The port
+  /// ignores them too: honouring one would make a Swift node act on a line a Python node
+  /// treats as inert.
+  private static let ignoredByPython: [String: String] = [
+    "reticulum.hop_limiter":
+      "rnsd.py:296 documents it under [reticulum]; Reticulum.py:501 reads it only from [filter]"
+  ]
 
   private enum Probe {
     /// Set the key to this value and require the parsed result to change.
@@ -361,6 +371,17 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
     "reticulum.blackhole_sources": .value("521c87a83afb8f29e4455e77930b973b"),
     "reticulum.blackhole_update_interval": .value("90"),
     "reticulum.static_transport_identity": .value("yes"),
+    "reticulum.hop_limiter": .value("16"),
+    "stamps.enforce_stamps": .value("yes"),
+    "stamps.stamp_destinations": .value("yes"),
+    "stamps.stamp_prs": .value("yes"),
+    "stamps.destination_cost": .value("23.5"),
+    "stamps.destination_value": .value("25.0"),
+    "stamps.pr_cost": .value("15.8"),
+    "stamps.pr_value": .value("15.8"),
+    "stamps.lr_cost": .value("12.5"),
+    "stamps.lr_stamp_timeout": .value("15"),
+    "stamps.pr_stamp_timeout": .value("15"),
     "logging.loglevel": .value("6"),
     "logging.logtimestamps": .value("no"),
 
@@ -378,7 +399,10 @@ final class ConfigTemplateRoundTripTests: XCTestCase {
   /// without anyone updating this test—the same reason the key list is derived rather than
   /// listed.
   private static func dump(_ config: ReticulumConfig, section: String) -> String {
-    let subject: Any = section == "logging" ? config.logging : config.reticulum
+    let sections: [String: Any] = [
+      "logging": config.logging, "stamps": config.stamps, "filter": config.filter,
+    ]
+    let subject = sections[section] ?? config.reticulum
     return Mirror(reflecting: subject).children
       .map { "\($0.label ?? "?")=\(String(describing: $0.value))" }
       .joined(separator: "|")
