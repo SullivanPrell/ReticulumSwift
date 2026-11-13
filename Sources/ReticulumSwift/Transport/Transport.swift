@@ -114,6 +114,8 @@ public final class Transport {
   /// Mirrors Python's periodic clean-jobs scheduler in `Reticulum.__clean_caches`
   /// (RNS commit b408699e). Defaults to 1 hour to amortise the table walk.
   public static let knownDestinationsCleanInterval: TimeInterval = 60 * 60
+  /// Python's `kd_flush_interval` (`Transport.py:351`).
+  public static let knownDestinationsFlushInterval: TimeInterval = 10
   /// Python's `mgmt_announce_interval` (`Transport.py:266`).
   public static let managementAnnounceInterval: TimeInterval = 2 * 60 * 60
   /// Maximum receipts tracked simultaneously.
@@ -654,6 +656,14 @@ public final class Transport {
   ///
   /// Set by `Reticulum.start`.
   public var ratchetsDirectory: URL?
+  /// RNS 1.6.0's known-destinations database, Python's `Identity.known_destinations_store`.
+  ///
+  /// `Reticulum.start` opens it for a shared or standalone instance. Nil keeps the legacy
+  /// `known_destinations` file and per-destination ratchet files.
+  public var knownDestinationsStore: KnownDestinationsStore?
+  /// The shared instance's database, where a local client looks up a ratchet it doesn't
+  /// hold (`Identity.py:636-648`).
+  public var sharedKnownDestinationsDatabase: URL?
   /// Established links this node owns, keyed by link ID.
   public private(set) var links: [Data: Link] = [:]  // by link id
   /// Relayed link routes this node forwards, keyed by link ID.
@@ -1248,6 +1258,8 @@ public final class Transport {
   ///
   /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
   private var lastKnownDestinationsClean: Date = .distantPast
+  /// Python's `kd_last_flush` (`Transport.py:356`).
+  var lastKnownDestinationsFlush: Date = .distantPast
   /// Python's `last_mgmt_announce` (`Transport.py:265`).
   var lastManagementAnnounce: TimeInterval = 0
   /// Python's `mgmt_destinations`, in its order (`Transport.py:371`, `:383-384`, `:515`).
@@ -3136,10 +3148,7 @@ public final class Transport {
   ///
   /// Returns nil when no ratchet exists. Mirrors Python's `Identity.current_ratchet_id()`.
   public func currentRatchetID(forDestination destinationHash: Data) -> Data? {
-    lock.lock()
-    defer { lock.unlock() }
-    guard let ratchetPub = knownRatchets[destinationHash] else { return nil }
-    return Identity.ratchetID(forPublicKey: ratchetPub)
+    ratchet(forDestination: destinationHash).map(Identity.ratchetID(forPublicKey:))
   }
 
   /// The 32-byte ratchet PUBLIC key known for a destination, or nil.
@@ -3150,9 +3159,37 @@ public final class Transport {
   /// which returns the 10-byte *identifier* derived from this key and can't be used
   /// as an encryption target.
   public func currentRatchetKey(forDestination destinationHash: Data) -> Data? {
+    ratchet(forDestination: destinationHash)
+  }
+
+  /// `Identity.get_ratchet` (`Identity.py:618-650`): the ratchet in memory, else, for a local
+  /// client, the one the shared instance's database holds and hasn't expired.
+  ///
+  /// A shared or standalone instance loads every stored ratchet at start, so its memory miss
+  /// is a database miss too.
+  private func ratchet(forDestination destinationHash: Data) -> Data? {
     lock.lock()
-    defer { lock.unlock() }
-    return knownRatchets[destinationHash]
+    let held = knownRatchets[destinationHash]
+    lock.unlock()
+    guard held == nil, isConnectedToSharedInstance, let database = sharedKnownDestinationsDatabase
+    else { return held }
+    do {
+      // Opened per miss, as Python does, so a ratchet the instance stored since is found.
+      guard
+        let stored = try KnownDestinationsStore(path: database, readOnly: true)
+          .fetchRatchet(destinationHash),
+        Date().timeIntervalSince1970 < stored.received + ratchetExpiry
+      else { return nil }
+      restore(
+        ratchet: stored.ratchet, forDestination: destinationHash,
+        receivedAt: Date(timeIntervalSince1970: stored.received))
+      return stored.ratchet
+    } catch {
+      Reticulum.log(
+        "Could not fetch ratchet for \(RNSUtilities.prettyhexrep(destinationHash)) from shared "
+          + "instance database. The contained exception was: \(error)", level: .error)
+      return nil
+    }
   }
 
   // MARK: - Lifecycle
@@ -3596,8 +3633,10 @@ public final class Transport {
   /// `:459-462,476`, and `loadKnownRatchets` below). Each side silently destroyed the other's
   /// forward-secrecy state on the first start after a switch.
   private func persistKnownRatchet(_ ratchet: Data, forDestination hash: Data, receivedAt: Date) {
-    // `Identity.py:420`: a local client remembers the ratchet without writing it.
-    guard !isConnectedToSharedInstance, let dir = ratchetsDirectory else { return }
+    // `Identity.py:420`: a local client remembers the ratchet without writing it, and with a
+    // database the next flush writes it (`:540-546`).
+    guard !isConnectedToSharedInstance, knownDestinationsStore == nil, let dir = ratchetsDirectory
+    else { return }
     try? FileManager.default.createDirectory(
       at: dir, withIntermediateDirectories: true
     )
@@ -3666,10 +3705,10 @@ public final class Transport {
   public func encrypt(_ plaintext: Data, forDestination destinationHash: Data) throws -> Data {
     lock.lock()
     let identity = knownIdentities[destinationHash]
-    let ratchet = knownRatchets[destinationHash]
     lock.unlock()
     guard let identity else { throw TransportError.unknownDestination }
-    return try identity.encrypt(plaintext, ratchetPublicKey: ratchet)
+    return try identity.encrypt(
+      plaintext, ratchetPublicKey: ratchet(forDestination: destinationHash))
   }
 
   /// Errors thrown by transport operations.
@@ -3702,8 +3741,13 @@ public final class Transport {
   /// `os.replace`. `Data.write(options: .atomic)` is that same write-then-rename, so a torn
   /// file isn't observable on either side.
   public func saveKnownDestinations(to url: URL) throws {
-    // `Identity.py:179`: the shared instance owns the file.
+    // `Identity.py:216`: the shared instance owns the file.
     guard !isConnectedToSharedInstance else { return }
+    // `Identity.py:218`: with a database, saving is flushing it, and `url` goes unused.
+    if knownDestinationsStore != nil {
+      flushKnownDestinations()
+      return
+    }
     lock.lock()
     let snapshot = knownIdentities
     let announcedAt = knownDestinationAnnouncedAt
@@ -3736,6 +3780,72 @@ public final class Transport {
     try MsgPack.encode(.map(pairs)).write(to: url, options: .atomic)
   }
 
+  /// `Identity.flush_known_destinations` (`Identity.py:951-960`): writes what changed in the
+  /// known-destinations and ratchet tables to ``knownDestinationsStore``.
+  @discardableResult
+  func flushKnownDestinations() -> Bool {
+    guard let store = knownDestinationsStore, !isConnectedToSharedInstance else { return false }
+    let now = Date().timeIntervalSince1970
+    lock.lock()
+    var rows: [Data: KnownDestinationsStore.Row] = [:]
+    for (hash, identity) in knownIdentities {
+      let stampFields = knownDestinationStamps[hash]
+      rows[hash] = KnownDestinationsStore.Row(
+        lastHeard: knownDestinationAnnouncedAt[hash]?.timeIntervalSince1970 ?? now,
+        packetHash: knownDestinationPacketHash[hash], publicKey: identity.publicKeyBytes,
+        appData: identity.appData,
+        used: retainedDestinations.contains(hash)
+          ? -1 : knownDestinationLastUsed[hash]?.timeIntervalSince1970 ?? 0,
+        stamp: stampFields?.stamp, stampValue: stampFields?.value ?? 0,
+        lrCost: stampFields?.lrCost)
+    }
+    var ratchets: [Data: KnownDestinationsStore.Ratchet] = [:]
+    for (hash, ratchet) in knownRatchets {
+      ratchets[hash] = KnownDestinationsStore.Ratchet(
+        ratchet: ratchet, received: knownRatchetTimes[hash]?.timeIntervalSince1970 ?? now)
+    }
+    lock.unlock()
+    do {
+      try store.flush(rows, ratchets: ratchets)
+      return true
+    } catch {
+      Reticulum.log(
+        "Could not flush known destinations to storage. The contained exception was: \(error)",
+        level: .error)
+      return false
+    }
+  }
+
+  /// Restores rows read from a known-destinations database.
+  public func restore(knownDestinations rows: [Data: KnownDestinationsStore.Row]) {
+    lock.lock()
+    defer { lock.unlock() }
+    for (hash, row) in rows { restoreKnownDestinationLocked(hash, row) }
+  }
+
+  /// Restores one known destination, from the database or the legacy file.
+  ///
+  /// The caller holds `lock`.
+  private func restoreKnownDestinationLocked(_ hash: Data, _ row: KnownDestinationsStore.Row) {
+    guard hash.count == Constants.truncatedHashLength, knownIdentities[hash] == nil,
+      row.publicKey.count == Constants.keySize,
+      let identity = try? Identity(publicKeyBytes: row.publicKey)
+    else { return }
+    identity.appData = row.appData
+    knownIdentities[hash] = identity
+    knownDestinationAnnouncedAt[hash] = Date(timeIntervalSince1970: row.lastHeard)
+    if let packetHash = row.packetHash { knownDestinationPacketHash[hash] = packetHash }
+    knownDestinationStamps[hash] = (row.stamp, row.stampValue, row.lrCost)
+    // 0 is "never used", a negative value is the retention sentinel, and anything else is
+    // a use time (`Identity.py:314-324`). Reading it back is what keeps a pinned
+    // destination pinned across a restart.
+    if row.used < 0 {
+      retainedDestinations.insert(hash)
+    } else if row.used > 0 {
+      knownDestinationLastUsed[hash] = Date(timeIntervalSince1970: row.used)
+    }
+  }
+
   /// Load previously persisted `knownIdentities` from `url`.
   ///
   /// Mirrors Python's `Identity.load_known_destinations()` (`Identity.py:216-240`).
@@ -3756,30 +3866,8 @@ public final class Transport {
       // has four fields and is backfilled with a zero `last_use`, not discarded. RNS 1.6.0
       // pads anything short of eight with `None, 0, None` (`Identity.py:332-339`).
       if fields.count == 4 { fields.append(.double(0)) }
-      while fields.count < 8 { fields.append(fields.count == 6 ? .int(0) : .nil) }
-      guard case .bytes(let publicKey) = fields[2],
-        publicKey.count == Constants.keySize,
-        let identity = try? Identity(publicKeyBytes: publicKey)
-      else { continue }
-
-      if case .bytes(let appData) = fields[3] { identity.appData = appData }
-      guard knownIdentities[destHash] == nil else { continue }
-      knownIdentities[destHash] = identity
-      knownDestinationAnnouncedAt[destHash] =
-        Date(timeIntervalSince1970: fields[0].asDouble ?? 0)
-      if case .bytes(let packetHash) = fields[1] {
-        knownDestinationPacketHash[destHash] = packetHash
-      }
-      knownDestinationStamps[destHash] = (fields[5].asData, fields[6].asDouble, fields[7].asDouble)
-      // 0 is "never used", a negative value is the retention sentinel, and anything else is
-      // a use time (`Identity.py:314-324`). Reading it back is what keeps a pinned
-      // destination pinned across a restart.
-      let lastUse = fields[4].asDouble ?? 0
-      if lastUse < 0 {
-        retainedDestinations.insert(destHash)
-      } else if lastUse > 0 {
-        knownDestinationLastUsed[destHash] = Date(timeIntervalSince1970: lastUse)
-      }
+      guard let row = KnownDestinationsStore.Row(entry: fields) else { continue }
+      restoreKnownDestinationLocked(destHash, row)
     }
   }
 
@@ -3841,6 +3929,9 @@ public final class Transport {
       knownDestinationAnnouncedAt.removeValue(forKey: h)
       knownDestinationLastUsed.removeValue(forKey: h)
       knownDestinationStamps.removeValue(forKey: h)
+      // `Identity.py:455`.
+      knownRatchets.removeValue(forKey: h)
+      knownRatchetTimes.removeValue(forKey: h)
     }
     lock.unlock()
 
@@ -4160,6 +4251,12 @@ public final class Transport {
     {
       cleanKnownDestinations(now: now)
       lastKnownDestinationsClean = now
+    }
+    if knownDestinationsStore != nil,
+      now.timeIntervalSince(lastKnownDestinationsFlush) > Transport.knownDestinationsFlushInterval
+    {
+      lastKnownDestinationsFlush = now
+      flushKnownDestinations()
     }
     announceManagementDestinations()
     // `Reticulum.__jobs` culls the packet cache every `CLEAN_INTERVAL` (`Reticulum.py:388-392`).
@@ -6043,7 +6140,8 @@ public final class Transport {
         decoded.stamp, decoded.stampValue, decoded.lrCost
       )
       cachedAnnounces[decoded.destinationHash] = packet
-      if let ratchet = decoded.ratchet {
+      // `Identity.py:538`: an identical ratchet keeps its received time.
+      if let ratchet = decoded.ratchet, knownRatchets[decoded.destinationHash] != ratchet {
         let now = Date()
         knownRatchets[decoded.destinationHash] = ratchet
         knownRatchetTimes[decoded.destinationHash] = now

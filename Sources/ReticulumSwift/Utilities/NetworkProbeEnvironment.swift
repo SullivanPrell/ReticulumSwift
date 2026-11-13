@@ -206,11 +206,11 @@ public final class TransportProbeNetwork: ProbeNetwork {
       // key; a Swift daemon caches under the truncated one and narrows the key on
       // lookup, so the full hash works against both. The truncated retry keeps this
       // working against an older Swift daemon that doesn't narrow.
-      if let value = try? rpc.get(call, extra: [("packet_hash", .bytes(packetHash))]),
-        !isNil(value)
-      {
-        return value
+      // A failed call is Python's logged `None`, so it isn't retried (`Reticulum.py:2084`).
+      guard let value = try? rpc.get(call, extra: [("packet_hash", .bytes(packetHash))]) else {
+        return nil
       }
+      if !isNil(value) { return value }
       let truncated = packetHash.prefix(Constants.truncatedHashLength)
       guard truncated.count != packetHash.count,
         let value = try? rpc.get(call, extra: [("packet_hash", .bytes(truncated))]),

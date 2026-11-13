@@ -242,6 +242,39 @@ final class RPCClientTests: XCTestCase {
     }
   }
 
+  /// RNS 1.6.0's client getters log a failed call before returning their fallback, rendering
+  /// the error as Python's `OSError` prints (`Reticulum.py:1616`, `:1876`, `:1904`).
+  func testAFailedGetterLogsPythonsError() {
+    var errors: [String] = []
+    Reticulum.logHandler = { message, level in if level == .error { errors.append(message) } }
+    defer { Reticulum.logHandler = nil }
+    let client = RPCClient(host: "127.0.0.1", port: 1, authkey: authkey, timeout: 1)
+    let refused = "[Errno \(ECONNREFUSED)] Connection refused"
+
+    _ = try? client.interfaceStats()
+    _ = try? client.pathTable()
+    _ = try? client.rateTable()
+    _ = try? client.linkCount()
+
+    XCTAssertEqual(
+      errors,
+      [
+        "Shared instance RPC failed while getting interface stats: \(refused)",
+        "Shared instance RPC failed while getting path table: \(refused)",
+        "Shared instance RPC failed while getting rate table: \(refused)",
+      ], "`get_link_count` has no handler of its own (`Reticulum.py:2042-2050`)")
+  }
+
+  /// `get_path_table` and `get_rate_table` answer `[]` once they've logged
+  /// (`Reticulum.py:1877`, `:1905`), so `rnpath` renders an empty table.
+  func testTheRNPathSourceAnswersAnEmptyTableWhenTheCallFails() throws {
+    let source = RPCManagementSource(
+      client: RPCClient(host: "127.0.0.1", port: 1, authkey: authkey, timeout: 1),
+      localTransportIdentityHash: nil)
+    XCTAssertEqual(try source.pathTable(maxHops: nil).count, 0)
+    XCTAssertEqual(try source.rateTable().count, 0)
+  }
+
   // MARK: - Auth key derivation
 
   func testAuthkeyDerivation_matchesInstanceDerivation() throws {

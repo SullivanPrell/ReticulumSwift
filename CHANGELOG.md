@@ -5,6 +5,113 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Reference parity moves to RNS 1.6.0
+
+`Reticulum.rnsProtocolVersion` reads `1.6.0`, up from `1.5.7`.
+
+The port covers what reaches the wire or changes a default, the opt-in stamping and its
+enforcement, and the `[stamps]` and `[filter]` sections. Python's internal rework is out of
+scope: the SQLite announce cache, heap trimming, worker queues and validation caches.
+
+reticulum-interop ran against this tree with RNS 1.6.0. `make test-utilities` passed 163 tests
+with 1 expected failure, and `make test-rngit` passed 5 with 4 skipped: the NomadNet fetcher
+cells, which need the Swift and Go nodes built.
+
+### Added in RNS 1.6.0
+
+- `Stamps`, a port of `RNS/Stamps.py`: fixed-point costs, fractional stamp values, workblock
+  expansion, hash-mode and X25519 key-mode generation, and `.dstamp` persistence. Vectors
+  come from RNS 1.6.0.
+- Announce stamps. An announce may carry an 18-byte `0xC1` trailer with a 14-byte stamp and
+  the destination's link-request cost (`Identity.py:840-889`, `Destination.py:348-357`). A
+  valid stamp is stripped from the app data, and its value and cost are remembered. Known
+  destinations persist Python's eight-field entry, which a 1.5.7 reader tolerates.
+- Path requests always carry the transport identity and a 16-byte tag
+  (`Transport.py:3685-3746`). Ingress drops tagless, oversized and odd-sized bodies as protocol
+  violations (`:3982-4017`) and deduplicates on destination plus tag.
+- Link-request stamps. The responder values the initiator's X25519 key as a stamp
+  (`Link.py:192-200`). An initiator grinds one when the destination announced a cost, and closes
+  with `STAMP_FAILURE` when it can't within `LINK_STAMP_TIMEOUT` (`Link.py:310-387`).
+- Resources carry the application flag (`Resource.py:1343`). An advertisement too large for the
+  link MDU goes out with an empty hashmap and serves it on request (`:1375-1378`).
+- Path use. Outbound, forwarded and link-transported traffic stamps a path's use time rather
+  than refreshing its timestamp (`Transport.py:1618`, `:2387`, `:2440`). The jobs loop drops a
+  never-used path after `unused_path_linger`, and holds the never-used pool to 2,048 entries
+  (`:1120-1159`). The path and tunnel stores write the use time as a ninth field.
+- `Reticulum.Configuration.enableStamping` and `enforceStamps`, the `[stamps]` section, and the
+  regenerated config templates that document it.
+- The `[filter]` section and the destination-type registry: blocked, allowed and wanted types,
+  `required_only`, and the hop limiter (`Transport.py:2022`, `:2033-2042`, `:4623-4693`;
+  `Reticulum.py:487-503`). A shared instance answers the registration calls over RPC
+  (`Reticulum.py:1514-1529`).
+- `rnpath`, `rnstatus`, `rncp`, `rnx` and `rngit` register the destination types they need, so
+  a `required_only` shared instance keeps those announces for them.
+- Interface discovery stamps with `Stamps`, so a stack publishes discoverable interfaces
+  without an injected generator. Announces carry the interface's destination and path-request
+  costs (`Discovery.py:166-172`). A receiver records them, ignores an announce from
+  `PATHFINDER_M` hops (`:294-296`), and auto-connects only to an implementation at 1.5.7 or
+  later.
+- `RNSUtilities.prettycost`. `rnstatus` prints stamp values with it and shows a discovered
+  interface's costs (`rnstatus.py:265-300`).
+- The `rnstatus -j` statistics gain the packet counters (`rxpkts`, `txpkts`, `arxpkts`,
+  `atxpkts`, `prxpkts`, `ptxpkts`), the link and path-pool counts (`tlinks`, `alinks`,
+  `plinks`, `tpcount`, `unupcount`, `actpcount`), and an RNode's radio parameters
+  (`Reticulum.py:1652-1661`, `:1820-1850`).
+- The `path_table` RPC reply and the remote `/path` table carry `value`, `used` and `lr_cost`
+  (`Reticulum.py:1881-1888`). `rnpath -t` prints 1.6.0's row (`rnpath.py:302`) and gains
+  `-u`/`--usage`.
+- `KnownDestinationsStore`, Python's SQLite store of known destinations and their ratchets at
+  `storage/known_destinations.db` (`Storage.py:215-547`). The schema, pragmas and pre-release
+  rebuild match Python's, and each side reads the other's file. A shared or standalone
+  instance imports the legacy `known_destinations` file once, renaming it
+  `known_destinations.imported`, and moves the per-destination ratchet files into the database
+  (`Identity.py:286-312`). It writes what changed every 10 seconds and at stop
+  (`Transport.py:1005-1007`). When the database can't be opened, the legacy files stay in use.
+- A local client loads the shared instance's table from that database read-only, and looks up
+  a ratchet it doesn't hold there (`Identity.py:259-273`, `:636-648`). It no longer reads the
+  legacy file or the ratchet files.
+- A failed `interface_stats`, `path_table`, `rate_table`, `link_distribution` or packet-stat
+  RPC logs `Shared instance RPC failed while …` at error level, with a refused connection
+  rendered as Python prints it (`Reticulum.py:1616`, `:1876`, `:1904`, `:2070-2120`).
+  `RPCClientError.connectionFailed` carries the socket's `errno`.
+
+### Changed in RNS 1.6.0
+
+- `rnpath -t` and `rnpath -r` print an empty table when the shared instance's RPC call fails,
+  after the error line. They printed the error and exited 1 (`Reticulum.py:1875-1877`,
+  `:1903-1905`).
+
+- An `rngit` node whose configuration sits under `~/.config/rngit` now keeps its files there.
+  It used `~/.rngit/reticulum` (`rngit/server.py:2017-2023`).
+
+### Fixed with RNS 1.6.0
+
+- A repeated announce carrying the ratchet already known keeps that ratchet's received time.
+  The port refreshed it on every announce, so a ratchet outlived Python's 30-day expiry
+  (`Identity.py:538`).
+
+- The interface announcer runs on a dispatch timer, and `Transport.stop()` releases it and the
+  blackhole updater. The old loop held a GCD thread in a 60-second sleep and was never stopped.
+  With discovery on by default, 64 stopped stacks in one process exhausted the pool and
+  deadlocked any caller waiting on a global queue.
+
+### Not ported from RNS 1.6.0
+
+- A rate-blocked announce. Python still caches it, calls the announce handlers, and updates an
+  existing path's next hop, hops, random blobs, interface and packet, leaving its timestamp and
+  expiry alone (`Transport.py:2579-2760`). The port returns before any of that, as it did
+  before 1.6.0. Only an interface with `announce_rate_target` set rate-blocks.
+- `destination_type_map`, which only names types in log lines (`Transport.py:271`, `:4695`).
+- Requester signatures on type registrations. Python leaves validating them as a TODO
+  (`Transport.py:4652`).
+
+### Deliberate differences from RNS 1.6.0
+
+- `alinks` counts the relayed links whose proof was validated. Python's `active_link_count`
+  iterates the link table's keys, so it tests byte 7 of each link ID (`Transport.py:3576-3577`).
+- An announcer pass that runs past 60 s is followed at once by the next. Python waits 60 s
+  after each pass.
+
 ### Added
 
 - `InterfaceConstructionError.unsupportedPlatform(interface:reason:)`, thrown for an interface
