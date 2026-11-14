@@ -308,7 +308,7 @@ final class AnnounceRateTableTests: XCTestCase {
     first.inboundHandler?(try Announce.make(for: dest, timestamp: now - 100), first)
     let before = try XCTUnwrap(t.paths[dest.hash])
 
-    // More hops but a newer emission, so the `should_add` ladder accepts it (`:2551-2558`),
+    // More hops but a newer emission, so the `should_add` ladder accepts it (`:2562-2566`),
     // and inside 60 s of the first, so the rate table blocks it.
     var wire = try Announce.make(for: dest, timestamp: now)
     wire.headerType = .type2
@@ -318,7 +318,7 @@ final class AnnounceRateTableTests: XCTestCase {
     let blocked = try Packet.unpack(try wire.pack())
     second.inboundHandler?(blocked, second)
 
-    XCTAssertEqual(handler.received, [dest.hash, dest.hash], "handlers still run (`:2765`)")
+    XCTAssertEqual(handler.received, [dest.hash, dest.hash], "handlers still run (`:2756-2766`)")
     XCTAssertNotNil(try cachedAnnounce(blocked, in: t), "still cached (`:2713`)")
     let after = try XCTUnwrap(t.paths[dest.hash])
     XCTAssertTrue(after.nextHopInterface === second)
@@ -333,7 +333,7 @@ final class AnnounceRateTableTests: XCTestCase {
     XCTAssertEqual(after.expires, before.expires, "a blocked announce doesn't extend the path")
   }
 
-  /// `Transport.py:2717`: with no path to update, a blocked announce creates none, yet the
+  /// `Transport.py:2719`: with no path to update, a blocked announce creates none, yet the
   /// handlers, the cache and the identity store still see it.
   func testRateBlockedAnnounceWithNoPathCreatesNone() throws {
     let t = makeCachingTransport()
@@ -356,7 +356,7 @@ final class AnnounceRateTableTests: XCTestCase {
     XCTAssertNotNil(t.recall(identity: dest.hash))
   }
 
-  /// `Transport.py:2606`, `:2649-2675`: a blocked announce isn't rebroadcast, but local
+  /// `Transport.py:2606`, `:2650-2683`: a blocked announce isn't rebroadcast, but local
   /// clients still get it.
   func testRateBlockedAnnounceReachesLocalClientsButIsNotRelayed() throws {
     let t = Transport()
