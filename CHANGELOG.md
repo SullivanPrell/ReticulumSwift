@@ -108,6 +108,9 @@ cells, which need the Swift and Go nodes built.
 - `destination_type_map`, which only names types in log lines (`Transport.py:271`, `:4695`).
 - Requester signatures on type registrations. Python leaves validating them as a TODO
   (`Transport.py:4652`).
+- Quarantining a row that breaks a table constraint at flush (`Storage.py:333-353`, `:409-417`).
+  The only constraints are `NOT NULL`, on fields the port's row doesn't make optional, so only a
+  disk or lock fault fails a write, and that fails the whole flush.
 
 ### Deliberate differences from RNS 1.6.0
 
@@ -137,6 +140,9 @@ cells, which need the Swift and Go nodes built.
 
 ### Fixed
 
+- Announce handlers hear only an announce the path table accepts, as Python calls them inside
+  `if should_add:` (`Transport.py:2579`, `:2758`). The port called them for every announce past
+  the duplicate filter, so a replayed or older announce reached them too.
 - A local destination answers a link request only when the request's header names the
   destination's type, as Python checks `destination.type == packet.destination_type`
   (`Transport.py:2543`). A request marked PLAIN, GROUP or LINK for a SINGLE destination's hash
