@@ -6071,17 +6071,9 @@ public final class Transport {
         // updated the path recorded its blob on the first pass—so for a
         // duplicate only the two exempted below (gravity takeover, and
         // reviving an unresponsive path, both of which turn on equal
-        // emission rather than an unheard blob) can fire.
-        //
-        // Known residual divergence: the dedup cache is populated earlier,
-        // *before* the announce-rate filter runs. An announce that filter
-        // drops never reaches the
-        // ladder and so never records its blob, yet its cache entry
-        // survives—a later copy at equal-or-greater hops is then
-        // swallowed here where Python would still evaluate it. Narrow
-        // (it needs a first copy dropped by a rate limiter and a second
-        // copy on a non-shorter route) and fail-closed, so it's left
-        // as-is rather than reordering the filters around the cache.
+        // emission rather than an unheard blob) can fire. A rate-blocked
+        // announce records its blob too: it updates an existing path's
+        // routing fields, and with no path `existingHops` lets every copy through.
         let higherGravity =
           currentPathGravityLocked(decoded.destinationHash)
           .map { interface.gravity > $0 } ?? false
@@ -6093,14 +6085,6 @@ public final class Transport {
         // takeover—fall through.
       }
       lock.unlock()
-
-      // Per-destination rate limiting (mirrors Python's announce_rate_table check).
-      // Only active when interface.announceRateTarget != nil.
-      // A rate-blocked announce is still validated but the path table isn't updated.
-      let rateBlocked = isAnnounceRateBlocked(
-        destinationHash: decoded.destinationHash,
-        interface: interface)
-      if rateBlocked { return }
 
       let emittedAt = announceEmitted(packet)
       let randomBlob = announceRandomBlob(packet)
@@ -6233,7 +6217,13 @@ public final class Transport {
         shouldUpdate = true  // no existing path (Python 1877-1880)
       }
       var requestedPathWritten = false
+      var rateBlocked = false
       if shouldUpdate {
+        // Python checks the rate only once `should_add` holds, and never for a path response
+        // (`Transport.py:2584`).
+        rateBlocked =
+          !decoded.isPathResponse
+          && isAnnounceRateBlocked(destinationHash: decoded.destinationHash, interface: interface)
         // Cache the announce packet to disk so the path table survives restarts.
         // Mirrors Python: `Transport.cache(packet, force_cache=True, packet_type="announce")`
         let announceHash = (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
@@ -6250,7 +6240,15 @@ public final class Transport {
           }
           updatedEntry.randomBlobs = blobs
         }
-        paths[decoded.destinationHash] = updatedEntry
+        if !rateBlocked {
+          paths[decoded.destinationHash] = updatedEntry
+        } else if let existing = paths[decoded.destinationHash] {
+          // A rate-blocked announce moves an existing path's routing fields but never its
+          // liveness, and creates no path (`Transport.py:2714-2724`).
+          updatedEntry.lastHeard = existing.lastHeard
+          updatedEntry.expires = existing.expires
+          paths[decoded.destinationHash] = updatedEntry
+        }
         lock.unlock()
         // `Transport.py:2457`: the shared instance owns the announce cache.
         if !isConnectedToSharedInstance {
@@ -6279,7 +6277,7 @@ public final class Transport {
         requestedPathWritten = pathRequests[decoded.destinationHash] != nil
         // The tunnel keeps the path it wrote, random blobs and announce hash included, for
         // `handle_tunnel` to restore (`Transport.py:2465-2475`).
-        if let tunnelID = interface.tunnelID, tunnels[tunnelID] != nil {
+        if !rateBlocked, let tunnelID = interface.tunnelID, tunnels[tunnelID] != nil {
           tunnels[tunnelID]?.paths[decoded.destinationHash] = updatedEntry
           tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
         }
@@ -6338,7 +6336,8 @@ public final class Transport {
       // Each outbound interface is rate-limited; announces that exceed
       // the cap are queued for deferred transmission.
       let fromLocalClient = fromLocalClient(interface: interface)
-      if shouldUpdate,
+      // A rate-blocked announce is never rebroadcast (`Transport.py:2606`).
+      if shouldUpdate, !rateBlocked,
         transportEnabled || fromLocalClient,
         !decoded.isPathResponse,
         packet.hops < propagationLimit,

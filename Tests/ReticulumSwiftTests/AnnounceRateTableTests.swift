@@ -249,4 +249,148 @@ final class AnnounceRateTableTests: XCTestCase {
       t.announceRateTimestampCount(for: dest.hash) >= 0 ? pathsAfterFirst : nil,
       "first announce always allowed and path table updated")
   }
+
+  // MARK: - RNS 1.6.0: a rate-blocked announce still feeds handlers, the cache and routing
+
+  final class RecordingHandler: AnnounceHandler {
+    var aspectFilter: String?
+    var receivePathResponses = true
+    var received: [Data] = []
+    func receivedAnnounce(
+      destinationHash: Data, identity: Identity, appData: Data?,
+      announcePacketHash: Data, isPathResponse: Bool
+    ) { received.append(destinationHash) }
+  }
+
+  /// Records what it sends; a local-client server when `clientCount > 0`.
+  final class SpyInterface: LocalClientServingInterface {
+    var name: String
+    var bitrate: Int = 100_000
+    var isOnline: Bool = true
+    var inboundHandler: ((Packet, any Interface) -> Void)?
+    var clientCount: Int
+    var sent: [Packet] = []
+    init(name: String, clientCount: Int = 0) {
+      self.name = name
+      self.clientCount = clientCount
+    }
+    func start() throws { isOnline = true }
+    func stop() { isOnline = false }
+    func send(_ packet: Packet) throws { sent.append(packet) }
+  }
+
+  private func makeCachingTransport() -> Transport {
+    let t = Transport()
+    t.cacheDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("rate-blocked-\(UUID().uuidString)")
+    return t
+  }
+
+  private func cachedAnnounce(_ packet: Packet, in t: Transport) throws -> Packet? {
+    try t.getCachedAnnounce(hash: Hashes.fullHash(packet.hashablePart()))
+  }
+
+  /// `Transport.py:2714-2724`: an existing path takes the blocked announce's next hop, hops,
+  /// random blobs, receiving interface and packet, but keeps its timestamp and expiry.
+  func testRateBlockedAnnounceUpdatesRoutingButNotLiveness() throws {
+    let t = makeCachingTransport()
+    let handler = RecordingHandler()
+    t.register(announceHandler: handler)
+    let first = RateLimitedInterface(name: "first", rateTarget: 60, grace: 0)
+    let second = RateLimitedInterface(name: "second", rateTarget: 60, grace: 0)
+    t.register(interface: first)
+    t.register(interface: second)
+    let dest = try Destination(
+      identity: Identity(), direction: .in, kind: .single,
+      appName: "ratelimit", aspects: ["routing"])
+    let now = Date().timeIntervalSince1970
+
+    first.inboundHandler?(try Announce.make(for: dest, timestamp: now - 100), first)
+    let before = try XCTUnwrap(t.paths[dest.hash])
+
+    // More hops but a newer emission, so the `should_add` ladder accepts it (`:2551-2558`),
+    // and inside 60 s of the first, so the rate table blocks it.
+    var wire = try Announce.make(for: dest, timestamp: now)
+    wire.headerType = .type2
+    wire.transportType = .transport
+    wire.transportID = Data(repeating: 0xAB, count: 16)
+    wire.hops = before.hops + 2
+    let blocked = try Packet.unpack(try wire.pack())
+    second.inboundHandler?(blocked, second)
+
+    XCTAssertEqual(handler.received, [dest.hash, dest.hash], "handlers still run (`:2765`)")
+    XCTAssertNotNil(try cachedAnnounce(blocked, in: t), "still cached (`:2713`)")
+    let after = try XCTUnwrap(t.paths[dest.hash])
+    XCTAssertTrue(after.nextHopInterface === second)
+    XCTAssertEqual(after.nextHopTransportID, Data(repeating: 0xAB, count: 16))
+    XCTAssertEqual(after.hops, blocked.hops)
+    let blob = blocked.data.subdata(
+      in: Constants.keySize + Constants.nameHashLength..<Constants.keySize
+        + Constants.nameHashLength + 10)
+    XCTAssertEqual(after.randomBlobs, before.randomBlobs + [blob])
+    XCTAssertEqual(after.cachedAnnounceHash, Hashes.fullHash(try blocked.hashablePart()))
+    XCTAssertEqual(after.lastHeard, before.lastHeard, "a blocked announce doesn't refresh liveness")
+    XCTAssertEqual(after.expires, before.expires, "a blocked announce doesn't extend the path")
+  }
+
+  /// `Transport.py:2717`: with no path to update, a blocked announce creates none, yet the
+  /// handlers, the cache and the identity store still see it.
+  func testRateBlockedAnnounceWithNoPathCreatesNone() throws {
+    let t = makeCachingTransport()
+    let handler = RecordingHandler()
+    t.register(announceHandler: handler)
+    let iface = RateLimitedInterface(name: "tight", rateTarget: 60, grace: 0)
+    t.register(interface: iface)
+    let dest = try Destination(
+      identity: Identity(), direction: .in, kind: .single,
+      appName: "ratelimit", aspects: ["nopath"])
+    // Seed the rate entry, so the first announce this node hears is already over the rate.
+    XCTAssertFalse(t.isAnnounceRateBlocked(destinationHash: dest.hash, interface: iface))
+
+    let announce = try Packet.unpack(try Announce.make(for: dest).pack())
+    iface.inboundHandler?(announce, iface)
+
+    XCTAssertNil(t.paths[dest.hash])
+    XCTAssertEqual(handler.received, [dest.hash])
+    XCTAssertNotNil(try cachedAnnounce(announce, in: t))
+    XCTAssertNotNil(t.recall(identity: dest.hash))
+  }
+
+  /// `Transport.py:2606`, `:2649-2675`: a blocked announce isn't rebroadcast, but local
+  /// clients still get it.
+  func testRateBlockedAnnounceReachesLocalClientsButIsNotRelayed() throws {
+    let t = Transport()
+    t.transportEnabled = true
+    let iface = RateLimitedInterface(name: "tight", rateTarget: 60, grace: 0)
+    let mesh = SpyInterface(name: "mesh")
+    let local = SpyInterface(name: "local", clientCount: 1)
+    t.register(interface: iface)
+    t.register(interface: mesh)
+    t.register(interface: local)
+    let dest = try Destination(
+      identity: Identity(), direction: .in, kind: .single,
+      appName: "ratelimit", aspects: ["relay"])
+    XCTAssertFalse(t.isAnnounceRateBlocked(destinationHash: dest.hash, interface: iface))
+
+    iface.inboundHandler?(try Packet.unpack(try Announce.make(for: dest).pack()), iface)
+
+    XCTAssertTrue(mesh.sent.isEmpty, "a rate-blocked announce isn't rebroadcast")
+    XCTAssertEqual(local.sent.filter { $0.destinationHash == dest.hash }.count, 1)
+  }
+
+  /// `Transport.py:2584`: a path response never goes through the rate table.
+  func testPathResponseIsNotRateChecked() throws {
+    let t = Transport()
+    let iface = RateLimitedInterface(name: "tight", rateTarget: 60, grace: 0)
+    t.register(interface: iface)
+    let dest = try Destination(
+      identity: Identity(), direction: .in, kind: .single,
+      appName: "ratelimit", aspects: ["response"])
+    XCTAssertFalse(t.isAnnounceRateBlocked(destinationHash: dest.hash, interface: iface))
+
+    let response = try Announce.make(for: dest, isPathResponse: true)
+    iface.inboundHandler?(try Packet.unpack(try response.pack()), iface)
+
+    XCTAssertNotNil(t.paths[dest.hash])
+  }
 }
