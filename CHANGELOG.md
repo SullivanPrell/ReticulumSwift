@@ -84,6 +84,14 @@ cells, which need the Swift and Go nodes built.
 - An `rngit` node whose configuration sits under `~/.config/rngit` now keeps its files there.
   It used `~/.rngit/reticulum` (`rngit/server.py:2017-2023`).
 
+- A rate-blocked announce is cached, reaches the announce handlers and local clients, and
+  updates an existing path's next hop, hops, random blobs, interface and packet, leaving the
+  path's timestamp and expiry alone (`Transport.py:2579-2760`). It still isn't rebroadcast,
+  creates no path and writes no tunnel entry. The port dropped it outright. The rate check also
+  moves to where Python makes it: only for an announce the path table would accept, and never
+  for a path response (`:2584`). The port counted every announce and blocked path responses
+  too. Only an interface with `announce_rate_target` set rate-blocks.
+
 ### Fixed with RNS 1.6.0
 
 - A repeated announce carrying the ratchet already known keeps that ratchet's received time.
@@ -97,10 +105,6 @@ cells, which need the Swift and Go nodes built.
 
 ### Not ported from RNS 1.6.0
 
-- A rate-blocked announce. Python still caches it, calls the announce handlers, and updates an
-  existing path's next hop, hops, random blobs, interface and packet, leaving its timestamp and
-  expiry alone (`Transport.py:2579-2760`). The port returns before any of that, as it did
-  before 1.6.0. Only an interface with `announce_rate_target` set rate-blocks.
 - `destination_type_map`, which only names types in log lines (`Transport.py:271`, `:4695`).
 - Requester signatures on type registrations. Python leaves validating them as a TODO
   (`Transport.py:4652`).
