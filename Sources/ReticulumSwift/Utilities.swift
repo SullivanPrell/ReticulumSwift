@@ -67,6 +67,15 @@ public enum RNSUtilities {
     prettysize(bps / 8, suffix: "b") + "ps"
   }
 
+  /// A stamp cost or value, quantized and printed to three places, or `"n"` when there is
+  /// none.
+  ///
+  /// Mirrors Python `RNS.prettycost(value)` (`RNS/__init__.py:183-186`, RNS 1.6.0).
+  public static func prettycost(_ value: Double?) -> String {
+    guard let value else { return "n" }
+    return String(format: "%.3f", Stamps.quantizeCost(value))
+  }
+
   // MARK: - Time formatting
 
   /// Human-readable duration.

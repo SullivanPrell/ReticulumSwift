@@ -30,6 +30,10 @@ public protocol AnnounceHandler: AnyObject {
   /// Mirrors Python's optional `receive_path_responses` attribute.
   var receivePathResponses: Bool { get }
 
+  /// While `true`, Transport skips this handler. Mirrors the `paused` attribute RNS 1.6.0
+  /// gives every handler (`Transport.py:2769`, `3229`).
+  var paused: Bool { get }
+
   /// Called when a matching announce arrives. Mirrors Python's
   /// `received_announce(destination_hash, announced_identity, app_data, announce_packet_hash, is_path_response)`.
   ///
@@ -49,6 +53,7 @@ public protocol AnnounceHandler: AnyObject {
 extension AnnounceHandler {
   // Default: don't filter path-response announces (handlers opt in by overriding to true).
   public var receivePathResponses: Bool { false }
+  public var paused: Bool { false }
 
   // Backwards-compatible shim: if the full signature isn't overridden,
   // fall back through the chain to the no-arg baseline.

@@ -12,10 +12,10 @@ import XCTest
 
 @testable import ReticulumSwift
 
-/// A link's own lifecycle leaves the path's responsiveness alone.
+/// A link marks its path responsive once established, and otherwise leaves it alone.
 ///
-/// Python's `Link` never calls `mark_path_responsive` or `mark_path_unresponsive`. Only the
-/// jobs loop marks a path unresponsive, on a transport node, when a relayed link request goes
+/// RNS 1.6.0's `Link` calls `mark_path_responsive` when the proof validates (`Link.py:513`) and
+/// never `mark_path_unresponsive`. Only the jobs loop marks a path unresponsive, on a transport node, when a relayed link request goes
 /// unproven (`Transport.py:931`, `:944`). An announce resets it (`Transport.py:2460`).
 final class PathResponsivenessTests: XCTestCase {
 
@@ -35,7 +35,7 @@ final class PathResponsivenessTests: XCTestCase {
     }
   }
 
-  func testSuccessfulLinkEstablishmentLeavesThePathStateAlone() throws {
+  func testSuccessfulLinkEstablishmentMarksThePathResponsive() throws {
     let aT = Transport()
     let bT = Transport()
     let bId = Identity()
@@ -69,9 +69,9 @@ final class PathResponsivenessTests: XCTestCase {
     _ = try Link.initiate(destination: bDest, transport: aT)
     wait(for: [established], timeout: 1.0)
 
-    XCTAssertTrue(
+    XCTAssertFalse(
       aT.pathIsUnresponsive(to: bDest.hash),
-      "Python's link never calls `mark_path_responsive`")
+      "`Link.py:513` calls `mark_path_responsive` on establishment")
     _ = (aT, bT)
   }
 

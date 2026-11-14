@@ -150,7 +150,7 @@ final class RoamingPathExpiryTests: XCTestCase {
     let hash = Data(repeating: 0xCD, count: 16)
 
     // 7-day path that's only 6 hours old—shouldn't be swept.
-    let entry = Transport.PathEntry(
+    var entry = Transport.PathEntry(
       destinationHash: hash,
       nextHopInterface: iface,
       hops: 1,
@@ -158,6 +158,8 @@ final class RoamingPathExpiryTests: XCTestCase {
       identityHash: Data(repeating: 0x02, count: 16)
       // expires = lastHeard + 7 days (default) → still in the future
     )
+    // Used, so RNS 1.6.0's never-used linger (`Transport.py:1145`) doesn't cull it first.
+    entry.used = Date()
     transport.restore(path: entry, forDestination: hash)
     transport.sweepExpiredPaths()
     XCTAssertTrue(
@@ -194,7 +196,7 @@ final class RoamingPathExpiryTests: XCTestCase {
     let hash = Data(repeating: 0x12, count: 16)
 
     // 7-day path that's only 1 day old—must not be swept.
-    let entry = Transport.PathEntry(
+    var entry = Transport.PathEntry(
       destinationHash: hash,
       nextHopInterface: iface,
       hops: 1,
@@ -202,6 +204,8 @@ final class RoamingPathExpiryTests: XCTestCase {
       identityHash: Data(repeating: 0x04, count: 16)
       // default expires = now + 7 days
     )
+    // Used, so RNS 1.6.0's never-used linger (`Transport.py:1145`) doesn't cull it first.
+    entry.used = Date()
     transport.restore(path: entry, forDestination: hash)
     transport.sweepExpiredPaths()
     XCTAssertTrue(

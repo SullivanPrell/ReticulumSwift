@@ -18,12 +18,12 @@ import XCTest
 /// check that the stamp is taken over the packed info rather than over something else.
 private final class FixedStampGenerator: DiscoveryStampGenerator {
   private(set) var lastMaterial: Data?
-  private(set) var lastTargetCost: Int?
+  private(set) var lastTargetCost: Double?
   private(set) var lastExpandRounds: Int?
   var stamp: Data? = Data(repeating: 0xAB, count: 32)
   private(set) var callCount = 0
 
-  func generateStamp(material: Data, targetCost: Int, expandRounds: Int) -> Data? {
+  func generateStamp(material: Data, targetCost: Double, expandRounds: Int) -> Data? {
     lastMaterial = material
     lastTargetCost = targetCost
     lastExpandRounds = expandRounds
@@ -37,8 +37,8 @@ private final class FixedStampGenerator: DiscoveryStampGenerator {
 private final class AcceptAnyStamp: DiscoveryStampValidator {
   let stampSize: Int = 32
   func stampWorkblock(material: Data, expandRounds: Int) -> Data { material }
-  func stampValue(workblock: Data, stamp: Data) -> Int { 99 }
-  func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+  func stampValue(workblock: Data, stamp: Data) -> Double { 99 }
+  func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
 }
 
 /// The interface-discovery publish side—Python's `Discovery.InterfaceAnnouncer`.
@@ -268,7 +268,7 @@ final class InterfaceAnnouncerTests: XCTestCase {
   /// RNS 1.5.0 moved from 14 to 16.
   func testAnUnconfiguredCostUsesTheDefault() throws {
     _ = try announcer().announceData(for: discoverableServer())
-    XCTAssertEqual(generator.lastTargetCost, InterfaceAnnouncer.defaultStampValue)
+    XCTAssertEqual(generator.lastTargetCost, Double(InterfaceAnnouncer.defaultStampValue))
     XCTAssertEqual(InterfaceAnnouncer.defaultStampValue, 16)
   }
 
@@ -438,6 +438,7 @@ final class InterfaceAnnouncerTests: XCTestCase {
     let handler = InterfaceAnnounceHandler(
       requiredValue: 16,
       stampValidator: AcceptAnyStamp(),
+      hopsTo: { _ in 1 },
       callback: { received = $0 })
     let announcing = Identity()
     handler.receivedAnnounce(

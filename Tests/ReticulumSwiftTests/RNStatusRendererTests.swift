@@ -752,9 +752,9 @@ final class RNStatusRendererTests: XCTestCase {
       "\n"
         + "Name                      Type         Status     Last Heard   Value   Running          Location       \n"
         + String(repeating: "-", count: 110) + "\n"
-        + "my-backbone               Backbone   ✓ Available  4m ago       21      RNS 1.5.5        55.6761, 12.5683\n"
-        + "a-very-long-discovered-i… RNode      ? Unknown    2h ago       18      Unknown          N/A            \n"
-        + "stale-one                 TCPServer  × Stale      3d ago       14      RNSwift 1.22.1-… -35.2717, 138.5542\n"
+        + "my-backbone               Backbone   ✓ Available  4m ago       21.000  RNS 1.5.5        55.6761, 12.5683\n"
+        + "a-very-long-discovered-i… RNode      ? Unknown    2h ago       18.000  Unknown          N/A            \n"
+        + "stale-one                 TCPServer  × Stale      3d ago       14.000  RNSwift 1.22.1-… -35.2717, 138.5542\n"
     )
   }
 
@@ -812,13 +812,13 @@ final class RNStatusRendererTests: XCTestCase {
         + "Stack        : RNS 1.5.5\n"
         + "Status       : Available\n"
         + "Transport    : Enabled\n"
+        + "Stamp Value  : 21.000\n"
         + "Distance     : 2 hops\n"
         + "Discovered   : 3d and 11h ago\n"
         + "Last Heard   : 4m ago\n"
         + "Location     : 55.6761, 12.5683, 12.0m h\n"
         + "Address      : example.org\n"
         + "Port         : 4965\n"
-        + "Stamp Value  : 21\n"
         + "\nConfiguration Entry:\n"
         + "  [[my-backbone]]\n"
         + "    type = BackboneInterface\n"
@@ -830,6 +830,7 @@ final class RNStatusRendererTests: XCTestCase {
         + "Stack        : Unknown\n"
         + "Status       : Unknown\n"
         + "Transport    : Disabled\n"
+        + "Stamp Value  : 18.000\n"
         + "Distance     : 1 hop\n"
         + "Discovered   : 1d and 1h ago\n"
         + "Last Heard   : 2h ago\n"
@@ -838,7 +839,6 @@ final class RNStatusRendererTests: XCTestCase {
         + "Bandwidth    : 125,000 Hz\n"
         + "Sprd. Factor : 8\n"
         + "Coding Rate  : 5\n"
-        + "Stamp Value  : 18\n"
         + "\nConfiguration Entry:\n"
         + "  [[rnode]]\n"
         + "    type = RNodeInterface\n"
@@ -849,13 +849,13 @@ final class RNStatusRendererTests: XCTestCase {
         + "Stack        : RNSwift 1.22.1-development\n"
         + "Status       : Stale\n"
         + "Transport    : Enabled\n"
+        + "Stamp Value  : 14.000\n"
         + "Distance     : 3 hops\n"
         + "Discovered   : 10d and 10h ago\n"
         + "Last Heard   : 3d and 11h ago\n"
         + "Location     : -35.2717, 138.5542\n"
         + "Address      : 1.2.3.4\n"
         + "Port         : 4242\n"
-        + "Stamp Value  : 14\n"
         + "\nConfiguration Entry:\n"
         + "  [[stale]]\n"
         + "    type = TCPClientInterface\n")
@@ -876,8 +876,22 @@ final class RNStatusRendererTests: XCTestCase {
     var info = Self.discoveredFixtures()[0]
     info.configEntry = nil
     let rendered = Self.renderer().renderDiscoveredDetails([info])
-    XCTAssertTrue(rendered.hasSuffix("Stamp Value  : 21\n"))
+    XCTAssertTrue(rendered.hasSuffix("Port         : 4965\n"))
     XCTAssertFalse(rendered.contains("Configuration Entry"))
+  }
+
+  /// RNS 1.6.0 prints the costs an interface announced after its stamp value, when the
+  /// entry has both keys (`rnstatus.py:265-271`, `299-300`).
+  func testDiscoveredDetailsShowAnnouncedCosts() {
+    var info = Self.discoveredFixtures()[0]
+    info.value = 23.4567
+    info.hasCostInfo = true
+    info.dstCost = 23.4567
+    let rendered = Self.renderer().renderDiscoveredDetails([info])
+    XCTAssertTrue(
+      rendered.contains(
+        "Transport    : Enabled\nStamp Value  : 23.457\nCosts        : Dst 23.457, PR n\n"
+          + "Distance     : 2 hops\n"), rendered)
   }
 
   // MARK: - Formatting helpers

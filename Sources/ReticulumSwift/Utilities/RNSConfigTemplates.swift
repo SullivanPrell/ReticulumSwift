@@ -14,9 +14,9 @@ import Foundation
 /// and the file Python writes from the second.
 ///
 /// Python reference:
-/// - ``exampleConfig``: `RNS/Utilities/rnsd.py` lines 90-616, `__example_rns_config__`—what
+/// - ``exampleConfig``: `RNS/Utilities/rnsd.py` lines 90-692, `__example_rns_config__`—what
 ///   `rnsd --exampleconfig` prints.
-/// - ``defaultConfig``: `RNS/Reticulum.py` line 2195+, `__default_rns_config__`, which
+/// - ``defaultConfig``: `RNS/Reticulum.py` line 2425+, `__default_rns_config__`, which
 ///   `Reticulum.__create_default_config()` passes through ConfigObj and writes on a first run
 ///   as ``defaultConfigFile``.
 ///
@@ -25,13 +25,14 @@ import Foundation
 /// created by ReticulumSwift is indistinguishable from one created by Python RNS, and so
 /// that `rnsd --exampleconfig` is byte-identical to Python's.
 ///
-/// The two templates contain zero backslashes and zero double-quote characters, so they paste
-/// into a Swift `"""` literal verbatim. `RNSConfigTemplatesTests` pins all three SHA-256
-/// digests; if you edit any of the strings those tests must fail.
+/// The templates contain no backslashes and no `"""`, so they paste into a Swift `"""`
+/// literal, with each trailing space spelled `\u{20}` so no editor or formatter can strip it.
+/// `RNSConfigTemplatesTests` pins all three SHA-256 digests; if you edit any of the strings
+/// those tests must fail.
 public enum RNSConfigTemplates {
 
-  /// Python: `rnsd.py:90-616`, `__example_rns_config__` (RNS 1.5.5). 15926 bytes, 526 newlines,
-  /// SHA-256 54c9c8e2099e49cd23910e24cf1ef0529256810863fca9b476210d6aba9d8ebf.
+  /// Python: `rnsd.py:90-692`, `__example_rns_config__` (RNS 1.6.0). 18342 bytes, 602 newlines,
+  /// SHA-256 4c12061692e0d06cff9337b3e601ac6e4561a6bb486289a311fc6ae1c22d5875.
   public static let exampleConfig: String = """
     # This is an example Reticulum config file.
     # You should probably edit it to include any additional,
@@ -67,6 +68,7 @@ public enum RNSConfigTemplates {
     # sockets, this can be done with the instance_name option:
 
     instance_name = default
+
 
     # Some platforms don't support domain sockets, and if that
     # is the case, you can isolate different instances by
@@ -235,12 +237,87 @@ public enum RNSConfigTemplates {
     # blackhole_update_interval = 60
 
 
+    # You can enable a hop limiter, that will drop all packets
+    # exceeding the specified maximum hop count.
+
+    # hop_limiter = 16
+
+
     # When not running as a transport node, it is possible to
     # force the use of the same, static transport identity
     # for every instance start. Defaults to using a new identity
     # at every instance start, if transport is disabled.
 
     # static_transport_identity = no
+
+    [stamps]
+    # This section configures stamping behaviour and defaults.
+    # In most cases, you do not need to change this, but on
+    # constrained systems especially, tuning these parameters
+    # can be very beneficial
+
+    # During the 1.6.x phased transition to network stamp usage,
+    # it is possible to enable early opt-in on stamp generation
+    # and enforcement. RNS 1.6.0 includes all the required stamp
+    # generation and verification functionality, and actively
+    # validates stamps, while leaving generation, emission and
+    # enforcement disabled by default for destinations and PRs.
+    # Link requests will be stamped already from 1.6.0 if a cost
+    # has been announced by the destination. Version 1.6.1 will
+    # enable generation and emission by default, and version
+    # 1.6.2 will finally activate enforcement. Any of these
+    # options can be enabled early by configuration:
+
+    # stamp_destinations = yes
+    # stamp_prs = yes
+    # enforce_stamps = yes
+
+
+    # The default required stamp cost for an announce, and its
+    # destination to be considered valid. This applies both to
+    # announces received directly, and transported by this node,
+    # if transport is enabled. Any announced destination not
+    # meeting the cost will be ignored.
+
+    # destination_cost = 23.5
+
+
+    # The default value this instance will target when generating
+    # new destination stamps. An application may set a higher
+    # target, but applications requesting a lower value than the
+    # default will always generate at least the default value.
+    # Destination stamps are cached and reused, so a one-time
+    # high-value generation is usually a good idea.
+
+    # destination_value = 25.0
+
+
+    # The default required path request stamp cost. Path requests
+    # that do not meet the requirement are ignored.
+
+    # pr_cost = 15.8
+
+
+    # The default target value of path request stamps generated
+    # by this instance.
+
+    # pr_value = 15.8
+
+
+    # The default link request stamp cost to use, if one has not
+    # been announced by the destination the link is established
+    # to, or if it is unknown. In practice, all destinations will
+    # include their required link cost in each announce, and this
+    # option is rarely necessary.
+
+    # lr_cost = 12.5
+
+
+    # The maximum amount of time to spend attempting to generate
+    # a link request and path request stamps, in seconds.
+
+    # lr_stamp_timeout = 15
+    # pr_stamp_timeout = 15
 
 
     [logging]
@@ -287,7 +364,7 @@ public enum RNSConfigTemplates {
 
       # The following example enables communication with other
       # local Reticulum peers using UDP broadcasts.
-      
+    \u{20}\u{20}
       [[UDP Interface]]
         type = UDPInterface
         enabled = no
@@ -330,24 +407,24 @@ public enum RNSConfigTemplates {
       # This example demonstrates a TCP server interface.
       # It will listen for incoming connections on the
       # specified IP address and port number.
-      
+    \u{20}\u{20}
       [[TCP Server Interface]]
         type = TCPServerInterface
         enabled = no
 
         # This configuration will listen on all IP
         # interfaces on port 4242
-        
+    \u{20}\u{20}\u{20}\u{20}
         listen_ip = 0.0.0.0
         listen_port = 4242
 
         # Alternatively you can bind to a specific IP
-        
+    \u{20}\u{20}\u{20}\u{20}
         # listen_ip = 10.0.0.88
         # listen_port = 4242
 
         # Or a specific network device
-        
+    \u{20}\u{20}\u{20}\u{20}
         # device = eth0
         # port = 4242
 
@@ -395,7 +472,7 @@ public enum RNSConfigTemplates {
         # host device before connecting. BLE
         # devices can be connected by name,
         # BLE MAC address or by any available.
-        
+    \u{20}\u{20}\u{20}\u{20}
         # Connect to specific device by name
         # port = ble://RNode 3B87
 
@@ -415,7 +492,7 @@ public enum RNSConfigTemplates {
         # Set TX power to 7 dBm (5 mW)
         txpower = 7
 
-        # Select spreading factor 8. Valid 
+        # Select spreading factor 8. Valid\u{20}
         # range is 7 through 12, with 7
         # being the fastest and 12 having
         # the longest range.
@@ -444,8 +521,8 @@ public enum RNSConfigTemplates {
         # flow control can be useful. By default
         # it is disabled.
         flow_control = False
-        
-        
+    \u{20}\u{20}\u{20}\u{20}
+    \u{20}\u{20}\u{20}\u{20}
       # An example KISS modem interface. Useful for running
       # Reticulum over packet radio hardware.
 
@@ -460,7 +537,7 @@ public enum RNSConfigTemplates {
 
         # Set the serial baud-rate and other
         # configuration parameters.
-        speed = 115200    
+        speed = 115200\u{20}\u{20}\u{20}\u{20}
         databits = 8
         parity = none
         stopbits = 1
@@ -508,7 +585,7 @@ public enum RNSConfigTemplates {
       # way, Reticulum will automatically encapsulate it's
       # traffic in AX.25 and also identify your stations
       # transmissions with your callsign and SSID.
-      # 
+      #\u{20}
       # Only do this if you really need to! Reticulum doesn't
       # need the AX.25 layer for anything, and it incurs extra
       # overhead on every packet to encapsulate in AX.25.
@@ -531,7 +608,7 @@ public enum RNSConfigTemplates {
 
         # Set the serial baud-rate and other
         # configuration parameters.
-        speed = 115200    
+        speed = 115200\u{20}\u{20}\u{20}\u{20}
         databits = 8
         parity = none
         stopbits = 1
@@ -562,12 +639,13 @@ public enum RNSConfigTemplates {
 
     """
 
-  /// Python: `RNS/Reticulum.py:2195+`, `__default_rns_config__` (RNS 1.5.5). 3950 bytes,
-  /// 120 newlines, SHA-256 9b811134dd64a46a49ec2af3fe0d7293aa94bcc8c547c44b42f0eb38eef92e42.
+  /// Python: `RNS/Reticulum.py:2425+`, `__default_rns_config__` (RNS 1.6.0). 4576 bytes,
+  /// 137 newlines, SHA-256 efc715b029497d8a9719fd270c988dd9ec8cd4d33822dda00ab9b8fc89754ff6.
   ///
   /// Python writes ConfigObj's serialisation of this literal rather than the literal itself,
   /// which is ``defaultConfigFile``.
   public static let defaultConfig: String = """
+    ##########################################################
     # This is the default Reticulum config file.
     # You should probably edit it to include any additional,
     # interfaces and settings you might need.
@@ -652,6 +730,22 @@ public enum RNSConfigTemplates {
 
     # blackhole_sources = 521c87a83afb8f29e4455e77930b973b
 
+    ##########################################################
+    # This section configures stamping behaviour and defaults.
+    # In most cases, you do not need to change this, but on
+    # constrained systems especially, tuning these parameters
+    # can be very beneficial. See "rnsd --exampleconfig" or
+    # the manual for a full explanation of these parameters.
+
+    [stamps]
+
+    # destination_cost = 23.5
+    # destination_value = 25.0
+    # pr_cost = 15.8
+    # pr_value = 15.8
+    # lr_cost = 12.5
+    # lr_stamp_timeout = 15
+    # pr_stamp_timeout = 15
 
     [logging]
     # Valid log levels are 0 through 8:
@@ -667,7 +761,7 @@ public enum RNSConfigTemplates {
 
     loglevel = 4
 
-
+    ##########################################################
     # The interfaces section defines the physical and virtual
     # interfaces Reticulum will use to communicate on. This
     # section will contain examples for a variety of interface
@@ -692,13 +786,14 @@ public enum RNSConfigTemplates {
     """
 
   /// What Python writes on a first run: ConfigObj's serialisation of ``defaultConfig``
-  /// (`Reticulum.py:1355-1360`), captured from RNS 1.5.5. 4035 bytes, 119 newlines, SHA-256
-  /// a927b3a6e728fde161c05e8526bb46a72325852a4605ebe602779a61ea0ebcb7.
+  /// (`Reticulum.py:1451-1456`), captured from RNS 1.6.0. 4661 bytes, 136 newlines, SHA-256
+  /// 73356fbad9fa0331caa82c12622e28cced39d7d37cbfd4692ce022dd8e7a60dd.
   ///
   /// ConfigObj indents each section's comments and keys, so this differs from the literal in
   /// layout only. Each line holding only spaces is spelled with `\u{20}` escapes so that no
   /// editor or formatter can strip it.
   public static let defaultConfigFile: String = """
+    ##########################################################
     # This is the default Reticulum config file.
     # You should probably edit it to include any additional,
     # interfaces and settings you might need.
@@ -783,6 +878,22 @@ public enum RNSConfigTemplates {
 
     # blackhole_sources = 521c87a83afb8f29e4455e77930b973b
 
+    ##########################################################
+    # This section configures stamping behaviour and defaults.
+    # In most cases, you do not need to change this, but on
+    # constrained systems especially, tuning these parameters
+    # can be very beneficial. See "rnsd --exampleconfig" or
+    # the manual for a full explanation of these parameters.
+
+    [stamps]
+
+    # destination_cost = 23.5
+    # destination_value = 25.0
+    # pr_cost = 15.8
+    # pr_value = 15.8
+    # lr_cost = 12.5
+    # lr_stamp_timeout = 15
+    # pr_stamp_timeout = 15
 
     [logging]
       # Valid log levels are 0 through 8:
@@ -798,7 +909,7 @@ public enum RNSConfigTemplates {
     \u{20}\u{20}
       loglevel = 4
 
-
+    ##########################################################
     # The interfaces section defines the physical and virtual
     # interfaces Reticulum will use to communicate on. This
     # section will contain examples for a variety of interface

@@ -36,8 +36,8 @@ public enum RNGitNodeEnvironment {
 
   /// The directory a node keeps its files in, where `given` names none.
   ///
-  /// A node whose own configuration stands under `~/.config/rngit` keeps its files under
-  /// `~/.rngit/reticulum`, so the client's files and the node's do not share a directory.
+  /// A node whose own configuration stands under `~/.config/rngit` keeps its files there
+  /// (RNS 1.6.0, `rngit/server.py:2017-2023`; 1.5.x used `~/.rngit/reticulum`).
   public static func directory(
     given: String?, home: String = DaemonBootstrap.homeDirectory().path,
     isDirectory: (String) -> Bool = RNGitClientEnvironment.isDirectory,
@@ -48,7 +48,7 @@ public enum RNGitNodeEnvironment {
       return systemDirectory
     }
     if isDirectory(home + "/.config/rngit"), isFile(home + "/.config/rngit/config") {
-      return home + "/.rngit/reticulum"
+      return home + "/.config/rngit"
     }
     return home + "/.rngit"
   }

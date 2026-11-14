@@ -73,11 +73,14 @@ final class ResourceHashmapRequestTests: XCTestCase {
     try sender.send(payload: data, autoCompress: false)
     XCTAssertGreaterThan(sender.partCount, 2 * ResourceAdvertisement.hashmapMaxLength)
 
+    // At this MTU a 74-hash advertisement can't fit, so RNS 1.6.0 sends it without a hashmap
+    // (`Resource.py:1375-1378`); segment 0's last hash comes from the sender's own copy.
     let advPacket = try XCTUnwrap(aI.sent.last { $0.context == .resourceAdvertisement })
     let adv = try ResourceAdvertisement.unpack(bLink.decrypt(advPacket.data))
-    XCTAssertEqual(
-      adv.hashmap.count, ResourceAdvertisement.hashmapMaxLength * ResourceTransfer.mapHashLength)
-    let lastMapHash = adv.hashmap.suffix(ResourceTransfer.mapHashLength)
+    XCTAssertEqual(adv.hashmap, Data())
+    let segment0 = try XCTUnwrap(sender.advertisement).hashmap.prefix(
+      ResourceAdvertisement.hashmapMaxLength * ResourceTransfer.mapHashLength)
+    let lastMapHash = segment0.suffix(ResourceTransfer.mapHashLength)
 
     aI.sent.removeAll()
     let request = Data([ResourceTransfer.hashmapIsExhausted]) + lastMapHash + sender.resourceHash

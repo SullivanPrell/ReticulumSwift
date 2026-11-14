@@ -226,6 +226,41 @@ extension StorageInventory.Entry {
     authority: .reference("Identity.py:198,220")
   )
 
+  /// `storage/known_destinations.db`—RNS 1.6.0's SQLite store of known destinations and
+  /// their ratchets, which replaces the file above and the `ratchets` directory.
+  ///
+  /// Python: `Identity.py:261,278`.
+  public static let knownDestinationsDatabase = StorageInventory.Entry(
+    ["storage", "known_destinations.db"], .file,
+    authority: .reference("Identity.py:261,278")
+  )
+
+  /// `storage/known_destinations.db-wal` and `-shm`, SQLite's write-ahead log and its index,
+  /// present while the database is open in WAL mode.
+  ///
+  /// Python: `Storage.py:238`.
+  public static let knownDestinationsDatabaseWAL = StorageInventory.Entry(
+    ["storage", "known_destinations.db-wal"], .file,
+    authority: .reference("Storage.py:238")
+  )
+
+  /// See ``knownDestinationsDatabaseWAL``.
+  ///
+  /// Python: `Storage.py:238`.
+  public static let knownDestinationsDatabaseSHM = StorageInventory.Entry(
+    ["storage", "known_destinations.db-shm"], .file,
+    authority: .reference("Storage.py:238")
+  )
+
+  /// `storage/known_destinations.imported`—the legacy file, renamed once the database has
+  /// imported it.
+  ///
+  /// Python: `Identity.py:290`.
+  public static let knownDestinationsImported = StorageInventory.Entry(
+    ["storage", "known_destinations.imported"], .file,
+    authority: .reference("Identity.py:290")
+  )
+
   /// `storage/destination_table`—umsgpack list of 8-element entries.
   ///
   /// Python: `Transport.py:3405-3408` (write), `:307-360` (read).
@@ -348,13 +383,23 @@ extension StorageInventory.Entry {
     authority: .reference("I2PInterface.py:90-91")
   )
 
+  /// `storage/stamps`—this node's own destination stamps, one `<hash>.dstamp` each.
+  ///
+  /// Python: `Stamps.py:872-886` (RNS 1.6.0).
+  public static let stamps = StorageInventory.Entry(
+    ["storage", "stamps"], .directory,
+    authority: .reference("Stamps.py:872-886")
+  )
+
   /// Every entry in the inventory, in the order a fresh storage tree is laid out.
   public static let all: [StorageInventory.Entry] = [
     config, storage, interfaceModules,
     identity, transportIdentity, ratchets, identityRatchets,
-    knownDestinations, destinationTable, tunnels, packetHashlist,
+    knownDestinations, knownDestinationsDatabase, knownDestinationsDatabaseWAL,
+    knownDestinationsDatabaseSHM, knownDestinationsImported,
+    destinationTable, tunnels, packetHashlist,
     cache, announceCache, resources, identities,
     blackhole, blackholeLocal, blackholeLocalTemp, i2p,
-    discovery, discoveredInterfaces,
+    discovery, discoveredInterfaces, stamps,
   ]
 }

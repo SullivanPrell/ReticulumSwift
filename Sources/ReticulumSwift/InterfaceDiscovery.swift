@@ -40,6 +40,10 @@ enum DiscoveryFieldKey: UInt64 {
   // (`Discovery.py:461-464`).
   case transportImpl = 0xFD
   case transportVers = 0xFC
+  // Added in RNS 1.6.0: the interface's quantized destination and path-request stamp costs
+  // (`Discovery.py:171-172`).
+  case dstCost = 0xFB
+  case prCost = 0xFA
   case operatorAddress = 0xF0
 }
 
@@ -55,6 +59,8 @@ private enum PersistKey {
   static let value = "value"
   static let transportID = "transport_id"
   static let networkID = "network_id"
+  static let dstCost = "dst_cost"
+  static let prCost = "pr_cost"
   static let hops = "hops"
   static let latitude = "latitude"
   static let longitude = "longitude"
@@ -101,9 +107,16 @@ extension DiscoveredInterfaceInfo {
       (.string(PersistKey.name), .string(name)),
       (.string(PersistKey.received), .double(received)),
       (.string(PersistKey.stamp), .bytes(stamp)),
-      (.string(PersistKey.value), .int(Int64(value))),
+      (.string(PersistKey.value), .double(value)),
       (.string(PersistKey.transportID), .string(transportID)),
       (.string(PersistKey.networkID), .string(networkID)),
+    ]
+    // A file from before 1.6.0 has neither key, and round-trips without them.
+    if hasCostInfo {
+      pairs.append((.string(PersistKey.dstCost), dstCost.map { .double($0) } ?? .nil))
+      pairs.append((.string(PersistKey.prCost), prCost.map { .double($0) } ?? .nil))
+    }
+    pairs += [
       (.string(PersistKey.hops), .int(Int64(hops))),
       (.string(PersistKey.latitude), latitude.map { .double($0) } ?? .nil),
       (.string(PersistKey.longitude), longitude.map { .double($0) } ?? .nil),
@@ -141,18 +154,46 @@ extension DiscoveredInterfaceInfo {
 
 /// Protocol for validating proof-of-work stamps on discovery announces.
 ///
-/// Allows `InterfaceAnnounceHandler` to be decoupled from the LXMF package.
-/// In production, wrap `LXStamper` from LXMFSwift to conform.
-/// In tests, use a passthrough implementation that always accepts any stamp.
+/// ``DiscoveryStamper`` is the production conformance. In tests, use a passthrough
+/// implementation that always accepts any stamp.
 public protocol DiscoveryStampValidator {
   /// Number of bytes in a valid stamp (typically 32).
   var stampSize: Int { get }
   /// Build the work block from `material` using `expandRounds` HKDF rounds.
   func stampWorkblock(material: Data, expandRounds: Int) -> Data
-  /// Count leading zero bits of SHA256(workblock + stamp). Higher = stronger proof.
-  func stampValue(workblock: Data, stamp: Data) -> Int
-  /// Return true if SHA256(workblock + stamp) has ≥ `targetCost` leading zero bits.
-  func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool
+  /// The stamp's value: its leading zero bits of SHA256(workblock + stamp), on RNS 1.6.0's
+  /// 1/256 grid. Higher = stronger proof.
+  func stampValue(workblock: Data, stamp: Data) -> Double
+  /// Return true if SHA256(workblock + stamp) meets `targetCost`.
+  func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool
+}
+
+/// RNS 1.6.0's discovery stamper, `RNS.Stamps` (`Discovery.py:52`, `264`).
+///
+/// Before 1.6.0 Python imported `LXMF.LXStamper`, so this port took the stamper by injection.
+/// The stamps are still 32 bytes and an integer cost sets the same target, so a 1.5.x peer
+/// accepts what this produces.
+public struct DiscoveryStamper: DiscoveryStampValidator, DiscoveryStampGenerator {
+  /// Creates a stamper.
+  public init() {}
+  /// `STAMP_SIZE`.
+  public var stampSize: Int { Stamps.stampSize }
+  /// `stamp_workblock`.
+  public func stampWorkblock(material: Data, expandRounds: Int) -> Data {
+    Stamps.stampWorkblock(material, expandRounds: expandRounds)
+  }
+  /// `stamp_value`.
+  public func stampValue(workblock: Data, stamp: Data) -> Double {
+    Stamps.stampValue(workblock: workblock, stamp: stamp)
+  }
+  /// `stamp_valid`.
+  public func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool {
+    Stamps.stampValid(stamp: stamp, targetCost: targetCost, workblock: workblock)
+  }
+  /// `generate_stamp`.
+  public func generateStamp(material: Data, targetCost: Double, expandRounds: Int) -> Data? {
+    Stamps.generateStamp(material, stampCost: targetCost, expandRounds: expandRounds)?.stamp
+  }
 }
 
 // MARK: - DiscoveredInterfaceInfo
@@ -171,8 +212,8 @@ public struct DiscoveredInterfaceInfo {
   public var received: TimeInterval
   /// Discovery stamp the announce carried.
   public var stamp: Data
-  /// Proof-of-work value of `stamp`.
-  public var value: Int
+  /// Proof-of-work value of `stamp`, fractional since RNS 1.6.0.
+  public var value: Double
   /// Announcing transport identity as undelimited hex.
   public var transportID: String  // hex, no delimiters
   /// Network identity the interface belongs to, as undelimited hex.
@@ -222,6 +263,16 @@ public struct DiscoveredInterfaceInfo {
   ///
   /// `info["version"]` (`Discovery.py:349`, `365`).
   public var version: String? = nil
+  /// The interface's quantized destination stamp cost, from `DST_COST` (RNS 1.6.0,
+  /// `Discovery.py:345`, `369`).
+  ///
+  /// Nil from a peer that didn't publish one.
+  public var dstCost: Double? = nil
+  /// The interface's quantized path-request stamp cost, from `PR_COST` (`Discovery.py:346`).
+  public var prCost: Double? = nil
+  /// Whether the entry carries `dst_cost` and `pr_cost` keys, as every entry a 1.6.0 receiver
+  /// builds does, possibly None (`Discovery.py:368-369`; `rnstatus.py:265`).
+  public var hasCostInfo: Bool = false
 
   // Persistence fields (written/read by InterfaceDiscovery)
   /// Timestamp this interface was first heard.
@@ -371,7 +422,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
   ///
   /// Mirrors Python `InterfaceAnnouncer.DEFAULT_STAMP_VALUE` (bumped 14 → 16 in
   /// RNS 1.4.0, commit be36abd8).
-  public static let defaultRequiredValue: Int = 16
+  public static let defaultRequiredValue: Double = 16
 
   private static let discoverableTypes: Set<String> = [
     "BackboneInterface", "TCPServerInterface", "TCPClientInterface",
@@ -388,7 +439,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
   // MARK: - State
 
   /// Minimum stamp value an announce must carry to be accepted.
-  public let requiredValue: Int
+  public let requiredValue: Double
   private let stampValidator: DiscoveryStampValidator
   /// Hop count to a destination, as `RNS.Transport.hops_to` returns it.
   private let hopsTo: (Data) -> Int
@@ -403,7 +454,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
   /// default is `Transport.PATHFINDER_M`, the count `hops_to` returns for a destination
   /// with no path (`Transport.py:3141-3142`).
   public init(
-    requiredValue: Int = defaultRequiredValue,
+    requiredValue: Double = defaultRequiredValue,
     stampValidator: DiscoveryStampValidator,
     hopsTo: @escaping (Data) -> Int = { _ in Transport.pathfinderM },
     callback: ((DiscoveredInterfaceInfo) -> Void)? = nil
@@ -436,6 +487,9 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     guard let appData, appData.count > stampValidator.stampSize + 1 else { return }
     let flags = appData[0]
     let payload = appData.dropFirst()
+    // An announce from beyond the path finder's reach is ignored (`Discovery.py:292-296`).
+    let hops = hopsTo(destinationHash)
+    guard hops <= Transport.pathfinderM - 1 else { return }
 
     let encrypted = (flags & Self.flagEncrypted) != 0
     if encrypted {
@@ -455,13 +509,12 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     let valid = stampValidator.stampValid(
       stamp: stamp, targetCost: requiredValue, workblock: workblock)
 
-    guard valid, value >= requiredValue else { return }
+    guard valid else { return }
 
     guard case .map(let map) = (try? MsgPack.decode(packed)) else { return }
     guard
       let info = buildInfo(
-        map: map, identity: identity,
-        destinationHash: destinationHash,
+        map: map, identity: identity, hops: hops,
         stamp: stamp, value: value)
     else { return }
     callback?(info)
@@ -472,8 +525,8 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
   private func buildInfo(
     map: [(MsgPack.Value, MsgPack.Value)],
     identity: Identity,
-    destinationHash: Data,
-    stamp: Data, value: Int
+    hops: Int,
+    stamp: Data, value: Double
   ) -> DiscoveredInterfaceInfo? {
     // Build lookup dict from int key to value
     var d: [UInt64: MsgPack.Value] = [:]
@@ -512,7 +565,7 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
       type: interfaceType, transport: transport, name: name,
       received: now, stamp: stamp, value: value,
       transportID: transportIDHex, networkID: networkIDHex,
-      hops: hopsTo(destinationHash),
+      hops: hops,
       latitude: latitude, longitude: longitude, height: height,
       ifacNetname: nil, ifacNetkey: nil,
       reachableOn: nil, port: nil,
@@ -527,6 +580,11 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     // them as strings.
     info.implName = extractOptionalString(d[DiscoveryFieldKey.transportImpl.rawValue])
     info.version = extractOptionalString(d[DiscoveryFieldKey.transportVers.rawValue])
+    info.dstCost = extractOptionalDouble(d[DiscoveryFieldKey.dstCost.rawValue])
+      .map(Stamps.quantizeCost)
+    info.prCost = extractOptionalDouble(d[DiscoveryFieldKey.prCost.rawValue])
+      .map(Stamps.quantizeCost)
+    info.hasCostInfo = true
 
     // IFAC values count only as non-empty strings (RNS 1.5.5, `Discovery.py:378-379`).
     if let nn = extractOptionalString(d[DiscoveryFieldKey.ifacNetname.rawValue]), !nn.isEmpty {
@@ -804,7 +862,7 @@ public final class InterfaceDiscovery {
   /// The lowest announced version autoconnect dials.
   ///
   /// Python: `InterfaceDiscovery.AUTOCONNECT_MIN_V` (`Discovery.py:487`).
-  public static let autoconnectMinVersion = "1.5.2"
+  public static let autoconnectMinVersion = "1.5.7"
 
   /// The mode a transport node adopts a discovered peer under.
   ///
@@ -913,7 +971,7 @@ public final class InterfaceDiscovery {
       RNStatusRenderer.implementation(info).map { " (\($0))" } ?? " (unknown implementation)"
     Reticulum.log(
       "Discovered \(info.type)\(versionStr) \(info.hops) hop\(info.hops == 1 ? "" : "s") away "
-        + "with stamp value \(info.value): \(info.name)", level: .debug)
+        + "with stamp value \(RNSUtilities.prettycost(info.value)): \(info.name)", level: .debug)
     let filename = RNSUtilities.hexrep(discoveryHash, delimit: false)
     let filepath = storagePath.appendingPathComponent(filename)
 
@@ -1045,6 +1103,19 @@ public final class InterfaceDiscovery {
           + "auto-connect criteria not satisfied", level: .debug)
       return
     }
+    // An interface whose destinations or path requests cost more than this node values isn't
+    // worth dialling; an unpublished cost counts as 0 (`Discovery.py:805-814`).
+    let dstValue = Stamps.quantizeCost(transport.stamps.destinationValue)
+    let prValue = Stamps.quantizeCost(transport.stamps.prValue)
+    guard Stamps.quantizeCost(info.dstCost ?? 0) <= dstValue,
+      Stamps.quantizeCost(info.prCost ?? 0) <= prValue
+    else {
+      Reticulum.log(
+        "Discovered \(info.type) \(info.name) costs more than this node values, "
+          + "not auto-connecting", level: .debug)
+      return
+    }
+
     guard !interfaceExists(info) else {
       Reticulum.log(
         "Discovered \(info.type) already exists, not auto-connecting",
@@ -1411,7 +1482,7 @@ public final class InterfaceDiscovery {
       let name = stringVal(d[PersistKey.name]),
       let received = doubleVal(d[PersistKey.received]),
       let stamp = bytesVal(d[PersistKey.stamp]),
-      let value = intVal(d[PersistKey.value]),
+      let value = doubleVal(d[PersistKey.value]),
       let transportID = stringVal(d[PersistKey.transportID]),
       let networkID = stringVal(d[PersistKey.networkID]),
       let hops = intVal(d[PersistKey.hops]),
@@ -1420,7 +1491,7 @@ public final class InterfaceDiscovery {
       let heardCount = intVal(d[PersistKey.heardCount])
     else { return nil }
 
-    return DiscoveredInterfaceInfo(
+    var info = DiscoveredInterfaceInfo(
       type: type, transport: transport, name: name,
       received: received, stamp: stamp, value: value,
       transportID: transportID, networkID: networkID, hops: hops,
@@ -1442,8 +1513,12 @@ public final class InterfaceDiscovery {
       operatorLxmfAddress: stringVal(d[PersistKey.operatorLxmfAddress]),
       implName: stringVal(d[PersistKey.implName]),
       version: stringVal(d[PersistKey.version]),
+      dstCost: doubleValOpt(d[PersistKey.dstCost]),
+      prCost: doubleValOpt(d[PersistKey.prCost]),
       discovered: discovered, lastHeard: lastHeard, heardCount: heardCount
     )
+    info.hasCostInfo = d[PersistKey.dstCost] != nil && d[PersistKey.prCost] != nil
+    return info
   }
 
   // MARK: - Unpack helpers

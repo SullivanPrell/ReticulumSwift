@@ -14,7 +14,7 @@ import XCTest
 
 /// Byte-exactness of the two configuration templates Python ships.
 ///
-/// Python reference: `RNS/Utilities/rnsd.py:90-616` (`__example_rns_config__`, printed by
+/// Python reference: `RNS/Utilities/rnsd.py:90-692` (`__example_rns_config__`, printed by
 /// `rnsd --exampleconfig`) and `RNS/Reticulum.py:1818+` (`__default_rns_config__`, written on
 /// a first run). Both are ~15 KB and ~4 KB of prose that no reviewer can diff by eye, so the
 /// SHA-256 assertions are the real guard—they were computed from the Python source with:
@@ -31,24 +31,24 @@ final class RNSConfigTemplatesTests: XCTestCase {
   // MARK: - __example_rns_config__
 
   func testExampleConfigByteLength() {
-    XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 15926)
+    XCTAssertEqual(RNSConfigTemplates.exampleConfig.utf8.count, 18342)
   }
 
   func testExampleConfigSHA256() {
     XCTAssertEqual(
       sha256Hex(RNSConfigTemplates.exampleConfig),
-      "54c9c8e2099e49cd23910e24cf1ef0529256810863fca9b476210d6aba9d8ebf")
+      "4c12061692e0d06cff9337b3e601ac6e4561a6bb486289a311fc6ae1c22d5875")
   }
 
   func testExampleConfigNewlineCount() {
-    XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 526)
+    XCTAssertEqual(RNSConfigTemplates.exampleConfig.filter { $0 == "\n" }.count, 602)
   }
 
   func testExampleConfigBoundaries() {
     XCTAssertTrue(
       RNSConfigTemplates.exampleConfig
         .hasPrefix("# This is an example Reticulum config file.\n"))
-    // The literal ends with a blank line, so `print()` takes stdout to 15927 bytes.
+    // The literal ends with a blank line, so `print()` takes stdout to 18343 bytes.
     XCTAssertTrue(
       RNSConfigTemplates.exampleConfig
         .hasSuffix("    persistence = 200\n    slottime = 20\n\n"))
@@ -121,20 +121,22 @@ final class RNSConfigTemplatesTests: XCTestCase {
   // MARK: - __default_rns_config__
 
   func testDefaultConfigByteLength() {
-    XCTAssertEqual(RNSConfigTemplates.defaultConfig.utf8.count, 3950)
-    XCTAssertEqual(RNSConfigTemplates.defaultConfig.filter { $0 == "\n" }.count, 120)
+    XCTAssertEqual(RNSConfigTemplates.defaultConfig.utf8.count, 4576)
+    XCTAssertEqual(RNSConfigTemplates.defaultConfig.filter { $0 == "\n" }.count, 137)
   }
 
   func testDefaultConfigSHA256() {
     XCTAssertEqual(
       sha256Hex(RNSConfigTemplates.defaultConfig),
-      "9b811134dd64a46a49ec2af3fe0d7293aa94bcc8c547c44b42f0eb38eef92e42")
+      "efc715b029497d8a9719fd270c988dd9ec8cd4d33822dda00ab9b8fc89754ff6")
   }
 
   func testDefaultConfigBoundaries() {
     XCTAssertTrue(
       RNSConfigTemplates.defaultConfig
-        .hasPrefix("# This is the default Reticulum config file.\n"))
+        .hasPrefix(
+          "##########################################################\n# This is the default Reticulum config file.\n"
+        ))
     XCTAssertTrue(
       RNSConfigTemplates.defaultConfig
         .hasSuffix("  [[Default Interface]]\n    type = AutoInterface\n    enabled = Yes\n\n"))
@@ -160,16 +162,16 @@ final class RNSConfigTemplatesTests: XCTestCase {
 
   // MARK: - What a first run writes
 
-  /// Python writes ConfigObj's serialisation of the literal (`Reticulum.py:1355-1360`).
+  /// Python writes ConfigObj's serialisation of the literal (`Reticulum.py:1451-1456`).
   ///
-  /// The digest is of RNS 1.5.5 writing `ConfigObj(__default_rns_config__)`, which matches
+  /// The digest is of RNS 1.6.0 writing `ConfigObj(__default_rns_config__)`, which matches
   /// the file its own first run leaves.
   func testDefaultConfigFileIsWhatPythonWritesOnAFirstRun() {
-    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.utf8.count, 4035)
-    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.filter { $0 == "\n" }.count, 119)
+    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.utf8.count, 4661)
+    XCTAssertEqual(RNSConfigTemplates.defaultConfigFile.filter { $0 == "\n" }.count, 136)
     XCTAssertEqual(
       sha256Hex(RNSConfigTemplates.defaultConfigFile),
-      "a927b3a6e728fde161c05e8526bb46a72325852a4605ebe602779a61ea0ebcb7")
+      "73356fbad9fa0331caa82c12622e28cced39d7d37cbfd4692ce022dd8e7a60dd")
   }
 
   func testDefaultConfigFileParsesAsTheTemplateDoes() {

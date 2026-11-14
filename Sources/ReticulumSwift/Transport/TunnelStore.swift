@@ -19,7 +19,7 @@ import Foundation
 /// peer re-announced—which for a tunnel endpoint that's itself waiting isn't guaranteed.
 ///
 /// `umsgpack.packb` of a list of `[tunnel_id, interface_hash, paths, expires]` (`:3942`), where
-/// each path is the same 8-element list a `destination_table` entry uses. That shared shape is
+/// each path is the same 9-element list a `destination_table` entry uses. That shared shape is
 /// shared here too: both go through ``PathStore/Entry``'s codec, so the two files can't drift
 /// into disagreeing about what a field means.
 public struct TunnelStore {

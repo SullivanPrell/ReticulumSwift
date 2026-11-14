@@ -22,11 +22,11 @@ import Foundation
 /// Kept separate from the validator so each side declares only what it needs—a node that only
 /// discovers never generates, and a test double for one isn't forced to implement the other.
 public protocol DiscoveryStampGenerator {
-  /// Search for a stamp over `material` reaching at least `targetCost` leading zero bits,
-  /// against a work block expanded over `expandRounds` HKDF rounds.
+  /// Search for a stamp over `material` meeting `targetCost`, against a work block expanded
+  /// over `expandRounds` HKDF rounds.
   ///
   /// - Returns: the stamp, or `nil` when none was found. A `nil` aborts the announce.
-  func generateStamp(material: Data, targetCost: Int, expandRounds: Int) -> Data?
+  func generateStamp(material: Data, targetCost: Double, expandRounds: Int) -> Data?
 }
 
 // MARK: - InterfaceAnnouncer
@@ -89,11 +89,11 @@ public final class InterfaceAnnouncer {
   private var stampCache: [Data: Data] = [:]
 
   private let lock = NSLock()
-  private var isRunning = false
-  /// Incremented on every `start()`, so a `stop()` + `start()` can't leave two loops running.
+  /// A timer rather than a sleeping loop, so a running announcer holds no thread between
+  /// passes.
   ///
-  /// The same shape as `BlackholeUpdater`.
-  private var generation = 0
+  /// Every stack with a discoverable interface runs one.
+  private var timer: DispatchSourceTimer?
 
   // MARK: - Init
 
@@ -114,45 +114,29 @@ public final class InterfaceAnnouncer {
 
   // MARK: - Lifecycle
 
-  /// Starts the periodic announce loop.
+  /// Starts the periodic announce job.
   public func start() {
     lock.lock()
-    guard !isRunning else {
-      lock.unlock()
-      return
-    }
-    isRunning = true
-    generation &+= 1
-    let myGeneration = generation
-    lock.unlock()
-
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      self?.runJob(generation: myGeneration)
-    }
+    defer { lock.unlock() }
+    guard timer == nil else { return }
+    // Python sleeps *before* its first pass (`Discovery.py:78-79`), so a node that has just
+    // started doesn't announce into a transport whose interfaces are still coming up.
+    let timer = DispatchSource.makeTimerSource(queue: .global(qos: .background))
+    timer.schedule(deadline: .now() + Self.jobInterval, repeating: Self.jobInterval)
+    timer.setEventHandler { [weak self] in self?.tick() }
+    timer.resume()
+    self.timer = timer
   }
 
-  /// Stops the periodic announce loop.
+  /// Stops the periodic announce job.
   public func stop() {
     lock.lock()
-    isRunning = false
-    lock.unlock()
+    defer { lock.unlock() }
+    timer?.cancel()
+    timer = nil
   }
 
-  private func runJob(generation myGeneration: Int) {
-    while true {
-      // Python sleeps *before* its first pass (`Discovery.py:78-79`), so a node that has
-      // just started doesn't announce into a transport whose interfaces are still coming
-      // up.
-      Thread.sleep(forTimeInterval: Self.jobInterval)
-
-      lock.lock()
-      let keepRunning = isRunning && generation == myGeneration
-      lock.unlock()
-      guard keepRunning else { return }
-
-      tick()
-    }
-  }
+  deinit { timer?.cancel() }
 
   // MARK: - Job
 
@@ -209,6 +193,13 @@ public final class InterfaceAnnouncer {
     // (`Discovery.py:110-134`). A script that's configured and fails aborts the announce.
     if interface.discoveryLocation != nil, !applyLocationCommand(to: interface) { return nil }
 
+    // `interface.destination_cost` and `pr_cost` fall back to the transport's
+    // (`Interface.py:350-358`).
+    let stamps = transport?.stamps ?? StampSettings()
+    let costs = (
+      dst: interface.destinationCost ?? stamps.destinationCost,
+      pr: interface.prCost ?? stamps.prCost
+    )
     var flags: UInt8 = 0
     var info: [(MsgPack.Value, MsgPack.Value)] = [
       (.uint(DiscoveryFieldKey.interfaceType.rawValue), .string(interfaceType)),
@@ -225,6 +216,8 @@ public final class InterfaceAnnouncer {
         .uint(DiscoveryFieldKey.transportVers.rawValue),
         .string(InterfaceDiscoveryHelpers.implementationVersion)
       ),
+      (.uint(DiscoveryFieldKey.dstCost.rawValue), .double(Stamps.quantizeCost(costs.dst))),
+      (.uint(DiscoveryFieldKey.prCost.rawValue), .double(Stamps.quantizeCost(costs.pr))),
       (.uint(DiscoveryFieldKey.name.rawValue), Self.optionalString(interface.discoveryName)),
       (
         .uint(DiscoveryFieldKey.latitude.rawValue), Self.optionalDouble(interface.discoveryLatitude)
@@ -377,7 +370,7 @@ public final class InterfaceAnnouncer {
     } else {
       guard
         let found = stampGenerator.generateStamp(
-          material: infohash, targetCost: cost,
+          material: infohash, targetCost: Double(cost),
           expandRounds: Self.workblockExpandRounds)
       else { return nil }
       stamp = found

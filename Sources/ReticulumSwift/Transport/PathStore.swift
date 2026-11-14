@@ -12,7 +12,7 @@ import Foundation
 
 /// On-disk snapshot of Transport's path table—`storage/destination_table`.
 ///
-/// The format is the reference's, byte for byte: `umsgpack.packb` of a list of 8-element entries
+/// The format is the reference's, byte for byte: `umsgpack.packb` of a list of 9-element entries
 /// (`Transport.py:3390-3407` writing, `:307-360` reading). A config directory is a shared surface
 /// the moment `rnsd` can be either implementation, so this file has to be one either can read.
 ///
@@ -30,7 +30,7 @@ import Foundation
 /// `destination_table` beside a JSON announce cache restores nothing at all.
 public struct PathStore {
 
-  /// One serialised path—the reference's 8-element entry, in its order.
+  /// One serialised path—the reference's 9-element entry, in its order.
   ///
   /// Field order is load-bearing: Python indexes positionally (`Transport.py:317-327`), so a
   /// field in the wrong slot is a silently wrong path rather than a parse failure.
@@ -74,6 +74,10 @@ public struct PathStore {
     /// 7—the full hash of the announce packet that established this path, under which
     /// `storage/cache/announces/` holds it.
     public var announceHash: Data
+    /// 8—`IDX_PT_USED`, when the path last carried traffic as unix seconds, `0` if never.
+    ///
+    /// RNS 1.6.0 added it; an older 8-element entry loads as used now (`Transport.py:557`).
+    public var used: TimeInterval
 
     /// Creates a path table entry.
     public init(
@@ -84,8 +88,10 @@ public struct PathStore {
       expires: TimeInterval,
       randomBlobs: [Data],
       interfaceHash: Data?,
-      announceHash: Data
+      announceHash: Data,
+      used: TimeInterval = 0
     ) {
+      self.used = used
       self.destinationHash = destinationHash
       self.timestamp = timestamp
       self.receivedFrom = receivedFrom
@@ -96,10 +102,10 @@ public struct PathStore {
       self.announceHash = announceHash
     }
 
-    // MARK: - The shared 8-element codec
+    // MARK: - The shared 9-element codec
 
     /// The reference serialises a destination-table entry and a tunnel path with the *same*
-    /// eight fields in the same order (`Transport.py:3390-3397` and `:3470-3479`), and reads
+    /// nine fields in the same order (`Transport.py:3390-3397` and `:3470-3479`), and reads
     /// them back with the same positional indexing (`:317-327` and `:379-386`).
     ///
     /// One codec, so
@@ -114,15 +120,17 @@ public struct PathStore {
         .array(randomBlobs.map { .bytes($0) }),
         interfaceHash.map(MsgPack.Value.bytes) ?? .nil,
         .bytes(announceHash),
+        used == 0 ? .uint(0) : .double(used),
       ])
     }
 
-    /// Returns `nil` for anything that isn't the reference's 8-element entry.
+    /// Returns `nil` for anything that isn't the reference's 9-element entry, or the
+    /// 8-element one RNS before 1.6.0 wrote.
     ///
     /// The caller
     /// skips it rather than aborting the file, as the reference's per-entry `try` does.
     public static func decode(_ value: MsgPack.Value) -> Entry? {
-      guard case .array(let f) = value, f.count == 8,
+      guard case .array(let f) = value, f.count >= 8,
         case .bytes(let destinationHash) = f[0],
         let timestamp = f[1].asDouble,
         case .bytes(let receivedFrom) = f[2],
@@ -141,7 +149,8 @@ public struct PathStore {
         expires: expires,
         randomBlobs: blobs.compactMap(\.asData),
         interfaceHash: interfaceHash,
-        announceHash: announceHash
+        announceHash: announceHash,
+        used: f.count > 8 ? f[8].asDouble ?? 0 : Date().timeIntervalSince1970
       )
     }
 
@@ -163,7 +172,8 @@ public struct PathStore {
         expires: path.expires.timeIntervalSince1970,
         randomBlobs: Array(path.randomBlobs.suffix(Transport.persistRandomBlobs)),
         interfaceHash: interfaceHash,
-        announceHash: announceHash
+        announceHash: announceHash,
+        used: path.used?.timeIntervalSince1970 ?? 0
       )
     }
 
@@ -203,6 +213,7 @@ public struct PathStore {
         )
       }
       path.announceEmittedAt = Transport.timebaseFromRandomBlobs(randomBlobs)
+      path.used = used == 0 ? nil : Date(timeIntervalSince1970: used)
       return path
     }
   }

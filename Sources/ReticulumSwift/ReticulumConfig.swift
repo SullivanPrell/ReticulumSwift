@@ -35,6 +35,10 @@ public struct ReticulumConfig {
   public var reticulum: ReticulumSection = .init()
   /// Parsed `[logging]` section.
   public var logging: LoggingSection = .init()
+  /// Parsed `[filter]` section (RNS 1.6.0).
+  public var filter: FilterSection = .init()
+  /// Parsed `[stamps]` section (RNS 1.6.0).
+  public var stamps: StampsSection = .init()
   /// Parsed interface blocks, in file order.
   public var interfaces: [InterfaceConfig] = []
   /// Whether the file has an `[interfaces]` section, even an empty one.
@@ -120,10 +124,11 @@ public struct ReticulumConfig {
     /// (RNS commit 02924656).
     public var blackholeUpdateInterval: TimeInterval? = nil
     /// Minimum PoW stamp value required to accept a discovery announce.
-    /// `nil` means use `Reticulum.requiredDiscoveryValue()` default (14).
+    /// `nil` means use `Reticulum.requiredDiscoveryValue()` default (16).
     ///
-    /// Mirrors Python's `required_discovery_value`. Positive → override; 0 or missing → nil.
-    public var requiredDiscoveryValue: Int? = nil
+    /// Mirrors Python's `required_discovery_value`, read as a float since RNS 1.6.0
+    /// (`Reticulum.py:674-677`). Positive → override; 0 or missing → nil.
+    public var requiredDiscoveryValue: Double? = nil
     /// Whether to publish this node's blackhole list to the network.
     ///
     /// Mirrors Python's `publish_blackhole = No`. Defaults to `false`.
@@ -264,6 +269,68 @@ public struct ReticulumConfig {
     ///
     /// Mirrors Python's `logtimestamps`.
     public var logTimestamps: Bool = true
+  }
+
+  // MARK: - [filter] section
+
+  /// The `[filter]` section (`Reticulum.py:487-503`).
+  public struct FilterSection {
+    /// `required_only`.
+    public var requiredOnly = false
+    /// `ignored_types`: destination types (`app.aspect…`) to block.
+    public var ignoredTypes: [String] = []
+    /// `allowed_types`: destination types to admit under `required_only`.
+    public var allowedTypes: [String] = []
+    /// `hop_limiter`, unclamped as written.
+    public var hopLimiter: Int?
+
+    /// Applies the section, clamping `hop_limiter` to `0…PATHFINDER_M`.
+    public func apply(to transport: Transport) {
+      transport.requiredDestinationsOnly = requiredOnly
+      for type in ignoredTypes { transport.blockDestinationType(type) }
+      for type in allowedTypes { transport.allowDestinationType(type) }
+      if let v = hopLimiter { transport.hopLimiter = max(0, min(v, Transport.pathfinderM)) }
+    }
+  }
+
+  // MARK: - [stamps] section
+
+  /// The `[stamps]` section (`Reticulum.py:505-555`).
+  ///
+  /// The switches only ever turn on.
+  public struct StampsSection {
+    /// `enforce_stamps`: enforces announce, path-request and link-request stamps.
+    public var enforceStamps = false
+    /// `stamp_destinations`.
+    public var stampDestinations = false
+    /// `stamp_prs`.
+    public var stampPRs = false
+    /// `always_stamp_lrs`.
+    public var alwaysStampLRs = false
+    /// `destination_cost`, `destination_value`, `pr_cost`, `pr_value` and `lr_cost`, unclamped.
+    public var destinationCost, destinationValue, prCost, prValue, lrCost: Double?
+    /// `lr_stamp_timeout` and `pr_stamp_timeout` in seconds, unclamped.
+    public var lrStampTimeout, prStampTimeout: Double?
+
+    /// Applies the section, clamping costs to `STAMP_COST_CAP`, `lr_cost` to `LINK_COST_CAP`
+    /// and the timeouts to at least 20 ms.
+    public func apply(to stamps: inout StampSettings) {
+      if enforceStamps {
+        stamps.enforced = true
+        stamps.lrEnforced = true
+      }
+      if stampDestinations { stamps.stampDestinations = true }
+      if stampPRs { stamps.stampPRs = true }
+      if alwaysStampLRs { stamps.alwaysStampLRs = true }
+      let cap = Double(Transport.stampCostCap)
+      if let v = destinationCost { stamps.destinationCost = max(0, min(v, cap)) }
+      if let v = destinationValue { stamps.destinationValue = max(0, min(v, cap)) }
+      if let v = prCost { stamps.prCost = max(0, min(v, cap)) }
+      if let v = prValue { stamps.prValue = max(0, min(v, cap)) }
+      if let v = lrCost { stamps.lrCost = max(0, min(v, Double(Transport.linkCostCap))) }
+      if let v = lrStampTimeout { stamps.linkStampTimeout = max(0.020, v) }
+      if let v = prStampTimeout { stamps.prStampTimeout = max(0.020, v) }
+    }
   }
 
   // MARK: - [[Interface]] subsections
@@ -497,7 +564,7 @@ public struct ReticulumConfig {
           }
         case "required_discovery_value":
           // Python: if v > 0: set; else set to None.
-          if let n = Int(value), n > 0 {
+          if let n = Double(value), n > 0 {
             cfg.reticulum.requiredDiscoveryValue = n
           } else {
             cfg.reticulum.requiredDiscoveryValue = nil
@@ -624,6 +691,31 @@ public struct ReticulumConfig {
         case "logtimestamps": if let b = parseBool(value) { cfg.logging.logTimestamps = b }
         default:
           cfg.unrecognisedKeys.append("logging.\(key)")
+        }
+      case "filter":
+        let list = value.components(separatedBy: ",")
+          .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        switch key {
+        case "required_only": if let b = parseBool(value) { cfg.filter.requiredOnly = b }
+        case "ignored_types": cfg.filter.ignoredTypes += list
+        case "allowed_types": cfg.filter.allowedTypes += list
+        case "hop_limiter": if let n = Int(value) { cfg.filter.hopLimiter = n }
+        default: cfg.unrecognisedKeys.append("filter.\(key)")
+        }
+      case "stamps":
+        switch key {
+        case "enforce_stamps": cfg.stamps.enforceStamps = parseBool(value) == true
+        case "stamp_destinations": cfg.stamps.stampDestinations = parseBool(value) == true
+        case "stamp_prs": cfg.stamps.stampPRs = parseBool(value) == true
+        case "always_stamp_lrs": cfg.stamps.alwaysStampLRs = parseBool(value) == true
+        case "destination_cost": cfg.stamps.destinationCost = Double(value)
+        case "destination_value": cfg.stamps.destinationValue = Double(value)
+        case "pr_cost": cfg.stamps.prCost = Double(value)
+        case "pr_value": cfg.stamps.prValue = Double(value)
+        case "lr_cost": cfg.stamps.lrCost = Double(value)
+        case "lr_stamp_timeout": cfg.stamps.lrStampTimeout = Double(value)
+        case "pr_stamp_timeout": cfg.stamps.prStampTimeout = Double(value)
+        default: cfg.unrecognisedKeys.append("stamps.\(key)")
         }
       case "interfaces":
         if currentSubName != nil {

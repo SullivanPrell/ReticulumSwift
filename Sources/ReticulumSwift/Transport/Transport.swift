@@ -73,6 +73,40 @@ public final class Transport {
   ///
   /// Python: `Transport.AP_PATH_TIME = 60*60*24`.
   public static let apPathExpiry: TimeInterval = 60 * 60 * 24
+
+  /// `path_timeout_from_interface` (`Transport.py:3617-3621`).
+  static func pathTimeout(for interface: (any Interface)?) -> TimeInterval {
+    switch interface?.mode {
+    case .roaming: return roamingPathExpiry
+    case .accessPoint: return apPathExpiry
+    default: return pathExpiry
+    }
+  }
+
+  /// How long a never-used path lingers on a transport node.
+  ///
+  /// Python: `UNUSED_PATH_LINGER`.
+  public static let unusedPathLinger: TimeInterval = 60 * 60 * 1.75
+  /// How long a never-used path lingers on a leaf node.
+  ///
+  /// Python: `UNUSED_PATH_LINGER_LEAF`.
+  public static let unusedPathLingerLeaf: TimeInterval = 60 * 12
+  /// Never-used paths above this many are culled.
+  ///
+  /// Python: `PATH_POOL_UNUSED_TARGET`.
+  public static let pathPoolUnusedTarget = 2048
+  /// Below this bitrate an interface is slow.
+  ///
+  /// Python: `PATH_SLOW_BITRATE`.
+  public static let pathSlowBitrate = 25000
+  /// A slow interface's never-used paths linger this many times longer.
+  ///
+  /// Python: `PATH_SLOW_LINGER_FACTOR`.
+  public static let pathSlowLingerFactor: Double = 10
+  /// How often the never-used pool is counted.
+  ///
+  /// Python: `pool_size_check_interval`.
+  public static let poolSizeCheckInterval: TimeInterval = 5 * 60
   /// How often the jobs loop runs (seconds).
   public static let jobInterval: TimeInterval = 5
   /// How often the jobs loop invokes `cleanKnownDestinations`.
@@ -80,6 +114,8 @@ public final class Transport {
   /// Mirrors Python's periodic clean-jobs scheduler in `Reticulum.__clean_caches`
   /// (RNS commit b408699e). Defaults to 1 hour to amortise the table walk.
   public static let knownDestinationsCleanInterval: TimeInterval = 60 * 60
+  /// Python's `kd_flush_interval` (`Transport.py:351`).
+  public static let knownDestinationsFlushInterval: TimeInterval = 10
   /// Python's `mgmt_announce_interval` (`Transport.py:266`).
   public static let managementAnnounceInterval: TimeInterval = 2 * 60 * 60
   /// Maximum receipts tracked simultaneously.
@@ -140,6 +176,16 @@ public final class Transport {
   ///
   /// Mirrors Python's `Transport.UNUSED_DESTINATION_LINGER`.
   public static let unusedDestinationLinger: TimeInterval = 6 * 60
+
+  /// Hard cap on any stamp cost, keeping 14-byte stamps searchable.
+  ///
+  /// Python: `Transport.STAMP_COST_CAP = 100` (RNS 1.6.0).
+  public static let stampCostCap: Int = 100
+
+  /// Hard cap on a link-request cost.
+  ///
+  /// Python: `Transport.LINK_COST_CAP = 40`.
+  public static let linkCostCap: Int = 40
 
   // Path responsiveness state values.
   /// Responsiveness of a path that has not been probed yet.
@@ -216,6 +262,11 @@ public final class Transport {
     /// already present is a replay and is rejected (prevents path forging /
     /// network loops via captured announces).
     public var randomBlobs: [Data] = []
+    /// When this path last carried traffic, `nil` if it never has: Python's `IDX_PT_USED`,
+    /// where `0` means never (`Transport.py:1618`, `2387`, `2440`).
+    ///
+    /// A never-used path is culled after ``Transport/unusedPathLinger`` (`:1145`).
+    public var used: Date?
 
     /// A routable path through `nextHopInterface`.
     ///
@@ -333,6 +384,7 @@ public final class Transport {
         && lhs.announceEmittedAt == rhs.announceEmittedAt
         && lhs.cachedAnnounceHash == rhs.cachedAnnounceHash
         && lhs.randomBlobs == rhs.randomBlobs
+        && lhs.used == rhs.used
     }
   }
 
@@ -535,6 +587,9 @@ public final class Transport {
   /// a positional list—a missing field 1 shifts the public key into the slot the reader takes
   /// as app data.
   var knownDestinationPacketHash: [Data: Data] = [:]
+  /// Fields 5-7 of a known-destinations entry (RNS 1.6.0, `Identity.py:114`): the announce's
+  /// stamp and its value, valid or not, and the link-request cost it announced when valid.
+  var knownDestinationStamps: [Data: (stamp: Data?, value: Double?, lrCost: Double?)] = [:]
   /// Destinations explicitly marked as retained—never swept by `cleanKnownDestinations`.
   ///
   /// Mirrors Python's last_use == -1 sentinel.
@@ -561,12 +616,54 @@ public final class Transport {
   /// matching `Identity.RATCHET_EXPIRY`.
   public var ratchetExpiry: TimeInterval = 60 * 60 * 24 * 30
 
+  /// Stamping switches and costs, Python's `Transport` class attributes (RNS 1.6.0).
+  public var stamps = StampSettings()
+
+  /// Where this node's own destination stamps persist, Python's `<storagepath>/stamps`.
+  ///
+  /// Nil keeps stamps in memory only.
+  public var stampsDirectory: URL?
+
+  /// Python's stamper thread: one serial queue, so stamp work never runs on a caller's thread.
+  private let stampQueue = DispatchQueue(label: "ReticulumSwift.Transport.stamper", qos: .utility)
+
+  /// The stamp value an announce received on `interface` needs: the interface's
+  /// `destination_cost`, else the transport's (`Interface.py:350-353`).
+  func destinationCost(for interface: Interface?) -> Double {
+    interface?.destinationCost ?? stamps.destinationCost
+  }
+
+  /// The stamp value a path request received on `interface` needs (`Interface.py:355-358`).
+  func prCost(for interface: Interface?) -> Double {
+    interface?.prCost ?? stamps.prCost
+  }
+
+  /// Python's `pr_stamp_cache`: path-request stamps keyed on `dst+tag`, at most 256
+  /// (`Transport.py:216-217`).
+  private var prStampCache: [Data: Data] = [:]
+
+  /// `PR_LEGACY_LENGTH`, `PR_LENGTH` and `PR_STAMPED_LENGTH` (`Transport.py:3974-3980`).
+  static let pathRequestLengths: Set<Int> = [32, 48, 64]
+
+  /// The extension a stamping node adds when it relays an unstamped request
+  /// (`Transport.py:3935-3936`).
+  static let lenientPathRequestExtension =
+    Data([Identity.extPayloadMarker, 0xFF]) + Data(count: Identity.stampLength)
+
   /// Optional directory where learned ratchets are persisted, one
   /// file per destination (`<dir>/<desthex>`), matching Python's
   /// `<storagepath>/ratchets/<hex>` layout.
   ///
   /// Set by `Reticulum.start`.
   public var ratchetsDirectory: URL?
+  /// RNS 1.6.0's known-destinations database, Python's `Identity.known_destinations_store`.
+  ///
+  /// `Reticulum.start` opens it for a shared or standalone instance. Nil keeps the legacy
+  /// `known_destinations` file and per-destination ratchet files.
+  public var knownDestinationsStore: KnownDestinationsStore?
+  /// The shared instance's database, where a local client looks up a ratchet it doesn't
+  /// hold (`Identity.py:636-648`).
+  public var sharedKnownDestinationsDatabase: URL?
   /// Established links this node owns, keyed by link ID.
   public private(set) var links: [Data: Link] = [:]  // by link id
   /// Relayed link routes this node forwards, keyed by link ID.
@@ -641,6 +738,27 @@ public final class Transport {
   /// Per-instance propagation limit; defaults to `pathfinderM`.
   public var propagationLimit: UInt8 = UInt8(Transport.pathfinderM)
 
+  /// Python's `HOP_LIMITER`: a packet arriving with this many hops or more is dropped before
+  /// the packet filter (`Transport.py:207`, `2022`). `[filter] hop_limiter` sets it.
+  public var hopLimiter = Transport.pathfinderM
+
+  /// Python's `required_destinations_only`: announce ingress admits only allowed and
+  /// client-wanted destination types (`Transport.py:272`, `2036-2042`).
+  public var requiredDestinationsOnly = false
+
+  /// Python's `application_identity`, the requester this application registers its wanted
+  /// destination types as (`Transport.py:449`).
+  public let applicationIdentity = Identity()
+
+  /// Python's `destination_filters_lock` and the three type tables it guards, keyed by name
+  /// hash (`Transport.py:4615-4620`).
+  ///
+  /// A client type maps to the requesters that want it.
+  let destinationFiltersLock = NSLock()
+  var blockedDestinationTypes: Set<Data> = []
+  var allowedDestinationTypes: Set<Data> = []
+  var clientDestinationTypes: [Data: Set<Data>] = [:]
+
   /// Whether a link-request proof arriving with an unexpected hop count may
   /// correct the path table (after its signature validates).
   ///
@@ -680,6 +798,8 @@ public final class Transport {
   /// Mirrors Python's `Transport.path_states` dict.
   private var pathStates: [Data: UInt8] = [:]
   private let pathStatesLock = NSLock()
+  /// The first pool count waits a check interval after start (`Transport.py:259-260`).
+  private var poolSizeLastChecked = Date()
 
   /// Reverse lookup table for multi-hop proof forwarding.
   ///
@@ -994,6 +1114,15 @@ public final class Transport {
   /// Mirrors Python `Transport.tx_packets`
   /// (`Transport.py:1329`).
   public private(set) var txPackets: Int = 0
+  /// Announces received, sent, and path requests received and sent: Python's
+  /// `announce_rxc`, `announce_txc`, `pr_rxc` and `pr_txc` (RNS 1.6.0, `Transport.py:379-384`).
+  public private(set) var announceRxCount: Int = 0
+  /// Announces sent (`Transport.py:1827`).
+  public private(set) var announceTxCount: Int = 0
+  /// Path requests received (`Transport.py:2132`).
+  public private(set) var prRxCount: Int = 0
+  /// Path requests sent (`Transport.py:1828`).
+  public private(set) var prTxCount: Int = 0
   /// Inbound packets per second over the last sampling interval.
   ///
   /// Python `Transport.rx_pps`.
@@ -1129,6 +1258,8 @@ public final class Transport {
   ///
   /// Used to amortise the sweep at `knownDestinationsCleanInterval` cadence.
   private var lastKnownDestinationsClean: Date = .distantPast
+  /// Python's `kd_last_flush` (`Transport.py:356`).
+  var lastKnownDestinationsFlush: Date = .distantPast
   /// Python's `last_mgmt_announce` (`Transport.py:265`).
   var lastManagementAnnounce: TimeInterval = 0
   /// Python's `mgmt_destinations`, in its order (`Transport.py:371`, `:383-384`, `:515`).
@@ -1807,6 +1938,19 @@ public final class Transport {
     public let rxPPS: Int
     /// Packets sent per second over the last sampling interval.
     public let txPPS: Int
+    /// `rxpkts`, `txpkts`, `arxpkts`, `atxpkts`, `prxpkts` and `ptxpkts` (RNS 1.6.0,
+    /// `Reticulum.py:1823-1828`).
+    public let rxPackets: Int
+    /// Packets sent.
+    public let txPackets: Int
+    /// Announces received.
+    public let announceRxCount: Int
+    /// Announces sent.
+    public let announceTxCount: Int
+    /// Path requests received.
+    public let prRxCount: Int
+    /// Path requests sent.
+    public let prTxCount: Int
   }
 
   /// Returns aggregate transport-level traffic statistics.
@@ -1831,7 +1975,13 @@ public final class Transport {
       prFreqRx: prFreqRx,
       prFreqTx: prFreqTx,
       rxPPS: rxPPS,
-      txPPS: txPPS
+      txPPS: txPPS,
+      rxPackets: rxPackets,
+      txPackets: txPackets,
+      announceRxCount: announceRxCount,
+      announceTxCount: announceTxCount,
+      prRxCount: prRxCount,
+      prTxCount: prTxCount
     )
   }
 
@@ -2486,6 +2636,9 @@ public final class Transport {
   /// Mirrors Python's `interface.received_announce()` call in `Transport.inbound`.
   public func notifyIncomingAnnounce(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordIncomingAnnounce(size: size)
+    metricsLock.lock()
+    announceRxCount += 1
+    metricsLock.unlock()
   }
 
   /// Overload accepting an explicit timestamp—used by tests and internally.
@@ -2501,6 +2654,9 @@ public final class Transport {
   /// Mirrors Python's `interface.sent_announce()` call in `Transport.outbound`.
   public func notifyOutgoingAnnounce(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordOutgoingAnnounce(size: size)
+    metricsLock.lock()
+    announceTxCount += 1
+    metricsLock.unlock()
   }
 
   /// Notifies that `interface` sent an announce at `t`.
@@ -2516,6 +2672,9 @@ public final class Transport {
   /// Mirrors Python's `interface.received_path_request()` call.
   public func notifyIncomingPathRequest(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordIncomingPathRequest(size: size)
+    metricsLock.lock()
+    prRxCount += 1
+    metricsLock.unlock()
   }
 
   /// Notifies that `interface` received a path request at `t`.
@@ -2531,6 +2690,9 @@ public final class Transport {
   /// Mirrors Python's `interface.sent_path_request()` call.
   public func notifyOutgoingPathRequest(on interface: any Interface, size: Int = 0) {
     tracker(for: interface)?.recordOutgoingPathRequest(size: size)
+    metricsLock.lock()
+    prTxCount += 1
+    metricsLock.unlock()
   }
 
   /// Notifies that `interface` sent a path request at `t`.
@@ -2636,6 +2798,13 @@ public final class Transport {
     public let lastHeard: Date
     /// Wall-clock time the path expires.
     public let expires: Date
+    /// The destination's last announce stamp value, `known_destinations[dst][6]`: 0 when it
+    /// carried none, nil for a destination with no known identity (`Reticulum.py:1881-1888`).
+    public var value: Double? = nil
+    /// When the path last carried traffic, `path_table[dst][7]`; nil when never used.
+    public var used: Date? = nil
+    /// The link-request cost the destination announced, `known_destinations[dst][7]`.
+    public var lrCost: Double? = nil
   }
 
   /// Returns the path table, optionally limited to routes within `maxHops`.
@@ -2667,9 +2836,21 @@ public final class Transport {
         // path restored from disk can outlive the interface that heard it.
         interfaceName: displayNames[path.nextHopInterfaceName] ?? path.nextHopInterfaceName,
         lastHeard: path.lastHeard,
-        expires: path.expires
+        expires: path.expires,
+        value: knownIdentities[path.destinationHash] == nil
+          ? nil : knownDestinationStamps[path.destinationHash]?.value ?? 0,
+        used: path.used,
+        lrCost: knownDestinationStamps[path.destinationHash]?.lrCost ?? nil
       )
     }
+  }
+
+  /// The path table's size and how many of its paths never carried traffic, Python's
+  /// `Transport.path_pool_counts()` (RNS 1.6.0, `Transport.py:3565-3569`).
+  public func pathPoolCounts() -> (total: Int, unused: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (paths.count, paths.values.filter { $0.used == nil }.count)
   }
 
   /// Returns the number of entries in the link table.
@@ -2779,20 +2960,35 @@ public final class Transport {
     return true
   }
 
-  /// Mark a known path as responsive.
+  /// Mark a known path as responsive, refreshing its timestamp, expiry and use time.
   ///
-  /// Returns true if the path exists.
-  /// Mirrors Python's `Transport.mark_path_responsive`.
+  /// Returns true if the path exists. Only an event that proves the destination live
+  /// should call this (`Transport.py:3632-3646`).
   @discardableResult
   public func markPathResponsive(for destinationHash: Data) -> Bool {
     lock.lock()
-    let exists = paths[destinationHash] != nil
-    lock.unlock()
-    guard exists else { return false }
+    defer { lock.unlock() }
+    return markPathResponsiveLocked(destinationHash)
+  }
+
+  /// ``markPathResponsive(for:)`` for a caller holding `lock`.
+  private func markPathResponsiveLocked(_ destinationHash: Data) -> Bool {
+    guard var entry = paths[destinationHash] else { return false }
+    let now = Date()
+    entry.lastHeard = now
+    entry.expires = now.addingTimeInterval(Transport.pathTimeout(for: entry.nextHopInterface))
+    entry.used = now
+    paths[destinationHash] = entry
     pathStatesLock.lock()
     pathStates[destinationHash] = Transport.stateResponsive
     pathStatesLock.unlock()
     return true
+  }
+
+  private func markPathUsed(_ destinationHash: Data) {
+    lock.lock()
+    paths[destinationHash]?.used = Date()
+    lock.unlock()
   }
 
   /// Reset responsiveness state to unknown.
@@ -2927,14 +3123,32 @@ public final class Transport {
     return knownIdentities[destinationHash]?.appData
   }
 
+  /// The stamp value of the last announce heard for `destinationHash`, 0 when it carried no
+  /// stamp, or `nil` for an unknown destination.
+  ///
+  /// Mirrors Python's `Identity.recall_stamp_value` (RNS 1.6.0).
+  public func recallStampValue(forDestination destinationHash: Data) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard knownIdentities[destinationHash] != nil else { return nil }
+    return knownDestinationStamps[destinationHash]?.value ?? 0
+  }
+
+  /// The link-request cost `destinationHash` announced with a valid stamp, or `nil` when it
+  /// announced none or is unknown.
+  ///
+  /// Mirrors Python's `Identity.recall_link_cost` (RNS 1.6.0).
+  public func recallLinkCost(forDestination destinationHash: Data) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    return knownDestinationStamps[destinationHash]?.lrCost ?? nil
+  }
+
   /// Get the 10-byte ratchet ID of the known ratchet for a destination.
   ///
   /// Returns nil when no ratchet exists. Mirrors Python's `Identity.current_ratchet_id()`.
   public func currentRatchetID(forDestination destinationHash: Data) -> Data? {
-    lock.lock()
-    defer { lock.unlock() }
-    guard let ratchetPub = knownRatchets[destinationHash] else { return nil }
-    return Identity.ratchetID(forPublicKey: ratchetPub)
+    ratchet(forDestination: destinationHash).map(Identity.ratchetID(forPublicKey:))
   }
 
   /// The 32-byte ratchet PUBLIC key known for a destination, or nil.
@@ -2945,9 +3159,37 @@ public final class Transport {
   /// which returns the 10-byte *identifier* derived from this key and can't be used
   /// as an encryption target.
   public func currentRatchetKey(forDestination destinationHash: Data) -> Data? {
+    ratchet(forDestination: destinationHash)
+  }
+
+  /// `Identity.get_ratchet` (`Identity.py:618-650`): the ratchet in memory, else, for a local
+  /// client, the one the shared instance's database holds and hasn't expired.
+  ///
+  /// A shared or standalone instance loads every stored ratchet at start, so its memory miss
+  /// is a database miss too.
+  private func ratchet(forDestination destinationHash: Data) -> Data? {
     lock.lock()
-    defer { lock.unlock() }
-    return knownRatchets[destinationHash]
+    let held = knownRatchets[destinationHash]
+    lock.unlock()
+    guard held == nil, isConnectedToSharedInstance, let database = sharedKnownDestinationsDatabase
+    else { return held }
+    do {
+      // Opened per miss, as Python does, so a ratchet the instance stored since is found.
+      guard
+        let stored = try KnownDestinationsStore(path: database, readOnly: true)
+          .fetchRatchet(destinationHash),
+        Date().timeIntervalSince1970 < stored.received + ratchetExpiry
+      else { return nil }
+      restore(
+        ratchet: stored.ratchet, forDestination: destinationHash,
+        receivedAt: Date(timeIntervalSince1970: stored.received))
+      return stored.ratchet
+    } catch {
+      Reticulum.log(
+        "Could not fetch ratchet for \(RNSUtilities.prettyhexrep(destinationHash)) from shared "
+          + "instance database. The contained exception was: \(error)", level: .error)
+      return nil
+    }
   }
 
   // MARK: - Lifecycle
@@ -3391,8 +3633,10 @@ public final class Transport {
   /// `:459-462,476`, and `loadKnownRatchets` below). Each side silently destroyed the other's
   /// forward-secrecy state on the first start after a switch.
   private func persistKnownRatchet(_ ratchet: Data, forDestination hash: Data, receivedAt: Date) {
-    // `Identity.py:420`: a local client remembers the ratchet without writing it.
-    guard !isConnectedToSharedInstance, let dir = ratchetsDirectory else { return }
+    // `Identity.py:420`: a local client remembers the ratchet without writing it, and with a
+    // database the next flush writes it (`:540-546`).
+    guard !isConnectedToSharedInstance, knownDestinationsStore == nil, let dir = ratchetsDirectory
+    else { return }
     try? FileManager.default.createDirectory(
       at: dir, withIntermediateDirectories: true
     )
@@ -3461,10 +3705,10 @@ public final class Transport {
   public func encrypt(_ plaintext: Data, forDestination destinationHash: Data) throws -> Data {
     lock.lock()
     let identity = knownIdentities[destinationHash]
-    let ratchet = knownRatchets[destinationHash]
     lock.unlock()
     guard let identity else { throw TransportError.unknownDestination }
-    return try identity.encrypt(plaintext, ratchetPublicKey: ratchet)
+    return try identity.encrypt(
+      plaintext, ratchetPublicKey: ratchet(forDestination: destinationHash))
   }
 
   /// Errors thrown by transport operations.
@@ -3497,14 +3741,20 @@ public final class Transport {
   /// `os.replace`. `Data.write(options: .atomic)` is that same write-then-rename, so a torn
   /// file isn't observable on either side.
   public func saveKnownDestinations(to url: URL) throws {
-    // `Identity.py:179`: the shared instance owns the file.
+    // `Identity.py:216`: the shared instance owns the file.
     guard !isConnectedToSharedInstance else { return }
+    // `Identity.py:218`: with a database, saving is flushing it, and `url` goes unused.
+    if knownDestinationsStore != nil {
+      flushKnownDestinations()
+      return
+    }
     lock.lock()
     let snapshot = knownIdentities
     let announcedAt = knownDestinationAnnouncedAt
     let lastUsed = knownDestinationLastUsed
     let retained = retainedDestinations
     let packetHashes = knownDestinationPacketHash
+    let stampFields = knownDestinationStamps
     lock.unlock()
 
     let pairs: [(MsgPack.Value, MsgPack.Value)] = snapshot.map { destHash, identity in
@@ -3521,10 +3771,79 @@ public final class Transport {
           .bytes(identity.publicKeyBytes),
           identity.appData.map(MsgPack.Value.bytes) ?? .nil,
           lastUse,
+          stampFields[destHash]?.stamp.map(MsgPack.Value.bytes) ?? .nil,
+          stampFields[destHash]?.value.map(MsgPack.Value.double) ?? .int(0),
+          stampFields[destHash]?.lrCost.map(MsgPack.Value.double) ?? .nil,
         ])
       )
     }
     try MsgPack.encode(.map(pairs)).write(to: url, options: .atomic)
+  }
+
+  /// `Identity.flush_known_destinations` (`Identity.py:951-960`): writes what changed in the
+  /// known-destinations and ratchet tables to ``knownDestinationsStore``.
+  @discardableResult
+  func flushKnownDestinations() -> Bool {
+    guard let store = knownDestinationsStore, !isConnectedToSharedInstance else { return false }
+    let now = Date().timeIntervalSince1970
+    lock.lock()
+    var rows: [Data: KnownDestinationsStore.Row] = [:]
+    for (hash, identity) in knownIdentities {
+      let stampFields = knownDestinationStamps[hash]
+      rows[hash] = KnownDestinationsStore.Row(
+        lastHeard: knownDestinationAnnouncedAt[hash]?.timeIntervalSince1970 ?? now,
+        packetHash: knownDestinationPacketHash[hash], publicKey: identity.publicKeyBytes,
+        appData: identity.appData,
+        used: retainedDestinations.contains(hash)
+          ? -1 : knownDestinationLastUsed[hash]?.timeIntervalSince1970 ?? 0,
+        stamp: stampFields?.stamp, stampValue: stampFields?.value ?? 0,
+        lrCost: stampFields?.lrCost)
+    }
+    var ratchets: [Data: KnownDestinationsStore.Ratchet] = [:]
+    for (hash, ratchet) in knownRatchets {
+      ratchets[hash] = KnownDestinationsStore.Ratchet(
+        ratchet: ratchet, received: knownRatchetTimes[hash]?.timeIntervalSince1970 ?? now)
+    }
+    lock.unlock()
+    do {
+      try store.flush(rows, ratchets: ratchets)
+      return true
+    } catch {
+      Reticulum.log(
+        "Could not flush known destinations to storage. The contained exception was: \(error)",
+        level: .error)
+      return false
+    }
+  }
+
+  /// Restores rows read from a known-destinations database.
+  public func restore(knownDestinations rows: [Data: KnownDestinationsStore.Row]) {
+    lock.lock()
+    defer { lock.unlock() }
+    for (hash, row) in rows { restoreKnownDestinationLocked(hash, row) }
+  }
+
+  /// Restores one known destination, from the database or the legacy file.
+  ///
+  /// The caller holds `lock`.
+  private func restoreKnownDestinationLocked(_ hash: Data, _ row: KnownDestinationsStore.Row) {
+    guard hash.count == Constants.truncatedHashLength, knownIdentities[hash] == nil,
+      row.publicKey.count == Constants.keySize,
+      let identity = try? Identity(publicKeyBytes: row.publicKey)
+    else { return }
+    identity.appData = row.appData
+    knownIdentities[hash] = identity
+    knownDestinationAnnouncedAt[hash] = Date(timeIntervalSince1970: row.lastHeard)
+    if let packetHash = row.packetHash { knownDestinationPacketHash[hash] = packetHash }
+    knownDestinationStamps[hash] = (row.stamp, row.stampValue, row.lrCost)
+    // 0 is "never used", a negative value is the retention sentinel, and anything else is
+    // a use time (`Identity.py:314-324`). Reading it back is what keeps a pinned
+    // destination pinned across a restart.
+    if row.used < 0 {
+      retainedDestinations.insert(hash)
+    } else if row.used > 0 {
+      knownDestinationLastUsed[hash] = Date(timeIntervalSince1970: row.used)
+    }
   }
 
   /// Load previously persisted `knownIdentities` from `url`.
@@ -3544,31 +3863,11 @@ public final class Transport {
         case .array(var fields) = value
       else { continue }
       // `[e[0], e[1], e[2], e[3], 0]` (:226-229)—an entry written by an older reference
-      // has four fields and is backfilled with a zero `last_use`, not discarded.
+      // has four fields and is backfilled with a zero `last_use`, not discarded. RNS 1.6.0
+      // pads anything short of eight with `None, 0, None` (`Identity.py:332-339`).
       if fields.count == 4 { fields.append(.double(0)) }
-      guard fields.count == 5,
-        case .bytes(let publicKey) = fields[2],
-        publicKey.count == Constants.keySize,
-        let identity = try? Identity(publicKeyBytes: publicKey)
-      else { continue }
-
-      if case .bytes(let appData) = fields[3] { identity.appData = appData }
-      guard knownIdentities[destHash] == nil else { continue }
-      knownIdentities[destHash] = identity
-      knownDestinationAnnouncedAt[destHash] =
-        Date(timeIntervalSince1970: fields[0].asDouble ?? 0)
-      if case .bytes(let packetHash) = fields[1] {
-        knownDestinationPacketHash[destHash] = packetHash
-      }
-      // 0 is "never used", a negative value is the retention sentinel, and anything else is
-      // a use time (`Identity.py:314-324`). Reading it back is what keeps a pinned
-      // destination pinned across a restart.
-      let lastUse = fields[4].asDouble ?? 0
-      if lastUse < 0 {
-        retainedDestinations.insert(destHash)
-      } else if lastUse > 0 {
-        knownDestinationLastUsed[destHash] = Date(timeIntervalSince1970: lastUse)
-      }
+      guard let row = KnownDestinationsStore.Row(entry: fields) else { continue }
+      restoreKnownDestinationLocked(destHash, row)
     }
   }
 
@@ -3629,6 +3928,10 @@ public final class Transport {
       knownIdentities.removeValue(forKey: h)
       knownDestinationAnnouncedAt.removeValue(forKey: h)
       knownDestinationLastUsed.removeValue(forKey: h)
+      knownDestinationStamps.removeValue(forKey: h)
+      // `Identity.py:455`.
+      knownRatchets.removeValue(forKey: h)
+      knownRatchetTimes.removeValue(forKey: h)
     }
     lock.unlock()
 
@@ -3802,17 +4105,8 @@ public final class Transport {
             let table = self.getPathTable(maxHops: maxHops)
             let filtered =
               filterHash == nil ? table : table.filter { $0.destinationHash == filterHash }
-            let entries = filtered.map { e -> MsgPack.Value in
-              .map([
-                (.string("hash"), .bytes(e.destinationHash)),
-                (.string("timestamp"), .double(e.lastHeard.timeIntervalSince1970)),
-                (.string("via"), .bytes(e.via)),
-                (.string("hops"), .int(Int64(e.hops))),
-                (.string("expires"), .double(e.expires.timeIntervalSince1970)),
-                (.string("interface"), .string(e.interfaceName)),
-              ])
-            }
-            return MsgPack.encode(.array(entries))
+            return MsgPack.encode(
+              .array(filtered.map { RNPathTableEntry($0, resolvingNamesWith: nil).msgpackValue() }))
           case "rates":
             // Likewise: rnpath computes an announce rate from
             // `entry["timestamps"]` and reads `entry["blocked_until"]`.
@@ -3905,6 +4199,9 @@ public final class Transport {
   public func stop() {
     jobsTimer?.cancel()
     jobsTimer = nil
+    // Python's daemon threads die with the process; a Swift stack can be restarted in one.
+    disableDiscovery()
+    disableBlackholeUpdater()
     for interface in interfaces { interface.stop() }
     stopInboundWorker()
     isRunning = false
@@ -3954,6 +4251,12 @@ public final class Transport {
     {
       cleanKnownDestinations(now: now)
       lastKnownDestinationsClean = now
+    }
+    if knownDestinationsStore != nil,
+      now.timeIntervalSince(lastKnownDestinationsFlush) > Transport.knownDestinationsFlushInterval
+    {
+      lastKnownDestinationsFlush = now
+      flushKnownDestinations()
     }
     announceManagementDestinations()
     // `Reticulum.__jobs` culls the packet cache every `CLEAN_INTERVAL` (`Reticulum.py:388-392`).
@@ -4359,7 +4662,7 @@ public final class Transport {
 
   /// Sends the oldest queued discovery path request, then waits a throttle for the next.
   ///
-  /// Python's `handle_disovery_path_requests` (`Transport.py:1247-1264`). A request with no
+  /// Python's `handle_disovery_path_requests` (`Transport.py:4051-4075`). A request with no
   /// blocked interface goes out on every interface. Otherwise each other interface gets one.
   private func sendNextDiscoveryPathRequest() {
     lock.lock()
@@ -4374,8 +4677,13 @@ public final class Transport {
     lock.unlock()
 
     if let blocked = next.blockedInterface {
-      for iface in snapshot where iface !== blocked && iface.isOnline && iface.isRoutingEndpoint {
-        try? requestPath(for: next.destinationHash, onInterface: iface)
+      // One tag on every interface, stamped once under `STAMP_PRS` (`Transport.py:4062-4075`).
+      let tag = SecureRandom.bytes(Constants.truncatedHashLength)
+      let ext = stamps.stampPRs ? pathRequestStamp(next.destinationHash, tag: tag) : nil
+      if !stamps.stampPRs || ext != nil {
+        for iface in snapshot where iface !== blocked && iface.isOnline && iface.isRoutingEndpoint {
+          try? requestPath(for: next.destinationHash, onInterface: iface, tag: tag, extPayload: ext)
+        }
       }
     } else {
       try? requestPath(for: next.destinationHash)
@@ -4385,29 +4693,59 @@ public final class Transport {
 
   // MARK: - Path expiry
 
-  /// Remove paths that have expired or whose interface is no longer attached.
+  /// Remove paths that have expired, whose interface is no longer attached, or that were
+  /// never used.
   ///
-  /// The path table cull in Python's `Transport.jobs()` (`Transport.py:957-976`). A path
+  /// The path table cull in Python's `Transport.jobs()` (`Transport.py:1118-1159`). A path
   /// through an interface that was deregistered, or that no longer exists, goes on the next
-  /// pass. Entries parked for a deferred restore and the tunnel table's paths are held
+  /// pass. A never-used path goes after ``unusedPathLinger`` (×10 on a slow interface), and
+  /// every ``poolSizeCheckInterval`` the never-used pool is cut to ``pathPoolUnusedTarget``.
+  /// Entries parked for a deferred restore and the tunnel table's paths are held
   /// elsewhere, and this leaves them alone, as Python does (`:1015-1060`).
   public func sweepExpiredPaths(now: Date = Date()) {
     lock.lock()
     defer { lock.unlock() }
     let attached = attachedInterfaceIDs()
+    // `unused_path_linger` (`Transport.py:451-454`).
+    let linger =
+      transportEnabled && !isConnectedToSharedInstance
+      ? Transport.unusedPathLinger : Transport.unusedPathLingerLeaf
+    let checkUnused = now > poolSizeLastChecked.addingTimeInterval(Transport.poolSizeCheckInterval)
+    var unused: [(slow: Int, expires: Date, destinationHash: Data)] = []
     var expired: [Data] = []
     for (destinationHash, path) in paths {
-      if path.isExpired {
+      let bitrate = path.nextHopInterface?.bitrate ?? 0
+      let slow = 0 < bitrate && bitrate < Transport.pathSlowBitrate
+      if checkUnused && path.used == nil {
+        unused.append((slow ? 1 : 0, path.expires, destinationHash))
+      }
+      if now > path.expires {
         expired.append(destinationHash)
-      } else if let iface = path.nextHopInterface, attached.contains(ObjectIdentifier(iface)) {
-        continue
-      } else {
+      } else if path.nextHopInterface.map({ !attached.contains(ObjectIdentifier($0)) }) ?? true {
         expired.append(destinationHash)
         Reticulum.log(
           "Path to \(RNSUtilities.prettyhexrep(destinationHash)) was removed since the "
             + "attached interface no longer exists", level: .pathing)
+      } else if path.used == nil,
+        now
+          > path.lastHeard.addingTimeInterval(linger * (slow ? Transport.pathSlowLingerFactor : 1))
+      {
+        expired.append(destinationHash)
+        Reticulum.log(
+          "Removing never used path to \(RNSUtilities.prettyhexrep(destinationHash))",
+          level: .pathing)
       }
     }
+    if unused.count > Transport.pathPoolUnusedTarget {
+      // Python sorts `(slow, expiry, destination_hash)` tuples.
+      unused.sort { a, b in
+        if a.slow != b.slow { return a.slow < b.slow }
+        if a.expires != b.expires { return a.expires < b.expires }
+        return a.destinationHash.lexicographicallyPrecedes(b.destinationHash)
+      }
+      expired += unused.prefix(unused.count - Transport.pathPoolUnusedTarget).map(\.destinationHash)
+    }
+    if checkUnused { poolSizeLastChecked = now }
     for dh in expired {
       paths.removeValue(forKey: dh)
       // Drop the parallel cached announce so it can't outlive its path.
@@ -4698,12 +5036,10 @@ public final class Transport {
       // Local hop-count obfuscation: hide that this packet originated here.
       if shouldApplyDelta(packet, interface: outbound) { routed.hops = localHopsDelta }
       try transmit(routed, on: outbound)
-      // Update path timestamp on successful send (mirrors Python's path_entry[IDX_PT_TIMESTAMP]).
+      // `path_entry[IDX_PT_USED] = outbound_time` (`Transport.py:1618`). Since 1.6.0 only
+      // proven liveness refreshes the timestamp.
       lock.lock()
-      if var updated = paths[packet.destinationHash] {
-        updated.lastHeard = Date()
-        paths[packet.destinationHash] = updated
-      }
+      paths[packet.destinationHash]?.used = Date()
       lock.unlock()
     } else {
       for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
@@ -4767,8 +5103,32 @@ public final class Transport {
     isPathResponse: Bool = false,
     onInterface: (any Interface)? = nil
   ) throws -> PacketReceipt? {
+    var trailer: Data?
+    if stamps.stampDestinations {
+      // Python grinds a missing stamp on its stamper thread and announces once it's ready
+      // (`Destination.py:297-301`). A persisted stamp loads on that thread too, so the first
+      // announce after a start is asynchronous here even when no work is needed.
+      if destination.stamp == nil {
+        let (settings, directory) = (stamps, stampsDirectory)
+        stampQueue.async { [weak self] in
+          guard destination.awaitStamp(settings, directory: directory) else {
+            Reticulum.log(
+              "Could not generate destination stamp for \(destination.hexHash), announce "
+                + "emission cancelled", level: .warning)
+            return
+          }
+          _ = try? self?.announce(
+            destination: destination, appData: appData, ratchet: ratchet,
+            isPathResponse: isPathResponse, onInterface: onInterface)
+        }
+        return nil
+      }
+      guard destination.awaitStamp(stamps, directory: stampsDirectory) else { return nil }
+      trailer = destination.stampTrailer(stamps)
+    }
     let packet = try Announce.make(
-      for: destination, appData: appData, ratchet: ratchet, isPathResponse: isPathResponse)
+      for: destination, appData: appData, ratchet: ratchet, isPathResponse: isPathResponse,
+      stampTrailer: trailer)
     if let iface = onInterface {
       try transmit(packet, on: iface)
       return nil
@@ -4943,6 +5303,9 @@ public final class Transport {
       }
     }
     metricsLock.unlock()
+
+    // `if not packet.hops < Transport.HOP_LIMITER: return` (`Transport.py:2022`).
+    guard Int(packet.hops) < hopLimiter else { return nil }
 
     // `if not Transport.packet_filter(packet): return interface.packet_filter_hit()`
     // (`Transport.py:1795`). The verdict only: `_inbound` records the hash
@@ -5121,6 +5484,7 @@ public final class Transport {
     clampRelayedLinkRequestMtu(&forwarded, prevHop: interface, nextHop: outbound)
 
     try? transmit(forwarded, on: outbound)
+    markPathUsed(packet.destinationHash)
   }
 
   /// Clamp or strip the 3-byte MTU signalling tail of a relayed LINKREQUEST so
@@ -5201,6 +5565,7 @@ public final class Transport {
       if link.role == .initiator, link.status == .pending { addPacketHash(packet) }
       do {
         try link.validateProof(proof)
+        markPathResponsive(for: link.destination.hash)  // `Link.py:513`
         // Fire the transport-level callback for the initiator side.
         // The destination's onLinkEstablished is intentionally NOT
         // fired here—it belongs to the responder side and is wired
@@ -5270,6 +5635,7 @@ public final class Transport {
     // evict it while the link is active. Only fires when the destination hash
     // is already known (markDestinationUsed returns false otherwise).
     markDestinationUsed(route.destinationHash)
+    if !isConnectedToSharedInstance { markPathResponsive(for: route.destinationHash) }  // `:2938`
   }
 
   /// Moves a relayed link's remaining hops, and the path behind it, to a verified proof's
@@ -5286,6 +5652,7 @@ public final class Transport {
       entry.hops = wireHops(fromPythonHops: hops, on: entry.nextHopInterface)
       paths[route.destinationHash] = entry
     }
+    _ = markPathResponsiveLocked(route.destinationHash)  // `Transport.py:2907`
     return route
   }
 
@@ -5320,6 +5687,7 @@ public final class Transport {
       entry.hops = wireHops(fromPythonHops: hops, on: entry.nextHopInterface)
       paths[destinationHash] = entry
     }
+    _ = markPathResponsiveLocked(destinationHash)  // `Transport.py:2983`
   }
 
   private func handleLinkRTT(_ packet: Packet, from interface: Interface) {
@@ -5438,6 +5806,7 @@ public final class Transport {
     route.lastHeard = Date()
     lock.lock()
     linkRoutes[packet.destinationHash] = route
+    paths[route.destinationHash]?.used = route.lastHeard  // `Transport.py:2437-2440`
     lock.unlock()
   }
 
@@ -5539,6 +5908,8 @@ public final class Transport {
   private func admitAnnounce(
     _ packet: Packet, from interface: Interface, trafficClass: TrafficClass
   ) -> TrafficClass? {
+    guard admitsDestinationType(of: packet, from: interface) else { return nil }
+
     // Python's announce admission gate (`Transport.py:1806-1811`). Three
     // decisions, in this order, before anything else looks at the announce:
     //
@@ -5556,9 +5927,12 @@ public final class Transport {
     // Order 1-before-2 is observable: it decides whether a blackholed peer
     // sending a bad signature shows up in the protocol-violation counter.
     switch Identity.validateAnnounce(
-      packet, onlyValidateSignature: true, isBlackholed: { self.isBlackholed($0) }
+      packet, onlyValidateSignature: true, stamps: stamps,
+      requiredValue: destinationCost(for: interface), isBlackholed: { self.isBlackholed($0) }
     ) {
-    case .blackholed:
+    // An enforced stamp shortfall drops silently, like a blackholed announcer
+    // (`Transport.py:2047-2049`).
+    case .blackholed, .noStamp, .invalidStamp:
       return nil
     case .invalid:
       notifyProtocolViolation(on: interface)
@@ -5627,7 +6001,9 @@ public final class Transport {
       // `admitAnnounce` already verified this signature over these same bytes, so skip the
       // second verification the way Python's `announce_signature_validated` does
       // (`Identity.py:559`).
-      let decoded = try Announce.validate(packet, signatureVerified: true)
+      let decoded = try Announce.validate(
+        packet, signatureVerified: true, stamps: stamps,
+        requiredValue: destinationCost(for: interface))
       // `announce_hops = packet.hops` (`Transport.py:2333`): the hop count every copy, relay
       // and answer of this announce carries.
       let announceHops = inboundHops(of: packet, on: interface)
@@ -5729,17 +6105,8 @@ public final class Transport {
       let emittedAt = announceEmitted(packet)
       let randomBlob = announceRandomBlob(packet)
       let now = Date()
-      // Paths learned via ROAMING interfaces expire after 6 hours, paths via
-      // ACCESS_POINT interfaces expire after 1 hour, and all others use the
-      // normal 7-day expiry. Mirrors Python's ROAMING_PATH_EXPIRY /
-      // AP_PATH_EXPIRY checks in Transport.announce_handler.
-      let pathLifetime: TimeInterval
-      switch interface.mode {
-      case .roaming: pathLifetime = Transport.roamingPathExpiry
-      case .accessPoint: pathLifetime = Transport.apPathExpiry
-      default: pathLifetime = Transport.pathExpiry
-      }
-      let entry = PathEntry(
+      let pathLifetime = Transport.pathTimeout(for: interface)
+      var entry = PathEntry(
         destinationHash: decoded.destinationHash,
         nextHopInterface: interface,
         hops: packet.hops,
@@ -5769,8 +6136,12 @@ public final class Transport {
       // the known-destinations entry (`:107`).
       knownDestinationPacketHash[decoded.destinationHash] =
         (try? Hashes.fullHash(packet.hashablePart())) ?? Data()
+      knownDestinationStamps[decoded.destinationHash] = (
+        decoded.stamp, decoded.stampValue, decoded.lrCost
+      )
       cachedAnnounces[decoded.destinationHash] = packet
-      if let ratchet = decoded.ratchet {
+      // `Identity.py:538`: an identical ratchet keeps its received time.
+      if let ratchet = decoded.ratchet, knownRatchets[decoded.destinationHash] != ratchet {
         let now = Date()
         knownRatchets[decoded.destinationHash] = ratchet
         knownRatchetTimes[decoded.destinationHash] = now
@@ -5788,6 +6159,8 @@ public final class Transport {
       let isUnresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
       pathStatesLock.unlock()
       let existingBlobs = paths[decoded.destinationHash]?.randomBlobs ?? []
+      // A replacing announce keeps `path_used` (`Transport.py:2510`, `2726`).
+      entry.used = paths[decoded.destinationHash]?.used
       if let existing = paths[decoded.destinationHash] {
         // Path-table freshness gate—a faithful port of Python's
         // `should_add` ladder (Transport.inbound, Transport.py:1801-1875).
@@ -6118,22 +6491,45 @@ public final class Transport {
   ///     Mirrors Python's `Transport.request_path(recursive=False)`.
   ///     Reserved for future use (Python's recursive handling is
   ///     performed by the receiving transport, not the sender).
+  ///   - extPayload: A stamp extension to carry, as a relay forwards it. Without one,
+  ///     `stamps.stampPRs` grinds a stamp first and sends once it's ready.
   /// - Throws: An error raised by the interface the request is sent on.
   public func requestPath(
     for destinationHash: Data,
     onInterface: (any Interface)? = nil,
     tag: Data? = nil,
-    recursive: Bool = false
+    recursive: Bool = false,
+    extPayload: Data? = nil
   ) throws {
     guard destinationHash.count == Constants.truncatedHashLength else { return }
-    let tag = tag ?? SecureRandom.bytes(Constants.truncatedHashLength)
+    let tag = Data(
+      (tag ?? SecureRandom.bytes(Constants.truncatedHashLength)).prefix(
+        Constants.truncatedHashLength))
     _ = recursive  // the receiving transport node handles forwarded recursion
-    // Mirrors Python: if transport_enabled: body = destHash + transport_id + tag
-    //                 else:                  body = destHash + tag
-    let body =
-      transportEnabled
-      ? destinationHash + transportInstanceID + tag
-      : destinationHash + tag
+    // "From version 1.6.0, path requests always carry transport ID" (`Transport.py:3700-3703`).
+    var body = destinationHash + transportInstanceID + tag
+    if let extPayload {
+      body += extPayload
+    } else if stamps.stampPRs {
+      // Send at once with a cached stamp, otherwise grind on the stamper
+      // (`Transport.py:3705-3719`).
+      lock.lock()
+      let cached = prStampCache[destinationHash + tag]
+      if cached == nil { pathRequests[destinationHash] = Date().timeIntervalSince1970 }
+      lock.unlock()
+      guard let cached else {
+        // shortcut: one serial stamper with no PR priority lane or queue cap, as Python's
+        // STAMPER_*_QUEUE_LENGTH has; add them if announce grinding is seen delaying requests.
+        stampQueue.async { [weak self] in
+          guard let self, let ext = self.pathRequestStamp(destinationHash, tag: tag) else { return }
+          try? self.requestPath(
+            for: destinationHash, onInterface: onInterface, tag: tag, recursive: recursive,
+            extPayload: ext)
+        }
+        return
+      }
+      body += Data([Identity.extPayloadMarker, 0x00]) + cached
+    }
 
     // Pre-seed the local dedup entry so this node never re-processes its own
     // request when it bounces back from an interface's local echo.
@@ -6163,43 +6559,56 @@ public final class Transport {
     }
   }
 
+  /// `stamp_path_request` (`Transport.py:4020-4049`): the `0xC1 0x00` extension for a stamp
+  /// over `dst+tag` at `PR_VALUE`, from the cache or ground within `PR_STAMP_TIMEOUT`.
+  func pathRequestStamp(_ destinationHash: Data, tag: Data) -> Data? {
+    let material = destinationHash + tag
+    lock.lock()
+    var stamp = prStampCache[material]
+    lock.unlock()
+    if stamp == nil {
+      let deadline = Date().addingTimeInterval(stamps.prStampTimeout)
+      stamp =
+        Stamps.generateStamp(
+          material, stampCost: stamps.prValue, expandRounds: 0, size: Identity.stampLength,
+          isCancelled: { Date() > deadline })?.stamp
+    }
+    guard let stamp else {
+      Reticulum.log(
+        "Could not generate path request stamp for \(destinationHash.hexString), path request "
+          + "emission cancelled", level: .warning)
+      return nil
+    }
+    lock.lock()
+    prStampCache[material] = stamp
+    // shortcut: evicts an arbitrary entry where Python evicts the oldest; a cache miss only
+    // costs a re-grind.
+    if prStampCache.count > 256 { prStampCache.remove(at: prStampCache.startIndex) }
+    lock.unlock()
+    return Data([Identity.extPayloadMarker, 0x00]) + stamp
+  }
+
   /// The path-request half of `preprocess_inbound` (`Transport.py:1827-1886`).
   ///
   /// Returns `.ingressLimited` when the receiving interface's path-request limiter is
   /// active, `.pathRequest` otherwise, or `nil` when the request stops here.
   private func admitPathRequest(_ packet: Packet, from interface: Interface) -> TrafficClass? {
-    let hashLen = Constants.truncatedHashLength
-    // `if not len(packet.data) >= TRUNCATED_HASHLENGTH//8: return` (`Transport.py:1830`).
+    let length = packet.data.count
+    // `if not len(packet.data) >= TRUNCATED_HASHLENGTH//8: return` (`Transport.py:2072`).
     // Too short to name a destination, so upstream returns before it looks for a tag and
     // charges nothing.
-    guard let fields = pathRequestFields(packet.data) else { return nil }
-    // `if tag_bytes == None: ... protocol_violation("Tagless path request")`
-    // (`:1838-1840`). One byte longer than the preceding case, and upstream treats it very
-    // differently: a tag is what makes a request distinguishable from a replay of itself,
-    // so nothing can deduplicate a request without one, and upstream declines to act.
-    guard !fields.rawTag.isEmpty else {
+    guard length >= Constants.truncatedHashLength else { return nil }
+    // "Excessive path request size" past 64 bytes (`Transport.py:2074`), "Tagless path
+    // request" (`:2077`), and "Invalid path request size" for anything but 32, 48 or 64 bytes
+    // (`:2084-2086`). A tag is what makes a request distinguishable from a replay of itself,
+    // and a fixed length keeps a sender from defeating deduplication with a tail nothing reads.
+    guard let fields = pathRequestFields(packet.data), Self.pathRequestLengths.contains(length)
+    else {
       notifyProtocolViolation(on: interface)
       return nil
     }
     let target = fields.target
-    let rawTag = fields.rawTag
-    // `if len(tag_bytes) > RNS.Identity.TRUNCATED_HASHLENGTH//8: tag_bytes = tag_bytes[:...]`
-    // (`Transport.py:1842-1843`). The excess isn't merely ignored—it must not reach the
-    // dedup key. Keyed on the untruncated bytes, a sender defeats deduplication for free by
-    // varying a tail nothing reads, turning one path request into as many recursive
-    // fan-outs as it cares to send. The truncated tag is also what gets forwarded, so every
-    // hop agrees on the identity of the request.
-    // `protocol_violation("Excessive path request tag size")` accompanies the truncation
-    // (`:1845`). Upstream truncates and carries on, so this is a counter rather than a
-    // rejection—but it's the only trace a peer doing it leaves for the operator.
-    let tag: Data
-    if rawTag.count > hashLen {
-      notifyProtocolViolation(on: interface)
-      tag = Data(rawTag.prefix(hashLen))
-    } else {
-      tag = rawTag
-    }
-    let dedupKey = target + tag
+    let dedupKey = target + fields.tag
 
     lock.lock()
     // `if not unique_tag in discovery_pr_tags and not unique_tag in discovery_pr_tags_prev`
@@ -6209,6 +6618,12 @@ public final class Transport {
     if !alreadySeen { pathRequestTags.insert(dedupKey) }
     lock.unlock()
     if alreadySeen { return nil }
+
+    // `if not stamp_ok: if Transport.STAMPS_ENFORCED: return` (`Transport.py:2097-2131`).
+    // Unenforced, upstream only logs the stamp's value.
+    if stamps.enabled, stamps.enforced, !pathRequestStampValid(fields, on: interface) {
+      return nil
+    }
 
     // `interface.received_path_request(size=len(raw))` (`Transport.py:1857`). Upstream
     // counts here, below the length guard, both tag checks and the duplicate check, so the
@@ -6241,24 +6656,36 @@ public final class Transport {
     return ingressLimited ? .ingressLimited : .pathRequest
   }
 
-  /// Splits a path-request body into its target, the requesting transport instance and the
-  /// untruncated tag (`Transport.py:3385-3402`).
+  /// `parse_path_request` (`Transport.py:3982-4005`): the target, the requesting transport
+  /// instance, the tag (at most 16 bytes) and the stamp extension of a 64-byte request.
   ///
-  /// The body is `target || tag` or `target || transport id || tag`. Returns `nil` for a
-  /// body too short to name a destination.
+  /// Returns `nil` for a body with no tag.
   private func pathRequestFields(_ body: Data) -> (
-    target: Data, requestorTransportID: Data?, rawTag: Data
+    target: Data, requestorTransportID: Data?, tag: Data, ext: Data?
   )? {
-    let hashLen = Constants.truncatedHashLength
-    guard body.count >= hashLen else { return nil }
-    let target = Data(body.prefix(hashLen))
-    if body.count > hashLen * 2 {
-      return (
-        target, Data(body[body.startIndex + hashLen..<body.startIndex + hashLen * 2]),
-        Data(body.suffix(from: body.startIndex + hashLen * 2))
-      )
+    let n = Constants.truncatedHashLength
+    let bytes = [UInt8](body)
+    guard bytes.count > n else { return nil }
+    let target = Data(bytes[..<n])
+    if bytes.count == 64 {
+      return (target, Data(bytes[n..<2 * n]), Data(bytes[2 * n..<3 * n]), Data(bytes[(3 * n)...]))
     }
-    return (target, nil, Data(body.suffix(from: body.startIndex + hashLen)))
+    if bytes.count > 2 * n {
+      return (target, Data(bytes[n..<2 * n]), Data(bytes[(2 * n)...].prefix(n)), nil)
+    }
+    return (target, nil, Data(bytes[n...]), nil)
+  }
+
+  /// `validate_pr_stamp` against the receiving interface's `pr_cost`
+  /// (`Transport.py:2099-2104`, `4011-4016`).
+  private func pathRequestStampValid(
+    _ fields: (target: Data, requestorTransportID: Data?, tag: Data, ext: Data?),
+    on interface: Interface
+  ) -> Bool {
+    guard let ext = fields.ext, ext.first == Identity.extPayloadMarker else { return false }
+    return Stamps.stampValid(
+      stamp: Data(ext.dropFirst(2)), targetCost: prCost(for: interface),
+      workblock: fields.target + fields.tag)
   }
 
   /// `path_request_handler` and `path_request` (`Transport.py:3380-3599`), for a request
@@ -6269,9 +6696,8 @@ public final class Transport {
     guard let fields = pathRequestFields(packet.data) else { return }
     let target = fields.target
     let requestorTransportID = fields.requestorTransportID
-    // Truncated as `path_request_handler` truncates it (`Transport.py:3404-3405`). Admission
-    // already counted the excess as a protocol violation.
-    let tag = Data(fields.rawTag.prefix(Constants.truncatedHashLength))
+    let tag = fields.tag
+    let ext = fields.ext
     // `should_ingress_limit = ingress_limited or attached_interface.should_ingress_limit_pr()`
     // (`Transport.py:3427`). For a queued request the second call reads the limiter as it
     // stands when the worker reaches the request, not as it stood on arrival.
@@ -6306,8 +6732,7 @@ public final class Transport {
       let localDest = registeredDestinations[target]
       lock.unlock()
       if let dest = localDest, dest.identity?.hasPrivateKey == true {
-        let pkt = try? Announce.make(for: dest, isPathResponse: true)
-        if let pkt { try? transmit(pkt, on: interface) }
+        _ = try? announce(destination: dest, isPathResponse: true, onInterface: interface)
       }
       onPathRequested?(target, interface)
       return
@@ -6360,15 +6785,14 @@ public final class Transport {
       return
     }
 
-    // Branch 3 (Python Transport.py:3032): the request is from a local client
+    // Branch 3 (Python Transport.py:3871-3878): the request is from a local client
     // and this node couldn't answer it—forward it to the mesh on every
-    // other interface (one shared random tag) so an upstream transport can
+    // other interface, under the client's own tag and extension, so an upstream transport can
     // resolve it. Runs regardless of transportEnabled: carrying its clients'
     // path requests onto the network is the whole point of a shared instance.
     if fromLocal {
-      let requestTag = SecureRandom.bytes(Constants.truncatedHashLength)
       for iface in interfaces where iface !== interface && iface.isOnline {
-        try? requestPath(for: target, onInterface: iface, tag: requestTag)
+        try? requestPath(for: target, onInterface: iface, tag: tag, extPayload: ext)
       }
       return
     }
@@ -6403,6 +6827,10 @@ public final class Transport {
       }
     }
     if shouldDiscover {
+      // "Sentinel check for potential enforcement logic leaks" (`Transport.py:3895-3900`):
+      // reachable only with stamps disabled but enforced, which skips the ingress check.
+      if ext == nil && stamps.enforced { return }
+
       // "Abort recursive path request if receiving interface has PR burst active, or
       // should otherwise ingress limit path requests" (`Transport.py:3543-3550`).
       //
@@ -6422,21 +6850,25 @@ public final class Transport {
       // already engaged means someone else is running it.
       if engageDiscoveryPathRequest(target, on: interface) { return }
 
+      // A stamping node marks an unstamped request it relays (`Transport.py:3930-3936`).
+      let forwardExt = ext ?? (stamps.stampPRs ? Self.lenientPathRequestExtension : nil)
       let now = Date().timeIntervalSince1970
       for iface in interfaces where iface !== interface && iface.isOnline && iface.isRoutingEndpoint
       {
         if let filter = searchModeFilter, !filter.contains(iface.mode) { continue }
         if shouldEgressLimitPR(on: iface, now: now) { continue }
-        try? requestPath(for: target, onInterface: iface, tag: tag)
+        try? requestPath(
+          for: target, onInterface: iface, tag: tag, recursive: true, extPayload: forwardExt)
       }
       return
     }
 
-    // Branch 5 (Python Transport.py:3069): this node isn't the client's origin, but
-    // this node serves local clients—forward the request down to them so a connected
-    // client that owns the destination can answer.
+    // Branch 5 (Python Transport.py:3950-3963): this node isn't the client's origin, but
+    // this node serves local clients—forward the request down to them, under its own tag and
+    // extension, so a connected client that owns the destination can answer.
+    let forwardExt = ext ?? (stamps.stampPRs ? Self.lenientPathRequestExtension : nil)
     for iface in localClientServingInterfaces(excluding: interface) {
-      try? requestPath(for: target, onInterface: iface)
+      try? requestPath(for: target, onInterface: iface, tag: tag, extPayload: forwardExt)
     }
   }
 
@@ -6939,6 +7371,7 @@ public final class Transport {
     for handler in handlers {
       // Mirrors Python: skip path-response announces unless handler opted in.
       if decoded.isPathResponse && !handler.receivePathResponses { continue }
+      if handler.paused { continue }  // `Transport.py:2769`
 
       guard let filter = handler.aspectFilter else {
         handler.receivedAnnounce(
@@ -6995,6 +7428,7 @@ public final class Transport {
     }
 
     try? transmit(forwarded, on: outbound)
+    markPathUsed(packet.destinationHash)
   }
 
   // MARK: - Tunnel synthesis
@@ -7141,6 +7575,7 @@ public final class Transport {
         cachedAnnounceHash: path.cachedAnnounceHash,
         randomBlobs: randomBlobs
       )
+      paths[destinationHash]?.used = path.used  // `Transport.py:1273-1274`
     }
     tunnels[tunnelID] = tunnel
   }

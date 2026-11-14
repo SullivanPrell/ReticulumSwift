@@ -345,6 +345,7 @@ func bringUpStack(_ options: Options) -> InstanceConnection {
     // and -v/-q become no-ops. Python does the reverse—a requested loglevel
     // suppresses the config value entirely (Reticulum.py:455).
     Reticulum.globalLogLevel = options.logLevel
+    connection.reticulum.wantsDestinationType("\(RNXApp.appName).execute")  // rnx.py:345
     session.connection = connection
     return connection
   } catch {

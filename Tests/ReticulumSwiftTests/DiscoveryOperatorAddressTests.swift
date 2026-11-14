@@ -33,8 +33,8 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
     func stampWorkblock(material: Data, expandRounds: Int) -> Data {
       Data(repeating: 0, count: max(1, expandRounds) * 256)
     }
-    func stampValue(workblock: Data, stamp: Data) -> Int { 99 }
-    func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+    func stampValue(workblock: Data, stamp: Data) -> Double { 99 }
+    func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
   }
 
   private static let stamp = Data(repeating: 0xAB, count: 32)
@@ -70,8 +70,9 @@ final class DiscoveryOperatorAddressTests: XCTestCase {
     var result: DiscoveredInterfaceInfo?
     let handler = InterfaceAnnounceHandler(
       requiredValue: 14,
-      stampValidator: AcceptAnyStamp()
-    ) { result = $0 }
+      stampValidator: AcceptAnyStamp(),
+      hopsTo: { _ in 1 },
+      callback: { result = $0 })
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
       identity: Identity(),

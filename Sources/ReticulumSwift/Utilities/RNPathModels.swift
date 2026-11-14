@@ -14,9 +14,10 @@ import Foundation
 
 /// One row of `rnpath -t`, in the shape Python's `Reticulum.get_path_table()` produces.
 ///
-/// Python reference: `RNS/Reticulum.py:1470-1488`. The entry dict is
-/// `{"hash", "timestamp", "via", "hops", "expires", "interface"}` and that **insertion
-/// order is observable**—`rnpath -t -j` emits `json.dumps` of these dicts directly.
+/// Python reference: `RNS/Reticulum.py:1868-1894`. The entry dict is
+/// `{"hash", "timestamp", "via", "hops", "expires", "value", "used", "lr_cost", "interface"}`
+/// and that **insertion order is observable**—`rnpath -t -j` emits `json.dumps` of these dicts
+/// directly. A daemon before RNS 1.6.0 sends no `value`, `used` or `lr_cost`.
 ///
 /// This is a separate type from ``Transport/PathTableEntry`` for four reasons:
 ///
@@ -47,6 +48,16 @@ public struct RNPathTableEntry: Equatable {
   public var expires: TimeInterval
   /// Python key `"interface"`—`str(receiving_interface)`, that is, `Interface.displayName`.
   public var interfaceName: String
+  /// Python key `"value"`—the stamp value of the destination's last announce, 0 when it
+  /// carried none, nil when the destination is unknown.
+  public var value: Double?
+  /// Python key `"used"`—when the path was last used, 0 when never.
+  ///
+  /// Nil only for a row from a daemon before RNS 1.6.0, which sends none of the three stamp and
+  /// usage keys.
+  public var used: TimeInterval?
+  /// Python key `"lr_cost"`—the link-request cost the destination announced, if any.
+  public var lrCost: Double?
 
   /// Creates a path table entry.
   public init(
@@ -55,7 +66,10 @@ public struct RNPathTableEntry: Equatable {
     via: Data?,
     hops: UInt8,
     expires: TimeInterval,
-    interfaceName: String
+    interfaceName: String,
+    value: Double? = nil,
+    used: TimeInterval? = nil,
+    lrCost: Double? = nil
   ) {
     self.destinationHash = destinationHash
     self.timestamp = timestamp
@@ -63,6 +77,9 @@ public struct RNPathTableEntry: Equatable {
     self.hops = hops
     self.expires = expires
     self.interfaceName = interfaceName
+    self.value = value
+    self.used = used
+    self.lrCost = lrCost
   }
 
   /// Bridge from the library's own path table.
@@ -80,24 +97,39 @@ public struct RNPathTableEntry: Equatable {
       via: entry.via,
       hops: entry.hops,
       expires: entry.expires.timeIntervalSince1970,
-      interfaceName: resolved ?? entry.interfaceName)
+      interfaceName: resolved ?? entry.interfaceName,
+      value: entry.value,
+      used: entry.used?.timeIntervalSince1970 ?? 0,
+      lrCost: entry.lrCost)
   }
 
   /// Python's `path["via"]`, which is never `None` (Transport.py:1796 stores the
   /// destination hash itself when an announce carries no transport id).
   public var resolvedVia: Data { via ?? destinationHash }
 
-  /// MsgPack shape in Python's key order—what a Python `/path` handler sends back.
+  /// MsgPack shape in Python's key order—what `get_path_table()` returns and a Python
+  /// `/path` handler sends back.
   public func msgpackValue() -> MsgPack.Value {
-    .map([
+    var pairs: [(MsgPack.Value, MsgPack.Value)] = [
       (.string("hash"), .bytes(destinationHash)),
       (.string("timestamp"), .double(timestamp)),
       (.string("via"), via.map { .bytes($0) } ?? .nil),
       (.string("hops"), .uint(UInt64(hops))),
       (.string("expires"), .double(expires)),
-      (.string("interface"), .string(interfaceName)),
-    ])
+    ]
+    if let used {
+      pairs += [
+        (.string("value"), value.map(Self.number) ?? .nil),
+        (.string("used"), Self.number(used)),
+        (.string("lr_cost"), lrCost.map(Self.number) ?? .nil),
+      ]
+    }
+    pairs.append((.string("interface"), .string(interfaceName)))
+    return .map(pairs)
   }
+
+  /// Python stores an int 0 for "never used" and "no stamp" and a float otherwise.
+  static func number(_ value: Double) -> MsgPack.Value { value == 0 ? .uint(0) : .double(value) }
 
   /// Decode one entry from a `/path` or RPC `path_table` reply.
   ///
@@ -115,7 +147,10 @@ public struct RNPathTableEntry: Equatable {
       via: fields["via"]?.asData,
       hops: UInt8(clamping: hops),
       expires: fields["expires"]?.asDouble ?? 0,
-      interfaceName: fields["interface"]?.asString ?? ""
+      interfaceName: fields["interface"]?.asString ?? "",
+      value: fields["value"]?.asDouble,
+      used: fields["used"]?.asDouble,
+      lrCost: fields["lr_cost"]?.asDouble
     )
   }
 

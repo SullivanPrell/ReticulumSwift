@@ -701,7 +701,8 @@ public struct RNStatusRenderer {
 
       out +=
         Self.pad(name, 25) + " " + Self.pad(type, 10) + " " + Self.pad(statusDisplay, 12)
-        + " " + Self.pad(lastHeardDisplay, 12) + " " + Self.pad("\(info.value)", 7)
+        + " " + Self.pad(lastHeardDisplay, 12) + " "
+        + Self.pad(RNSUtilities.prettycost(info.value), 7)
         + " " + Self.pad(running, 16) + " " + Self.pad(location, 15) + "\n"
     }
     return out
@@ -721,8 +722,7 @@ public struct RNStatusRenderer {
   ///
   /// DELIBERATE DIVERGENCE, one case: a `KISSInterface` discovery record always carries a
   /// `frequency` key, sometimes with a null value. Python's `f"{None:,}"` then raises and
-  /// the entry is abandoned just after `Location`, dropping its Stamp Value and
-  /// Configuration Entry. `DiscoveredInterfaceInfo.frequency` is a `Double?`, which
+  /// the entry is abandoned just after `Location`, dropping its Configuration Entry. `DiscoveredInterfaceInfo.frequency` is a `Double?`, which
   /// can't tell present-and-null from absent, so Swift skips the Frequency line and
   /// renders the rest of the entry. Verified against the live store: this is the only
   /// difference in a 9,700-line `-D` dump.
@@ -767,6 +767,13 @@ public struct RNStatusRenderer {
       out += "Stack        : \(Self.implementation(info) ?? "Unknown")\n"
       out += "Status       : \(statusDisplay)\n"
       out += "Transport    : \(info.transport ? "Enabled" : "Disabled")\n"
+      out += "Stamp Value  : \(RNSUtilities.prettycost(info.value))\n"
+      // `has_cost_info = "dst_cost" in i and "pr_cost" in i` (rnstatus.py:265).
+      if info.hasCostInfo {
+        out +=
+          "Costs        : Dst \(RNSUtilities.prettycost(info.dstCost)), "
+          + "PR \(RNSUtilities.prettycost(info.prCost))\n"
+      }
       out += "Distance     : \(info.hops) hop\(info.hops == 1 ? "" : "s")\n"
       out +=
         "Discovered   : \(Self.prettytime(now - info.discovered, isFloat: true, compact: true)) ago\n"
@@ -785,8 +792,6 @@ public struct RNStatusRenderer {
       if let modulation = info.modulation { out += "Modulation   : \(modulation)\n" }
       if let reachableOn = info.reachableOn { out += "Address      : \(reachableOn)\n" }
       if let port = info.port { out += "Port         : \(port)\n" }
-
-      out += "Stamp Value  : \(info.value)\n"
 
       // Python raises KeyError here when the entry has no config_entry, abandoning
       // the rest of the render with everything above already on screen.

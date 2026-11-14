@@ -341,6 +341,20 @@ public final class RPCServer {
       return msgpack(.nil)
     }
 
+    // RNS 1.6.0's destination-type registration (`Reticulum.py:1514-1529`). The signature
+    // is carried but, as in Python, not checked.
+    if let t = transport, let requester = binValue(kv["requester"]) {
+      if case .string(let name)? = kv["wants_destination_type"] {
+        return msgpack(.bool(t.wantsDestinationType(name, requester: requester)))
+      }
+      if case .string(let name)? = kv["unwants_destination_type"] {
+        return msgpack(.bool(t.unwantsDestinationType(name, requester: requester)))
+      }
+      if kv["unwants_all_destination_types"] != nil {
+        return msgpack(.bool(t.unwantsAllDestinationTypes(requester: requester)))
+      }
+    }
+
     Reticulum.log(
       "RPC: unrecognised call (\(payload.count) bytes) \(payload.prefix(32).map { String(format: "%02x", $0) }.joined())",
       level: .warning)
@@ -499,18 +513,11 @@ public final class RPCServer {
   // MARK: - path_table builder
 
   private func buildPathTable(_ t: Transport, maxHops: UInt8?) -> MsgPack.Value {
-    let entries = t.getPathTable(maxHops: maxHops)
-    let values: [MsgPack.Value] = entries.map { entry in
-      .map([
-        (.string("hash"), .bytes(entry.destinationHash)),
-        (.string("timestamp"), .double(entry.lastHeard.timeIntervalSince1970)),
-        (.string("via"), .bytes(entry.via)),
-        (.string("hops"), .int(Int64(entry.hops))),
-        (.string("expires"), .double(entry.expires.timeIntervalSince1970)),
-        (.string("interface"), .string(entry.interfaceName)),
-      ])
-    }
-    return .array(values)
+    // `getPathTable` already resolves display names.
+    .array(
+      t.getPathTable(maxHops: maxHops).map {
+        RNPathTableEntry($0, resolvingNamesWith: nil).msgpackValue()
+      })
   }
 
   // MARK: - rate_table builder

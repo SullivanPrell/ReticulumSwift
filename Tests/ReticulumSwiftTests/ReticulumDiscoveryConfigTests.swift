@@ -130,16 +130,6 @@ final class ReticulumDiscoveryConfigTests: XCTestCase {
 
   // MARK: - Reticulum.Configuration discoveryStampValidator
 
-  func testConfigurationDiscoveryStampValidatorDefaultNil() {
-    let config = Reticulum.Configuration(
-      storagePath: URL(fileURLWithPath: NSTemporaryDirectory()),
-      shareInstance: false
-    )
-    XCTAssertNil(
-      config.discoveryStampValidator,
-      "discoveryStampValidator must default to nil")
-  }
-
   func testConfigurationDiscoveryStampValidatorCanBeSet() {
     var config = Reticulum.Configuration(
       storagePath: URL(fileURLWithPath: NSTemporaryDirectory()),
@@ -155,6 +145,6 @@ final class ReticulumDiscoveryConfigTests: XCTestCase {
 private final class AlwaysPassValidator26: DiscoveryStampValidator {
   var stampSize: Int { 32 }
   func stampWorkblock(material: Data, expandRounds: Int) -> Data { Data(repeating: 0, count: 32) }
-  func stampValue(workblock: Data, stamp: Data) -> Int { 255 }
-  func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+  func stampValue(workblock: Data, stamp: Data) -> Double { 255 }
+  func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
 }

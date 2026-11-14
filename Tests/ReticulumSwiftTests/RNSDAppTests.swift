@@ -329,7 +329,7 @@ final class RNSDAppTests: XCTestCase {
     XCTAssertEqual(RNSDApp.versionText(program: "rnpkg"), "rnpkg \(Reticulum.version)")
     // Documented divergence: Python prints RNS.__version__. Keeping this assertion here
     // means the two versions can never drift silently.
-    XCTAssertEqual(Reticulum.rnsProtocolVersion, "1.5.7")
+    XCTAssertEqual(Reticulum.rnsProtocolVersion, "1.6.0")
   }
 
   // MARK: - rnpkg's own example config

@@ -114,6 +114,11 @@ public final class BlackholeUpdater {
     generation &+= 1
     let myGeneration = generation
     lock.unlock()
+    // `Discovery.py:908`, so a `required_only` node still hears blackhole lists.
+    if let transport {
+      transport.wantsDestinationType(
+        "rnstransport.info.blackhole", requester: transport.applicationIdentity.hash)
+    }
     DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + Self.initialWait) {
       [weak self] in
       self?.runJob(generation: myGeneration)

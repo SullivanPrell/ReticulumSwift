@@ -69,8 +69,8 @@ final class PathTableHopCountTests: XCTestCase {
   final class PassthroughStamps: DiscoveryStampValidator {
     let stampSize = 32
     func stampWorkblock(material: Data, expandRounds: Int) -> Data { Data(count: 256) }
-    func stampValue(workblock: Data, stamp: Data) -> Int { 99 }
-    func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+    func stampValue(workblock: Data, stamp: Data) -> Double { 99 }
+    func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
   }
 
   /// Transports hold interfaces weakly and links hold transports weakly.
@@ -254,8 +254,9 @@ final class PathTableHopCountTests: XCTestCase {
       TransportPathResolver(transport: t).hopsTo(dest.hash), 1,
       "`rnpath <hash>` prints `RNS.Transport.hops_to(destination_hash)` (rnpath.py:463)")
     let entry = try XCTUnwrap(t.getPathTable().first { $0.destinationHash == dest.hash })
-    let line = RNPathFormatter.pathTableLine(RNPathTableEntry(entry, resolvingNamesWith: t))
-    XCTAssertTrue(line.contains(" is 1 hop  away via "), "rnpath.py:288-290: \(line)")
+    let line = RNPathFormatter.pathTableLine(
+      RNPathTableEntry(entry, resolvingNamesWith: t), now: Date().timeIntervalSince1970)
+    XCTAssertTrue(line.contains(">   1h via <"), "rnpath.py:302: \(line)")
   }
 
   // MARK: - destination_table

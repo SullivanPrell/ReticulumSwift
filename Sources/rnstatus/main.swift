@@ -149,6 +149,7 @@ do {
 } catch {
   fail("No shared RNS instance available to get status from", .noSharedInstance)
 }
+connection.reticulum.wantsDestinationType("rnstransport.remote.management")  // rnstatus.py:174, 928
 
 // MARK: - Interface management (--attach / --detach / --reload)
 

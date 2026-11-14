@@ -290,7 +290,9 @@ final class SharedInstanceBroadcastTests: XCTestCase {
     }
     usleep(300_000)
     XCTAssertFalse(
-      seen().contains { $0.data.suffix(Constants.truncatedHashLength) == tag },
-      "the mesh's request reached the client verbatim")
+      seen().contains { $0.data == target + tag }, "the mesh's request reached the client verbatim")
+    // The instance's own request keeps the mesh's tag under its transport ID
+    // (`Transport.py:3950-3963`).
+    XCTAssertTrue(seen().contains { $0.data == target + hub.transportInstanceID + tag })
   }
 }

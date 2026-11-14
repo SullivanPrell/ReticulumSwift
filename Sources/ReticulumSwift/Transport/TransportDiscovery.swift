@@ -70,7 +70,7 @@ extension Transport {
   ///   - callback: Called with each valid `DiscoveredInterfaceInfo` when it arrives.
   public func discoverInterfaces(
     storagePath: String,
-    requiredValue: Int = Reticulum.requiredDiscoveryValue(),
+    requiredValue: Double = Reticulum.requiredDiscoveryValue(),
     stampValidator: DiscoveryStampValidator,
     callback: ((DiscoveredInterfaceInfo) -> Void)? = nil
   ) {

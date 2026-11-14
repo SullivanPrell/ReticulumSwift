@@ -361,6 +361,7 @@ func runSend(file: String, destination: String) -> Never {
   emit(erase, terminator: "")
 
   let connection = startReticulum()
+  connection.reticulum.wantsDestinationType("\(RNCopyApp.appName).receive")  // rncp.py:390, 647
   let identity = prepareIdentity(connection: connection)
   // `estab_timeout = time.time()+max(timeout, reticulum.get_medium_path_timeout())`
   // (rncp.py:404, 660). In `rncp` the `-w` value feeds nothing but that one deadline—which
@@ -493,6 +494,7 @@ func runFetch(file: String, destination: String) -> Never {
   let prettyDestination = prettyHex(destinationHash)
 
   let connection = startReticulum()
+  connection.reticulum.wantsDestinationType("\(RNCopyApp.appName).receive")  // rncp.py:390, 647
   let identity = prepareIdentity(connection: connection)
   // `estab_timeout = time.time()+max(timeout, reticulum.get_medium_path_timeout())`
   // (rncp.py:404, 660). In `rncp` the `-w` value feeds nothing but that one deadline—which

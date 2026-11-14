@@ -130,10 +130,10 @@ final class TunnelPersistenceTests: XCTestCase {
       return XCTFail("field 2 is the list of serialised paths")
     }
     XCTAssertEqual(
-      path.count, 8,
+      path.count, 9,
       """
-      a tunnel path is the same 8-element list as a destination table entry \
-      (Transport.py:3470-3479), so the two files share one codec — and one \
+      a tunnel path is the same 9-element list as a destination table entry \
+      (Transport.py:4430-4440), so the two files share one codec — and one \
       announce-cache dependency.
       """)
   }

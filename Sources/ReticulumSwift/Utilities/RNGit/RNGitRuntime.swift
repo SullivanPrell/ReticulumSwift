@@ -405,8 +405,11 @@ public enum RNGitRuntime {
       paths: paths,
       verbosity: setup.service == true ? nil : setup.verbosity - setup.quietness)
 
-    return try InstanceConnection.attach(
+    let reticulum = try InstanceConnection.attach(
       configDirectory: configDir, logLevel: bootstrapped.logLevel
     ).reticulum
+    // Python: `server.py:68`.
+    reticulum.wantsDestinationType("\(RNGitDestination.appName).\(RNGitDestination.aspect)")
+    return reticulum
   }
 }

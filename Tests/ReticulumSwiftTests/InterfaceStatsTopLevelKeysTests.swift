@@ -13,7 +13,7 @@ import XCTest
 @testable import ReticulumSwift
 
 /// Every top-level key `Reticulum.get_interface_stats()` publishes, in Python's own
-/// insertion order (`Reticulum.py:1576-1616`).
+/// insertion order (`Reticulum.py:1803-1850`, RNS 1.6.0).
 ///
 /// `rnstatus` reads most of the per-interface fields behind `if "key" in ifstat`, but the
 /// top-level ones it does **not**: `stats['rxpps']` under `-p` and `stats['rxqt']` under
@@ -31,10 +31,12 @@ final class InterfaceStatsTopLevelKeysTests: XCTestCase {
     "arxb", "atxb", "arxs", "atxs", "arxf", "atxf",
     "prxb", "ptxb", "prxs", "ptxs", "prxf", "ptxf",
     "rxpps", "txpps",
+    "rxpkts", "txpkts", "arxpkts", "atxpkts", "prxpkts", "ptxpkts",
     "rxqt", "rxqd", "rxqa", "rxqp", "rxqil",
     "rxqtd", "rxqdd", "rxqad", "rxqpd", "rxqild",
     "tqpressure", "dqpressure", "aqpressure", "pqpressure", "ilqpressure",
     "txq",
+    "tlinks", "alinks", "plinks", "tpcount", "unupcount", "actpcount",
   ]
 
   private func keys(of value: MsgPack.Value) throws -> [String] {

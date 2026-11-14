@@ -39,11 +39,11 @@ final class RNStatus155SurfaceTests: XCTestCase {
     + "Name                      Type         Status     Last Heard   Value   Running          Location       \n"
     + String(repeating: "-", count: 110) + "\n"
   private static let backboneRow =
-    "my-backbone               Backbone   ✓ Available  4m ago       21      RNS 1.5.5        55.6761, 12.5683\n"
+    "my-backbone               Backbone   ✓ Available  4m ago       21.000  RNS 1.5.5        55.6761, 12.5683\n"
   private static let unknownRow =
-    "a-very-long-discovered-i… RNode      ? Unknown    2h ago       18      Unknown          N/A            \n"
+    "a-very-long-discovered-i… RNode      ? Unknown    2h ago       18.000  Unknown          N/A            \n"
   private static let staleRow =
-    "stale-one                 TCPServer  × Stale      3d ago       14      RNSwift 1.22.1-… -35.2717, 138.5542\n"
+    "stale-one                 TCPServer  × Stale      3d ago       14.000  RNSwift 1.22.1-… -35.2717, 138.5542\n"
 
   // MARK: - The table
 
@@ -91,7 +91,7 @@ final class RNStatus155SurfaceTests: XCTestCase {
         renderer().renderDiscoveredTable([info]), Self.tableHeader,
         "\(String(describing: implName)) \(String(describing: version))")
       let shown = renderer { $0.showUnknown = true }.renderDiscoveredTable([info])
-      XCTAssertTrue(shown.contains(" 21      Unknown          55.6761"), shown)
+      XCTAssertTrue(shown.contains(" 21.000  Unknown          55.6761"), shown)
     }
   }
 
@@ -105,13 +105,13 @@ final class RNStatus155SurfaceTests: XCTestCase {
     + "Stack        : RNS 1.5.5\n"
     + "Status       : Available\n"
     + "Transport    : Enabled\n"
+    + "Stamp Value  : 21.000\n"
     + "Distance     : 2 hops\n"
     + "Discovered   : 3d and 11h ago\n"
     + "Last Heard   : 4m ago\n"
     + "Location     : 55.6761, 12.5683, 12.0m h\n"
     + "Address      : example.org\n"
     + "Port         : 4965\n"
-    + "Stamp Value  : 21\n"
     + "\nConfiguration Entry:\n"
     + "  [[my-backbone]]\n"
     + "    type = BackboneInterface\n"
@@ -123,13 +123,13 @@ final class RNStatus155SurfaceTests: XCTestCase {
     + "Stack        : RNSwift 1.22.1-development\n"
     + "Status       : Stale\n"
     + "Transport    : Enabled\n"
+    + "Stamp Value  : 14.000\n"
     + "Distance     : 3 hops\n"
     + "Discovered   : 10d and 10h ago\n"
     + "Last Heard   : 3d and 11h ago\n"
     + "Location     : -35.2717, 138.5542\n"
     + "Address      : 1.2.3.4\n"
     + "Port         : 4242\n"
-    + "Stamp Value  : 14\n"
     + "\nConfiguration Entry:\n"
     + "  [[stale]]\n"
     + "    type = TCPClientInterface\n"
@@ -167,7 +167,7 @@ final class RNStatus155SurfaceTests: XCTestCase {
       RNStatusJSON.encodeDiscovered(Fixtures.discoveredFixtures()),
       "[{\"type\": \"BackboneInterface\", \"impl_name\": \"RNS\", \"version\": \"1.5.5\", "
         + "\"transport\": true, \"name\": \"my-backbone\", "
-        + "\"received\": 1699999760.0, \"stamp\": \"1111111111111111\", \"value\": 21, "
+        + "\"received\": 1699999760.0, \"stamp\": \"1111111111111111\", \"value\": 21.0, "
         + "\"transport_id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", "
         + "\"network_id\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"hops\": 2, "
         + "\"latitude\": 55.6761, \"longitude\": 12.5683, \"height\": 12.0, "
@@ -179,7 +179,7 @@ final class RNStatus155SurfaceTests: XCTestCase {
         + "{\"type\": \"RNodeInterface\", \"impl_name\": null, \"version\": null, "
         + "\"transport\": false, "
         + "\"name\": \"a-very-long-discovered-interface-name\", \"received\": 1699992800.0, "
-        + "\"stamp\": \"3333333333333333\", \"value\": 18, "
+        + "\"stamp\": \"3333333333333333\", \"value\": 18.0, "
         + "\"transport_id\": \"cccccccccccccccccccccccccccccccc\", "
         + "\"network_id\": \"cccccccccccccccccccccccccccccccc\", \"hops\": 1, "
         + "\"latitude\": null, \"longitude\": null, \"height\": null, "
@@ -190,7 +190,7 @@ final class RNStatus155SurfaceTests: XCTestCase {
         + "\"status\": \"unknown\", \"status_code\": 100}, "
         + "{\"type\": \"TCPServerInterface\", \"impl_name\": \"RNSwift\", "
         + "\"version\": \"1.22.1-development\", \"transport\": true, \"name\": \"stale-one\", "
-        + "\"received\": 1699700000.0, \"stamp\": \"5555555555555555\", \"value\": 14, "
+        + "\"received\": 1699700000.0, \"stamp\": \"5555555555555555\", \"value\": 14.0, "
         + "\"transport_id\": \"dddddddddddddddddddddddddddddddd\", "
         + "\"network_id\": \"dddddddddddddddddddddddddddddddd\", \"hops\": 3, "
         + "\"latitude\": -35.2717, \"longitude\": 138.55425, \"height\": null, "
@@ -239,6 +239,8 @@ final class RNStatus155SurfaceTests: XCTestCase {
   /// A discovery file holds the keys in the order Python's `info` dict gains them
   /// (`Discovery.py:363-463`, then `606-608`), since Python's own `rnstatus -d -j` prints a
   /// file straight from disk.
+  ///
+  /// An entry from before 1.6.0 has no cost keys and keeps none.
   func testAPersistedEntryKeepsPythonsKeyOrder() throws {
     var weave = Fixtures.discoveredFixtures()[1]
     weave.type = "WeaveInterface"
@@ -251,11 +253,13 @@ final class RNStatus155SurfaceTests: XCTestCase {
     weave.channel = 11
     weave.modulation = "2FSK"
     weave.operatorLxmfAddress = String(repeating: "ee", count: 16)
+    weave.hasCostInfo = true
     XCTAssertEqual(
       try persistedKeys(weave).map(\.0),
       [
         "type", "impl_name", "version", "transport", "name", "received", "stamp", "value",
-        "transport_id", "network_id", "hops", "latitude", "longitude", "height",
+        "transport_id", "network_id", "dst_cost", "pr_cost", "hops", "latitude", "longitude",
+        "height",
         "ifac_netname", "ifac_netkey", "frequency", "bandwidth", "channel", "modulation",
         "config_entry", "discovery_hash", "operator_lxmf_address",
         "discovered", "last_heard", "heard_count",
@@ -306,12 +310,12 @@ final class RNStatus155SurfaceTests: XCTestCase {
     discovery.interfaceDiscovered(fixtures[0])
     discovery.interfaceDiscovered(fixtures[1])
 
-    // Python: `Discovery.py:594-600`.
+    // Python: `Discovery.py:594-600`, with `RNS.prettycost(value)` from 1.6.0 (`:599`).
     XCTAssertEqual(
       lines,
       [
-        "Discovered BackboneInterface (RNS 1.5.5) 2 hops away with stamp value 21: my-backbone",
-        "Discovered RNodeInterface (unknown implementation) 1 hop away with stamp value 18: "
+        "Discovered BackboneInterface (RNS 1.5.5) 2 hops away with stamp value 21.000: my-backbone",
+        "Discovered RNodeInterface (unknown implementation) 1 hop away with stamp value 18.000: "
           + "a-very-long-discovered-interface-name",
       ])
   }

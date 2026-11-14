@@ -138,11 +138,34 @@ public final class RPCClient {
   }
 
   /// Convenience for `{"get": <path>, ...extra}` calls.
+  ///
+  /// A failed call of a getter that RNS 1.6.0 guards is logged as Python logs it before
+  /// returning its fallback (`Reticulum.py:1616`, `:1876`, `:1904`, `:2070-2120`), then
+  /// rethrown for the caller's own fallback.
   public func get(_ path: String, extra: [(String, MsgPack.Value)] = []) throws -> MsgPack.Value {
     var pairs: [(MsgPack.Value, MsgPack.Value)] = [(.string("get"), .string(path))]
     for (key, value) in extra { pairs.append((.string(key), value)) }
-    return try call(.map(pairs))
+    do {
+      return try call(.map(pairs))
+    } catch {
+      if let task = Self.guardedGetters[path] {
+        let rendered = (error as? RPCClientError)?.pythonDescription ?? "\(error)"
+        Reticulum.log("Shared instance RPC failed while \(task): \(rendered)", level: .error)
+      }
+      throw error
+    }
   }
+
+  /// The getters RNS 1.6.0 wraps, and what its log line says each was doing.
+  private static let guardedGetters = [
+    "interface_stats": "getting interface stats",
+    "path_table": "getting path table",
+    "rate_table": "getting rate table",
+    "link_distribution": "getting link distribution",
+    "packet_rssi": "getting packet RSSI",
+    "packet_snr": "getting packet SNR",
+    "packet_q": "getting packet link quality",
+  ]
 
   /// Convenience for `{"drop": <target>, ...extra}` calls.
   @discardableResult
@@ -372,16 +395,19 @@ public final class RPCClient {
     defer { freeaddrinfo(info) }
 
     var candidate: UnsafeMutablePointer<addrinfo>? = first
+    var failure: Int32 = 0
     while let entry = candidate {
       let fd = socket(entry.pointee.ai_family, entry.pointee.ai_socktype, entry.pointee.ai_protocol)
+      failure = errno
       if fd >= 0 {
         setTimeout(fd, timeout)
         if connect(fd, entry.pointee.ai_addr, entry.pointee.ai_addrlen) == 0 { return fd }
+        failure = errno
         close(fd)
       }
       candidate = entry.pointee.ai_next
     }
-    throw RPCClientError.connectionFailed(host, port)
+    throw RPCClientError.connectionFailed(host, port, errno: failure)
   }
 
   private static func setTimeout(_ fd: Int32, _ seconds: TimeInterval) {
@@ -459,8 +485,9 @@ public final class RPCClient {
 public enum RPCClientError: Error, CustomStringConvertible {
   /// No `transport_identity` in the given storage directory, so no auth key can be derived.
   case noInstanceIdentity(URL)
-  /// Couldn't open a TCP connection to the control socket.
-  case connectionFailed(String, UInt16)
+  /// Couldn't open a TCP connection to the control socket; `errno` is the last socket error,
+  /// 0 when the address didn't resolve.
+  case connectionFailed(String, UInt16, errno: Int32 = 0)
   /// The peer closed the connection mid-exchange.
   case connectionClosed
   /// The peer's greeting didn't follow the `multiprocessing.connection` protocol.
@@ -475,7 +502,7 @@ public enum RPCClientError: Error, CustomStringConvertible {
     switch self {
     case .noInstanceIdentity(let url):
       return "No instance identity at \(url.path) — is a Reticulum instance configured here?"
-    case .connectionFailed(let host, let port):
+    case .connectionFailed(let host, let port, _):
       return "Could not connect to instance control socket at \(host):\(port)"
     case .connectionClosed:
       return "Instance closed the control connection unexpectedly"
@@ -486,5 +513,14 @@ public enum RPCClientError: Error, CustomStringConvertible {
     case .malformedResponse(let detail):
       return "Malformed response from instance: \(detail)"
     }
+  }
+
+  /// The failure as Python's exception prints it in a log line.
+  ///
+  /// A refused connection is `[Errno 61] Connection refused`. Other failures keep
+  /// ``description``.
+  public var pythonDescription: String {
+    guard case .connectionFailed(_, _, let code) = self, code != 0 else { return description }
+    return "[Errno \(code)] \(String(cString: strerror(code)))"
   }
 }

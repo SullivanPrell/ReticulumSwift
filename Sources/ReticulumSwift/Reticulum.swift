@@ -34,18 +34,19 @@ public final class Reticulum {
   /// a single version string for both its library and its protocol). Bump only
   /// when parity is verified against a new RNS release. Informational only.
   ///
-  /// `reticulum-interop` verifies the match. Its `make test-utilities` drives Python 1.5.7's
+  /// `reticulum-interop` verifies the match. Its `make test-utilities` drives Python 1.6.0's
   /// utilities against this port's daemon, and both directions agree, including the key order
   /// of `rnstatus -j`. Its `make test-rngit` serves one repository from a Python and a Swift
   /// `rngit` node, compares every page each browser reads, and clones the repository through
   /// each `git-remote-rns`.
   ///
-  /// Of upstream's 77 per-interface `rnstatus` keys this port emits 73 and adds none of its
-  /// own; all 28 top-level keys are present. The four it omits are deliberate:
-  /// `interference_last_ts` and `interference_last_dbm` are dead upstream (upstream comments out
-  /// every writer at `RNodeInterface.py:957-966`), and `blocked_ips` and `blocked_ip_list` are
+  /// This port emits every top-level `rnstatus` key and every per-interface key except six, and
+  /// adds none of its own. The six are deliberate. `channel` and `modulation` are dead upstream:
+  /// no interface sets `r_channel` or `modulation` (`Reticulum.py:1660-1661`).
+  /// `interference_last_ts` and `interference_last_dbm` are dead too, since upstream comments out
+  /// every writer at `RNodeInterface.py:957-966`. `blocked_ips` and `blocked_ip_list` are
   /// `BackboneInterface` server state, which this client-only Backbone never holds.
-  /// `rnstatus.py` guards all four.
+  /// `rnstatus.py` guards all six.
   ///
   /// What each release since 1.4.2 brought:
   ///
@@ -83,6 +84,16 @@ public final class Reticulum {
   ///    says `transport` is true, and a non-transport instance with a discoverable interface
   ///    keeps a static transport identity. 1.5.7's egress-control reset has nothing to reset
   ///    here, because this port has no `TransmitBuffer`.
+  ///  - **1.6.0**, stamps and filtering. Announces, path requests and link requests carry
+  ///    optional proof-of-work stamps with fractional costs (``Stamps``, ``StampSettings``),
+  ///    set by a `[stamps]` config section. Nothing is enforced by default, and only a link
+  ///    request to a destination that announced a cost is stamped unasked. `[filter]` and
+  ///    ``wantsDestinationType(_:requester:)`` drop announces of unwanted types, discovery
+  ///    announces carry the interface's costs, and `rnstatus` and `rnpath` gained packet
+  ///    counters, path-pool counts and the path table's stamp and usage columns. Known
+  ///    destinations and their ratchets moved to Python's SQLite store
+  ///    (``KnownDestinationsStore``). The rate-blocked announce rework
+  ///    (`Transport.py:2579-2760`) isn't ported.
   ///
   /// Inbound packets queue by traffic class for one drain worker, as in Python
   /// (``Transport/TrafficClass``, ``InboundQueues``). Two areas are deliberately not ported
@@ -96,7 +107,7 @@ public final class Reticulum {
   /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,
   /// ``autoconnectsDiscoveredInterfaces``), and batches `discovery_path_requests` together
   /// with the announce replay that answers the requestors it batches.
-  public static let rnsProtocolVersion = "1.5.7"
+  public static let rnsProtocolVersion = "1.6.0"
 
   /// Log severity levels, ordered from `none` through `extreme`.
   public enum LogLevel: Int, Comparable, Sendable {
@@ -227,7 +238,16 @@ public final class Reticulum {
     /// `discoveryStampValidator`, and typically backed by the same `LXStamper`.
     public var discoveryStampGenerator: (any DiscoveryStampGenerator)?
 
-    /// Creates a configuration, leaving both discovery stamp hooks unset.
+    /// Python's `Reticulum(enable_stamping=True)`: stamps this node's announces, path
+    /// requests and link requests (`Reticulum.py:353-357`).
+    public var enableStamping = false
+
+    /// Python's `Reticulum(enforce_stamps=True)`: enforces announce, path-request and
+    /// link-request stamps (`Reticulum.py:359-362`).
+    public var enforceStamps = false
+
+    /// Creates a configuration with the built-in ``DiscoveryStamper`` as both discovery
+    /// stamp hooks, as RNS 1.6.0 stamps with `RNS.Stamps` (`Discovery.py:52`).
     public init(
       storagePath: URL, configPath: URL? = nil, shareInstance: Bool = true,
       logLevel: LogLevel? = nil
@@ -236,8 +256,8 @@ public final class Reticulum {
       self.configPath = configPath
       self.shareInstance = shareInstance
       self.logLevel = logLevel
-      self.discoveryStampValidator = nil
-      self.discoveryStampGenerator = nil
+      self.discoveryStampValidator = DiscoveryStamper()
+      self.discoveryStampGenerator = DiscoveryStamper()
     }
   }
 
@@ -503,9 +523,9 @@ public final class Reticulum {
   /// Returns the required stamp value for interface discovery validation.
   ///
   /// Mirrors Python's `Reticulum.required_discovery_value()`.
-  public private(set) static var storedRequiredDiscoveryValue: Int = 16
+  public private(set) static var storedRequiredDiscoveryValue: Double = 16
   /// Returns the required stamp value for interface discovery validation.
-  public static func requiredDiscoveryValue() -> Int { storedRequiredDiscoveryValue }
+  public static func requiredDiscoveryValue() -> Double { storedRequiredDiscoveryValue }
 
   /// Returns whether blackhole list publishing is enabled.
   ///
@@ -964,6 +984,92 @@ public final class Reticulum {
         + url.deletingLastPathComponent().path + "/config and restart Reticulum if needed.")
   }
 
+  /// `Identity.load_known_destinations` (`Identity.py:257-312`).
+  ///
+  /// A local client reads the shared instance's database read-only. Any other instance opens
+  /// its own, moves the legacy file and ratchet files into it once, and loads it. When the
+  /// database can't be opened, the legacy files stay in use.
+  private func loadKnownDestinations() {
+    let manager = FileManager.default
+    let storage = configuration.storagePath
+    let database = StorageInventory.url(.knownDestinationsDatabase, storage: storage)
+    if transport.isConnectedToSharedInstance {
+      transport.sharedKnownDestinationsDatabase = database
+      do {
+        let rows = try KnownDestinationsStore(path: database, readOnly: true).loadAll()
+        transport.restore(knownDestinations: rows)
+        Self.log(
+          "Loaded \(rows.count) known destinations from shared instance database", level: .verbose)
+      } catch {
+        Self.log(
+          "Could not load known destinations from shared instance database, continuing with an "
+            + "empty table. The contained exception was: \(error)", level: .error)
+      }
+      return
+    }
+
+    let store: KnownDestinationsStore
+    do {
+      store = try KnownDestinationsStore(path: database)
+    } catch {
+      Self.log(
+        "Could not initialise known destinations database, falling back to legacy snapshot "
+          + "persistence. The contained exception was: \(error)", level: .error)
+      if manager.fileExists(atPath: knownDestinationsURL.path) {
+        try? transport.loadKnownDestinations(from: knownDestinationsURL)
+      }
+      transport.loadKnownRatchets()
+      return
+    }
+    transport.knownDestinationsStore = store
+
+    if manager.fileExists(atPath: knownDestinationsURL.path) {
+      do {
+        let imported = try store.importLegacy(from: knownDestinationsURL)
+        // `os.rename` replaces an earlier `.imported` file.
+        let renamed = StorageInventory.url(.knownDestinationsImported, storage: storage)
+        try? manager.removeItem(at: renamed)
+        try manager.moveItem(at: knownDestinationsURL, to: renamed)
+        Self.log(
+          "Imported \(imported) known destinations from legacy storage into the known "
+            + "destinations database", level: .verbose)
+      } catch {
+        Self.log(
+          "Could not import legacy known destinations file into the known destinations "
+            + "database. The contained exception was: \(error)", level: .error)
+      }
+    }
+
+    let started = Date()
+    do {
+      let rows = try store.loadAll()
+      transport.restore(knownDestinations: rows)
+      Self.log(
+        "Loaded \(rows.count) known destinations from storage in "
+          + RNSUtilities.prettyshorttime(Date().timeIntervalSince(started)), level: .verbose)
+    } catch {
+      Self.log(
+        "Error loading known destinations from storage, continuing with an empty table",
+        level: .error)
+    }
+
+    if let ratchets = transport.ratchetsDirectory,
+      let files = try? manager.contentsOfDirectory(atPath: ratchets.path), !files.isEmpty
+    {
+      let imported = store.importLegacyRatchets(
+        from: ratchets, cutoff: Date().timeIntervalSince1970 - transport.ratchetExpiry,
+        known: Set(transport.knownIdentities.keys))
+      Self.log("Imported \(imported) ratchets from legacy file storage", level: .verbose)
+    }
+    // Python reads a stored ratchet on its first use (`Identity.py:621-631`); this reads all
+    // of them now, so the in-memory table stays the one place a ratchet is looked up.
+    for (hash, entry) in (try? store.loadRatchets()) ?? [:] {
+      transport.restore(
+        ratchet: entry.ratchet, forDestination: hash,
+        receivedAt: Date(timeIntervalSince1970: entry.received))
+    }
+  }
+
   /// Brings the stack up: storage, config, identity, interfaces and the shared instance.
   public func start() throws {
     // Python sets a requested level before it reads the config (`Reticulum.py:316`).
@@ -984,6 +1090,17 @@ public final class Reticulum {
         config = parsed
         applyConfig(parsed)
       }
+    }
+
+    // After the config, so the constructor flags win (`Reticulum.py:353-362`).
+    if configuration.enableStamping {
+      transport.stamps.stampDestinations = true
+      transport.stamps.stampPRs = true
+      transport.stamps.stampLRs = true
+    }
+    if configuration.enforceStamps {
+      transport.stamps.enforced = true
+      transport.stamps.lrEnforced = true
     }
 
     // A local client leaves transport to the shared instance (`Reticulum.py:440`), before
@@ -1035,18 +1152,14 @@ public final class Reticulum {
 
     transport.ratchetsDirectory = StorageInventory.url(
       .ratchets, storage: configuration.storagePath)
+    transport.stampsDirectory = StorageInventory.url(.stamps, storage: configuration.storagePath)
 
     // Set cache directory for disk-based packet (announce) cache.
     // Mirrors Python's `RNS.Reticulum.cachepath`.
     transport.cacheDirectory = StorageInventory.url(
       .cache, storage: configuration.storagePath)
 
-    // Load persisted known destinations (mirrors Python's Identity.load_known_destinations).
-    if FileManager.default.fileExists(atPath: knownDestinationsURL.path) {
-      try? transport.loadKnownDestinations(from: knownDestinationsURL)
-    }
-
-    transport.loadKnownRatchets()
+    loadKnownDestinations()
     transport.sweepKnownRatchets()
 
     // `Transport.py:340` and `:404-408`: only a transport instance that isn't a local client
@@ -1170,6 +1283,10 @@ public final class Reticulum {
   /// A local client writes no state file: they belong to the shared instance
   /// (`Transport.py:3980`, `Identity.py:616`).
   public func stop() {
+    // The exit handler's first act (`Reticulum.py:189`). A client tells its shared instance
+    // while the control socket is still reachable.
+    unwantsAllDestinationTypes()
+
     // Close the control socket before anything else, so a `manage` call can't attach an
     // interface to a transport that is stopping, and the port is free when `stop()` returns.
     //
@@ -1265,6 +1382,69 @@ public final class Reticulum {
   @discardableResult
   public func dropAllVia(transportHash: Data) -> Int {
     transport.dropAllPaths(via: transportHash)
+  }
+
+  // MARK: - Destination-type filter (RNS 1.6.0)
+
+  /// Registers that `requester` wants announces of `fullName` (`app.aspect…`), so a
+  /// `required_only` node admits them.
+  ///
+  /// The requester defaults to ``Transport/applicationIdentity``. A shared-instance client
+  /// registers locally and with its shared instance, and returns the instance's answer.
+  /// Mirrors Python's `Reticulum.wants_destination_type` (`Reticulum.py:2224-2237`).
+  @discardableResult
+  public func wantsDestinationType(_ fullName: String, requester: Data? = nil) -> Bool {
+    let requester = requester ?? transport.applicationIdentity.hash
+    let local = transport.wantsDestinationType(fullName, requester: requester)
+    guard transport.isConnectedToSharedInstance else { return local }
+    return sharedInstanceFilterCall("wants_destination_type", .string(fullName), requester)
+  }
+
+  /// Withdraws a ``wantsDestinationType(_:requester:)`` registration
+  /// (`Reticulum.py:2239-2252`).
+  @discardableResult
+  public func unwantsDestinationType(_ fullName: String, requester: Data? = nil) -> Bool {
+    let requester = requester ?? transport.applicationIdentity.hash
+    let local = transport.unwantsDestinationType(fullName, requester: requester)
+    guard transport.isConnectedToSharedInstance else { return local }
+    return sharedInstanceFilterCall("unwants_destination_type", .string(fullName), requester)
+  }
+
+  /// Withdraws every registration `requester` made (`Reticulum.py:2254-2267`).
+  @discardableResult
+  public func unwantsAllDestinationTypes(requester: Data? = nil) -> Bool {
+    let requester = requester ?? transport.applicationIdentity.hash
+    let local = transport.unwantsAllDestinationTypes(requester: requester)
+    guard transport.isConnectedToSharedInstance else { return local }
+    return sharedInstanceFilterCall("unwants_all_destination_types", .bool(true), requester)
+  }
+
+  /// Sets announce filtering to required types only.
+  ///
+  /// Only a shared-instance client may, so an application can't squelch announces for the node as a
+  /// whole (`Reticulum.py:2213-2222`).
+  @discardableResult
+  public func requiredAnnouncesOnly(_ enabled: Bool = true) -> Bool {
+    guard transport.isConnectedToSharedInstance else { return false }
+    transport.requiredDestinationsOnly = enabled
+    return true
+  }
+
+  /// One filter call to the shared instance; `false` when it can't be reached, as Python's
+  /// `except` returns.
+  private func sharedInstanceFilterCall(_ key: String, _ value: MsgPack.Value, _ requester: Data)
+    -> Bool
+  {
+    guard let authkey = rpcAuthenticationKey() else { return false }
+    let client = RPCClient(
+      port: config?.reticulum.instanceControlPort ?? RPCClient.defaultControlPort,
+      authkey: authkey)
+    let request = MsgPack.Value.map([
+      (.string(key), value), (.string("requester"), .bytes(requester)),
+      (.string("signature"), .nil),
+    ])
+    guard case .bool(let answer)? = try? client.call(request) else { return false }
+    return answer
   }
 
   /// Blackhole an identity hash, preventing its announces from being forwarded.
@@ -1447,6 +1627,11 @@ public final class Reticulum {
     interface.optimiseMtu()
 
     interface.ingressControl = block.bool("ingress_control") ?? true
+
+    // Clamped to `STAMP_COST_CAP` (`Reticulum.py:963-971`, `1157-1158`).
+    let costCap = Double(Transport.stampCostCap)
+    interface.destinationCost = block.double("destination_cost").map { max(0, min($0, costCap)) }
+    interface.prCost = block.double("pr_cost").map { max(0, min($0, costCap)) }
 
     // Present-only, so an absent key leaves the class default (`Reticulum.py:942-953`).
     let state = interface.interfaceState
@@ -2318,6 +2503,8 @@ public final class Reticulum {
 
   private func applyConfig(_ cfg: ReticulumConfig) {
     transport.transportEnabled = cfg.reticulum.enableTransport
+    cfg.filter.apply(to: transport)
+    cfg.stamps.apply(to: &transport.stamps)
     Reticulum.allowProbes = cfg.reticulum.allowProbes
     Reticulum.storedRemoteManagementEnabled = cfg.reticulum.remoteManagementEnabled
     Reticulum.storedInterfaceManagementEnabled = cfg.reticulum.enableInterfaceManagement

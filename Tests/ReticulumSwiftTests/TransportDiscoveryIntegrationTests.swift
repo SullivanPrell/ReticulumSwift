@@ -206,8 +206,8 @@ final class TransportDiscoveryIntegrationTests: XCTestCase {
 final class AlwaysPassValidator: DiscoveryStampValidator {
   var stampSize: Int { 32 }
   func stampWorkblock(material: Data, expandRounds: Int) -> Data { Data(repeating: 0, count: 32) }
-  func stampValue(workblock: Data, stamp: Data) -> Int { 255 }
-  func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+  func stampValue(workblock: Data, stamp: Data) -> Double { 255 }
+  func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
 }
 
 private func tmpDir() -> String {

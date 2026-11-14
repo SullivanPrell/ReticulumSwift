@@ -33,15 +33,17 @@ final class WireIntegerRangeTests: XCTestCase {
     func stampWorkblock(material: Data, expandRounds: Int) -> Data {
       Data(repeating: 0, count: max(1, expandRounds) * 256)
     }
-    func stampValue(workblock: Data, stamp: Data) -> Int { 99 }
-    func stampValid(stamp: Data, targetCost: Int, workblock: Data) -> Bool { true }
+    func stampValue(workblock: Data, stamp: Data) -> Double { 99 }
+    func stampValid(stamp: Data, targetCost: Double, workblock: Data) -> Bool { true }
   }
 
   private func discover(_ fields: [(MsgPack.Value, MsgPack.Value)]) -> DiscoveredInterfaceInfo? {
     var result: DiscoveredInterfaceInfo?
-    let handler = InterfaceAnnounceHandler(requiredValue: 14, stampValidator: AcceptAnyStamp()) {
-      result = $0
-    }
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 14, stampValidator: AcceptAnyStamp(), hopsTo: { _ in 1 },
+      callback: {
+        result = $0
+      })
     handler.receivedAnnounce(
       destinationHash: Data(repeating: 0, count: 16),
       identity: Identity(),

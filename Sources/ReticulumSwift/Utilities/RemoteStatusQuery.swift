@@ -176,7 +176,7 @@ public final class RemoteStatusQuery {
       case .initiatorClosed: return
       case .timeout: completion(.failure(.linkTimedOut))
       case .destinationClosed: completion(.failure(.linkClosedByServer))
-      case .none: completion(.failure(.linkClosedUnexpectedly))
+      case .stampFailure, .none: completion(.failure(.linkClosedUnexpectedly))
       }
       _ = self
     }

@@ -16,9 +16,9 @@ import XCTest
 ///
 /// `bugs/029`—the port writes `storage/known_destinations.json`, a JSON object of hex strings.
 /// The reference writes `umsgpack.dump(Identity.known_destinations)` (`Identity.py:198`): a map
-/// keyed by the raw 16-byte destination hash, whose values are the 5-element list
+/// keyed by the raw 16-byte destination hash, whose values are the list
 /// `[last_announce, packet_hash, public_key, app_data, last_use]` read back positionally at
-/// `:220-231`.
+/// `:220-231`. RNS 1.6.0 appends `stamp, stamp_value, lr_cost` (`Identity.py:115` in 1.6.0).
 ///
 /// This is the store the path table resolves identities through—the reference's
 /// `destination_table` entry carries no public key of its own—so a Python daemon that can't
@@ -50,7 +50,7 @@ final class KnownDestinationsParityTests: XCTestCase {
     return (identity, destHash)
   }
 
-  /// Decode the file into the reference's own view of it: hash → 5-element list.
+  /// Decode the file into the reference's own view of it: hash → 8-element list.
   private func decodedEntries() throws -> [Data: [MsgPack.Value]] {
     guard case .map(let pairs) = try MsgPack.decode(Data(contentsOf: fileURL)) else {
       XCTFail(
@@ -84,7 +84,7 @@ final class KnownDestinationsParityTests: XCTestCase {
 
   // MARK: - The shape
 
-  func testFileIsMsgpackDictOfFiveElementLists() throws {
+  func testFileIsMsgpackDictOfEightElementLists() throws {
     let transport = Transport()
     let (identity, destHash) = makeIdentity(appData: Data("app".utf8))
     let announcedAt = Date(timeIntervalSince1970: 1_700_000_000)
@@ -99,14 +99,14 @@ final class KnownDestinationsParityTests: XCTestCase {
       "the entry must be keyed by the raw destination hash")
 
     XCTAssertEqual(
-      fields.count, 5,
+      fields.count, 8,
       """
-      `[time.time(), packet_hash, public_key, app_data, last_use]` \
+      `[time.time(), packet_hash, public_key, app_data, 0, stamp, stamp_value, lr_cost]` \
       (Identity.py:107). Python indexes these positionally — `[2]` for the key, \
       `[3]` for app data, `[4]` for last use — so a differing arity is a \
       differing file, and a shorter one is backfilled at :226-229.
       """)
-    guard fields.count == 5 else { return }
+    guard fields.count == 8 else { return }
 
     guard case .double(let lastAnnounce) = fields[0] else {
       return XCTFail("field 0 is the last-announce timestamp. Got: \(fields[0])")
@@ -133,6 +133,11 @@ final class KnownDestinationsParityTests: XCTestCase {
       the *integer* 0 — `remember` at :107 — so msgpack holds a fixint, not a \
       float64.
       """)
+
+    // `remember(..., stamp=None, stamp_value=0, lr_cost=None)` (`Identity.py:109` in 1.6.0).
+    XCTAssertEqual(fields[5], .nil)
+    XCTAssertEqual(fields[6], .uint(0))
+    XCTAssertEqual(fields[7], .nil)
   }
 
   /// Asserts an announce carrying no app data is stored with `nil`.
@@ -147,7 +152,7 @@ final class KnownDestinationsParityTests: XCTestCase {
     try transport.saveKnownDestinations(to: fileURL)
 
     let fields = try XCTUnwrap(try decodedEntries()[destHash])
-    guard fields.count == 5 else { return XCTFail("entry is not the 5-element list") }
+    guard fields.count == 8 else { return XCTFail("entry is not the 8-element list") }
     XCTAssertEqual(fields[3], .nil, "no app data is None, not empty bytes")
   }
 
@@ -168,10 +173,10 @@ final class KnownDestinationsParityTests: XCTestCase {
     try transport.saveKnownDestinations(to: fileURL)
     let entries = try decodedEntries()
 
-    guard let used = entries[usedHash], used.count == 5,
-      let retained = entries[retainedHash], retained.count == 5
+    guard let used = entries[usedHash], used.count == 8,
+      let retained = entries[retainedHash], retained.count == 8
     else {
-      return XCTFail("entries are not the 5-element list")
+      return XCTFail("entries are not the 8-element list")
     }
     guard case .double(let lastUse) = used[4] else {
       return XCTFail("a used destination carries its timestamp. Got: \(used[4])")

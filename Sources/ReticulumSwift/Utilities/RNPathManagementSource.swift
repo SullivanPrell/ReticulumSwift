@@ -176,14 +176,15 @@ public final class RPCManagementSource: RNPathManagementSource {
     InstanceConnection.mediumPathTimeout(rpc: client, transport: nil)
   }
 
-  /// Returns the known paths, limited to `maxHops` when one is given.
+  /// Returns the known paths, limited to `maxHops` when one is given, or none when the call
+  /// fails, which ``RPCClient`` has logged (`Reticulum.py:1875-1877`).
   public func pathTable(maxHops: UInt8?) throws -> [RNPathTableEntry] {
-    RNPathTableEntry.decodeTable(try client.pathTable(maxHops: maxHops)) ?? []
+    (try? client.pathTable(maxHops: maxHops)).flatMap(RNPathTableEntry.decodeTable) ?? []
   }
 
-  /// Returns the announce rate table.
+  /// Returns the announce rate table, or none when the call fails (`Reticulum.py:1903-1905`).
   public func rateTable() throws -> [RNPathRateEntry] {
-    RNPathRateEntry.decodeTable(try client.rateTable()) ?? []
+    (try? client.rateTable()).flatMap(RNPathRateEntry.decodeTable) ?? []
   }
 
   /// Returns the blackholed identities.
