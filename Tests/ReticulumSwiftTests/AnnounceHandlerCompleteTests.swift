@@ -188,7 +188,9 @@ final class AnnounceHandlerCompleteTests: XCTestCase {
 
   // MARK: - Only an accepted announce reaches the handlers
 
-  /// Python calls the handlers inside `if should_add:` (RNS 1.6.0 `Transport.py:2579`, `:2758`).
+  /// Only an announce the path table accepts reaches the handlers.
+  ///
+  /// Python calls them inside `if should_add:` (RNS 1.6.0 `Transport.py:2579`, `:2758`).
   /// An unheard announce emitted before the path's newest one fails the ladder (`:2551-2558`),
   /// so the handlers don't hear it.
   func testAnnounceThePathTableRejectsSkipsHandlers() throws {
@@ -201,7 +203,8 @@ final class AnnounceHandlerCompleteTests: XCTestCase {
       identity: Identity(), direction: .in, kind: .single, appName: "gate", aspects: ["older"])
     let now = Date().timeIntervalSince1970
 
-    iface.inboundHandler?(try Packet.unpack(try Announce.make(for: dest, timestamp: now).pack()), iface)
+    let newer = try Packet.unpack(try Announce.make(for: dest, timestamp: now).pack())
+    iface.inboundHandler?(newer, iface)
     let path = try XCTUnwrap(t.paths[dest.hash])
     let older = try Packet.unpack(try Announce.make(for: dest, timestamp: now - 100).pack())
     iface.inboundHandler?(older, iface)
