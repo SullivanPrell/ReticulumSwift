@@ -185,4 +185,31 @@ final class AnnounceHandlerCompleteTests: XCTestCase {
     b.register(interface: bI)
     return (a, b, aI, bI)
   }
+
+  // MARK: - Only an accepted announce reaches the handlers
+
+  /// Only an announce the path table accepts reaches the handlers.
+  ///
+  /// Python calls them inside `if should_add:` (RNS 1.6.0 `Transport.py:2579`, `:2758`).
+  /// An unheard announce emitted before the path's newest one fails the ladder (`:2551-2558`),
+  /// so the handlers don't hear it.
+  func testAnnounceThePathTableRejectsSkipsHandlers() throws {
+    let t = Transport()
+    let iface = LoopbackInterface(name: "in")
+    t.register(interface: iface)
+    let handler = RecordingHandler()
+    t.register(announceHandler: handler)
+    let dest = try Destination(
+      identity: Identity(), direction: .in, kind: .single, appName: "gate", aspects: ["older"])
+    let now = Date().timeIntervalSince1970
+
+    let newer = try Packet.unpack(try Announce.make(for: dest, timestamp: now).pack())
+    iface.inboundHandler?(newer, iface)
+    let path = try XCTUnwrap(t.paths[dest.hash])
+    let older = try Packet.unpack(try Announce.make(for: dest, timestamp: now - 100).pack())
+    iface.inboundHandler?(older, iface)
+
+    XCTAssertEqual(handler.received.count, 1, "the older announce isn't dispatched")
+    XCTAssertEqual(t.paths[dest.hash]?.randomBlobs, path.randomBlobs, "nor accepted")
+  }
 }

@@ -6293,7 +6293,8 @@ public final class Transport {
       }
 
       onAnnounceReceived?(decoded, interface)
-      dispatchAnnounceHandlers(decoded)
+      // Python calls the handlers inside `if should_add:` (`Transport.py:2758`).
+      if shouldUpdate { dispatchAnnounceHandlers(decoded) }
 
       // If this instance serves any local shared-instance clients, retransmit
       // the announce to them immediately—independent of `transportEnabled`
