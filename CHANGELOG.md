@@ -5,6 +5,8 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.28.0]—RNS 1.6.0 parity: stamps, type filters and the known-destinations database
+
 ### Reference parity moves to RNS 1.6.0
 
 `Reticulum.rnsProtocolVersion` reads `1.6.0`, up from `1.5.7`.
