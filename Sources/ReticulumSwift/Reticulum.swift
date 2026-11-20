@@ -107,7 +107,7 @@ public final class Reticulum {
   /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,
   /// ``autoconnectsDiscoveredInterfaces``), and batches `discovery_path_requests` together
   /// with the announce replay that answers the requestors it batches.
-  public static let rnsProtocolVersion = "1.6.0"
+  public static let rnsProtocolVersion = "1.6.1"
 
   /// Log severity levels, ordered from `none` through `extreme`.
   public enum LogLevel: Int, Comparable, Sendable {

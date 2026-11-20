@@ -5,6 +5,58 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Reference parity moves to RNS 1.6.1
+
+`Reticulum.rnsProtocolVersion` reads `1.6.1`, up from `1.6.0`.
+
+### Added in RNS 1.6.1
+
+- Tunnel synthesis v2. A synthesis carries a signed MessagePack extension table holding the
+  implementation, version, transport flag and both stamp costs, and is answered with a reverse
+  synthesis (`Transport.py:3170-3298`). A tunnel's interface can be detached by tunnel ID
+  (`Reticulum.py:976-1016`).
+- Inbound accounting. `rxb` counts the bytes `Transport.inbound` accepts and `frxb` the bytes it
+  filters, on the interface and its parent (`Transport.py:1973-1995`). Link traffic, filtered
+  traffic and filtered announces have their own counters and speeds, and `interface_stats`,
+  `path_table` and a new `known_destinations` call carry them over RPC.
+- The announce rate table persists as `storage/announce_rate_table`, byte for byte as the
+  reference writes it (`Storage.py:167-345`).
+- Restoring the path table skips blackholed identities and blocked or disallowed names
+  (`Transport.py:582-599`). Path culling keeps 0-hop paths, drops paths past the hop limiter,
+  and sizes the never-used pool from the used count (`:1181-1229`).
+- An interface block takes `hop_limiter`, and shared-medium interfaces aren't re-sent an
+  announce they delivered (`Transport.py:985`, `:2692-2696`).
+- Announce ingress counts oversized, malformed, and short announces as protocol violations
+  (`Interface.py:296-341`).
+- A local client's answer to a path request goes back to the interface that asked, and an
+  announce reviving an unresponsive path only updates the table (`Transport.py:2611-2772`).
+- `autoconnect_discovered_interfaces` is capped at 12 and warns above 6, unless
+  `autoconnect_discovered_interfaces_disable_caps` is set (`Reticulum.py:743-768`).
+- Interface discovery accepts a stamp made over the non-expanded workblock
+  (`Discovery.py:321-331`).
+- `rnstatus` gains `-F` and `-T`, the links totals, filtered announce counts, and five sort keys.
+  `rnpath` gains the path state, usage text, `-a`, `-M`, `-V`, `-E` and the `-A` stub. Both
+  help pages match 1.6.1.
+- `rngit` reads `link_cost` (default 18.0) and `stamp_value` from `[rngit]` and `[pages]`, and
+  ships the 1.6.1 configuration template.
+
+### Changed in RNS 1.6.1
+
+- `STAMP_DESTINATIONS` and `STAMP_PRS` default to on. `REVERSE_TIMEOUT` is 3 minutes and
+  `MAX_HELD_ANNOUNCES` is 64 (`Transport.py:194-238`).
+- `Packet.rawByteCount` includes the context byte, so it equals `len(raw)`.
+
+### Not ported from RNS 1.6.1
+
+- The `Link` mode check against `ENABLED_MODES`. This port's `Link` has no caller-chosen mode.
+- `lossless_medium`, `destination_type_map` and the flagged and known types files: Python
+  sets them and reads them only for logs.
+- `blocked_ips`, a Backbone server table. This port's Backbone interface is client-only.
+- Validation cache sizes, stamp worker counts and the RPC exit timeout, which are Python
+  process internals.
+- `rnpath --capture` is parsed and dropped. It feeds only the reference's unfinished analysis.
+- The `rnsh` log change. There is no Swift `rnsh`.
+
 ## [1.28.0]—RNS 1.6.0 parity: stamps, type filters and the known-destinations database
 
 ### Reference parity moves to RNS 1.6.0
