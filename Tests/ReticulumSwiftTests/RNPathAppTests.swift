@@ -311,42 +311,72 @@ final class RNPathPathLineTests: XCTestCase {
       value: value, used: 0, lrCost: lrCost)
   }
 
-  /// Python 1.6.0: `f"{prettyhexrep(hash)} {hops:>3}h via {prettyhexrep(via)} on {interface}
-  /// expires in {prettytime(expires-now, compact=True)} (dv:{prettycost(value)}/lc:{prettycost(lr_cost)})"`
-  /// (rnpath.py:302).
+  /// `-V -E` restore 1.6.0's via and expiry fields, after the 1.6.1 state (rnpath.py:316-318).
   ///
   /// The expected strings came from Python's own `prettytime` and
   /// `prettycost`.
   func testFullLineShape() {
     XCTAssertEqual(
-      RNPathFormatter.pathTableLine(entry(hops: 3), now: now),
-      "<aabbccddeeff00112233445566778899>   3h via "
+      RNPathFormatter.pathTableLine(entry(hops: 3), now: now, vias: true, expiry: true),
+      "<aabbccddeeff00112233445566778899>   3h (?) via "
         + "<0102030405060708090a0b0c0d0e0f10> on TCPInterface[Client on 1.2.3.4:4242] "
         + "expires in 5m and 3s (dv:21.000/lc:n)")
   }
 
   /// `{hops:>3}` right-aligns in three columns, and a wider count just widens the field.
   func testHopsAreRightAlignedInThreeColumns() {
-    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 1), now: now).contains(">   1h via <"))
-    XCTAssertTrue(
-      RNPathFormatter.pathTableLine(entry(hops: 128), now: now).contains("> 128h via <"))
+    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 1), now: now).contains(">   1h (?)"))
+    XCTAssertTrue(RNPathFormatter.pathTableLine(entry(hops: 128), now: now).contains("> 128h (?)"))
   }
 
   /// An expired path prints a negative time, and the link cost is quantized like the value.
   func testAnExpiredPathAndALinkCost() {
     XCTAssertTrue(
       RNPathFormatter.pathTableLine(
-        entry(hops: 2, expiresIn: -303.4, value: nil, lrCost: 9.1), now: now
+        entry(hops: 2, expiresIn: -303.4, value: nil, lrCost: 9.1), now: now, expiry: true
       ).hasSuffix("expires in -5m and 3s (dv:n/lc:9.102)"))
   }
 
   /// Python's `via` is never None (Transport.py:1796 stores the destination hash itself
   /// for a direct peer), so a nil Swift `via` must render the destination hash.
   func testNilViaFallsBackToTheDestinationHash() {
-    let line = RNPathFormatter.pathTableLine(entry(hops: 1, via: nil), now: now)
-    XCTAssertTrue(line.contains("h via <aabbccddeeff00112233445566778899>"))
+    let line = RNPathFormatter.pathTableLine(entry(hops: 1, via: nil), now: now, vias: true)
+    XCTAssertTrue(line.contains("h (?) via <aabbccddeeff00112233445566778899>"))
     XCTAssertFalse(line.contains("<>"))
     XCTAssertEqual(entry(hops: 1, via: nil).resolvedVia, hashA)
+  }
+
+  /// RNS 1.6.1's default line: the path state, no via, no expiry (rnpath.py:303-318).
+  /// Expected strings come from the 1.6.1 f-string and `RNS.prettytime`.
+  func testThe161LineCarriesTheStateAndUsage() {
+    var responsive = entry(hops: 3)
+    responsive.state = 0x02
+    XCTAssertEqual(
+      RNPathFormatter.pathTableLine(responsive, now: now),
+      "<aabbccddeeff00112233445566778899>   3h (R) on TCPInterface[Client on 1.2.3.4:4242] "
+        + "(dv:21.000/lc:n)")
+    XCTAssertEqual(
+      RNPathFormatter.pathTableLine(responsive, now: now, usage: true),
+      "<aabbccddeeff00112233445566778899>   3h (R) on TCPInterface[Client on 1.2.3.4:4242] "
+        + "(dv:21.000/lc:n), never used")
+
+    var unresponsive = entry(hops: 3)
+    unresponsive.state = 0x01
+    // A whole float second prints `30.0s` in Python; `prettytime` here can't tell 30 from 30.0.
+    unresponsive.used = now - 90.5
+    XCTAssertTrue(
+      RNPathFormatter.pathTableLine(unresponsive, now: now, usage: true)
+        .hasSuffix(
+          "3h (u) on TCPInterface[Client on 1.2.3.4:4242] (dv:21.000/lc:n), last used 1m and 30.5s ago"
+        ))
+
+    var legacy = entry(hops: 3)
+    legacy.used = nil
+    legacy.state = 0x07
+    XCTAssertTrue(
+      RNPathFormatter.pathTableLine(legacy, now: now)
+        .hasSuffix("3h (?) on TCPInterface[Client on 1.2.3.4:4242] (dv:21.000/lc:n), no usage info")
+    )
   }
 
   func testStableSortByInterfaceThenHops() {
@@ -1208,8 +1238,8 @@ final class RNPathRunnerTableTests: XCTestCase {
     XCTAssertEqual(makeRunner(options, management: management, recorder: recorder).run(), .ok)
     XCTAssertEqual(recorder.lines.count, 3)
     XCTAssertTrue(recorder.lines[0].contains("AInterface[a]"))
-    XCTAssertTrue(recorder.lines[1].contains(">   1h via"))
-    XCTAssertTrue(recorder.lines[2].contains(">   3h via"))
+    XCTAssertTrue(recorder.lines[1].contains(">   1h (?) on"))
+    XCTAssertTrue(recorder.lines[2].contains(">   3h (?) on"))
   }
 
   /// `-u` re-sorts by last use, newest first, keeping ties in table order
@@ -2095,13 +2125,14 @@ final class RNPathArgumentParsingTests: XCTestCase {
     XCTAssertThrowsError(try makeParser().parse(["-m"]))
   }
 
-  /// The literal must stay byte-identical to argparse's own 80-column rendering: RNS 1.6.0's
+  /// The literal must stay byte-identical to argparse's own 80-column rendering: RNS 1.6.1's
   /// `rnpath --help`, with `-m` in the Python 3.10–3.12 form the literal is pinned to.
   func testHelpTextMatchesArgparse() {
     let expected = """
-      usage: rnpath [-h] [--config CONFIG] [--version] [-t] [-u] [-m hops] [-r] [-d]
-                    [-D] [-x] [-w seconds] [-R hash] [-i path] [-W seconds] [-b]
-                    [-B] [-U] [--duration DURATION] [--reason REASON] [-p] [-j] [-v]
+      usage: rnpath [-h] [--config CONFIG] [--version] [-t] [-a] [-u] [-V] [-E]
+                    [-m hops] [-M value] [-r] [-d] [-D] [-x] [-w seconds] [-R hash]
+                    [-i path] [-W seconds] [-b] [-B] [-U] [--duration hours]
+                    [--reason reason] [-p] [-j] [-A] [--capture path] [-v]
                     [destination] [list_filter]
 
       Reticulum Path Management Utility
@@ -2115,8 +2146,13 @@ final class RNPathArgumentParsingTests: XCTestCase {
         --config CONFIG       path to alternative Reticulum config directory
         --version             show program's version number and exit
         -t, --table           show all known paths
+        -a, --active          show in-use paths only
         -u, --usage           show path usage time
+        -V, --vias            show via transport IDs
+        -E, --expiry          show path expiry times
         -m hops, --max hops   maximum hops to filter path table by
+        -M value, --min-value value
+                              minimum value to filter path table by
         -r, --rates           show announce rate info
         -d, --drop            remove the path to a destination
         -D, --drop-announces  drop all queued announces
@@ -2128,12 +2164,14 @@ final class RNPathArgumentParsingTests: XCTestCase {
         -b, --blackholed      list blackholed identities
         -B, --blackhole       blackhole identity
         -U, --unblackhole     unblackhole identity
-        --duration DURATION   duration of blackhole enforcement in hours
-        --reason REASON       reason for blackholing identity
+        --duration hours      duration of blackhole enforcement in hours
+        --reason reason       reason for blackholing identity
         -p, --blackholed-list
                               view published blackhole list for remote transport
                               instance
         -j, --json            output in JSON format
+        -A, --analyze         Analyze tables
+        --capture path        path to capture file for analyze mode
         -v, --verbose
       """
     XCTAssertEqual(RNPathApp.helpText, expected)
@@ -2147,5 +2185,79 @@ final class RNPathArgumentParsingTests: XCTestCase {
     XCTAssertEqual(Reticulum.LogLevel(rawValue: min(max(3 + 1, 0), 8)), .info)
     XCTAssertEqual(Reticulum.LogLevel(rawValue: min(max(3 + 3, 0), 8)), .debug)
     XCTAssertEqual(Reticulum.LogLevel(rawValue: min(max(3 + 99, 0), 8)), .extreme)
+  }
+}
+
+// MARK: - Runner: RNS 1.6.1 filters
+
+final class RNS161RNPathRunnerTests: XCTestCase {
+
+  private func management() -> MockManagementSource {
+    let management = MockManagementSource()
+    management.paths = [
+      RNPathTableEntry(
+        destinationHash: hashA, timestamp: 0, via: hashB, hops: 1, expires: 0,
+        interfaceName: "TCPInterface[b]", value: 30, used: 100, lrCost: nil),
+      RNPathTableEntry(
+        destinationHash: hashB, timestamp: 0, via: hashB, hops: 2, expires: 0,
+        interfaceName: "TCPInterface[b]", value: 10, used: 0, lrCost: nil),
+      RNPathTableEntry(
+        destinationHash: hashC, timestamp: 0, via: hashB, hops: 3, expires: 0,
+        interfaceName: "TCPInterface[b]", value: nil, used: nil, lrCost: nil),
+    ]
+    return management
+  }
+
+  private func run(_ configure: (inout RNPathOptions) -> Void) -> (RNPathApp.Result, [String]) {
+    var options = RNPathOptions()
+    configure(&options)
+    let recorder = OutputRecorder()
+    let result = makeRunner(options, management: management(), recorder: recorder).run()
+    return (result, recorder.lines)
+  }
+
+  /// `-a` drops never-used paths and keeps rows without usage info (rnpath.py:313-314).
+  func testActiveKeepsUsedPaths() {
+    let (result, lines) = run {
+      $0.table = true
+      $0.active = true
+    }
+    XCTAssertEqual(result, .ok)
+    XCTAssertEqual(
+      lines.map { String($0.prefix(34)) },
+      [RNSUtilities.prettyhexrep(hashA), RNSUtilities.prettyhexrep(hashC)])
+  }
+
+  /// `-M` drops paths without a value or below it (rnpath.py:299-301).
+  func testMinValueFiltersByValue() {
+    let (_, lines) = run {
+      $0.table = true
+      $0.minValue = 20
+    }
+    XCTAssertEqual(lines.map { String($0.prefix(34)) }, [RNSUtilities.prettyhexrep(hashA)])
+  }
+
+  /// A filtered-out destination still counts as displayed, so it isn't "No path known".
+  func testAFilteredDestinationIsNotReportedUnknown() {
+    let (result, lines) = run {
+      $0.table = true
+      $0.minValue = 50
+      $0.destination = hashB.map { String(format: "%02x", $0) }.joined()
+    }
+    XCTAssertEqual(result, .ok)
+    XCTAssertEqual(lines, [])
+  }
+
+  /// `-A` is a stub upstream (rnpath.py:245-247, :565-567), and opens the mode gate (:547).
+  func testAnalyzeIsNotYetImplemented() {
+    var options = RNPathOptions()
+    options.analyze = true
+    XCTAssertFalse(options.shouldPrintHelp)
+    let (result, lines) = run {
+      $0.analyze = true
+      $0.table = true
+    }
+    XCTAssertEqual(result, .ok)
+    XCTAssertEqual(lines, ["Not yet implemented"])
   }
 }
