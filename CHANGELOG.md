@@ -5,6 +5,8 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
+
 ### Reference parity moves to RNS 1.6.1
 
 `Reticulum.rnsProtocolVersion` reads `1.6.1`, up from `1.6.0`.
