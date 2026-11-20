@@ -71,6 +71,16 @@ public enum RNGitNodeEnvironment {
 
     # node_name = Anonymous Git Node
 
+    # You can configure the required link stamp cost for
+    # connecting to the repository node.
+
+    # link_cost = 18.0
+
+    # The target stamp value for the repositories destination
+    # can also be configured.
+
+    # stamp_value = 25.0
+
     # You can enable collecting view, fetch and push statistics
     # which can be displayed on the stats pages of repositories.
     # Remember to set the "s" (stats) permission appropriately
@@ -188,6 +198,16 @@ public enum RNGitNodeEnvironment {
     # variable.
 
     # serve_nomadnet = no
+
+    # You can configure the required link stamp cost for
+    # connecting to the page node.
+
+    # link_cost = 18.0
+
+    # The target stamp value for the node destination can
+    # also be configured.
+
+    # stamp_value = 25.0
 
     # It is possible to disable Nerd Font icons and instead
     # use simpler (but more compatible) unicode icons.

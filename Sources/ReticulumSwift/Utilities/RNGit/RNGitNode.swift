@@ -138,9 +138,12 @@ public final class RNGitNode {
 
   /// The destination the node's repositories are reached at.
   public func makeDestination() throws -> Destination {
-    try Destination(
+    let destination = try Destination(
       identity: identity, direction: .in, kind: .single, appName: RNGitDestination.appName,
       aspects: [RNGitDestination.aspect])
+    if let value = settings.stampValue, value != 0 { destination.setValue(value) }
+    destination.setLinkCost(settings.linkCost)
+    return destination
   }
 
   /// Puts the node's handlers on `destination`, and takes it as the one the node serves on.
