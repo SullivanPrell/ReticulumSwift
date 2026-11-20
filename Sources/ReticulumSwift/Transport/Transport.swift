@@ -560,9 +560,9 @@ public final class Transport {
     public var pathRequestRx: Double = 0
     /// Outgoing path-request rate in bits per second.
     public var pathRequestTx: Double = 0
-    /// Filtered inbound and outbound rates in bits per second, `current_frx_speed` and
-    /// `current_ftx_speed`.
+    /// Filtered inbound rate in bits per second, `current_frx_speed`.
     public var filteredRx: Double = 0
+    /// Filtered outbound rate in bits per second, `current_ftx_speed`.
     public var filteredTx: Double = 0
   }
 
@@ -1015,18 +1015,21 @@ public final class Transport {
   ///
   /// Mirrors Python's `Transport.traffic_txb`.
   public private(set) var trafficTxBytes: Int = 0
-  /// Filtered inbound bytes, Python's `filtered_rxb`, and `filtered_txb`, which nothing
-  /// increments (`Transport.py:383-386`).
+  /// Filtered inbound bytes, Python's `filtered_rxb` (`Transport.py:383-386`).
   public private(set) var filteredRxBytes: Int = 0
+  /// Python's `filtered_txb`, which nothing increments (`Transport.py:383-386`).
   public private(set) var filteredTxBytes: Int = 0
-  /// Aggregate filtered speeds (bits/sec), `filtered_speed_rx` and `filtered_speed_tx`.
+  /// Aggregate filtered inbound speed in bits per second, `filtered_speed_rx`.
   public private(set) var filteredSpeedRx: Double = 0
+  /// Aggregate filtered outbound speed in bits per second, `filtered_speed_tx`.
   public private(set) var filteredSpeedTx: Double = 0
-  /// Relayed link bytes, `link_rxb` and `link_txb` (`Transport.py:2509`, `:2545`).
+  /// Received link bytes, `link_rxb` (`Transport.py:2509`).
   public private(set) var linkRxBytes: Int = 0
+  /// Transmitted link bytes, `link_txb` (`Transport.py:2545`).
   public private(set) var linkTxBytes: Int = 0
-  /// `link_speed_rx` and `link_speed_tx` (bits/sec) over the sampling interval.
+  /// `link_speed_rx` in bits per second over the sampling interval.
   public private(set) var linkSpeedRx: Double = 0
+  /// `link_speed_tx` in bits per second over the sampling interval.
   public private(set) var linkSpeedTx: Double = 0
 
   /// Per-destination announce rate tracking.
@@ -2917,8 +2920,9 @@ public final class Transport {
     public var used: Date? = nil
     /// The link-request cost the destination announced, `known_destinations[dst][7]`.
     public var lrCost: Double? = nil
-    /// `interface.get_hash()` and `get_path_state` (RNS 1.6.1, `Reticulum.py:2050-2051`).
+    /// `interface.get_hash()` (RNS 1.6.1, `Reticulum.py:2050`).
     public var interfaceHash: Data? = nil
+    /// `get_path_state` (RNS 1.6.1, `Reticulum.py:2051`).
     public var state: UInt8? = nil
   }
 
@@ -5355,7 +5359,7 @@ public final class Transport {
 
   // MARK: - Inbound pipeline
 
-  /// `Transport.inbound`'s raw half: IFAC, frame size and unpacking, then `inbound`.
+  /// The raw half of `Transport.inbound`: IFAC, frame size and unpacking, then `inbound`.
   ///
   /// Returns `preprocess_inbound`'s verdict (`Transport.py:1987-1995`).
   private func preprocessRaw(_ rawBytes: Data, from sourceInterface: any Interface) -> Bool {

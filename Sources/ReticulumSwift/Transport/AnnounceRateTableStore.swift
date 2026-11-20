@@ -54,8 +54,9 @@ extension Transport {
     try blob.write(to: url, options: .atomic)
   }
 
-  /// `AnnounceRateTable.load` (`Storage.py:250-327`), replacing the table. Returns `false`, and
-  /// leaves the table alone, for a missing or malformed file.
+  /// Replaces the table with the file's, as `AnnounceRateTable.load` (`Storage.py:250-327`).
+  ///
+  /// Returns `false`, and leaves the table alone, for a missing or malformed file.
   @discardableResult
   public func loadAnnounceRateTable(from url: URL) -> Bool {
     guard let blob = try? Data(contentsOf: url), blob.count >= 16 else { return false }

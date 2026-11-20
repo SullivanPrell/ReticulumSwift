@@ -131,8 +131,8 @@ final class RNStatus152SurfaceTests: XCTestCase {
 
   // MARK: - Sort vocabulary
 
-  /// The tokens the 1.5.2 if-chain tests, in the order it tests them (rnstatus.py:379-401).
-  /// RNS 1.6.1's chain (`rnstatus.py:432-460`).
+  /// The tokens the sort if-chain tests, in the order it tests them (`rnstatus.py:432-460`,
+  /// RNS 1.6.1).
   static let pythonSortTokens = [
     "rate", "bitrate", "rx", "tx", "frx", "ftx", "rxs", "txs", "frxs", "ftxs", "traffic",
     "anns", "announces", "arx", "atx", "arxc", "atxc", "afrxc",

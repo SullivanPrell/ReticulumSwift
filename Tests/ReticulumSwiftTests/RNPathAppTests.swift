@@ -347,6 +347,7 @@ final class RNPathPathLineTests: XCTestCase {
   }
 
   /// RNS 1.6.1's default line: the path state, no via, no expiry (rnpath.py:303-318).
+  ///
   /// Expected strings come from the 1.6.1 f-string and `RNS.prettytime`.
   func testThe161LineCarriesTheStateAndUsage() {
     var responsive = entry(hops: 3)

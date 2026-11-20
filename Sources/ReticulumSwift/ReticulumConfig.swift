@@ -423,13 +423,13 @@ public struct ReticulumConfig {
     return parse(text)
   }
 
-  /// Parse a config string.
-  ///
-  /// Returns a config with defaults if `text` is empty.
   /// `__autoconnect_warn` and `__autoconnect_cap` (RNS 1.6.1, `Reticulum.py:294-295`).
   static let autoconnectWarn = 6
   static let autoconnectCap = 12
 
+  /// Parse a config string.
+  ///
+  /// Returns a config with defaults if `text` is empty.
   public static func parse(_ text: String) -> ReticulumConfig {
     var cfg = ReticulumConfig()
     var currentSection: String? = nil

@@ -580,10 +580,17 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
     let packed = MsgPack.encode(.map(backboneInfo()))
     let infohash = Hashes.fullHash(packed)
     let stamper = DiscoveryStamper()
-    guard
-      let stamp = stamper.generateStamp(
-        material: infohash, targetCost: 4, expandRounds: expandRounds)
-    else { return nil }
+    let bare = stamper.stampWorkblock(material: infohash, expandRounds: 0)
+    var stamp = Data()
+    // At cost 4 an expanded stamp also meets the bare workblock about 1 time in 16, and is
+    // then valued on it; draw until the fallback is the only path.
+    repeat {
+      guard
+        let drawn = stamper.generateStamp(
+          material: infohash, targetCost: 4, expandRounds: expandRounds)
+      else { return nil }
+      stamp = drawn
+    } while expandRounds != 0 && stamper.stampValid(stamp: stamp, targetCost: 4, workblock: bare)
     var result: DiscoveredInterfaceInfo?
     let handler = InterfaceAnnounceHandler(
       requiredValue: 4, stampValidator: stamper, hopsTo: { _ in 1 }, callback: { result = $0 })

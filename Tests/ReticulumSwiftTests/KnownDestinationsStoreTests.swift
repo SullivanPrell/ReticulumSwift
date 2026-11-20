@@ -316,8 +316,6 @@ final class KnownDestinationsStoreTests: XCTestCase {
     XCTAssertEqual(client.transport.currentRatchetKey(forDestination: destination), ratchet.ratchet)
   }
 
-  /// With no database to read, a client logs Python's error, keeps an empty table and
-  /// creates nothing (`Identity.py:271-273`).
   /// Without a database the client asks the instance over RPC, and logs Python's error when
   /// that fails too (`Identity.py:271-281`, RNS 1.6.1).
   func testALocalClientWithoutADatabaseOrRPCLogsPythonsError() throws {

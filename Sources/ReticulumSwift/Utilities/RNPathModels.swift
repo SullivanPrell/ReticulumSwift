@@ -58,10 +58,9 @@ public struct RNPathTableEntry: Equatable {
   public var used: TimeInterval?
   /// Python key `"lr_cost"`—the link-request cost the destination announced, if any.
   public var lrCost: Double?
-  /// Python keys `"interface_hash"` and `"state"` (RNS 1.6.1, `Reticulum.py:2050-2051`).
-  ///
-  /// Nil for a row from an older daemon.
+  /// Python key `"interface_hash"` (RNS 1.6.1, `Reticulum.py:2050`); nil from an older daemon.
   public var interfaceHash: Data?
+  /// Python key `"state"` (RNS 1.6.1, `Reticulum.py:2051`); nil from an older daemon.
   public var state: UInt8?
 
   /// Creates a path table entry.
