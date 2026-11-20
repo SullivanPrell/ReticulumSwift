@@ -131,6 +131,23 @@ final class InterfaceManagementTests: XCTestCase {
     XCTAssertTrue(attached("Peer").isEmpty)
   }
 
+  /// An unknown name is read as a tunnel ID, matched against `tunnel_id` then
+  /// `local_tunnel_id` (`Reticulum.py:984-988`).
+  func testDetachFindsAnInterfaceByItsTunnelID() {
+    let responder = Stub(name: "Responder")
+    let initiator = Stub(name: "Initiator")
+    responder.tunnelID = Data(repeating: 0xAB, count: 32)
+    initiator.interfaceState.tunnelSynthesis.localTunnelID = Data(repeating: 0xCD, count: 32)
+    reticulum.transport.register(interface: responder)
+    reticulum.transport.register(interface: initiator)
+
+    XCTAssertEqual(reticulum.detachInterface(named: String(repeating: "ab", count: 32)), true)
+    XCTAssertEqual(reticulum.detachInterface(named: String(repeating: "cd", count: 32)), true)
+    XCTAssertTrue(responder.stopped)
+    XCTAssertTrue(initiator.stopped)
+    XCTAssertNil(reticulum.detachInterface(named: String(repeating: "ef", count: 32)))
+  }
+
   func testDetachingAnUnknownInterfaceReturnsNil() {
     XCTAssertNil(reticulum.detachInterface(named: "Nowhere"))
   }

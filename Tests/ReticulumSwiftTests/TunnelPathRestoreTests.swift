@@ -28,6 +28,7 @@ final class TunnelPathRestoreTests: XCTestCase {
     var name: String
     var bitrate: Int = 1_000_000
     var isOnline: Bool = true
+    var tunnelsAllowed: Bool { true }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     init(name: String) { self.name = name }
     func start() throws {}
@@ -41,6 +42,7 @@ final class TunnelPathRestoreTests: XCTestCase {
     var bitrate: Int = 1_000_000
     var isOnline: Bool = true
     var clientCount: Int = 1
+    var tunnelsAllowed: Bool { true }
     var inboundHandler: ((Packet, any Interface) -> Void)?
     init(name: String) { self.name = name }
     func start() throws {}

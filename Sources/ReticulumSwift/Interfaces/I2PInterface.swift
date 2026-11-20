@@ -278,3 +278,8 @@ public final class I2PInterface: Interface {
     lock.unlock()
   }
 }
+
+extension I2PInterface {
+  /// `tunnels_allowed = True` (`I2PInterface.py:759`).
+  public var tunnelsAllowed: Bool { true }
+}

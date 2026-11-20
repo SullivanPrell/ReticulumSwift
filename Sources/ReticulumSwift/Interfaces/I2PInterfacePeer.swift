@@ -402,7 +402,8 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
     }
 
     // 4. Tunnel is up—go online and hand the socket to the data phase.
-    wantsTunnel = !kissFraming  // Python wait_job, before connect()
+    // `I2PInterface.py:501-504`.
+    if !kissFraming { noteConnected() }
     lock.lock()
     if detached {
       // stop() raced the dial—drop everything.
@@ -629,3 +630,8 @@ public final class I2PInterfacePeer: Interface, SpawnedInterface {
 }
 
 // (HDLC constants are defined in HDLC.swift and shared throughout the module)
+
+extension I2PInterfacePeer {
+  /// `tunnels_allowed = True` (`I2PInterface.py:356`).
+  public var tunnelsAllowed: Bool { true }
+}

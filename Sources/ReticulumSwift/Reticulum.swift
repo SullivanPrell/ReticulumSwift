@@ -2440,7 +2440,7 @@ public final class Reticulum {
 
   /// Stop the named interface and the interfaces it spawned, and remove them all.
   ///
-  /// Mirrors `Reticulum._detach_interface` (RNS 1.5.5, `Reticulum.py:799-826`). I2P and the
+  /// Mirrors `Reticulum._detach_interface` (`Reticulum.py:976-1016`). I2P and the
   /// shared-instance interfaces stay attached.
   ///
   /// - Parameters:
@@ -2454,17 +2454,16 @@ public final class Reticulum {
     guard internalForced || Reticulum.storedInterfaceManagementEnabled else { return false }
     // Python looks the name up in a dict built from the interface list, so of several
     // interfaces sharing a name, the last one is the one it finds.
-    guard let iface = transport.interfaces.last(where: { $0.name == name }) else {
+    // An unknown name is tried as a tunnel ID, then a local tunnel ID (`Reticulum.py:984-988`).
+    let byTunnel = Data(hex: name).flatMap { id in
+      transport.interfaces.last { $0.tunnelID == id }
+        ?? transport.interfaces.last { $0.interfaceState.tunnelSynthesis.localTunnelID == id }
+    }
+    guard let iface = transport.interfaces.last(where: { $0.name == name }) ?? byTunnel else {
       Reticulum.log("Attempt to detach non-existing interface \"\(name)\"", level: .warning)
       return nil
     }
-    // `I2PInterface`, `LocalClientInterface` and `LocalServerInterface` (`Reticulum.py:809-811`).
-    if iface is I2PInterface || iface is LocalInterface || iface is any LocalClientServingInterface
-      || iface is PosixTCPServer
-    {
-      return false
-    }
-    transport.detach(interface: iface)
+    guard transport.detachUnlessExempt(iface) else { return false }
     Reticulum.log("Interface \"\(name)\" was detached", level: .notice)
     return true
   }

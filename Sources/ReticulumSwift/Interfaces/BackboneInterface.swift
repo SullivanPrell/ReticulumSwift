@@ -430,3 +430,8 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
     }
   }
 }
+
+extension BackboneInterface {
+  /// `tunnels_allowed = True` (`BackboneInterface.py:889`).
+  public var tunnelsAllowed: Bool { true }
+}

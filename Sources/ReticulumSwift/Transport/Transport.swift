@@ -3491,6 +3491,19 @@ public final class Transport {
     deregister(interface: iface)
   }
 
+  /// Detaches `interface` unless it's an I2P, local or shared-instance interface, as
+  /// `Reticulum._detach_interface(..., internal_forced=True)` does (`Reticulum.py:995-1011`).
+  @discardableResult
+  func detachUnlessExempt(_ interface: any Interface) -> Bool {
+    if interface is I2PInterface || interface is LocalInterface
+      || interface is any LocalClientServingInterface || interface is PosixTCPServer
+    {
+      return false
+    }
+    detach(interface: interface)
+    return true
+  }
+
   /// Remove an interface from the transport.
   ///
   /// Cleans up all per-interface state.
@@ -4882,6 +4895,7 @@ public final class Transport {
       }
       if let iface = tunnel.iface, !attached.contains(ObjectIdentifier(iface)) {
         removed.append("Removing non-existent tunnel interface \(iface.name)")
+        tunnel.expires = now.addingTimeInterval(Transport.tunnelReconnectWindow)  // `:1287`
         tunnel.iface = nil
       }
       for (destinationHash, path) in tunnel.paths {
@@ -7559,16 +7573,6 @@ public final class Transport {
 
   // MARK: - Tunnel synthesis
 
-  /// Send a tunnel-synthesize packet on `interface` to establish this transport as
-  /// a tunnel endpoint for that interface.
-  ///
-  /// Matches Python `Transport.synthesize_tunnel`.
-  ///
-  /// Wire layout of the DATA payload (176 bytes):
-  ///   [  0.. 63] 64 bytes: combined public key (X25519 + Ed25519)
-  ///   [ 64.. 95] 32 bytes: SHA-256 of interface name ("interface hash")
-  ///   [ 96..111] 16 bytes: random hash (replay-prevention nonce)
-  ///   [112..175] 64 bytes: Ed25519 signature over bytes 0..111
   /// Serve every interface that has asked for a tunnel since the last sweep.
   ///
   /// Python synthesizes at two moments: a startup pass over every interface wanting one
@@ -7588,63 +7592,127 @@ public final class Transport {
     }
   }
 
-  /// Synthesizes a tunnel endpoint for `interface` and re-announces its paths.
-  public func synthesizeTunnel(_ interface: any Interface) {
-    guard let identity = transportIdentity else { return }
-
-    let publicKey = identity.publicKeyBytes  // 64 bytes
-    let ifaceHash = Hashes.fullHash(Data(interface.name.utf8))  // 32 bytes
-    let randomHash = Hashes.randomHash()  // 16 bytes
-    let signedData = publicKey + ifaceHash + randomHash  // 112 bytes
-    guard let signature = try? identity.sign(signedData) else { return }
-
-    let data = signedData + signature  // 176 bytes
+  /// Sends a tunnel synthesis on `interface` (`Transport.synthesize_tunnel`,
+  /// `Transport.py:3170-3205`).
+  ///
+  /// The payload is `public_key(64) + interface_hash(32) + random(16) + signature(64) + ext`,
+  /// signed over everything but the signature. The extension names this implementation, its
+  /// version, whether it routes, and the interface's announce and path-request costs.
+  ///
+  /// A reverse synthesis answers the remote's and records no local tunnel. An offline
+  /// interface keeps its request for the jobs loop (`:1413`); this port has no
+  /// `early_synthesis`, so it sends once the interface is online.
+  public func synthesizeTunnel(_ interface: any Interface, reverse: Bool = false) {
+    guard let identity = transportIdentity, reverse || interface.wantsTunnel else { return }
+    let ext = MsgPack.encode(
+      .map([
+        (
+          .uint(DiscoveryFieldKey.transportImpl.rawValue),
+          .string(InterfaceDiscoveryHelpers.implementationName)
+        ),
+        (
+          .uint(DiscoveryFieldKey.transportVers.rawValue),
+          .string(InterfaceDiscoveryHelpers.implementationVersion)
+        ),
+        (.uint(DiscoveryFieldKey.transport.rawValue), .bool(transportEnabled)),
+        (.uint(DiscoveryFieldKey.dstCost.rawValue), .double(destinationCost(for: interface))),
+        (.uint(DiscoveryFieldKey.prCost.rawValue), .double(prCost(for: interface))),
+      ]))
+    let tunnelIDData = identity.publicKeyBytes + Hashes.fullHash(Data(interface.name.utf8))
+    let randomHash = Hashes.randomHash()
+    guard let signature = try? identity.sign(tunnelIDData + randomHash + ext) else { return }
     let packet = Packet(
       destinationType: .plain,
       packetType: .data,
       destinationHash: Transport.tunnelSynthesizeHash,
-      data: data
+      data: tunnelIDData + randomHash + signature + ext
     )
+    interface.interfaceState.tunnelSynthesis.emitted = true
+    guard interface.isOnline else { return }
     try? transmit(packet, on: interface)
     interface.wantsTunnel = false
+    if !reverse {
+      interface.interfaceState.tunnelSynthesis.localTunnelID = Hashes.fullHash(tunnelIDData)
+    }
   }
 
-  /// Handle an incoming tunnel-synthesize packet.
+  /// Handles a tunnel synthesis (`Transport.tunnel_synthesize_handler`,
+  /// `Transport.py:3208-3298`).
   ///
-  /// Validates the signature and
-  /// creates a tunnel entry for the sending transport node.
-  /// Matches Python `Transport.tunnel_synthesize_handler`.
+  /// Only an interface with `tunnelsAllowed` accepts one, and only once per connection. A
+  /// bad signature or a blackholed sender tears the interface down. The extension, when
+  /// present, must carry all five fields with valid values, and is answered with a reverse
+  /// synthesis if this side hasn't sent one. The side that synthesized first records the
+  /// remote but no tunnel.
   private func handleTunnelSynthesizePacket(data: Data, from interface: any Interface) {
-    // Expected: pubkey(64) + ifaceHash(32) + randomHash(16) + signature(64) = 176
-    let expectedLength = 64 + 32 + 16 + 64
-    guard data.count == expectedLength else { return }
+    guard interface.tunnelsAllowed else { return }
+    var state = interface.interfaceState.tunnelSynthesis
+    guard state.remoteTransportID == nil, !state.received else {
+      return notifyProtocolViolation(on: interface)
+    }
+    interface.interfaceState.tunnelSynthesis.received = true
 
-    let publicKey = data[0..<64]
-    let ifaceHash = data[64..<96]
-    let tunnelIDData = Data(publicKey) + Data(ifaceHash)
+    let requiredLength = 64 + 32 + 16 + 64
+    guard data.count <= Constants.mdu, data.count >= requiredLength else {
+      return notifyProtocolViolation(on: interface)
+    }
+    let data = Data(data)
+    let publicKey = data.subdata(in: 0..<64)
+    let tunnelIDData = data.subdata(in: 0..<96)
     let tunnelID = Hashes.fullHash(tunnelIDData)
-    let randomHash = data[96..<112]
-    let signature = data[112..<176]
-    let signedData = tunnelIDData + Data(randomHash)
+    let randomHash = data.subdata(in: 96..<112)
+    let signature = data.subdata(in: 112..<176)
+    let ext = data.subdata(in: requiredLength..<data.count)
 
-    // Upstream's `protocol_violation("Invalid tunnel synthesis packet")`
-    // (`Transport.py:2808-2810`) stays deliberately unported, because it's unreachable.
-    // It fires from the handler's `except`, and with the length already checked nothing
-    // inside can raise: `load_public_key` swallows its own exception (`Identity.py`), and
-    // neither X25519 nor Ed25519 rejects a 32-byte value at construction—Ed25519 defers
-    // point decoding to verification time. So every correctly sized frame loads a key,
-    // reaches `validate`, and either matches or quietly doesn't.
-    //
-    // CryptoKit behaves the same way (verified against 2000 random values per curve for
-    // both curves in both libraries), so this initializer can only throw on a wrong length,
-    // which the preceding guard already excludes. Counting a violation here would charge peers
-    // for frames upstream never complains about.
-    guard let remoteIdentity = try? Identity(publicKeyBytes: Data(publicKey)) else { return }
-    // A failing signature is ordinary traffic on a shared medium: upstream reaches
-    // `validate`, gets False, and falls off the end of the handler without raising.
-    guard remoteIdentity.validate(signature: Data(signature), for: signedData) else { return }
+    // Neither curve rejects 32 key bytes at construction, so this throws on no input that
+    // reaches it, as `load_public_key` raises on none.
+    guard let remote = try? Identity(publicKeyBytes: publicKey),
+      remote.validate(signature: signature, for: tunnelIDData + randomHash + ext),
+      !isBlackholed(remote.hash)
+    else {
+      detachUnlessExempt(interface)
+      return
+    }
 
-    handleTunnel(tunnelID: tunnelID, interface: interface)
+    if !ext.isEmpty {
+      guard let info = Transport.tunnelSynthesisExt(ext) else {
+        return notifyProtocolViolation(on: interface)
+      }
+      state = interface.interfaceState.tunnelSynthesis
+      state.remoteImpl = info.impl
+      state.remoteVers = info.version
+      state.remoteDstCost = Stamps.quantizeCost(info.dstCost)
+      state.remotePrCost = Stamps.quantizeCost(info.prCost)
+      state.remoteIsTN = info.transport
+      interface.interfaceState.tunnelSynthesis = state
+      if !state.emitted { synthesizeTunnel(interface, reverse: true) }
+    }
+
+    let initiated = interface.interfaceState.tunnelSynthesis.localTunnelID != nil
+    if !initiated { interface.tunnelID = tunnelID }
+    interface.interfaceState.tunnelSynthesis.remoteTransportID = remote.hash
+    if !initiated { handleTunnel(tunnelID: tunnelID, interface: interface) }
+  }
+
+  /// The fields of a tunnel synthesis extension, or nil where Python counts a violation
+  /// (`Transport.py:3256-3283`).
+  static func tunnelSynthesisExt(
+    _ ext: Data
+  ) -> (impl: String, version: [Int], transport: Bool, dstCost: Double, prCost: Double)? {
+    guard case .map(let pairs) = try? MsgPack.decode(ext) else { return nil }
+    func field(_ key: DiscoveryFieldKey) -> MsgPack.Value? {
+      pairs.first { $0.0 == .uint(key.rawValue) }?.1
+    }
+    guard case .string(let impl) = field(.transportImpl),
+      case .string(let version) = field(.transportVers),
+      case .bool(let transport) = field(.transport),
+      case .double(let dstCost) = field(.dstCost),
+      case .double(let prCost) = field(.prCost),
+      let versionTuple = InterfaceDiscoveryHelpers.versionTuple(version),
+      let sanitized = InterfaceAnnounceHandler.sanitizeName(impl), !sanitized.isEmpty,
+      sanitized == impl
+    else { return nil }
+    return (impl, versionTuple, transport, dstCost, prCost)
   }
 
   /// Attach the tunnel to `interface`, and restore its paths through it when the tunnel is
@@ -7658,7 +7726,6 @@ public final class Transport {
     let expires = Date().addingTimeInterval(Transport.tunnelTimeout)
     lock.lock()
     defer { lock.unlock() }
-    interface.tunnelID = tunnelID
     guard var tunnel = tunnels[tunnelID] else {
       tunnels[tunnelID] = TunnelEntry(
         tunnelID: tunnelID,

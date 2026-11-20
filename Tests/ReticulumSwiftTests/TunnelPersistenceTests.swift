@@ -101,6 +101,21 @@ final class TunnelPersistenceTests: XCTestCase {
     XCTAssertNotNil(tunnel.paths[destHash], "and it must still carry its path")
   }
 
+  /// `if expires > now+Transport.TUNNEL_RECONNECT_WINDOW: expires = now+...` (`Transport.py:636-637`).
+  func testALoadedTunnelExpiresWithinTheReconnectWindow() throws {
+    let (live, iface) = makeTransport()
+    let tunnelID = Hashes.fullHash(Data("window".utf8))
+    try installTunnel(on: live, through: iface, tunnelID: tunnelID)
+    try TunnelStore.snapshot(of: live).write(to: fileURL)
+
+    let (revived, _) = makeTransport()
+    try TunnelStore.read(from: fileURL).apply(to: revived)
+
+    let expires = try XCTUnwrap(revived.tunnels[tunnelID]).expires
+    XCTAssertLessThanOrEqual(
+      expires.timeIntervalSinceNow, Transport.tunnelReconnectWindow + 1)
+  }
+
   // MARK: - The shape
 
   /// `serialised_tunnel = [tunnel_id, interface_hash, serialised_paths, expires]`—`Transport.py:3487`,
