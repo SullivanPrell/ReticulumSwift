@@ -140,4 +140,23 @@ final class ReticulumDiscoveryConfig2Tests: XCTestCase {
     let cfg = ReticulumConfig.parse("[reticulum]")
     XCTAssertEqual(cfg.reticulum.autoconnectDiscoveredInterfaces, 0)
   }
+
+  /// Capped at 12 unless `autoconnect_discovered_interfaces_disable_caps` came first
+  /// (RNS 1.6.1, `Reticulum.py:743-754`).
+  func testAutoconnectDiscoveredInterfacesIsCappedAtTwelve() {
+    func parsed(_ body: String) -> Int {
+      ReticulumConfig.parse("[reticulum]\n" + body).reticulum.autoconnectDiscoveredInterfaces
+    }
+    XCTAssertEqual(parsed("  autoconnect_discovered_interfaces = 12"), 12)
+    XCTAssertEqual(parsed("  autoconnect_discovered_interfaces = 40"), 12)
+    XCTAssertEqual(
+      parsed(
+        "  autoconnect_discovered_interfaces_disable_caps = yes\n"
+          + "  autoconnect_discovered_interfaces = 40"), 40)
+    XCTAssertEqual(
+      parsed(
+        "  autoconnect_discovered_interfaces = 40\n"
+          + "  autoconnect_discovered_interfaces_disable_caps = yes"), 12,
+      "Python reads the options in file order")
+  }
 }

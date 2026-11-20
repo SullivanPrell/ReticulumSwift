@@ -1001,9 +1001,24 @@ public final class Reticulum {
         Self.log(
           "Loaded \(rows.count) known destinations from shared instance database", level: .verbose)
       } catch {
+        // `Identity.py:269-281`: a split-mode client reaches the database only over RPC.
         Self.log(
-          "Could not load known destinations from shared instance database, continuing with an "
-            + "empty table. The contained exception was: \(error)", level: .error)
+          "Could not load known destinations from shared instance database: \(error)",
+          level: .debug)
+        do {
+          guard let authkey = rpcAuthenticationKey() else {
+            throw RPCClientError.authenticationFailed
+          }
+          let rows = try RPCClient(
+            port: config?.reticulum.instanceControlPort ?? RPCClient.defaultControlPort,
+            authkey: authkey
+          ).knownDestinations()
+          transport.restore(knownDestinations: rows)
+          Self.log("Loaded \(rows.count) known destinations from shared instance", level: .verbose)
+        } catch {
+          Self.log(
+            "Could not load known destinations from shared instance: \(error)", level: .error)
+        }
       }
       return
     }
@@ -1270,6 +1285,21 @@ public final class Reticulum {
       }
     }
 
+    // `Transport.py:465-473`: a transport node not attached to a shared instance reloads its
+    // rate table.
+    if transport.transportEnabled, !transport.isConnectedToSharedInstance {
+      let rateTableURL = StorageInventory.url(
+        .announceRateTable, storage: configuration.storagePath)
+      if FileManager.default.fileExists(atPath: rateTableURL.path) {
+        if transport.loadAnnounceRateTable(from: rateTableURL) {
+          Reticulum.log("Loaded announce rate table from storage", level: .debug)
+        } else {
+          Reticulum.log(
+            "Could not load announce rate table from storage, initialized empty", level: .warning)
+        }
+      }
+    }
+
     // Restore packet hashlist for replay prevention across restarts.
     // Mirrors Python's hashlist loading in Transport.__init__.
     let hashlistURL = StorageInventory.url(
@@ -1330,6 +1360,8 @@ public final class Reticulum {
       .packetHashlist,
       storage: configuration.storagePath)
     try? transport.savePacketHashlist(to: hashlistURL)
+    try? transport.saveAnnounceRateTable(
+      to: StorageInventory.url(.announceRateTable, storage: configuration.storagePath))
     // Persist blackhole list (own entries only, mirrors Python's Transport.persist_blackhole()).
     let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
     try? transport.persistBlacklist(toDirectory: blackholePath)

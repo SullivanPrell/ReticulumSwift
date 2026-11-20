@@ -318,6 +318,14 @@ public struct PathStore {
         installed.insert(entry.destinationHash)
         continue
       }
+      // `if path_identity and path_identity.hash in Transport.blackholed_identities`
+      // (`Transport.py:583-586`). Final, like a malformed hash.
+      if let identityHash = transport.recall(identity: entry.destinationHash)?.hash,
+        transport.isBlackholed(identityHash)
+      {
+        installed.insert(entry.destinationHash)
+        continue
+      }
 
       // Resolve the stored interface hash back to a live interface, and drop the entry if
       // nothing answers—the reference gates the restore on `receiving_interface != None`
@@ -344,11 +352,22 @@ public struct PathStore {
       // Ported anyway, because a restored announce that under-reports its hops would be
       // wrong the moment anything does read it, and asserted at this seam rather than
       // through a path entry that can't show it.
-      guard PathStore.restoredAnnounce(for: entry, from: transport) != nil else {
+      guard let announce = PathStore.restoredAnnounce(for: entry, from: transport) else {
         Reticulum.log(
           "Could not reconstruct path table entry from storage for "
             + "\(entry.destinationHash.hexString): the announce packet could "
             + "not be loaded from cache", level: .debug)
+        installed.insert(entry.destinationHash)
+        continue
+      }
+
+      // `name_hash = announce_packet.data[KEYSIZE//8:KEYSIZE//8+NAME_HASH_LENGTH//8]`, then
+      // the type filters (`Transport.py:595-599`).
+      let nameStart = announce.data.startIndex + Constants.keySize
+      if announce.data.count >= Constants.keySize + Constants.nameHashLength,
+        !transport.restoresDestinationType(
+          Data(announce.data[nameStart..<nameStart + Constants.nameHashLength]))
+      {
         installed.insert(entry.destinationHash)
         continue
       }

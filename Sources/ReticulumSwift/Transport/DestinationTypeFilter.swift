@@ -24,10 +24,27 @@ extension Transport {
     return Destination.computeNameHash(appName: appName, aspects: aspects)
   }
 
+  /// The name hash `block_destination_type` and `allow_destination_type` file a type under: a
+  /// `<hex>` name is the hash itself (RNS 1.6.1, `Transport.py:4878-4885`).
+  ///
+  /// Python slices `full_name[1:1+20]`, so a short bracketed name keeps its `>` and hashes as
+  /// text.
+  static func filterTypeHash(_ fullName: String) -> Data {
+    guard fullName.hasPrefix("<"), fullName.hasSuffix(">") else {
+      return destinationTypeHash(fullName)
+    }
+    let inner = String(fullName.dropFirst().prefix(Constants.nameHashLength * 2))
+    if let raw = Data(hex: inner), !raw.isEmpty { return raw }
+    return destinationTypeHash(inner)
+  }
+
   /// Python's `block_destination_type`: also drops every client's want of the type.
+  ///
+  /// An empty name blocks nothing (`if not full_name: return`).
   @discardableResult
   public func blockDestinationType(_ fullName: String) -> Bool {
-    let nameHash = Self.destinationTypeHash(fullName)
+    guard !fullName.isEmpty else { return false }
+    let nameHash = Self.filterTypeHash(fullName)
     destinationFiltersLock.lock()
     defer { destinationFiltersLock.unlock() }
     blockedDestinationTypes.insert(nameHash)
@@ -38,7 +55,8 @@ extension Transport {
   /// Python's `allow_destination_type`.
   @discardableResult
   public func allowDestinationType(_ fullName: String) -> Bool {
-    let nameHash = Self.destinationTypeHash(fullName)
+    guard !fullName.isEmpty else { return false }
+    let nameHash = Self.filterTypeHash(fullName)
     destinationFiltersLock.lock()
     defer { destinationFiltersLock.unlock() }
     allowedDestinationTypes.insert(nameHash)
@@ -82,6 +100,16 @@ extension Transport {
     let wasRegistered = requesters.remove(requester) != nil
     clientDestinationTypes[nameHash] = requesters.isEmpty ? nil : requesters
     return wasRegistered
+  }
+
+  /// Whether a stored path's announce may come back at load (`Transport.py:595-599`).
+  ///
+  /// Unlike ingress, a client's want doesn't admit a type here.
+  func restoresDestinationType(_ nameHash: Data) -> Bool {
+    destinationFiltersLock.lock()
+    defer { destinationFiltersLock.unlock() }
+    if blockedDestinationTypes.contains(nameHash) { return false }
+    return !requiredDestinationsOnly || allowedDestinationTypes.contains(nameHash)
   }
 
   /// The type gate at the head of announce ingress (`Transport.py:2033-2042`).

@@ -318,7 +318,9 @@ final class KnownDestinationsStoreTests: XCTestCase {
 
   /// With no database to read, a client logs Python's error, keeps an empty table and
   /// creates nothing (`Identity.py:271-273`).
-  func testALocalClientWithoutADatabaseLogsPythonsError() throws {
+  /// Without a database the client asks the instance over RPC, and logs Python's error when
+  /// that fails too (`Identity.py:271-281`, RNS 1.6.1).
+  func testALocalClientWithoutADatabaseOrRPCLogsPythonsError() throws {
     var errors: [String] = []
     Reticulum.logHandler = { message, level in if level == .error { errors.append(message) } }
 
@@ -328,9 +330,7 @@ final class KnownDestinationsStoreTests: XCTestCase {
     defer { client.stop() }
 
     XCTAssertTrue(
-      errors.contains(
-        "Could not load known destinations from shared instance database, continuing with an "
-          + "empty table. The contained exception was: unable to open database file"),
+      errors.contains { $0.hasPrefix("Could not load known destinations from shared instance: ") },
       "\(errors)")
     XCTAssertTrue(client.transport.knownIdentities.isEmpty)
     XCTAssertFalse(FileManager.default.fileExists(atPath: database.path))
