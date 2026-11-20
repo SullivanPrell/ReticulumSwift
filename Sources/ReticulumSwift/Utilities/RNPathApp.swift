@@ -247,16 +247,17 @@ public enum RNPathApp {
   ///
   /// `argparse` wraps to the terminal width (defaulting to 80 when `COLUMNS` is unset) and
   /// its section header changed across Python releases, so this literal is pinned to the
-  /// **80-column, Python 3.10–3.12** rendering of RNS 1.6.0's `rnpath`. (Python ≤ 3.9 prints
+  /// **80-column, Python 3.10–3.12** rendering of RNS 1.6.1's `rnpath`. (Python ≤ 3.9 prints
   /// `optional arguments:`; Python ≥ 3.13 renders value-taking options as `-m, --max hops`.)
   ///
   /// It's a literal rather than generated because ``ArgumentParser/usage`` isn't
   /// argparse-shaped—it emits `usage: rnpath [options] …` and pads to a fixed 24 columns.
   /// Parsing still goes through ``ArgumentParser``; only the rendering is hand-pinned.
   public static let helpText: String = """
-    usage: rnpath [-h] [--config CONFIG] [--version] [-t] [-u] [-m hops] [-r] [-d]
-                  [-D] [-x] [-w seconds] [-R hash] [-i path] [-W seconds] [-b]
-                  [-B] [-U] [--duration DURATION] [--reason REASON] [-p] [-j] [-v]
+    usage: rnpath [-h] [--config CONFIG] [--version] [-t] [-a] [-u] [-V] [-E]
+                  [-m hops] [-M value] [-r] [-d] [-D] [-x] [-w seconds] [-R hash]
+                  [-i path] [-W seconds] [-b] [-B] [-U] [--duration hours]
+                  [--reason reason] [-p] [-j] [-A] [--capture path] [-v]
                   [destination] [list_filter]
 
     Reticulum Path Management Utility
@@ -270,8 +271,13 @@ public enum RNPathApp {
       --config CONFIG       path to alternative Reticulum config directory
       --version             show program's version number and exit
       -t, --table           show all known paths
+      -a, --active          show in-use paths only
       -u, --usage           show path usage time
+      -V, --vias            show via transport IDs
+      -E, --expiry          show path expiry times
       -m hops, --max hops   maximum hops to filter path table by
+      -M value, --min-value value
+                            minimum value to filter path table by
       -r, --rates           show announce rate info
       -d, --drop            remove the path to a destination
       -D, --drop-announces  drop all queued announces
@@ -283,12 +289,14 @@ public enum RNPathApp {
       -b, --blackholed      list blackholed identities
       -B, --blackhole       blackhole identity
       -U, --unblackhole     unblackhole identity
-      --duration DURATION   duration of blackhole enforcement in hours
-      --reason REASON       reason for blackholing identity
+      --duration hours      duration of blackhole enforcement in hours
+      --reason reason       reason for blackholing identity
       -p, --blackholed-list
                             view published blackhole list for remote transport
                             instance
       -j, --json            output in JSON format
+      -A, --analyze         Analyze tables
+      --capture path        path to capture file for analyze mode
       -v, --verbose
     """
 

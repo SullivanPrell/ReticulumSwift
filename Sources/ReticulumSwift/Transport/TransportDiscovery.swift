@@ -75,6 +75,8 @@ extension Transport {
     callback: ((DiscoveredInterfaceInfo) -> Void)? = nil
   ) {
     guard discoveryHandler == nil else { return }  // idempotent
+    // `Discovery.py:522-523` (RNS 1.6.1).
+    wantsDestinationType("rnstransport.discovery.interface", requester: applicationIdentity.hash)
 
     let discovery = InterfaceDiscovery(storagePath: storagePath)
     // Python reaches its Reticulum singleton for this

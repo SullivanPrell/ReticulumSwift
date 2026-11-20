@@ -54,6 +54,19 @@ public final class KnownDestinationsStore {
       self.lrCost = lrCost
     }
 
+    /// Python's in-memory entry list, as the `known_destinations` RPC returns it
+    /// (`Reticulum.py:2076-2093`).
+    public var msgpackEntry: MsgPack.Value {
+      func number(_ value: Double) -> MsgPack.Value {
+        value == value.rounded() && abs(value) < 1e15 ? .int(Int64(value)) : .double(value)
+      }
+      return .array([
+        .double(lastHeard), packetHash.map { .bytes($0) } ?? .nil, .bytes(publicKey),
+        appData.map { .bytes($0) } ?? .nil, number(used), stamp.map { .bytes($0) } ?? .nil,
+        stampValue.map(number) ?? .nil, lrCost.map { .double($0) } ?? .nil,
+      ])
+    }
+
     /// A legacy `known_destinations` entry, or nil when it carries no public key.
     ///
     /// Padded to eight fields with `None, 0, None`, as `Identity.py:332-339` and

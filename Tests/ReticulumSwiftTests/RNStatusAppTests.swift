@@ -116,7 +116,7 @@ final class RNStatusAppTests: XCTestCase {
     // The vocabulary itself is pinned against Python in
     // `RNStatus152SurfaceTests.testSortVocabularyMatchesPython`; this only holds the
     // count, so adding a case without extending that list fails here too.
-    XCTAssertEqual(RNStatusApp.Sort.allCases.count, 26)
+    XCTAssertEqual(RNStatusApp.Sort.allCases.count, 31)
     XCTAssertEqual(
       RNStatusApp.Sort.allCases.map(\.rawValue),
       RNStatus152SurfaceTests.pythonSortTokens)

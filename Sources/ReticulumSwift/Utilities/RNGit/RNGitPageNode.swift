@@ -23,13 +23,21 @@ public struct RNGitPageNodeSettings: Equatable, Sendable {
   /// Whether an image a page shows is sent converted to WebP.
   public var mediaConversion = true
 
+  /// The stamp cost a link to the pages destination needs (`pages.py:74`).
+  public var linkCost = 18.0
+
+  /// The value the pages destination's announces are stamped to, or `nil` for the default.
+  public var stampValue: Double?
+
   /// Creates the settings with every default in place.
   public init() {}
 
   /// Creates the settings the `[pages]` section of `configuration` spells out.
   ///
   /// - Throws: ``RNGitSettingsError/notABoolean(key:)`` where `unicode_icons` or
-  ///   `media_conversion` names neither true nor false, `unicode_icons` read first.
+  ///   `media_conversion` names neither true nor false, and
+  ///   ``RNGitSettingsError/notAFloat(key:)`` where `link_cost` or `stamp_value` names no number,
+  ///   in that order.
   public init(configuration: RNGitConfigSection) throws {
     guard let section = configuration.section("pages") else { return }
     if section.has("unicode_icons") {
@@ -44,6 +52,8 @@ public struct RNGitPageNodeSettings: Equatable, Sendable {
       }
       mediaConversion = conversion
     }
+    if section.has("link_cost") { linkCost = try section.quantizedCost("link_cost") }
+    if section.has("stamp_value") { stampValue = try section.quantizedCost("stamp_value") }
   }
 }
 
@@ -154,8 +164,8 @@ public final class RNGitPageNode {
   /// A templates directory is made where none stands, and a failure to make one is logged
   /// rather than stopping the node, as the reference does.
   ///
-  /// - Throws: ``RNGitSettingsError`` where the `[pages]` section names no boolean for a key
-  ///   read as one, and whatever the destination throws.
+  /// - Throws: ``RNGitSettingsError`` where the `[pages]` section names no boolean or number for
+  ///   a key read as one, and whatever the destination throws.
   public init(
     owner: RNGitNode, version: String, clock: @escaping @Sendable () -> Date = { Date() }
   ) throws {
@@ -180,6 +190,8 @@ public final class RNGitPageNode {
     self.destination = try Destination(
       identity: owner.identity, direction: .in, kind: .single, appName: Self.appName,
       aspects: [Self.aspect])
+    if let value = settings.stampValue, value != 0 { destination.setValue(value) }
+    destination.setLinkCost(settings.linkCost)
     let nodeName = owner.settings.nodeName
     destination.setDefaultAppData(provider: { Data(nodeName.utf8) })
     destination.setLinkEstablishedCallback { [weak self] link in self?.connected(link) }

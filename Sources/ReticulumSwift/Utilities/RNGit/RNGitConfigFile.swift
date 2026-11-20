@@ -85,6 +85,16 @@ public struct RNGitConfigSection: Equatable, Sendable {
     return Self.booleans[text.lowercased()]
   }
 
+  /// `RNS.Stamps.quantize_cost(section.as_float(key))`.
+  ///
+  /// shortcut: Swift's `Double` refuses the underscores `float()` takes and reads the hex
+  /// `float()` refuses; widen it if a configuration ever needs either.
+  func quantizedCost(_ key: String) throws -> Double {
+    guard let text = string(key), let cost = Double(text.trimmingCharacters(in: .whitespaces))
+    else { throw RNGitSettingsError.notAFloat(key: key) }
+    return Stamps.quantizeCost(cost)
+  }
+
   /// The subsection `key` opens, or `nil` if it holds a value.
   public func section(_ key: String) -> RNGitConfigSection? {
     guard case .section(let value) = entries[key] else { return nil }

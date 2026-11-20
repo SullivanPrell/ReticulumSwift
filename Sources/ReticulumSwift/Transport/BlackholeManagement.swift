@@ -95,10 +95,20 @@ extension Transport {
     return blackholedIdentities[identityHash] != nil
   }
 
-  /// Remove path table entries whose associated identity is blackholed.
+  /// Remove path table entries whose associated identity is blackholed, and tear down the
+  /// interfaces a blackholed transport node is the remote of.
   ///
-  /// Mirrors Python's `Transport.remove_blackholed_paths()`.
+  /// Mirrors Python's `Transport.remove_blackholed_paths()` (`Transport.py:4811-4840`).
   public func removeBlackholedPaths() {
+    defer {
+      for iface in interfaces {
+        if let remote = iface.interfaceState.tunnelSynthesis.remoteTransportID,
+          isBlackholed(remote)
+        {
+          detachUnlessExempt(iface)
+        }
+      }
+    }
     // Snapshot (destHash → identityHash) under `lock`, decide which are
     // blackholed under blackholeLock, then remove under `lock`—the two
     // locks are never held simultaneously.

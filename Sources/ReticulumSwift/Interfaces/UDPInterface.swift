@@ -193,3 +193,8 @@ public final class UDPInterface: Interface {
     }
   }
 }
+
+extension UDPInterface {
+  /// `UDPInterface.py:81`.
+  public var sharedMedium: Bool { true }
+}

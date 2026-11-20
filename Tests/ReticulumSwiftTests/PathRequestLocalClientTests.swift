@@ -58,7 +58,7 @@ final class PathRequestLocalClientTests: XCTestCase {
   // MARK: - A2: local client's path request must reach the mesh
 
   func testLocalClientPathRequestForwardedToMeshWhenTransportDisabled() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = false
 
     let serving = ServingIface(name: "Shared Instance[37428]")
@@ -81,7 +81,7 @@ final class PathRequestLocalClientTests: XCTestCase {
   // MARK: - A4: mesh path request must be offered to local clients
 
   func testMeshPathRequestForwardedToLocalClientsWhenNotTransport() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = false
 
     let serving = ServingIface(name: "Shared Instance[37428]")
@@ -104,7 +104,7 @@ final class PathRequestLocalClientTests: XCTestCase {
   // MARK: - C1: a non-transport node must not answer as a fake relay
 
   func testNonTransportNodeDoesNotAnswerPathRequestAsFakeRelay() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = false  // plain endpoint, no local clients
 
     let mesh = MeshIface(name: "mesh")
@@ -138,7 +138,7 @@ final class PathRequestLocalClientTests: XCTestCase {
   // MARK: - C3: recursive discovery reuses the incoming tag
 
   func testRecursiveDiscoveryReusesIncomingTag() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = true
 
     let source = MeshIface(name: "in")

@@ -156,9 +156,10 @@ public final class RPCClient {
     }
   }
 
-  /// The getters RNS 1.6.0 wraps, and what its log line says each was doing.
+  /// The getters RNS 1.6.0 and 1.6.1 wrap, and what its log line says each was doing.
   private static let guardedGetters = [
     "interface_stats": "getting interface stats",
+    "known_destinations": "getting known destinations",
     "path_table": "getting path table",
     "rate_table": "getting rate table",
     "link_distribution": "getting link distribution",
@@ -188,6 +189,19 @@ public final class RPCClient {
 
   /// Python: `get_rate_table()`.
   public func rateTable() throws -> MsgPack.Value { try get("rate_table") }
+
+  /// Python: `get_known_destinations()` (RNS 1.6.1, `Reticulum.py:2076-2093`).
+  public func knownDestinations() throws -> [Data: KnownDestinationsStore.Row] {
+    var rows: [Data: KnownDestinationsStore.Row] = [:]
+    guard case .map(let pairs) = try get("known_destinations") else { return [:] }
+    for (key, value) in pairs {
+      guard let hash = key.asData, let fields = value.asArray,
+        let row = KnownDestinationsStore.Row(entry: fields)
+      else { continue }
+      rows[hash] = row
+    }
+    return rows
+  }
 
   /// Python: `get_link_count()`.
   public func linkCount() throws -> Int? { try get("link_count").asInt }

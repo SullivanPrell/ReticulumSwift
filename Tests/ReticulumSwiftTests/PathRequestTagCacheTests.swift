@@ -24,7 +24,7 @@ import XCTest
 /// can't be what drops it.
 final class PathRequestTagCacheTests: XCTestCase {
 
-  private let transport = Transport()
+  private let transport = Transport.unstamped()
   private let iface = PathRequestResponderTests.CapturingInterface(name: "in")
 
   override func setUp() {

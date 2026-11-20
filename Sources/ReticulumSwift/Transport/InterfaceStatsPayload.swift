@@ -34,6 +34,10 @@ public enum InterfaceStatsPayload {
       (.string("rxs"), .double(0)),
       (.string("txs"), .double(0)),
     ]
+    for key in ["lrxb", "ltxb"] { pairs.append((.string(key), .int(0))) }
+    for key in ["lrxs", "ltxs"] { pairs.append((.string(key), .double(0))) }
+    for key in ["frxb", "ftxb"] { pairs.append((.string(key), .int(0))) }
+    for key in ["frxs", "ftxs"] { pairs.append((.string(key), .double(0))) }
     for key in ["arxb", "atxb"] { pairs.append((.string(key), .int(0))) }
     for key in ["arxs", "atxs", "arxf", "atxf"] { pairs.append((.string(key), .double(0))) }
     for key in ["prxb", "ptxb"] { pairs.append((.string(key), .int(0))) }
@@ -171,6 +175,9 @@ public enum InterfaceStatsPayload {
       kv("bitrate", .int(Int64(iface.bitrate)))
       kv("rxs", .double(t.currentRxSpeed(for: iface)))
       kv("txs", .double(t.currentTxSpeed(for: iface)))
+      let speeds = t.announceSpeeds(for: iface)
+      kv("frxs", .double(speeds.filteredRx))
+      kv("ftxs", .double(speeds.filteredTx))
 
       // Announce and path-request speeds. Python reads `current_arx_speed` and its
       // three siblings behind a `hasattr`, falling through to 0 in the `else`
@@ -178,7 +185,6 @@ public enum InterfaceStatsPayload {
       // effectively dead on a running daemon: `count_traffic_loop` assigns all four on
       // every interface it has sampled twice (`Transport.py:631-636`), so a Python peer
       // reports live rates here, not zeros.
-      let speeds = t.announceSpeeds(for: iface)
       kv("arxs", .double(speeds.announceRx))
       kv("atxs", .double(speeds.announceTx))
       kv("prxs", .double(speeds.pathRequestRx))
@@ -236,14 +242,18 @@ public enum InterfaceStatsPayload {
       // (`Reticulum.py:1531`). rnstatus prints it beside the bitrate and reads it
       // without a membership guard once `bitrate` is present, so it cannot be omitted.
       kv("mtu", iface.hwMtu.map { .int(Int64($0)) } ?? .nil)
-      kv("rxb", .int(Int64(iface.rxBytes)))
-      kv("txb", .int(Int64(iface.txBytes)))
-
+      // `Transport.inbound` credits `rxb` and `frxb` (RNS 1.6.1, `Transport.py:1973-1985`);
+      // `ftxb` is declared and never incremented (`Interface.py:76`).
       let counts = t.interfaceCounts(for: iface)
+      kv("rxb", .int(Int64(counts.rxBytes)))
+      kv("txb", .int(Int64(iface.txBytes)))
+      kv("frxb", .int(Int64(counts.filteredRxBytes)))
+      kv("ftxb", .int(0))
       kv("arxb", .int(Int64(counts.announceRxBytes)))
       kv("atxb", .int(Int64(counts.announceTxBytes)))
       kv("arxc", .int(Int64(counts.announceRxCount)))
       kv("atxc", .int(Int64(counts.announceTxCount)))
+      kv("afrxc", .int(Int64(counts.filteredAnnounceRxCount)))
       kv("prxb", .int(Int64(counts.pathRequestRxBytes)))
       kv("ptxb", .int(Int64(counts.pathRequestTxBytes)))
       kv("prxc", .int(Int64(counts.pathRequestRxCount)))
@@ -305,6 +315,19 @@ public enum InterfaceStatsPayload {
       kv("ifac_violations", .int(Int64(counts.ifacViolations)))
       kv("packet_filter_hits", .int(Int64(counts.packetFilterHits)))
 
+      // `Reticulum.py:1927-1941`.
+      let synthesis = iface.interfaceState.tunnelSynthesis
+      kv("tunnel_id", (iface.tunnelID ?? synthesis.localTunnelID).map { .bytes($0) } ?? .nil)
+      kv("remote_transport_id", synthesis.remoteTransportID.map { .bytes($0) } ?? .nil)
+      let remote = !iface.sharedMedium
+      kv("rem_impl", remote ? synthesis.remoteImpl.map { .string($0) } ?? .nil : .nil)
+      kv(
+        "rem_vers",
+        remote ? synthesis.remoteVers.map { .array($0.map { .int(Int64($0)) }) } ?? .nil : .nil)
+      kv("rem_is_tn", remote ? synthesis.remoteIsTN.map { .bool($0) } ?? .nil : .nil)
+      kv("rem_dst_cost", remote ? synthesis.remoteDstCost.map { .double($0) } ?? .nil : .nil)
+      kv("rem_pr_cost", remote ? synthesis.remotePrCost.map { .double($0) } ?? .nil : .nil)
+
       return .map(pairs)
     }
 
@@ -315,6 +338,14 @@ public enum InterfaceStatsPayload {
       (.string("txb"), .int(Int64(tStats.trafficTxBytes))),
       (.string("rxs"), .double(tStats.speedRx)),
       (.string("txs"), .double(tStats.speedTx)),
+      (.string("lrxb"), .int(Int64(tStats.linkRxBytes))),
+      (.string("ltxb"), .int(Int64(tStats.linkTxBytes))),
+      (.string("lrxs"), .double(tStats.linkSpeedRx)),
+      (.string("ltxs"), .double(tStats.linkSpeedTx)),
+      (.string("frxb"), .int(Int64(tStats.filteredRxBytes))),
+      (.string("ftxb"), .int(Int64(tStats.filteredTxBytes))),
+      (.string("frxs"), .double(tStats.filteredSpeedRx)),
+      (.string("ftxs"), .double(tStats.filteredSpeedTx)),
       // The announce and path-request aggregates `rnstatus -t -A` and `-t -P` read.
       // Python indexes several of these with no presence guard, so a daemon that omits
       // them makes the peer's own tool raise KeyError and print nothing at all.

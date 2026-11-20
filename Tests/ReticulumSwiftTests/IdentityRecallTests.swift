@@ -34,8 +34,8 @@ final class IdentityRecallTests: XCTestCase {
   }
 
   func testRecallReturnsIdentityAfterAnnounce() throws {
-    let aT = Transport()
-    let bT = Transport()
+    let aT = Transport.unstamped()
+    let bT = Transport.unstamped()
     let bId = Identity()
     let bDest = try Destination(
       identity: bId, direction: .in, kind: .single,
@@ -67,8 +67,8 @@ final class IdentityRecallTests: XCTestCase {
   }
 
   func testRecallAppDataAfterAnnounce() throws {
-    let aT = Transport()
-    let bT = Transport()
+    let aT = Transport.unstamped()
+    let bT = Transport.unstamped()
     let bId = Identity()
     let bDest = try Destination(
       identity: bId, direction: .in, kind: .single,
@@ -99,7 +99,7 @@ final class IdentityRecallTests: XCTestCase {
   }
 
   func testRecallNilForUnknownDestination() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let unknown = Data(repeating: 0xAA, count: 16)
     XCTAssertNil(t.recall(identity: unknown))
     XCTAssertNil(t.recallAppData(forDestination: unknown))

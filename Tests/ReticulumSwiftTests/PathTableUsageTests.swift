@@ -14,7 +14,7 @@ import XCTest
 
 /// RNS 1.6.0's path-table usage: `IDX_PT_USED` records when a path last carried traffic, a
 /// path never used is culled after `unused_path_linger`, the never-used pool is held to
-/// `PATH_POOL_UNUSED_TARGET`, and `mark_path_responsive` refreshes a path
+/// `PATH_POOL_UNUSED_MAX`, and `mark_path_responsive` refreshes a path
 /// (`Transport.py:1120-1159`, `3632-3646`).
 final class PathTableUsageTests: XCTestCase {
 
@@ -150,7 +150,7 @@ final class PathTableUsageTests: XCTestCase {
     XCTAssertFalse(t.hasPath(to: dst(2)))
   }
 
-  /// Above `PATH_POOL_UNUSED_TARGET`, the never-used paths sorting first by
+  /// Above `PATH_POOL_UNUSED_MAX`, the never-used paths sorting first by
   /// `(slow, expiry)` go, checked every `pool_size_check_interval` (`Transport.py:1150-1159`).
   func testTheNeverUsedPoolIsCulledToItsTarget() {
     let t = Transport()
@@ -159,7 +159,7 @@ final class PathTableUsageTests: XCTestCase {
     t.register(interface: fast)
     t.register(interface: slow)
     let now = Date()
-    let target = Transport.pathPoolUnusedTarget
+    let target = Transport.pathPoolUnusedMax
     for n in 0..<(target + 1) {
       let expires = now.addingTimeInterval(86_400 + Double(n))
       t.restore(path: path(n, via: fast, heard: now, expires: expires), forDestination: dst(n))

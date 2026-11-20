@@ -28,6 +28,8 @@ final class InterfaceStatsTopLevelKeysTests: XCTestCase {
   /// The keys Python emits before the optional transport block, in order.
   static let expectedOrder = [
     "interfaces", "rxb", "txb", "rxs", "txs",
+    // RNS 1.6.1's link and filtered traffic (`Reticulum.py:1959-1966`).
+    "lrxb", "ltxb", "lrxs", "ltxs", "frxb", "ftxb", "frxs", "ftxs",
     "arxb", "atxb", "arxs", "atxs", "arxf", "atxf",
     "prxb", "ptxb", "prxs", "ptxs", "prxf", "ptxf",
     "rxpps", "txpps",

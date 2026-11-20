@@ -46,6 +46,7 @@ final class TunnelTests: XCTestCase {
       exp.fulfill()
     }
 
+    iface.wantsTunnel = true
     transport.synthesizeTunnel(iface)
     wait(for: [exp], timeout: 1.0)
 
@@ -54,8 +55,8 @@ final class TunnelTests: XCTestCase {
     XCTAssertEqual(pkt.headerType, .type1)
     XCTAssertEqual(pkt.destinationType, .plain)
     XCTAssertEqual(pkt.destinationHash, Transport.tunnelSynthesizeHash)
-    // Wire: public_key(64) + interface_hash(32) + random_hash(16) + signature(64) = 176
-    XCTAssertEqual(pkt.data.count, 64 + 32 + 16 + 64)
+    // public_key(64) + interface_hash(32) + random_hash(16) + signature(64) + ext
+    XCTAssertGreaterThan(pkt.data.count, 64 + 32 + 16 + 64)
   }
 
   func testSynthesizeTunnelNilIdentityDoesNothing() {
@@ -221,6 +222,7 @@ private final class TunnelTestIface: Interface {
   var ifacSize: Int = Constants.defaultIfacSize
   var wantsTunnel: Bool = false
   var tunnelID: Data?
+  var tunnelsAllowed: Bool { true }
 
   var onSend: ((Packet) -> Void)?
   private(set) var lastSentPacket: Packet?

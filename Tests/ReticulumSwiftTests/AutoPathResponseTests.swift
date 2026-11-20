@@ -34,7 +34,7 @@ final class AutoPathResponseTests: XCTestCase {
   }
 
   func testPathRequestForLocalDestinationGeneratesPathResponse() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let id = Identity()
     let dest = try Destination(
       identity: id, direction: .in, kind: .single,
@@ -72,7 +72,7 @@ final class AutoPathResponseTests: XCTestCase {
   }
 
   func testPathRequestForUnknownDestinationPropagatesToOtherInterfaces() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = true
 
     let iface1 = RecordingInterface(name: "req")

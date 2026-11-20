@@ -134,15 +134,15 @@ public enum RNStatusApp {
   /// The `-s` help string, single-sourced so the option table and ``helpText`` can't
   /// drift apart.
   ///
-  /// Python: rnstatus.py:845.
+  /// Python: rnstatus.py:968 (RNS 1.6.1).
   ///
   /// `helpText` has to carry the argparse-wrapped form, so the two spellings are
   /// unavoidably separate strings. `RNStatusAppTests` re-joins the wrapped rows and
   /// compares them against this one, which is what makes adding a sort key to the enum
   /// and forgetting one of the two help sites a test failure rather than a silent lie.
   public static let sortHelp: String =
-    "sort interfaces by [rate, traffic, rx, tx, rxs, txs, anns, arx, atx, arxc, "
-    + "atxc, held, prx, ptx, prxc, ptxc, pvs, ivs, flt, txdrp, txdrb, txbuf]"
+    "sort interfaces by [rate, traffic, rx, tx, rxs, txs, frx, ftx, anns, arx, atx, "
+    + "arxc, atxc, afrxc, held, prx, ptx, prxc, ptxc, pvs, ivs, flt, txdrp, txdrb, txbuf]"
 
   /// The `rnstatus` option table, built on the house ``ArgumentParser``.
   ///
@@ -160,10 +160,12 @@ public enum RNStatusApp {
     parser.flag(["-a", "--all"], help: "show all interfaces")
     parser.flag(["-A", "--announce-stats"], help: "show announce stats")
     parser.flag(["-P", "--pr-stats"], help: "show path request stats")
+    parser.flag(["-F", "--filter-stats"], help: "show filtered traffic stats")
     parser.flag(["-l", "--link-stats"], help: "show link stats")
     parser.flag(["-B", "--burst"], help: "only show interfaces with active bursts")
     parser.flag(["-b", "--blocked-ips"], help: "show blocked IPs per interface")
     parser.flag(["-t", "--totals"], help: "display traffic totals")
+    parser.flag(["-T", "--tunnels"], help: "display tunnel information")
     parser.flag(["-p", "--pps"], help: "display packets per second in totals")
     parser.flag(["-q", "--queues"], help: "display queue stats")
     parser.flag(["-z", "--profiling"], help: "display live profiling results")
@@ -197,10 +199,10 @@ public enum RNStatusApp {
   /// like everything else in this port, it's reproduced literally instead.
   public static let helpText: String = """
     usage: rnstatus [-h] [--config CONFIG] [--version] [--attach name]
-                    [--detach name] [--reload name] [-a] [-A] [-P] [-l] [-B] [-b]
-                    [-t] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash] [-i path]
-                    [-w seconds] [-d] [-D] [--show-stale] [--show-unknown] [-m]
-                    [-I seconds] [-v]
+                    [--detach name] [--reload name] [-a] [-A] [-P] [-F] [-l] [-B]
+                    [-b] [-t] [-T] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash]
+                    [-i path] [-w seconds] [-d] [-D] [--show-stale]
+                    [--show-unknown] [-m] [-I seconds] [-v]
                     [filter]
 
     Reticulum Network Stack Status
@@ -218,16 +220,19 @@ public enum RNStatusApp {
       -a, --all             show all interfaces
       -A, --announce-stats  show announce stats
       -P, --pr-stats        show path request stats
+      -F, --filter-stats    show filtered traffic stats
       -l, --link-stats      show link stats
       -B, --burst           only show interfaces with active bursts
       -b, --blocked-ips     show blocked IPs per interface
       -t, --totals          display traffic totals
+      -T, --tunnels         display tunnel information
       -p, --pps             display packets per second in totals
       -q, --queues          display queue stats
       -z, --profiling       display live profiling results
       -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
-                            anns, arx, atx, arxc, atxc, held, prx, ptx, prxc,
-                            ptxc, pvs, ivs, flt, txdrp, txdrb, txbuf]
+                            frx, ftx, anns, arx, atx, arxc, atxc, afrxc, held,
+                            prx, ptx, prxc, ptxc, pvs, ivs, flt, txdrp, txdrb,
+                            txbuf]
       -r, --reverse         reverse sorting
       -j, --json            output in JSON format
       -R hash               transport identity hash of remote instance to get
@@ -348,10 +353,10 @@ public enum RNStatusApp {
   /// `gravity` and its `g` short form.
   public enum Sort: String, Equatable, CaseIterable {
     case rate, bitrate
-    case rx, tx, rxs, txs
+    case rx, tx, frx, ftx, rxs, txs, frxs, ftxs
     case traffic
     case anns, announces
-    case arx, atx, arxc, atxc
+    case arx, atx, arxc, atxc, afrxc
     case prx, ptx, prxc, ptxc
     case held
     case pvs, ivs, flt

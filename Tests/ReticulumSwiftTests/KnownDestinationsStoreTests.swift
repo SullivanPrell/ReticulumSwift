@@ -316,22 +316,29 @@ final class KnownDestinationsStoreTests: XCTestCase {
     XCTAssertEqual(client.transport.currentRatchetKey(forDestination: destination), ratchet.ratchet)
   }
 
-  /// With no database to read, a client logs Python's error, keeps an empty table and
-  /// creates nothing (`Identity.py:271-273`).
-  func testALocalClientWithoutADatabaseLogsPythonsError() throws {
+  /// Without a database the client asks the instance over RPC. `get_known_destinations()`
+  /// logs the failed call and answers `{}` (`Reticulum.py:2077-2085`), so the load succeeds
+  /// with nothing (`Identity.py:271-276`).
+  func testALocalClientWithoutADatabaseOrRPCLogsPythonsError() throws {
     var errors: [String] = []
     Reticulum.logHandler = { message, level in if level == .error { errors.append(message) } }
+    defer { Reticulum.logHandler = nil }
+    // Port 1 is never bound; the default control port is a developer's own rnsd.
+    let config = dir.appendingPathComponent("config")
+    try "[reticulum]\n  instance_control_port = 1\n".write(
+      to: config, atomically: true, encoding: .utf8)
 
-    let client = Reticulum(configuration: .init(storagePath: dir))
+    let client = Reticulum(configuration: .init(storagePath: dir, configPath: config))
     client.transport.isConnectedToSharedInstance = true
     try client.start()
     defer { client.stop() }
 
-    XCTAssertTrue(
-      errors.contains(
-        "Could not load known destinations from shared instance database, continuing with an "
-          + "empty table. The contained exception was: unable to open database file"),
-      "\(errors)")
+    XCTAssertEqual(
+      errors.filter { $0.contains("known destinations") },
+      [
+        "Shared instance RPC failed while getting known destinations: [Errno \(ECONNREFUSED)] "
+          + "Connection refused"
+      ])
     XCTAssertTrue(client.transport.knownIdentities.isEmpty)
     XCTAssertFalse(FileManager.default.fileExists(atPath: database.path))
   }

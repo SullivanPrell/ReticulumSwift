@@ -256,7 +256,7 @@ final class PathTableHopCountTests: XCTestCase {
     let entry = try XCTUnwrap(t.getPathTable().first { $0.destinationHash == dest.hash })
     let line = RNPathFormatter.pathTableLine(
       RNPathTableEntry(entry, resolvingNamesWith: t), now: Date().timeIntervalSince1970)
-    XCTAssertTrue(line.contains(">   1h via <"), "rnpath.py:302: \(line)")
+    XCTAssertTrue(line.contains(">   1h ("), "rnpath.py:318: \(line)")
   }
 
   // MARK: - destination_table

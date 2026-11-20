@@ -89,12 +89,14 @@ public final class InterfaceState {
     var icMaxHeldAnnounces: Int = Reticulum.defaultIcMaxHeldAnnounces()
 
     var gravity: Int = InterfaceMode.defaultGravity
+    var hopLimiter: Int?
     var bootstrapOnly: Bool = false
     var recursivePrs: Bool = false
     var announcesFromInternal: Bool = true
     var announcesToInternal: Bool?
     var wantsTunnel: Bool = false
     var tunnelID: Data?
+    var tunnelSynthesis = TunnelSynthesis()
 
     /// Python `interface._destination_cost` and `_pr_cost` (`Interface.py:177-178`, RNS
     /// 1.6.0): the stamp values this interface requires of announces and path requests, nil
@@ -313,6 +315,13 @@ public final class InterfaceState {
     set { write(\.gravity, newValue) }
   }
 
+  /// Python: `interface.hop_limiter` (RNS 1.6.1, `Interface.py:140`): packets that arrived with
+  /// this many hops or more drop. `nil` or 0 sets no limit.
+  public var hopLimiter: Int? {
+    get { read(\.hopLimiter) }
+    set { write(\.hopLimiter, newValue) }
+  }
+
   /// Python: `interface.bootstrap_only`.
   public var bootstrapOnly: Bool {
     get { read(\.bootstrapOnly) }
@@ -360,6 +369,12 @@ public final class InterfaceState {
   public var wantsTunnel: Bool {
     get { read(\.wantsTunnel) }
     set { write(\.wantsTunnel, newValue) }
+  }
+
+  /// Python's per-connection tunnel synthesis attributes (`Interface.py:133-149`).
+  public var tunnelSynthesis: TunnelSynthesis {
+    get { read(\.tunnelSynthesis) }
+    set { write(\.tunnelSynthesis, newValue) }
   }
 
   /// Python: `interface.tunnel_id`.
@@ -579,6 +594,7 @@ public final class InterfaceState {
     // Per-connection, not inherited.
     incoming.wantsTunnel = false
     incoming.tunnelID = nil
+    incoming.tunnelSynthesis = TunnelSynthesis()
 
     // Per-endpoint, not inherited. Python's spawn block copies nineteen attributes
     // (`TCPInterface.py:594-641`) and no discovery attribute is among them: a spawned
@@ -610,4 +626,29 @@ public final class InterfaceState {
     storage = incoming
     os_unfair_lock_unlock(lock)
   }
+}
+
+/// What an interface has sent and learned through tunnel synthesis (`Interface.py:133-149`).
+public struct TunnelSynthesis: Equatable {
+  /// Python `synthesis_received`.
+  public var received = false
+  /// Python `synthesis_emitted`.
+  public var emitted = false
+  /// Python `local_tunnel_id`: the tunnel this side's own synthesis names.
+  public var localTunnelID: Data?
+  /// Python `remote_transport.hash`.
+  public var remoteTransportID: Data?
+  /// Python `remote_impl`.
+  public var remoteImpl: String?
+  /// Python `remote_vers`.
+  public var remoteVers: [Int]?
+  /// Python `remote_dst_cost`.
+  public var remoteDstCost: Double?
+  /// Python `remote_pr_cost`.
+  public var remotePrCost: Double?
+  /// Python `remote_is_tn`.
+  public var remoteIsTN: Bool?
+
+  /// No synthesis sent or received.
+  public init() {}
 }

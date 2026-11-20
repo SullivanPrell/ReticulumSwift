@@ -83,7 +83,7 @@ final class PathRequestStampTests: XCTestCase {
       (32, true), (48, true), (64, true), (17, false), (31, false), (33, false), (47, false),
       (49, false), (63, false), (65, false),
     ] {
-      let t = Transport()
+      let t = Transport.unstamped()
       let hop = Hop(name: "len-\(length)")
       t.register(interface: hop)
       t.handleIncoming(
@@ -106,7 +106,7 @@ final class PathRequestStampTests: XCTestCase {
       (Self.target + Self.tag, nil, false),
     ]
     for (index, (body, prCost, accepted)) in cases.enumerated() {
-      let t = Transport()
+      let t = Transport.unstamped()
       t.stamps.enforced = true
       let hop = Hop(name: "enforce-\(index)")
       hop.prCost = prCost
@@ -121,7 +121,7 @@ final class PathRequestStampTests: XCTestCase {
 
   /// From 1.6.0 every request carries the transport identity hash (`Transport.py:3700-3703`).
   func testANonTransportNodeStillSendsItsTransportID() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = false
     let hop = Hop(name: "emit")
     t.register(interface: hop)
@@ -132,7 +132,7 @@ final class PathRequestStampTests: XCTestCase {
   /// `STAMP_PRS` grinds a stamp over `dst+tag` before sending, then reuses it from
   /// `pr_stamp_cache` (`Transport.py:3705-3719`, `4020-4049`).
   func testStampingOwnRequestsGrindsThenReusesTheStamp() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.stamps.stampPRs = true
     t.stamps.prValue = 6
     let hop = Hop(name: "grind")
@@ -161,7 +161,7 @@ final class PathRequestStampTests: XCTestCase {
     for (ext, stampPRs, forwarded) in [
       (Self.ext, false, Self.ext), (nil, false, nil), (nil, true, Self.lenient),
     ] as [(Data?, Bool, Data?)] {
-      let t = Transport()
+      let t = Transport.unstamped()
       t.transportEnabled = true
       t.stamps.stampPRs = stampPRs
       let inbound = Hop(name: "gw", mode: .gateway)
@@ -180,7 +180,7 @@ final class PathRequestStampTests: XCTestCase {
   /// (`Transport.py:3871-3878`), and a network request goes down to local clients the same way
   /// (`Transport.py:3950-3963`).
   func testLocalClientForwardsKeepTheTagAndExtension() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = false
     let serving = ServingHop(name: "Shared Instance[37428]")
     let mesh = Hop(name: "mesh")
@@ -200,7 +200,7 @@ final class PathRequestStampTests: XCTestCase {
   /// A discovery request skipping one interface goes out under one tag on all the others
   /// (`Transport.py:4062-4075`).
   func testDiscoveryRequestsShareOneTag() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.discoveryPathRequestTxThrottle = 0.01
     let blocked = Hop(name: "blocked")
     let a = Hop(name: "a")

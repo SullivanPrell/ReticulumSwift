@@ -285,6 +285,14 @@ extension StorageInventory.Entry {
     authority: .reference("Transport.py:3314-3316,242-251")
   )
 
+  /// `storage/announce_rate_table`—the `RNSART` columnar rate table.
+  ///
+  /// Python: `Transport.py:4701-4706` (write), `:466-473` (read), RNS 1.6.1.
+  public static let announceRateTable = StorageInventory.Entry(
+    ["storage", "announce_rate_table"], .file,
+    authority: .reference("Transport.py:4701-4706,466-473")
+  )
+
   // Caches.
 
   /// `storage/cache`.
@@ -397,7 +405,7 @@ extension StorageInventory.Entry {
     identity, transportIdentity, ratchets, identityRatchets,
     knownDestinations, knownDestinationsDatabase, knownDestinationsDatabaseWAL,
     knownDestinationsDatabaseSHM, knownDestinationsImported,
-    destinationTable, tunnels, packetHashlist,
+    destinationTable, tunnels, packetHashlist, announceRateTable,
     cache, announceCache, resources, identities,
     blackhole, blackholeLocal, blackholeLocalTemp, i2p,
     discovery, discoveredInterfaces, stamps,

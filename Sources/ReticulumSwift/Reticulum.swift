@@ -107,7 +107,7 @@ public final class Reticulum {
   /// interfaces and dials the ones it hears about (``publishesInterfaceDiscovery``,
   /// ``autoconnectsDiscoveredInterfaces``), and batches `discovery_path_requests` together
   /// with the announce replay that answers the requestors it batches.
-  public static let rnsProtocolVersion = "1.6.0"
+  public static let rnsProtocolVersion = "1.6.1"
 
   /// Log severity levels, ordered from `none` through `extreme`.
   public enum LogLevel: Int, Comparable, Sendable {
@@ -1001,9 +1001,20 @@ public final class Reticulum {
         Self.log(
           "Loaded \(rows.count) known destinations from shared instance database", level: .verbose)
       } catch {
+        // `Identity.py:269-281`: a split-mode client reaches the database only over RPC.
         Self.log(
-          "Could not load known destinations from shared instance database, continuing with an "
-            + "empty table. The contained exception was: \(error)", level: .error)
+          "Could not load known destinations from shared instance database: \(error)",
+          level: .debug)
+        // `get_known_destinations()` logs a failed call and answers `{}` (`Reticulum.py:2077-2085`).
+        let rows =
+          rpcAuthenticationKey().flatMap { authkey in
+            try? RPCClient(
+              port: config?.reticulum.instanceControlPort ?? RPCClient.defaultControlPort,
+              authkey: authkey
+            ).knownDestinations()
+          } ?? [:]
+        transport.restore(knownDestinations: rows)
+        Self.log("Loaded \(rows.count) known destinations from shared instance", level: .verbose)
       }
       return
     }
@@ -1270,6 +1281,21 @@ public final class Reticulum {
       }
     }
 
+    // `Transport.py:465-473`: a transport node not attached to a shared instance reloads its
+    // rate table.
+    if transport.transportEnabled, !transport.isConnectedToSharedInstance {
+      let rateTableURL = StorageInventory.url(
+        .announceRateTable, storage: configuration.storagePath)
+      if FileManager.default.fileExists(atPath: rateTableURL.path) {
+        if transport.loadAnnounceRateTable(from: rateTableURL) {
+          Reticulum.log("Loaded announce rate table from storage", level: .debug)
+        } else {
+          Reticulum.log(
+            "Could not load announce rate table from storage, initialized empty", level: .warning)
+        }
+      }
+    }
+
     // Restore packet hashlist for replay prevention across restarts.
     // Mirrors Python's hashlist loading in Transport.__init__.
     let hashlistURL = StorageInventory.url(
@@ -1330,6 +1356,8 @@ public final class Reticulum {
       .packetHashlist,
       storage: configuration.storagePath)
     try? transport.savePacketHashlist(to: hashlistURL)
+    try? transport.saveAnnounceRateTable(
+      to: StorageInventory.url(.announceRateTable, storage: configuration.storagePath))
     // Persist blackhole list (own entries only, mirrors Python's Transport.persist_blackhole()).
     let blackholePath = StorageInventory.url(.blackhole, storage: configuration.storagePath)
     try? transport.persistBlacklist(toDirectory: blackholePath)
@@ -1579,6 +1607,11 @@ public final class Reticulum {
 
     // An explicit `gravity` wins, else `default_gravity`, else 0 (`Reticulum.py:771-772`).
     interface.gravity = block.int("gravity") ?? Reticulum.defaultGravity()
+
+    // Clamped to `0...PATHFINDER_M`; absent leaves none (`Reticulum.py:1074-1077`).
+    interface.interfaceState.hopLimiter = block.int("hop_limiter").map {
+      max(0, min($0, Transport.pathfinderM))
+    }
 
     // A percentage in `(0, 100]`, divided by 100 (`Reticulum.py:834-837`). Out of range leaves
     // the class default.
@@ -2435,7 +2468,7 @@ public final class Reticulum {
 
   /// Stop the named interface and the interfaces it spawned, and remove them all.
   ///
-  /// Mirrors `Reticulum._detach_interface` (RNS 1.5.5, `Reticulum.py:799-826`). I2P and the
+  /// Mirrors `Reticulum._detach_interface` (`Reticulum.py:976-1016`). I2P and the
   /// shared-instance interfaces stay attached.
   ///
   /// - Parameters:
@@ -2449,17 +2482,16 @@ public final class Reticulum {
     guard internalForced || Reticulum.storedInterfaceManagementEnabled else { return false }
     // Python looks the name up in a dict built from the interface list, so of several
     // interfaces sharing a name, the last one is the one it finds.
-    guard let iface = transport.interfaces.last(where: { $0.name == name }) else {
+    // An unknown name is tried as a tunnel ID, then a local tunnel ID (`Reticulum.py:984-988`).
+    let byTunnel = Data(hex: name).flatMap { id in
+      transport.interfaces.last { $0.tunnelID == id }
+        ?? transport.interfaces.last { $0.interfaceState.tunnelSynthesis.localTunnelID == id }
+    }
+    guard let iface = transport.interfaces.last(where: { $0.name == name }) ?? byTunnel else {
       Reticulum.log("Attempt to detach non-existing interface \"\(name)\"", level: .warning)
       return nil
     }
-    // `I2PInterface`, `LocalClientInterface` and `LocalServerInterface` (`Reticulum.py:809-811`).
-    if iface is I2PInterface || iface is LocalInterface || iface is any LocalClientServingInterface
-      || iface is PosixTCPServer
-    {
-      return false
-    }
-    transport.detach(interface: iface)
+    guard transport.detachUnlessExempt(iface) else { return false }
     Reticulum.log("Interface \"\(name)\" was detached", level: .notice)
     return true
   }

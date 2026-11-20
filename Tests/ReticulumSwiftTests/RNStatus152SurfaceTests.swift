@@ -131,10 +131,11 @@ final class RNStatus152SurfaceTests: XCTestCase {
 
   // MARK: - Sort vocabulary
 
-  /// The tokens the 1.5.2 if-chain tests, in the order it tests them (rnstatus.py:379-401).
+  /// The tokens the sort if-chain tests, in the order it tests them (`rnstatus.py:432-460`,
+  /// RNS 1.6.1).
   static let pythonSortTokens = [
-    "rate", "bitrate", "rx", "tx", "rxs", "txs", "traffic",
-    "anns", "announces", "arx", "atx", "arxc", "atxc",
+    "rate", "bitrate", "rx", "tx", "frx", "ftx", "rxs", "txs", "frxs", "ftxs", "traffic",
+    "anns", "announces", "arx", "atx", "arxc", "atxc", "afrxc",
     "prx", "ptx", "prxc", "ptxc", "held",
     "pvs", "ivs", "flt", "gravity", "g", "txdrp", "txdrb", "txbuf",
   ]
@@ -173,7 +174,7 @@ final class RNStatus152SurfaceTests: XCTestCase {
     let closing = try XCTUnwrap(RNStatusApp.sortHelp.range(of: "]"))
     let listed = RNStatusApp.sortHelp[inside.upperBound..<closing.lowerBound]
       .components(separatedBy: ", ")
-    XCTAssertEqual(listed.count, 22)
+    XCTAssertEqual(listed.count, 25)
     for token in listed {
       XCTAssertNotNil(RNStatusApp.Sort(rawValue: token), "advertised but unaccepted: \(token)")
     }

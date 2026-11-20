@@ -22,7 +22,7 @@ final class Discovery160Tests: XCTestCase {
 
   override func setUp() {
     super.setUp()
-    transport = Transport()
+    transport = Transport.unstamped()
     transport.transportIdentity = Identity()
   }
 

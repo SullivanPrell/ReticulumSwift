@@ -143,7 +143,10 @@ public struct TunnelStore {
           tunnelID: entry.tunnelID,
           iface: nil,
           paths: paths,
-          expires: Date(timeIntervalSince1970: entry.expires)
+          // Capped at `TUNNEL_RECONNECT_WINDOW` from now (`Transport.py:636-637`).
+          expires: min(
+            Date(timeIntervalSince1970: entry.expires),
+            Date().addingTimeInterval(Transport.tunnelReconnectWindow))
         ))
     }
   }

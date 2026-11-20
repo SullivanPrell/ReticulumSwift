@@ -88,24 +88,40 @@ public enum RNPathFormatter {
 
   // MARK: - Path table (-t)
 
-  /// Python 1.6.0: rnpath.py:302.
+  /// Python 1.6.1: rnpath.py:303-318.
   ///
   /// ```
-  /// print(f"{prettyhexrep(path['hash'])} {path['hops']:>3}h via {prettyhexrep(path['via'])}
-  ///       on {path['interface']} expires in {prettytime(path['expires']-now, compact=True)}
-  ///       (dv:{prettycost(path['value'])}/lc:{prettycost(path['lr_cost'])})")
+  /// print(f"{prettyhexrep(path['hash'])} {path['hops']:>3}h{state_str}{via_str}
+  ///       on {path['interface']}{exp_str} (dv:{prettycost(path['value'])}/lc:{prettycost(path['lr_cost'])}){u_str}")
   /// ```
   ///
-  /// The `u_str` usage text Python builds on the lines above is never printed; `-u` only
-  /// re-sorts.
-  public static func pathTableLine(_ entry: RNPathTableEntry, now: TimeInterval) -> String {
+  /// Python subscripts `state` bare, so a pre-1.6.1 row raises there; it reads `(?)` here.
+  public static func pathTableLine(
+    _ entry: RNPathTableEntry, now: TimeInterval, vias: Bool = false, expiry: Bool = false,
+    usage: Bool = false
+  ) -> String {
     let hops = String(entry.hops)
+    let state: String
+    switch entry.state {
+    case Transport.stateResponsive: state = " (R)"
+    case Transport.stateUnresponsive: state = " (u)"
+    default: state = " (?)"
+    }
+    let usageString: String
+    if let used = entry.used {
+      usageString =
+        !usage
+        ? "" : used != 0 ? ", last used \(RNSUtilities.prettytime(now - used)) ago" : ", never used"
+    } else {
+      usageString = ", no usage info"
+    }
     return RNSUtilities.prettyhexrep(entry.destinationHash) + " "
-      + String(repeating: " ", count: max(0, 3 - hops.count)) + hops + "h via "
-      + RNSUtilities.prettyhexrep(entry.resolvedVia)
-      + " on \(entry.interfaceName) expires in "
-      + RNSUtilities.prettytime(entry.expires - now, compact: true)
+      + String(repeating: " ", count: max(0, 3 - hops.count)) + hops + "h" + state
+      + (vias ? " via " + RNSUtilities.prettyhexrep(entry.resolvedVia) : "")
+      + " on \(entry.interfaceName)"
+      + (expiry ? " expires in " + RNSUtilities.prettytime(entry.expires - now, compact: true) : "")
       + " (dv:\(RNSUtilities.prettycost(entry.value))/lc:\(RNSUtilities.prettycost(entry.lrCost)))"
+      + usageString
   }
 
   // MARK: - Rate table (-r)

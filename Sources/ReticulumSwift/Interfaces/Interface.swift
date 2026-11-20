@@ -385,6 +385,15 @@ public protocol Interface: AnyObject {
   /// Mirrors Python's per-spawned-client TCPServerInterfaceClient model.
   var isRoutingEndpoint: Bool { get }
 
+  /// Whether every peer on the medium hears each frame, as on a radio, a serial line or UDP
+  /// broadcast (`shared_medium`, `Interface.py:142`). A rebroadcast never skips such an
+  /// interface for having delivered the same announce (`Transport.py:2695`).
+  var sharedMedium: Bool { get }
+
+  /// Whether a tunnel can be synthesized over this interface (`tunnels_allowed`,
+  /// `Interface.py:134`); synthesis arriving on any other is ignored (`Transport.py:3212`).
+  var tunnelsAllowed: Bool { get }
+
   func start() throws
   func stop()
 }
@@ -480,6 +489,8 @@ extension Interface {
   /// existed and nothing ever set the flag.
   public func noteConnected() {
     wantsTunnel = true
+    interfaceState.tunnelSynthesis.remoteTransportID = nil
+    interfaceState.tunnelSynthesis.received = false
   }
 
   /// Python `Interface.optimise_mtu()`.
@@ -768,6 +779,10 @@ extension Interface {
   public var discoveryRadioParameters: DiscoveryRadioParameters? { nil }
 
   public var isRoutingEndpoint: Bool { true }
+
+  public var sharedMedium: Bool { false }
+
+  public var tunnelsAllowed: Bool { false }
 
   // PHY stats—no radio hardware by default
   public var rssi: Float? { nil }

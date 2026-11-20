@@ -52,7 +52,7 @@ final class StampConfigTests: XCTestCase {
 
     XCTAssertTrue(stamps.enforced)
     XCTAssertTrue(stamps.lrEnforced)
-    XCTAssertFalse(stamps.stampDestinations, "`no` leaves the default")
+    XCTAssertTrue(stamps.stampDestinations, "`no` leaves the default")
     XCTAssertTrue(stamps.stampPRs)
     XCTAssertTrue(stamps.alwaysStampLRs)
     XCTAssertEqual(stamps.destinationCost, 100)

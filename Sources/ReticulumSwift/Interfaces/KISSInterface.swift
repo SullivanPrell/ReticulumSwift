@@ -446,3 +446,8 @@ public final class KISSInterface: Interface {
     return packetQueue.count
   }
 }
+
+extension KISSInterface {
+  /// `KISSInterface.py:125`.
+  public var sharedMedium: Bool { true }
+}

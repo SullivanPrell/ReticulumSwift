@@ -1245,3 +1245,8 @@ public protocol RNodeTransport: AnyObject {
 
   func write(_ data: Data) throws
 }
+
+extension RNodeInterface {
+  /// `RNodeInterface.py:300`.
+  public var sharedMedium: Bool { true }
+}

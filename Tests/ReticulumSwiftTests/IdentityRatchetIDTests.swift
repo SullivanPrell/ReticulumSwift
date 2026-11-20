@@ -60,8 +60,8 @@ final class IdentityRatchetIDTests: XCTestCase {
   }
 
   func testCurrentRatchetIDAfterReceivingAnnounceWithRatchet() throws {
-    let aT = Transport()
-    let bT = Transport()
+    let aT = Transport.unstamped()
+    let bT = Transport.unstamped()
     let bId = Identity()
     let bDest = try Destination(
       identity: bId, direction: .in, kind: .single,
@@ -97,7 +97,7 @@ final class IdentityRatchetIDTests: XCTestCase {
   // MARK: - Transport.currentRatchetID
 
   func testTransportCurrentRatchetIDMatchesFormula() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let ratchetPub = Data(repeating: 0xDD, count: 32)
     let destHash = Data(repeating: 0xEE, count: 16)
     t.restore(ratchet: ratchetPub, forDestination: destHash)

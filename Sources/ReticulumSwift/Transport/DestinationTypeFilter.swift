@@ -24,10 +24,27 @@ extension Transport {
     return Destination.computeNameHash(appName: appName, aspects: aspects)
   }
 
+  /// The name hash `block_destination_type` and `allow_destination_type` file a type under: a
+  /// `<hex>` name is the hash itself (RNS 1.6.1, `Transport.py:4878-4885`).
+  ///
+  /// Python slices `full_name[1:1+20]`, so a short bracketed name keeps its `>` and hashes as
+  /// text.
+  static func filterTypeHash(_ fullName: String) -> Data {
+    guard fullName.hasPrefix("<"), fullName.hasSuffix(">") else {
+      return destinationTypeHash(fullName)
+    }
+    let inner = String(fullName.dropFirst().prefix(Constants.nameHashLength * 2))
+    if let raw = Data(hex: inner), !raw.isEmpty { return raw }
+    return destinationTypeHash(inner)
+  }
+
   /// Python's `block_destination_type`: also drops every client's want of the type.
+  ///
+  /// An empty name blocks nothing (`if not full_name: return`).
   @discardableResult
   public func blockDestinationType(_ fullName: String) -> Bool {
-    let nameHash = Self.destinationTypeHash(fullName)
+    guard !fullName.isEmpty else { return false }
+    let nameHash = Self.filterTypeHash(fullName)
     destinationFiltersLock.lock()
     defer { destinationFiltersLock.unlock() }
     blockedDestinationTypes.insert(nameHash)
@@ -38,7 +55,8 @@ extension Transport {
   /// Python's `allow_destination_type`.
   @discardableResult
   public func allowDestinationType(_ fullName: String) -> Bool {
-    let nameHash = Self.destinationTypeHash(fullName)
+    guard !fullName.isEmpty else { return false }
+    let nameHash = Self.filterTypeHash(fullName)
     destinationFiltersLock.lock()
     defer { destinationFiltersLock.unlock() }
     allowedDestinationTypes.insert(nameHash)
@@ -84,6 +102,16 @@ extension Transport {
     return wasRegistered
   }
 
+  /// Whether a stored path's announce may come back at load (`Transport.py:595-599`).
+  ///
+  /// Unlike ingress, a client's want doesn't admit a type here.
+  func restoresDestinationType(_ nameHash: Data) -> Bool {
+    destinationFiltersLock.lock()
+    defer { destinationFiltersLock.unlock() }
+    if blockedDestinationTypes.contains(nameHash) { return false }
+    return !requiredDestinationsOnly || allowedDestinationTypes.contains(nameHash)
+  }
+
   /// The type gate at the head of announce ingress (`Transport.py:2033-2042`).
   ///
   /// `packet.hops` hasn't been incremented yet here, so Python's `hops == 1` for an announce
@@ -101,9 +129,12 @@ extension Transport {
     if allowedDestinationTypes.contains(nameHash) || clientDestinationTypes[nameHash] != nil {
       return true
     }
-    if isLocalClientInterface(interface) || interfaceToSharedInstance(interface) {
-      return packet.hops == 0
-    }
-    return false
+    let allowed =
+      (isLocalClientInterface(interface) || interfaceToSharedInstance(interface))
+      && packet.hops == 0
+    // `if not allowed: return packet.receiving_interface.filtered_announce()`
+    // (`Transport.py:2130`). A blocked type returns before it, uncounted.
+    if !allowed { notifyFilteredAnnounce(on: interface) }
+    return allowed
   }
 }

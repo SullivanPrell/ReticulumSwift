@@ -57,6 +57,7 @@ final class DestinationAnnounceAPITests: XCTestCase {
     let cfg = Reticulum.Configuration(storagePath: tmpDir.appendingPathComponent("storage"))
     let r = Reticulum(configuration: cfg)
     try r.start()
+    r.transport.stamps.stampDestinations = false
     rns = r
     return r
   }
@@ -110,7 +111,7 @@ final class DestinationAnnounceAPITests: XCTestCase {
   // MARK: - isPathResponse tags the packet with .pathResponse context
 
   func testAnnouncePathResponseSetsContextOnPacket() throws {
-    let transport = Transport()
+    let transport = Transport.unstamped()
     let iface = CapturingInterface(name: "pr")
     transport.register(interface: iface)
 

@@ -75,8 +75,13 @@ parser.option(
   ["--config"], metavar: "CONFIG", help: "path to alternative Reticulum config directory")
 parser.flag(["--version"], help: "show program's version number and exit")
 parser.flag(["-t", "--table"], help: "show all known paths")
+parser.flag(["-a", "--active"], help: "show in-use paths only")
 parser.flag(["-u", "--usage"], help: "show path usage time")
+parser.flag(["-V", "--vias"], help: "show via transport IDs")
+parser.flag(["-E", "--expiry"], help: "show path expiry times")
 parser.option(["-m", "--max"], metavar: "hops", help: "maximum hops to filter path table by")
+parser.option(
+  ["-M", "--min-value"], metavar: "value", help: "minimum value to filter path table by")
 parser.flag(["-r", "--rates"], help: "show announce rate info")
 parser.flag(["-d", "--drop"], help: "remove the path to a destination")
 parser.flag(["-D", "--drop-announces"], help: "drop all queued announces")
@@ -89,11 +94,13 @@ parser.flag(["-b", "--blackholed"], help: "list blackholed identities")
 parser.flag(["-B", "--blackhole"], help: "blackhole identity")
 parser.flag(["-U", "--unblackhole"], help: "unblackhole identity")
 parser.option(
-  ["--duration"], metavar: "DURATION", help: "duration of blackhole enforcement in hours")
-parser.option(["--reason"], metavar: "REASON", help: "reason for blackholing identity")
+  ["--duration"], metavar: "hours", help: "duration of blackhole enforcement in hours")
+parser.option(["--reason"], metavar: "reason", help: "reason for blackholing identity")
 parser.flag(
   ["-p", "--blackholed-list"], help: "view published blackhole list for remote transport instance")
 parser.flag(["-j", "--json"], help: "output in JSON format")
+parser.flag(["-A", "--analyze"], help: "Analyze tables")
+parser.option(["--capture"], metavar: "path", help: "path to capture file for analyze mode")
 parser.counted(["-v", "--verbose"], help: "")
 parser.positional("destination", help: "hexadecimal hash of the destination", required: false)
 parser.positional("list_filter", help: "filter for remote blackhole list view", required: false)
@@ -147,6 +154,10 @@ var options = RNPathOptions()
 options.configDirectory = parsed.value("--config").map { DaemonBootstrap.expandTildeURL($0) }
 options.table = parsed.flag("--table")
 options.usage = parsed.flag("--usage")
+options.active = parsed.flag("--active")
+options.vias = parsed.flag("--vias")
+options.expiry = parsed.flag("--expiry")
+options.analyze = parsed.flag("--analyze")
 options.rates = parsed.flag("--rates")
 options.drop = parsed.flag("--drop")
 options.dropAnnounces = parsed.flag("--drop-announces")
@@ -171,6 +182,9 @@ if let hops: Int = requireNumber(
   // value from wrapping—Python has no analogue because it never narrows.
   options.maxHops = UInt8(clamping: hops)
 }
+options.minValue = requireNumber(
+  parsed.value("--min-value"), flag: "-M/--min-value", typeName: "float",
+  convert: { Double($0) })
 if let seconds: Double = requireNumber(
   parsed.value("-w"), flag: "-w", typeName: "float",
   convert: { Double($0) })

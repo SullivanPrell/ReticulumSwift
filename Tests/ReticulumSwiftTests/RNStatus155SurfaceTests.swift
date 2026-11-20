@@ -379,10 +379,10 @@ final class RNStatus155SurfaceTests: XCTestCase {
   /// reticulum-interop's `normalize_help` reconciles the two rows it affects.
   static let pythonHelp = """
     usage: rnstatus [-h] [--config CONFIG] [--version] [--attach name]
-                    [--detach name] [--reload name] [-a] [-A] [-P] [-l] [-B] [-b]
-                    [-t] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash] [-i path]
-                    [-w seconds] [-d] [-D] [--show-stale] [--show-unknown] [-m]
-                    [-I seconds] [-v]
+                    [--detach name] [--reload name] [-a] [-A] [-P] [-F] [-l] [-B]
+                    [-b] [-t] [-T] [-p] [-q] [-z] [-s SORT] [-r] [-j] [-R hash]
+                    [-i path] [-w seconds] [-d] [-D] [--show-stale]
+                    [--show-unknown] [-m] [-I seconds] [-v]
                     [filter]
 
     Reticulum Network Stack Status
@@ -400,16 +400,19 @@ final class RNStatus155SurfaceTests: XCTestCase {
       -a, --all             show all interfaces
       -A, --announce-stats  show announce stats
       -P, --pr-stats        show path request stats
+      -F, --filter-stats    show filtered traffic stats
       -l, --link-stats      show link stats
       -B, --burst           only show interfaces with active bursts
       -b, --blocked-ips     show blocked IPs per interface
       -t, --totals          display traffic totals
+      -T, --tunnels         display tunnel information
       -p, --pps             display packets per second in totals
       -q, --queues          display queue stats
       -z, --profiling       display live profiling results
       -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
-                            anns, arx, atx, arxc, atxc, held, prx, ptx, prxc,
-                            ptxc, pvs, ivs, flt, txdrp, txdrb, txbuf]
+                            frx, ftx, anns, arx, atx, arxc, atxc, afrxc, held,
+                            prx, ptx, prxc, ptxc, pvs, ivs, flt, txdrp, txdrb,
+                            txbuf]
       -r, --reverse         reverse sorting
       -j, --json            output in JSON format
       -R hash               transport identity hash of remote instance to get
@@ -427,6 +430,7 @@ final class RNStatus155SurfaceTests: XCTestCase {
       -v, --verbose
     """
 
+  /// Pinned to RNS 1.6.1's page, which adds `-F` and `-T` and five sort keys.
   func testHelpTextIsTheWholePythonPage() {
     XCTAssertEqual(RNStatusApp.helpText, Self.pythonHelp)
     XCTAssertEqual(RNStatusApp.usageText.components(separatedBy: "\n").count, 6)

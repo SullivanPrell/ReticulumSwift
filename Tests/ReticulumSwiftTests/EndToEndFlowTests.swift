@@ -41,9 +41,9 @@ final class EndToEndFlowTests: XCTestCase {
   /// Topology: A <-> R (transport node) <-> B
   /// B announces → R caches → A gets path → A can encrypt to B
   func testAnnouncePropagatesToTransportNode() throws {
-    let aT = Transport()
-    let rT = Transport()
-    let bT = Transport()
+    let aT = Transport.unstamped()
+    let rT = Transport.unstamped()
+    let bT = Transport.unstamped()
     rT.transportEnabled = true
 
     let bId = Identity()
@@ -84,9 +84,9 @@ final class EndToEndFlowTests: XCTestCase {
   }
 
   func testPathRequestCausesPathResolution() throws {
-    let aT = Transport()
-    let rT = Transport()
-    let bT = Transport()
+    let aT = Transport.unstamped()
+    let rT = Transport.unstamped()
+    let bT = Transport.unstamped()
     rT.transportEnabled = true
 
     let bId = Identity()
@@ -133,9 +133,9 @@ final class EndToEndFlowTests: XCTestCase {
   // MARK: - Multi-hop link + data + proof delivery
 
   func testMultiHopLinkDataAndProof() throws {
-    let aT = Transport()
-    let rT = Transport()
-    let bT = Transport()
+    let aT = Transport.unstamped()
+    let rT = Transport.unstamped()
+    let bT = Transport.unstamped()
     rT.transportEnabled = true
 
     let bId = Identity()

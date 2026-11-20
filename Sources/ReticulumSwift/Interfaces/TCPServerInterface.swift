@@ -528,3 +528,13 @@ final class SpawnedClient {
     }
   }
 }
+
+extension TCPServerInterface {
+  /// `tunnels_allowed = True` (`TCPInterface.py:549`).
+  public var tunnelsAllowed: Bool { true }
+}
+
+extension TCPServerClientInterface {
+  /// A spawned client is a `TCPClientInterface` in Python (`TCPInterface.py:129`).
+  public var tunnelsAllowed: Bool { true }
+}

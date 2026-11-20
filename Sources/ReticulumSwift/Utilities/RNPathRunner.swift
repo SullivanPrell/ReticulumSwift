@@ -29,6 +29,18 @@ public struct RNPathOptions: Equatable {
   ///
   /// `-m` / `--max`
   public var maxHops: UInt8?
+  /// `-a` / `--active`: only paths that have been used (RNS 1.6.1).
+  public var active: Bool = false
+  /// `-V` / `--vias`: print each path's next hop (RNS 1.6.1).
+  public var vias: Bool = false
+  /// `-E` / `--expiry`: print each path's expiry (RNS 1.6.1).
+  public var expiry: Bool = false
+  /// `-M` / `--min-value`: lowest destination value printed (RNS 1.6.1).
+  public var minValue: Double?
+  /// `-A` / `--analyze`, a stub upstream (RNS 1.6.1, `rnpath.py:565-567`).
+  ///
+  /// `--capture` only feeds Python's commented-out analysis, so it's parsed and dropped.
+  public var analyze: Bool = false
   /// Whether to print the announce rate table.
   ///
   /// `-r` / `--rates`
@@ -117,6 +129,7 @@ public struct RNPathOptions: Equatable {
   /// first four all need a positional destination, which does.
   public var shouldPrintHelp: Bool {
     !dropAnnounces && !table && !rates && destination == nil && !dropVia && !blackholed
+      && !analyze
   }
 
   /// Python's blackhole filter-source split (rnpath.py:194-197).
@@ -266,6 +279,10 @@ public final class RNPathRunner {
     if options.blackholed || options.blackholedList { return runBlackholeList() }
     if options.blackhole { return runBlackholeAdd() }
     if options.unblackhole { return runBlackholeLift() }
+    if options.analyze {
+      output("Not yet implemented")
+      return .ok
+    }
     if options.table { return runTable() }
     if options.rates { return runRates() }
     if options.dropAnnounces { return runDropAnnounceQueues() }
@@ -483,8 +500,17 @@ public final class RNPathRunner {
     let reference = now().timeIntervalSince1970
     var displayed = 0
     for entry in table where destinationHash == nil || destinationHash == entry.destinationHash {
+      // Counted before the filters, so a filtered destination isn't "No path known"
+      // (rnpath.py:298-314).
       displayed += 1
-      output(RNPathFormatter.pathTableLine(entry, now: reference))
+      if let minValue = options.minValue, minValue != 0 {
+        guard let value = entry.value, value != 0, value >= minValue else { continue }
+      }
+      if options.active, let used = entry.used, used == 0 { continue }
+      output(
+        RNPathFormatter.pathTableLine(
+          entry, now: reference, vias: options.vias, expiry: options.expiry,
+          usage: options.usage))
     }
     if destinationHash != nil, displayed == 0 {
       output("No path known")

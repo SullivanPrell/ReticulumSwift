@@ -503,13 +503,16 @@ public final class InterfaceAnnounceHandler: AnnounceHandler {
     let packed = Data(payload.dropLast(stampValidator.stampSize))
 
     let infohash = Hashes.fullHash(packed)
-    let workblock = stampValidator.stampWorkblock(
-      material: infohash, expandRounds: Self.workblockExpandRounds)
+    // RNS 1.6.1 checks the non-expanded workblock first (`Discovery.py:321-331`).
+    var workblock = stampValidator.stampWorkblock(material: infohash, expandRounds: 0)
+    if !stampValidator.stampValid(stamp: stamp, targetCost: requiredValue, workblock: workblock) {
+      workblock = stampValidator.stampWorkblock(
+        material: infohash, expandRounds: Self.workblockExpandRounds)
+      guard
+        stampValidator.stampValid(stamp: stamp, targetCost: requiredValue, workblock: workblock)
+      else { return }
+    }
     let value = stampValidator.stampValue(workblock: workblock, stamp: stamp)
-    let valid = stampValidator.stampValid(
-      stamp: stamp, targetCost: requiredValue, workblock: workblock)
-
-    guard valid else { return }
 
     guard case .map(let map) = (try? MsgPack.decode(packed)) else { return }
     guard

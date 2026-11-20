@@ -14,6 +14,9 @@ import XCTest
 
 /// Tests for per-interface current RX/TX speed tracking.
 ///
+/// Received bytes come from `accepted_inbound` (`Transport.py:1980`), sent bytes from the
+/// interface.
+///
 /// Mirrors Python's `count_traffic_loop` which computes per-interface
 /// `current_rx_speed` and `current_tx_speed` (bits/sec) from byte-count
 /// deltas, and updates `Transport.speed_rx` / `speed_tx` aggregates.
@@ -60,7 +63,7 @@ final class InterfaceSpeedTrackingTests: XCTestCase {
     t.sampleInterfaceSpeeds(now: 0)
 
     // Simulate 1000 bytes received over 1 second.
-    iface.rxBytes = 1000
+    t.accountInbound(1000, on: iface, accepted: true)
     iface.txBytes = 500
     t.sampleInterfaceSpeeds(now: 1.0)
 
@@ -96,8 +99,8 @@ final class InterfaceSpeedTrackingTests: XCTestCase {
     t.register(interface: b)
 
     t.sampleInterfaceSpeeds(now: 0)
-    a.rxBytes = 500
-    b.rxBytes = 500
+    t.accountInbound(500, on: a, accepted: true)
+    t.accountInbound(500, on: b, accepted: true)
     t.sampleInterfaceSpeeds(now: 1.0)
 
     // Both interfaces together = 1000 bytes in 1 second = 8000 bits/s aggregate
@@ -124,7 +127,7 @@ final class InterfaceSpeedTrackingTests: XCTestCase {
     let iface = CountingIface()
     t.register(interface: iface)
     t.sampleInterfaceSpeeds(now: 0)
-    iface.rxBytes = 800
+    t.accountInbound(800, on: iface, accepted: true)
     t.sampleInterfaceSpeeds(now: 1.0)
 
     let stats = t.getInterfaceStats().first { $0.name == "stats-speed" }
@@ -152,7 +155,7 @@ final class InterfaceSpeedTrackingTests: XCTestCase {
     let iface = CountingIface()
     t.register(interface: iface)
     t.sampleInterfaceSpeeds(now: 0)
-    iface.rxBytes = 1000
+    t.accountInbound(1000, on: iface, accepted: true)
     iface.txBytes = 200
     t.sampleInterfaceSpeeds(now: 1.0)
 

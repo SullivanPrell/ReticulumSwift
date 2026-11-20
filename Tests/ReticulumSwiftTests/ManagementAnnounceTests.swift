@@ -21,7 +21,7 @@ final class ManagementAnnounceTests: XCTestCase {
   private var savedManagement = false
   private let sink = PathRequestResponderTests.CapturingInterface(name: "eth0")
   private let networkIdentity = Identity()
-  private let transport = Transport()
+  private let transport = Transport.unstamped()
 
   override func setUp() {
     super.setUp()

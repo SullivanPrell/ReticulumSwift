@@ -895,3 +895,8 @@ extension RNodeMultiInterface: DemultiplexingInterface {
 
 // RNodeSubInterfaceProxy was removed: RNodeSubInterface now conforms to Interface directly,
 // so it can be passed as `any Interface` and downcast back by callers.
+
+extension RNodeSubInterface {
+  /// `RNodeMultiInterface.py:1008`.
+  public var sharedMedium: Bool { true }
+}

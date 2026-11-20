@@ -85,8 +85,8 @@ public struct IngressControlState {
   public static let icPrBurstCooldown: Int = 3
   /// Maximum number of held announces per interface.
   ///
-  /// Mirrors Python `Interface.MAX_HELD_ANNOUNCES = 256`.
-  public static let maxHeldAnnounces: Int = 256
+  /// Mirrors Python `Interface.MAX_HELD_ANNOUNCES = 64`.
+  public static let maxHeldAnnounces: Int = 64
 
   // MARK: - Mutable state
 

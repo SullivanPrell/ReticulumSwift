@@ -397,4 +397,16 @@ final class PerInterfaceConfigTests: XCTestCase {
       try synthesise("    listen_port = 4971").announcesFromInternal,
       "Python's default is True (Reticulum.py:851)")
   }
+
+  // MARK: - Hop limiter
+
+  /// `hop_limiter` clamps to `0...PATHFINDER_M`, and an absent key leaves `None`
+  /// (`Reticulum.py:1074-1077`, `:1241`).
+  func testHopLimiterIsClampedAndOptional() throws {
+    XCTAssertNil(try synthesise("").interfaceState.hopLimiter)
+    XCTAssertEqual(try synthesise("    hop_limiter = 3").interfaceState.hopLimiter, 3)
+    XCTAssertEqual(try synthesise("    hop_limiter = -2").interfaceState.hopLimiter, 0)
+    XCTAssertEqual(
+      try synthesise("    hop_limiter = 500").interfaceState.hopLimiter, Transport.pathfinderM)
+  }
 }

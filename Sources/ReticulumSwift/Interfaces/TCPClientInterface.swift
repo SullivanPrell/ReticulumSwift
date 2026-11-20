@@ -380,3 +380,8 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     }
   }
 }
+
+extension TCPClientInterface {
+  /// `tunnels_allowed = True` (`TCPInterface.py:129`).
+  public var tunnelsAllowed: Bool { true }
+}

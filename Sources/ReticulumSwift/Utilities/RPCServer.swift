@@ -389,6 +389,28 @@ public final class RPCServer {
       guard let t = transport else { return msgpack(.int(0)) }
       return msgpack(.int(Int64(t.getActiveLinkCount())))
 
+    case "link_distribution":
+      // `Transport.link_distribution` (`Transport.py:3786-3815`).
+      guard let t = transport else { return msgpack(.map([])) }
+      return msgpack(
+        .map(
+          t.linkDistribution().map { destination, entry in
+            (
+              .bytes(destination),
+              .map([
+                (.string("active"), .int(Int64(entry.active))),
+                (.string("pending"), .int(Int64(entry.pending))),
+                (.string("traffic"), .int(Int64(entry.traffic))),
+                (.string("from_ifs"), .array(entry.fromInterfaces.map { .bytes($0) })),
+              ])
+            )
+          }))
+
+    case "known_destinations":
+      // `Reticulum.py:1594`, `:2076-2093` (RNS 1.6.1).
+      guard let t = transport else { return msgpack(.map([])) }
+      return msgpack(.map(t.knownDestinationRows().map { (.bytes($0.key), $0.value.msgpackEntry) }))
+
     case "next_hop":
       if let t = transport, let hash = binValue(kv["destination_hash"]),
         let hop = t.nextHop(to: hash)

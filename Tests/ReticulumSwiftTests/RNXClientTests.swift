@@ -89,7 +89,7 @@ final class RNXClientTests: XCTestCase {
     clientIdentity: Identity = Identity()
   ) throws -> Harness {
     let listenerIdentity = Identity()
-    let responderTransport = Transport()
+    let responderTransport = Transport.unstamped()
     responderTransport.ownerIdentity = listenerIdentity
 
     let executor = MockRNXCommandExecutor()
@@ -103,7 +103,7 @@ final class RNXClientTests: XCTestCase {
     listener.onLog = { _, _ in }
     listener.register()
 
-    let initiatorTransport = Transport()
+    let initiatorTransport = Transport.unstamped()
     let ifaceA = RNXLoopbackInterface(name: "initiator")
     let ifaceB = RNXLoopbackInterface(name: "responder")
     ifaceA.paired = ifaceB

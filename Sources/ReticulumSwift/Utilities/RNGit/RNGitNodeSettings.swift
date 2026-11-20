@@ -21,6 +21,9 @@ public enum RNGitSettingsError: Error, Equatable, Sendable {
   /// A setting read as a boolean whose value names neither.
   case notABoolean(key: String)
 
+  /// A setting read with `as_float` whose value `float()` refuses.
+  case notAFloat(key: String)
+
   /// A setting read as a path whose value holds more than one, or opens a section.
   case notAPath(key: String)
 }
@@ -36,6 +39,13 @@ public struct RNGitNodeSettings: Equatable, Sendable {
 
   /// Seconds between announces, or zero to announce only at startup.
   public var announceInterval = 0
+
+  /// The stamp cost a link to the repositories destination needs (`server.py:1980`).
+  public var linkCost = 18.0
+
+  /// The value the repositories destination's announces are stamped to, or `nil` for the
+  /// default.
+  public var stampValue: Double?
 
   /// Seconds between mirror synchronizations, or zero to leave mirrors alone.
   public var mirrorInterval = 24 * 60 * 60
@@ -128,6 +138,9 @@ public struct RNGitNodeSettings: Equatable, Sendable {
       }
       announceInterval = minutes * 60
     }
+
+    if section.has("stamp_value") { stampValue = try section.quantizedCost("stamp_value") }
+    if section.has("link_cost") { linkCost = try section.quantizedCost("link_cost") }
 
     if section.has("mirror_interval") {
       guard let hours = section.int("mirror_interval") else {

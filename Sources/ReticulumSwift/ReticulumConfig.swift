@@ -423,6 +423,10 @@ public struct ReticulumConfig {
     return parse(text)
   }
 
+  /// `__autoconnect_warn` and `__autoconnect_cap` (RNS 1.6.1, `Reticulum.py:294-295`).
+  static let autoconnectWarn = 6
+  static let autoconnectCap = 12
+
   /// Parse a config string.
   ///
   /// Returns a config with defaults if `text` is empty.
@@ -434,6 +438,7 @@ public struct ReticulumConfig {
     var currentSubBlocks: [InterfaceConfig.SubBlockConfig] = []
     var currentSubName: String? = nil
     var currentSub: [String: String] = [:]
+    var autoconnectCapsDisabled = false
 
     func flushSubBlock() {
       if let subName = currentSubName {
@@ -584,9 +589,26 @@ public struct ReticulumConfig {
             guard hexHash.count == 32, let hashData = Data(hex: hexHash) else { continue }
             cfg.reticulum.interfaceDiscoverySources.append(hashData)
           }
+        case "autoconnect_discovered_interfaces_disable_caps":
+          if parseBool(value) == true { autoconnectCapsDisabled = true }
         case "autoconnect_discovered_interfaces":
           // Python: if v > 0: set (so 0 is a no-op, preserving default of 0)
           if let n = Int(value), n > 0 { cfg.reticulum.autoconnectDiscoveredInterfaces = n }
+          // `Reticulum.py:750-768` (RNS 1.6.1): the cap applies unless the disabling option
+          // came earlier in the file.
+          if !autoconnectCapsDisabled {
+            if cfg.reticulum.autoconnectDiscoveredInterfaces > ReticulumConfig.autoconnectCap {
+              cfg.reticulum.autoconnectDiscoveredInterfaces = ReticulumConfig.autoconnectCap
+              Reticulum.log(
+                "Auto-connect interface target was capped to \(ReticulumConfig.autoconnectCap)",
+                level: .warning)
+            }
+            if cfg.reticulum.autoconnectDiscoveredInterfaces > ReticulumConfig.autoconnectWarn {
+              Reticulum.log(
+                "You have configured more than \(ReticulumConfig.autoconnectWarn) auto-connect "
+                  + "interfaces.", level: .warning)
+            }
+          }
         case "default_gravity":
           // Python assigns unconditionally (`as_int`), so 0 and
           // negatives are honoured, not treated as "unset".

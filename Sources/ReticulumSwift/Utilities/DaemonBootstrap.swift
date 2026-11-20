@@ -304,6 +304,8 @@ public enum DaemonBootstrap {
     try? reticulum.transport
       .savePacketHashlist(to: StorageInventory.url(.packetHashlist, storage: storage))
     try? reticulum.transport
+      .saveAnnounceRateTable(to: StorageInventory.url(.announceRateTable, storage: storage))
+    try? reticulum.transport
       .persistBlacklist(toDirectory: StorageInventory.url(.blackhole, storage: storage))
   }
 }

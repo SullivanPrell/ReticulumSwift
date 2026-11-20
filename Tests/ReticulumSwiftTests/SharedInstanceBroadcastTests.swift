@@ -73,7 +73,7 @@ final class SharedInstanceBroadcastTests: XCTestCase {
         continue
       }
       server = candidate
-      let hub = Transport()
+      let hub = Transport.unstamped()
       hub.transportEnabled = transportEnabled
       hub.register(interface: candidate)
       transports.append(hub)
@@ -83,7 +83,7 @@ final class SharedInstanceBroadcastTests: XCTestCase {
   }
 
   private func attachClient(to server: PosixTCPServer) throws -> (Transport, LocalInterface) {
-    let transport = Transport()
+    let transport = Transport.unstamped()
     transport.transportEnabled = false
     transport.isConnectedToSharedInstance = true
     let iface = LocalInterface(host: "127.0.0.1", port: server.port)
