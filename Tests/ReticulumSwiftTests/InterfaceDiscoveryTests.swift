@@ -573,6 +573,38 @@ final class InterfaceAnnounceHandlerTests: XCTestCase {
       announcePacketHash: Data(repeating: 0, count: 4), isPathResponse: false)
     XCTAssertFalse(called, "encrypted payloads without decrypt key must be silently skipped")
   }
+
+  /// RNS 1.6.1 tries the non-expanded workblock first and falls back to the expanded one
+  /// (`Discovery.py:321-331`).
+  private func receiveStamped(expandRounds: Int) -> DiscoveredInterfaceInfo? {
+    let packed = MsgPack.encode(.map(backboneInfo()))
+    let infohash = Hashes.fullHash(packed)
+    let stamper = DiscoveryStamper()
+    guard
+      let stamp = stamper.generateStamp(
+        material: infohash, targetCost: 4, expandRounds: expandRounds)
+    else { return nil }
+    var result: DiscoveredInterfaceInfo?
+    let handler = InterfaceAnnounceHandler(
+      requiredValue: 4, stampValidator: stamper, hopsTo: { _ in 1 }, callback: { result = $0 })
+    handler.receivedAnnounce(
+      destinationHash: Data(repeating: 0, count: 16), identity: makeIdentity(),
+      appData: Data([0x00]) + packed + stamp, announcePacketHash: Data(repeating: 0, count: 4),
+      isPathResponse: false)
+    if let result {
+      let workblock = stamper.stampWorkblock(material: infohash, expandRounds: expandRounds)
+      XCTAssertEqual(result.value, stamper.stampValue(workblock: workblock, stamp: stamp))
+    }
+    return result
+  }
+
+  func testANonExpandedStampIsAccepted() {
+    XCTAssertNotNil(receiveStamped(expandRounds: 0))
+  }
+
+  func testAnExpandedStampIsStillAccepted() {
+    XCTAssertNotNil(receiveStamped(expandRounds: InterfaceAnnounceHandler.workblockExpandRounds))
+  }
 }
 
 // MARK: - InterfaceDiscovery persistence tests
@@ -735,5 +767,25 @@ final class InterfaceDiscoveryPersistenceTests: XCTestCase {
 
     XCTAssertEqual(hash1a, hash1b, "Same info → same endpoint hash")
     XCTAssertNotEqual(hash1a, hash2, "Different host → different endpoint hash")
+  }
+}
+
+final class InterfaceDiscoveryWantsTests: XCTestCase {
+
+  /// A `required_only` node still hears discovery announces once it listens for them
+  /// (`Discovery.py:522-523`, RNS 1.6.1).
+  func testDiscoveringInterfacesWantsTheDiscoveryType() throws {
+    let t = Transport()
+    let storage = FileManager.default.temporaryDirectory
+      .appendingPathComponent("wants-\(UUID().uuidString)")
+    addTeardownBlock {
+      t.stopDiscoverInterfaces()
+      try? FileManager.default.removeItem(at: storage)
+    }
+
+    t.discoverInterfaces(storagePath: storage.path, stampValidator: DiscoveryStamper())
+
+    let nameHash = Transport.destinationTypeHash("rnstransport.discovery.interface")
+    XCTAssertEqual(t.clientDestinationTypes[nameHash], [t.applicationIdentity.hash])
   }
 }

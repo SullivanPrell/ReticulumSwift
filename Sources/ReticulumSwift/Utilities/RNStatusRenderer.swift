@@ -44,6 +44,14 @@ public struct RNStatusRenderer {
     ///
     /// Python: `lstats`.
     public var linkStats: Bool = false
+    /// `-F, --filter-stats`.
+    ///
+    /// Python: `fstats`.
+    public var filterStats: Bool = false
+    /// `-T, --tunnels`.
+    ///
+    /// Python: `tstats`.
+    public var tunnelStats: Bool = false
     /// `-B, --burst`.
     ///
     /// Python: `burst_filter`.
@@ -182,6 +190,42 @@ public struct RNStatusRenderer {
       }
 
       out += "\n Totals       : \(txstat)\n\(RNStatusApp.continuationIndent)\(rxstat)\n"
+
+      // RNS 1.6.1, rnstatus.py:829-862.
+      if options.filterStats {
+        var (frxstat, ftxstat) = Self.padded(
+          "↓" + RNSUtilities.prettysize(stats.double("frxb")),
+          "↑" + RNSUtilities.prettysize(stats.double("ftxb")))
+        if stats.has("frxs"), stats.has("ftxs") {
+          frxstat += "  " + RNSUtilities.prettyspeed(stats.double("frxs"))
+          ftxstat += "  " + RNSUtilities.prettyspeed(stats.double("ftxs"))
+        }
+        out += "\n Filtered     : \(ftxstat)\n\(RNStatusApp.continuationIndent)\(frxstat)\n"
+      }
+      if options.linkStats, stats.has("lrxb"), stats.has("ltxb"), stats.has("lrxs"),
+        stats.has("ltxs")
+      {
+        let (lrxb, ltxb) = Self.padded(
+          "↓" + RNSUtilities.prettysize(stats.double("lrxb")),
+          "↑" + RNSUtilities.prettysize(stats.double("ltxb")))
+        let parxs = stats.double("prxs") + stats.double("arxs")
+        let patxs = stats.double("ptxs") + stats.double("atxs")
+        let drxpct = stats.rxs != 0 ? 100.0 - min(100.0, (parxs / stats.rxs) * 100.0) : 100.0
+        let dtxpct = stats.txs != 0 ? 100.0 - min(100.0, (patxs / stats.txs) * 100.0) : 100.0
+        let drxs = stats.rxs * (drxpct / 100.0)
+        let dtxs = stats.txs * (dtxpct / 100.0)
+        let lrxs = stats.double("lrxs")
+        let ltxs = stats.double("ltxs")
+        let lrxspct = drxs != 0 && lrxs != 0 ? min(100.0, (lrxs / drxs) * 100.0) : 0.0
+        let ltxspct = dtxs != 0 && ltxs != 0 ? min(100.0, (ltxs / dtxs) * 100.0) : 0.0
+        let lrxstat =
+          lrxb + "  " + RNSUtilities.prettyspeed(lrxs)
+          + ", \(Self.pythonInt(lrxspct))% of data flow"
+        let ltxstat =
+          ltxb + "  " + RNSUtilities.prettyspeed(ltxs)
+          + ", \(Self.pythonInt(ltxspct))% of data flow"
+        out += "\n Links        : \(ltxstat)\n\(RNStatusApp.continuationIndent)\(lrxstat)\n"
+      }
 
       if options.prStats, stats.has("prxb"), stats.has("ptxb"), stats.has("prxs"), stats.has("ptxs")
       {
@@ -333,6 +377,30 @@ public struct RNStatusRenderer {
       // no mtu raises there. Rendering the rate alone is the graceful reading.
       let mtu = ifstat.int("mtu").map { ", MTU \($0)" } ?? ""
       out += "    Rate      : \(RNStatusApp.speedStr(bitrate))\(mtu)\n"
+    }
+
+    // RNS 1.6.1, rnstatus.py:559-572.
+    if options.tunnelStats {
+      let tunnelID = ifstat.data("tunnel_id")
+      if (clients ?? 0) == 0 {
+        out +=
+          "    Tunnel ID : \(tunnelID.map { RNSUtilities.hexrep($0, delimit: false) } ?? "None")\n"
+      }
+      if tunnelID != nil {
+        let remote = ifstat.data("remote_transport_id").map(RNSUtilities.prettyhexrep) ?? "Unknown"
+        out += "    Rem.Tr.ID : \(remote)\n"
+        let transport = ifstat.bool("rem_is_tn") == true ? ", transport enabled" : ", no transport"
+        let impl =
+          ifstat.string("rem_impl").flatMap { $0.isEmpty ? nil : $0 } ?? "Unknown implementation"
+        let parts = ifstat.raw("rem_vers")?.asArray?.compactMap { $0.asInt.map(String.init) } ?? []
+        let version =
+          parts.isEmpty ? ", unknown version" : " \(parts.joined(separator: "."))\(transport)"
+        out += "    Rem.Vers. : \(impl)\(version)\n"
+        let dst =
+          ifstat.double("rem_dst_cost").map { "Dst \(RNSUtilities.prettycost($0))" } ?? "Dst ?"
+        let pr = ifstat.double("rem_pr_cost").map { "PR \(RNSUtilities.prettycost($0))" } ?? "PR ?"
+        out += "    Rem.Csts. : \(dst), \(pr)\n"
+      }
     }
 
     // --- Radio / host telemetry (rnstatus.py:479-519) ---
@@ -624,7 +692,9 @@ public struct RNStatusRenderer {
       let arxc = ifstat.int("arxc") ?? 0
       let atxc = ifstat.int("atxc") ?? 0
       if arxc != 0, atxc != 0 {
-        out += "    Announces : \(arxc)↓ \(atxc)↑ total\n"
+        let filtered = ifstat.int("afrxc") ?? 0
+        let fStr = filtered != 0 ? ", \(filtered) filtered" : ""  // rnstatus.py:761
+        out += "    Announces : \(arxc)↓ \(atxc)↑ total\(fStr)\n"
         out += "\(RNStatusApp.continuationIndent)\(oaf) \(pcStr)\n"
       } else {
         out += "    Announces : \(oaf) \(pcStr)\n"
@@ -639,6 +709,17 @@ public struct RNStatusRenderer {
       txstat += "  " + RNSUtilities.prettyspeed(ifstat.double("txs") ?? 0)
     }
     out += "    Traffic   : \(txstat)\n\(RNStatusApp.continuationIndent)\(rxstat)\n"
+
+    // RNS 1.6.1, rnstatus.py:781-787.
+    if options.filterStats {
+      var frxstat = "↓" + RNSUtilities.prettysize(ifstat.double("frxb") ?? 0)
+      var ftxstat = "↑" + RNSUtilities.prettysize(ifstat.double("ftxb") ?? 0)
+      if ifstat.has("frxs"), ifstat.has("ftxs") {
+        frxstat += "  " + RNSUtilities.prettyspeed(ifstat.double("frxs") ?? 0)
+        ftxstat += "  " + RNSUtilities.prettyspeed(ifstat.double("ftxs") ?? 0)
+      }
+      out += "    Filtered  : \(ftxstat)\n\(RNStatusApp.continuationIndent)\(frxstat)\n"
+    }
 
     return out
   }
@@ -943,6 +1024,15 @@ public struct RNStatusRenderer {
     if value.isNaN { return "nan" }
     if value.isInfinite { return value < 0 ? "-inf" : "inf" }
     return "\(value)"
+  }
+
+  /// Pads the shorter of a `↓`/`↑` pair to the longer one's length (`strdiff`).
+  static func padded(_ rx: String, _ tx: String) -> (String, String) {
+    let difference = rx.count - tx.count
+    return (
+      rx + String(repeating: " ", count: max(0, -difference)),
+      tx + String(repeating: " ", count: max(0, difference))
+    )
   }
 
   /// Python `int(float)`—truncation toward zero, not rounding.

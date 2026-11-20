@@ -204,8 +204,12 @@ public struct RNStatusStats {
       case .rate, .bitrate: return i.double("bitrate") ?? 0
       case .rx: return i.double("rxb") ?? 0
       case .tx: return i.double("txb") ?? 0
+      case .frx: return i.double("frxb") ?? 0
+      case .ftx: return i.double("ftxb") ?? 0
       case .rxs: return i.double("rxs") ?? 0
       case .txs: return i.double("txs") ?? 0
+      case .frxs: return i.double("frxs") ?? 0
+      case .ftxs: return i.double("ftxs") ?? 0
       case .traffic: return (i.double("rxb") ?? 0) + (i.double("txb") ?? 0)
       case .anns, .announces:
         return (i.double("incoming_announce_frequency") ?? 0)
@@ -214,6 +218,7 @@ public struct RNStatusStats {
       case .atx: return i.double("outgoing_announce_frequency") ?? 0
       case .arxc: return i.double("arxc") ?? 0
       case .atxc: return i.double("atxc") ?? 0
+      case .afrxc: return i.double("afrxc") ?? 0
       case .prx: return i.double("incoming_pr_frequency") ?? 0
       case .ptx: return i.double("outgoing_pr_frequency") ?? 0
       case .prxc: return i.double("prxc") ?? 0
