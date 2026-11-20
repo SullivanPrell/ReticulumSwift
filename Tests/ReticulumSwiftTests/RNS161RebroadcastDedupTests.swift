@@ -55,4 +55,30 @@ final class RNS161RebroadcastDedupTests: XCTestCase {
     XCTAssertEqual(radio.sent.count - before[1], 1, "a shared medium is never skipped")
     XCTAssertEqual(quiet.sent.count - before[2], 1)
   }
+
+  /// An announce that replaces an unresponsive path updates the table without a rebroadcast
+  /// (`table_insertion_only`, `Transport.py:2686-2689`, `:2734`).
+  func testReplacingAnUnresponsivePathDoesntRebroadcast() throws {
+    let t = Transport.unstamped()
+    t.transportEnabled = true
+    let near = Port(name: "near")
+    let far = Port(name: "far")
+    let other = Port(name: "other")
+    for port in [near, far, other] { t.register(interface: port) }
+    let destination = try Destination(
+      identity: Identity(), direction: .in, kind: .single, appName: "dedup161",
+      aspects: ["revive"])
+    let announce = try Announce.make(for: destination)
+    near.inboundHandler?(announce, near)
+    XCTAssertTrue(t.markPathUnresponsive(for: destination.hash))
+    let before = (near.sent.count, other.sent.count)
+
+    var longer = announce
+    longer.hops = 2
+    far.inboundHandler?(longer, far)
+
+    XCTAssertTrue(t.paths[destination.hash]?.nextHopInterface === far)
+    XCTAssertEqual(near.sent.count, before.0)
+    XCTAssertEqual(other.sent.count, before.1)
+  }
 }

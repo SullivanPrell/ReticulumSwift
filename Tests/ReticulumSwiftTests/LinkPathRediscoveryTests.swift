@@ -617,12 +617,12 @@ final class LinkPathRediscoveryTests: XCTestCase {
       data: hash + SecureRandom.bytes(Constants.truncatedHashLength))
   }
 
-  /// The client's answer goes out as an ordinary announce on every interface.
+  /// The client's answer goes only to the interface that asked, as a path response.
   ///
-  /// The announce-table entry at `Transport.py:2384-2395` attaches the `attached_interface`
-  /// that `:2336` cleared, not the interface that asked, and doesn't block rebroadcasts, so
-  /// the jobs loop sends it everywhere with context `NONE` (`Transport.py:784-805`).
-  func testTheClientsAnswerGoesOutAsAnAnnounce() throws {
+  /// The announce-table entry attaches the desiring interface and blocks rebroadcasts
+  /// (`Transport.py:2757-2772`), so the jobs loop sends it there alone with context
+  /// `PATH_RESPONSE` (`:983-1007`). The answer also marks the path responsive (`:2753`).
+  func testTheClientsAnswerGoesOnlyToTheInterfaceThatAsked() throws {
     let (t, asking, elsewhere, client, onClient) = try sharedInstance()
     let sentBefore = (asking.sent.count, elsewhere.sent.count)
 
@@ -636,18 +636,58 @@ final class LinkPathRediscoveryTests: XCTestCase {
     let answer = try Announce.make(for: onClient, isPathResponse: true)
     client.inboundHandler?(answer, client)
 
-    for (iface, before) in [(asking, sentBefore.0), (elsewhere, sentBefore.1)] {
-      let out = iface.sent.dropFirst(before).filter {
-        $0.packetType == .announce && $0.destinationHash == onClient.hash
-      }
-      XCTAssertEqual(out.count, 1, "\(iface.name): Transport.py:2375-2395")
-      XCTAssertEqual(out.first?.context, Packet.Context.none, "\(iface.name): Transport.py:785-786")
-      XCTAssertEqual(
-        out.first?.hops, answer.hops, "\(iface.name): `announce_hops = packet.hops` (:2332)")
-      XCTAssertEqual(out.first?.headerType, .type2)
-      XCTAssertEqual(out.first?.transportID, t.transportInstanceID)
+    let toAsking = asking.sent.dropFirst(sentBefore.0).filter {
+      $0.packetType == .announce && $0.destinationHash == onClient.hash
     }
-    XCTAssertNil(t.pendingLocalPathRequest(for: onClient.hash), "`.pop(...)` (:2381)")
+    XCTAssertEqual(toAsking.count, 1)
+    XCTAssertEqual(toAsking.first?.context, .pathResponse)
+    XCTAssertEqual(toAsking.first?.hops, answer.hops, "`announce_hops = packet.hops`")
+    XCTAssertEqual(toAsking.first?.headerType, .type2)
+    XCTAssertEqual(toAsking.first?.transportID, t.transportInstanceID)
+    XCTAssertFalse(
+      elsewhere.sent.dropFirst(sentBefore.1).contains {
+        $0.packetType == .announce && $0.destinationHash == onClient.hash
+      })
+    XCTAssertEqual(t.pathState(for: onClient.hash), Transport.stateResponsive)
+    XCTAssertNil(t.pendingLocalPathRequest(for: onClient.hash), "`.pop(...)`")
+  }
+
+  /// A local client's announce marks its path responsive, not unknown (`Transport.py:2854-2855`).
+  func testALocalClientsAnnounceMarksItsPathResponsive() throws {
+    let (t, _, _, _, onClient) = try sharedInstance()
+    XCTAssertEqual(t.pathState(for: onClient.hash), Transport.stateResponsive)
+  }
+
+  /// A closed pending link to a local client's destination keeps the path and asks for
+  /// nothing (`Transport.py:902-904`).
+  func testAPendingLinkToALocalClientKeepsItsPath() throws {
+    let (t, _, _, client, onClient) = try sharedInstance()
+    let outbound = try Destination(
+      identity: try XCTUnwrap(onClient.identity), direction: .out, kind: .single,
+      appName: "rediscovery", aspects: ["client"])
+    let link = try Link.initiate(destination: outbound, transport: t)
+
+    link.close()
+    t.runLinkJobs(now: Date())
+
+    XCTAssertTrue(t.hasPath(to: onClient.hash))
+    XCTAssertEqual(queued(t), [])
+    _ = client
+  }
+
+  /// A local client's unproven link request to another local client asks for nothing
+  /// (`Transport.py:1126-1129`).
+  func testALocalClientsLinkRequestToALocalClientIsntRediscovered() throws {
+    let (t, asking, _, client, onClient) = try sharedInstance()
+    t.restore(
+      linkRoute: route(
+        for: onClient, from: client, to: asking, takenHops: 0,
+        proofTimeout: Date().addingTimeInterval(-1)))
+
+    t.runLinkJobs(now: Date())
+
+    XCTAssertEqual(queued(t), [])
+    XCTAssertTrue(t.hasPath(to: onClient.hash))
   }
 
   func testASecondAnswerFindsNoRequestWaiting() throws {

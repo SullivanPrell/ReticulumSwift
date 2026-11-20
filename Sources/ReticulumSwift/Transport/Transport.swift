@@ -1661,10 +1661,10 @@ public final class Transport {
   /// and returns whether there was one.
   ///
   /// `Transport.pending_local_path_requests.pop(packet.destination_hash)` (`Transport.py:2381`).
-  private func takePendingLocalPathRequest(for destinationHash: Data) -> Bool {
+  private func takePendingLocalPathRequest(for destinationHash: Data) -> (any Interface)? {
     lock.lock()
     defer { lock.unlock() }
-    return pendingLocalPathRequests.removeValue(forKey: destinationHash) != nil
+    return pendingLocalPathRequests.removeValue(forKey: destinationHash)?.interface
   }
 
   /// Drops each waiting local path request whose interface has left.
@@ -3064,6 +3064,15 @@ public final class Transport {
     pathStatesLock.lock()
     defer { pathStatesLock.unlock() }
     return pathStates[destinationHash] == Transport.stateUnresponsive
+  }
+
+  /// The path's responsiveness state, ``stateUnknown`` when none is recorded.
+  ///
+  /// Mirrors Python's `Transport.get_path_state` (`Transport.py:3884-3885`).
+  public func pathState(for destinationHash: Data) -> UInt8 {
+    pathStatesLock.lock()
+    defer { pathStatesLock.unlock() }
+    return pathStates[destinationHash] ?? Transport.stateUnknown
   }
 
   /// Block until a path to `destinationHash` exists, or the timeout
@@ -4498,6 +4507,11 @@ public final class Transport {
       closed.values.filter { Transport.closedBeforeActivating($0) }.map(\.destination.hash)
       + unregistered
     for destinationHash in pending where !transportEnabled {
+      // A path to a local client stays (`Transport.py:902-904`).
+      lock.lock()
+      let localDestination = forLocalClient(paths[destinationHash])
+      lock.unlock()
+      if localDestination { continue }
       expirePath(for: destinationHash)
       guard !isConnectedToSharedInstance else { continue }
       let lastRequest = pathRequestTimestamp(for: destinationHash) ?? 0
@@ -4574,6 +4588,8 @@ public final class Transport {
     if let path {
       guard !throttled else { return }
       if route.takenHops == 0 {
+        // Nor is a local client's path rediscovered for another local client (`:1127`).
+        guard pythonHops(of: path) != 0 else { return }
         blocked = nil
       } else if pythonHops(of: path) == 1 || route.takenHops == 1 {
         blocked = route.initiatorSideInterface
@@ -6238,6 +6254,9 @@ public final class Transport {
       //    (the existing path's source may have moved or the old path is stale).
       // 5. Update if the existing path is expired.
       let shouldUpdate: Bool
+      // Python's `table_insertion_only`: reviving an unresponsive path writes the table but
+      // queues no rebroadcast (`Transport.py:2611`, `:2689`, `:2744`).
+      var tableInsertionOnly = false
       pathStatesLock.lock()
       let isUnresponsive = pathStates[decoded.destinationHash] == Transport.stateUnresponsive
       pathStatesLock.unlock()
@@ -6307,6 +6326,7 @@ public final class Transport {
           // has gone dead. Pairs with the unresponsive exception in the
           // duplicate early return above (D2).
           shouldUpdate = isUnresponsive
+          tableInsertionOnly = isUnresponsive
         } else {
           // More hops and strictly older emission: ignore (Python's
           // implicit else—should_add stays False).
@@ -6370,9 +6390,14 @@ public final class Transport {
         // the `emittedAt == pathTimebase → shouldUpdate = isUnresponsive`
         // branch below hand the path to any longer, lower-gravity route
         // that repeats the same announce, silently undoing the takeover.
-        pathStatesLock.lock()
-        pathStates[decoded.destinationHash] = Transport.stateUnknown
-        pathStatesLock.unlock()
+        // A local client's announce marks its path responsive instead (`Transport.py:2854-2855`).
+        if self.fromLocalClient(interface: interface) {
+          _ = markPathResponsiveLocked(decoded.destinationHash)
+        } else {
+          pathStatesLock.lock()
+          pathStates[decoded.destinationHash] = Transport.stateUnknown
+          pathStatesLock.unlock()
+        }
         requestedPathWritten = pathRequests[decoded.destinationHash] != nil
         // The tunnel keeps the path it wrote, random blobs and announce hash included, for
         // `handle_tunnel` to restore (`Transport.py:2465-2475`).
@@ -6439,7 +6464,7 @@ public final class Transport {
       // the cap are queued for deferred transmission.
       let fromLocalClient = fromLocalClient(interface: interface)
       // A rate-blocked announce is never rebroadcast (`Transport.py:2606`).
-      if shouldUpdate, !rateBlocked,
+      if shouldUpdate, !rateBlocked, !tableInsertionOnly,
         transportEnabled || fromLocalClient,
         !decoded.isPathResponse,
         packet.hops < propagationLimit,
@@ -6477,22 +6502,22 @@ public final class Transport {
       }
 
       // A local client's path response, when a path request for its destination reached it
-      // through this shared instance, goes out as an ordinary announce
-      // (`Transport.py:2375-2395`). Python queues it in the announce table for one send on the
-      // next jobs pass. The entry's attached interface is the one `:2336` cleared, not the
-      // interface that asked, so it goes to every interface, under the same mode filters and
-      // announce caps as a relayed announce. Its hop count is `announce_hops` (`:2391`). This
-      // port sends it at once, as it does the relay of a local client's own announce.
+      // through this shared instance, goes back to the interface that asked
+      // (`Transport.py:2750-2772`). Python queues it in the announce table, attached to that
+      // interface with rebroadcasts blocked, for one send on the next jobs pass, which gives
+      // it context `PATH_RESPONSE` and skips the mode filters and announce caps
+      // (`:983-1007`, `:1760-1761`). Its hop count is `announce_hops`. This port sends it at
+      // once, as it does the relay of a local client's own announce.
       if shouldUpdate, fromLocalClient, decoded.isPathResponse,
-        takePendingLocalPathRequest(for: decoded.destinationHash)
+        let desiring = takePendingLocalPathRequest(for: decoded.destinationHash)
       {
         var answer = packet
         answer.hops = announceHops
-        answer.context = .none
+        answer.context = .pathResponse
         answer.headerType = .type2
         answer.transportType = .transport
         answer.transportID = transportInstanceID
-        relayAnnounce(answer, receivedOn: interface, now: Date().timeIntervalSince1970)
+        try? transmit(deltaMangled(answer, for: desiring), on: desiring)
       }
 
       // Answer the peers waiting on a search for this destination
