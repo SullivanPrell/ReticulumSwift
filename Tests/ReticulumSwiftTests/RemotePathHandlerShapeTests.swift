@@ -275,17 +275,17 @@ final class RemotePathHandlerShapeTests: XCTestCase {
     XCTAssertEqual(
       order,
       [
-        "clients", "bitrate", "rxs", "txs",
+        "clients", "bitrate", "rxs", "txs", "frxs", "ftxs",
         // RNS 1.5.0 added the four announce and path-request speed gauges directly
         // after the two byte-rate ones (Reticulum.py:1482-1502).
         "arxs", "atxs", "prxs", "ptxs",
         "ifac_signature", "ifac_size", "ifac_netname", "autoconnect_source",
         "name", "short_name", "hash", "type",
         // `mtu` lands between `type` and `rxb`, not at the end.
-        "mtu", "rxb", "txb",
+        "mtu", "rxb", "txb", "frxb", "ftxb",
         // Announce and path-request byte and frame totals, then the transmit-buffer
         // drop counters `rnstatus` reads without a membership guard.
-        "arxb", "atxb", "arxc", "atxc", "prxb", "ptxb", "prxc", "ptxc",
+        "arxb", "atxb", "arxc", "atxc", "afrxc", "prxb", "ptxb", "prxc", "ptxc",
         "txdrp", "txdrb", "txstalled", "txbuffered",
         "incoming_announce_frequency", "outgoing_announce_frequency",
         "incoming_pr_frequency", "outgoing_pr_frequency",
@@ -299,6 +299,9 @@ final class RemotePathHandlerShapeTests: XCTestCase {
         // in 1.5.2—so they extend this sequence rather than reordering it.
         "gravity", "announces_to_internal",
         "protocol_violations", "ifac_violations", "packet_filter_hits",
+        // RNS 1.6.1 (`Reticulum.py:1927-1941`).
+        "tunnel_id", "remote_transport_id",
+        "rem_impl", "rem_vers", "rem_is_tn", "rem_dst_cost", "rem_pr_cost",
       ])
   }
 

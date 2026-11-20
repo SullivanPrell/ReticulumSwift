@@ -55,6 +55,9 @@ public final class InterfaceFreqTracker {
   private var arxb = 0, atxb = 0, prxb = 0, ptxb = 0
   private var arxc = 0, atxc = 0, prxc = 0, ptxc = 0
   private var afrxc = 0
+  /// Python's `interface.rxb` and `interface.frxb`, which `Transport.inbound` credits
+  /// (`Transport.py:1973-1985`).
+  private var rxb = 0, frxb = 0
   private var protocolViolations = 0, ifacViolations = 0, packetFilterHits = 0
 
   /// Guards the four deques.
@@ -116,6 +119,13 @@ public final class InterfaceFreqTracker {
     append(t, to: &op)
     ptxc += 1
     ptxb += size
+  }
+
+  /// Credits `bytes` to `rxb` when `accepted`, else to `frxb` (`Transport.py:1973-1985`).
+  public func recordInbound(bytes: Int, accepted: Bool) {
+    lock.lock()
+    defer { lock.unlock() }
+    if accepted { rxb += bytes } else { frxb += bytes }
   }
 
   // MARK: - Violation counters
@@ -202,6 +212,8 @@ public final class InterfaceFreqTracker {
     public let protocolViolations: Int, ifacViolations: Int, packetFilterHits: Int
     /// Python `afrxc`.
     public let filteredAnnounceRxCount: Int
+    /// Python `rxb` and `frxb`.
+    public var rxBytes = 0, filteredRxBytes = 0
   }
 
   /// Returns a snapshot of the tracked counters.
@@ -216,7 +228,7 @@ public final class InterfaceFreqTracker {
       protocolViolations: protocolViolations,
       ifacViolations: ifacViolations,
       packetFilterHits: packetFilterHits,
-      filteredAnnounceRxCount: afrxc)
+      filteredAnnounceRxCount: afrxc, rxBytes: rxb, filteredRxBytes: frxb)
   }
 
   // MARK: - Test helpers

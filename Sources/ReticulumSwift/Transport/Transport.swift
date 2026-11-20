@@ -470,6 +470,10 @@ public final class Transport {
     /// routes ends up counting forgeries.
     public var validated: Bool = false
 
+    /// Bytes relayed over this link, Python's `link_table[link_id][IDX_LT_TRXB]`
+    /// (`Transport.py:2548`).
+    public var traffic: Int = 0
+
     /// Hand-written because the interface fields are existentials.
     ///
     /// They compare by
@@ -487,6 +491,7 @@ public final class Transport {
         && lhs.takenHops == rhs.takenHops
         && lhs.proofTimeout == rhs.proofTimeout
         && lhs.validated == rhs.validated
+        && lhs.traffic == rhs.traffic
     }
   }
 
@@ -540,6 +545,7 @@ public final class Transport {
     var announceTxBytes: Int = 0
     var pathRequestRxBytes: Int = 0
     var pathRequestTxBytes: Int = 0
+    var filteredRxBytes: Int = 0
     var timestamp: TimeInterval
   }
 
@@ -554,6 +560,10 @@ public final class Transport {
     public var pathRequestRx: Double = 0
     /// Outgoing path-request rate in bits per second.
     public var pathRequestTx: Double = 0
+    /// Filtered inbound and outbound rates in bits per second, `current_frx_speed` and
+    /// `current_ftx_speed`.
+    public var filteredRx: Double = 0
+    public var filteredTx: Double = 0
   }
 
   /// Interfaces registered with this transport, in registration order.
@@ -995,7 +1005,7 @@ public final class Transport {
   ///
   /// Leaf lock: never held across a callout, and no holder
   /// acquires `lock`. If both are ever needed, `lock` is the outer lock.
-  private let metricsLock = NSLock()
+  let metricsLock = NSLock()
 
   /// Cumulative bytes received across all interfaces (inbound).
   ///
@@ -1005,11 +1015,24 @@ public final class Transport {
   ///
   /// Mirrors Python's `Transport.traffic_txb`.
   public private(set) var trafficTxBytes: Int = 0
+  /// Filtered inbound bytes, Python's `filtered_rxb`, and `filtered_txb`, which nothing
+  /// increments (`Transport.py:383-386`).
+  public private(set) var filteredRxBytes: Int = 0
+  public private(set) var filteredTxBytes: Int = 0
+  /// Aggregate filtered speeds (bits/sec), `filtered_speed_rx` and `filtered_speed_tx`.
+  public private(set) var filteredSpeedRx: Double = 0
+  public private(set) var filteredSpeedTx: Double = 0
+  /// Relayed link bytes, `link_rxb` and `link_txb` (`Transport.py:2509`, `:2545`).
+  public private(set) var linkRxBytes: Int = 0
+  public private(set) var linkTxBytes: Int = 0
+  /// `link_speed_rx` and `link_speed_tx` (bits/sec) over the sampling interval.
+  public private(set) var linkSpeedRx: Double = 0
+  public private(set) var linkSpeedTx: Double = 0
 
   /// Per-destination announce rate tracking.
   ///
   /// Mirrors Python's `Transport.announce_rate_table`.
-  private var announceRateTable: [Data: AnnounceRateEntry] = [:]
+  var announceRateTable: [Data: AnnounceRateEntry] = [:]
   /// Maximum announce timestamps kept per destination.
   ///
   /// Mirrors Python's `Transport.MAX_RATE_TIMESTAMPS = 16`.
@@ -1050,6 +1073,7 @@ public final class Transport {
   ///
   /// Guarded by `metricsLock`, like the two tables above.
   private var ifaceAnnounceSpeeds: [ObjectIdentifier: AnnounceSpeeds] = [:]
+  private var lastSampledLinkRxBytes = 0, lastSampledLinkTxBytes = 0
   /// Aggregate RX speed across all interfaces (bits/sec).
   ///
   /// Mirrors Python `Transport.speed_rx`.
@@ -1967,13 +1991,19 @@ public final class Transport {
     public let prRxCount: Int
     /// Path requests sent.
     public let prTxCount: Int
+    /// `lrxb`, `ltxb`, `lrxs`, `ltxs`, `frxb`, `ftxb`, `frxs`, `ftxs` (RNS 1.6.1,
+    /// `Reticulum.py:1959-1966`).
+    public var linkRxBytes = 0, linkTxBytes = 0
+    public var linkSpeedRx: Double = 0, linkSpeedTx: Double = 0
+    public var filteredRxBytes = 0, filteredTxBytes = 0
+    public var filteredSpeedRx: Double = 0, filteredSpeedTx: Double = 0
   }
 
   /// Returns aggregate transport-level traffic statistics.
   public func getTransportStats() -> TransportStats {
     metricsLock.lock()
     defer { metricsLock.unlock() }
-    return TransportStats(
+    var stats = TransportStats(
       trafficRxBytes: trafficRxBytes,
       trafficTxBytes: trafficTxBytes,
       speedRx: speedRx,
@@ -1999,6 +2029,15 @@ public final class Transport {
       prRxCount: prRxCount,
       prTxCount: prTxCount
     )
+    stats.linkRxBytes = linkRxBytes
+    stats.linkTxBytes = linkTxBytes
+    stats.linkSpeedRx = linkSpeedRx
+    stats.linkSpeedTx = linkSpeedTx
+    stats.filteredRxBytes = filteredRxBytes
+    stats.filteredTxBytes = filteredTxBytes
+    stats.filteredSpeedRx = filteredSpeedRx
+    stats.filteredSpeedTx = filteredSpeedTx
+    return stats
   }
 
   /// Returns statistics for all registered interfaces.
@@ -2017,7 +2056,7 @@ public final class Transport {
         name: iface.name,
         isOnline: iface.isOnline,
         bitrate: iface.bitrate,
-        rxBytes: iface.rxBytes,
+        rxBytes: tracker?.counts().rxBytes ?? 0,
         txBytes: iface.txBytes,
         rxPackets: iface.rxPackets,
         txPackets: iface.txPackets,
@@ -2432,7 +2471,9 @@ public final class Transport {
     // Re-inject the packet into the transport pipeline (outside ingressLock), as
     // `TC_INGRESS_LIMITED` (`Interface.py:296`).
     if let released {
-      inbound(released, from: interface, trafficClass: .ingressLimited)
+      // `Interface.py:341` passes no `no_accounting`, so the release is counted again.
+      let accepted = inbound(released, from: interface, trafficClass: .ingressLimited)
+      accountInbound((try? released.packedBytes())?.count ?? 0, on: interface, accepted: accepted)
     }
     return released
   }
@@ -2522,13 +2563,21 @@ public final class Transport {
     var totalAnnounceTxFreq: Double = 0
     var totalPrRxFreq: Double = 0
     var totalPrTxFreq: Double = 0
+    var totalFilteredRxSpeed: Double = 0
     for (iface, counts, freqs) in counters {
+      // `if interface.parent_interface == None: if interface.is_local_shared_instance:
+      // continue` (`Transport.py:780-781`): a spawned interface's bytes reach its parent.
+      if (iface as? any SpawnedInterface)?.spawningInterface != nil
+        || iface is any LocalClientServingInterface
+      {
+        continue
+      }
       totalAnnounceRxFreq += freqs.0
       totalAnnounceTxFreq += freqs.1
       totalPrRxFreq += freqs.2
       totalPrTxFreq += freqs.3
       let key = ObjectIdentifier(iface)
-      let currentRx = iface.rxBytes
+      let currentRx = counts?.rxBytes ?? 0
       let currentTx = iface.txBytes
       let sample = SpeedSample(
         rxBytes: currentRx, txBytes: currentTx,
@@ -2536,6 +2585,7 @@ public final class Transport {
         announceTxBytes: counts?.announceTxBytes ?? 0,
         pathRequestRxBytes: counts?.pathRequestRxBytes ?? 0,
         pathRequestTxBytes: counts?.pathRequestTxBytes ?? 0,
+        filteredRxBytes: counts?.filteredRxBytes ?? 0,
         timestamp: now)
       if let prior = ifaceSpeedSamples[key] {
         let tsDiff = now - prior.timestamp
@@ -2556,7 +2606,8 @@ public final class Transport {
           announceRx: rate(sample.announceRxBytes, prior.announceRxBytes),
           announceTx: rate(sample.announceTxBytes, prior.announceTxBytes),
           pathRequestRx: rate(sample.pathRequestRxBytes, prior.pathRequestRxBytes),
-          pathRequestTx: rate(sample.pathRequestTxBytes, prior.pathRequestTxBytes))
+          pathRequestTx: rate(sample.pathRequestTxBytes, prior.pathRequestTxBytes),
+          filteredRx: rate(sample.filteredRxBytes, prior.filteredRxBytes))
         ifaceAnnounceSpeeds[key] = speeds
         totalRxSpeed += rxSpeed
         totalTxSpeed += txSpeed
@@ -2570,10 +2621,11 @@ public final class Transport {
         announceTxBytes += sample.announceTxBytes - prior.announceTxBytes
         prRxBytes += sample.pathRequestRxBytes - prior.pathRequestRxBytes
         prTxBytes += sample.pathRequestTxBytes - prior.pathRequestTxBytes
-        // Accumulate transport-level TX total from interface diffs.
-        // Mirrors Python: Transport.traffic_txb += txDiff (count_traffic_loop).
-        // preprocessInbound already counts RX per packet, so this adds only TX.
-        if txDiff > 0 { trafficTxBytes += txDiff }
+        totalFilteredRxSpeed += speeds.filteredRx
+        filteredRxBytes += sample.filteredRxBytes - prior.filteredRxBytes
+        // `traffic_rxb += rxb`, `traffic_txb += txb` (`Transport.py:847-848`).
+        trafficRxBytes += rxDiff
+        trafficTxBytes += txDiff
       }
       ifaceSpeedSamples[key] = sample
     }
@@ -2587,6 +2639,8 @@ public final class Transport {
     announceFreqTx = totalAnnounceTxFreq
     prFreqRx = totalPrRxFreq
     prFreqTx = totalPrTxFreq
+    filteredSpeedRx = totalFilteredRxSpeed
+    filteredSpeedTx = 0
     samplePacketRates(now: now)
   }
 
@@ -2603,6 +2657,8 @@ public final class Transport {
     guard startTime > 0 else {
       rxPPS = 0
       txPPS = 0
+      linkSpeedRx = 0
+      linkSpeedTx = 0
       return
     }
     let since = lastPPSSampleTime ?? startTime
@@ -2615,6 +2671,11 @@ public final class Transport {
     lastPPSSampleTime = now
     lastSampledRxPackets = rxPackets
     lastSampledTxPackets = txPackets
+    // `lrxs = (Transport.link_rxb - lrxb)*8 / td` (`Transport.py:840-843`).
+    linkSpeedRx = Double(linkRxBytes - lastSampledLinkRxBytes) * 8 / elapsed
+    linkSpeedTx = Double(linkTxBytes - lastSampledLinkTxBytes) * 8 / elapsed
+    lastSampledLinkRxBytes = linkRxBytes
+    lastSampledLinkTxBytes = linkTxBytes
   }
 
   /// Current RX speed for `interface` in bits/sec.
@@ -2856,6 +2917,9 @@ public final class Transport {
     public var used: Date? = nil
     /// The link-request cost the destination announced, `known_destinations[dst][7]`.
     public var lrCost: Double? = nil
+    /// `interface.get_hash()` and `get_path_state` (RNS 1.6.1, `Reticulum.py:2050-2051`).
+    public var interfaceHash: Data? = nil
+    public var state: UInt8? = nil
   }
 
   /// Returns the path table, optionally limited to routes within `maxHops`.
@@ -2863,6 +2927,9 @@ public final class Transport {
   /// Hop counts, and the `maxHops` filter, are Python's (`Reticulum.py:1737-1740`):
   /// ``pythonHops(of:)``.
   public func getPathTable(maxHops: UInt8? = nil) -> [PathTableEntry] {
+    pathStatesLock.lock()
+    let states = pathStates
+    pathStatesLock.unlock()
     lock.lock()
     defer { lock.unlock() }
     // Python publishes `str(receiving_interface)`—the display name, "LocalInterface
@@ -2876,7 +2943,8 @@ public final class Transport {
     return paths.values.compactMap { path in
       let hops = UInt8(clamping: pythonHops(of: path))
       guard hops <= (maxHops ?? .max) else { return nil }
-      return PathTableEntry(
+      let interfaceName = displayNames[path.nextHopInterfaceName] ?? path.nextHopInterfaceName
+      var entry = PathTableEntry(
         destinationHash: path.destinationHash,
         // `nextHopTransportID` is nil exactly when the announce carried no
         // transport id, which is the case where Python falls back to the
@@ -2885,7 +2953,7 @@ public final class Transport {
         hops: hops,
         // Fall back to the stored short name when nothing holds that name—a
         // path restored from disk can outlive the interface that heard it.
-        interfaceName: displayNames[path.nextHopInterfaceName] ?? path.nextHopInterfaceName,
+        interfaceName: interfaceName,
         lastHeard: path.lastHeard,
         expires: path.expires,
         value: knownIdentities[path.destinationHash] == nil
@@ -2893,6 +2961,9 @@ public final class Transport {
         used: path.used,
         lrCost: knownDestinationStamps[path.destinationHash]?.lrCost ?? nil
       )
+      entry.interfaceHash = Hashes.fullHash(Data(interfaceName.utf8))
+      entry.state = states[path.destinationHash] ?? Transport.stateUnknown
+      return entry
     }
   }
 
@@ -3276,59 +3347,9 @@ public final class Transport {
     // Raw-bytes handler used by real interfaces—verifies IFAC, parses packet.
     interface.rawInboundHandler = { [weak self] rawBytes, sourceInterface in
       guard let self else { return }
-      guard let verified = sourceInterface.unwrapIfac(rawBytes) else {
-        // Python counts every one of these through `interface.ifac_violation()`
-        // (`Transport.py:1715`, `:1749`, `:1773`, `:1777`, `:1784`). This port
-        // decides all five inside `unwrapIfac`, so one call covers them.
-        self.notifyIfacViolation(on: sourceInterface)
-        return
-      }
-      // `if interface and len(raw) > interface.HW_MTU + (interface.ifac_size or 0):
-      //      return interface.protocol_violation(...)` (`Transport.py:1789`, RNS 1.5.0).
-      //
-      // A frame past the medium's own hardware MTU can't have a legitimate origin
-      // by a peer on that medium. This port bounded frame size only inside the HDLC
-      // deframer, which leaves UDP, RNode/KISS, AutoInterface, Weave and the KISS-framed
-      // I2P path with no inbound bound at all. Here—the one funnel every interface's
-      // raw bytes pass through—covers all of them, which is the same reason Python
-      // moved the check to `preprocess_inbound` rather than into each interface.
-      //
-      // Python compares against `HW_MTU`, which its base class leaves as `None`; the
-      // resulting `None + int` would raise, and `inbound`'s blanket `except`
-      // (`Transport.py:1683`) would turn that into a logged drop of every packet on such
-      // an interface. Every shipped interface sets one, so that branch is unreachable
-      // upstream—skipping the check when `hwMtu` is nil keeps the reachable behaviour
-      // and declines to reproduce the unreachable bug.
-      //
-      // The comparison is against the *post-IFAC* bytes on both sides: Python runs
-      // `handle_ifac` first (`:1766`) and still adds `ifac_size` back into the
-      // allowance, so a frame that filled the medium before the tag was stripped is
-      // still accepted.
-      if let hwMtu = sourceInterface.hwMtu,
-        verified.count > hwMtu + sourceInterface.ifacSize
-      {
-        self.notifyProtocolViolation(on: sourceInterface)
-        return
-      }
-      guard let packet = try? Packet.unpack(verified) else {
-        // `protocol_violation(f"Malformed packet ({len(raw)} bytes)")`
-        // (`Transport.py:1794`).
-        self.notifyProtocolViolation(on: sourceInterface)
-        return
-      }
-      // `if len(raw) > RNS.Reticulum.MTU: return ... protocol_violation("Excessive
-      // announce packet frame size ...")` (`Transport.py:1804`).
-      //
-      // Announces are the one packet type every transport node floods onward, so an
-      // unbounded one is an amplification path rather than merely a large frame. The
-      // ceiling is the protocol MTU, not the interface's—a legitimate announce fits in
-      // 500 bytes on every medium, so a larger one is malformed no matter how wide the
-      // link that carried it.
-      if packet.packetType == .announce, verified.count > Constants.mtu {
-        self.notifyProtocolViolation(on: sourceInterface)
-        return
-      }
-      self.inbound(packet, from: sourceInterface)
+      self.accountInbound(
+        rawBytes.count, on: sourceInterface,
+        accepted: self.preprocessRaw(rawBytes, from: sourceInterface))
     }
     // Packet handler kept for test-stub loopback interfaces that deliver
     // pre-parsed packets directly (they don't use rawInboundHandler).
@@ -3616,6 +3637,47 @@ public final class Transport {
     linkRoutes[linkRoute.linkID] = linkRoute
   }
 
+  /// The link-table entry for `linkID`.
+  public func linkRoute(for linkID: Data) -> LinkRoute? {
+    lock.lock()
+    defer { lock.unlock() }
+    return linkRoutes[linkID]
+  }
+
+  /// One destination's row in `linkDistribution()`.
+  public struct LinkDistributionEntry: Equatable {
+    public var active = 0, pending = 0, traffic = 0
+    /// `get_hash()` of each interface a link request arrived on, in first-seen order.
+    public var fromInterfaces: [Data] = []
+  }
+
+  /// Relayed links grouped by destination, `Transport.link_distribution` (`Transport.py:3786-3815`).
+  public func linkDistribution() -> [Data: LinkDistributionEntry] {
+    lock.lock()
+    let routes = Array(linkRoutes.values)
+    lock.unlock()
+    var result: [Data: LinkDistributionEntry] = [:]
+    for route in routes {
+      // `from_interface.get_hash()` raises on a vanished interface, which empties the result.
+      guard let from = route.initiatorSideInterface else { return [:] }
+      let ifhash = Hashes.fullHash(Data(from.displayName.utf8))
+      var entry = result[route.destinationHash] ?? LinkDistributionEntry()
+      entry.traffic += route.traffic
+      if !entry.fromInterfaces.contains(ifhash) { entry.fromInterfaces.append(ifhash) }
+      if route.validated { entry.active += 1 } else { entry.pending += 1 }
+      result[route.destinationHash] = entry
+    }
+    return result
+  }
+
+  /// Credits `link_rxb` and `link_txb` (`Link.py:1034`, `Packet.py:312`).
+  func addLinkTraffic(rx: Int = 0, tx: Int = 0) {
+    metricsLock.lock()
+    linkRxBytes += rx
+    linkTxBytes += tx
+    metricsLock.unlock()
+  }
+
   /// Directly insert an announce packet into the announce cache for testing.
   ///
   /// Mirrors the side-effect of processing a real announce packet.
@@ -3860,18 +3922,7 @@ public final class Transport {
     guard let store = knownDestinationsStore, !isConnectedToSharedInstance else { return false }
     let now = Date().timeIntervalSince1970
     lock.lock()
-    var rows: [Data: KnownDestinationsStore.Row] = [:]
-    for (hash, identity) in knownIdentities {
-      let stampFields = knownDestinationStamps[hash]
-      rows[hash] = KnownDestinationsStore.Row(
-        lastHeard: knownDestinationAnnouncedAt[hash]?.timeIntervalSince1970 ?? now,
-        packetHash: knownDestinationPacketHash[hash], publicKey: identity.publicKeyBytes,
-        appData: identity.appData,
-        used: retainedDestinations.contains(hash)
-          ? -1 : knownDestinationLastUsed[hash]?.timeIntervalSince1970 ?? 0,
-        stamp: stampFields?.stamp, stampValue: stampFields?.value ?? 0,
-        lrCost: stampFields?.lrCost)
-    }
+    let rows = knownDestinationRowsLocked(now: now)
     var ratchets: [Data: KnownDestinationsStore.Ratchet] = [:]
     for (hash, ratchet) in knownRatchets {
       ratchets[hash] = KnownDestinationsStore.Ratchet(
@@ -3887,6 +3938,30 @@ public final class Transport {
         level: .error)
       return false
     }
+  }
+
+  /// `Identity.known_destinations`, one row per known destination.
+  public func knownDestinationRows() -> [Data: KnownDestinationsStore.Row] {
+    lock.lock()
+    defer { lock.unlock() }
+    return knownDestinationRowsLocked(now: Date().timeIntervalSince1970)
+  }
+
+  /// The caller holds `lock`.
+  private func knownDestinationRowsLocked(now: TimeInterval) -> [Data: KnownDestinationsStore.Row] {
+    var rows: [Data: KnownDestinationsStore.Row] = [:]
+    for (hash, identity) in knownIdentities {
+      let stampFields = knownDestinationStamps[hash]
+      rows[hash] = KnownDestinationsStore.Row(
+        lastHeard: knownDestinationAnnouncedAt[hash]?.timeIntervalSince1970 ?? now,
+        packetHash: knownDestinationPacketHash[hash], publicKey: identity.publicKeyBytes,
+        appData: identity.appData,
+        used: retainedDestinations.contains(hash)
+          ? -1 : knownDestinationLastUsed[hash]?.timeIntervalSince1970 ?? 0,
+        stamp: stampFields?.stamp, stampValue: stampFields?.value ?? 0,
+        lrCost: stampFields?.lrCost)
+    }
+    return rows
   }
 
   /// Restores rows read from a known-destinations database.
@@ -5280,27 +5355,106 @@ public final class Transport {
 
   // MARK: - Inbound pipeline
 
+  /// `Transport.inbound`'s raw half: IFAC, frame size and unpacking, then `inbound`.
+  ///
+  /// Returns `preprocess_inbound`'s verdict (`Transport.py:1987-1995`).
+  private func preprocessRaw(_ rawBytes: Data, from sourceInterface: any Interface) -> Bool {
+    guard let verified = sourceInterface.unwrapIfac(rawBytes) else {
+      // Python counts every one of these through `interface.ifac_violation()`
+      // (`Transport.py:1715`, `:1749`, `:1773`, `:1777`, `:1784`). This port
+      // decides all five inside `unwrapIfac`, so one call covers them.
+      self.notifyIfacViolation(on: sourceInterface)
+      return false
+    }
+    // `if interface and len(raw) > interface.HW_MTU + (interface.ifac_size or 0):
+    //      return interface.protocol_violation(...)` (`Transport.py:1789`, RNS 1.5.0).
+    //
+    // A frame past the medium's own hardware MTU can't have a legitimate origin
+    // by a peer on that medium. This port bounded frame size only inside the HDLC
+    // deframer, which leaves UDP, RNode/KISS, AutoInterface, Weave and the KISS-framed
+    // I2P path with no inbound bound at all. Here—the one funnel every interface's
+    // raw bytes pass through—covers all of them, which is the same reason Python
+    // moved the check to `preprocess_inbound` rather than into each interface.
+    //
+    // Python compares against `HW_MTU`, which its base class leaves as `None`; the
+    // resulting `None + int` would raise, and `inbound`'s blanket `except`
+    // (`Transport.py:1683`) would turn that into a logged drop of every packet on such
+    // an interface. Every shipped interface sets one, so that branch is unreachable
+    // upstream—skipping the check when `hwMtu` is nil keeps the reachable behaviour
+    // and declines to reproduce the unreachable bug.
+    //
+    // The comparison is against the *post-IFAC* bytes on both sides: Python runs
+    // `handle_ifac` first (`:1766`) and still adds `ifac_size` back into the
+    // allowance, so a frame that filled the medium before the tag was stripped is
+    // still accepted.
+    if let hwMtu = sourceInterface.hwMtu,
+      verified.count > hwMtu + sourceInterface.ifacSize
+    {
+      self.notifyProtocolViolation(on: sourceInterface)
+      return false
+    }
+    guard let packet = try? Packet.unpack(verified) else {
+      // `protocol_violation(f"Malformed packet ({len(raw)} bytes)")`
+      // (`Transport.py:1794`).
+      self.notifyProtocolViolation(on: sourceInterface)
+      return false
+    }
+    // `if len(raw) > RNS.Reticulum.MTU: return ... protocol_violation("Excessive
+    // announce packet frame size ...")` (`Transport.py:1804`).
+    //
+    // Announces are the one packet type every transport node floods onward, so an
+    // unbounded one is an amplification path rather than merely a large frame. The
+    // ceiling is the protocol MTU, not the interface's—a legitimate announce fits in
+    // 500 bytes on every medium, so a larger one is malformed no matter how wide the
+    // link that carried it.
+    if packet.packetType == .announce, verified.count > Constants.mtu {
+      self.notifyProtocolViolation(on: sourceInterface)
+      return false
+    }
+    return self.inbound(packet, from: sourceInterface)
+  }
+
+  /// `accepted_inbound` and `filtered_inbound`, crediting a spawned interface's parent too
+  /// (`Transport.py:1973-1985`).
+  func accountInbound(_ bytes: Int, on interface: any Interface, accepted: Bool) {
+    tracker(for: interface)?.recordInbound(bytes: bytes, accepted: accepted)
+    if let parent = (interface as? any SpawnedInterface)?.spawningInterface {
+      tracker(for: parent)?.recordInbound(bytes: bytes, accepted: accepted)
+    }
+  }
+
   /// Python's `Transport.inbound` for an unpacked packet (`Transport.py:1682-1897`).
   ///
   /// Runs `preprocess_inbound` on the calling thread. A packet that survives it queues under
   /// its traffic class for the drain worker, or runs to completion here when no worker runs.
-  func inbound(_ packet: Packet, from interface: Interface, trafficClass: TrafficClass = .data) {
-    guard let trafficClass = preprocessInbound(packet, from: interface, trafficClass: trafficClass)
-    else { return }
+  /// Returns `preprocess_inbound`'s verdict, which decides `rxb` or `frxb` (`Transport.py:1990`).
+  @discardableResult
+  func inbound(_ packet: Packet, from interface: Interface, trafficClass: TrafficClass = .data)
+    -> Bool
+  {
+    var batched = false
+    guard
+      let trafficClass = preprocessInbound(
+        packet, from: interface, trafficClass: trafficClass, batched: &batched)
+    else { return batched }
     let item = InboundPacket(packet: packet, interface: interface, trafficClass: trafficClass)
     guard let queues = currentInboundQueues() else {
       processInbound(item)
-      return
+      return true
     }
     if !queues.put(item, trafficClass: trafficClass) {
       Reticulum.log(
         "Dropping inbound packet, queue is full (tc=\(trafficClass.rawValue))", level: .extreme)
     }
+    return true
   }
 
   /// Runs the whole inbound path on the calling thread, bypassing the queues.
   func handleIncoming(packet: Packet, from interface: Interface) {
-    guard let trafficClass = preprocessInbound(packet, from: interface, trafficClass: .data)
+    var batched = false
+    guard
+      let trafficClass = preprocessInbound(
+        packet, from: interface, trafficClass: .data, batched: &batched)
     else { return }
     processInbound(InboundPacket(packet: packet, interface: interface, trafficClass: trafficClass))
   }
@@ -5374,25 +5528,18 @@ public final class Transport {
 
   /// `preprocess_inbound` from the packet filter on (`Transport.py:1795-1888`).
   ///
-  /// Returns the class the packet queues under, or `nil` when it stops here.
+  /// Returns the class the packet queues under, or `nil` when it stops here. `batched` is set
+  /// for a path request joined to one in flight, which Python counts as accepted
+  /// (`Transport.py:2258`).
   private func preprocessInbound(
-    _ packet: Packet, from interface: Interface, trafficClass: TrafficClass
+    _ packet: Packet, from interface: Interface, trafficClass: TrafficClass, batched: inout Bool
   ) -> TrafficClass? {
-    // Count inbound traffic bytes + cache packet PHY stats under `metricsLock`.
-    // Preprocessing runs concurrently for every inbound frame across
-    // interfaces, so these counter/array mutations must be serialized. The
-    // packet pack/hash work is done first (outside the lock) so the lock is
-    // held only for the mutations. `lock` isn't held here.
-    // Mirrors Python `Transport.traffic_rxb` accumulation and the
-    // local_client_rssi/snr/q caches (LOCAL_CLIENT_CACHE_MAXSIZE = 512).
-    // Use packedBytes()/hashablePart-based hashing (NOT pack()): an inbound
-    // link packet may legitimately exceed the base MTU once a larger link
-    // MTU is negotiated, and pack()'s MTU guard would throw—undercounting
-    // traffic and (via filterAndRecord) dropping the packet entirely.
-    let rawByteCount = (try? packet.packedBytes())?.count
+    // Cache packet PHY stats under `metricsLock`: Python's local_client_rssi/snr/q caches
+    // (LOCAL_CLIENT_CACHE_MAXSIZE = 512). Preprocessing runs concurrently across interfaces,
+    // so the hash is computed outside the lock. hashablePart-based hashing, not pack(): an
+    // inbound link packet may exceed the base MTU once a larger link MTU is negotiated.
     let pktHash = try? packet.truncatedPacketHash()
     metricsLock.lock()
-    if let n = rawByteCount { trafficRxBytes += n }
     if let pktHash {
       if let rssi = packet.rssi {
         packetRssiCache.append((hash: pktHash, rssi: rssi))
@@ -5437,7 +5584,9 @@ public final class Transport {
       return admitAnnounce(packet, from: interface, trafficClass: max(trafficClass, .announce))
     }
     if isPathRequest(packet) {
-      guard let admitted = admitPathRequest(packet, from: interface) else { return nil }
+      guard let admitted = admitPathRequest(packet, from: interface, batched: &batched) else {
+        return nil
+      }
       return max(trafficClass, admitted)
     }
     return trafficClass
@@ -5874,6 +6023,12 @@ public final class Transport {
       (initIface.map(isLocalClientInterface) ?? false)
       || (respIface.map(isLocalClientInterface) ?? false)
     guard transportEnabled || touchesLocalClient else { return }
+    let rawCount = (try? packet.packedBytes())?.count ?? 0
+    // `if not Transport.is_local_client_interface(packet.receiving_interface):
+    // Transport.link_rxb += len(packet.raw)` (`Transport.py:2509-2510`).
+    if packet.context != .lrproof, !isLocalClientInterface(sourceInterface) {
+      addLinkTraffic(rx: rawCount)
+    }
     // Steer to the side that didn't deliver the packet—compared by identity, not by
     // name. With names, a hairpin between two clients of one listening interface compares
     // two equal strings, matches the first branch, and sends the packet back out the
@@ -5915,6 +6070,11 @@ public final class Transport {
     forwarded.hops = relayHops(packet, from: sourceInterface, staysLocal: instanceLocalLink)
     try? transmit(forwarded, on: outbound)
     route.lastHeard = Date()
+    if linkTableTraffic {
+      // `Transport.py:2547-2548`.
+      if !isLocalClientInterface(outbound) { addLinkTraffic(tx: rawCount) }
+      route.traffic += rawCount
+    }
     lock.lock()
     linkRoutes[packet.destinationHash] = route
     paths[route.destinationHash]?.used = route.lastHeard  // `Transport.py:2437-2440`
@@ -6732,7 +6892,9 @@ public final class Transport {
   ///
   /// Returns `.ingressLimited` when the receiving interface's path-request limiter is
   /// active, `.pathRequest` otherwise, or `nil` when the request stops here.
-  private func admitPathRequest(_ packet: Packet, from interface: Interface) -> TrafficClass? {
+  private func admitPathRequest(
+    _ packet: Packet, from interface: Interface, batched: inout Bool
+  ) -> TrafficClass? {
     let length = packet.data.count
     // `if not len(packet.data) >= TRUNCATED_HASHLENGTH//8: return` (`Transport.py:2072`).
     // Too short to name a destination, so upstream returns before it looks for a tag and
@@ -6791,6 +6953,7 @@ public final class Transport {
       // each—enrolling them would turn the flood into an amplifier again, one announce
       // copy per duplicate, which is the shape the batching exists to prevent.
       if !ingressLimited { batchDiscoveryPathRequest(target, on: interface) }
+      batched = true
       return nil
     }
     return ingressLimited ? .ingressLimited : .pathRequest

@@ -41,6 +41,7 @@ final class TransportTrafficCounterTests: XCTestCase {
       var bitrate = 0
       var isOnline = true
       var inboundHandler: ((Packet, any Interface) -> Void)?
+      var rawInboundHandler: ((Data, any Interface) -> Void)?
       func start() throws {}
       func stop() {}
       func send(_ packet: Packet) throws {}
@@ -57,11 +58,13 @@ final class TransportTrafficCounterTests: XCTestCase {
     )
     let raw = try packet.pack()
 
+    // RNS 1.6.1 sums accepted bytes into `traffic_rxb` in the count loop
+    // (`Transport.py:799`), not on receipt.
+    t.sampleInterfaceSpeeds(now: 0)
     let before = t.trafficRxBytes
-    iface.inboundHandler?(try Packet.unpack(raw), iface)
-    XCTAssertGreaterThan(
-      t.trafficRxBytes, before,
-      "trafficRxBytes should increase after inbound packet delivery")
+    iface.rawInboundHandler?(raw, iface)
+    t.sampleInterfaceSpeeds(now: 1)
+    XCTAssertEqual(t.trafficRxBytes - before, raw.count)
   }
 
   // MARK: - InterfaceStats includes aggregate traffic

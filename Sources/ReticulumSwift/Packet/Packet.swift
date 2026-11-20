@@ -194,7 +194,7 @@ public struct Packet: Equatable {
       headerType == .type2
       ? 2 + Constants.truncatedHashLength * 2
       : 2 + Constants.truncatedHashLength
-    return headerSize + data.count
+    return headerSize + 1 + data.count  // + the context byte
   }
 
   // MARK: - Encode

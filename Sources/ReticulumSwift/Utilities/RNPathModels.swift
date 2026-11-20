@@ -58,6 +58,11 @@ public struct RNPathTableEntry: Equatable {
   public var used: TimeInterval?
   /// Python key `"lr_cost"`—the link-request cost the destination announced, if any.
   public var lrCost: Double?
+  /// Python keys `"interface_hash"` and `"state"` (RNS 1.6.1, `Reticulum.py:2050-2051`).
+  ///
+  /// Nil for a row from an older daemon.
+  public var interfaceHash: Data?
+  public var state: UInt8?
 
   /// Creates a path table entry.
   public init(
@@ -69,7 +74,9 @@ public struct RNPathTableEntry: Equatable {
     interfaceName: String,
     value: Double? = nil,
     used: TimeInterval? = nil,
-    lrCost: Double? = nil
+    lrCost: Double? = nil,
+    interfaceHash: Data? = nil,
+    state: UInt8? = nil
   ) {
     self.destinationHash = destinationHash
     self.timestamp = timestamp
@@ -80,6 +87,8 @@ public struct RNPathTableEntry: Equatable {
     self.value = value
     self.used = used
     self.lrCost = lrCost
+    self.interfaceHash = interfaceHash
+    self.state = state
   }
 
   /// Bridge from the library's own path table.
@@ -100,7 +109,9 @@ public struct RNPathTableEntry: Equatable {
       interfaceName: resolved ?? entry.interfaceName,
       value: entry.value,
       used: entry.used?.timeIntervalSince1970 ?? 0,
-      lrCost: entry.lrCost)
+      lrCost: entry.lrCost,
+      interfaceHash: entry.interfaceHash,
+      state: entry.state)
   }
 
   /// Python's `path["via"]`, which is never `None` (Transport.py:1796 stores the
@@ -125,6 +136,10 @@ public struct RNPathTableEntry: Equatable {
       ]
     }
     pairs.append((.string("interface"), .string(interfaceName)))
+    if let state {
+      pairs.append((.string("interface_hash"), interfaceHash.map { .bytes($0) } ?? .nil))
+      pairs.append((.string("state"), .uint(UInt64(state))))
+    }
     return .map(pairs)
   }
 
@@ -150,7 +165,9 @@ public struct RNPathTableEntry: Equatable {
       interfaceName: fields["interface"]?.asString ?? "",
       value: fields["value"]?.asDouble,
       used: fields["used"]?.asDouble,
-      lrCost: fields["lr_cost"]?.asDouble
+      lrCost: fields["lr_cost"]?.asDouble,
+      interfaceHash: fields["interface_hash"]?.asData,
+      state: fields["state"]?.asInt.map { UInt8(clamping: $0) }
     )
   }
 

@@ -1179,14 +1179,13 @@ final class NetworkProbeCryptoTests: XCTestCase {
       "Error: Probe packet size of 515 bytes exceed MTU of 500 bytes\n")
   }
 
-  func testRawByteCountIsOneShortOfPacked() throws {
-    // Documents the library bug the stub's MTU guard rested on: rawByteCount omits the
-    // one-byte context field. Enforce the MTU through pack(), never through this.
+  /// `rawByteCount` is `len(raw)`, the context byte included.
+  func testRawByteCountEqualsPacked() throws {
     let packet = Packet(
       destinationType: .single, packetType: .data,
       destinationHash: Data(repeating: 0x01, count: 16),
       data: Data(repeating: 0x02, count: 100))
-    XCTAssertEqual(packet.rawByteCount, try packet.pack().count - 1)
+    XCTAssertEqual(packet.rawByteCount, try packet.pack().count)
   }
 
   // MARK: single-shot send()

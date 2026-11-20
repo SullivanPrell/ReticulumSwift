@@ -159,8 +159,7 @@ public final class TransportProbeNetwork: ProbeNetwork {
 
   /// Python: `RNS.Packet(request_destination, payload)` → `pack()` → `send()`.
   ///
-  /// The MTU is enforced through `pack()` itself, not `Packet.rawByteCount`—the latter
-  /// omits the one-byte context field and is a byte short of the real packed length.
+  /// The MTU is enforced through `pack()` itself.
   /// Defaults match Python's: DATA / SINGLE / HEADER_1 / BROADCAST / context NONE / hops 0.
   public func transmit(ciphertext: Data, to destinationHash: Data) throws -> (any ProbeReceipt)? {
     let packet = Packet(

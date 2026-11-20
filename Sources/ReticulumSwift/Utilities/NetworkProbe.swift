@@ -909,8 +909,7 @@ public final class NetworkProbe {
       destinationHash: destination.hash,
       data: ciphertext
     )
-    // Enforce the MTU through pack() itself. `Packet.rawByteCount` omits the 1-byte
-    // context field and is one short of the real packed length.
+    // Enforce the MTU through pack() itself.
     guard (try? packet.pack()) != nil else { return nil }
     return try? transport.send(packet)
   }

@@ -921,7 +921,7 @@ public final class Link {
   /// `countPacket` bumps tx/txBytes; `isData` bumps lastData (keepalives skip it).
   ///
   /// Called AFTER `transport.send` returns, so the lock is never held across the send.
-  private func recordOutbound(bytes: Int, countPacket: Bool, isData: Bool) {
+  private func recordOutbound(bytes: Int, countPacket: Bool, isData: Bool, rawCount: Int = 0) {
     stateLock.lock()
     let ts = Date()
     lastOutbound = ts
@@ -929,17 +929,21 @@ public final class Link {
     stateLock.unlock()
     // Outside `stateLock`—the counters carry their own lock, and taking
     // them separately keeps the two locks from ever nesting.
-    if countPacket { counters.addTx(bytes: bytes) }
+    if countPacket {
+      counters.addTx(bytes: bytes)
+      transport?.addLinkTraffic(tx: rawCount)  // `Packet.py:312`
+    }
   }
 
   /// Record inbound lastInbound, lastData + rx/rxBytes under `stateLock` (Link.py:942-945).
-  private func recordInbound(bytes: Int, isData: Bool) {
+  private func recordInbound(bytes: Int, isData: Bool, rawCount: Int) {
     stateLock.lock()
     let ts = Date()
     lastInbound = ts
     if isData { lastData = ts }
     stateLock.unlock()
     counters.addRx(bytes: bytes)
+    transport?.addLinkTraffic(rx: rawCount)  // `Link.py:1034`
   }
 
   /// Send pre-encrypted resource segment data without applying link-level
@@ -1296,7 +1300,8 @@ public final class Link {
     )
     let hash = try? packet.packetHash()
     try? transport.send(packet, generateReceipt: false)
-    recordOutbound(bytes: ciphertext.count, countPacket: true, isData: true)
+    recordOutbound(
+      bytes: ciphertext.count, countPacket: true, isData: true, rawCount: packet.rawByteCount)
     return hash
   }
 
@@ -1927,7 +1932,9 @@ public final class Link {
       data: ciphertext
     )
     let receipt = try transport.send(packet)
-    recordOutbound(bytes: ciphertext.count, countPacket: true, isData: context != .keepalive)
+    recordOutbound(
+      bytes: ciphertext.count, countPacket: true, isData: context != .keepalive,
+      rawCount: packet.rawByteCount)
     return receipt
   }
 
@@ -1960,7 +1967,8 @@ public final class Link {
     guard let transport else { throw LinkError.invalidState }
     try transport.send(packet, generateReceipt: false)
     // only keepalive packets skip lastData; REQUEST isn't keepalive
-    recordOutbound(bytes: packet.data.count, countPacket: true, isData: true)
+    recordOutbound(
+      bytes: packet.data.count, countPacket: true, isData: true, rawCount: packet.rawByteCount)
   }
 
   /// Process an inbound packet.
@@ -2005,7 +2013,9 @@ public final class Link {
     }
 
     // Every other link packet counts before any decrypt (Link.py:942-946).
-    recordInbound(bytes: packet.data.count, isData: packet.context != .keepalive)
+    recordInbound(
+      bytes: packet.data.count, isData: packet.context != .keepalive,
+      rawCount: packet.rawByteCount)
 
     // RESOURCE data parts—pre-encrypted by the resource layer; pass raw.
     if packet.context == .resource {
@@ -2480,7 +2490,9 @@ public final class Link {
       data: ciphertext
     )
     try transport.send(packet, generateReceipt: false)
-    recordOutbound(bytes: ciphertext.count, countPacket: true, isData: context != .keepalive)
+    recordOutbound(
+      bytes: ciphertext.count, countPacket: true, isData: context != .keepalive,
+      rawCount: packet.rawByteCount)
   }
 
   // MARK: - Identify

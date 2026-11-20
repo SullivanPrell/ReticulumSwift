@@ -93,7 +93,10 @@ final class RNS160SurfaceTests: XCTestCase {
 
     XCTAssertEqual(
       pairs.compactMap { $0.0.asString },
-      ["hash", "timestamp", "via", "hops", "expires", "value", "used", "lr_cost", "interface"])
+      [
+        "hash", "timestamp", "via", "hops", "expires", "value", "used", "lr_cost", "interface",
+        "interface_hash", "state",
+      ])
     let row = Dictionary(
       uniqueKeysWithValues: pairs.compactMap { k, v in k.asString.map { ($0, v) } })
     XCTAssertEqual(row["hash"], .bytes(hash))
