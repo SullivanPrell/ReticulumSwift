@@ -1005,20 +1005,16 @@ public final class Reticulum {
         Self.log(
           "Could not load known destinations from shared instance database: \(error)",
           level: .debug)
-        do {
-          guard let authkey = rpcAuthenticationKey() else {
-            throw RPCClientError.authenticationFailed
-          }
-          let rows = try RPCClient(
-            port: config?.reticulum.instanceControlPort ?? RPCClient.defaultControlPort,
-            authkey: authkey
-          ).knownDestinations()
-          transport.restore(knownDestinations: rows)
-          Self.log("Loaded \(rows.count) known destinations from shared instance", level: .verbose)
-        } catch {
-          Self.log(
-            "Could not load known destinations from shared instance: \(error)", level: .error)
-        }
+        // `get_known_destinations()` logs a failed call and answers `{}` (`Reticulum.py:2077-2085`).
+        let rows =
+          rpcAuthenticationKey().flatMap { authkey in
+            try? RPCClient(
+              port: config?.reticulum.instanceControlPort ?? RPCClient.defaultControlPort,
+              authkey: authkey
+            ).knownDestinations()
+          } ?? [:]
+        transport.restore(knownDestinations: rows)
+        Self.log("Loaded \(rows.count) known destinations from shared instance", level: .verbose)
       }
       return
     }

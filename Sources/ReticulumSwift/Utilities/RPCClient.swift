@@ -156,9 +156,10 @@ public final class RPCClient {
     }
   }
 
-  /// The getters RNS 1.6.0 wraps, and what its log line says each was doing.
+  /// The getters RNS 1.6.0 and 1.6.1 wrap, and what its log line says each was doing.
   private static let guardedGetters = [
     "interface_stats": "getting interface stats",
+    "known_destinations": "getting known destinations",
     "path_table": "getting path table",
     "rate_table": "getting rate table",
     "link_distribution": "getting link distribution",
