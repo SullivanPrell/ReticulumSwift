@@ -91,10 +91,18 @@ public final class Transport {
   ///
   /// Python: `UNUSED_PATH_LINGER_LEAF`.
   public static let unusedPathLingerLeaf: TimeInterval = 60 * 12
-  /// Never-used paths above this many are culled.
+  /// The never-used pool target while used paths stay under ``pathPoolUsedTarget``.
   ///
-  /// Python: `PATH_POOL_UNUSED_TARGET`.
-  public static let pathPoolUnusedTarget = 2048
+  /// Python: `PATH_POOL_UNUSED_MAX`.
+  public static let pathPoolUnusedMax = 1536
+  /// The never-used pool target never drops below this.
+  ///
+  /// Python: `PATH_POOL_UNUSED_MIN`.
+  public static let pathPoolUnusedMin = 512
+  /// Each used path past this many lowers the never-used pool target by one.
+  ///
+  /// Python: `PATH_POOL_USED_TARGET`.
+  public static let pathPoolUsedTarget = 2048
   /// Below this bitrate an interface is slow.
   ///
   /// Python: `PATH_SLOW_BITRATE`.
@@ -501,6 +509,10 @@ public final class Transport {
   ///
   /// Matches Python `TUNNEL_TIMEOUT` (8 hours).
   public static let tunnelTimeout: TimeInterval = 60 * 60 * 8
+  /// How long a tunnel whose interface went away waits for it to reappear.
+  ///
+  /// Python: `TUNNEL_RECONNECT_WINDOW`.
+  public static let tunnelReconnectWindow: TimeInterval = 60 * 10
 
   /// Per-destination entry in the announce rate table.
   ///
@@ -930,6 +942,7 @@ public final class Transport {
     // `announces_to_internal` of the receiving interface, captured alongside
     // its mode so the retry pass filters identically to the first forward.
     var receivingInterfaceAnnouncesToInternal: Bool?
+    var dedupInterfaceNames: Set<String> = []  // IDX_AT_DEDUP_IFS—delivered it again, skipped
   }
   /// Pending announce retransmissions keyed by destination hash.
   ///
@@ -1007,8 +1020,8 @@ public final class Transport {
   public static let readyWait: TimeInterval = 60
   /// Reverse path table entry lifetime (seconds).
   ///
-  /// Python: `Transport.REVERSE_TIMEOUT = 8*60`.
-  public static let reverseTimeout: TimeInterval = 8 * 60
+  /// Python: `Transport.REVERSE_TIMEOUT = 3*60`.
+  public static let reverseTimeout: TimeInterval = 3 * 60
   /// Timeout for tunnel-sourced path entries.
   ///
   /// Python: `Transport.TUNNEL_PATH_TIMEOUT = 60*60*8`.
@@ -1119,6 +1132,9 @@ public final class Transport {
   public private(set) var announceRxCount: Int = 0
   /// Announces sent (`Transport.py:1827`).
   public private(set) var announceTxCount: Int = 0
+  /// Announces filtered on any interface: Python's `filtered_arxc` (RNS 1.6.1,
+  /// `Transport.py:387`).
+  public private(set) var filteredAnnounceRxCount: Int = 0
   /// Path requests received (`Transport.py:2132`).
   public private(set) var prRxCount: Int = 0
   /// Path requests sent (`Transport.py:1828`).
@@ -2327,19 +2343,29 @@ public final class Transport {
     // propagation distance—replaying them later would push them past the
     // hop limit, so they'd drop anyway. Python (RNS 1.3.8):
     //   if announce_packet.hops >= RNS.Transport.PATHFINDER_M-1: return
-    guard Int(packet.hops) < Transport.pathfinderM - 1 else { return }
+    // Every outcome but a new entry counts as filtered (`Interface.py:297-306`).
+    guard Int(packet.hops) < Transport.pathfinderM - 1 else {
+      notifyFilteredAnnounce(on: interface)
+      return
+    }
     let key = ObjectIdentifier(interface)
     ingressLock.lock()
-    defer { ingressLock.unlock() }
-    guard var state = ingressStates[key] else { return }
+    guard var state = ingressStates[key] else {
+      ingressLock.unlock()
+      return
+    }
+    var held = false
     if let index = state.heldAnnounces.firstIndex(where: { $0.destinationHash == destinationHash })
     {
       // The most recent copy replaces the held one and keeps its place.
       state.heldAnnounces[index].packet = packet
     } else if state.heldAnnounces.count < interface.interfaceState.icMaxHeldAnnounces {
       state.heldAnnounces.append((destinationHash, packet))
+      held = true
     }
     ingressStates[key] = state
+    ingressLock.unlock()
+    if !held { notifyFilteredAnnounce(on: interface) }
   }
 
   /// Release the lowest-hop held announce on `interface` if the release timer has elapsed
@@ -2354,6 +2380,20 @@ public final class Transport {
     now: TimeInterval = Date().timeIntervalSince1970
   ) -> Packet? {
     let key = ObjectIdentifier(interface)
+    // A held announce that can no longer update its path is culled (`Interface.py:316-336`).
+    // The prefilter reads the path table, so the candidates are found outside ingressLock.
+    ingressLock.lock()
+    let heldSnapshot = ingressStates[key]?.heldAnnounces ?? []
+    ingressLock.unlock()
+    var cull: [Data] = []
+    for held in heldSnapshot {
+      lock.lock()
+      let pathEntry = paths[held.destinationHash]
+      lock.unlock()
+      if let pathEntry, !announcePrefilter(held.packet, on: interface, pathEntry: pathEntry) {
+        cull.append(held.destinationHash)
+      }
+    }
     // Do the whole select-and-remove under ingressLock, then RELEASE it before
     // re-injecting: inbound re-enters the transport (and takes `lock` /
     // ingressLock again), so holding ingressLock across it would deadlock.
@@ -2370,7 +2410,9 @@ public final class Transport {
         : interface.interfaceState.icBurstFreq
       let freq = tracker(for: interface)?.incomingAnnounceFrequency(now: now) ?? 0
       if freq < threshold {
-        // The first held of the fewest-hop announces (`Interface.py:283-288`).
+        state.heldAnnounces.removeAll { cull.contains($0.destinationHash) }
+        ingressStates[key] = state
+        // The first held of the fewest-hop announces (`Interface.py:331-333`).
         var selected: Int? = nil
         var minHops = Transport.pathfinderM
         for (index, held) in state.heldAnnounces.enumerated()
@@ -2641,6 +2683,15 @@ public final class Transport {
     metricsLock.unlock()
   }
 
+  /// Notify that `interface` filtered an announce, Python's `Interface.filtered_announce`
+  /// (`Interface.py:359-363`).
+  public func notifyFilteredAnnounce(on interface: any Interface) {
+    tracker(for: interface)?.recordFilteredAnnounce()
+    metricsLock.lock()
+    filteredAnnounceRxCount += 1
+    metricsLock.unlock()
+  }
+
   /// Overload accepting an explicit timestamp—used by tests and internally.
   public func notifyIncomingAnnounce(
     on interface: any Interface, at t: TimeInterval,
@@ -2735,7 +2786,7 @@ public final class Transport {
         pathRequestRxBytes: 0, pathRequestTxBytes: 0,
         pathRequestRxCount: 0, pathRequestTxCount: 0,
         protocolViolations: 0, ifacViolations: 0,
-        packetFilterHits: 0)
+        packetFilterHits: 0, filteredAnnounceRxCount: 0)
   }
 
   /// Incoming announce frequency (Hz) for the given interface.
@@ -4348,6 +4399,7 @@ public final class Transport {
     for iface in snapshot
     where iface.isOnline && iface.isRoutingEndpoint
       && iface.name != entry.receivingInterfaceName
+      && !entry.dedupInterfaceNames.contains(iface.name)
     {
       if let restrict = entry.attachedInterfaceName, iface.name != restrict { continue }
       emitRelayedAnnounce(
@@ -4355,6 +4407,18 @@ public final class Transport {
         nextHopAnnouncesToInternal: entry.receivingInterfaceAnnouncesToInternal,
         emitted: emitted, now: now)
     }
+  }
+
+  /// Marks an interface that delivered the announce waiting for rebroadcast.
+  ///
+  /// The rebroadcast then skips it, unless it's a shared medium (`Transport.py:2692-2696`).
+  /// Called with `lock` held.
+  private func noteRedeliveredAnnounceLocked(_ packet: Packet, on interface: any Interface) {
+    guard !interface.sharedMedium, var entry = announceTable[packet.destinationHash],
+      let waiting = try? entry.packet.packetHash(), waiting == (try? packet.packetHash())
+    else { return }
+    entry.dedupInterfaceNames.insert(interface.name)
+    announceTable[packet.destinationHash] = entry
   }
 
   /// Receive-side cancel for a pending announce retransmission.
@@ -4696,10 +4760,12 @@ public final class Transport {
   /// Remove paths that have expired, whose interface is no longer attached, or that were
   /// never used.
   ///
-  /// The path table cull in Python's `Transport.jobs()` (`Transport.py:1118-1159`). A path
+  /// The path table cull in Python's `Transport.jobs()` (`Transport.py:1181-1229`). A path
   /// through an interface that was deregistered, or that no longer exists, goes on the next
-  /// pass. A never-used path goes after ``unusedPathLinger`` (×10 on a slow interface), and
-  /// every ``poolSizeCheckInterval`` the never-used pool is cut to ``pathPoolUnusedTarget``.
+  /// pass. A path with 0 hops neither expires nor lingers out. A never-used path goes after
+  /// ``unusedPathLinger`` (×10 on a slow interface), a path over ``hopLimiter`` goes, and every
+  /// ``poolSizeCheckInterval`` the never-used pool is cut to ``pathPoolUnusedMax``, less each
+  /// used path past ``pathPoolUsedTarget`` and no lower than ``pathPoolUnusedMin``.
   /// Entries parked for a deferred restore and the tunnel table's paths are held
   /// elsewhere, and this leaves them alone, as Python does (`:1015-1060`).
   public func sweepExpiredPaths(now: Date = Date()) {
@@ -4713,20 +4779,23 @@ public final class Transport {
     let checkUnused = now > poolSizeLastChecked.addingTimeInterval(Transport.poolSizeCheckInterval)
     var unused: [(slow: Int, expires: Date, destinationHash: Data)] = []
     var expired: [Data] = []
+    var usedCount = 0
     for (destinationHash, path) in paths {
       let bitrate = path.nextHopInterface?.bitrate ?? 0
       let slow = 0 < bitrate && bitrate < Transport.pathSlowBitrate
+      if path.used != nil { usedCount += 1 }
       if checkUnused && path.used == nil {
         unused.append((slow ? 1 : 0, path.expires, destinationHash))
       }
-      if now > path.expires {
+      let pathHops = pythonHops(of: path)
+      if now > path.expires && pathHops != 0 {
         expired.append(destinationHash)
       } else if path.nextHopInterface.map({ !attached.contains(ObjectIdentifier($0)) }) ?? true {
         expired.append(destinationHash)
         Reticulum.log(
           "Path to \(RNSUtilities.prettyhexrep(destinationHash)) was removed since the "
             + "attached interface no longer exists", level: .pathing)
-      } else if path.used == nil,
+      } else if pathHops != 0, path.used == nil,
         now
           > path.lastHeard.addingTimeInterval(linger * (slow ? Transport.pathSlowLingerFactor : 1))
       {
@@ -4734,16 +4803,24 @@ public final class Transport {
         Reticulum.log(
           "Removing never used path to \(RNSUtilities.prettyhexrep(destinationHash))",
           level: .pathing)
+      } else if pathHops > hopLimiter {
+        expired.append(destinationHash)
+        Reticulum.log(
+          "Removing excessive hops path to \(RNSUtilities.prettyhexrep(destinationHash))",
+          level: .pathing)
       }
     }
-    if unused.count > Transport.pathPoolUnusedTarget {
+    // `Transport.py:1221-1222`.
+    let unusedTrim = max(0, usedCount - Transport.pathPoolUsedTarget)
+    let unusedTarget = max(Transport.pathPoolUnusedMin, Transport.pathPoolUnusedMax - unusedTrim)
+    if unused.count > unusedTarget {
       // Python sorts `(slow, expiry, destination_hash)` tuples.
       unused.sort { a, b in
         if a.slow != b.slow { return a.slow < b.slow }
         if a.expires != b.expires { return a.expires < b.expires }
         return a.destinationHash.lexicographicallyPrecedes(b.destinationHash)
       }
-      expired += unused.prefix(unused.count - Transport.pathPoolUnusedTarget).map(\.destinationHash)
+      expired += unused.prefix(unused.count - unusedTarget).map(\.destinationHash)
     }
     if checkUnused { poolSizeLastChecked = now }
     for dh in expired {
@@ -5304,7 +5381,11 @@ public final class Transport {
     }
     metricsLock.unlock()
 
-    // `if not packet.hops < Transport.HOP_LIMITER: return` (`Transport.py:2022`).
+    // `if interface.hop_limiter and not packet.hops < interface.hop_limiter` and
+    // `if not packet.hops < Transport.HOP_LIMITER` (`Transport.py:2108-2109`).
+    if let limit = interface.interfaceState.hopLimiter, limit != 0, Int(packet.hops) >= limit {
+      return nil
+    }
     guard Int(packet.hops) < hopLimiter else { return nil }
 
     // `if not Transport.packet_filter(packet): return interface.packet_filter_hit()`
@@ -5908,31 +5989,51 @@ public final class Transport {
   private func admitAnnounce(
     _ packet: Packet, from interface: Interface, trafficClass: TrafficClass
   ) -> TrafficClass? {
+    // Frame and payload sizes (`Transport.py:2116-2118`).
+    let rawCount = packet.rawByteCount
+    let minimumPayload = Constants.keySize + Constants.nameHashLength + 10
+    if rawCount > Constants.mtu
+      || (packet.headerType == .type1
+        && Constants.mtu - rawCount < Constants.truncatedHashLength)
+      || packet.data.count < minimumPayload
+    {
+      notifyProtocolViolation(on: interface)
+      return nil
+    }
+
     guard admitsDestinationType(of: packet, from: interface) else { return nil }
 
-    // Python's announce admission gate (`Transport.py:1806-1811`). Three
-    // decisions, in this order, before anything else looks at the announce:
-    //
-    //  1. A blackholed announcer drops without a sound. The blackhole test
-    //     sits inside `validate_announce`, after the public key loads and
-    //     before it verifies the signature (`Identity.py:551-556`), so a
-    //     blackholed peer never costs a verification.
-    //  2. An announce whose signature doesn't verify is a protocol
-    //     violation, not a silent drop. Without this the operator has no
-    //     signal that a peer is putting forgeries on the wire.
-    //  3. Only an announce that survives both reaches `received_announce`,
-    //     so the interface's announce counter describes announces this node
-    //     accepted rather than every announce-shaped frame that arrived.
-    //
-    // Order 1-before-2 is observable: it decides whether a blackholed peer
-    // sending a bad signature shows up in the protocol-violation counter.
+    // The prefilter drops an announce that can't update a known path (`Transport.py:2131-2143`).
+    lock.lock()
+    let pathEntry = paths[packet.destinationHash]
+    let awaited =
+      pathRequests[packet.destinationHash] != nil
+      || discoveryPathRequests[packet.destinationHash] != nil
+    let inAnnounceTable = announceTable[packet.destinationHash] != nil
+    // A deliberate difference: this node's own destinations count as known for the hold
+    // below. `_inbound` ignores an announce for one, so holding it only spends a release
+    // interval, and a transport node's echo of a node's own announce can otherwise start a
+    // burst in its first seconds.
+    let isKnownDestination =
+      pathEntry != nil || registeredDestinations[packet.destinationHash] != nil
+    lock.unlock()
+    if let pathEntry, packet.context != .pathResponse, !awaited, !inAnnounceTable,
+      !announcePrefilter(packet, on: interface, pathEntry: pathEntry)
+    {
+      notifyIncomingAnnounce(on: interface, size: 0)
+      notifyFilteredAnnounce(on: interface)
+      return nil
+    }
+
+    // A blackholed announcer is checked before the signature (`Identity.py:551-556`), so it
+    // never costs a verification. An enforced stamp shortfall is filtered like it
+    // (`Transport.py:2147-2149`); a bad signature is a protocol violation.
     switch Identity.validateAnnounce(
       packet, onlyValidateSignature: true, stamps: stamps,
       requiredValue: destinationCost(for: interface), isBlackholed: { self.isBlackholed($0) }
     ) {
-    // An enforced stamp shortfall drops silently, like a blackholed announcer
-    // (`Transport.py:2047-2049`).
     case .blackholed, .noStamp, .invalidStamp:
+      notifyFilteredAnnounce(on: interface)
       return nil
     case .invalid:
       notifyProtocolViolation(on: interface)
@@ -5941,36 +6042,33 @@ public final class Transport {
       break
     }
 
-    notifyIncomingAnnounce(on: interface, size: packet.rawByteCount)
-
-    // `announced_destination_known = packet.destination_hash in Transport.path_table`
-    // (`Transport.py:1812`). Announce rate limiting handles re-announces of a known
-    // destination.
-    //
-    // A deliberate difference: this node's own destinations count as known too. `_inbound`
-    // ignores an announce for one (`Transport.py:2175-2176`), so holding it only spends a
-    // release interval. In a node's first seconds, a transport node's echo of its own
-    // announce can be the announce that starts a burst, and the release then serves the
-    // echo before any announce held behind it.
-    lock.lock()
-    let isKnownDestination =
-      paths[packet.destinationHash] != nil
-      || registeredDestinations[packet.destinationHash] != nil
-    // `if packet.destination_hash in Transport.path_requests or … in
-    // Transport.discovery_path_requests: pass` (`Transport.py:1819-1821`). This node asked
-    // the network for exactly this destination, for itself or on a peer's behalf, so the
-    // burst limiter doesn't hold the answer.
-    let awaited =
-      pathRequests[packet.destinationHash] != nil
-      || discoveryPathRequests[packet.destinationHash] != nil
-    lock.unlock()
-    // `elif packet.receiving_interface.should_ingress_limit(): hold_announce(packet); return`
-    // (`Transport.py:1823-1825`).
+    // An unknown destination's announce is held while the interface is in a burst, unless
+    // this node asked for that destination (`Transport.py:2154-2163`).
     if !isKnownDestination && !awaited && shouldIngressLimit(on: interface) {
       holdAnnounce(packet, destinationHash: packet.destinationHash, on: interface)
+      notifyIncomingAnnounce(on: interface, size: 0)
       return nil
     }
+
+    notifyIncomingAnnounce(on: interface, size: rawCount)
     return trafficClass
+  }
+
+  /// Whether an announce for a known destination could still update its path:
+  /// `Transport.announce_prefilter` (`Transport.py:4462-4480`).
+  ///
+  /// It can when it was emitted after the path's newest random blob, or at the same time on an
+  /// interface with more gravity, or while the path is unresponsive.
+  func announcePrefilter(
+    _ packet: Packet, on interface: any Interface, pathEntry: PathEntry
+  ) -> Bool {
+    guard let pathInterface = pathEntry.nextHopInterface else { return true }
+    let announceEmitted = announceEmitted(packet)
+    let pathTimebase = Transport.timebaseFromRandomBlobs(pathEntry.randomBlobs)
+    if announceEmitted > pathTimebase { return true }
+    if announceEmitted < pathTimebase { return false }
+    if interface.gravity > pathInterface.gravity { return true }
+    return pathIsUnresponsive(to: packet.destinationHash)
   }
 
   private func handleAnnounce(_ packet: Packet, from interface: Interface) {
@@ -6078,6 +6176,7 @@ public final class Transport {
           currentPathGravityLocked(decoded.destinationHash)
           .map { interface.gravity > $0 } ?? false
         if Int(announceHops) >= existingHops, !unresponsive, !higherGravity {
+          noteRedeliveredAnnounceLocked(packet, on: interface)
           lock.unlock()
           return  // Already seen, not a better path, and path is responsive
         }
@@ -6281,6 +6380,8 @@ public final class Transport {
           tunnels[tunnelID]?.paths[decoded.destinationHash] = updatedEntry
           tunnels[tunnelID]?.expires = Date().addingTimeInterval(Transport.tunnelTimeout)
         }
+      } else {
+        noteRedeliveredAnnounceLocked(packet, on: interface)
       }
       lock.unlock()
 

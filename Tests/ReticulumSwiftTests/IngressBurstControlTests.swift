@@ -26,7 +26,7 @@ import XCTest
 ///   IC_BURST_HOLD            = 15       s—hold duration before deactivating burst
 ///   IC_BURST_PENALTY         = 15       s—penalty delay before releasing held announces
 ///   IC_HELD_RELEASE_INTERVAL = 5        s—interval between individual held releases
-///   MAX_HELD_ANNOUNCES       = 256
+///   MAX_HELD_ANNOUNCES       = 64
 final class IngressBurstControlTests: XCTestCase {
 
   // MARK: - Constants
@@ -50,13 +50,13 @@ final class IngressBurstControlTests: XCTestCase {
     XCTAssertEqual(IngressControlState.icHeldReleaseInterval, 5.0, accuracy: 0.001)
   }
   func testMaxHeldAnnouncesConstant() {
-    XCTAssertEqual(IngressControlState.maxHeldAnnounces, 256)
+    XCTAssertEqual(IngressControlState.maxHeldAnnounces, 64)
   }
 
   // MARK: - shouldIngressLimit: no burst below threshold
 
   func testShouldIngressLimitFalseWhenQuiet() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "quiet", createdAt: Date())
     t.register(interface: iface)
 
@@ -68,7 +68,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - shouldIngressLimit: activates when frequency exceeds threshold
 
   func testShouldIngressLimitActivatesOnHighFrequency() {
-    let t = Transport()
+    let t = Transport.unstamped()
     // Use a "mature" interface (age > IC_NEW_TIME) so threshold is IC_BURST_FREQ (10 Hz).
     let createdAt = Date(timeIntervalSinceNow: -(IngressControlState.icNewTime + 1))
     let iface = makeInterface(name: "busy", createdAt: createdAt)
@@ -86,7 +86,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - shouldIngressLimit: new interface uses lower threshold
 
   func testNewInterfaceUsesLowerBurstFreqNew() {
-    let t = Transport()
+    let t = Transport.unstamped()
     // New interface (age < IC_NEW_TIME): threshold = IC_BURST_FREQ_NEW = 3 Hz.
     let iface = makeInterface(name: "new-iface", createdAt: Date())
     t.register(interface: iface)
@@ -102,7 +102,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - shouldIngressLimit: burst stays active until hold elapses
 
   func testBurstStaysActiveDuringHoldPeriod() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let createdAt = Date(timeIntervalSinceNow: -(IngressControlState.icNewTime + 1))
     let iface = makeInterface(name: "hold", createdAt: createdAt)
     t.register(interface: iface)
@@ -120,7 +120,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - shouldIngressLimit: deactivates after hold period
 
   func testBurstDeactivatesAfterHoldPeriod() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let createdAt = Date(timeIntervalSinceNow: -(IngressControlState.icNewTime + 1))
     let iface = makeInterface(name: "deactivate", createdAt: createdAt)
     t.register(interface: iface)
@@ -160,7 +160,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - shouldIngressLimitPR: deactivating call still returns true
 
   func testPathRequestBurstDeactivationStillLimitsOnClearingCall() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let createdAt = Date(timeIntervalSinceNow: -(IngressControlState.icNewTime + 1))
     let iface = makeInterface(name: "pr-deactivate", createdAt: createdAt)
     t.register(interface: iface)
@@ -204,7 +204,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - holdAnnounce stores packet
 
   func testHoldAnnounceStoresPacket() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "holder", createdAt: Date())
     t.register(interface: iface)
 
@@ -224,7 +224,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - holdAnnounce caps at maxHeldAnnounces
 
   func testHoldAnnounceCapsAtMax() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "cap-test", createdAt: Date())
     t.register(interface: iface)
 
@@ -248,7 +248,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - processHeldAnnounces releases lowest-hop announce
 
   func testProcessHeldAnnouncesReleasesLowestHop() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let identity = Identity()
     let dest1 = try Destination(
       identity: identity, direction: .in, kind: .single,
@@ -289,7 +289,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - processHeldAnnounces respects heldRelease timer
 
   func testProcessHeldAnnouncesRespectsTimer() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "timer", createdAt: Date())
     t.register(interface: iface)
 
@@ -315,7 +315,7 @@ final class IngressBurstControlTests: XCTestCase {
   /// order and keeps a key's place when a new value replaces the old. The release takes the
   /// first entry with the fewest hops (`Interface.py:283-288`).
   func testHeldAnnouncesReleaseInTheOrderTheyWereFirstHeld() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "order", createdAt: Date())
     t.register(interface: iface)
     let hashes = (0..<16).map { Hashes.truncatedHash(Data("order\($0)".utf8)) }
@@ -343,7 +343,7 @@ final class IngressBurstControlTests: XCTestCase {
   /// Without it, the released announce makes the clearing call itself, which still limits, so
   /// the limiter holds it again.
   func testTheInterfaceJobsPassClearsASubsidedBurstBeforeReleasing() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "jobs", createdAt: Date(timeIntervalSinceNow: -60))
     t.register(interface: iface)
     let base = Date().timeIntervalSince1970 - 30
@@ -364,7 +364,7 @@ final class IngressBurstControlTests: XCTestCase {
   /// The interface-jobs pass looks at the path-request burst on every pass, so its cooldown
   /// runs out without new path requests (`Transport.py:1154`, `Interface.py:216-224`).
   func testTheInterfaceJobsPassCoolsAPathRequestBurstDown() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "pr-jobs", createdAt: Date(timeIntervalSinceNow: -60))
     t.register(interface: iface)
     let base: TimeInterval = 1000
@@ -381,7 +381,7 @@ final class IngressBurstControlTests: XCTestCase {
   // MARK: - ingressControl = false bypasses all limiting
 
   func testIngressControlFalseBypassesLimiting() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = makeInterface(name: "no-ic", createdAt: Date(), ingressControl: false)
     t.register(interface: iface)
 

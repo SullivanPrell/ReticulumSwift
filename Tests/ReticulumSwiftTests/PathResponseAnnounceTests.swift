@@ -51,7 +51,7 @@ final class PathResponseAnnounceTests: XCTestCase {
   }
 
   func testTransportAnnounceWithPathResponseFlag() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let id = Identity()
     let dest = try Destination(
       identity: id, direction: .in, kind: .single,

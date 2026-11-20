@@ -30,7 +30,7 @@ final class AnnounceInterfaceTests: XCTestCase {
   // MARK: - announce on all interfaces (default)
 
   func testAnnounceGoesToAllInterfaces() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let id = Identity()
     let dest = try Destination(
       identity: id, direction: .in, kind: .single,
@@ -53,7 +53,7 @@ final class AnnounceInterfaceTests: XCTestCase {
   // MARK: - announce on specific interface
 
   func testAnnounceOnSpecificInterface() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let id = Identity()
     let dest = try Destination(
       identity: id, direction: .in, kind: .single,
@@ -76,7 +76,7 @@ final class AnnounceInterfaceTests: XCTestCase {
   // MARK: - announce has correct content
 
   func testAnnounceContainsValidSignature() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let id = Identity()
     let dest = try Destination(
       identity: id, direction: .in, kind: .single,

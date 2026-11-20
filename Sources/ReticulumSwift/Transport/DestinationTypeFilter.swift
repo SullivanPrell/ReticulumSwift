@@ -101,9 +101,12 @@ extension Transport {
     if allowedDestinationTypes.contains(nameHash) || clientDestinationTypes[nameHash] != nil {
       return true
     }
-    if isLocalClientInterface(interface) || interfaceToSharedInstance(interface) {
-      return packet.hops == 0
-    }
-    return false
+    let allowed =
+      (isLocalClientInterface(interface) || interfaceToSharedInstance(interface))
+      && packet.hops == 0
+    // `if not allowed: return packet.receiving_interface.filtered_announce()`
+    // (`Transport.py:2130`). A blocked type returns before it, uncounted.
+    if !allowed { notifyFilteredAnnounce(on: interface) }
+    return allowed
   }
 }

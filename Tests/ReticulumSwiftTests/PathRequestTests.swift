@@ -51,7 +51,7 @@ final class PathRequestTests: XCTestCase {
     // Topology:
     //   requester  <-> relay  (relay has the cached announce)
     //   relay      <-> dest   (announce originates here)
-    let relay = Transport()
+    let relay = Transport.unstamped()
 
     let requesterIface = RecordingInterface(name: "requester")
     let relayFromRequester = RecordingInterface(name: "fromRequester")
@@ -106,7 +106,7 @@ final class PathRequestTests: XCTestCase {
   }
 
   func testDuplicatePathRequestIsIgnored() throws {
-    let relay = Transport()
+    let relay = Transport.unstamped()
     let inIface = RecordingInterface(name: "in")
     let outIface = RecordingInterface(name: "out")
     let inPair = RecordingInterface(name: "inPair")
@@ -144,7 +144,7 @@ final class PathRequestTests: XCTestCase {
   func testUnknownDestinationNotForwardedOnFullModeInterface() throws {
     // Python parity: full-mode interfaces aren't in DISCOVER_PATHS_FOR.
     // Unknown path requests received on a full-mode interface are silently ignored.
-    let relay = Transport()
+    let relay = Transport.unstamped()
     let inIface = RecordingInterface(name: "in")
     let outIface = RecordingInterface(name: "out")
     let inPair = RecordingInterface(name: "inPair")
@@ -175,7 +175,7 @@ final class PathRequestTests: XCTestCase {
   }
 
   func testRequestPathHelperEmitsRequestPacket() throws {
-    let transport = Transport()
+    let transport = Transport.unstamped()
     let iface = RecordingInterface(name: "x")
     transport.register(interface: iface)
 

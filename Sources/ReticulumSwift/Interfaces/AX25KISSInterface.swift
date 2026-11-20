@@ -476,3 +476,8 @@ public final class AX25KISSInterface: Interface {
     return packetQueue.count
   }
 }
+
+extension AX25KISSInterface {
+  /// `AX25KISSInterface.py:131`.
+  public var sharedMedium: Bool { true }
+}

@@ -85,7 +85,7 @@ final class DiscoveryPathRequestTests: XCTestCase {
   }
 
   private func makeNode(bitrate: Int = 1_000_000) -> (Transport, PRInterface, PRInterface) {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = true
     let ingress = PRInterface(name: "ingress", bitrate: bitrate)
     ingress.recursivePrs = true
@@ -346,7 +346,7 @@ final class DiscoveryPathRequestTests: XCTestCase {
   // MARK: - Expiry
 
   func testTheInFlightMarkerExpiresAtTheGateTimeout() {
-    let t = Transport()
+    let t = Transport.unstamped()
     let target = Data(repeating: 0x77, count: 16)
     let now: TimeInterval = 1000
     t.registerInflightPathRequest(target, at: now)

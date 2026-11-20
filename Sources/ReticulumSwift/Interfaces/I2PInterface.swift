@@ -212,6 +212,8 @@ public final class I2PInterface: Interface {
       // routing preference has to reach them. Mirrors Python's
       // `spawned_interface.gravity = self.gravity` (RNS 1.4.1, 3ca71527).
       peer.gravity = gravity
+      // `spawned_interface.hop_limiter = self.hop_limiter` (`I2PInterface.py:930`).
+      peer.interfaceState.hopLimiter = interfaceState.hopLimiter
       peer.onConnected = { [weak self] p in self?.onPeerConnected?(p) }
       peer.onDisconnected = { [weak self] p in self?.onPeerDisconnected?(p) }
       spawnedPeers.append(peer)
@@ -263,6 +265,7 @@ public final class I2PInterface: Interface {
     // the parent that knows its own gravity, and an inbound peer that routes
     // without it would quietly ignore the operator's path preference.
     peer.gravity = gravity
+    peer.interfaceState.hopLimiter = interfaceState.hopLimiter
     lock.lock()
     spawned.append(peer)
     lock.unlock()

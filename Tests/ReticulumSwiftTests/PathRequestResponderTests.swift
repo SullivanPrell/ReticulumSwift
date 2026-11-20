@@ -30,7 +30,7 @@ final class PathRequestResponderTests: XCTestCase {
   }
 
   func testPathRequestForLocalDestinationAutoResponds() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let id = Identity()
     let dest = try Destination(
       identity: id, direction: .in, kind: .single,
@@ -64,7 +64,7 @@ final class PathRequestResponderTests: XCTestCase {
   }
 
   func testPathRequestForCachedDestinationRepliesWithCachedAnnounce() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = true
     let id = Identity()
     let dest = try Destination(
@@ -98,7 +98,7 @@ final class PathRequestResponderTests: XCTestCase {
   }
 
   func testPathRequestForUnknownDestinationPropagated() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = true
 
     let iface1 = CapturingInterface(name: "in")
@@ -125,7 +125,7 @@ final class PathRequestResponderTests: XCTestCase {
   }
 
   func testPathRequestOnlyAnsweredOncePerTag() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let id = Identity()
     let dest = try Destination(
       identity: id, direction: .in, kind: .single,

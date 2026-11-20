@@ -33,7 +33,7 @@ final class DestinationTypeFilterTests: XCTestCase {
 
   /// An announce for `app.aspect`, as another node puts it on the wire, with `hops` set.
   private func announce(_ app: String, _ aspect: String, hops: UInt8 = 0) throws -> (Packet, Data) {
-    let b = Transport()
+    let b = Transport.unstamped()
     let tap = Tap(name: "tap")
     b.register(interface: tap)
     let destination = try Destination(
@@ -47,7 +47,7 @@ final class DestinationTypeFilterTests: XCTestCase {
   }
 
   private func receiver() -> (Transport, Tap) {
-    let a = Transport()
+    let a = Transport.unstamped()
     let inbound = Tap(name: "in")
     a.register(interface: inbound)
     retained += [a, inbound]
@@ -180,7 +180,7 @@ final class DestinationTypeFilterTests: XCTestCase {
   /// A 1.6.0 client registers its types with the shared instance over RPC
   /// (`Reticulum.py:1514-1529`).
   func testTheSharedInstanceAnswersTypeRegistrationCalls() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let server = RPCServer(port: 37429, authkey: Data(repeating: 0, count: 32))
     server.transport = t
     t.requiredDestinationsOnly = true

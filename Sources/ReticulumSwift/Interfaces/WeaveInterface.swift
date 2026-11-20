@@ -818,6 +818,8 @@ public final class WeaveInterface: Interface {
     // (RNS 1.4.1, commit 3ca71527)—the peer, not the parent, is what
     // Transport records as a path's receiving interface.
     peer.gravity = gravity
+    // `spawned_interface.hop_limiter = self.hop_limiter` (`WeaveInterface.py:978`).
+    peer.interfaceState.hopLimiter = interfaceState.hopLimiter
     spawnedInterfaces[endpointAddr] = peer
     peers[endpointAddr] = WeaveEndpoint(endpointAddr: endpointAddr)
     onPeerAdded?(peer)

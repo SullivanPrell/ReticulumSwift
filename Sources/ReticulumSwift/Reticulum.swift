@@ -1580,6 +1580,11 @@ public final class Reticulum {
     // An explicit `gravity` wins, else `default_gravity`, else 0 (`Reticulum.py:771-772`).
     interface.gravity = block.int("gravity") ?? Reticulum.defaultGravity()
 
+    // Clamped to `0...PATHFINDER_M`; absent leaves none (`Reticulum.py:1074-1077`).
+    interface.interfaceState.hopLimiter = block.int("hop_limiter").map {
+      max(0, min($0, Transport.pathfinderM))
+    }
+
     // A percentage in `(0, 100]`, divided by 100 (`Reticulum.py:834-837`). Out of range leaves
     // the class default.
     if let cap = block.double("announce_cap"), cap > 0, cap <= 100 {

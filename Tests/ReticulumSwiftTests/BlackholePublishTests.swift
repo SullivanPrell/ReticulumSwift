@@ -19,7 +19,7 @@ final class BlackholePublishTests: XCTestCase {
 
   private var savedPublish = false
   private let sink = PathRequestResponderTests.CapturingInterface(name: "eth0")
-  private let transport = Transport()
+  private let transport = Transport.unstamped()
 
   override func setUp() {
     super.setUp()
@@ -114,7 +114,7 @@ final class BlackholePublishTests: XCTestCase {
     transport.stop()
 
     Reticulum.storedPublishBlackholeEnabled = true
-    let client = Transport()
+    let client = Transport.unstamped()
     client.transportIdentity = Identity()
     client.isConnectedToSharedInstance = true
     try client.start()

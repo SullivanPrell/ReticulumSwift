@@ -30,7 +30,7 @@ final class PathRequestFormatTests: XCTestCase {
   }
 
   func testPathRequestIncludesTransportIDWhenEnabled() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = true
     let iface = CapturingInterface()
     t.register(interface: iface)
@@ -49,7 +49,7 @@ final class PathRequestFormatTests: XCTestCase {
   }
 
   func testPathRequestIncludesTransportIDWhenDisabled() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = false
     let iface = CapturingInterface()
     t.register(interface: iface)
@@ -66,7 +66,7 @@ final class PathRequestFormatTests: XCTestCase {
   }
 
   func testPathRequestSentAsPlainBroadcast() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = CapturingInterface()
     t.register(interface: iface)
 

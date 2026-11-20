@@ -101,8 +101,8 @@ final class OwnAnnounceTests: XCTestCase {
   }
 
   private func makeReflectingPair() throws -> Network {
-    let owner = Transport()
-    let remote = Transport()
+    let owner = Transport.unstamped()
+    let remote = Transport.unstamped()
     let ownerInterface = LoopbackInterface(name: "owner")
     let remoteInterface = LoopbackInterface(name: "remote")
     ownerInterface.paired = remoteInterface

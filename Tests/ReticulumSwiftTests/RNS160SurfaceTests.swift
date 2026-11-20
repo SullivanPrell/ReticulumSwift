@@ -50,7 +50,7 @@ final class RNS160SurfaceTests: XCTestCase {
 
   /// A receiver holding the path an unstamped `surface.path` announce installed.
   private func learnedPath() throws -> (Transport, Data) {
-    let b = Transport()
+    let b = Transport.unstamped()
     let tap = Tap(name: "tap")
     b.register(interface: tap)
     let destination = try Destination(
@@ -59,7 +59,7 @@ final class RNS160SurfaceTests: XCTestCase {
     _ = try b.announce(destination: destination)
     let packet = try XCTUnwrap(tap.sent.last { $0.packetType == .announce })
 
-    let a = Transport()
+    let a = Transport.unstamped()
     let inbound = Tap(name: "in")
     a.register(interface: inbound)
     retained += [b, tap, inbound]
@@ -148,7 +148,7 @@ final class RNS160SurfaceTests: XCTestCase {
   // MARK: - Radio parameters
 
   private func orderedRow(_ iface: any Interface) throws -> [(String, MsgPack.Value)] {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.register(interface: iface)
     defer { t.deregister(interface: iface) }
     let interfaces = try XCTUnwrap(

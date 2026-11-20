@@ -268,6 +268,12 @@ public struct Packet: Equatable {
   /// Encodes the packet into its wire representation.
   public func pack() throws -> Data {
     let raw = try packedBytes()
+    // A transport node inserts its ID into a forwarded `HEADER_1` announce (`Packet.py:240-243`).
+    if packetType == .announce, headerType == .type1,
+      raw.count + Constants.truncatedHashLength > mtu
+    {
+      throw PackError.exceedsMTU(size: raw.count + Constants.truncatedHashLength)
+    }
     if raw.count > mtu { throw PackError.exceedsMTU(size: raw.count) }
     return raw
   }

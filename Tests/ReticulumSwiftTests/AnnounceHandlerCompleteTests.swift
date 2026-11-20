@@ -175,8 +175,8 @@ final class AnnounceHandlerCompleteTests: XCTestCase {
   }
 
   private func makeTransports() -> (Transport, Transport, LoopbackInterface, LoopbackInterface) {
-    let a = Transport()
-    let b = Transport()
+    let a = Transport.unstamped()
+    let b = Transport.unstamped()
     let aI = LoopbackInterface(name: "A")
     let bI = LoopbackInterface(name: "B")
     aI.paired = bI
@@ -194,7 +194,7 @@ final class AnnounceHandlerCompleteTests: XCTestCase {
   /// An unheard announce emitted before the path's newest one fails the ladder (`:2551-2558`),
   /// so the handlers don't hear it.
   func testAnnounceThePathTableRejectsSkipsHandlers() throws {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = LoopbackInterface(name: "in")
     t.register(interface: iface)
     let handler = RecordingHandler()

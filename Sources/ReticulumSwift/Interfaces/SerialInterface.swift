@@ -291,3 +291,8 @@ public final class SerialInterface: Interface {
     }
   }
 }
+
+extension SerialInterface {
+  /// `SerialInterface.py:86`.
+  public var sharedMedium: Bool { true }
+}

@@ -70,7 +70,7 @@ final class PathRequestIngressLimitTests: XCTestCase {
   }
 
   private func makePair() -> (Transport, PRInterface, PRInterface) {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = true
     let ingress = PRInterface(name: "ingress")
     ingress.recursivePrs = true

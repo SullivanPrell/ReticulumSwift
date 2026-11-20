@@ -83,7 +83,7 @@ final class PathHopRoutingTests: XCTestCase {
   private func makeTransport(transportEnabled: Bool = false) -> (
     Transport, MeshIface, ServingIface
   ) {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = transportEnabled
     let mesh = MeshIface(name: "mesh")
     let serving = ServingIface(name: "LocalInterface[50001]")
@@ -125,7 +125,7 @@ final class PathHopRoutingTests: XCTestCase {
   }
 
   private func makeClient() -> (Transport, SharedInstanceIface) {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.isConnectedToSharedInstance = true
     let toShared = SharedInstanceIface(name: "LocalInterface")
     t.register(interface: toShared)

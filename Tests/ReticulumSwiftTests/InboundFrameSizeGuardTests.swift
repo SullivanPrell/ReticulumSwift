@@ -66,7 +66,7 @@ final class InboundFrameSizeGuardTests: XCTestCase {
 
   /// Feed `raw` at the seam and report whether it reached the transport core.
   private func reachesCore(_ raw: Data, hwMtu: Int?, ifacSize: Int = 0) throws -> Bool {
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = RawLoopbackInterface(name: "in", hwMtu: hwMtu)
     iface.ifacSize = ifacSize
     t.register(interface: iface)
@@ -109,7 +109,7 @@ final class InboundFrameSizeGuardTests: XCTestCase {
     let hwMtu = 512
     let raw = try frame(bytes: hwMtu + 1, to: destination.hash)
 
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = RawLoopbackInterface(name: "in", hwMtu: hwMtu)
     t.register(interface: iface)
     t.register(destination: destination)
@@ -135,7 +135,7 @@ final class InboundFrameSizeGuardTests: XCTestCase {
     let hwMtu = 512
     let raw = try frame(bytes: hwMtu, to: destination.hash)
 
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = RawLoopbackInterface(name: "in", hwMtu: hwMtu)
     t.register(interface: iface)
     t.register(destination: destination)
@@ -158,7 +158,7 @@ final class InboundFrameSizeGuardTests: XCTestCase {
     let ifacSize = 16
     let raw = try frame(bytes: hwMtu + ifacSize, to: destination.hash)
 
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = RawLoopbackInterface(name: "in", hwMtu: hwMtu)
     iface.ifacSize = ifacSize
     t.register(interface: iface)
@@ -180,7 +180,7 @@ final class InboundFrameSizeGuardTests: XCTestCase {
       kind: .single, appName: "sizeguard")
     let raw = try frame(bytes: 4096, to: destination.hash)
 
-    let t = Transport()
+    let t = Transport.unstamped()
     let iface = RawLoopbackInterface(name: "in", hwMtu: nil)
     t.register(interface: iface)
     t.register(destination: destination)
@@ -257,8 +257,8 @@ final class InboundFrameSizeGuardTests: XCTestCase {
   }
 
   private func makeRawPair() -> (Transport, Transport, RawLoopbackInterface, RawLoopbackInterface) {
-    let a = Transport()
-    let b = Transport()
+    let a = Transport.unstamped()
+    let b = Transport.unstamped()
     let aI = RawLoopbackInterface(name: "A")
     let bI = RawLoopbackInterface(name: "B")
     aI.paired = bI

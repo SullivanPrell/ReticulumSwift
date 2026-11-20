@@ -385,6 +385,11 @@ public protocol Interface: AnyObject {
   /// Mirrors Python's per-spawned-client TCPServerInterfaceClient model.
   var isRoutingEndpoint: Bool { get }
 
+  /// Whether every peer on the medium hears each frame, as on a radio, a serial line or UDP
+  /// broadcast (`shared_medium`, `Interface.py:142`). A rebroadcast never skips such an
+  /// interface for having delivered the same announce (`Transport.py:2695`).
+  var sharedMedium: Bool { get }
+
   func start() throws
   func stop()
 }
@@ -768,6 +773,8 @@ extension Interface {
   public var discoveryRadioParameters: DiscoveryRadioParameters? { nil }
 
   public var isRoutingEndpoint: Bool { true }
+
+  public var sharedMedium: Bool { false }
 
   // PHY stats—no radio hardware by default
   public var rssi: Float? { nil }

@@ -89,6 +89,7 @@ public final class InterfaceState {
     var icMaxHeldAnnounces: Int = Reticulum.defaultIcMaxHeldAnnounces()
 
     var gravity: Int = InterfaceMode.defaultGravity
+    var hopLimiter: Int?
     var bootstrapOnly: Bool = false
     var recursivePrs: Bool = false
     var announcesFromInternal: Bool = true
@@ -311,6 +312,13 @@ public final class InterfaceState {
   public var gravity: Int {
     get { read(\.gravity) }
     set { write(\.gravity, newValue) }
+  }
+
+  /// Python: `interface.hop_limiter` (RNS 1.6.1, `Interface.py:140`): packets that arrived with
+  /// this many hops or more drop. `nil` or 0 sets no limit.
+  public var hopLimiter: Int? {
+    get { read(\.hopLimiter) }
+    set { write(\.hopLimiter, newValue) }
   }
 
   /// Python: `interface.bootstrap_only`.

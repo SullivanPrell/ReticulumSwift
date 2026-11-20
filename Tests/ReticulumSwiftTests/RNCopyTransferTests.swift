@@ -43,8 +43,8 @@ private final class RNCopyFixture {
     }
   }
 
-  let clientTransport = Transport()
-  let serverTransport = Transport()
+  let clientTransport = Transport.unstamped()
+  let serverTransport = Transport.unstamped()
   let clientIdentity = Identity()
   let serverIdentity = Identity()
   let clientInterface = LoopbackInterface(name: "client")

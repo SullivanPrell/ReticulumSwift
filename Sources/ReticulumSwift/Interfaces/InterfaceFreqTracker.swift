@@ -54,6 +54,7 @@ public final class InterfaceFreqTracker {
   /// Keeping them here preserves that: one call, one lock, both effects.
   private var arxb = 0, atxb = 0, prxb = 0, ptxb = 0
   private var arxc = 0, atxc = 0, prxc = 0, ptxc = 0
+  private var afrxc = 0
   private var protocolViolations = 0, ifacViolations = 0, packetFilterHits = 0
 
   /// Guards the four deques.
@@ -76,6 +77,12 @@ public final class InterfaceFreqTracker {
     append(t, to: &ia)
     arxc += 1
     arxb += size
+  }
+  /// Records one filtered announce, Python's `Interface.filtered_announce` (`Interface.py:359-363`).
+  public func recordFilteredAnnounce() {
+    lock.lock()
+    defer { lock.unlock() }
+    afrxc += 1
   }
   /// Records one transmitted announce.
   public func recordOutgoingAnnounce(
@@ -185,7 +192,7 @@ public final class InterfaceFreqTracker {
 
   // MARK: - Reading the counters
 
-  /// All eleven counters under one lock acquisition, so the pairs a reader reports
+  /// All twelve counters under one lock acquisition, so the pairs a reader reports
   /// together (`arxc` with `arxb`) always describe the same set of frames.
   public struct Counts: Sendable, Equatable {
     public let announceRxBytes: Int, announceTxBytes: Int
@@ -193,6 +200,8 @@ public final class InterfaceFreqTracker {
     public let pathRequestRxBytes: Int, pathRequestTxBytes: Int
     public let pathRequestRxCount: Int, pathRequestTxCount: Int
     public let protocolViolations: Int, ifacViolations: Int, packetFilterHits: Int
+    /// Python `afrxc`.
+    public let filteredAnnounceRxCount: Int
   }
 
   /// Returns a snapshot of the tracked counters.
@@ -206,7 +215,8 @@ public final class InterfaceFreqTracker {
       pathRequestRxCount: prxc, pathRequestTxCount: ptxc,
       protocolViolations: protocolViolations,
       ifacViolations: ifacViolations,
-      packetFilterHits: packetFilterHits)
+      packetFilterHits: packetFilterHits,
+      filteredAnnounceRxCount: afrxc)
   }
 
   // MARK: - Test helpers

@@ -138,13 +138,13 @@ final class LocalInterfaceReadinessTests: XCTestCase {
     let server = try startServer()
 
     // Daemon side—a non-transport shared instance, as most rnsd installs are.
-    let daemon = Transport()
+    let daemon = Transport.unstamped()
     daemon.transportEnabled = false
     daemon.register(interface: server)
     defer { daemon.stop() }
 
     // Client side—exactly what InstanceConnection.attach does for a local client.
-    let client = Transport()
+    let client = Transport.unstamped()
     client.transportEnabled = false
     client.isConnectedToSharedInstance = true
     let localInterface = makeClient(port: server.port)

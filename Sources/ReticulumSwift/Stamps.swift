@@ -14,7 +14,7 @@ import Foundation
 /// The stamping switches and costs Python keeps as `Transport` class attributes
 /// (`Transport.py:191-206`), set from the `[stamps]` config section.
 ///
-/// Every value defaults to RNS 1.6.0's.
+/// Every value defaults to RNS 1.6.1's.
 public struct StampSettings: Equatable {
   /// Python: `STAMPS_ENABLED`, whether announces and path requests are checked for stamps.
   public var enabled = true
@@ -24,9 +24,9 @@ public struct StampSettings: Equatable {
   /// Python: `LR_STAMPS_ENFORCED`, whether a link request without a sufficient stamp is refused.
   public var lrEnforced = false
   /// Python: `STAMP_DESTINATIONS`, whether this node stamps its own announces.
-  public var stampDestinations = false
+  public var stampDestinations = true
   /// Python: `STAMP_PRS`, whether this node stamps its own path requests.
-  public var stampPRs = false
+  public var stampPRs = true
   /// Python: `STAMP_LRS`, whether this node stamps link requests to destinations that
   /// announced a cost.
   public var stampLRs = true

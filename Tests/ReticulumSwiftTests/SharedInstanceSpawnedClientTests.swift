@@ -70,7 +70,7 @@ final class SharedInstanceSpawnedClientTests: XCTestCase {
   /// A non-transport shared instance, as most `rnsd` installs are.
   private func startHub() throws -> (Transport, PosixTCPServer) {
     let server = try startServer()
-    let hub = Transport()
+    let hub = Transport.unstamped()
     hub.transportEnabled = false
     hub.register(interface: server)
     transports.append(hub)
@@ -79,7 +79,7 @@ final class SharedInstanceSpawnedClientTests: XCTestCase {
 
   /// A program attached to the shared instance, as `InstanceConnection.attach` sets one up.
   private func attachClient(to server: PosixTCPServer) throws -> (Transport, LocalInterface) {
-    let transport = Transport()
+    let transport = Transport.unstamped()
     transport.transportEnabled = false
     transport.isConnectedToSharedInstance = true
     let iface = LocalInterface(host: "127.0.0.1", port: server.port)

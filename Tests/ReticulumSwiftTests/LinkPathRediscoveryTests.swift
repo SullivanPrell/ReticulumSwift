@@ -89,7 +89,7 @@ final class LinkPathRediscoveryTests: XCTestCase {
   }
 
   private func node(transportEnabled: Bool = false) -> (Transport, MeshIface) {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = transportEnabled
     let mesh = MeshIface(name: "mesh")
     t.register(interface: mesh)
@@ -346,7 +346,7 @@ final class LinkPathRediscoveryTests: XCTestCase {
   }
 
   private func relay(transportEnabled: Bool = true) -> (Transport, MeshIface, MeshIface) {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = transportEnabled
     let a = MeshIface(name: "toward initiator")
     let b = MeshIface(name: "toward responder")
@@ -588,7 +588,7 @@ final class LinkPathRediscoveryTests: XCTestCase {
   private func sharedInstance() throws -> (
     Transport, MeshIface, MeshIface, ClientIface, Destination
   ) {
-    let t = Transport()
+    let t = Transport.unstamped()
     t.transportEnabled = false
     let asking = MeshIface(name: "asking")
     let elsewhere = MeshIface(name: "elsewhere")
