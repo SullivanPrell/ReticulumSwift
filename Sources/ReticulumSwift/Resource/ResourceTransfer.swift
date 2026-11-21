@@ -771,7 +771,7 @@ public final class ResourceTransfer {
       segmentIndex: UInt64(segIdxSnapshot),
       totalSegments: UInt64(totalSegSnapshot),
       requestID: reqIDSnapshot,
-      hashmap: resource.mapHashes.reduce(Data(), +),
+      hashmap: resource.mapHashes.reduce(into: Data()) { $0.append($1) },
       encrypted: true,
       compressed: resource.isCompressed,
       split: totalSegSnapshot > 1,
@@ -885,7 +885,9 @@ public final class ResourceTransfer {
           // Mirrors Python `request()` (`if not hashmap: cancel()`).
           cancelReason = "resource HMU error"
         } else {
-          let hmuHashmap = mapHashes[hashmapStart..<hashmapEnd].reduce(Data(), +)
+          let hmuHashmap = mapHashes[hashmapStart..<hashmapEnd].reduce(into: Data()) {
+            $0.append($1)
+          }
           hmuPayload =
             unsafeResourceHash
             + MsgPack.encode(
@@ -1385,7 +1387,7 @@ public final class ResourceTransfer {
 
     // Inline assembly with specific failure diagnostics. Decrypt, decompress and
     // hash-verify are pure/callout work—done OUTSIDE the lock.
-    let encryptedStream = allParts.reduce(Data(), +)
+    let encryptedStream = allParts.reduce(into: Data()) { $0.append($1) }
     let decrypted: Data
     do {
       decrypted = try link.decrypt(encryptedStream)
@@ -1498,7 +1500,7 @@ public final class ResourceTransfer {
     stateLock.lock()
     unsafeReceivedMetadata = result.metadata
     segmentBuffer.append(plaintext)
-    let fullPayload = segmentBuffer.reduce(Data(), +)
+    let fullPayload = segmentBuffer.reduce(into: Data()) { $0.append($1) }
     segmentBuffer.removeAll()
     // Use metadata from segment 1 if this was a multi-segment transfer.
     if multiSegmentMetadata != nil {

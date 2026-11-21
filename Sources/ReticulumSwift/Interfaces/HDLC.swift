@@ -25,38 +25,43 @@ public enum HDLC {
 
   /// Returns `data` with its flag and escape bytes stuffed.
   public static func escape(_ data: Data) -> Data {
-    var out = Data()
-    out.reserveCapacity(data.count)
-    for byte in data {
-      if byte == esc {
-        out.append(esc)
-        out.append(esc ^ escMask)
-      } else if byte == flag {
-        out.append(esc)
-        out.append(flag ^ escMask)
-      } else {
-        out.append(byte)
+    // Per-element `Data` iteration and appends cost Foundation overhead on every byte;
+    // scan and build through raw buffers instead (Python uses C `bytes.replace`).
+    data.withUnsafeBytes { src in
+      guard src.contains(where: { $0 == esc || $0 == flag }) else { return Data(src) }
+      var out = [UInt8]()
+      out.reserveCapacity(src.count + src.count / 8)
+      for byte in src {
+        if byte == esc || byte == flag {
+          out.append(esc)
+          out.append(byte ^ escMask)
+        } else {
+          out.append(byte)
+        }
       }
+      return Data(out)
     }
-    return out
   }
 
   /// Returns `data` with its byte stuffing removed.
   public static func unescape(_ data: Data) -> Data {
-    var out = Data()
-    out.reserveCapacity(data.count)
-    var pendingEscape = false
-    for byte in data {
-      if pendingEscape {
-        out.append(byte ^ escMask)
-        pendingEscape = false
-      } else if byte == esc {
-        pendingEscape = true
-      } else {
-        out.append(byte)
+    data.withUnsafeBytes { src in
+      guard src.contains(esc) else { return Data(src) }
+      var out = [UInt8]()
+      out.reserveCapacity(src.count)
+      var pendingEscape = false
+      for byte in src {
+        if pendingEscape {
+          out.append(byte ^ escMask)
+          pendingEscape = false
+        } else if byte == esc {
+          pendingEscape = true
+        } else {
+          out.append(byte)
+        }
       }
+      return Data(out)
     }
-    return out
   }
 
   /// Wrap a packet body in HDLC delimiters: `FLAG ... FLAG`.
@@ -106,8 +111,22 @@ public enum HDLC {
     /// compliant peer never emits a frame that violates them.
     public func feed(_ bytes: Data, hwMtu: Int? = nil, ifacSize: Int = 0) -> [Data] {
       var frames: [Data] = []
-      for byte in bytes {
-        if byte == HDLC.flag {
+      bytes.withUnsafeBytes { src in
+        var start = 0
+        while start <= src.count {
+          // Everything up to the next FLAG (or the end of this chunk) is one run of body bytes.
+          let end = src[start...].firstIndex(of: HDLC.flag) ?? src.count
+          if inFrame, end > start {
+            // Bound a runaway/unterminated partial frame. Once past the bound the rest of
+            // the run is outside any frame, exactly as the per-byte check left it.
+            if let hwMtu, buffer.count + (end - start) > hwMtu * 2 {
+              buffer.removeAll(keepingCapacity: true)
+              inFrame = false
+            } else {
+              buffer.append(contentsOf: UnsafeRawBufferPointer(rebasing: src[start..<end]))
+            }
+          }
+          guard end < src.count else { break }
           // A closing FLAG also opens the next frame: Python keeps it in the buffer
           // (`frame_buffer = frame_buffer[frame_end:]`, `TCPInterface.py:406`).
           if inFrame, !buffer.isEmpty {
@@ -122,13 +141,7 @@ public enum HDLC {
           }
           buffer.removeAll(keepingCapacity: true)
           inFrame = true
-        } else if inFrame {
-          buffer.append(byte)
-          // Bound a runaway/unterminated partial frame.
-          if let hwMtu, buffer.count > hwMtu * 2 {
-            buffer.removeAll(keepingCapacity: true)
-            inFrame = false
-          }
+          start = end + 1
         }
       }
       return frames
