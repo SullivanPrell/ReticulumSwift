@@ -251,7 +251,7 @@ public final class Resource {
     maxDecompressedSize: Int = Resource.autoCompressMaxSize,
     link: Link
   ) -> AssemblyResult? {
-    let encryptedStream = encryptedParts.reduce(Data(), +)
+    let encryptedStream = encryptedParts.reduce(into: Data()) { $0.append($1) }
     guard let decrypted = try? link.decrypt(encryptedStream) else { return nil }
     guard decrypted.count > randomHashSize else { return nil }
     let body = decrypted.dropFirst(randomHashSize)
