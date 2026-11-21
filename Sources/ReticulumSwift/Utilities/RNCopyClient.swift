@@ -682,7 +682,8 @@ public final class RNCopyFetcher {
       fileSystem: fileSystem,
       onOverwriteFailure: { [weak self] path in
         self?.onNotice?("Could not overwrite existing file \(path), renaming instead")
-      }
+      },
+      storagePath: transfer?.storagePath
     )
 
     stateLock.lock()

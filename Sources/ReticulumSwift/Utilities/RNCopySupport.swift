@@ -453,6 +453,15 @@ public protocol RNCopyFileSystem: AnyObject {
   func writeFile(_ data: Data, toPath path: String) throws
   /// `os.unlink`.
   func removeFile(atPath path: String) throws
+  /// `shutil.move` of a real file (a resource's storage file) to `path`.
+  func moveFile(at source: URL, toPath path: String) throws
+}
+
+extension RNCopyFileSystem {
+  /// Copies the source file's bytes in through the write path, for in-memory test doubles.
+  public func moveFile(at source: URL, toPath path: String) throws {
+    try writeFile(Data(contentsOf: source), toPath: path)
+  }
 }
 
 /// `RNCopyFileSystem` backed by `FileManager`.
@@ -516,6 +525,11 @@ public final class RNCopyDiskFileSystem: RNCopyFileSystem {
   /// Removes the file at `path`.
   public func removeFile(atPath path: String) throws {
     try FileManager.default.removeItem(atPath: path)
+  }
+
+  /// Moves `source` to `path`.
+  public func moveFile(at source: URL, toPath path: String) throws {
+    try FileManager.default.moveItem(at: source, to: URL(fileURLWithPath: path))
   }
 }
 

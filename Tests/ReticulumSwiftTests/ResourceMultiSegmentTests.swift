@@ -558,6 +558,56 @@ final class ResourceMultiSegmentTests: XCTestCase {
     }
   }
 
+  // MARK: - Segments go to disk, not memory
+
+  /// A parked multi-segment receiver holds its completed segment in a file, not in memory.
+  ///
+  /// Python appends each assembled segment to `resource.storagepath`
+  /// (Resource.py:725-727), so a receive's memory stays at one segment however big the
+  /// resource is. Keeping every segment in RAM grew the receiver to ~3x the file size.
+  func testParkedReceiverStoresCompletedSegmentOnDisk() throws {
+    let (aLink, bLink, gate) = try makeProofGatedPair()
+    let rx = ResourceTransfer(link: bLink)
+    rx.bindAsReceiver()
+    let tx = ResourceTransfer(link: aLink)
+    tx.testSegmentSizeOverride = 300
+    gate.dropProofs = true
+    let payload = Data((0..<400).map { UInt8($0 % 251) })
+    try tx.send(payload: payload, autoCompress: false)
+
+    XCTAssertEqual(rx.status, .idle, "test premise: receiver should be parked between segments")
+    let path = try XCTUnwrap(rx.storagePath, "a parked receiver must have a storage file")
+    XCTAssertEqual(try Data(contentsOf: path), payload.prefix(300))
+  }
+
+  /// The final payload is the storage file's contents, and the file is removed after the
+  /// callbacks return, as Python unlinks `storagepath` after `callback` (Resource.py:759-761).
+  func testCompletedMultiSegmentReceiveDeliversStorageFileThenRemovesIt() throws {
+    let (aLink, bLink) = try makeLinkedPair()
+    let rx = ResourceTransfer(link: bLink)
+    rx.bindAsReceiver()
+    let tx = ResourceTransfer(link: aLink)
+    tx.testSegmentSizeOverride = 300
+    let payload = Data((0..<700).map { UInt8($0 % 251) })
+    var got: Data?
+    var onDisk: Data?
+    var path: URL?
+    let received = expectation(description: "received")
+    rx.onPayloadReceived = { d, t in
+      got = d
+      path = t.storagePath
+      onDisk = path.flatMap { try? Data(contentsOf: $0) }
+      received.fulfill()
+    }
+    try tx.send(payload: payload, autoCompress: false)
+    wait(for: [received], timeout: 2.0)
+
+    XCTAssertEqual(got, payload)
+    XCTAssertEqual(onDisk, payload, "the storage file must hold every segment during the callback")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(path).path))
+    XCTAssertNil(rx.storagePath)
+  }
+
   // MARK: - originalHash is stable across segments
 
   func testOriginalHashStableAcrossSegments() throws {

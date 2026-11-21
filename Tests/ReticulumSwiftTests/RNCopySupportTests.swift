@@ -575,6 +575,27 @@ final class RNCopySaveTargetTests: XCTestCase {
     guard case .failure(let error) = result else { return XCTFail("expected failure") }
     XCTAssertEqual(error.exceptionText, "'name'")
   }
+
+  func testSaveHelperMovesResourceStorageFileIntoPlace() throws {
+    // Python moves the RNS storage file (`shutil.move(resource.data.name, …)`,
+    // rncp.py:308); writing the mapped payload instead would page the whole file in.
+    let dir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("rncp-move-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let storage = dir.appendingPathComponent("storage")
+    try Data("segments".utf8).write(to: storage)
+
+    let result = RNCopyApp.saveReceivedResource(
+      payload: Data("ignored".utf8),
+      metadata: RNCopyApp.encodeMetadata(name: "f.bin"),
+      savePath: dir.path, allowOverwrite: false,
+      fileSystem: RNCopyDiskFileSystem(), storagePath: storage)
+
+    let saved = try result.get()
+    XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: saved)), Data("segments".utf8))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: storage.path))
+  }
 }
 
 // MARK: - Progress meter
