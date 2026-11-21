@@ -5,6 +5,16 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Receiving a resource costs about a quarter of the CPU it did. `HDLC.FrameDecoder.feed`,
+  `HDLC.escape` and `HDLC.unescape` walked every byte through `Data`'s iterator and `append`;
+  they now scan for the delimiter and copy whole runs, as Python's `bytes.find` and
+  `bytes.replace` do. Five `reduce(Data(), +)` joins of resource parts, segments, and hash maps
+  copied the accumulated buffer once per element, which is quadratic in the part count. They
+  now append in place. A 50 MB `rncp` receive over loopback TCP went from 3.6 s to 0.8 s of CPU
+  (Python 1.6.1: 0.75 s), and the transfer from 4.7 s to 1.6 s.
+
 ### Fixed
 
 - The interface stats payload reports the `ifac_signature` Python stores, so `rnstatus` prints
