@@ -373,10 +373,27 @@ public final class ResourceTransfer {
   // MARK: - Multi-segment receiver state
   // Mirrors Python's segmented resource protocol (total_segments > 1).
 
-  /// Accumulated payload bytes from completed prior segments (indices 1.
+  /// Number of completed prior segments appended to ``storagePath``.
+  private var segmentsStored: Int = 0
+  private var unsafeStoragePath: URL?
+  /// The file a multi-segment receive appends each completed segment to, Python's
+  /// `resource.storagepath` (Resource.py:202, 725-727).
   ///
-  /// .N-1).
-  private var segmentBuffer: [Data] = []
+  /// Still set while the conclusion callbacks run, so a consumer can move the finished
+  /// file into place as Python's rncp does (`shutil.move(resource.data.name, …)`);
+  /// removed afterwards (Resource.py:759-761). Nil for a single-segment receive.
+  public private(set) var storagePath: URL? {
+    get {
+      stateLock.lock()
+      defer { stateLock.unlock() }
+      return unsafeStoragePath
+    }
+    set {
+      stateLock.lock()
+      unsafeStoragePath = newValue
+      stateLock.unlock()
+    }
+  }
   /// Original hash (same across all segments of one multi-segment transfer).
   private(set) var originalHash: Data?
   /// Metadata extracted from the first segment (if any).
@@ -1046,9 +1063,9 @@ public final class ResourceTransfer {
 
   /// Caller must hold `stateLock`.
   private func isParkedBetweenSegmentsLocked(matching adv: ResourceAdvertisement) -> Bool {
-    guard isReceiver, !segmentBuffer.isEmpty, let originalHash else { return false }
+    guard isReceiver, segmentsStored > 0, let originalHash else { return false }
     return originalHash == Data(adv.originalHash)
-      && Int(adv.segmentIndex) == segmentBuffer.count + 1
+      && Int(adv.segmentIndex) == segmentsStored + 1
   }
 
   /// Whether this transfer should adopt `adv` at all.
@@ -1059,7 +1076,7 @@ public final class ResourceTransfer {
   private func acceptsAsContinuation(_ adv: ResourceAdvertisement) -> Bool {
     stateLock.lock()
     defer { stateLock.unlock() }
-    if segmentBuffer.isEmpty { return true }
+    if segmentsStored == 0 { return true }
     return isParkedBetweenSegmentsLocked(matching: adv)
   }
 
@@ -1099,7 +1116,7 @@ public final class ResourceTransfer {
     // next segment's advertisement reaches it directly—but Link hands every
     // subsequent advertisement to every registered receiver, so without this
     // check a *different* resource advertised mid-transfer is downloaded into
-    // `segmentBuffer` and spliced into the middle of the delivered payload.
+    // the storage file and spliced into the middle of the delivered payload.
     // (It would also bypass `resourceStrategy` and never fire
     // `onResourceStarted`.) Only adopt what actually continues this transfer:
     // same overall resource, and the awaited segment.
@@ -1455,11 +1472,19 @@ public final class ResourceTransfer {
 
     if segIdx < segTotal {
       // More segments to come.
-      // Accumulate bytes BEFORE sending proof so the receiver is ready when the
+      // Store bytes BEFORE sending proof so the receiver is ready when the
       // next ADV arrives synchronously (loopback interfaces cascade instantly).
+      let path: URL
+      do {
+        path = try storeSegment(plaintext, originalHash: Data(adv.originalHash))
+      } catch {
+        fail("assembly: could not store segment (\(error))")
+        return
+      }
       stateLock.lock()
       unsafeReceivedMetadata = result.metadata
-      segmentBuffer.append(plaintext)
+      unsafeStoragePath = path
+      segmentsStored += 1
       originalHash = Data(adv.originalHash)
       // Preserve metadata from segment 1 (subsequent segments have no metadata).
       if result.metadata != nil { multiSegmentMetadata = result.metadata }
@@ -1494,12 +1519,22 @@ public final class ResourceTransfer {
       return
     }
 
-    // All segments received—concatenate and deliver.
+    // All segments received—deliver. A multi-segment payload is mapped from its storage
+    // file rather than read, so it isn't held in memory unless a consumer touches it.
+    let fullPayload: Data
+    if segTotal > 1 {
+      do {
+        let path = try storeSegment(plaintext, originalHash: Data(adv.originalHash))
+        fullPayload = try Data(contentsOf: path, options: .alwaysMapped)
+      } catch {
+        fail("assembly: could not store segment (\(error))")
+        return
+      }
+    } else {
+      fullPayload = plaintext
+    }
     stateLock.lock()
     unsafeReceivedMetadata = result.metadata
-    segmentBuffer.append(plaintext)
-    let fullPayload = segmentBuffer.reduce(Data(), +)
-    segmentBuffer.removeAll()
     // Use metadata from segment 1 if this was a multi-segment transfer.
     if multiSegmentMetadata != nil {
       unsafeReceivedMetadata = multiSegmentMetadata
@@ -1553,6 +1588,38 @@ public final class ResourceTransfer {
     stopWatchdog()
     link.unregisterIncomingResource(self)
     onComplete?(self)
+    removeStorage()
+  }
+
+  /// Appends one segment's payload to ``storagePath``, creating it for the first segment.
+  private func storeSegment(_ data: Data, originalHash: Data) throws -> URL {
+    let path: URL
+    if let existing = storagePath {
+      path = existing
+    } else {
+      // shortcut: lives in the temp dir, not Python's <configdir>/storage/resources; plumb
+      // the configured path through if a consumer needs it there.
+      path = FileManager.default.temporaryDirectory
+        .appendingPathComponent("rns-resource-\(originalHash.hexString)-\(UUID().uuidString)")
+      guard FileManager.default.createFile(atPath: path.path, contents: nil) else {
+        throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: path.path])
+      }
+    }
+    let handle = try FileHandle(forWritingTo: path)
+    defer { try? handle.close() }
+    try handle.seekToEnd()
+    try handle.write(contentsOf: data)
+    return path
+  }
+
+  /// Deletes the storage file (if a consumer hasn't moved it) and forgets stored segments.
+  private func removeStorage() {
+    stateLock.lock()
+    let path = unsafeStoragePath
+    unsafeStoragePath = nil
+    segmentsStored = 0
+    stateLock.unlock()
+    if let path { try? FileManager.default.removeItem(at: path) }
   }
 
   /// Aborts the transfer (via `fail`) when the link is no longer active, before
@@ -1600,6 +1667,7 @@ public final class ResourceTransfer {
     link.unregisterOutgoingResource(self)
     link.unregisterIncomingResource(self)
     closeSegmentSource()
+    removeStorage()
     onFailed?(self, s)
   }
 }

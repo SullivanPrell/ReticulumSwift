@@ -13,6 +13,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   (`Reticulum.py:1306`, `:1863`). The port signed with CryptoKit's hedged Ed25519 on every
   stats call, so the fingerprint changed each time. It now signs with `DeterministicEd25519`,
   once per key.
+- A multi-segment resource receive keeps bounded memory. Each completed segment is appended to
+  a storage file, as Python appends to `resource.storagepath` (`Resource.py:725-727`), instead
+  of being held in memory and joined at the end. The completion callbacks still get `Data`,
+  now memory-mapped from that file, and the new `ResourceTransfer.storagePath` exposes the file
+  while they run; it is removed afterwards (`Resource.py:759-761`). `rncp` moves that file into
+  place like Python's `shutil.move(resource.data.name, …)`. Receiving a 100 MB file with
+  `rncp` peaked at 289 MB and now peaks at 33 MB, the same as for 10 MB.
 
 ## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
 

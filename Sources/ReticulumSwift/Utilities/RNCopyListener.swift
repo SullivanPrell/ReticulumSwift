@@ -55,7 +55,8 @@ extension RNCopyApp {
     savePath: String?,
     allowOverwrite: Bool,
     fileSystem: RNCopyFileSystem,
-    onOverwriteFailure: ((String) -> Void)? = nil
+    onOverwriteFailure: ((String) -> Void)? = nil,
+    storagePath: URL? = nil
   )
     -> Swift.Result<String, RNCopyError>
   {
@@ -80,7 +81,12 @@ extension RNCopyApp {
       return .failure(.invalidSavePath(path))
     case .write(let path, _):
       do {
-        try fileSystem.writeFile(payload, toPath: path)
+        // A multi-segment receive's storage file is moved, like Python's `shutil.move`.
+        if let storagePath {
+          try fileSystem.moveFile(at: storagePath, toPath: path)
+        } else {
+          try fileSystem.writeFile(payload, toPath: path)
+        }
         return .success(path)
       } catch {
         return .failure(.writeFailed("\(error)"))
@@ -380,7 +386,9 @@ public final class RNCopyListener {
       "Incoming resource <\(advertisement.resourceHash.hexString)/\(linkID.hexString)> completed",
       level: .info)
 
-    switch saveReceivedResource(payload: payload, metadata: transfer?.receivedMetadata) {
+    switch saveReceivedResource(
+      payload: payload, metadata: transfer?.receivedMetadata, storagePath: transfer?.storagePath)
+    {
     case .success(let path):
       // Python: RNS.log("Saved received file to "+full_save_path, RNS.LOG_NOTICE)
       Reticulum.log("Saved received file to " + path, level: .notice)
@@ -412,11 +420,12 @@ public final class RNCopyListener {
 
   /// Write a completed inbound resource to disk.
   ///
-  /// Python moves the RNS temp file with `shutil.move(resource.data.name, …)`; Swift
-  /// receives the plaintext as in-memory `Data`, so this writes it instead. Everything
+  /// Python moves the RNS temp file with `shutil.move(resource.data.name, …)`; Swift moves
+  /// `storagePath` (a multi-segment receive's ``ResourceTransfer/storagePath``) the same
+  /// way and otherwise writes the in-memory payload. Everything
   /// else—basename collapsing, `--save` containment, `-O` unlink, the `.1`/`.2` rename
   /// counter—matches rncp.py:287-309 exactly.
-  public func saveReceivedResource(payload: Data, metadata: Data?)
+  public func saveReceivedResource(payload: Data, metadata: Data?, storagePath: URL? = nil)
     -> Swift.Result<String, RNCopyError>
   {
     RNCopyApp.saveReceivedResource(
@@ -430,7 +439,8 @@ public final class RNCopyListener {
         Reticulum.log(
           "Could not overwrite existing file \(path), renaming instead",
           level: .error)
-      }
+      },
+      storagePath: storagePath
     )
   }
 
