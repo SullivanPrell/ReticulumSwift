@@ -458,7 +458,7 @@ public protocol RNCopyFileSystem: AnyObject {
 }
 
 extension RNCopyFileSystem {
-  /// Copies `source`'s bytes through ``writeFile(_:toPath:)``, for in-memory test doubles.
+  /// Copies the source file's bytes in through the write path, for in-memory test doubles.
   public func moveFile(at source: URL, toPath path: String) throws {
     try writeFile(Data(contentsOf: source), toPath: path)
   }
