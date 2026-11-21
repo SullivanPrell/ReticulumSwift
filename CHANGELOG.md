@@ -5,6 +5,15 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The interface stats payload reports the `ifac_signature` Python stores, so `rnstatus` prints
+  the same `Access` fingerprint on every refresh and on every node of one IFAC segment. Python
+  signs `full_hash(ifac_key)` once with RFC 8032 Ed25519 and reports that value
+  (`Reticulum.py:1306`, `:1863`). The port signed with CryptoKit's hedged Ed25519 on every
+  stats call, so the fingerprint changed each time. It now signs with `DeterministicEd25519`,
+  once per key.
+
 ## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
 
 ### Reference parity moves to RNS 1.6.1
