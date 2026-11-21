@@ -62,6 +62,24 @@ public enum InterfaceStatsPayload {
     return .map(pairs)
   }
 
+  private static let ifacSignatureLock = NSLock()
+  private static var ifacSignatures: [Data: Data] = [:]
+
+  /// The signature Python stores as `interface.ifac_signature` for `key`.
+  ///
+  /// Python signs once when it configures IFAC (`Reticulum.py:1306`). The signature depends
+  /// only on the key, so it's computed once per key. The seed is the key's last 32 bytes, as
+  /// in `Identity.load_private_key` (Identity.py:1127).
+  static func ifacSignature(_ key: Data) -> Data? {
+    guard key.count == 64 else { return nil }
+    ifacSignatureLock.lock()
+    defer { ifacSignatureLock.unlock() }
+    if let cached = ifacSignatures[key] { return cached }
+    let signature = DeterministicEd25519.sign(Identity.fullHash(key), seed: Data(key.suffix(32)))
+    ifacSignatures[key] = signature
+    return signature
+  }
+
   /// Builds the `ifstats` payload from a live transport.
   public static func build(_ t: Transport) -> MsgPack.Value {
     let now = Date().timeIntervalSince1970
@@ -202,17 +220,14 @@ public enum InterfaceStatsPayload {
       }
 
       // IFAC fields. Python's order is signature, size, netname.
-      if let ifacIdentity = iface.ifacIdentity {
+      if iface.ifacIdentity != nil {
         // Python: interface.ifac_signature = ifac_identity.sign(full_hash(ifac_key))
-        // (Reticulum.py:933). This is a signature over the key, not the key itself—rnstatus
-        // prints its last 5 bytes as the network's "Access" fingerprint, so
-        // reporting the raw key here makes a Swift node's access code differ from a
-        // Python node's on the very same IFAC network.
+        // (Reticulum.py:1306, :1863). This is a signature over the key, not the key
+        // itself—rnstatus prints its last 5 bytes as the network's "Access" fingerprint.
+        // Python's Ed25519 is RFC 8032 deterministic; CryptoKit's is hedged and changes
+        // the fingerprint on every call.
         let signature: MsgPack.Value =
-          iface.ifacKey
-          .flatMap { key -> MsgPack.Value? in
-            (try? ifacIdentity.sign(Identity.fullHash(key))).map { .bytes($0) }
-          } ?? .nil
+          iface.ifacKey.flatMap(ifacSignature).map { .bytes($0) } ?? .nil
         kv("ifac_signature", signature)
         kv("ifac_size", .int(Int64(iface.ifacSize)))
       } else {
