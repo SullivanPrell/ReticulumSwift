@@ -382,96 +382,96 @@ public final class RNodeInterface: Interface {
   // MARK:–Reported (echoed) radio parameters (what the device says it has)
 
   /// Center frequency in Hz the device reports.
-  public var rFrequency: UInt32? = nil
+  @Locked public var rFrequency: UInt32? = nil
   /// Bandwidth in Hz the device reports.
-  public var rBandwidth: UInt32? = nil
+  @Locked public var rBandwidth: UInt32? = nil
   /// Transmit power in dBm the device reports.
-  public var rTxPower: Int? = nil
+  @Locked public var rTxPower: Int? = nil
   /// Spreading factor the device reports.
-  public var rSf: Int? = nil
+  @Locked public var rSf: Int? = nil
   /// Coding rate the device reports.
-  public var rCr: Int? = nil
+  @Locked public var rCr: Int? = nil
   /// Radio state the device reports.
-  public var rState: UInt8? = nil
+  @Locked public var rState: UInt8? = nil
   /// Airtime lock state the device reports.
-  public var rLock: UInt8? = nil
+  @Locked public var rLock: UInt8? = nil
   /// Short-term airtime limit the device reports.
-  public var rStAlock: Double? = nil
+  @Locked public var rStAlock: Double? = nil
   /// Long-term airtime limit the device reports.
-  public var rLtAlock: Double? = nil
+  @Locked public var rLtAlock: Double? = nil
 
   // MARK:–Firmware / hardware info
 
   /// Major firmware version the device reports.
-  public var majVersion: UInt8 = 0
+  @Locked public var majVersion: UInt8 = 0
   /// Minor firmware version the device reports.
-  public var minVersion: UInt8 = 0
+  @Locked public var minVersion: UInt8 = 0
   /// Whether the reported firmware meets the required version.
-  public var firmwareOk: Bool = false
+  @Locked public var firmwareOk: Bool = false
   /// Whether the device answered the detect command.
-  public var detected: Bool = false
+  @Locked public var detected: Bool = false
   /// Hardware platform byte the device reports.
-  public var platform: UInt8? = nil
+  @Locked public var platform: UInt8? = nil
   /// Microcontroller byte the device reports.
-  public var mcu: UInt8? = nil
+  @Locked public var mcu: UInt8? = nil
   /// Hardware error codes the device has reported.
   public var hwErrors: [UInt8] = []
 
   // MARK:–Telemetry
 
   /// Received packet count the device reports.
-  public var rStatRx: UInt32? = nil
+  @Locked public var rStatRx: UInt32? = nil
   /// Transmitted packet count the device reports.
-  public var rStatTx: UInt32? = nil
+  @Locked public var rStatTx: UInt32? = nil
   /// RSSI in dBm for the last received packet.
-  public var rStatRssi: Int? = nil
+  @Locked public var rStatRssi: Int? = nil
   /// SNR in dB for the last received packet.
-  public var rStatSnr: Float? = nil
+  @Locked public var rStatSnr: Float? = nil
   /// Link quality for the last received packet, as a percentage.
-  public var rStatQ: Double? = nil
+  @Locked public var rStatQ: Double? = nil
   /// Random byte the device last supplied.
-  public var rRandom: UInt8? = nil
+  @Locked public var rRandom: UInt8? = nil
 
   /// Short-window airtime usage, as a fraction.
-  public var rAirtimeShort: Double = 0.0
+  @Locked public var rAirtimeShort: Double = 0.0
   /// Long-window airtime usage, as a fraction.
-  public var rAirtimeLong: Double = 0.0
+  @Locked public var rAirtimeLong: Double = 0.0
   /// Short-window channel load, as a fraction.
-  public var rChannelLoadShort: Double = 0.0
+  @Locked public var rChannelLoadShort: Double = 0.0
   /// Long-window channel load, as a fraction.
-  public var rChannelLoadLong: Double = 0.0
+  @Locked public var rChannelLoadLong: Double = 0.0
   /// Current channel RSSI in dBm.
-  public var rCurrentRssi: Int? = nil
+  @Locked public var rCurrentRssi: Int? = nil
   /// Current noise floor in dBm.
-  public var rNoiseFloor: Int? = nil
+  @Locked public var rNoiseFloor: Int? = nil
   /// Current interference level in dBm.
-  public var rInterference: Int? = nil
+  @Locked public var rInterference: Int? = nil
 
   /// Symbol time in milliseconds for the current radio parameters.
-  public var rSymbolTimeMs: Double? = nil
+  @Locked public var rSymbolTimeMs: Double? = nil
   /// Symbol rate in symbols per second.
-  public var rSymbolRate: Int? = nil
+  @Locked public var rSymbolRate: Int? = nil
   /// Preamble length in symbols.
-  public var rPreambleSymbols: Int? = nil
+  @Locked public var rPreambleSymbols: Int? = nil
   /// Preamble duration in milliseconds.
-  public var rPreambleTimeMs: Int? = nil
+  @Locked public var rPreambleTimeMs: Int? = nil
   /// CSMA slot time in milliseconds.
-  public var rCsmaSlotTimeMs: Int? = nil
+  @Locked public var rCsmaSlotTimeMs: Int? = nil
   /// CSMA interframe space in milliseconds.
-  public var rCsmaDifsMs: Int? = nil
+  @Locked public var rCsmaDifsMs: Int? = nil
   /// CSMA contention window band.
-  public var rCsmaCwBand: UInt8? = nil
+  @Locked public var rCsmaCwBand: UInt8? = nil
   /// Lowest CSMA contention window value.
-  public var rCsmaCwMin: UInt8? = nil
+  @Locked public var rCsmaCwMin: UInt8? = nil
   /// Highest CSMA contention window value.
-  public var rCsmaCwMax: UInt8? = nil
+  @Locked public var rCsmaCwMax: UInt8? = nil
 
   /// Battery state the device reports.
-  public var rBatteryState: UInt8 = RNodeInterface.batteryStateUnknown
+  @Locked public var rBatteryState: UInt8 = RNodeInterface.batteryStateUnknown
   /// Battery charge the device reports, as a percentage.
-  public var rBatteryPercent: UInt8 = 0
+  @Locked public var rBatteryPercent: UInt8 = 0
   /// Temperature in degrees Celsius the device reports.
-  public var rTemperature: Int? = nil
+  @Locked public var rTemperature: Int? = nil
 
   /// The radio's reported temperature, under the name the stats payload publishes.
   ///
@@ -484,7 +484,7 @@ public final class RNodeInterface: Interface {
 
   /// Python starts this `False` (`RNodeInterface.py:297`) and raises it only after a
   /// validated bring-up (`:459`); defaulting it true was half of the missing online gate.
-  public var interfaceReady: Bool = false
+  @Locked public var interfaceReady: Bool = false
   /// Whether the device has asked the host to pause transmission.
   public var flowControl: Bool = false
   /// Frames held while flow control is asserted.

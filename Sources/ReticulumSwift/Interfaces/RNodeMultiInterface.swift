@@ -84,23 +84,23 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
   // MARK:–Reported (echoed) parameters (what the hardware says it set)
 
   /// Center frequency in Hz the device reports.
-  public var rFrequency: UInt32? = nil
+  @Locked public var rFrequency: UInt32? = nil
   /// Bandwidth in Hz the device reports.
-  public var rBandwidth: UInt32? = nil
+  @Locked public var rBandwidth: UInt32? = nil
   /// Transmit power in dBm the device reports.
-  public var rTxPower: Int? = nil
+  @Locked public var rTxPower: Int? = nil
   /// Spreading factor the device reports.
-  public var rSf: Int? = nil
+  @Locked public var rSf: Int? = nil
   /// Coding rate the device reports.
-  public var rCr: Int? = nil
+  @Locked public var rCr: Int? = nil
   /// Radio state the device reports.
-  public var rState: UInt8? = nil
+  @Locked public var rState: UInt8? = nil
   /// Airtime lock state the device reports.
-  public var rLock: UInt8? = nil
+  @Locked public var rLock: UInt8? = nil
   /// Short-term airtime limit the device reports.
-  public var rStAlock: Double? = nil
+  @Locked public var rStAlock: Double? = nil
   /// Long-term airtime limit the device reports.
-  public var rLtAlock: Double? = nil
+  @Locked public var rLtAlock: Double? = nil
 
   // MARK:–State
 
@@ -110,24 +110,24 @@ public final class RNodeSubInterface: Interface, SpawnedInterface {
   // MARK:–Telemetry
 
   /// RSSI in dBm for the last packet received on this radio.
-  public var rStatRssi: Int? = nil
+  @Locked public var rStatRssi: Int? = nil
   /// SNR in dB for the last packet received on this radio.
-  public var rStatSnr: Float? = nil
+  @Locked public var rStatSnr: Float? = nil
   /// Link quality for the last packet received on this radio, as a percentage.
-  public var rStatQ: Double? = nil
+  @Locked public var rStatQ: Double? = nil
   /// Random byte the device last supplied for this radio.
-  public var rRandom: UInt8? = nil
+  @Locked public var rRandom: UInt8? = nil
 
   /// Symbol time in milliseconds for the current radio parameters.
-  public var rSymbolTimeMs: Double? = nil
+  @Locked public var rSymbolTimeMs: Double? = nil
   /// Symbol rate in symbols per second.
-  public var rSymbolRate: Int? = nil
+  @Locked public var rSymbolRate: Int? = nil
   /// Preamble length in symbols.
-  public var rPreambleSymbols: Int? = nil
+  @Locked public var rPreambleSymbols: Int? = nil
   /// Preamble duration in milliseconds.
-  public var rPreambleTimeMs: Int? = nil
+  @Locked public var rPreambleTimeMs: Int? = nil
   /// CSMA slot time in milliseconds.
-  public var rCsmaSlotTimeMs: Int? = nil
+  @Locked public var rCsmaSlotTimeMs: Int? = nil
 
   // MARK:–Statistics (override Interface default extensions that return 0)
 
@@ -337,17 +337,17 @@ public final class RNodeMultiInterface: Interface {
   // MARK:–Hardware / firmware state (shared across all sub-interfaces)
 
   /// Major firmware version the device reports.
-  public var majVersion: UInt8 = 0
+  @Locked public var majVersion: UInt8 = 0
   /// Minor firmware version the device reports.
-  public var minVersion: UInt8 = 0
+  @Locked public var minVersion: UInt8 = 0
   /// Whether the reported firmware meets the required version.
-  public var firmwareOk: Bool = false
+  @Locked public var firmwareOk: Bool = false
   /// Whether the device answered the detect command.
-  public var detected: Bool = false
+  @Locked public var detected: Bool = false
   /// Hardware platform byte the device reports.
-  public var platform: UInt8? = nil
+  @Locked public var platform: UInt8? = nil
   /// Microcontroller byte the device reports.
-  public var mcu: UInt8? = nil
+  @Locked public var mcu: UInt8? = nil
 
   /// Interface types reported by CMD_INTERFACES (from device detect response).
   public private(set) var subInterfaceTypes: [String] = []
