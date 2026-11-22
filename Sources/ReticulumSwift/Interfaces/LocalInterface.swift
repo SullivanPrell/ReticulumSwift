@@ -66,7 +66,7 @@ public final class LocalInterface: Interface, MtuAutoconfiguringInterface,
   /// Called with each packet decoded from an inbound frame.
   public var inboundHandler: ((Packet, any Interface) -> Void)?
   /// Called with each inbound frame, before packet decoding.
-  public var rawInboundHandler: ((Data, any Interface) -> Void)?
+  @Locked public var rawInboundHandler: ((Data, any Interface) -> Void)? = nil
   /// Identity authenticating this interface under IFAC, or `nil` when IFAC is off.
   public var ifacIdentity: Identity?
   /// Derived IFAC key used to sign and verify frames.

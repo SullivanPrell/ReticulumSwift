@@ -36,7 +36,7 @@ final class RNodeOnlineGateTests: XCTestCase {
     var byteHandler: ((Data) -> Void)?
     private(set) var opened = false
     private(set) var closed = false
-    private(set) var writes: [Data] = []
+    @Locked private(set) var writes: [Data] = []
 
     /// The interface whose configured values to echo.
     ///
@@ -45,7 +45,7 @@ final class RNodeOnlineGateTests: XCTestCase {
     /// Override the echoed bandwidth to stage a mismatch.
     var bandwidthOverride: UInt32?
     /// When false the transport accepts writes and answers nothing, as an absent device does.
-    var isAnswering = true
+    @Locked var isAnswering = true
 
     func open() throws { opened = true }
     func close() { closed = true }
@@ -81,7 +81,7 @@ final class RNodeOnlineGateTests: XCTestCase {
     var onTransportError: ((Error) -> Void)?
     var byteHandler: ((Data) -> Void)?
     private(set) var closed = false
-    private(set) var writes: [Data] = []
+    @Locked private(set) var writes: [Data] = []
     func open() throws {}
     func close() { closed = true }
     func write(_ data: Data) throws { writes.append(data) }
@@ -238,9 +238,9 @@ final class RNodeOnlineGateTests: XCTestCase {
     var onTransportError: ((Error) -> Void)?
     var byteHandler: ((Data) -> Void)?
     private(set) var closed = false
-    private(set) var writes: [Data] = []
+    @Locked private(set) var writes: [Data] = []
     /// When false the transport accepts writes and answers nothing, as an absent device does.
-    var isAnswering = true
+    @Locked var isAnswering = true
     func open() throws {}
     func close() { closed = true }
     func write(_ data: Data) throws {

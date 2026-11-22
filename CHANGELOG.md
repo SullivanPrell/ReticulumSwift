@@ -17,6 +17,17 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- Data races on the RNode interfaces' radio state. The KISS frame dispatcher wrote the `r...`
+  radio fields, `detected`, `firmwareOk` and the firmware version while the bring-up thread,
+  `Transport` and apps read them, with no lock. `RNodeInterface` and `RNodeSubInterface` now
+  keep each of these behind its own lock, through the new `Locked` property wrapper.
+- Data races on `Reticulum.globalLogLevel`, `logHandler` and `logTimestamps`. Config loads,
+  `InstanceConnection.attach` and apps set them while every thread reads them in `log()`. One
+  lock now guards all three, and `log()` calls the handler outside it.
+- A data race on `LocalInterface.rawInboundHandler`, which the receive queue read while a caller
+  replaced it.
+- `Reticulum.rand()` trapped in debug builds with a misaligned 8-byte load. It now reads with
+  `loadUnaligned`.
 - The interface stats payload reports the `ifac_signature` Python stores, so `rnstatus` prints
   the same `Access` fingerprint on every refresh and on every node of one IFAC segment. Python
   signs `full_hash(ifac_key)` once with RFC 8032 Ed25519 and reports that value

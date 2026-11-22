@@ -75,6 +75,27 @@ public final class LockedFlag: @unchecked Sendable {
   }
 }
 
+/// A stored property that's safe to read and write from different threads.
+///
+/// Exists for the RNode interfaces' radio state, which the KISS frame dispatcher writes as
+/// replies arrive while the bring-up thread, `Transport` and apps read it. Each read and write
+/// is atomic on its own, as a Python attribute is under the GIL; there's no multi-field
+/// snapshot.
+@propertyWrapper
+public final class Locked<Value>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var unsafeValue: Value
+
+  /// Creates storage holding `wrappedValue`.
+  public init(wrappedValue: Value) { unsafeValue = wrappedValue }
+
+  /// Current value.
+  public var wrappedValue: Value {
+    get { lock.withLock { unsafeValue } }
+    set { lock.withLock { unsafeValue = newValue } }
+  }
+}
+
 /// Thread-safe traffic counters for one interface.
 public final class InterfaceCounters: @unchecked Sendable {
 

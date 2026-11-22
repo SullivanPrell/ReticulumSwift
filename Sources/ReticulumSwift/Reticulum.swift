@@ -163,18 +163,32 @@ public final class Reticulum {
   ///
   /// Only messages at or above this level are emitted.
   /// Defaults to `.notice` (matches Python's default log level).
-  public static var globalLogLevel: LogLevel = .notice
+  public static var globalLogLevel: LogLevel {
+    get { logLock.withLock { unsafeGlobalLogLevel } }
+    set { logLock.withLock { unsafeGlobalLogLevel = newValue } }
+  }
+  private static var unsafeGlobalLogLevel: LogLevel = .notice
+  /// Guards the log level and handler: config loads and apps replace them while every thread logs.
+  private static let logLock = NSLock()
 
   /// Whether to prepend a timestamp to log lines.
   ///
   /// Mirrors Python's `RNS.logtimestamps`.
-  public static var logTimestamps: Bool = true
+  public static var logTimestamps: Bool {
+    get { logLock.withLock { unsafeLogTimestamps } }
+    set { logLock.withLock { unsafeLogTimestamps = newValue } }
+  }
+  private static var unsafeLogTimestamps = true
 
   /// Optional custom log handler.
   ///
   /// When non-nil, all log messages are routed here
   /// instead of `print`. Allows apps to integrate with os.Logger or a custom sink.
-  public static var logHandler: ((String, LogLevel) -> Void)?
+  public static var logHandler: ((String, LogLevel) -> Void)? {
+    get { logLock.withLock { unsafeLogHandler } }
+    set { logLock.withLock { unsafeLogHandler = newValue } }
+  }
+  private static var unsafeLogHandler: ((String, LogLevel) -> Void)?
 
   /// Emit a log message if `level >= globalLogLevel`.
   ///
@@ -184,8 +198,11 @@ public final class Reticulum {
   ///   - message:  The message to log.
   ///   - level:    Severity level. Defaults to `.notice`.
   public static func log(_ message: String, level: LogLevel = .notice) {
-    guard level <= globalLogLevel else { return }
-    if let handler = logHandler {
+    let (threshold, handler, timestamps) = logLock.withLock {
+      (unsafeGlobalLogLevel, unsafeLogHandler, unsafeLogTimestamps)
+    }
+    guard level <= threshold else { return }
+    if let handler {
       handler(message, level)
     } else {
       let prefix: String
@@ -201,7 +218,7 @@ public final class Reticulum {
       case .extreme: prefix = "[EXTREME]"
       case .none: prefix = "[NONE]"
       }
-      let ts = logTimestamps ? "[\(Date())] " : ""
+      let ts = timestamps ? "[\(Date())] " : ""
       print("\(ts)\(prefix) \(message)")
       fflush(stdout)
     }
@@ -427,7 +444,7 @@ public final class Reticulum {
   public static func rand() -> Double {
     let bytes = SecureRandom.bytes(8)
     // Construct a value in [0, 1) by filling the mantissa of a 64-bit float.
-    let bits = bytes.withUnsafeBytes { $0.load(as: UInt64.self) }
+    let bits = bytes.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
     // IEEE-754: exponent = 1023 (value 1.0..2.0), then subtract 1.0 → [0, 1)
     let mantissa = (bits & 0x000F_FFFF_FFFF_FFFF) | 0x3FF0_0000_0000_0000
     return Double(bitPattern: mantissa) - 1.0
