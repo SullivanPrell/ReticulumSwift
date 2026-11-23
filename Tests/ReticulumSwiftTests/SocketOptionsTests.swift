@@ -40,6 +40,9 @@ final class SocketOptionsTests: XCTestCase {
     XCTAssertEqual(options.keepaliveInterval, 2, "TCP_PROBE_INTERVAL")
     XCTAssertEqual(options.keepaliveCount, 12, "TCP_PROBES")
     XCTAssertEqual(options.connectionDropTime, 24, "TCP_USER_TIMEOUT")
+    // Linux's TCP_USER_TIMEOUT also ends a zero-window peer; Darwin needs the persist timer,
+    // or a peer that stops reading queues every relayed frame in memory.
+    XCTAssertEqual(options.persistTimeout, 24, "TCP_USER_TIMEOUT over a zero window")
     XCTAssertTrue(options.noDelay, "TCPInterface.py:149, :241 — TCP_NODELAY on every socket")
   }
 

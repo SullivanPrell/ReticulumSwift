@@ -9,7 +9,6 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
-import Network
 
 /// Bidirectional UDP transport for Reticulum packets, wire-compatible
 /// with `RNS.Interfaces.UDPInterface`.
@@ -69,17 +68,17 @@ public final class UDPInterface: Interface {
   /// Total bytes transmitted on this interface.
   public var txBytes: Int { counters.txBytes }
 
-  private var listener: NWListener?
-  private var connection: NWConnection?
-  private let queue: DispatchQueue
-  /// Inbound connections accepted by the listener.
+  /// The one IPv4 socket that receives and sends.
   ///
-  /// Retained so stop() can
-  /// cancel them (otherwise every inbound peer leaks its connection + receive
-  /// loop) and pruned when their receive loop ends. Guarded by `connLock`
-  /// (newConnectionHandler runs on `queue`, stop() on the caller thread).
-  private var inboundConnections: [NWConnection] = []
-  private let connLock = NSLock()
+  /// It stands in for Python's `UDPServer` plus its per-send `SO_BROADCAST` socket
+  /// (`UDPInterface.py:101-103`, `:118-122`) and binds `listenPort` when there is one.
+  /// Network.framework can't send a broadcast and gives each source its own connection, which
+  /// is why this is BSD.
+  private var socketFD: Int32 = -1
+  private var readSource: DispatchSourceRead?
+  private let queue: DispatchQueue
+  /// Touched only on `queue`.
+  private var receiveBuffer = [UInt8](repeating: 0, count: 65_535)
 
   /// Python `UDPInterface.__str__` (`UDPInterface.py:131-132`):
   /// `"UDPInterface["+self.name+"/"+self.bind_ip+":"+str(self.bind_port)+"]"`, where
@@ -118,80 +117,105 @@ public final class UDPInterface: Interface {
 
   /// Brings the interface online.
   public func start() throws {
-    if let listenPort, let port = NWEndpoint.Port(rawValue: listenPort) {
-      let listener = try RNSSocketOptions.listener(using: .udp, bindIP: bindIP, port: port)
-      listener.newConnectionHandler = { [weak self] conn in
-        guard let self else {
-          conn.cancel()
-          return
-        }
-        self.connLock.lock()
-        self.inboundConnections.append(conn)
-        self.connLock.unlock()
-        conn.start(queue: self.queue)
-        self.beginReceiveLoop(on: conn)
+    let s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+    guard s >= 0 else { throw UDPInterfaceError.socket(errno) }
+    var on: Int32 = 1
+    let size = socklen_t(MemoryLayout<Int32>.size)
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &on, size)
+    setsockopt(s, SOL_SOCKET, SO_BROADCAST, &on, size)
+
+    if let listenPort {
+      guard var address = Self.ipv4Address(bindIP, port: listenPort) else {
+        close(s)
+        throw UDPInterfaceError.unresolvable(bindIP)
       }
-      listener.start(queue: queue)
-      self.listener = listener
+      let bound = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+          bind(s, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+      }
+      guard bound == 0 else {
+        let code = errno
+        close(s)
+        throw UDPInterfaceError.socket(code)
+      }
+      let source = DispatchSource.makeReadSource(fileDescriptor: s, queue: queue)
+      source.setEventHandler { [weak self] in self?.receive(on: s) }
+      // The source owns a listening socket: closing it here can't race a read.
+      source.setCancelHandler { close(s) }
+      source.resume()
+      readSource = source
     }
-
-    if let forwardHost, let forwardPort, let port = NWEndpoint.Port(rawValue: forwardPort) {
-      let connection = NWConnection(
-        to: .hostPort(host: NWEndpoint.Host(forwardHost), port: port),
-        using: .udp
-      )
-      connection.start(queue: queue)
-      self.connection = connection
-    }
-
+    socketFD = s
     isOnline = true
   }
 
   /// Takes the interface offline and releases its resources.
   public func stop() {
-    listener?.cancel()
-    listener = nil
-    connection?.cancel()
-    connection = nil
-    connLock.lock()
-    let inbound = inboundConnections
-    inboundConnections.removeAll()
-    connLock.unlock()
-    for c in inbound { c.cancel() }
     isOnline = false
+    if let readSource {
+      readSource.cancel()
+    } else if socketFD >= 0 {
+      close(socketFD)
+    }
+    readSource = nil
+    socketFD = -1
   }
 
   /// Transmits `packet` on the interface.
   public func send(_ packet: Packet) throws {
-    guard let connection else { return }
+    guard socketFD >= 0, let forwardHost, let forwardPort,
+      var destination = Self.ipv4Address(forwardHost, port: forwardPort)
+    else { return }
     let raw = try packet.pack()
-    counters.addTx(bytes: raw.count)
-    connection.send(content: wrapIfac(raw), completion: .contentProcessed { _ in })
-  }
-
-  private func beginReceiveLoop(on conn: NWConnection) {
-    conn.receiveMessage { [weak self] data, _, _, error in
-      guard let self else { return }
-      if let data, !data.isEmpty {
-        self.counters.addRx(bytes: data.count)
-        if let h = self.rawInboundHandler {
-          h(data, self)
-        } else if let packet = try? Packet.unpack(data) {
-          self.inboundHandler?(packet, self)
+    let sent = wrapIfac(raw).withUnsafeBytes { bytes in
+      withUnsafePointer(to: &destination) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+          sendto(
+            socketFD, bytes.baseAddress, bytes.count, 0, $0,
+            socklen_t(MemoryLayout<sockaddr_in>.size))
         }
       }
-      if error == nil {
-        self.beginReceiveLoop(on: conn)
-      } else {
-        // Receive loop ended—drop and cancel this inbound connection
-        // so it doesn't accumulate.
-        self.connLock.lock()
-        self.inboundConnections.removeAll { $0 === conn }
-        self.connLock.unlock()
-        conn.cancel()
-      }
+    }
+    // Python counts only what it transmitted (`UDPInterface.py:123`).
+    if sent >= 0 { counters.addTx(bytes: raw.count) }
+  }
+
+  private func receive(on s: Int32) {
+    let n = recv(s, &receiveBuffer, receiveBuffer.count, 0)
+    guard n > 0 else { return }
+    let data = Data(receiveBuffer[0..<n])
+    counters.addRx(bytes: data.count)
+    if let h = rawInboundHandler {
+      h(data, self)
+    } else if let packet = try? Packet.unpack(data) {
+      inboundHandler?(packet, self)
     }
   }
+
+  /// `host` (a dotted quad or a name, as Python's `sendto` takes) and `port` as an IPv4
+  /// socket address.
+  private static func ipv4Address(_ host: String, port: UInt16) -> sockaddr_in? {
+    var hints = addrinfo()
+    hints.ai_family = AF_INET
+    hints.ai_socktype = SOCK_DGRAM
+    var result: UnsafeMutablePointer<addrinfo>?
+    guard getaddrinfo(host, nil, &hints, &result) == 0, let first = result else { return nil }
+    defer { freeaddrinfo(first) }
+    var address = first.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+      $0.pointee
+    }
+    address.sin_port = port.bigEndian
+    return address
+  }
+}
+
+/// Errors raised while bringing a UDP interface up.
+public enum UDPInterfaceError: Error {
+  /// A socket call failed with this `errno`.
+  case socket(Int32)
+  /// The listen address didn't resolve to IPv4.
+  case unresolvable(String)
 }
 
 extension UDPInterface {

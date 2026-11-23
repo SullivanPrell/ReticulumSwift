@@ -1842,6 +1842,7 @@ public final class Transport {
   func received(_ packet: Packet, on interface: any Interface) -> Packet {
     var inbound = packet
     inbound.hops = inboundHops(of: packet, on: interface)
+    inbound.receivingInterface = interface
     return inbound
   }
 
@@ -4081,6 +4082,7 @@ public final class Transport {
       knownDestinationAnnouncedAt.removeValue(forKey: h)
       knownDestinationLastUsed.removeValue(forKey: h)
       knownDestinationStamps.removeValue(forKey: h)
+      knownDestinationPacketHash.removeValue(forKey: h)
       // `Identity.py:455`.
       knownRatchets.removeValue(forKey: h)
       knownRatchetTimes.removeValue(forKey: h)
@@ -5131,9 +5133,10 @@ public final class Transport {
     // Without it, `pack()` caps every packet at the base 500 bytes, so once MTU discovery
     // raises a link the resource parts `bugs/016` sizes from that MTU, and every
     // interface and the transfer dies silently (`bugs/033`).
+    var link: Link?
     if packet.destinationType == .link {
       lock.lock()
-      let link = links[packet.destinationHash]
+      link = links[packet.destinationHash]
       lock.unlock()
       if let link { packet.mtu = max(packet.mtu, link.establishedMtu) }
     }
@@ -5229,6 +5232,8 @@ public final class Transport {
       lock.unlock()
     } else {
       for iface in interfaces where iface.isOnline && iface.isRoutingEndpoint {
+        // A link's packets leave only on its attached interface (`Transport.py:1757`).
+        if packet.destinationType == .link, iface !== link?.attachedInterface { continue }
         try? transmit(deltaMangled(packet, for: iface), on: iface)
       }
     }
@@ -5630,6 +5635,18 @@ public final class Transport {
       return
     }
 
+    // A local link takes DATA and resource proofs only from its attached interface
+    // (`Transport.py:2974`, `Link.py:1027`); packet proofs are signature-checked from anywhere
+    // (`Transport.py:3124-3131`). A DATA copy from elsewhere leaves the hashlist, so the
+    // genuine one still gets through (`Transport.py:2993`).
+    if packet.destinationType == .link,
+      packet.packetType == .data || packet.context == .resourceProof,
+      let link = lookupLink(packet.destinationHash), link.attachedInterface !== interface
+    {
+      if packet.packetType == .data { discardPacketHash(packet) }
+      return
+    }
+
     switch packet.packetType {
     case .announce:
       handleAnnounce(packet, from: interface)
@@ -5673,9 +5690,11 @@ public final class Transport {
       destination.kind.rawValue == packet.destinationType.rawValue,
       packet.transportID == nil || packet.transportID == transportInstanceID
     {
+      var request = received(packet, on: interface)
+      clampLocalLinkRequestMtu(&request, on: interface)
       do {
         let link = try Link.answer(
-          request: received(packet, on: interface),
+          request: request,
           destination: destination,
           owner: owner,
           transport: self
@@ -5784,6 +5803,24 @@ public final class Transport {
       // better than dropping it on a Python `min(None)` crash.
       let clamped = min(nh, phMtu ?? nh)
       packet.data = Data(packet.data.prefix(base)) + Link.mtuSignallingBytes(mtu: clamped)
+    }
+  }
+
+  /// A local destination's link can't negotiate above what the receiving interface carries
+  /// (`Transport.py:2944-2962`): no HW MTU drops the signalling, and an interface that can't
+  /// autoconfigure or fix its MTU caps the link at the base 500.
+  private func clampLocalLinkRequestMtu(_ packet: inout Packet, on interface: any Interface) {
+    let base = Constants.keySize
+    guard packet.data.count == base + 3,
+      let pathMtu = Link.mtuFromSignalling(Data(packet.data.suffix(3))), pathMtu > 0
+    else { return }
+    guard let hwMtu = interface.hwMtu else {
+      packet.data = Data(packet.data.prefix(base))
+      return
+    }
+    let nhMtu = interface.autoconfigureMtu || interface.fixedMtu ? hwMtu : Constants.mtu
+    if nhMtu < pathMtu {
+      packet.data = Data(packet.data.prefix(base)) + Link.mtuSignallingBytes(mtu: nhMtu)
     }
   }
 
@@ -7321,6 +7358,14 @@ public final class Transport {
     hashlistLock.lock()
     defer { hashlistLock.unlock() }
     insertPacketHashLocked(hash)
+  }
+
+  /// Python's `packet_hashlist.discard(packet.packet_hash)` (`Transport.py:2993`).
+  private func discardPacketHash(_ packet: Packet) {
+    guard let hash = Self.packetHashlistKey(packet) else { return }
+    hashlistLock.lock()
+    defer { hashlistLock.unlock() }
+    packetHashlist.remove(hash)
   }
 
   /// Adds `hash` to the current generation, rotating when it fills.

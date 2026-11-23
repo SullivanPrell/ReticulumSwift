@@ -76,6 +76,19 @@ final class CleanKnownDestinationsTests: XCTestCase {
       "never-used pathless entry announced > UNUSED_DESTINATION_LINGER ago must be cleaned")
   }
 
+  /// A removed identity takes its announce packet hash with it.
+  ///
+  /// Python keeps the hash inside the `known_destinations` entry, so it leaves with the
+  /// entry. Here it lives in its own map and must be removed with the identity.
+  func testRemovedEntryTakesItsAnnouncePacketHash() {
+    let t = makeTransport()
+    let h = addIdentity(to: t, announcedSecondsAgo: Transport.unusedDestinationLinger + 60)
+    t.knownDestinationPacketHash[h] = Data(repeating: 0xAA, count: 32)
+    t.cleanKnownDestinations()
+    XCTAssertNil(t.recall(identity: h))
+    XCTAssertNil(t.knownDestinationPacketHash[h])
+  }
+
   func testNeverUsedPathlessEntryWithinLingerIsRetained() {
     let t = makeTransport()
     let h = addIdentity(to: t, announcedSecondsAgo: Transport.unusedDestinationLinger / 2)

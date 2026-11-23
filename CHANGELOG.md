@@ -17,6 +17,34 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- A link's packets go out only on the interface its request or proof arrived on, and packets
+  for it from any other interface are dropped, as Python's `attached_interface` does
+  (`Transport.py:1757`, `:2974`, `Link.py:1027`). `Link` had no attached interface, so every
+  link packet fell through to the broadcast branch: a TCP file transfer from a node that also
+  had an RNode went over the radio too. `Link.attachedInterface` is new. A link DATA packet from
+  the wrong interface also leaves the packet hashlist, so the genuine copy still gets through.
+- A responder caps a link's MTU at what the receiving interface carries
+  (`Transport.py:2944-2962`). It adopted any requested MTU, so a Python `BackboneInterface`
+  client asking for 1 MB on a 262 144-byte `TCPServerInterface` link sent parts the HDLC decoder
+  dropped, and the transfer stalled without an error.
+- `AutoInterface` accepts data only from peers that sent a valid beacon
+  (`AutoInterface.py:613-615`), and data refreshes the peer. The data socket binds every
+  address, so any host reaching port 42671, over IPv4 or a global IPv6 address, could inject
+  packets past the group ID.
+- `AutoInterface` follows a changed link-local address on its adopted interfaces, as Python's
+  `peer_jobs` does (`AutoInterface.py:411-427`). It beaconed the address it read at start, so
+  after a MAC or address change every peer rejected its beacons until a restart.
+- `UDPInterface` reads `port` into whichever of `listen_port` and `forward_port` is unset
+  (`UDPInterface.py:68-72`); the manual's `device`/`port` block got no ports at all. The
+  interface now runs on one BSD socket with `SO_BROADCAST`, so `forward_ip = 255.255.255.255`
+  sends (Network.framework can't send a broadcast, and dropped the error), and inbound senders no
+  longer each keep an `NWConnection` for the life of the interface.
+- TCP sockets set the persist timeout to the 24 s user timeout. Linux's `TCP_USER_TIMEOUT`
+  also ends a peer holding a zero window; on Darwin a client that stopped reading kept
+  answering keepalives, and every relayed frame queued in memory for it.
+- `cleanKnownDestinations` drops the destination's announce packet hash with the rest of its
+  entry. Python keeps the hash inside the `known_destinations` entry; the port's separate map
+  was never pruned.
 - Data races on the RNode interfaces' radio state. The KISS frame dispatcher wrote the `r...`
   radio fields, `detected`, `firmwareOk` and the firmware version while the bring-up thread,
   `Transport` and apps read them, with no lock. `RNodeInterface` and `RNodeSubInterface` now

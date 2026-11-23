@@ -1944,8 +1944,9 @@ public final class Reticulum {
       iface = TCPServerInterface(name: ifCfg.name, port: UInt16(listenPort), bindIP: bindIP)
 
     case "UDPInterface":
-      let listenPort = ifCfg.int("listen_port")
-      let forwardPort = ifCfg.int("forward_port")
+      // `port` fills whichever of the two is unset (`UDPInterface.py:68-72`).
+      let listenPort = ifCfg.int("listen_port") ?? ifCfg.int("port")
+      let forwardPort = ifCfg.int("forward_port") ?? ifCfg.int("port")
       // `device` names a network device whose broadcast address fills whichever of
       // bind and forward the block leaves unset (`UDPInterface.py:82-86`); explicit
       // `listen_ip` / `forward_ip` win, as they do there.

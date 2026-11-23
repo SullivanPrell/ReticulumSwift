@@ -79,6 +79,9 @@ enum RNSSocketOptions {
     options.keepaliveInterval = probeInterval
     options.keepaliveCount = probes
     options.connectionDropTime = userTimeout
+    // Linux's TCP_USER_TIMEOUT also ends a peer that holds a zero window; Darwin needs the
+    // persist timer for that, or every frame for a peer that stopped reading queues in memory.
+    options.persistTimeout = userTimeout
     // RNS packets are small and latency-sensitive; Nagle would hold them behind the
     // delayed-ACK timer.
     options.noDelay = true
@@ -141,8 +144,7 @@ enum RNSSocketOptions {
   /// A listener on `port` of `bindIP`, the address a Python server interface binds.
   ///
   /// Python's `TCPServerInterface` binds the address `listen_ip` resolves to
-  /// (`TCPInterface.py:551`, `:567`, `:573`), and `UDPInterface` binds `(bind_ip, bind_port)`
-  /// (`UDPInterface.py:101-103`). `NWListener(using:on:)` binds every address, so any other
+  /// (`TCPInterface.py:551`, `:567`, `:573`). `NWListener(using:on:)` binds every address, so any other
   /// address becomes a required local endpoint. A host name resolves first, to its IPv4 address
   /// where it has one (`TCPInterface.py:490-497`): `NWListener` given a name there listens on an
   /// arbitrary port.
