@@ -216,6 +216,7 @@ final class TCPInterfaceNamingTests: XCTestCase {
   /// Python reads `listen_ip` for the bind address (`TCPInterface.py:518`); the Swift
   /// synthesizer ignored it, so every listener claimed 0.0.0.0 regardless of config.
   func testSynthesisReadsListenIPForTheServerName() throws {
+    let port = try freeLoopbackPort()
     let cfg = ReticulumConfig.parse(
       """
       [interfaces]
@@ -223,7 +224,7 @@ final class TCPInterfaceNamingTests: XCTestCase {
           type = TCPServerInterface
           interface_enabled = true
           listen_ip = 127.0.0.1
-          listen_port = 4242
+          listen_port = \(port)
       """)
     let reticulum = Reticulum(
       configuration: Reticulum.Configuration(
@@ -235,7 +236,7 @@ final class TCPInterfaceNamingTests: XCTestCase {
 
     let names = reticulum.transport.interfaces.map(\.displayName)
     XCTAssertTrue(
-      names.contains("TCPServerInterface[TCP Server/127.0.0.1:4242]"),
+      names.contains("TCPServerInterface[TCP Server/127.0.0.1:\(port)]"),
       "got \(names)")
   }
 }
