@@ -367,4 +367,78 @@ final class TunnelPathRestoreTests: XCTestCase {
     XCTAssertTrue(revived.paths[destination.hash]?.nextHopInterface === second)
     XCTAssertEqual(revived.hopsTo(destination.hash), 3)
   }
+
+  // MARK: - Captured from Python
+
+  /// One `handle_tunnel` case, in Python's hop counts, and what RNS 1.6.1 did with it.
+  private struct Vector {
+    let name: String
+    let tunnelHops: UInt8
+    var tunnelExpired = false
+    var tableHops: UInt8?
+    var tableExpired = false
+    var tableNewer = false
+    let restored: Bool
+    let hopsAfter: UInt8?
+    let inTunnel: Bool
+  }
+
+  /// Captured from RNS 1.6.1 by `scripts/capture-tunnel-restore-vectors.py`.
+  private let vectors: [Vector] = [
+    Vector(name: "absent", tunnelHops: 2, restored: true, hopsAfter: 2, inTunnel: true),
+    Vector(
+      name: "absent_expired", tunnelHops: 2, tunnelExpired: true, restored: false, hopsAfter: nil,
+      inTunnel: false),
+    Vector(
+      name: "more_hops_in_table", tunnelHops: 2, tableHops: 4, restored: true, hopsAfter: 2,
+      inTunnel: true),
+    Vector(
+      name: "fewer_hops_in_table", tunnelHops: 3, tableHops: 1, restored: false, hopsAfter: 1,
+      inTunnel: false),
+    Vector(
+      name: "fewer_hops_in_table_expired", tunnelHops: 3, tableHops: 1, tableExpired: true,
+      restored: true, hopsAfter: 3, inTunnel: true),
+    Vector(
+      name: "newer_table_announce", tunnelHops: 2, tableHops: 4, tableNewer: true,
+      restored: false, hopsAfter: 4, inTunnel: false),
+    Vector(
+      name: "equal_hops_equal_timebase", tunnelHops: 2, tableHops: 2, restored: true,
+      hopsAfter: 2, inTunnel: true),
+  ]
+
+  /// Every captured case ends as Python's did.
+  ///
+  /// On a mesh interface Python's count is the wire count plus one.
+  func testEveryCaseMatchesPythonsCapturedOutcome() throws {
+    for v in vectors {
+      let t = makeTransport()
+      let first = mesh("first", on: t)
+      let direct = mesh("direct", on: t)
+      let (endpoint, destination, tunnelPath) = try tunnelWithPath(
+        on: t, through: first, hops: v.tunnelHops - 1, aspect: v.name)
+      if v.tunnelExpired {
+        t.tunnels[endpoint.tunnelID]?.paths[destination.hash]?.expires = Date()
+          .addingTimeInterval(-1)
+      }
+      if let tableHops = v.tableHops {
+        let timebase =
+          Transport.timebaseFromRandomBlobs(tunnelPath.randomBlobs) + (v.tableNewer ? 100 : 0)
+        install(
+          destination, on: t, through: direct, hops: tableHops - 1,
+          blobs: [blob(emittedAt: timebase)],
+          expires: Date().addingTimeInterval(v.tableExpired ? -1 : Transport.pathExpiry))
+      } else {
+        t.paths.removeValue(forKey: destination.hash)
+      }
+      let second = mesh("second", on: t)
+
+      try synthesize(endpoint, on: second)
+
+      let path = t.paths[destination.hash]
+      XCTAssertEqual(path?.nextHopInterface === second, v.restored, v.name)
+      XCTAssertEqual(t.hopsTo(destination.hash), v.hopsAfter, v.name)
+      XCTAssertEqual(
+        t.tunnels[endpoint.tunnelID]?.paths[destination.hash] != nil, v.inTunnel, v.name)
+    }
+  }
 }

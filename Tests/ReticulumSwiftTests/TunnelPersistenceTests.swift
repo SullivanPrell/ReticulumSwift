@@ -15,7 +15,7 @@ import XCTest
 /// `storage/tunnels`—the one file in `bugs/029` that isn't a divergence but an absence.
 ///
 /// The reference writes the tunnel table on the same clock as the path table
-/// (`Transport.persist_data` at `Transport.py:3510-3512`) and restores it at start (`:368-405`).
+/// (`Transport.persist_data` at `Transport.py:3962-3967`) and restores it at start (`:462-500`).
 /// The port writes no counterpart at all, so a node with an established tunnel loses every tunnel
 /// path across a restart and can't serve them again until the peer re-announces—which for a
 /// tunnel endpoint that's itself waiting isn't guaranteed to happen at all.
@@ -86,7 +86,7 @@ final class TunnelPersistenceTests: XCTestCase {
       FileManager.default.fileExists(atPath: fileURL.path),
       """
       the reference writes `storage/tunnels` on the same clock as the path table \
-      (Transport.py:3510-3512). Nothing in the port writes it, so an established \
+      (Transport.py:3962-3967). Nothing in the port writes it, so an established \
       tunnel does not outlive the process.
       """)
 
@@ -118,7 +118,7 @@ final class TunnelPersistenceTests: XCTestCase {
 
   // MARK: - The shape
 
-  /// `serialised_tunnel = [tunnel_id, interface_hash, serialised_paths, expires]`—`Transport.py:3487`,
+  /// `serialised_tunnel = [tunnel_id, interface_hash, serialised_paths, expires]`—`Transport.py:3942`,
   /// indexed positionally at `:373-376`.
   func testEntryIsTheReferenceFourElementList() throws {
     let (live, iface) = makeTransport()
@@ -129,17 +129,17 @@ final class TunnelPersistenceTests: XCTestCase {
     guard case .array(let entries) = try MsgPack.decode(Data(contentsOf: fileURL)),
       case .array(let fields) = entries.first
     else {
-      return XCTFail("the file is `umsgpack.packb(serialised_tunnels)` (Transport.py:3491)")
+      return XCTFail("the file is `umsgpack.packb(serialised_tunnels)` (Transport.py:3947)")
     }
     XCTAssertEqual(
       fields.count, 4,
-      "[tunnel_id, interface_hash, paths, expires] (Transport.py:3487)")
+      "[tunnel_id, interface_hash, paths, expires] (Transport.py:3942)")
     guard fields.count == 4 else { return }
 
     XCTAssertEqual(fields[0], .bytes(tunnelID))
     XCTAssertEqual(
       fields[1], .bytes(iface.hash),
-      "field 1 is the tunnel's `interface.get_hash()` (Transport.py:3456)")
+      "field 1 is the tunnel's `interface.get_hash()` (Transport.py:3912)")
 
     guard case .array(let paths) = fields[2], case .array(let path) = paths.first else {
       return XCTFail("field 2 is the list of serialised paths")
@@ -154,7 +154,7 @@ final class TunnelPersistenceTests: XCTestCase {
   }
 
   /// `if interface != None: interface_hash = interface.get_hash() else: interface_hash = None`
-  /// (`Transport.py:3456-3457`)—a tunnel whose interface has gone is still written, with a
+  /// (`Transport.py:3912-3913`)—a tunnel whose interface has gone is still written, with a
   /// null interface. `TunnelEntry.iface` is weak here, so this is the state after the interface
   /// is deregistered, not a hypothetical.
   func testTunnelWithNoInterfaceIsStillWritten() throws {
@@ -176,7 +176,7 @@ final class TunnelPersistenceTests: XCTestCase {
   }
 
   /// `if announce_packet != None: … tunnel_paths[destination_hash] = tunnel_path` and
-  /// `if len(tunnel_paths) > 0` (`Transport.py:398-404`)—a tunnel all of whose paths lost
+  /// `if len(tunnel_paths) > 0` (`Transport.py:483-498`)—a tunnel all of whose paths lost
   /// their announce isn't restored at all.
   func testTunnelWithNoRestorablePathIsDropped() throws {
     let (live, iface) = makeTransport()
@@ -194,12 +194,12 @@ final class TunnelPersistenceTests: XCTestCase {
       revived.tunnels[tunnelID],
       """
       the reference installs a tunnel only when at least one of its paths came \
-      back (Transport.py:402). An empty tunnel is a tunnel that can route nothing.
+      back (Transport.py:497). An empty tunnel is a tunnel that can route nothing.
       """)
   }
 
   /// The restored tunnel's interface is null, exactly as `tunnel = [tunnel_id, None,
-  /// tunnel_paths, expires]` sets it (`Transport.py:403`): the tunnel is re-attached to a live
+  /// tunnel_paths, expires]` sets it (`Transport.py:498`): the tunnel is re-attached to a live
   /// interface when the endpoint reappears, not by the restore.
   func testRestoredTunnelHasNoInterfaceUntilTheEndpointReappears() throws {
     let (live, iface) = makeTransport()
@@ -213,20 +213,20 @@ final class TunnelPersistenceTests: XCTestCase {
     XCTAssertNotNil(revived.tunnels[tunnelID])
     XCTAssertNil(
       revived.tunnels[tunnelID]?.iface,
-      "field 1 of the restored tunnel is None (Transport.py:403)")
+      "field 1 of the restored tunnel is None (Transport.py:498)")
   }
 
   // MARK: - Wired into the lifecycle
 
   /// Python persists all three tables together (`Transport.persist_data`,
-  /// `Transport.py:3510-3512`) and restores the tunnel table immediately after the destination
+  /// `Transport.py:3962-3967`) and restores the tunnel table immediately after the destination
   /// table (`:365`).
   ///
   /// A `TunnelStore` nothing calls is the same defect one level out.
   func testReticulumStopWritesTunnelsAndStartRestoresThem() throws {
     let dir = tmpDir.appendingPathComponent("lifecycle")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    // Only a transport instance restores the tunnel table (`Transport.py:404`, `:462`).
+    // Only a transport instance restores the tunnel table (`Transport.py:462`).
     try "[reticulum]\nenable_transport = Yes\n".write(
       to: tmpDir.appendingPathComponent("config"), atomically: true, encoding: .utf8)
     let config = Reticulum.Configuration(storagePath: dir)
@@ -252,7 +252,7 @@ final class TunnelPersistenceTests: XCTestCase {
 
     let tunnel = try XCTUnwrap(
       revived.transport.tunnels[tunnelID],
-      "start() must restore the tunnel table (Transport.py:365-405)")
+      "start() must restore the tunnel table (Transport.py:462-500)")
     XCTAssertNotNil(tunnel.paths[destHash])
   }
 }
