@@ -32,7 +32,12 @@ final class RNGitNodeTests: XCTestCase {
     let script: [(prefix: [String], output: String)]
 
     /// The arguments of every call the node made, in the order it made them.
-    var calls: [[String]] = []
+    var calls: [[String]] {
+      get { lock.withLock { recorded } }
+      set { lock.withLock { recorded = newValue } }
+    }
+    private var recorded: [[String]] = []
+    private let lock = NSLock()
 
     init(
       available: Bool = true, version: Int32 = 0,
@@ -46,7 +51,7 @@ final class RNGitNodeTests: XCTestCase {
     func run(_ executable: String, arguments: [String], in directory: String?)
       -> RNGitCommandOutput?
     {
-      calls.append(arguments)
+      lock.withLock { recorded.append(arguments) }
       guard available else { return nil }
       if arguments == ["--version"] {
         return RNGitCommandOutput(
@@ -838,5 +843,85 @@ final class RNGitRuntimeTests: XCTestCase {
     ])
     XCTAssertEqual(result.status, 255)
     XCTAssertEqual(result.out, "")
+  }
+}
+
+extension RNGitNodeTests {
+
+  // MARK: - Concurrency
+
+  func testConcurrentRecordsAllLand() throws {
+    let node = try makeNode()
+    DispatchQueue.concurrentPerform(iterations: 64) { _ in
+      node.record { $0.recordPageView(on: "2026-11-24") }
+    }
+    XCTAssertEqual(node.statistics.frontPageViews["2026-11-24"], 64)
+  }
+
+  /// Each fetch copied the statistics in and assigned its copy back, so overlapping fetches
+  /// lost each other's counts.
+  func testConcurrentFetchesAllCount() throws {
+    let held = try makeServingNode(
+      repositories: ["project.git"], granting: "r:all", settings: "record_stats = yes",
+      runner: Runner(script: Self.bareRepository))
+    let link = try makeLink()
+    held.node.identified(link)
+    let request = MsgPack.Value.map([
+      (.uint(0), .string("public/project.git")),
+      (.string("refs"), .array([.map([(.string("ref"), .string("refs/heads/main"))])])),
+    ])
+    DispatchQueue.concurrentPerform(iterations: 16) { _ in
+      _ = held.node.answer(.fetch, request, from: Identity(), on: link.linkID)
+    }
+    XCTAssertEqual(
+      held.node.statistics.groups["public"]?.repositories["project.git"]?
+        .fetch[RNGitStatsStore.day()], 16)
+    XCTAssertEqual(held.node.temporaries.held[try XCTUnwrap(link.linkID)]?.count, 16)
+  }
+
+  /// A page count adds to counts other requests made while the page rendered.
+  ///
+  /// The page node assigned its snapshot back, which erased them.
+  func testAPageCountAddsToCountsMadeMeanwhile() {
+    var snapshot = RNGitStatistics()
+    snapshot.recordFetch("public", "project.git", on: "2026-11-24")
+    var rendered = snapshot
+    rendered.recordRepositoryView("public", "project.git", on: "2026-11-24")
+    var current = snapshot
+    current.recordFetch("public", "project.git", on: "2026-11-24")
+    current.recordFetch("public", "project.git", on: "2026-11-24")
+
+    current.add(rendered, since: snapshot)
+
+    let counters = current.groups["public"]?.repositories["project.git"]
+    XCTAssertEqual(counters?.fetch["2026-11-24"], 3)
+    XCTAssertEqual(counters?.view["2026-11-24"], 1)
+  }
+
+  func testConcurrentIdentifiesAllLand() throws {
+    let node = try makeNode()
+    let links = try (0..<16).map { _ in try makeLink() }
+    DispatchQueue.concurrentPerform(iterations: links.count) { node.identified(links[$0]) }
+    XCTAssertEqual(node.activeLinks.count, 16)
+  }
+
+  /// Requests, links and the jobs loop reach the node from different threads at once.
+  ///
+  /// Run it under `swift test --sanitize=thread` to see the race.
+  func testRequestsLinksAndJobsShareTheNodeSafely() throws {
+    let held = try makeServingNode(
+      repositories: ["project.git"], granting: "r:all", settings: "record_stats = yes",
+      runner: Runner(script: Self.bareRepository))
+    let links = try (0..<8).map { _ in try makeLink() }
+    let request = MsgPack.Value.map([(.uint(0), .string("public/project.git"))])
+    DispatchQueue.concurrentPerform(iterations: 32) { index in
+      switch index % 4 {
+      case 0: held.node.identified(links[index / 4])
+      case 1: _ = held.node.answer(.list, request, from: Identity(), on: nil)
+      case 2: held.node.record { $0.recordPageView(on: "2026-11-24") }
+      default: held.node.runDueJobs(at: Date().timeIntervalSince1970 + Double(index) * 3600)
+      }
+    }
+    XCTAssertEqual(held.node.statistics.frontPageViews["2026-11-24"], 8)
   }
 }

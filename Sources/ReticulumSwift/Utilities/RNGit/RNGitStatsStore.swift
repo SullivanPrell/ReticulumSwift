@@ -135,6 +135,45 @@ extension RNGitStatistics {
   }
 }
 
+// MARK: - Merging
+
+extension RNGitStatistics {
+
+  /// Adds what `after` counted since `before`, the change a handler made to its own copy.
+  ///
+  /// A handler works on a copy, so two that overlap can't assign their copies back without one
+  /// erasing the other's counts. Python mutates one dictionary in place.
+  public mutating func add(_ after: RNGitStatistics, since before: RNGitStatistics) {
+    Self.add(&frontPageViews, after.frontPageViews, since: before.frontPageViews)
+    for (name, group) in after.groups {
+      let old = before.groups[name] ?? RNGitGroupStatistics()
+      guard group != old else { continue }
+      var merged = groups[name] ?? RNGitGroupStatistics()
+      Self.add(&merged.view, group.view, since: old.view)
+      for (repository, counters) in group.repositories {
+        let was = old.repositories[repository] ?? RNGitRepositoryStatistics()
+        guard counters != was else { continue }
+        var into = merged.repositories[repository] ?? RNGitRepositoryStatistics()
+        Self.add(&into.view, counters.view, since: was.view)
+        Self.add(&into.fetch, counters.fetch, since: was.fetch)
+        Self.add(&into.push, counters.push, since: was.push)
+        Self.add(&into.download, counters.download, since: was.download)
+        Self.add(&into.releaseDownload, counters.releaseDownload, since: was.releaseDownload)
+        merged.repositories[repository] = into
+      }
+      groups[name] = merged
+    }
+  }
+
+  private static func add(
+    _ into: inout [String: Int], _ after: [String: Int], since before: [String: Int]
+  ) {
+    for (day, count) in after where count != before[day] {
+      into[day, default: 0] += count - (before[day] ?? 0)
+    }
+  }
+}
+
 // MARK: - Coding
 
 extension RNGitStatistics {
