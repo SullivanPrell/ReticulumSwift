@@ -369,6 +369,9 @@ public final class BackboneInterface: Interface, MtuAutoconfiguringInterface {
       Reticulum.log(
         "BackboneInterface \(name) reached max reconnect tries (\(maxTries)), giving up.",
         level: .error)
+      Reticulum.interfaceFailed(
+        "The interface \(displayName) experienced an unrecoverable error and is being torn down. "
+          + "Restart Reticulum to attempt to open this interface again.")
       return
     }
     reconnectAttempts = attempts + 1

@@ -285,6 +285,8 @@ public final class KISSInterface: Interface {
     Reticulum.log(
       "\(displayName) lost its serial device (\(error)) — reconnecting",
       level: .error)
+    Reticulum.interfaceFailed(
+      "The interface \(displayName) experienced an unrecoverable error and is now offline.")
     lock.lock()
     isOnline = false
     interfaceReady = false

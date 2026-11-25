@@ -254,4 +254,21 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
     waitUntil("a retry after the refused connection") { iface.dialCountForTesting >= 2 }
     XCTAssertFalse(iface.isOnline)
   }
+
+  /// Running out of reconnect tries panics when `panic_on_interface_error` is set
+  /// (`TCPInterface.py:301-303`, `:450-454`).
+  func testExhaustingReconnectTriesPanicsWhenConfigured() throws {
+    let saved = Reticulum.panic
+    let panicked = expectation(description: "panic")
+    Reticulum.panic = { panicked.fulfill() }
+    Reticulum.panicOnInterfaceError = true
+    defer {
+      Reticulum.panic = saved
+      Reticulum.panicOnInterfaceError = false
+    }
+    let iface = makeClient(port: try deadPort())
+    iface.maxReconnectTries = 1
+    try iface.start()
+    wait(for: [panicked], timeout: 5)
+  }
 }

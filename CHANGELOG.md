@@ -17,6 +17,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- `panic_on_interface_error = yes` now exits the process with status 255 when an interface gives
+  up for good, as Python's `RNS.panic()` does. The config option was parsed and never read. The
+  exit comes after a TCP or Backbone client runs out of `max_reconnect_tries`, and when a Serial,
+  KISS, AX.25 KISS, RNode or RNode multi interface loses its device. Each site first logs
+  Python's "experienced an unrecoverable error" line. `Reticulum.panicOnInterfaceError` holds
+  the setting.
 - Data races on the RNode interfaces' radio state. The KISS frame dispatcher wrote the `r...`
   radio fields, `detected`, `firmwareOk` and the firmware version while the bring-up thread,
   `Transport` and apps read them, with no lock. `RNodeInterface` and `RNodeSubInterface` now

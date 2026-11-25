@@ -309,6 +309,9 @@ public final class TCPClientInterface: Interface, MtuAutoconfiguringInterface {
     if let max = maxReconnectTries, count >= max {
       // Python: "Max reconnection attempts reached for …" then teardown.
       Reticulum.log("Max reconnection attempts reached for \(displayName)", level: .error)
+      Reticulum.interfaceFailed(
+        "The interface \(displayName) experienced an unrecoverable error and is being torn down. "
+          + "Restart Reticulum to attempt to open this interface again.")
       return
     }
     scheduleReconnect()
