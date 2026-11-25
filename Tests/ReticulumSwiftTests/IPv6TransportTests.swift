@@ -26,7 +26,7 @@ final class IPv6TransportTests: XCTestCase {
   func testPacketExchangeOverIPv6Loopback() throws {
     let port: UInt16 = UInt16.random(in: 45_000...55_000)
 
-    let server = TCPServerInterface(name: "ygg-server", port: port)
+    let server = TCPServerInterface(name: "ygg-server", port: port, bindIP: "::")
     let client = TCPClientInterface(name: "ygg-client", host: "::1", port: port)
 
     let received = expectation(description: "server receives a packet over IPv6")
