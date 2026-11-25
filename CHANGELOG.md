@@ -42,6 +42,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
   place like Python's `shutil.move(resource.data.name, …)`. Receiving a 100 MB file with
   `rncp` peaked at 289 MB and now peaks at 33 MB, the same as for 10 MB.
 
+### Deliberate differences from Python
+
+- The announce cache stays one file per announce in `cache/announces/`. Python 1.6 keeps it in
+  `cache/announces.db` (`Transport.py:3502-3514`, `Storage.py:734-754`) and imports a
+  `cache/announces/` directory on start (`:3506-3509`), so Python reads a Swift directory. A
+  Swift daemon started on a Python 1.6 directory restores no path until announces return.
+  reticulum-interop's `test_python_state_read_by_swift` is a strict xfail for it.
+
 ## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
 
 ### Reference parity moves to RNS 1.6.1
