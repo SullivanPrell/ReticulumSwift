@@ -17,6 +17,9 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- A link request whose mode bits name a mode outside `Link.enabledModes` is refused, as Python
+  refuses it (`Link.py:168-177`, `:453`). `Link.answer` ignored the bits and answered with
+  AES-256-CBC, so a peer asking for another mode got a link keyed differently from its own.
 - Data races on the RNode interfaces' radio state. The KISS frame dispatcher wrote the `r...`
   radio fields, `detected`, `firmwareOk` and the firmware version while the bring-up thread,
   `Transport` and apps read them, with no lock. `RNodeInterface` and `RNodeSubInterface` now
@@ -41,6 +44,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   while they run; it is removed afterwards (`Resource.py:759-761`). `rncp` moves that file into
   place like Python's `shutil.move(resource.data.name, …)`. Receiving a 100 MB file with
   `rncp` peaked at 289 MB and now peaks at 33 MB, the same as for 10 MB.
+
+### Deliberate differences from Python
+
+- A destination's ratchet private keys stay in this port's JSON sidecar beside the identity.
+  Python writes a signed msgpack file at the path the app passes to `enable_ratchets`
+  (`Destination.py:233-246`, `:575`). No peer reads the file; it differs only for a storage directory
+  moved between implementations, and changing it would mean reading both formats.
 
 ## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
 
