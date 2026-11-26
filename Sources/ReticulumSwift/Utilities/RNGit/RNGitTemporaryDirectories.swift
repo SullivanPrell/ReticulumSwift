@@ -45,6 +45,11 @@ public struct RNGitTemporaryDirectories: Sendable {
     try? FileManager.default.removeItem(atPath: directory)
   }
 
+  /// Holds every directory `other` holds as well.
+  public mutating func adopt(_ other: RNGitTemporaryDirectories) {
+    for (link, paths) in other.held { held[link, default: []] += paths }
+  }
+
   /// Removes whatever was held for `link`, answering what it removed.
   @discardableResult
   public mutating func release(_ link: Data) -> [String] {

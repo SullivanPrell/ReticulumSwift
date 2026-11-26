@@ -15,10 +15,8 @@ import XCTest
 final class UDPInterfaceTests: XCTestCase {
 
   func testDatagramRoundTripBetweenTwoUDPInterfaces() throws {
-    // Pick two different ports on loopback. Use high range to avoid
-    // collisions in shared CI environments.
-    let portA: UInt16 = UInt16.random(in: 40_000...50_000)
-    let portB: UInt16 = portA + 1
+    let ports = try freeLoopbackPorts(2)
+    let (portA, portB) = (ports[0], ports[1])
 
     let a = UDPInterface(
       name: "A",

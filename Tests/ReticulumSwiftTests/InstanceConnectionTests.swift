@@ -58,9 +58,9 @@ final class InstanceConnectionTests: XCTestCase {
     return directory
   }
 
-  private func freePortPair() -> (UInt16, UInt16) {
-    let base = UInt16.random(in: 41_000...48_000)
-    return (base, base &+ 1)
+  private func freePortPair() throws -> (UInt16, UInt16) {
+    let ports = try freeLoopbackPorts(2)
+    return (ports[0], ports[1])
   }
 
   private func attach(
@@ -106,7 +106,7 @@ final class InstanceConnectionTests: XCTestCase {
   // MARK: - Standalone
 
   func testAttach_shareInstanceDisabled_isStandalone() throws {
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: false, sharedPort: shared, controlPort: control)
     let connection = try attach(directory)
@@ -116,7 +116,7 @@ final class InstanceConnectionTests: XCTestCase {
   }
 
   func testAttach_shareInstanceDisabled_requireShared_throws() throws {
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: false, sharedPort: shared, controlPort: control)
     XCTAssertThrowsError(try attach(directory, requireSharedInstance: true)) { error in
@@ -196,7 +196,7 @@ final class InstanceConnectionTests: XCTestCase {
   // MARK: - Becoming the shared instance
 
   func testAttach_firstProcess_becomesSharedInstance() throws {
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
     let connection = try attach(directory)
@@ -207,7 +207,7 @@ final class InstanceConnectionTests: XCTestCase {
   func testAttach_requireShared_whenNoneRunning_throws() throws {
     // Python: "Existing shared instance required, but this instance started as
     // shared instance. Aborting startup."
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
     XCTAssertThrowsError(try attach(directory, requireSharedInstance: true)) { error in
@@ -220,7 +220,7 @@ final class InstanceConnectionTests: XCTestCase {
   func testAttach_requireShared_releasesThePortItBrieflyBound() throws {
     // The failed require-shared attach must not leave the port held, or the
     // next attach would wrongly see a "running instance".
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
     XCTAssertThrowsError(try attach(directory, requireSharedInstance: true))
@@ -271,7 +271,7 @@ final class InstanceConnectionTests: XCTestCase {
   // MARK: - Attaching to an existing shared instance
 
   func testAttach_secondProcess_becomesLocalClient() throws {
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
 
@@ -285,7 +285,7 @@ final class InstanceConnectionTests: XCTestCase {
 
   func testAttach_localClient_disablesTransport() throws {
     // Python: `Reticulum.__transport_enabled = False` on the client side.
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
     _ = try attach(directory)
@@ -303,7 +303,7 @@ final class InstanceConnectionTests: XCTestCase {
     //     instance has already applied, dropping packets that were forwarded *to this node*;
     //   - shouldApplyDelta applies the local hops delta a second time;
     //   - rnprobe takes the standalone branch and never reports RSSI/SNR/Link Quality.
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
 
@@ -319,7 +319,7 @@ final class InstanceConnectionTests: XCTestCase {
   }
 
   func testAttach_standalone_isNotBehindASharedInstance() throws {
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: false, sharedPort: shared, controlPort: control)
     let connection = try attach(directory)
@@ -328,7 +328,7 @@ final class InstanceConnectionTests: XCTestCase {
   }
 
   func testAttach_localClient_getsWorkingRPCChannel() throws {
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
 
@@ -343,7 +343,7 @@ final class InstanceConnectionTests: XCTestCase {
   }
 
   func testAttach_requireShared_succeedsAgainstRunningInstance() throws {
-    let (shared, control) = freePortPair()
+    let (shared, control) = try freePortPair()
     let directory = try makeConfigDirectory(
       shareInstance: true, sharedPort: shared, controlPort: control)
 

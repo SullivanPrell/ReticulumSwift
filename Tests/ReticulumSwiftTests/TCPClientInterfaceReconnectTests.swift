@@ -47,21 +47,12 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
 
     init(hangUp: Bool) throws {
       self.hangUp = hangUp
-      var made: (NWListener, UInt16)?
-      for _ in 0..<16 {
-        let candidate = UInt16.random(in: 41_000...48_000)
-        guard let nwPort = NWEndpoint.Port(rawValue: candidate) else { continue }
-        if let l = try? NWListener(using: .tcp, on: nwPort) {
-          made = (l, candidate)
-          break
+      let box = WeakBox()
+      (self.listener, self.port) = try readyLoopbackListener { conn in
+        guard let self = box.owner else {
+          conn.cancel()
+          return
         }
-      }
-      guard let made else { throw XCTSkip("no free port for the test listener") }
-      self.listener = made.0
-      self.port = made.1
-
-      listener.newConnectionHandler = { [weak self] conn in
-        guard let self else { return }
         self.lock.lock()
         self.accepted += 1
         if !self.hangUp { self.live.append(conn) }
@@ -69,7 +60,12 @@ final class TCPClientInterfaceReconnectTests: XCTestCase {
         conn.start(queue: .global())
         if self.hangUp { conn.cancel() }
       }
-      listener.start(queue: .global())
+      box.owner = self
+    }
+
+    /// Lets the connection handler, installed before `self` exists, reach the listener weakly.
+    private final class WeakBox: @unchecked Sendable {
+      weak var owner: CountingListener?
     }
 
     /// Drop every connection held open.
