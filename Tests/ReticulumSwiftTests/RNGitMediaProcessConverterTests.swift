@@ -187,6 +187,19 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
     XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: path)[.size] as? Int, 0)
   }
 
+  /// An encoder that stops reading is stopped when the time is up, rather than holding the relay
+  /// until it exits.
+  func testAnEncoderThatStopsReadingIsStoppedWhenTheTimeIsUp() throws {
+    let path = try makeDirectory() + "/out"
+    let started = Date()
+    let outcome = RNGitMediaProcessConverter().convert(
+      producing: ["head", "-c", "1000000", "/dev/zero"], in: nil, through: { _ in ["sleep", "5"] },
+      to: path, within: 0.5)
+
+    XCTAssertEqual(outcome, .timedOut)
+    XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+  }
+
   /// Produced input past the size cap is refused rather than encoded.
   func testProducedInputPastTheSizeCapIsRefused() throws {
     let path = try makeDirectory() + "/out"

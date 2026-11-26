@@ -81,6 +81,8 @@ public struct RNGitMediaProcessConverter: RNGitMediaConverter {
     try? feed.fileHandleForReading.close()
     let sink = feed.fileHandleForWriting.fileDescriptor
     _ = fcntl(sink, F_SETNOSIGPIPE, 1)
+    // Non-blocking, so an encoder that stops reading meets the deadline instead of the relay.
+    _ = fcntl(sink, F_SETFL, fcntl(sink, F_GETFL) | O_NONBLOCK)
     let relayed = relay(head, from: source, to: sink, by: deadline)
     try? feed.fileHandleForWriting.close()
 
@@ -190,7 +192,8 @@ public struct RNGitMediaProcessConverter: RNGitMediaConverter {
     _ head: Data, from source: Int32, to sink: Int32, by deadline: Date
   ) -> Relay {
     var relayed = head.count
-    guard write(head, to: sink) else { return .encoderGone }
+    let wroteHead = write(head, to: sink, by: deadline)
+    guard wroteHead == .done else { return wroteHead }
     while true {
       guard let chunk = chunk(source, upTo: RNGitMedia.relayChunk, by: deadline) else {
         return .timedOut
@@ -198,7 +201,8 @@ public struct RNGitMediaProcessConverter: RNGitMediaConverter {
       if chunk.isEmpty { return .done }
       relayed += chunk.count
       if relayed > RNGitMedia.conversionSizeMax { return .tooLarge }
-      guard write(chunk, to: sink) else { return .encoderGone }
+      let wrote = write(chunk, to: sink, by: deadline)
+      guard wrote == .done else { return wrote }
     }
   }
 
@@ -217,33 +221,40 @@ public struct RNGitMediaProcessConverter: RNGitMediaConverter {
   /// What `fd` has next, up to `count` bytes and empty at its end, or `nil` where `deadline`
   /// passes first or the read fails.
   private func chunk(_ fd: Int32, upTo count: Int, by deadline: Date) -> Data? {
-    var ready: Int32
-    repeat {
-      var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
-      ready = poll(&poller, 1, Int32(max(0, deadline.timeIntervalSinceNow * 1000)))
-    } while ready < 0 && errno == EINTR
-    guard ready > 0 else { return nil }
+    guard ready(fd, for: POLLIN, by: deadline) else { return nil }
 
     var buffer = [UInt8](repeating: 0, count: count)
     let got = Darwin.read(fd, &buffer, count)
     return got < 0 ? nil : Data(buffer[..<got])
   }
 
-  /// Whether all of `data` was written to `fd`, which fails rather than blocks once the reader
-  /// has gone.
-  private func write(_ data: Data, to fd: Int32) -> Bool {
+  /// Whether `fd` is ready for `events` before `deadline` passes.
+  private func ready(_ fd: Int32, for events: Int32, by deadline: Date) -> Bool {
+    var result: Int32
+    repeat {
+      var poller = pollfd(fd: fd, events: Int16(events), revents: 0)
+      result = poll(&poller, 1, Int32(max(0, deadline.timeIntervalSinceNow * 1000)))
+    } while result < 0 && errno == EINTR
+    return result > 0
+  }
+
+  /// `.done` once all of `data` is written to the non-blocking `fd`, `.timedOut` where `deadline`
+  /// passes first, and `.encoderGone` where the reader has gone.
+  private func write(_ data: Data, to fd: Int32, by deadline: Date) -> Relay {
     data.withUnsafeBytes { raw in
-      guard let base = raw.baseAddress else { return true }
+      guard let base = raw.baseAddress else { return .done }
       var offset = 0
       while offset < raw.count {
         let wrote = Darwin.write(fd, base + offset, raw.count - offset)
-        if wrote < 0 {
-          if errno == EINTR { continue }
-          return false
+        if wrote >= 0 {
+          offset += wrote
+          continue
         }
-        offset += wrote
+        if errno == EINTR { continue }
+        if errno != EAGAIN { return .encoderGone }
+        if !ready(fd, for: POLLOUT, by: deadline) { return .timedOut }
       }
-      return true
+      return .done
     }
   }
 

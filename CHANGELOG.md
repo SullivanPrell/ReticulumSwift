@@ -17,7 +17,9 @@ All notable changes to ReticulumSwift are documented here. This project follows
   produced input is now relayed through the process so it can be counted. A file is sized,
   read and fed from one open handle. `RNGitMediaConverter` now takes the encoder as a
   `(Data) -> [String]?` closure, and `RNGitMediaOutcome` gains `.refused`, which is logged at
-  debug as Python does.
+  debug as Python does. Writes to the encoder are non-blocking and meet the same
+  deadline, so an encoder that stops reading, or fills its error stream, times out. Python's
+  `_pump` blocks there.
 
 ## [1.30.0]—Links bound to their interface, BSD socket listeners, and bounded resource memory
 
