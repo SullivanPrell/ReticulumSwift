@@ -5,6 +5,19 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Tests
+
+- No test picks a port at random. The eight suites that drew one from a literal range take it
+  from `freeLoopbackPort()` (#44) or the new `freeLoopbackPorts(_:)`, and a guard,
+  `testNoTestPicksAPortAtRandom`, fails on any new `random(in:)` port range in `Tests/`. The two
+  `NWListener` retry loops never retried, because `NWListener(using:on:)` doesn't bind; they
+  use `readyLoopbackListener`, which waits for `.ready`. Two tests no longer bind TCP port 4242,
+  and two never-started `RPCServer`s no longer name the live control port 37429.
+- `TunnelPathRestoreTests` replays seven `handle_tunnel` cases captured from Python RNS 1.6.1
+  by `scripts/capture-tunnel-restore-vectors.py`. The tunnel test citations that still named
+  RNS 1.3.x lines now name 1.5.5 lines, and `DeferredRestoreTests` no longer says Python
+  restores a tunnel path with no interface.
+
 ### Changed
 
 - Receiving a resource costs about a quarter of the CPU it did. `HDLC.FrameDecoder.feed`,
@@ -17,6 +30,10 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- `Link.remoteIdentity` is set on an initiator link once its proof validates, to the
+  destination's identity, as Python's `validate_proof` sets `__remote_identity`
+  (`Link.py:507`). It was nil on every outgoing link. `onRemoteIdentified` still fires only
+  for an identify packet (`Link.py:1077-1078`), so setting it on an initiator doesn't replay.
 - Data races on the RNode interfaces' radio state. The KISS frame dispatcher wrote the `r...`
   radio fields, `detected`, `firmwareOk` and the firmware version while the bring-up thread,
   `Transport` and apps read them, with no lock. `RNodeInterface` and `RNodeSubInterface` now

@@ -133,26 +133,13 @@ final class TCPKeepaliveTests: XCTestCase {
     // A concrete port rather than "any": before the listener reaches `.ready`,
     // `listener.port` reports the *requested* port, so asking for 0 reads back 0 and
     // there is no way to tell "not bound yet" from "bound to port 0".
-    var bound: (listener: NWListener, port: UInt16)?
-    for _ in 0..<16 {
-      let candidate = UInt16.random(in: 41_000...48_000)
-      guard let nwPort = NWEndpoint.Port(rawValue: candidate) else { continue }
-      if let l = try? NWListener(
-        using: RNSSocketOptions.tcpParameters().parameters,
-        on: nwPort)
-      {
-        bound = (l, candidate)
-        break
-      }
-    }
-    let (listener, port) = try XCTUnwrap(bound, "no free port for the test listener")
-
     let accepted = expectation(description: "listener accepted the connection")
-    listener.newConnectionHandler = { conn in
+    let (listener, port) = try readyLoopbackListener(
+      using: RNSSocketOptions.tcpParameters().parameters
+    ) { conn in
       conn.start(queue: .global())
       accepted.fulfill()
     }
-    listener.start(queue: .global())
     defer { listener.cancel() }
 
     let iface = TCPClientInterface(name: "keepalive", host: "127.0.0.1", port: port)
