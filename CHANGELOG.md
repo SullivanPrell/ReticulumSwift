@@ -30,6 +30,9 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- A link request whose mode bits name a mode outside `Link.enabledModes` is refused, as Python
+  refuses it (`Link.py:168-177`, `:453`). `Link.answer` ignored the bits and answered with
+  AES-256-CBC, so a peer asking for another mode got a link keyed differently from its own.
 - `Link.remoteIdentity` is set on an initiator link once its proof validates, to the
   destination's identity, as Python's `validate_proof` sets `__remote_identity`
   (`Link.py:507`). It was nil on every outgoing link. `onRemoteIdentified` still fires only
@@ -61,6 +64,10 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Deliberate differences from Python
 
+- A destination's ratchet private keys stay in this port's JSON sidecar beside the identity.
+  Python writes a signed msgpack file at the path the app passes to `enable_ratchets`
+  (`Destination.py:233-246`, `:575`). No peer reads the file; it differs only for a storage directory
+  moved between implementations, and changing it would mean reading both formats.
 - The announce cache stays one file per announce in `cache/announces/`. Python 1.6 keeps it in
   `cache/announces.db` (`Transport.py:3502-3514`, `Storage.py:734-754`) and imports a
   `cache/announces/` directory on start (`:3506-3509`), so Python reads a Swift directory. A

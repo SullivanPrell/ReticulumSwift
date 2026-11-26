@@ -1142,6 +1142,14 @@ public final class Link {
     else {
       throw LinkError.missingResponderIdentity
     }
+    // `prove` packs the requested mode with `mode_byte`, which raises outside `ENABLED_MODES`
+    // (`Link.py:168-177`, `:453`); with no signalling the mode is `MODE_DEFAULT`.
+    if packet.data.count > Constants.keySize,
+      !Link.enabledModes.contains(
+        (packet.data[packet.data.startIndex + Constants.keySize] & Link.modeByteMask) >> 5)
+    {
+      throw LinkError.malformedRequest
+    }
 
     let initiatorEncRaw = packet.data.prefix(Constants.halfKeySize)
     let initiatorSigRaw = packet.data[Constants.halfKeySize..<Constants.keySize]
