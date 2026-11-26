@@ -15,6 +15,9 @@ import XCTest
 /// The WebP conversion a node runs media through before serving it.
 final class RNGitMediaTests: XCTestCase {
 
+  /// The signature a PNG file starts with.
+  fileprivate static let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+
   /// The first 30 bytes of a lossy WebP file, which `cwebp` wrote from a 37 by 23 image.
   private static let lossy =
     "52494646200200005745425056503820140200 00300f009d012a2500 1700"
@@ -714,20 +717,25 @@ final class RNGitMediaTests: XCTestCase {
   private final class Converter: RNGitMediaConverter, @unchecked Sendable {
     let outcome: RNGitMediaOutcome
     let writing: Data?
+    let head: Data
     var produced: [[String]] = []
     var read: [String] = []
     var encodings: [[String]] = []
     var directories: [String?] = []
     var timeouts: [TimeInterval] = []
 
-    init(outcome: RNGitMediaOutcome = .converted, writing: Data? = nil) {
+    init(
+      outcome: RNGitMediaOutcome = .converted, writing: Data? = nil,
+      head: Data = RNGitMediaTests.png
+    ) {
       self.outcome = outcome
       self.writing = writing
+      self.head = head
     }
 
     func convert(
-      producing: [String], in directory: String?, through encoding: [String], to path: String,
-      within timeout: TimeInterval
+      producing: [String], in directory: String?, through encoding: (Data) -> [String]?,
+      to path: String, within timeout: TimeInterval
     ) -> RNGitMediaOutcome {
       produced.append(producing)
       directories.append(directory)
@@ -735,17 +743,18 @@ final class RNGitMediaTests: XCTestCase {
     }
 
     func convert(
-      reading source: String, through encoding: [String], to path: String,
+      reading source: String, through encoding: (Data) -> [String]?, to path: String,
       within timeout: TimeInterval
     ) -> RNGitMediaOutcome {
       read.append(source)
       return record(encoding, to: path, within: timeout)
     }
 
-    private func record(_ encoding: [String], to path: String, within timeout: TimeInterval)
-      -> RNGitMediaOutcome
-    {
-      encodings.append(encoding)
+    private func record(
+      _ encoding: (Data) -> [String]?, to path: String, within timeout: TimeInterval
+    ) -> RNGitMediaOutcome {
+      guard let words = encoding(head) else { return .refused("Input format is not supported") }
+      encodings.append(words)
       timeouts.append(timeout)
       if let writing { FileManager.default.createFile(atPath: path, contents: writing) }
       return outcome
@@ -766,7 +775,8 @@ final class RNGitMediaTests: XCTestCase {
     XCTAssertEqual(converter.produced, [["git", "show", "HEAD:logo.png"]])
     XCTAssertEqual(converter.directories, ["/repo"])
     XCTAssertEqual(
-      converter.encodings, [["magick", "-", "-quality", "70", "-resize", "640x640>", "webp:-"]])
+      converter.encodings,
+      [["magick", "png:-", "-quality", "70", "-resize", "640x640>", "webp:-"]])
     XCTAssertEqual(converter.timeouts, [8])
   }
 
@@ -810,7 +820,7 @@ final class RNGitMediaTests: XCTestCase {
     let converted = try XCTUnwrap(encoder.convert(file: source))
     XCTAssertEqual(converter.read, [source])
     XCTAssertEqual(
-      converter.encodings, [["magick", "-", "-quality", "85", "webp:-"]])
+      converter.encodings, [["magick", "png:-", "-quality", "85", "webp:-"]])
     XCTAssertTrue(RNGitMedia.isWebP(at: converted))
     try? FileManager.default.removeItem(atPath: converted)
 
@@ -826,5 +836,61 @@ final class RNGitMediaTests: XCTestCase {
     let encoder = RNGitMediaEncoder(converter: converter, forced: nil, found: onPath("magick"))
     XCTAssertNil(encoder.convert(file: directory + "/nothing.png"))
     XCTAssertTrue(converter.encodings.isEmpty)
+  }
+
+  // MARK: What reaches an encoder (RNS security notice 2026-11-19)
+
+  /// Only the formats `media.py` `_IMAGE_SIGNATURES` lists are recognized, by their first bytes.
+  func testOnlyTheFormatsPythonListsAreRecognizedByTheirFirstBytes() {
+    func bmp(_ dib: UInt8) -> Data { Data("BM".utf8) + Data(count: 12) + Data([dib, 0, 0, 0]) }
+    XCTAssertEqual(RNGitMedia.imageFormat(Self.png), "png")
+    XCTAssertEqual(RNGitMedia.imageFormat(Data([0xFF, 0xD8, 0xFF, 0xE0])), "jpeg")
+    XCTAssertEqual(RNGitMedia.imageFormat(Data("GIF87a".utf8)), "gif")
+    XCTAssertEqual(RNGitMedia.imageFormat(Data("GIF89a".utf8)), "gif")
+    XCTAssertEqual(RNGitMedia.imageFormat(Data([0x49, 0x49, 0x2A, 0x00])), "tiff")
+    XCTAssertEqual(RNGitMedia.imageFormat(Data([0x4D, 0x4D, 0x00, 0x2A])), "tiff")
+    XCTAssertEqual(RNGitMedia.imageFormat(Data(hex: Self.lossy)!), "webp")
+    XCTAssertEqual(RNGitMedia.imageFormat(bmp(40)), "bmp")
+    XCTAssertEqual(RNGitMedia.imageFormat(bmp(124)), "bmp")
+
+    XCTAssertNil(RNGitMedia.imageFormat(bmp(41)))
+    XCTAssertNil(RNGitMedia.imageFormat(Data("BM".utf8)))
+    XCTAssertNil(RNGitMedia.imageFormat(Data("<svg xmlns=\"http://www.w3.org/2000/svg\"/>".utf8)))
+    XCTAssertNil(RNGitMedia.imageFormat(Data("push graphic-context\nviewbox 0 0 1 1".utf8)))
+    XCTAssertNil(RNGitMedia.imageFormat(Data("<?xml version=\"1.0\"?><image>".utf8)))
+    XCTAssertNil(RNGitMedia.imageFormat(Data(Self.png.prefix(7))))
+    XCTAssertNil(RNGitMedia.imageFormat(Data()))
+  }
+
+  /// The ImageMagick family is told the format the input is, and ffmpeg's words are unchanged.
+  func testTheImageMagickFamilyIsToldTheInputFormat() {
+    func words(_ name: String) -> [String] {
+      let backend = RNGitMedia.backends.first { $0.name == name }!
+      return RNGitMedia.encoding(backend, quality: 80, input: "gif").arguments
+    }
+    XCTAssertEqual(words("magick"), ["magick", "gif:-", "-quality", "80", "webp:-"])
+    XCTAssertEqual(words("convert"), ["convert", "gif:-", "-quality", "80", "webp:-"])
+    XCTAssertEqual(words("gm"), ["gm", "convert", "gif:-", "-quality", "80", "webp:-"])
+    XCTAssertEqual(
+      words("ffmpeg"),
+      ["ffmpeg", "-y", "-loglevel", "error", "-i", "-", "-quality", "80", "-f", "webp", "pipe:1"])
+  }
+
+  /// Input in no supported format reaches no encoder, whichever way it is converted.
+  func testInputInNoSupportedFormatReachesNoEncoder() throws {
+    let directory = try makeDirectory()
+    let source = directory + "/logo.png"
+    XCTAssertTrue(FileManager.default.createFile(atPath: source, contents: Data("<svg/>".utf8)))
+    let converter = Converter(writing: Data(hex: Self.lossy)!, head: Data("<svg/>".utf8))
+    let encoder = RNGitMediaEncoder(converter: converter, forced: nil, found: onPath("magick"))
+
+    XCTAssertFalse(
+      encoder.convert(producedBy: ["git", "show", "HEAD:logo.png"], to: directory + "/out.webp"))
+    XCTAssertNil(encoder.convert(file: source))
+    XCTAssertTrue(converter.encodings.isEmpty)
+    XCTAssertEqual(
+      RNGitMedia.complaint(
+        about: .refused("Input format is not supported"), through: "magick", after: 8),
+      "Media conversion failed: Input format is not supported")
   }
 }

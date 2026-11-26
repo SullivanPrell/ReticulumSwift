@@ -5,6 +5,20 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Security
+
+- rngit media conversion no longer lets ImageMagick guess what it is reading. The guess can
+  reach coders that read arbitrary files into the output image, so a pushed file served as an
+  image could leak any file the node's user can read. This is RNS's 1.6.1 hotpatch (commit
+  `840eb369`, notice `docs/security/2026_11_19_Media_conversion_in_rngit_and_nomadnet.md`).
+  `RNGitMediaProcessConverter` reads the first 64 bytes before starting an encoder, refuses
+  anything that isn't PNG, JPEG, GIF, TIFF, WebP or BMP (`RNGitMedia.imageFormat`), and names
+  the format to the ImageMagick family (`png:-` for `-`). Input over 32 MiB is refused, and
+  produced input is now relayed through the process so it can be counted. A file is sized,
+  read and fed from one open handle. `RNGitMediaConverter` now takes the encoder as a
+  `(Data) -> [String]?` closure, and `RNGitMediaOutcome` gains `.refused`, which is logged at
+  debug as Python does.
+
 ## [1.30.0]—Links bound to their interface, BSD socket listeners, and bounded resource memory
 
 ### Tests

@@ -30,7 +30,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
   func testWhatOneProcessWritesReachesTheNextAndThenTheFile() throws {
     let path = try makeDirectory() + "/out"
     let outcome = RNGitMediaProcessConverter().convert(
-      producing: ["printf", "hello"], in: nil, through: ["cat"], to: path, within: 8)
+      producing: ["printf", "hello"], in: nil, through: { _ in ["cat"] }, to: path, within: 8)
 
     XCTAssertEqual(outcome, .converted)
     XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "hello")
@@ -41,8 +41,8 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
   func testMoreThanAPipeHoldsStillReachesTheFile() throws {
     let path = try makeDirectory() + "/out"
     let outcome = RNGitMediaProcessConverter().convert(
-      producing: ["head", "-c", "200000", "/dev/zero"], in: nil, through: ["cat"], to: path,
-      within: 8)
+      producing: ["head", "-c", "200000", "/dev/zero"], in: nil, through: { _ in ["cat"] },
+      to: path, within: 8)
 
     XCTAssertEqual(outcome, .converted)
     XCTAssertEqual(
@@ -54,7 +54,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
     let directory = try makeDirectory()
     let path = directory + "/out"
     let outcome = RNGitMediaProcessConverter().convert(
-      producing: ["pwd"], in: directory, through: ["cat"], to: path, within: 8)
+      producing: ["pwd"], in: directory, through: { _ in ["cat"] }, to: path, within: 8)
 
     XCTAssertEqual(outcome, .converted)
     let written = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(
@@ -69,7 +69,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
     let path = try makeDirectory() + "/out"
     let started = Date()
     let outcome = RNGitMediaProcessConverter().convert(
-      producing: ["sleep", "30"], in: nil, through: ["cat"], to: path, within: 0.3)
+      producing: ["sleep", "30"], in: nil, through: { _ in ["cat"] }, to: path, within: 0.3)
 
     XCTAssertEqual(outcome, .timedOut)
     XCTAssertLessThan(Date().timeIntervalSince(started), 10)
@@ -80,7 +80,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
     let path = try makeDirectory() + "/out"
     let outcome = RNGitMediaProcessConverter().convert(
       producing: ["sh", "-c", "echo no such object >&2; exit 128"], in: nil,
-      through: ["sh", "-c", "echo no decode delegate >&2; exit 1"], to: path, within: 8)
+      through: { _ in ["sh", "-c", "echo no decode delegate >&2; exit 1"] }, to: path, within: 8)
 
     XCTAssertEqual(
       outcome, .failed(encoder: "no decode delegate", input: "no such object"))
@@ -90,7 +90,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
   func testAProgramThatIsNotThereIsNotRun() throws {
     let path = try makeDirectory() + "/out"
     let outcome = RNGitMediaProcessConverter().convert(
-      producing: ["/nonexistent/producer"], in: nil, through: ["cat"], to: path, within: 8)
+      producing: ["/nonexistent/producer"], in: nil, through: { _ in ["cat"] }, to: path, within: 8)
 
     guard case .couldNotRun = outcome else { return XCTFail("\(outcome)") }
   }
@@ -109,7 +109,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
     converter.waiting = { _ in waits.count += 1 }
 
     let outcome = converter.convert(
-      producing: ["/nonexistent/producer"], in: nil, through: ["cat"], to: path, within: 8)
+      producing: ["/nonexistent/producer"], in: nil, through: { _ in ["cat"] }, to: path, within: 8)
 
     guard case .couldNotRun = outcome else { return XCTFail("\(outcome)") }
     XCTAssertEqual(waits.count, 0)
@@ -127,7 +127,8 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
 
     XCTAssertEqual(
       converter.convert(
-        producing: ["sleep", "30"], in: nil, through: ["cat"], to: path, within: 0.3), .timedOut)
+        producing: ["sh", "-c", "head -c 64 /dev/zero; exec sleep 30"], in: nil,
+        through: { _ in ["cat"] }, to: path, within: 0.3), .timedOut)
     XCTAssertEqual(waits.count, 2)
   }
   #endif
@@ -140,7 +141,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
     XCTAssertTrue(FileManager.default.createFile(atPath: source, contents: Data("image".utf8)))
 
     let outcome = RNGitMediaProcessConverter().convert(
-      reading: source, through: ["cat"], to: path, within: 8)
+      reading: source, through: { _ in ["cat"] }, to: path, within: 8)
 
     XCTAssertEqual(outcome, .converted)
     XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "image")
@@ -150,7 +151,7 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
   func testAFileThatIsNotThereLeavesNothingToRun() throws {
     let directory = try makeDirectory()
     let outcome = RNGitMediaProcessConverter().convert(
-      reading: directory + "/nothing", through: ["cat"], to: directory + "/out", within: 8)
+      reading: directory + "/nothing", through: { _ in ["cat"] }, to: directory + "/out", within: 8)
 
     guard case .couldNotRun = outcome else { return XCTFail("\(outcome)") }
   }
@@ -163,7 +164,62 @@ final class RNGitMediaProcessConverterTests: XCTestCase {
 
     XCTAssertEqual(
       RNGitMediaProcessConverter().convert(
-        producing: ["printf", "new"], in: nil, through: ["cat"], to: path, within: 8), .converted)
+        producing: ["printf", "new"], in: nil, through: { _ in ["cat"] }, to: path, within: 8),
+      .converted)
     XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "new")
+  }
+
+  // MARK: What reaches an encoder (RNS security notice 2026-11-19)
+
+  /// The encoding is handed the start of the input, and input it refuses reaches no encoder.
+  func testInputTheEncodingRefusesReachesNoEncoder() throws {
+    let path = try makeDirectory() + "/out"
+    var handed: [Data] = []
+    let outcome = RNGitMediaProcessConverter().convert(
+      producing: ["head", "-c", "100", "/dev/zero"], in: nil,
+      through: {
+        handed.append($0)
+        return nil
+      }, to: path, within: 8)
+
+    XCTAssertEqual(outcome, .refused("Input format is not supported"))
+    XCTAssertEqual(handed, [Data(count: RNGitMedia.sniffBytes)])
+    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: path)[.size] as? Int, 0)
+  }
+
+  /// Produced input past the size cap is refused rather than encoded.
+  func testProducedInputPastTheSizeCapIsRefused() throws {
+    let path = try makeDirectory() + "/out"
+    let outcome = RNGitMediaProcessConverter().convert(
+      producing: ["head", "-c", String(RNGitMedia.conversionSizeMax + 1), "/dev/zero"], in: nil,
+      through: { _ in ["cat"] }, to: path, within: 30)
+
+    guard case .refused = outcome else { return XCTFail("\(outcome)") }
+  }
+
+  /// A file the encoding refuses, or one past the size cap, reaches no encoder.
+  func testAFileRefusedOrPastTheSizeCapReachesNoEncoder() throws {
+    let directory = try makeDirectory()
+    let source = directory + "/source"
+    XCTAssertTrue(FileManager.default.createFile(atPath: source, contents: Data("<svg/>".utf8)))
+
+    var handed: [Data] = []
+    XCTAssertEqual(
+      RNGitMediaProcessConverter().convert(
+        reading: source,
+        through: {
+          handed.append($0)
+          return nil
+        }, to: directory + "/out", within: 8),
+      .refused("Input format is not supported"))
+    XCTAssertEqual(handed, [Data("<svg/>".utf8)])
+
+    let large = try XCTUnwrap(FileHandle(forWritingAtPath: source))
+    try large.truncate(atOffset: UInt64(RNGitMedia.conversionSizeMax + 1))
+    try large.close()
+    guard
+      case .refused = RNGitMediaProcessConverter().convert(
+        reading: source, through: { _ in ["cat"] }, to: directory + "/out", within: 8)
+    else { return XCTFail("a file past the cap was encoded") }
   }
 }
