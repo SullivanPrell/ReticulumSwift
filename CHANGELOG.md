@@ -5,6 +5,19 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Tests
+
+- No test picks a port at random. The eight suites that drew one from a literal range take it
+  from `freeLoopbackPort()` (#44) or the new `freeLoopbackPorts(_:)`, and a guard,
+  `testNoTestPicksAPortAtRandom`, fails on any new `random(in:)` port range in `Tests/`. The two
+  `NWListener` retry loops never retried, because `NWListener(using:on:)` doesn't bind; they
+  use `readyLoopbackListener`, which waits for `.ready`. Two tests no longer bind TCP port 4242,
+  and two never-started `RPCServer`s no longer name the live control port 37429.
+- `TunnelPathRestoreTests` replays seven `handle_tunnel` cases captured from Python RNS 1.6.1
+  by `scripts/capture-tunnel-restore-vectors.py`. The tunnel test citations that still named
+  RNS 1.3.x lines now name 1.5.5 lines, and `DeferredRestoreTests` no longer says Python
+  restores a tunnel path with no interface.
+
 ### Changed
 
 - Receiving a resource costs about a quarter of the CPU it did. `HDLC.FrameDecoder.feed`,
@@ -25,6 +38,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   directories as changes (`RNGitStatistics.add(_:since:)`), the page node does the same
   instead of overwriting the owner's counts, and the requests that change the store run one at
   a time. Python mutates one dictionary in place under the GIL.
+- A link request whose mode bits name a mode outside `Link.enabledModes` is refused, as Python
+  refuses it (`Link.py:168-177`, `:453`). `Link.answer` ignored the bits and answered with
+  AES-256-CBC, so a peer asking for another mode got a link keyed differently from its own.
+- `Link.remoteIdentity` is set on an initiator link once its proof validates, to the
+  destination's identity, as Python's `validate_proof` sets `__remote_identity`
+  (`Link.py:507`). It was nil on every outgoing link. `onRemoteIdentified` still fires only
+  for an identify packet (`Link.py:1077-1078`), so setting it on an initiator doesn't replay.
 - Data races on the RNode interfaces' radio state. The KISS frame dispatcher wrote the `r...`
   radio fields, `detected`, `firmwareOk` and the firmware version while the bring-up thread,
   `Transport` and apps read them, with no lock. `RNodeInterface` and `RNodeSubInterface` now
@@ -49,6 +69,18 @@ All notable changes to ReticulumSwift are documented here. This project follows
   while they run; it is removed afterwards (`Resource.py:759-761`). `rncp` moves that file into
   place like Python's `shutil.move(resource.data.name, …)`. Receiving a 100 MB file with
   `rncp` peaked at 289 MB and now peaks at 33 MB, the same as for 10 MB.
+
+### Deliberate differences from Python
+
+- A destination's ratchet private keys stay in this port's JSON sidecar beside the identity.
+  Python writes a signed msgpack file at the path the app passes to `enable_ratchets`
+  (`Destination.py:233-246`, `:575`). No peer reads the file; it differs only for a storage directory
+  moved between implementations, and changing it would mean reading both formats.
+- The announce cache stays one file per announce in `cache/announces/`. Python 1.6 keeps it in
+  `cache/announces.db` (`Transport.py:3502-3514`, `Storage.py:734-754`) and imports a
+  `cache/announces/` directory on start (`:3506-3509`), so Python reads a Swift directory. A
+  Swift daemon started on a Python 1.6 directory restores no path until announces return.
+  reticulum-interop's `test_python_state_read_by_swift` is a strict xfail for it.
 
 ## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
 

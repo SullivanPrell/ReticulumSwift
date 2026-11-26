@@ -141,4 +141,40 @@ final class LoopbackPortFixtureTests: XCTestCase {
     defer { server.stop() }
     XCTAssertEqual(loopbackPortState(server.port), .accepting)
   }
+
+  /// No test draws a port from a literal range.
+  ///
+  /// Such a pick can land on any listener on the machine. Use
+  /// ``freeLoopbackPort(attempts:nextCandidate:file:line:)`` instead.
+  func testNoTestPicksAPortAtRandom() throws {
+    let testsDir = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    // Escaped so this file's own source never matches the rule it enforces.
+    let rule = try NSRegularExpression(
+      pattern: "random\\(in: *([0-9_]+) *\\.\\.[.<] *([0-9_]+) *\\)")
+
+    var offences: [String] = []
+    let files = FileManager.default.enumerator(at: testsDir, includingPropertiesForKeys: nil)
+    while let url = files?.nextObject() as? URL {
+      guard url.pathExtension == "swift" else { continue }
+      let src = try String(contentsOf: url, encoding: .utf8)
+      for (index, line) in src.components(separatedBy: .newlines).enumerated() {
+        let code = line.trimmingCharacters(in: .whitespaces)
+        guard !code.hasPrefix("//") else { continue }
+        let range = NSRange(code.startIndex..., in: code)
+        for match in rule.matches(in: code, range: range) {
+          let bound = { (group: Int) -> Int in
+            Int(code[Range(match.range(at: group), in: code)!].filter { $0 != "_" }) ?? -1
+          }
+          guard bound(1) >= 1024, bound(2) <= 65535 else { continue }
+          offences.append("  \(url.lastPathComponent):\(index + 1)  \(code)")
+        }
+      }
+    }
+    XCTAssertTrue(
+      offences.isEmpty,
+      "\(offences.count) test site(s) pick a port at random; use freeLoopbackPort():\n"
+        + offences.joined(separator: "\n"))
+  }
 }
