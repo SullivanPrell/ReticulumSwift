@@ -58,6 +58,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - `cleanKnownDestinations` drops the destination's announce packet hash with the rest of its
   entry. Python keeps the hash inside the `known_destinations` entry; the port's separate map
   was never pruned.
+- `panic_on_interface_error = yes` now exits the process with status 255 when an interface gives
+  up for good, as Python's `RNS.panic()` does. The config option was parsed and never read. The
+  exit comes after a TCP or Backbone client runs out of `max_reconnect_tries`, and when a Serial,
+  KISS, AX.25 KISS, RNode or RNode multi interface loses its device. Each site first logs
+  Python's "experienced an unrecoverable error" line. `Reticulum.panicOnInterfaceError` holds
+  the setting.
 - `TCPServerInterface` binds the address `listen_ip` or `device` names, with a BSD socket
   carrying `SO_REUSEADDR`, as Python's `ThreadingTCPServer` does (`TCPInterface.py:518`,
   `:543-573`). `NWListener` refused a port any local address held, so a socket on `[::1]:P`
