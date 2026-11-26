@@ -30,6 +30,8 @@ final class IFACNoneValueTests: XCTestCase {
     savedHandler = Reticulum.logHandler
     savedLevel = Reticulum.globalLogLevel
     Reticulum.globalLogLevel = .notice
+    // No node is running, so transport reads as off: opt in, or `discoverable` is dropped.
+    Reticulum.storedStaticTransportIdentity = true
     Reticulum.logHandler = { [weak self] message, level in
       if level == .warning { self?.warnings.append(message) }
     }
@@ -38,6 +40,7 @@ final class IFACNoneValueTests: XCTestCase {
   override func tearDown() {
     Reticulum.logHandler = savedHandler
     Reticulum.globalLogLevel = savedLevel
+    Reticulum.storedStaticTransportIdentity = false
     super.tearDown()
   }
 
