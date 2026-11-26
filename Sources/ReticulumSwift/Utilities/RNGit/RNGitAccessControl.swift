@@ -397,7 +397,9 @@ public struct RNGitAccessControl: Sendable {
   /// The group and repository a request path names, or `nil` if it names neither.
   public static func repositoryPath(_ path: String) -> (group: String, repository: String)? {
     let components = path.components(separatedBy: "/")
-    guard components.count == 2, components[0].count <= 256, components[1].count <= 256 else {
+    guard components.count == 2, components[0].unicodeScalars.count <= 256,
+      components[1].unicodeScalars.count <= 256
+    else {
       return nil
     }
     return (components[0], components[1])
@@ -406,7 +408,7 @@ public struct RNGitAccessControl: Sendable {
   /// The group a request path names, or `nil` if it names none.
   public static func groupPath(_ path: String) -> String? {
     let components = path.components(separatedBy: "/")
-    guard components.count == 1, components[0].count <= 256 else { return nil }
+    guard components.count == 1, components[0].unicodeScalars.count <= 256 else { return nil }
     return components[0]
   }
 

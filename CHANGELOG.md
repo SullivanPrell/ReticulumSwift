@@ -30,6 +30,10 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- `RNGitAccessControl.repositoryPath(_:)` and `groupPath(_:)` cap each name at 256 code points,
+  as Python's `len()` does (`server.py:2307`, `:2316` in RNS 1.6.1). They counted grapheme
+  clusters, so a name of 129 letters each followed by a combining mark, 258 code points, passed
+  in Swift and was refused in Python.
 - A link's packets go out only on the interface its request or proof arrived on, and packets
   for it from any other interface are dropped, as Python's `attached_interface` does
   (`Transport.py:1757`, `:2974`, `Link.py:1027`). `Link` had no attached interface, so every

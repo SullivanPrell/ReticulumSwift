@@ -418,6 +418,18 @@ final class RNGitAccessControlVectorTests: XCTestCase {
     }
   }
 
+  /// The reference caps each name with `len()`, which counts code points, not graphemes
+  /// (`server.py:2307`, `:2316` in RNS 1.6.1). Python's `len()` gives 256 and 258 for these.
+  func testRequestPathNamesAreCappedInCodePoints() {
+    let accepted = String(repeating: "a\u{0301}", count: 128)
+    let refused = String(repeating: "a\u{0301}", count: 129)
+    XCTAssertEqual(RNGitAccessControl.groupPath(accepted), accepted)
+    XCTAssertNil(RNGitAccessControl.groupPath(refused))
+    XCTAssertEqual(RNGitAccessControl.repositoryPath("g/" + accepted)?.repository, accepted)
+    XCTAssertNil(RNGitAccessControl.repositoryPath("g/" + refused))
+    XCTAssertNil(RNGitAccessControl.repositoryPath(refused + "/r"))
+  }
+
   private static func describe(_ target: RNGitPermissionTarget) -> String {
     switch target {
     case .nobody: return "none"
