@@ -55,6 +55,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   place like Python's `shutil.move(resource.data.name, …)`. Receiving a 100 MB file with
   `rncp` peaked at 289 MB and now peaks at 33 MB, the same as for 10 MB.
 
+### Tests
+
+- `TunnelPathRestoreTests` replays seven `handle_tunnel` cases captured from Python RNS 1.6.1
+  by `scripts/capture-tunnel-restore-vectors.py`. The tunnel test citations that still named
+  RNS 1.3.x lines now name 1.5.5 lines, and `DeferredRestoreTests` no longer says Python
+  restores a tunnel path with no interface.
+
 ## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
 
 ### Reference parity moves to RNS 1.6.1
