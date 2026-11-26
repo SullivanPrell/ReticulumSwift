@@ -506,13 +506,13 @@ public final class Link {
   /// Mirrors Python's `LinkCallbacks.remote_identified`.
   public var onRemoteIdentified: ((Link, Identity) -> Void)? {
     didSet {
-      if let id = remoteIdentity { onRemoteIdentified?(self, id) }
+      // An initiator learns the identity from the proof, which isn't an identify (`Link.py:1077-1078`).
+      if role == .responder, let id = remoteIdentity { onRemoteIdentified?(self, id) }
     }
   }
 
-  /// The identity the remote peer revealed via `identify()`, if any.
-  ///
-  /// Only populated on the responder side.
+  /// The remote peer's identity: the destination's once an initiator's proof validates, or the
+  /// identity a peer revealed through `identify()` on the responder side.
   public private(set) var remoteIdentity: Identity?
 
   /// Adaptive keepalive interval based on measured RTT.
@@ -1486,6 +1486,8 @@ public final class Link {
     self.peerPubBytes = Data(responderPubBytes)
     self.peerSigPub = responderSigPub
     self.peerSigPubBytes = responderSigPubBytes
+    // Mirrors Python `self.__remote_identity = self.destination.identity` (`Link.py:507`).
+    self.remoteIdentity = destinationIdentity
     // Adopt the MTU the responder confirmed in the proof (RNS link MTU
     // discovery). Mirrors Python `validate_proof`:
     //   `confirmed_mtu = mtu_from_lp_packet(packet); self.mtu = confirmed_mtu or MTU`.
