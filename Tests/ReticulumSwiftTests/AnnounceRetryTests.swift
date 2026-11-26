@@ -146,4 +146,26 @@ final class AnnounceRetryTests: XCTestCase {
     t.processAnnounceRetries(now: Date().timeIntervalSince1970 + 60)
     XCTAssertEqual(outbound.sent.count, 0, "edge node schedules no retransmission")
   }
+
+  /// A retry that fires after its path was culled is blocked.
+  ///
+  /// `Transport.outbound` reads the announce's next hop from the path table when it sends
+  /// (`from_interface = Transport.next_hop_interface(...)`), and blocks the rebroadcast when
+  /// there's none: "Blocking announce broadcast on ... since next hop interface doesn't
+  /// exist" (RNS 1.6.1). A retry that fires after the path was culled goes nowhere, even
+  /// on an interface that attached after the announce arrived.
+  func testRetryAfterThePathIsCulledIsBlocked() throws {
+    let (t, inbound, _) = makeNode()
+    let (announce, hash) = try makeAnnounce("culled")
+    inbound.inboundHandler?(announce, inbound)
+
+    t.detach(interface: inbound)
+    t.sweepExpiredPaths()
+    XCTAssertFalse(t.hasPath(to: hash), "the cull removes the detached interface's path")
+
+    let late = RecordingInterface(name: "late")
+    t.register(interface: late)
+    t.processAnnounceRetries(now: Date().timeIntervalSince1970 + 60)
+    XCTAssertEqual(late.sent.count, 0, "a retry with no next hop is blocked")
+  }
 }
