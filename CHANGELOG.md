@@ -5,6 +5,8 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.30.0]—Links bound to their interface, BSD socket listeners, and bounded resource memory
+
 ### Tests
 
 - No test picks a port at random. The eight suites that drew one from a literal range take it

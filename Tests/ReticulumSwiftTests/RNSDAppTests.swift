@@ -323,7 +323,7 @@ final class RNSDAppTests: XCTestCase {
   // MARK: - Version
 
   func testVersionText() {
-    XCTAssertEqual(Reticulum.version, "1.29.0")
+    XCTAssertEqual(Reticulum.version, "1.30.0")
     XCTAssertEqual(RNSDApp.versionText(program: "rnsd"), "rnsd \(Reticulum.version)")
     XCTAssertEqual(RNSDApp.versionText(program: "rnir"), "rnir \(Reticulum.version)")
     XCTAssertEqual(RNSDApp.versionText(program: "rnpkg"), "rnpkg \(Reticulum.version)")
