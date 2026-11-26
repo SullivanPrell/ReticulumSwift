@@ -948,10 +948,6 @@ public final class Transport {
     var blockRebroadcasts: Bool  // IDX_AT_BLCK_RBRD—emit as PATH_RESPONSE
     var attachedInterfaceName: String?  // IDX_AT_ATTCHD_IF—restrict retransmit to one iface
     var receivingInterfaceName: String  // iface the announce arrived on (never echoed back)
-    var receivingInterfaceMode: InterfaceMode  // for the announce-propagation filter on retry
-    // `announces_to_internal` of the receiving interface, captured alongside
-    // its mode so the retry pass filters identically to the first forward.
-    var receivingInterfaceAnnouncesToInternal: Bool?
     var dedupInterfaceNames: Set<String> = []  // IDX_AT_DEDUP_IFS—delivered it again, skipped
   }
   /// Pending announce retransmissions keyed by destination hash.
@@ -4505,10 +4501,7 @@ public final class Transport {
       && !entry.dedupInterfaceNames.contains(iface.name)
     {
       if let restrict = entry.attachedInterfaceName, iface.name != restrict { continue }
-      emitRelayedAnnounce(
-        forwarded, on: iface, nextHopMode: entry.receivingInterfaceMode,
-        nextHopAnnouncesToInternal: entry.receivingInterfaceAnnouncesToInternal,
-        emitted: emitted, now: now)
+      emitRelayedAnnounce(forwarded, on: iface, emitted: emitted, now: now)
     }
   }
 
@@ -6709,9 +6702,7 @@ public final class Transport {
           localRebroadcasts: 0,
           blockRebroadcasts: false,
           attachedInterfaceName: nil,
-          receivingInterfaceName: interface.name,
-          receivingInterfaceMode: interface.mode,
-          receivingInterfaceAnnouncesToInternal: interface.announcesToInternal
+          receivingInterfaceName: interface.name
         )
         lock.unlock()
       }
@@ -7615,9 +7606,7 @@ public final class Transport {
     let emitted = announceEmitted(forwarded)
     for iface in interfaces
     where iface.isOnline && iface.isRoutingEndpoint && iface !== interface {
-      emitRelayedAnnounce(
-        forwarded, on: iface, nextHopMode: interface.mode,
-        nextHopAnnouncesToInternal: interface.announcesToInternal, emitted: emitted, now: now)
+      emitRelayedAnnounce(forwarded, on: iface, emitted: emitted, now: now)
     }
   }
 
@@ -7625,12 +7614,13 @@ public final class Transport {
   /// interface: the mode filter, the announce cap, then `local_hops_delta`
   /// (`Transport.py:1440-1597`).
   ///
-  /// `nextHopMode` and `nextHopAnnouncesToInternal` describe the interface the announce
-  /// arrived on.
+  /// The next hop is read from the path table at send time, as `from_interface =
+  /// Transport.next_hop_interface(packet.destination_hash)` is (`Transport.py:1764`). A
+  /// retry that outlives its path, as after a detach and the cull, finds none and is blocked.
   private func emitRelayedAnnounce(
-    _ packet: Packet, on iface: any Interface, nextHopMode: InterfaceMode,
-    nextHopAnnouncesToInternal: Bool?, emitted: TimeInterval, now: TimeInterval
+    _ packet: Packet, on iface: any Interface, emitted: TimeInterval, now: TimeInterval
   ) {
+    let nextHop = nextHopInterface(for: packet.destinationHash)
     // Interface-mode-based forwarding filter (mirrors Python Transport.outbound):
     // - Announces received from ACCESS_POINT interfaces (clients talking "up")
     //   must not be re-broadcast to other AP or BOUNDARY interfaces—AP
@@ -7642,10 +7632,10 @@ public final class Transport {
     guard
       Transport.shouldForwardAnnounce(
         outboundMode: iface.mode,
-        nextHopMode: nextHopMode,
+        nextHopMode: nextHop?.mode,
         localDestination: false,
         announcesFromInternal: iface.announcesFromInternal,
-        nextHopAnnouncesToInternal: nextHopAnnouncesToInternal
+        nextHopAnnouncesToInternal: nextHop?.announcesToInternal
       )
     else { return }
     queueLock.lock()
