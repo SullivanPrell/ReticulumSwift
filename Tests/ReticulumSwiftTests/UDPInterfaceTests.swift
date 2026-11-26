@@ -15,10 +15,8 @@ import XCTest
 final class UDPInterfaceTests: XCTestCase {
 
   func testDatagramRoundTripBetweenTwoUDPInterfaces() throws {
-    // Pick two different ports on loopback. Use high range to avoid
-    // collisions in shared CI environments.
-    let portA: UInt16 = UInt16.random(in: 40_000...50_000)
-    let portB: UInt16 = portA + 1
+    let ports = try freeLoopbackPorts(2)
+    let (portA, portB) = (ports[0], ports[1])
 
     let a = UDPInterface(
       name: "A",
@@ -68,8 +66,9 @@ final class UDPInterfaceTests: XCTestCase {
   /// Python sends with `SO_BROADCAST` (`UDPInterface.py:121`); a socket without it gets
   /// `EACCES` and the packet is lost.
   func testBroadcastForwardReachesAListener() throws {
-    let port = UInt16.random(in: 40_000...60_000)
-    try XCTSkipUnless(Self.hostCanBroadcast(toPort: port + 7), "no IPv4 broadcast route")
+    let ports = try freeLoopbackPorts(2)
+    let port = ports[0]
+    try XCTSkipUnless(Self.hostCanBroadcast(toPort: ports[1]), "no IPv4 broadcast route")
 
     let listener = UDPInterface(name: "L", listenPort: port)
     let sender = UDPInterface(name: "S", forwardHost: "255.255.255.255", forwardPort: port)

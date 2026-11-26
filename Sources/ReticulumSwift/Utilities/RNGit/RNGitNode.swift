@@ -35,26 +35,42 @@ public final class RNGitNode {
   /// The configuration as it was read, which the pages read their own section of.
   public let configuration: RNGitConfigSection
 
+  /// Guards the state requests, link callbacks and the jobs loop share.
+  ///
+  /// Nothing calls into a link, a subprocess or a callback while holding it.
+  private let lock = NSLock()
+
+  /// Serializes the requests that change the store, so none assigns a stale copy back.
+  ///
+  /// Held across their `git` calls, so it blocks only other store writers.
+  private let storeWriters = NSLock()
+
+  private var heldStore: RNGitRepositoryStore
+  private var heldStatistics: RNGitStatistics
+  private var heldLinks: [Data: Link] = [:]
+  private var heldTemporaries: RNGitTemporaryDirectories
+  private var heldSchedule: RNGitNodeRuntime.Schedule
+
   /// The groups the node serves, and what they grant.
-  public private(set) var store: RNGitRepositoryStore
+  public var store: RNGitRepositoryStore { lock.withLock { heldStore } }
 
   /// What the node has counted.
-  public private(set) var statistics: RNGitStatistics
+  public var statistics: RNGitStatistics { lock.withLock { heldStatistics } }
 
   /// Whether the bring-up got as far as serving.
   public private(set) var ready = false
 
   /// The links peers have identified over, by the identifier each carries.
-  public private(set) var links: [Data: Link] = [:]
+  public var links: [Data: Link] { lock.withLock { heldLinks } }
 
   /// The identifiers of the links peers have identified over.
   public var activeLinks: Set<Data> { Set(links.keys) }
 
   /// The directories the node removes with the links they were made for.
-  var temporaries: RNGitTemporaryDirectories
+  var temporaries: RNGitTemporaryDirectories { lock.withLock { heldTemporaries } }
 
   /// When each periodic job last ran.
-  var schedule: RNGitNodeRuntime.Schedule
+  var schedule: RNGitNodeRuntime.Schedule { lock.withLock { heldSchedule } }
 
   /// The destination the node serves on, or `nil` before one is attached.
   public private(set) var destination: Destination?
@@ -117,14 +133,14 @@ public final class RNGitNode {
       runner: runner, identityAliases: settings.identityAliases,
       access: configuration.section("access"))
     try store.loadGroups(from: configuration)
-    self.store = store
+    self.heldStore = store
 
-    self.statistics = RNGitStatsStore.load(
+    self.heldStatistics = RNGitStatsStore.load(
       from: self.directory + "/" + RNGitNodeEnvironment.statisticsFileName)
-    self.temporaries = RNGitTemporaryDirectories()
+    self.heldTemporaries = RNGitTemporaryDirectories()
 
     let now = clock().timeIntervalSince1970
-    self.schedule = RNGitNodeRuntime.Schedule(
+    self.heldSchedule = RNGitNodeRuntime.Schedule(
       announce: 0, statistics: now, syncCheck: now, linkClean: 0)
     self.ready = true
   }
@@ -195,8 +211,8 @@ public final class RNGitNode {
 
   /// What a peer identifying as `identityHash` gets back from `path`.
   ///
-  /// The handler is built over the node's own store, statistics and temporary directories, and
-  /// whatever it changed is read back before the answer goes out.
+  /// The handler is built over a snapshot of the node's state. Its counts and directories are
+  /// added back as changes, and a store change is made under ``storeWriters``.
   public func answer(
     _ path: RNGitRequestPath, _ request: MsgPack.Value, from identity: RNGitRemoteIdentity?,
     on link: Data?
@@ -213,35 +229,38 @@ public final class RNGitNode {
 
     case .fetch:
       var handler = RNGitFetchHandler(
-        access: access, runner: runner, settings: settings, statistics: statistics,
-        activeLinks: activeLinks, temporaries: temporaries)
+        access: access, runner: runner, settings: settings, activeLinks: activeLinks,
+        temporaries: RNGitTemporaryDirectories(root: temporaries.root))
       let answer = handler.handle(request, from: identityHash, on: link)
-      statistics = handler.statistics
-      temporaries = handler.temporaries
+      absorb(handler.statistics, handler.temporaries)
       return answer
 
     case .push:
-      var handler = RNGitPushHandler(
-        access: access, runner: runner, settings: settings, statistics: statistics)
+      var handler = RNGitPushHandler(access: access, runner: runner, settings: settings)
       let answer = handler.handle(request, from: identityHash)
-      statistics = handler.statistics
+      absorb(handler.statistics)
       return answer.map { .response($0) }
 
     case .create:
+      storeWriters.lock()
+      defer { storeWriters.unlock() }
       var handler = RNGitCreateHandler(
         store: store, runner: runner, blockedIdentities: settings.blockedIdentities)
       let answer = handler.handle(request, from: identityHash)
-      store = handler.store
+      lock.withLock { heldStore = handler.store }
       return answer.map { .response($0) }
 
     case .fork, .mirror:
+      storeWriters.lock()
+      defer { storeWriters.unlock() }
       var handler = RNGitCloneHandler(
         store: store, runner: runner, activeLinks: activeLinks,
-        blockedIdentities: settings.blockedIdentities, temporaries: temporaries)
+        blockedIdentities: settings.blockedIdentities,
+        temporaries: RNGitTemporaryDirectories(root: temporaries.root))
       let kind: RNGitCloneKind = path == .fork ? .fork : .mirror
       let answer = handler.handle(request, from: identityHash, on: link, as: kind)
-      store = handler.store
-      temporaries = handler.temporaries
+      lock.withLock { heldStore = handler.store }
+      absorb(RNGitStatistics(), handler.temporaries)
       return answer.map { .response($0) }
 
     case .sync:
@@ -249,10 +268,9 @@ public final class RNGitNode {
       return handler.handle(request, from: identityHash).map { .response($0) }
 
     case .delete:
-      var handler = RNGitDeleteHandler(
-        access: access, runner: runner, settings: settings, statistics: statistics)
+      var handler = RNGitDeleteHandler(access: access, runner: runner, settings: settings)
       let answer = handler.handle(request, from: identityHash)
-      statistics = handler.statistics
+      absorb(handler.statistics)
       return answer.map { .response($0) }
 
     case .release:
@@ -264,11 +282,24 @@ public final class RNGitNode {
       return handler.handle(request, from: identity).map { .response($0) }
 
     case .perms:
+      storeWriters.lock()
+      defer { storeWriters.unlock() }
       var handler = RNGitPermissionsHandler(
         store: store, blockedIdentities: settings.blockedIdentities)
       let answer = handler.handle(request, from: identity)
-      store = handler.store
+      lock.withLock { heldStore = handler.store }
       return .response(answer)
+    }
+  }
+
+  /// Adds what a handler counted from empty statistics, and the directories it made.
+  private func absorb(
+    _ counted: RNGitStatistics,
+    _ made: RNGitTemporaryDirectories = RNGitTemporaryDirectories()
+  ) {
+    lock.withLock {
+      heldStatistics.add(counted, since: RNGitStatistics())
+      heldTemporaries.adopt(made)
     }
   }
 
@@ -310,23 +341,25 @@ public final class RNGitNode {
   /// Holds `link`, which a peer has identified over.
   func identified(_ link: Link) {
     guard let linkID = link.linkID else { return }
-    links[linkID] = link
+    lock.withLock { heldLinks[linkID] = link }
   }
 
   /// A directory held for the length of `link`.
   func makeTemporaryDirectory(for link: Data) -> String? {
-    temporaries.make(for: link)
+    lock.withLock { heldTemporaries.make(for: link) }
   }
 
   /// Lets go of `stale`, removing whatever was held for each of them.
   func release(links stale: Set<Data>) {
     var cleaned = 0
-    for link in stale where links.removeValue(forKey: link) != nil {
-      cleaned += 1
-      for path in temporaries.release(link) {
-        Reticulum.log("Cleaned up " + path, level: .debug)
+    var removed: [String] = []
+    lock.withLock {
+      for link in stale where heldLinks.removeValue(forKey: link) != nil {
+        cleaned += 1
+        removed += heldTemporaries.release(link)
       }
     }
+    for path in removed { Reticulum.log("Cleaned up " + path, level: .debug) }
     if cleaned > 0 { Reticulum.log("Cleaned \(cleaned) links", level: .debug) }
   }
 
@@ -334,7 +367,7 @@ public final class RNGitNode {
 
   /// Reads the statistics, writes what `change` makes of them, and holds the result.
   func record(_ change: (inout RNGitStatistics) -> Void) {
-    change(&statistics)
+    lock.withLock { change(&heldStatistics) }
   }
 
   /// Writes the statistics where the bring-up found them.
@@ -346,7 +379,8 @@ public final class RNGitNode {
   public func announce() {
     Reticulum.log("Announcing repositories destination", level: .verbose)
     try? destination?.announce()
-    schedule.announce = clock().timeIntervalSince1970
+    let now = clock().timeIntervalSince1970
+    lock.withLock { heldSchedule.announce = now }
   }
 
   /// Which jobs are due at `now`.
@@ -360,15 +394,15 @@ public final class RNGitNode {
     if jobs.announce { announce() }
     if jobs.persistStatistics {
       try? persistStatistics()
-      schedule.statistics = now
+      lock.withLock { heldSchedule.statistics = now }
     }
     if jobs.syncMirrors {
       syncMirrors(at: now)
-      schedule.syncCheck = now
+      lock.withLock { heldSchedule.syncCheck = now }
     }
     if jobs.cleanLinks {
       release(links: staleLinks())
-      schedule.linkClean = now
+      lock.withLock { heldSchedule.linkClean = now }
     }
   }
 

@@ -72,26 +72,49 @@ final class SocketOptionsTests: XCTestCase {
 
   // MARK: - The handed-over object, per site
 
-  func testTCPServerListenerIsBuiltFromTheFactoryOptions() throws {
-    let server = TCPServerInterface(name: "optserver", port: 45_931)
+  /// The server accepts on a BSD socket (`bugs/040`), so `getsockopt` reads the accepted
+  /// descriptor's options back: keepalive, Python's three timers, the user timeout, the persist
+  /// timeout and `TCP_NODELAY` (`TCPInterface.py:241`, `:259-261`, `bugs/023`).
+  func testAcceptedTCPServerSocketCarriesTheFactoryOptions() throws {
+    let port = try freeLoopbackPort()
+    let server = TCPServerInterface(name: "optaccept", port: port, bindIP: "127.0.0.1")
+    let accepted = expectation(description: "accepted")
+    var read: [String: Int32] = [:]
+    server.acceptedDescriptorHandlerForTesting = { fd in
+      func get(_ level: Int32, _ name: Int32) -> Int32 {
+        var value: Int32 = -1
+        var length = socklen_t(MemoryLayout<Int32>.size)
+        _ = getsockopt(fd, level, name, &value, &length)
+        return value
+      }
+      read = [
+        "keepalive": get(SOL_SOCKET, SO_KEEPALIVE),
+        "idle": get(Int32(IPPROTO_TCP), TCP_KEEPALIVE),
+        "interval": get(Int32(IPPROTO_TCP), TCP_KEEPINTVL),
+        "count": get(Int32(IPPROTO_TCP), TCP_KEEPCNT),
+        "drop": get(Int32(IPPROTO_TCP), TCP_RXT_CONNDROPTIME),
+        "persist": get(Int32(IPPROTO_TCP), PERSIST_TIMEOUT),
+        "nodelay": get(Int32(IPPROTO_TCP), TCP_NODELAY),
+      ]
+      accepted.fulfill()
+    }
     try server.start()
     defer { server.stop() }
 
-    let handed = try XCTUnwrap(
-      server.handedOverTCPOptionsForTesting,
-      """
-      TCPServerInterface.start() recorded no options object, which \
-      means it did not take one from the factory. Before bugs/023 it \
-      called NWListener(using: .tcp) — framework defaults, keepalive \
-      off — so every connection it accepted was unable to notice a \
-      peer that vanished without sending FIN.
-      """)
-    XCTAssertTrue(handed.enableKeepalive)
-    XCTAssertTrue(handed.noDelay)
-    XCTAssertEqual(handed.keepaliveIdle, RNSSocketOptions.probeAfter)
-    XCTAssertEqual(handed.keepaliveInterval, RNSSocketOptions.probeInterval)
-    XCTAssertEqual(handed.keepaliveCount, RNSSocketOptions.probes)
-    XCTAssertEqual(handed.connectionDropTime, RNSSocketOptions.userTimeout)
+    let client = NWConnection(
+      to: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!),
+      using: RNSSocketOptions.tcpParameters().parameters)
+    client.start(queue: .global())
+    defer { client.cancel() }
+    wait(for: [accepted], timeout: 5.0)
+
+    XCTAssertNotEqual(read["keepalive"], 0)
+    XCTAssertEqual(read["idle"], Int32(RNSSocketOptions.probeAfter))
+    XCTAssertEqual(read["interval"], Int32(RNSSocketOptions.probeInterval))
+    XCTAssertEqual(read["count"], Int32(RNSSocketOptions.probes))
+    XCTAssertEqual(read["drop"], Int32(RNSSocketOptions.userTimeout))
+    XCTAssertEqual(read["persist"], Int32(RNSSocketOptions.userTimeout), "zero-window peer")
+    XCTAssertNotEqual(read["nodelay"], 0)
   }
 
   func testTCPClientDialIsBuiltFromTheFactoryOptions() throws {
@@ -119,38 +142,6 @@ final class SocketOptionsTests: XCTestCase {
         + "include the TCP_NODELAY Python sets at LocalInterface.py:147")
     XCTAssertTrue(handed.noDelay)
     XCTAssertFalse(handed.enableKeepalive, "matches LocalInterface.py, which sets no keepalive")
-  }
-
-  /// An accepted connection isn't constructed by this port at all—Network.framework derives
-  /// it from the listener's parameters—so routing the listener through the factory is what
-  /// covers every accepted connection.
-  ///
-  /// Asserted rather than assumed.
-  func testAcceptedConnectionInheritsTheListenerParameters() throws {
-    let server = TCPServerInterface(name: "optaccept", port: 45_934)
-    try server.start()
-    defer { server.stop() }
-
-    let accepted = expectation(description: "accepted")
-    server.acceptedConnectionParametersForTesting = { _ in accepted.fulfill() }
-
-    let client = NWConnection(
-      to: .hostPort(host: "127.0.0.1", port: 45_934),
-      using: RNSSocketOptions.tcpParameters().parameters)
-    client.start(queue: .global())
-    defer { client.cancel() }
-    wait(for: [accepted], timeout: 5.0)
-
-    let listenerParams = try XCTUnwrap(server.handedOverParametersForTesting)
-    let acceptedParams = try XCTUnwrap(server.lastAcceptedParametersForTesting)
-    XCTAssertTrue(
-      acceptedParams === listenerParams,
-      """
-      The accepted connection's parameters are not the listener's object. If \
-      Network.framework ever stops passing them through, fixing the listener \
-      would no longer cover accepted sockets and this port would need to \
-      configure each one — which is what bugs/023 is about.
-      """)
   }
 
   /// The one site with a real readback. `PosixTCPServer` binds with POSIX sockets, and Python

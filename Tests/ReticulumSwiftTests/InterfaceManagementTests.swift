@@ -278,7 +278,7 @@ final class InterfaceManagementTests: XCTestCase {
     reticulum.transport.register(interface: Stub(name: "Peer"))
     var lastError: Error?
     for _ in 0..<20 {
-      let port = UInt16.random(in: 41_000...48_000)
+      let port = try freeLoopbackPort()
       let server = RPCServer(port: port, authkey: authkey)
       server.transport = reticulum.transport
       server.reticulum = reticulum

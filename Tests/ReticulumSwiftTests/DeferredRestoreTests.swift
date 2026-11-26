@@ -149,9 +149,10 @@ final class DeferredRestoreTests: XCTestCase {
 
   /// A tunnel restores whether or not its interface is present, so it's never parked.
   ///
-  /// The reference restores a tunnel path with `receiving_interface = None` and gates only on
-  /// the announce (`Transport.py:398-400`), and restores the tunnel's paths onto the interface
-  /// the endpoint reappears on (`:2839-2867`). Deferring it would delay a tunnel that
+  /// The reference resolves a tunnel path's interface through `find_interface_from_hash`, which
+  /// returns None when no registered interface has that hash, and gates only on the announce
+  /// (`Transport.py:483-486`). The tunnel's own interface is None until the endpoint reappears
+  /// (`:498`), and `handle_tunnel` then restores its paths onto that interface (`:2839-2867`). Deferring it would delay a tunnel that
   /// was ready, and would leave `TunnelStore`'s share of the pending machinery permanently
   /// empty—dead code that reads as coverage.
   func testATunnelRestoresWithoutWaitingForAnInterface() throws {
@@ -174,7 +175,7 @@ final class DeferredRestoreTests: XCTestCase {
     let tunnel = try XCTUnwrap(
       revived.tunnels[tunnelID],
       "the tunnel restores with no interface registered at all")
-    XCTAssertNil(tunnel.iface, "field 1 of a restored tunnel is None (Transport.py:403)")
+    XCTAssertNil(tunnel.iface, "field 1 of a restored tunnel is None (Transport.py:498)")
     XCTAssertNil(
       tunnel.paths[installed.destinationHash]?.nextHopInterface,
       "and its paths are unattached until the endpoint reappears")

@@ -462,7 +462,7 @@ final class InterfaceConstructionTests: XCTestCase {
   /// `listen_port` and `forward_port` is unset (`UDPInterface.py:68-72`).
   func testUDPPortKeyFillsListenAndForwardPorts() throws {
     let stack = makeStack()
-    let port = Int.random(in: 40_000...60_000)
+    let port = Int(try freeLoopbackPort())
     try stack.synthesizeInterfaces(
       from: parse(
         """

@@ -191,6 +191,64 @@ enum RNSSocketOptions {
   ///
   /// Unlike the Network.framework paths this one *is* verifiable: `getsockopt` reads the value
   /// straight back, so `SocketOptionsTests` asserts the accepted descriptor's real state.
+  /// Apply ``tcpOptions()``'s set to a raw descriptor: keepalive with Python's three timers,
+  /// the user and persist timeouts and `TCP_NODELAY` (`TCPInterface.py:241`, `:259-261`).
+  static func applyTCPOptions(toFileDescriptor fd: Int32) {
+    func set(_ level: Int32, _ name: Int32, _ value: Int) {
+      var value = Int32(value)
+      setsockopt(fd, level, name, &value, socklen_t(MemoryLayout<Int32>.size))
+    }
+    set(SOL_SOCKET, SO_NOSIGPIPE, 1)
+    set(SOL_SOCKET, SO_KEEPALIVE, 1)
+    set(Int32(IPPROTO_TCP), TCP_KEEPALIVE, probeAfter)
+    set(Int32(IPPROTO_TCP), TCP_KEEPINTVL, probeInterval)
+    set(Int32(IPPROTO_TCP), TCP_KEEPCNT, probes)
+    set(Int32(IPPROTO_TCP), TCP_RXT_CONNDROPTIME, userTimeout)
+    set(Int32(IPPROTO_TCP), PERSIST_TIMEOUT, userTimeout)  // as `tcpOptions()`'s persistTimeout
+    set(Int32(IPPROTO_TCP), TCP_NODELAY, 1)
+  }
+
+  /// A bind that failed, naming the address and port.
+  struct ListenError: Error, CustomStringConvertible {
+    let address: String
+    let port: UInt16
+    let code: Int32
+    var description: String {
+      "Could not bind \(address):\(port): [Errno \(code)] \(String(cString: strerror(code)))"
+    }
+  }
+
+  /// A listening socket on `port` of `bindIP`, with `SO_REUSEADDR` as Python's
+  /// `ThreadingTCPServer` sets it (`TCPInterface.py:518`).
+  ///
+  /// The address family is the resolved address's, IPv4 first where a name has both
+  /// (`TCPInterface.py:490-497`), so `0.0.0.0` binds IPv4 only, as in Python.
+  static func listeningSocket(bindIP: String, port: UInt16) throws -> Int32 {
+    var hints = addrinfo()
+    hints.ai_socktype = SOCK_STREAM
+    hints.ai_flags = AI_PASSIVE
+    var info: UnsafeMutablePointer<addrinfo>?
+    guard getaddrinfo(bindIP, String(port), &hints, &info) == 0, let first = info else {
+      throw ListenError(address: bindIP, port: port, code: EADDRNOTAVAIL)
+    }
+    defer { freeaddrinfo(info) }
+    let entry =
+      sequence(first: first) { $0.pointee.ai_next }.first { $0.pointee.ai_family == AF_INET }
+      ?? first
+    let fd = socket(entry.pointee.ai_family, SOCK_STREAM, 0)
+    guard fd >= 0 else { throw ListenError(address: bindIP, port: port, code: errno) }
+    var one: Int32 = 1
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
+    guard Darwin.bind(fd, entry.pointee.ai_addr, entry.pointee.ai_addrlen) == 0,
+      Darwin.listen(fd, 16) == 0
+    else {
+      let code = errno
+      Darwin.close(fd)
+      throw ListenError(address: bindIP, port: port, code: code)
+    }
+    return fd
+  }
+
   static func applyLocalOptions(toFileDescriptor fd: Int32) {
     var one: Int32 = 1
     setsockopt(

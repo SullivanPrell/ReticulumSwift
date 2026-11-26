@@ -62,9 +62,10 @@ final class AutoInterfaceTests: XCTestCase {
   /// address, so without the check any host that reaches the port injects packets.
   func testDataOnlyFromPeersThatBeaconed() throws {
     let group = Data("ingress-\(UUID())".utf8)
-    let base = UInt16.random(in: 40_000...60_000)
+    let ports = try freeLoopbackPorts(2)
+    let (discoveryPort, dataPort) = (ports[0], ports[1])
     let iface = AutoInterface(
-      name: "ingress", groupID: group, discoveryPort: base, dataPort: base + 1)
+      name: "ingress", groupID: group, discoveryPort: discoveryPort, dataPort: dataPort)
     try iface.start()
     defer { iface.stop() }
     try XCTSkipUnless(iface.isOnline, "no IPv6 link-local interface on this host")
@@ -81,13 +82,13 @@ final class AutoInterfaceTests: XCTestCase {
       return frames
     }
 
-    Self.udpSend(Data("stranger".utf8), toPort: base + 1)  // ::1 never beaconed
+    Self.udpSend(Data("stranger".utf8), toPort: dataPort)  // ::1 never beaconed
     Thread.sleep(forTimeInterval: 0.3)
     XCTAssertEqual(received(), [], "accepted data from a host that never beaconed")
 
-    Self.udpSend(Hashes.fullHash(group + Data("::1".utf8)), toPort: base)
+    Self.udpSend(Hashes.fullHash(group + Data("::1".utf8)), toPort: discoveryPort)
     Thread.sleep(forTimeInterval: 0.3)
-    Self.udpSend(Data("peer".utf8), toPort: base + 1)
+    Self.udpSend(Data("peer".utf8), toPort: dataPort)
     let deadline = Date().addingTimeInterval(2)
     while received().isEmpty, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
     XCTAssertEqual(received(), [Data("peer".utf8)])

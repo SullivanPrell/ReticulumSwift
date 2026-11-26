@@ -41,7 +41,7 @@ final class RPCClientTests: XCTestCase {
     // Retry a few ports—the suite runs in parallel with other socket tests.
     var lastError: Error?
     for _ in 0..<20 {
-      let candidate = UInt16.random(in: 41_000...48_000)
+      let candidate = try freeLoopbackPort()
       let server = RPCServer(port: candidate, authkey: authkey)
       server.transport = transport
       do {
