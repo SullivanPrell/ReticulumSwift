@@ -45,6 +45,10 @@ All notable changes to ReticulumSwift are documented here. This project follows
 - `cleanKnownDestinations` drops the destination's announce packet hash with the rest of its
   entry. Python keeps the hash inside the `known_destinations` entry; the port's separate map
   was never pruned.
+- `Link.remoteIdentity` is set on an initiator link once its proof validates, to the
+  destination's identity, as Python's `validate_proof` sets `__remote_identity`
+  (`Link.py:507`). It was nil on every outgoing link. `onRemoteIdentified` still fires only
+  for an identify packet (`Link.py:1077-1078`), so setting it on an initiator doesn't replay.
 - Data races on the RNode interfaces' radio state. The KISS frame dispatcher wrote the `r...`
   radio fields, `detected`, `firmwareOk` and the firmware version while the bring-up thread,
   `Transport` and apps read them, with no lock. `RNodeInterface` and `RNodeSubInterface` now

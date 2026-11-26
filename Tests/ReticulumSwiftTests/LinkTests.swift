@@ -88,6 +88,19 @@ final class LinkTests: XCTestCase {
     XCTAssertEqual(try responderLink?.decrypt(ciphertext), plaintext)
   }
 
+  /// Python sets the initiator's remote identity to the destination's when the proof validates
+  /// (`Link.py:507`), and calls `remote_identified` only for an identify packet (`:1077-1078`).
+  func testInitiatorKnowsRemoteIdentityAfterProof() throws {
+    let pair = try makeEstablishedLinkPair()
+    let expected = try XCTUnwrap(pair.responderTransport.ownerIdentity)
+    XCTAssertEqual(pair.initiator.remoteIdentity?.hash, expected.hash)
+    XCTAssertEqual(pair.initiator.getRemoteIdentity()?.hash, expected.hash)
+
+    var identified = false
+    pair.initiator.onRemoteIdentified = { _, _ in identified = true }
+    XCTAssertFalse(identified)
+  }
+
   func testValidateProofRejectsBadSignature() throws {
     let identity = Identity()
     let destination = try Destination(
