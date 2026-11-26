@@ -51,13 +51,13 @@ final class RNGitStackTests: XCTestCase {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     directories.append(directory)
 
-    let base = Int.random(in: 41_000...48_000)
+    let ports = try freeLoopbackPorts(3)
     let text = """
       [reticulum]
       enable_transport = False
       share_instance = \(share ? "Yes" : "No")
-      shared_instance_port = \(base)
-      instance_control_port = \(base + 1)
+      shared_instance_port = \(ports[0])
+      instance_control_port = \(ports[1])
 
       [logging]
       loglevel = 1
@@ -67,9 +67,9 @@ final class RNGitStackTests: XCTestCase {
           type = UDPInterface
           enabled = Yes
           listen_ip = 127.0.0.1
-          listen_port = \(base + 2)
+          listen_port = \(ports[2])
           forward_ip = 127.0.0.1
-          forward_port = \(base + 2)
+          forward_port = \(ports[2])
       """
     try text.write(
       to: directory.appendingPathComponent("config"), atomically: true, encoding: .utf8)

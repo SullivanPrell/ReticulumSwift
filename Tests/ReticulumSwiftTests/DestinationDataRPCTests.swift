@@ -426,7 +426,7 @@ final class DestinationDataRPCTests: XCTestCase {
 
   private func makeServerWithTransport() -> (RPCServer, Transport) {
     let t = Transport()
-    let server = RPCServer(port: 37429, authkey: Data(repeating: 0, count: 32))
+    let server = RPCServer(port: 0, authkey: Data(repeating: 0, count: 32))
     server.transport = t
     return (server, t)
   }

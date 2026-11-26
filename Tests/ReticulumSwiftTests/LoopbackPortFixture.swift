@@ -10,6 +10,7 @@
 
 import Darwin
 import Foundation
+import Network
 import XCTest
 
 /// What a connect attempt to a loopback port found waiting there.
@@ -133,4 +134,68 @@ func freeLoopbackPort(
   }
   throw XCTSkip(
     "no loopback port could be proven free in \(attempts) attempts", file: file, line: line)
+}
+
+/// Returns `count` distinct loopback ports.
+///
+/// Each comes from ``freeLoopbackPort(attempts:nextCandidate:file:line:)``.
+///
+/// shortcut: each port is proven free for TCP only; a UDP socket holding the same number isn't
+/// detected. Add a UDP bind probe if a UDP suite flakes on it.
+func freeLoopbackPorts(
+  _ count: Int, file: StaticString = #filePath, line: UInt = #line
+) throws -> [UInt16] {
+  var ports: [UInt16] = []
+  for _ in 0..<(count * 4) where ports.count < count {
+    let port = try freeLoopbackPort(file: file, line: line)
+    if !ports.contains(port) { ports.append(port) }
+  }
+  guard ports.count == count else {
+    throw XCTSkip(
+      "no \(count) distinct loopback ports could be proven free", file: file, line: line)
+  }
+  return ports
+}
+
+/// Starts a TCP listener on a free loopback port and returns it once it reports `.ready`.
+///
+/// `NWListener(using:on:)` doesn't bind. `start(queue:)` does, and reports a held port as
+/// `.failed` through the state handler, so the retry has to wait for the state.
+func readyLoopbackListener(
+  using parameters: NWParameters = .tcp,
+  attempts: Int = 8,
+  onConnection: @escaping (NWConnection) -> Void,
+  file: StaticString = #filePath,
+  line: UInt = #line
+) throws -> (listener: NWListener, port: UInt16) {
+  for _ in 0..<attempts {
+    let port = try freeLoopbackPort(file: file, line: line)
+    guard let nwPort = NWEndpoint.Port(rawValue: port),
+      let listener = try? NWListener(using: parameters, on: nwPort)
+    else { continue }
+    let settled = DispatchSemaphore(value: 0)
+    let lock = NSLock()
+    var ready = false
+    listener.stateUpdateHandler = { state in
+      switch state {
+      case .ready:
+        lock.lock()
+        ready = true
+        lock.unlock()
+        settled.signal()
+      case .failed, .waiting: settled.signal()
+      default: break
+      }
+    }
+    listener.newConnectionHandler = onConnection
+    listener.start(queue: .global())
+    _ = settled.wait(timeout: .now() + 2)
+    lock.lock()
+    let isReady = ready
+    lock.unlock()
+    if isReady { return (listener, port) }
+    listener.cancel()
+  }
+  throw XCTSkip(
+    "no loopback listener reached ready in \(attempts) attempts", file: file, line: line)
 }

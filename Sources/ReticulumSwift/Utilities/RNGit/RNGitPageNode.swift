@@ -236,11 +236,12 @@ public final class RNGitPageNode {
     defer { lock.unlock() }
 
     var handler = makeHandler()
+    let before = handler.statistics
     let answer = Self.serve(
       path, RNGitPageRequest(request), request, identity?.hash, link, &handler)
     heldTemporaries = handler.temporaries
     let counted = handler.statistics
-    owner.record { $0 = counted }
+    owner.record { $0.add(counted, since: before) }
     return answer
   }
 
