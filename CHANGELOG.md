@@ -5,6 +5,15 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Tests
+
+- No test picks a port at random. The eight suites that drew one from a literal range take it
+  from `freeLoopbackPort()` (#44) or the new `freeLoopbackPorts(_:)`, and a guard,
+  `testNoTestPicksAPortAtRandom`, fails on any new `random(in:)` port range in `Tests/`. The two
+  `NWListener` retry loops never retried, because `NWListener(using:on:)` doesn't bind; they
+  use `readyLoopbackListener`, which waits for `.ready`. Two tests no longer bind TCP port 4242,
+  and two never-started `RPCServer`s no longer name the live control port 37429.
+
 ### Changed
 
 - Receiving a resource costs about a quarter of the CPU it did. `HDLC.FrameDecoder.feed`,

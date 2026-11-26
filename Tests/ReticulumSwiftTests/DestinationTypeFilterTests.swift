@@ -181,7 +181,7 @@ final class DestinationTypeFilterTests: XCTestCase {
   /// (`Reticulum.py:1514-1529`).
   func testTheSharedInstanceAnswersTypeRegistrationCalls() throws {
     let t = Transport.unstamped()
-    let server = RPCServer(port: 37429, authkey: Data(repeating: 0, count: 32))
+    let server = RPCServer(port: 0, authkey: Data(repeating: 0, count: 32))
     server.transport = t
     t.requiredDestinationsOnly = true
     let requester = Data(repeating: 9, count: 16)
