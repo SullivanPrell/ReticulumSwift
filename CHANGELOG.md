@@ -30,6 +30,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- Data races and lost updates on the `rngit` node's shared state. Transport threads and the
+  jobs loop read and wrote `RNGitNode`'s store, statistics, links, temporary directories and
+  job schedule with no lock, and each request handler assigned its copy back over the
+  property, so two overlapping fetches kept one count. One lock now guards that state and is
+  never held across a link, a `git` call or a callback. Handlers add their counts and
+  directories as changes (`RNGitStatistics.add(_:since:)`), the page node does the same
+  instead of overwriting the owner's counts, and the requests that change the store run one at
+  a time. Python mutates one dictionary in place under the GIL.
 - A link request whose mode bits name a mode outside `Link.enabledModes` is refused, as Python
   refuses it (`Link.py:168-177`, `:453`). `Link.answer` ignored the bits and answered with
   AES-256-CBC, so a peer asking for another mode got a link keyed differently from its own.
