@@ -190,6 +190,34 @@ public final class Reticulum {
   }
   private static var unsafeLogHandler: ((String, LogLevel) -> Void)?
 
+  /// Whether an interface that gives up for good exits the process.
+  ///
+  /// Python's `Reticulum.panic_on_interface_error`, set from the config's
+  /// `panic_on_interface_error` (`Reticulum.py:692-694`).
+  public static var panicOnInterfaceError: Bool {
+    get { logLock.withLock { unsafePanicOnInterfaceError } }
+    set { logLock.withLock { unsafePanicOnInterfaceError = newValue } }
+  }
+  private static var unsafePanicOnInterfaceError = false
+
+  /// Exits the process with status 255.
+  ///
+  /// Python's `RNS.panic()` is `os._exit(255)` (`__init__.py:355`). Tests replace it.
+  static var panic: () -> Void {
+    get { logLock.withLock { unsafePanic } }
+    set { logLock.withLock { unsafePanic = newValue } }
+  }
+  private static var unsafePanic: () -> Void = { exit(255) }
+
+  /// Logs that an interface gave up for good, then panics when the config asks.
+  ///
+  /// Python logs the line at `LOG_ERROR` and then calls `RNS.panic()` if
+  /// `panic_on_interface_error` is set, for example `TCPInterface.py:450-454`.
+  static func interfaceFailed(_ message: String) {
+    log(message, level: .error)
+    if panicOnInterfaceError { panic() }
+  }
+
   /// Emit a log message if `level >= globalLogLevel`.
   ///
   /// Mirrors Python's module-level `RNS.log(msg, level=LOG_NOTICE)`.
@@ -2550,8 +2578,9 @@ public final class Reticulum {
     return StorageInventory.url(.config, in: parent)
   }
 
-  private func applyConfig(_ cfg: ReticulumConfig) {
+  func applyConfig(_ cfg: ReticulumConfig) {
     transport.transportEnabled = cfg.reticulum.enableTransport
+    Reticulum.panicOnInterfaceError = cfg.reticulum.panicOnInterfaceError
     cfg.filter.apply(to: transport)
     cfg.stamps.apply(to: &transport.stamps)
     Reticulum.allowProbes = cfg.reticulum.allowProbes

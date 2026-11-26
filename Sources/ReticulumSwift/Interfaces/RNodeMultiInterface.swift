@@ -478,6 +478,8 @@ public final class RNodeMultiInterface: Interface {
   /// Device loss → offline → redial.
   private func handleTransportLoss(_ error: Error) {
     Reticulum.log("\(displayName) lost its device (\(error)) — reconnecting", level: .error)
+    Reticulum.interfaceFailed(
+      "The interface \(displayName) experienced an unrecoverable error and is now offline.")
     isOnline = false
     beginRedial()
   }
