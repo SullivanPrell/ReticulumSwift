@@ -13,6 +13,10 @@ All notable changes to ReticulumSwift are documented here. This project follows
   `NWListener` retry loops never retried, because `NWListener(using:on:)` doesn't bind; they
   use `readyLoopbackListener`, which waits for `.ready`. Two tests no longer bind TCP port 4242,
   and two never-started `RPCServer`s no longer name the live control port 37429.
+- `TunnelPathRestoreTests` replays seven `handle_tunnel` cases captured from Python RNS 1.6.1
+  by `scripts/capture-tunnel-restore-vectors.py`. The tunnel test citations that still named
+  RNS 1.3.x lines now name 1.5.5 lines, and `DeferredRestoreTests` no longer says Python
+  restores a tunnel path with no interface.
 
 ### Changed
 
@@ -55,12 +59,13 @@ All notable changes to ReticulumSwift are documented here. This project follows
   place like Python's `shutil.move(resource.data.name, …)`. Receiving a 100 MB file with
   `rncp` peaked at 289 MB and now peaks at 33 MB, the same as for 10 MB.
 
-### Tests
+### Deliberate differences from Python
 
-- `TunnelPathRestoreTests` replays seven `handle_tunnel` cases captured from Python RNS 1.6.1
-  by `scripts/capture-tunnel-restore-vectors.py`. The tunnel test citations that still named
-  RNS 1.3.x lines now name 1.5.5 lines, and `DeferredRestoreTests` no longer says Python
-  restores a tunnel path with no interface.
+- The announce cache stays one file per announce in `cache/announces/`. Python 1.6 keeps it in
+  `cache/announces.db` (`Transport.py:3502-3514`, `Storage.py:734-754`) and imports a
+  `cache/announces/` directory on start (`:3506-3509`), so Python reads a Swift directory. A
+  Swift daemon started on a Python 1.6 directory restores no path until announces return.
+  reticulum-interop's `test_python_state_read_by_swift` is a strict xfail for it.
 
 ## [1.29.0]—RNS 1.6.1 parity: default stamps, tunnel synthesis v2, and inbound accounting
 
