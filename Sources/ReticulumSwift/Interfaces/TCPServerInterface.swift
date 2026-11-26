@@ -8,6 +8,7 @@
 // SPDX-License-Identifier: LicenseRef-Reticulum
 //===----------------------------------------------------------------------===//
 
+import Darwin
 import Foundation
 import Network
 
@@ -42,7 +43,8 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
   /// The address the listener binds.
   ///
   /// Python resolves `listen_ip` into `self.bind_ip`, binds it, and prints it in `__str__`
-  /// (`TCPInterface.py:551-555`, `:691-693`). The default, `0.0.0.0`, binds every address.
+  /// (`TCPInterface.py:551-555`, `:691-693`). The default, `0.0.0.0`, binds every IPv4 address,
+  /// and `::` every address.
   public let bindIP: String
   /// Interface bitrate in bits per second.
   public var bitrate: Int = 10_000_000
@@ -117,18 +119,11 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     return spawned.count
   }
 
-  private var listener: NWListener?
+  private var acceptSource: DispatchSourceRead?
+  private var acceptClosed: DispatchSemaphore?
 
-  /// What `start()` handed to `NWListener`, and what the framework handed back on accept.
-  ///
-  /// Recorded because there is no authoritative readback for TCP options—see
-  /// ``RNSSocketOptions``. `SocketOptionsTests` asserts that the accepted connection's
-  /// parameters *are* the listener's object, which is what makes configuring the listener
-  /// sufficient to cover every accepted socket rather than merely assumed to be.
-  private(set) var handedOverTCPOptionsForTesting: NWProtocolTCP.Options?
-  private(set) var handedOverParametersForTesting: NWParameters?
-  private(set) var lastAcceptedParametersForTesting: NWParameters?
-  var acceptedConnectionParametersForTesting: ((NWParameters) -> Void)?
+  /// Called with each accepted descriptor once its options are set, for tests to read back.
+  var acceptedDescriptorHandlerForTesting: ((Int32) -> Void)?
   private let queue: DispatchQueue
   /// Serial queue that all spawned clients' inbound deliveries funnel through,
   /// so multiple client connections never invoke the (non-thread-safe) inbound
@@ -147,52 +142,36 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
       label: "ReticulumSwift.TCPServerInterface.\(name)", attributes: .concurrent)
   }
 
-  /// Opens the listening socket and starts accepting clients.
+  /// Binds `bindIP:port` and starts accepting clients.
+  ///
+  /// Python binds in the constructor and raises when the bind fails (`TCPInterface.py:567-573`).
+  /// A BSD socket binds the one address: `NWListener` refuses a port any local address holds
+  /// (`bugs/040`).
+  ///
+  /// - Throws: ``RNSSocketOptions/ListenError`` naming the address and port it couldn't bind.
   public func start() throws {
-    guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-      throw InterfaceError.invalidConfiguration("invalid port \(port)")
+    guard acceptSource == nil else { return }
+    let fd = try RNSSocketOptions.listeningSocket(bindIP: bindIP, port: port)
+    let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+    source.setEventHandler { [weak self] in self?.acceptOne(on: fd) }
+    let closed = DispatchSemaphore(value: 0)
+    source.setCancelHandler {
+      Darwin.close(fd)
+      closed.signal()
     }
-    // Python configures the socket it *accepts* exactly as the one it dials
-    // (`TCPInterface.py:241`, `:259-261`, reached from `:591`), so direction must not decide
-    // whether the options apply. Network.framework derives an accepted connection from the
-    // listener's parameters, so taking them from the shared factory here is what carries them
-    // onto every client—this line passed `.tcp` through 1.7.0, meaning framework defaults
-    // with keepalive **off**, and an accepted connection whose peer vanished without sending
-    // FIN stayed `.ready` forever while the interface reported Up (`bugs/023`).
-    let socketOptions = RNSSocketOptions.tcpParameters()
-    handedOverTCPOptionsForTesting = socketOptions.options
-    handedOverParametersForTesting = socketOptions.parameters
-    let listener = try RNSSocketOptions.listener(
-      using: socketOptions.parameters, bindIP: bindIP, port: nwPort)
-    self.listener = listener
-
-    listener.newConnectionHandler = { [weak self] conn in
-      self?.lastAcceptedParametersForTesting = conn.parameters
-      self?.acceptedConnectionParametersForTesting?(conn.parameters)
-      self?.accept(conn)
-    }
-    listener.stateUpdateHandler = { [weak self] state in
-      guard let self else { return }
-      switch state {
-      case .ready:
-        self.isOnline = true
-        Reticulum.log("Interface \(self.name) listening on port \(self.port)", level: .verbose)
-      case .failed(let err):
-        self.isOnline = false
-        Reticulum.log("Interface \(self.name) listener failed: \(err)", level: .error)
-      case .cancelled:
-        self.isOnline = false
-      default:
-        break
-      }
-    }
-    listener.start(queue: queue)
+    source.resume()
+    acceptSource = source
+    acceptClosed = closed
+    isOnline = true
+    Reticulum.log("Interface \(name) listening on port \(port)", level: .verbose)
   }
 
   /// Closes the listening socket and every accepted client.
   public func stop() {
-    listener?.cancel()
-    listener = nil
+    acceptSource?.cancel()
+    acceptClosed?.wait()
+    acceptSource = nil
+    acceptClosed = nil
     lock.lock()
     let all = spawned
     spawned.removeAll()
@@ -217,7 +196,21 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 
   // MARK: - Connection acceptance
 
-  private func accept(_ conn: NWConnection) {
+  private func acceptOne(on listenFD: Int32) {
+    var address = sockaddr_storage()
+    var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
+    let fd = withUnsafeMutablePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.accept(listenFD, $0, &length) }
+    }
+    guard fd >= 0 else { return }
+    // Python configures an accepted socket as it does a dialled one (`TCPInterface.py:241`,
+    // `:259-261`, reached from `:591`, `bugs/023`).
+    RNSSocketOptions.applyTCPOptions(toFileDescriptor: fd)
+    acceptedDescriptorHandlerForTesting?(fd)
+    accept(fd, peer: Self.peerAddress(of: address))
+  }
+
+  private func accept(_ fd: Int32, peer: (host: String, port: UInt16)) {
     lock.lock()
     clientCounter += 1
     let clientIndex = clientCounter
@@ -229,8 +222,6 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     let clientName = "Client on \(name)"
     Reticulum.log("Accepted TCP connection \(clientIndex) on \(name)", level: .verbose)
 
-    let peer = TCPServerInterface.peerAddress(of: conn)
-
     // Create a client interface before starting the connection so the
     // onFrame callback can reference it.
     let clientIface = TCPServerClientInterface(
@@ -241,7 +232,7 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
     )
 
     let spawned = SpawnedClient(
-      conn: conn,
+      fd: fd,
       queue: DispatchQueue(
         label: "ReticulumSwift.TCPServerInterface.\(name).\(clientIndex)", target: queue),
       hwMtu: hwMtu, ifacSize: ifacSize,
@@ -284,22 +275,23 @@ public final class TCPServerInterface: Interface, MtuAutoconfiguringInterface {
 
   /// The remote address of an accepted connection, for the spawned interface's name.
   ///
-  /// Python reads it straight off `handler.client_address`; `NWConnection` exposes it as
-  /// the endpoint it was created from.
-  static func peerAddress(of conn: NWConnection) -> (host: String, port: UInt16) {
-    guard case .hostPort(let host, let port) = conn.endpoint else { return ("0.0.0.0", 0) }
-    switch host {
-    case .ipv4(let address):
-      // `debugDescription` on an IPv4Address is the dotted quad.
-      return ("\(address)", port.rawValue)
-    case .ipv6(let address):
-      // Strip the scope suffix ("fe80::1%en0") Python's client_address doesn't carry.
-      return ("\(address)".components(separatedBy: "%")[0], port.rawValue)
-    case .name(let name, _):
-      return (name, port.rawValue)
-    @unknown default:
-      return ("0.0.0.0", port.rawValue)
+  /// Python reads it off `handler.client_address`.
+  static func peerAddress(of address: sockaddr_storage) -> (host: String, port: UInt16) {
+    var address = address
+    let length = socklen_t(address.ss_len)
+    var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+    var service = [CChar](repeating: 0, count: Int(NI_MAXSERV))
+    let resolved = withUnsafePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        getnameinfo(
+          $0, length, &host, socklen_t(host.count), &service,
+          socklen_t(service.count), NI_NUMERICHOST | NI_NUMERICSERV)
+      }
     }
+    guard resolved == 0 else { return ("0.0.0.0", 0) }
+    // Strip the scope suffix ("fe80::1%en0") Python's client_address doesn't carry.
+    let name = String(cString: host).components(separatedBy: "%")[0]
+    return (name, UInt16(String(cString: service)) ?? 0)
   }
 }
 
@@ -465,7 +457,7 @@ private enum InterfaceError: Error {
 // MARK: - SpawnedClient (shared between server and client interface)
 
 final class SpawnedClient {
-  private let conn: NWConnection
+  private let fd: Int32
   private let queue: DispatchQueue
   private let onFrame: (Data) -> Void
   private let onClose: (SpawnedClient) -> Void
@@ -473,14 +465,17 @@ final class SpawnedClient {
   /// Received-frame length bounds (Python TCPInterface HW_MTU + ifac_size).
   private let hwMtu: Int?
   private let ifacSize: Int
+  /// Written by the read handler and by `cancel()`, read by `send(_:)` on the sender's thread.
+  private let ioLock = NSLock()
+  private var channel: DispatchIO?
 
   init(
-    conn: NWConnection, queue: DispatchQueue,
+    fd: Int32, queue: DispatchQueue,
     hwMtu: Int? = 262_144, ifacSize: Int = 0,
     onFrame: @escaping (Data) -> Void,
     onClose: @escaping (SpawnedClient) -> Void
   ) {
-    self.conn = conn
+    self.fd = fd
     self.queue = queue
     self.hwMtu = hwMtu
     self.ifacSize = ifacSize
@@ -489,43 +484,41 @@ final class SpawnedClient {
   }
 
   func start() {
-    conn.stateUpdateHandler = { [weak self] state in
-      guard let self else { return }
-      switch state {
-      case .ready:
-        self.receive()
-      case .failed, .cancelled:
-        self.onClose(self)
-      default:
-        break
-      }
+    let fd = self.fd
+    let io = DispatchIO(type: .stream, fileDescriptor: fd, queue: queue) { _ in
+      Darwin.close(fd)
     }
-    conn.start(queue: queue)
-  }
-
-  func cancel() {
-    conn.cancel()
-  }
-
-  func send(_ framed: Data) {
-    conn.send(content: framed, completion: .contentProcessed { _ in })
-  }
-
-  private func receive() {
-    conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
-      [weak self] data, _, isComplete, error in
+    io.setLimit(lowWater: 1)
+    ioLock.withLock { channel = io }
+    // One read until end of file, as `PosixTCPServer`'s clients read (`LocalInterface.py:276-295`).
+    io.read(offset: 0, length: Int(bitPattern: UInt(SIZE_MAX)), queue: queue) {
+      [weak self] done, data, _ in
       guard let self else { return }
       if let data, !data.isEmpty {
-        for frame in self.decoder.feed(data, hwMtu: self.hwMtu, ifacSize: self.ifacSize) {
+        for frame in self.decoder.feed(Data(data), hwMtu: self.hwMtu, ifacSize: self.ifacSize) {
           self.onFrame(frame)
         }
       }
-      if error != nil || isComplete {
+      if done {
+        self.ioLock.withLock { self.channel = nil }
         self.onClose(self)
-        return
       }
-      self.receive()
     }
+  }
+
+  /// Hangs up. `.stop` cancels the outstanding read, so the socket closes now.
+  func cancel() {
+    let io = ioLock.withLock { () -> DispatchIO? in
+      defer { channel = nil }
+      return channel
+    }
+    io?.close(flags: .stop)
+  }
+
+  func send(_ framed: Data) {
+    guard let io = ioLock.withLock({ channel }) else { return }
+    let data = framed.withUnsafeBytes { DispatchData(bytes: $0) }
+    io.write(offset: 0, data: data, queue: queue) { _, _, _ in }
   }
 }
 

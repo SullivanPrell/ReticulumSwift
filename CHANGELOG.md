@@ -30,6 +30,15 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- `TCPServerInterface` binds the address `listen_ip` or `device` names, with a BSD socket
+  carrying `SO_REUSEADDR`, as Python's `ThreadingTCPServer` does (`TCPInterface.py:518`,
+  `:543-573`). `NWListener` refused a port any local address held, so a socket on `[::1]:P`
+  kept a server configured for `127.0.0.1:P` offline (`bugs/040`). `start()` now throws an
+  error naming the address and port when the bind fails, where it returned and left the
+  interface offline. Accepted sockets carry keepalive, Python's three timers, the user timeout
+  and `TCP_NODELAY` (`TCPInterface.py:241`, `:259-261`), read back with `getsockopt` in
+  `SocketOptionsTests`. `listen_ip = 0.0.0.0` binds IPv4 only, as in Python. `NWListener`'s
+  wildcard accepted IPv6 too, so an IPv6 server needs `listen_ip = ::`.
 - Data races and lost updates on the `rngit` node's shared state. Transport threads and the
   jobs loop read and wrote `RNGitNode`'s store, statistics, links, temporary directories and
   job schedule with no lock, and each request handler assigned its copy back over the
