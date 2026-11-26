@@ -30,6 +30,11 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- `RNGitAccessControl.repositoryPath(_:)` and `groupPath(_:)` cap each name at 256 code points,
+  as Python's `len()` does (`server.py:2307`, `:2316` in RNS 1.6.1). They counted grapheme
+  clusters, so a name of 129 letters each followed by a combining mark, 258 code points, passed
+  in Swift and was refused in Python.
+
 - A relayed announce's retry no longer outlives its path. The relay filter read the next hop
   from the interface the announce arrived on, captured at receipt; Python reads
   `next_hop_interface()` from the path table when it sends (`Transport.py:1764`) and blocks the
