@@ -115,6 +115,49 @@ final class LinkMTUSignallingTests: XCTestCase {
     XCTAssertEqual(proof.data.count, 64 + 32 + 3, "proof must include MTU signalling")
   }
 
+  /// A responder caps the requested MTU at what the receiving interface carries
+  /// (`Transport.py:2944-2962`): a 1 MB Backbone request on a 262 144-byte TCP server link
+  /// settles at 262 144, and an interface with no HW MTU keeps the base 500.
+  func testResponderClampsRequestedMtuToReceivingInterface() throws {
+    final class MtuInterface: Interface {
+      var name = "mtu"
+      var bitrate = 10_000_000
+      var isOnline = true
+      var hwMtu: Int?
+      var autoconfigureMtu = true
+      var inboundHandler: ((Packet, any Interface) -> Void)?
+      var sent: [Packet] = []
+      init(hwMtu: Int?) { self.hwMtu = hwMtu }
+      func start() throws {}
+      func stop() {}
+      func send(_ packet: Packet) throws { sent.append(packet) }
+    }
+    for (hwMtu, expected) in [(Int?.some(262_144), 262_144), (nil, Constants.mtu)] {
+      let transport = Transport()
+      let identity = Identity()
+      let dest = try Destination(
+        identity: identity, direction: .in, kind: .single, appName: "clamp")
+      transport.ownerIdentity = identity
+      transport.register(destination: dest)
+      let iface = MtuInterface(hwMtu: hwMtu)
+      transport.register(interface: iface)
+
+      let body =
+        Curve25519.KeyAgreement.PrivateKey().publicKey.rawRepresentation
+        + Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+        + LinkMTUSignallingTests.signallingBytes(mtu: 1_048_576)
+      let lrr = Packet(
+        destinationType: .single, packetType: .linkRequest, destinationHash: dest.hash, data: body)
+      iface.inboundHandler?(try Packet.unpack(lrr.pack()), iface)
+
+      let proof = try XCTUnwrap(iface.sent.first { $0.context == .lrproof })
+      XCTAssertEqual(
+        Link.mtuFromSignalling(Data(proof.data.suffix(3))), expected,
+        "hwMtu \(String(describing: hwMtu))")
+      XCTAssertEqual(transport.links[proof.destinationHash]?.establishedMtu, expected)
+    }
+  }
+
   /// Initiator must accept a 99-byte LRPR (with 3 MTU signalling bytes)
   /// and validate its signature correctly.
   func testInitiatorAccepts99ByteLinkProof() throws {

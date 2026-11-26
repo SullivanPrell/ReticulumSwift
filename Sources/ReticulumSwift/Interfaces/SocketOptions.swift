@@ -79,6 +79,9 @@ enum RNSSocketOptions {
     options.keepaliveInterval = probeInterval
     options.keepaliveCount = probes
     options.connectionDropTime = userTimeout
+    // Linux's TCP_USER_TIMEOUT also ends a peer that holds a zero window; Darwin needs the
+    // persist timer for that, or every frame for a peer that stopped reading queues in memory.
+    options.persistTimeout = userTimeout
     // RNS packets are small and latency-sensitive; Nagle would hold them behind the
     // delayed-ACK timer.
     options.noDelay = true
@@ -141,8 +144,7 @@ enum RNSSocketOptions {
   /// A listener on `port` of `bindIP`, the address a Python server interface binds.
   ///
   /// Python's `TCPServerInterface` binds the address `listen_ip` resolves to
-  /// (`TCPInterface.py:551`, `:567`, `:573`), and `UDPInterface` binds `(bind_ip, bind_port)`
-  /// (`UDPInterface.py:101-103`). `NWListener(using:on:)` binds every address, so any other
+  /// (`TCPInterface.py:551`, `:567`, `:573`). `NWListener(using:on:)` binds every address, so any other
   /// address becomes a required local endpoint. A host name resolves first, to its IPv4 address
   /// where it has one (`TCPInterface.py:490-497`): `NWListener` given a name there listens on an
   /// arbitrary port.
@@ -190,7 +192,7 @@ enum RNSSocketOptions {
   /// Unlike the Network.framework paths this one *is* verifiable: `getsockopt` reads the value
   /// straight back, so `SocketOptionsTests` asserts the accepted descriptor's real state.
   /// Apply ``tcpOptions()``'s set to a raw descriptor: keepalive with Python's three timers,
-  /// the user timeout and `TCP_NODELAY` (`TCPInterface.py:241`, `:259-261`).
+  /// the user and persist timeouts and `TCP_NODELAY` (`TCPInterface.py:241`, `:259-261`).
   static func applyTCPOptions(toFileDescriptor fd: Int32) {
     func set(_ level: Int32, _ name: Int32, _ value: Int) {
       var value = Int32(value)
@@ -202,6 +204,7 @@ enum RNSSocketOptions {
     set(Int32(IPPROTO_TCP), TCP_KEEPINTVL, probeInterval)
     set(Int32(IPPROTO_TCP), TCP_KEEPCNT, probes)
     set(Int32(IPPROTO_TCP), TCP_RXT_CONNDROPTIME, userTimeout)
+    set(Int32(IPPROTO_TCP), PERSIST_TIMEOUT, userTimeout)  // as `tcpOptions()`'s persistTimeout
     set(Int32(IPPROTO_TCP), TCP_NODELAY, 1)
   }
 

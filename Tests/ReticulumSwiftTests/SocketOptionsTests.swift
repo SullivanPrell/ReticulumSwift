@@ -40,6 +40,9 @@ final class SocketOptionsTests: XCTestCase {
     XCTAssertEqual(options.keepaliveInterval, 2, "TCP_PROBE_INTERVAL")
     XCTAssertEqual(options.keepaliveCount, 12, "TCP_PROBES")
     XCTAssertEqual(options.connectionDropTime, 24, "TCP_USER_TIMEOUT")
+    // Linux's TCP_USER_TIMEOUT also ends a zero-window peer; Darwin needs the persist timer,
+    // or a peer that stops reading queues every relayed frame in memory.
+    XCTAssertEqual(options.persistTimeout, 24, "TCP_USER_TIMEOUT over a zero window")
     XCTAssertTrue(options.noDelay, "TCPInterface.py:149, :241 — TCP_NODELAY on every socket")
   }
 
@@ -70,8 +73,8 @@ final class SocketOptionsTests: XCTestCase {
   // MARK: - The handed-over object, per site
 
   /// The server accepts on a BSD socket (`bugs/040`), so `getsockopt` reads the accepted
-  /// descriptor's options back: keepalive, Python's three timers, the user timeout and
-  /// `TCP_NODELAY` (`TCPInterface.py:241`, `:259-261`, `bugs/023`).
+  /// descriptor's options back: keepalive, Python's three timers, the user timeout, the persist
+  /// timeout and `TCP_NODELAY` (`TCPInterface.py:241`, `:259-261`, `bugs/023`).
   func testAcceptedTCPServerSocketCarriesTheFactoryOptions() throws {
     let port = try freeLoopbackPort()
     let server = TCPServerInterface(name: "optaccept", port: port, bindIP: "127.0.0.1")
@@ -90,6 +93,7 @@ final class SocketOptionsTests: XCTestCase {
         "interval": get(Int32(IPPROTO_TCP), TCP_KEEPINTVL),
         "count": get(Int32(IPPROTO_TCP), TCP_KEEPCNT),
         "drop": get(Int32(IPPROTO_TCP), TCP_RXT_CONNDROPTIME),
+        "persist": get(Int32(IPPROTO_TCP), PERSIST_TIMEOUT),
         "nodelay": get(Int32(IPPROTO_TCP), TCP_NODELAY),
       ]
       accepted.fulfill()
@@ -109,6 +113,7 @@ final class SocketOptionsTests: XCTestCase {
     XCTAssertEqual(read["interval"], Int32(RNSSocketOptions.probeInterval))
     XCTAssertEqual(read["count"], Int32(RNSSocketOptions.probes))
     XCTAssertEqual(read["drop"], Int32(RNSSocketOptions.userTimeout))
+    XCTAssertEqual(read["persist"], Int32(RNSSocketOptions.userTimeout), "zero-window peer")
     XCTAssertNotEqual(read["nodelay"], 0)
   }
 

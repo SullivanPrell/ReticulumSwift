@@ -106,9 +106,13 @@ public final class AutoInterface: Interface {
   // MARK: - State
 
   /// IPv6 link-local address per interface name.
-  private var adoptedInterfaces: [String: String] = [:]
-  /// All of this host's link-local addresses (to ignore its own beacons).
-  private var ownLinkLocalAddresses: Set<String> = []
+  ///
+  /// Guarded by `peersLock` once started; internal for tests.
+  var adoptedInterfaces: [String: String] = [:]
+  /// All of this host's link-local addresses, to ignore its own beacons.
+  ///
+  /// Guarded by `peersLock` once started; internal for tests.
+  var ownLinkLocalAddresses: Set<String> = []
   /// Peer table: link-local addr → (ifname, lastHeard, lastOutbound).
   private var peers: [String: (ifname: String, lastHeard: Date, lastOutbound: Date)] = [:]
   private let peersLock = NSLock()
@@ -171,7 +175,10 @@ public final class AutoInterface: Interface {
 
   /// Brings the interface online.
   public func start() throws {
-    discoverInterfaces()
+    for (ifname, addr) in scanLinkLocalAddresses() {
+      adoptedInterfaces[ifname] = addr
+      ownLinkLocalAddresses.insert(addr)
+    }
     guard !adoptedInterfaces.isEmpty else {
       return  // No suitable IPv6 interfaces—stay offline but don't throw
     }
@@ -215,9 +222,11 @@ public final class AutoInterface: Interface {
 
   // MARK: - Interface discovery
 
-  private func discoverInterfaces() {
+  /// This host's link-local addresses on the interfaces the filters allow, descoped.
+  private func scanLinkLocalAddresses() -> [(ifname: String, addr: String)] {
+    var found: [(ifname: String, addr: String)] = []
     var ifap: UnsafeMutablePointer<ifaddrs>? = nil
-    guard getifaddrs(&ifap) == 0, let first = ifap else { return }
+    guard getifaddrs(&ifap) == 0, let first = ifap else { return found }
     defer { freeifaddrs(first) }
 
     var ifa = Optional(first)
@@ -250,9 +259,33 @@ public final class AutoInterface: Interface {
         addr = String(addr[..<pct])
       }
 
+      found.append((ifname: ifname, addr: addr))
+    }
+    return found
+  }
+
+  /// Follows a changed link-local address on an adopted interface.
+  ///
+  /// Python's `peer_jobs` does the same (`AutoInterface.py:411-427`), so beacons keep matching
+  /// the source address peers see. The data socket binds every address, so no listener
+  /// restarts.
+  func followLinkLocalAddresses(_ scanned: [(ifname: String, addr: String)]) {
+    peersLock.lock()
+    defer { peersLock.unlock() }
+    for (ifname, addr) in scanned {
+      guard let old = adoptedInterfaces[ifname], old != addr else { continue }
       adoptedInterfaces[ifname] = addr
+      ownLinkLocalAddresses.remove(old)
       ownLinkLocalAddresses.insert(addr)
     }
+  }
+
+  /// `sha256(group_id + link_local_address)` for the interface's current address.
+  func beaconToken(for ifname: String) -> Data? {
+    peersLock.lock()
+    let addr = adoptedInterfaces[ifname]
+    peersLock.unlock()
+    return addr.map { Hashes.fullHash(groupID + Data($0.utf8)) }
   }
 
   // MARK: - Socket setup
@@ -321,19 +354,19 @@ public final class AutoInterface: Interface {
   // MARK: - Beacon sending
 
   private func startBeaconLoops() {
-    for (ifname, linkLocal) in adoptedInterfaces {
+    for ifname in adoptedInterfaces.keys {
       let timer = DispatchSource.makeTimerSource(queue: queue)
       timer.schedule(deadline: .now(), repeating: AutoInterface.announceInterval)
       timer.setEventHandler { [weak self] in
-        self?.sendBeacon(ifname: ifname, linkLocal: linkLocal)
+        self?.sendBeacon(ifname: ifname)
       }
       timer.resume()
       announceTimers.append(timer)
     }
   }
 
-  private func sendBeacon(ifname: String, linkLocal: String) {
-    let token = Hashes.fullHash(groupID + Data(linkLocal.utf8))
+  private func sendBeacon(ifname: String) {
+    guard let token = beaconToken(for: ifname) else { return }
     let s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
     guard s >= 0 else { return }
     defer { Darwin.close(s) }
@@ -380,27 +413,13 @@ public final class AutoInterface: Interface {
         }
       }
       guard n == 32 else { continue }
-      var srcStr = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-      withUnsafePointer(to: &src) {
-        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-          _ = getnameinfo(sa, srcLen, &srcStr, socklen_t(srcStr.count), nil, 0, NI_NUMERICHOST)
-        }
-      }
-      var addrStr = String(cString: srcStr)
-      // Strip scope suffix.
-      if let pct = addrStr.firstIndex(of: "%") { addrStr = String(addrStr[..<pct]) }
-
+      let addrStr = Self.descopedAddress(of: &src, length: srcLen)
       let receivedToken = Data(buf[0..<32])
       let expected = Hashes.fullHash(groupID + Data(addrStr.utf8))
       guard receivedToken == expected else { continue }
 
-      // Don't add ourselves.
-      if ownLinkLocalAddresses.contains(addrStr) { continue }
-
       // Find which local interface is on the same link.
-      let ifIdx = src.sin6_scope_id
-      let ifname = findInterface(byIndex: ifIdx) ?? adoptedInterfaces.keys.first ?? ""
-      addPeer(addr: addrStr, ifname: ifname)
+      addPeer(addr: addrStr, ifname: findInterface(byIndex: src.sin6_scope_id))
     }
   }
 
@@ -415,6 +434,9 @@ public final class AutoInterface: Interface {
         }
       }
       guard n > 0 else { continue }
+      // Data counts only from a peer that beaconed (`AutoInterface.py:613-615`); the socket
+      // binds every address, so anything that reaches the port lands here.
+      guard refreshPeer(Self.descopedAddress(of: &src, length: srcLen)) else { continue }
       let raw = Data(buf[0..<n])
       counters.addRx(bytes: raw.count)
       if let h = rawInboundHandler {
@@ -427,9 +449,12 @@ public final class AutoInterface: Interface {
 
   // MARK: - Peer management
 
-  private func addPeer(addr: String, ifname: String) {
+  private func addPeer(addr: String, ifname: String?) {
     peersLock.lock()
     defer { peersLock.unlock() }
+    // Don't add ourselves.
+    if ownLinkLocalAddresses.contains(addr) { return }
+    let ifname = ifname ?? adoptedInterfaces.keys.first ?? ""
     if let existing = peers[addr] {
       peers[addr] = (
         ifname: existing.ifname, lastHeard: Date(), lastOutbound: existing.lastOutbound
@@ -437,6 +462,27 @@ public final class AutoInterface: Interface {
     } else {
       peers[addr] = (ifname: ifname, lastHeard: Date(), lastOutbound: Date())
     }
+  }
+
+  /// Python's `refresh_peer`; false for an address that never beaconed.
+  private func refreshPeer(_ addr: String) -> Bool {
+    peersLock.lock()
+    defer { peersLock.unlock() }
+    guard let peer = peers[addr] else { return false }
+    peers[addr] = (ifname: peer.ifname, lastHeard: Date(), lastOutbound: peer.lastOutbound)
+    return true
+  }
+
+  /// The numeric source address with its `%scope` suffix removed, the form peers are keyed by.
+  private static func descopedAddress(of src: inout sockaddr_in6, length: socklen_t) -> String {
+    var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+    withUnsafePointer(to: &src) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+        _ = getnameinfo(sa, length, &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST)
+      }
+    }
+    let addr = String(cString: host)
+    return addr.firstIndex(of: "%").map { String(addr[..<$0]) } ?? addr
   }
 
   private func startPeerJobLoop() {
@@ -452,6 +498,7 @@ public final class AutoInterface: Interface {
   }
 
   private func peerJob() {
+    followLinkLocalAddresses(scanLinkLocalAddresses())
     let now = Date()
     peersLock.lock()
     peers = peers.filter {

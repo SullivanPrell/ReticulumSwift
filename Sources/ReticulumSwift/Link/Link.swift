@@ -369,6 +369,11 @@ public final class Link {
   /// at 500 and `mdu` equals `Constants.linkMdu`—identical to prior behavior.
   public internal(set) var establishedMtu: Int = Constants.mtu
 
+  /// The interface this link's request or proof arrived on, Python's `attached_interface`.
+  ///
+  /// Transport sends the link's packets only there and drops its packets from anywhere else.
+  public internal(set) var attachedInterface: (any Interface)?
+
   /// Maximum data unit for a single encrypted link packet payload, derived
   /// from the negotiated `establishedMtu`.
   ///
@@ -1182,6 +1187,7 @@ public final class Link {
     link.peerSigPub = initiatorSig
     link.peerSigPubBytes = Data(initiatorSigRaw)
     link.stampCost = Stamps.stampValue(workblock: stampMaterial, stamp: Data(initiatorEncRaw))
+    link.attachedInterface = packet.receivingInterface  // `Link.py:220`
 
     // Mirror Python's link_id_from_lr_packet: strip any signalling bytes (beyond ECPUBSIZE)
     // from the hashable part so both sides agree on the link_id regardless of signalling.
@@ -1508,6 +1514,7 @@ public final class Link {
 
     stateLock.lock()
     if let rt = requestTime { self.rtt = Date().timeIntervalSince(rt) }
+    self.attachedInterface = packet.receivingInterface  // `Link.py:506`
     self.unsafeStatus = .active
     self.establishedAt = Date()
     // establishment_cost = KEYSIZE/8*2 + SIGLENGTH/8 + ECPUBSIZE/2 + ECPUBSIZE

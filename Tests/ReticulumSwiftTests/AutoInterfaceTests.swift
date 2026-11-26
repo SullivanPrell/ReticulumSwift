@@ -55,5 +55,80 @@ final class AutoInterfaceTests: XCTestCase {
     XCTAssertEqual(iface.name, "auto0")
     XCTAssertFalse(iface.isOnline)
   }
+
+  /// Data counts only from a host that beaconed with the group token.
+  ///
+  /// Python checks the peer table (`AutoInterface.py:613-615`). The data socket binds every
+  /// address, so without the check any host that reaches the port injects packets.
+  func testDataOnlyFromPeersThatBeaconed() throws {
+    let group = Data("ingress-\(UUID())".utf8)
+    let ports = try freeLoopbackPorts(2)
+    let (discoveryPort, dataPort) = (ports[0], ports[1])
+    let iface = AutoInterface(
+      name: "ingress", groupID: group, discoveryPort: discoveryPort, dataPort: dataPort)
+    try iface.start()
+    defer { iface.stop() }
+    try XCTSkipUnless(iface.isOnline, "no IPv6 link-local interface on this host")
+    let lock = NSLock()
+    var frames: [Data] = []
+    iface.rawInboundHandler = { data, _ in
+      lock.lock()
+      frames.append(data)
+      lock.unlock()
+    }
+    func received() -> [Data] {
+      lock.lock()
+      defer { lock.unlock() }
+      return frames
+    }
+
+    Self.udpSend(Data("stranger".utf8), toPort: dataPort)  // ::1 never beaconed
+    Thread.sleep(forTimeInterval: 0.3)
+    XCTAssertEqual(received(), [], "accepted data from a host that never beaconed")
+
+    Self.udpSend(Hashes.fullHash(group + Data("::1".utf8)), toPort: discoveryPort)
+    Thread.sleep(forTimeInterval: 0.3)
+    Self.udpSend(Data("peer".utf8), toPort: dataPort)
+    let deadline = Date().addingTimeInterval(2)
+    while received().isEmpty, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+    XCTAssertEqual(received(), [Data("peer".utf8)])
+  }
+
+  /// A changed link-local address is followed, so beacons keep authenticating.
+  ///
+  /// Python does this in `peer_jobs` (`AutoInterface.py:411-427`). Only interfaces already
+  /// adopted are followed.
+  func testBeaconFollowsAChangedLinkLocalAddress() {
+    let group = Data("follow".utf8)
+    let iface = AutoInterface(name: "follow", groupID: group)
+    iface.adoptedInterfaces = ["en0": "fe80::1"]
+    iface.ownLinkLocalAddresses = ["fe80::1"]
+
+    iface.followLinkLocalAddresses([
+      (ifname: "en0", addr: "fe80::2"), (ifname: "en9", addr: "fe80::9"),
+    ])
+
+    XCTAssertEqual(iface.beaconToken(for: "en0"), Hashes.fullHash(group + Data("fe80::2".utf8)))
+    XCTAssertEqual(iface.ownLinkLocalAddresses, ["fe80::2"])
+    XCTAssertNil(iface.beaconToken(for: "en9"))
+  }
+
+  private static func udpSend(_ data: Data, toPort port: UInt16) {
+    let s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
+    defer { close(s) }
+    var dst = sockaddr_in6()
+    dst.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+    dst.sin6_family = sa_family_t(AF_INET6)
+    dst.sin6_port = port.bigEndian
+    dst.sin6_addr = in6addr_loopback
+    data.withUnsafeBytes { bytes in
+      withUnsafePointer(to: &dst) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+          _ = sendto(
+            s, bytes.baseAddress, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+        }
+      }
+    }
+  }
 }
 #endif  // canImport(Darwin)
