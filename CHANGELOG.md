@@ -30,6 +30,12 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ### Fixed
 
+- A relayed announce's retry no longer outlives its path. The relay filter read the next hop
+  from the interface the announce arrived on, captured at receipt; Python reads
+  `next_hop_interface()` from the path table when it sends (`Transport.py:1764`) and blocks the
+  announce when there's none. After `rnstatus --detach` and the cull, a daemon still sent the
+  retry, so a local client attaching in that window learned a path the daemon no longer had.
+
 - A link's packets go out only on the interface its request or proof arrived on, and packets
   for it from any other interface are dropped, as Python's `attached_interface` does
   (`Transport.py:1757`, `:2974`, `Link.py:1027`). `Link` had no attached interface, so every
