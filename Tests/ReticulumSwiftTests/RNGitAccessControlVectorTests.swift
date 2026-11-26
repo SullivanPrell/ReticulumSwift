@@ -418,6 +418,8 @@ final class RNGitAccessControlVectorTests: XCTestCase {
     }
   }
 
+  /// A name is capped at 256 code points, not 256 graphemes.
+  ///
   /// The reference caps each name with `len()`, which counts code points, not graphemes
   /// (`server.py:2307`, `:2316` in RNS 1.6.1). Python's `len()` gives 256 and 258 for these.
   func testRequestPathNamesAreCappedInCodePoints() {
