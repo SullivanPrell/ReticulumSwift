@@ -114,7 +114,7 @@ final class RNS137EphemeralTransportIdentityTests: XCTestCase {
   private func discoverableConfig(
     transport: Bool = false, staticIdentity: Bool = false, enabled: Bool = true,
     discoverable: Bool = true
-  ) -> String {
+  ) throws -> String {
     """
     [reticulum]
     enable_transport = \(transport ? "True" : "False")
@@ -125,7 +125,7 @@ final class RNS137EphemeralTransportIdentityTests: XCTestCase {
         type = TCPServerInterface
         interface_enabled = \(enabled ? "Yes" : "No")
         listen_ip = 127.0.0.1
-        listen_port = 4242
+        listen_port = \(try freeLoopbackPort())
         discoverable = \(discoverable ? "Yes" : "No")
     """
   }
