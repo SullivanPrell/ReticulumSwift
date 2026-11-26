@@ -147,6 +147,8 @@ final class AnnounceRetryTests: XCTestCase {
     XCTAssertEqual(outbound.sent.count, 0, "edge node schedules no retransmission")
   }
 
+  /// A retry that fires after its path was culled is blocked.
+  ///
   /// `Transport.outbound` reads the announce's next hop from the path table when it sends
   /// (`from_interface = Transport.next_hop_interface(...)`), and blocks the rebroadcast when
   /// there's none: "Blocking announce broadcast on ... since next hop interface doesn't
