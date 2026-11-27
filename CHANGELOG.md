@@ -5,6 +5,8 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.31.0]—rngit media conversion hardened (RNS 1.6.1 security hotpatch)
+
 ### Security
 
 - rngit media conversion no longer lets ImageMagick guess what it is reading. The guess can
