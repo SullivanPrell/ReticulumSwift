@@ -132,6 +132,27 @@ final class StampsTests: XCTestCase {
     XCTAssertEqual(found.value, Stamps.stampValue(workblock: material, stamp: found.publicKey))
   }
 
+  /// A NomadNet node announces a link cost of 17.8 (`NomadNetworkApp.py:40`). On one core a
+  /// phone misses the 15 s `LINK_STAMP_TIMEOUT`, so the grind spreads over every core as
+  /// Python's does on Linux and Android (`Stamps.py:410-414`).
+  func testStampedKeyGrindsOnEveryCore() throws {
+    let cores = ProcessInfo.processInfo.activeProcessorCount
+    try XCTSkipIf(cores < 2, "needs two cores")
+    let lock = NSLock()
+    var threads = Set<UInt>()
+    let deadline = Date().addingTimeInterval(5)
+    let found = Stamps.generateStampedKey(
+      material: Data("cores".utf8), stampCost: 40,
+      isCancelled: {
+        lock.lock()
+        defer { lock.unlock() }
+        threads.insert(UInt(bitPattern: pthread_self()))
+        return threads.count >= 2 || Date() > deadline
+      })
+    XCTAssertNil(found)
+    XCTAssertGreaterThanOrEqual(threads.count, 2)
+  }
+
   func testDestinationStampPersistence() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: dir) }
