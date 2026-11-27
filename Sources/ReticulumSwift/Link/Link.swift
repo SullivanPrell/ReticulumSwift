@@ -1046,7 +1046,7 @@ public final class Link {
       try link.sendRequest(on: transport)
       return link
     }
-    DispatchQueue.global(qos: .utility).async {
+    DispatchQueue.global(qos: .userInitiated).async {
       link.stampAndSendRequest(cost: cost, timeout: stamps.linkStampTimeout, on: transport)
     }
     return link

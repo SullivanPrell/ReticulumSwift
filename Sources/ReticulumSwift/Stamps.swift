@@ -59,7 +59,8 @@ public struct StampSettings: Equatable {
 /// stamp is valid at a cost when `SHA-256(workblock + stamp)` is at or below the target that
 /// cost maps to, and its value is how far below the target it lands, floored to the 1/256 grid.
 ///
-/// Generation runs on one core, as Python's does on Darwin (`Stamps.py:269-270`).
+/// Stamps grind on one core, as Python's do on Darwin (`Stamps.py:269-270`). Stamped keys grind
+/// on every core, as Python's do on Linux and Android.
 public enum Stamps {
 
   /// Python: `WORKBLOCK_EXPAND_CHUNK`.
@@ -258,18 +259,32 @@ public enum Stamps {
   ) -> (privateKey: Data, publicKey: Data, value: Double)? {
     guard stampCost >= 0, stampCost <= Double(Transport.stampCostCap) else { return nil }
     let target = targetFromFP(costToFP(stampCost))
-    var base = SHA256()
-    base.update(data: material)
-    while !isCancelled() {
-      let key = Curve25519.KeyAgreement.PrivateKey()
-      let publicKey = key.publicKey.rawRepresentation
-      var hasher = base
-      hasher.update(data: publicKey)
-      if meets(hasher.finalize(), target) {
-        return (key.rawRepresentation, publicKey, stampValue(workblock: material, stamp: publicKey))
+    var seed = SHA256()
+    seed.update(data: material)
+    let base = seed
+    let lock = NSLock()
+    var found: Curve25519.KeyAgreement.PrivateKey?
+    // Every core, as Python grinds on Linux and Android (`Stamps.py:410-414`).
+    DispatchQueue.concurrentPerform(iterations: ProcessInfo.processInfo.activeProcessorCount) { _ in
+      while true {
+        lock.lock()
+        let done = found != nil
+        lock.unlock()
+        if done || isCancelled() { return }
+        let key = Curve25519.KeyAgreement.PrivateKey()
+        var hasher = base
+        hasher.update(data: key.publicKey.rawRepresentation)
+        if meets(hasher.finalize(), target) {
+          lock.lock()
+          if found == nil { found = key }
+          lock.unlock()
+          return
+        }
       }
     }
-    return nil
+    guard let key = found else { return nil }
+    let publicKey = key.publicKey.rawRepresentation
+    return (key.rawRepresentation, publicKey, stampValue(workblock: material, stamp: publicKey))
   }
 
   // MARK: - Persistence

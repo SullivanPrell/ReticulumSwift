@@ -5,6 +5,14 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Link requests to a destination that announces a link cost now grind the stamped key on every
+  core, as Python does on Linux and Android, instead of one. A NomadNet node announces 17.8 by
+  default, which took about 9 s on average on one Apple-silicon Mac core and often outran the
+  15 s `LINK_STAMP_TIMEOUT` on a phone, so the page never loaded. The grind also runs at
+  `.userInitiated` rather than `.utility`.
+
 ## [1.31.0]—rngit media conversion hardened (RNS 1.6.1 security hotpatch)
 
 ### Security
