@@ -5,6 +5,8 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.31.1]—link requests grind their stamped key on every core
+
 ### Fixed
 
 - Link requests to a destination that announces a link cost now grind the stamped key on every
