@@ -207,6 +207,18 @@ final class DiscoveryPublishAttributeTests: XCTestCase {
 /// settable attribute nothing writes is the same failure as an unsettable one.
 final class DiscoveryPublishConfigTests: XCTestCase {
 
+  // No node is running, so transport reads as off: opt in, or `discoverable` is dropped
+  // (upstream `606a1691`).
+  override func setUp() {
+    super.setUp()
+    Reticulum.storedStaticTransportIdentity = true
+  }
+
+  override func tearDown() {
+    Reticulum.storedStaticTransportIdentity = false
+    super.tearDown()
+  }
+
   private func configured(
     _ parameters: [String: String],
     type: String = "TCPServerInterface"

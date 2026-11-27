@@ -5,6 +5,16 @@ All notable changes to ReticulumSwift are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- A `discoverable = yes` interface on a non-transport instance no longer switches the
+  transport identity to static. The interface's `discoverable` is turned off instead, with
+  Python's six-line warning, unless `static_transport_identity = yes` is set in `[reticulum]`.
+  Before, one discoverable block, even a disabled one, quietly gave up the ephemeral identity's
+  unlinkability. This ports upstream RNS commit `606a1691` (2026-11-20,
+  `Reticulum.py:1195-1203`), which is in no released RNS tag yet. The new
+  `Reticulum.staticTransportIdentity()` mirrors Python's `Reticulum.static_transport_identity()`.
+
 ## [1.30.0]—Links bound to their interface, BSD socket listeners, and bounded resource memory
 
 ### Tests

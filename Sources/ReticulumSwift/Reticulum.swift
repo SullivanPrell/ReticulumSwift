@@ -542,6 +542,14 @@ public final class Reticulum {
   /// Mirrors Python's `Reticulum.transport_enabled()`.
   public static func transportEnabled() -> Bool { shared?.transport.transportEnabled ?? false }
 
+  /// Whether `static_transport_identity` is set in `[reticulum]`.
+  ///
+  /// Mirrors Python's `Reticulum.static_transport_identity()`. Settable so tests can control
+  /// the flag without a full config file.
+  public static var storedStaticTransportIdentity: Bool = false
+  /// Returns whether `static_transport_identity` is configured.
+  public static func staticTransportIdentity() -> Bool { storedStaticTransportIdentity }
+
   /// Whether the probe destination is enabled.
   ///
   /// Mirrors Python's `Reticulum.probe_destination_enabled()`.
@@ -1178,20 +1186,10 @@ public final class Reticulum {
     // `static_transport_identity` is configured. Mirrors RNS 1.3.7
     // `Transport.start()`.
     transport.internalIdentity = persistentIdentity
-    var staticTransportIdentity = config?.reticulum.staticTransportIdentity ?? false
-    // A shared or standalone instance reads `discoverable` from every interface block, enabled
-    // or not, and keeps a static identity for it (`Reticulum.py:756-763`, `:988-994`, `:1108`).
-    if !transport.transportEnabled && !staticTransportIdentity
-      && !transport.isConnectedToSharedInstance
-      && (config?.interfaces.contains { $0.bool("discoverable") == true } ?? false)
-    {
-      Reticulum.log(
-        "Discoverable interface was configured, enabling static transport identity on "
-          + "non-transport instance", level: .warning)
-      staticTransportIdentity = true
-    }
+    // A discoverable interface no longer promotes this to static; `applyDiscoveryConfiguration`
+    // turns `discoverable` off instead (upstream `606a1691`).
     let transportIdentity: Identity
-    if !transport.transportEnabled && !staticTransportIdentity {
+    if !transport.transportEnabled && !(config?.reticulum.staticTransportIdentity ?? false) {
       transportIdentity = Identity()
     } else {
       transportIdentity = persistentIdentity
@@ -1747,6 +1745,26 @@ public final class Reticulum {
     from block: ReticulumConfig.InterfaceConfig
   ) {
     guard block.bool("discoverable") == true else { return }
+
+    // A non-transport instance runs behind an ephemeral transport identity, and announcing an
+    // interface would make it linkable, so `discoverable` is dropped unless the operator chose
+    // a static identity (`Reticulum.py:1195-1203`, upstream `606a1691`).
+    if !Reticulum.staticTransportIdentity() && !Reticulum.transportEnabled() {
+      for line in [
+        "",
+        "The interface \"\(block.name)\" was configured discoverable, but this instance has "
+          + "transport disabled",
+        "and is using an ephemeral transport identity. To make interfaces discoverable for "
+          + "non-transport",
+        "instances, you will have explicitly enable using static transport identity in the "
+          + "config file,",
+        "by adding \"static_transport_identity = yes\" to the [reticulum] section.",
+        "",
+      ] {
+        Reticulum.log(line, level: .warning)
+      }
+      return
+    }
 
     // Latched for the whole process, as Python does—the announcer starts from this flag
     // after every interface is up (`Reticulum.py:370`).
@@ -2585,6 +2603,7 @@ public final class Reticulum {
     cfg.filter.apply(to: transport)
     cfg.stamps.apply(to: &transport.stamps)
     Reticulum.allowProbes = cfg.reticulum.allowProbes
+    Reticulum.storedStaticTransportIdentity = cfg.reticulum.staticTransportIdentity
     Reticulum.storedRemoteManagementEnabled = cfg.reticulum.remoteManagementEnabled
     Reticulum.storedInterfaceManagementEnabled = cfg.reticulum.enableInterfaceManagement
     for identity in cfg.reticulum.remoteManagementAllowed {
