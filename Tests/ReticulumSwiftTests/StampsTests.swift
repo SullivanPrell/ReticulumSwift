@@ -132,9 +132,10 @@ final class StampsTests: XCTestCase {
     XCTAssertEqual(found.value, Stamps.stampValue(workblock: material, stamp: found.publicKey))
   }
 
-  /// A NomadNet node announces a link cost of 17.8 (`NomadNetworkApp.py:40`). On one core a
-  /// phone misses the 15 s `LINK_STAMP_TIMEOUT`, so the grind spreads over every core as
-  /// Python's does on Linux and Android (`Stamps.py:410-414`).
+  /// Stamped keys grind on every core, as Python's do on Linux and Android (`Stamps.py:410-414`).
+  ///
+  /// A NomadNet node announces a link cost of 17.8 (`NomadNetworkApp.py:40`), which on one core
+  /// misses the 15 s `LINK_STAMP_TIMEOUT` on a phone.
   func testStampedKeyGrindsOnEveryCore() throws {
     let cores = ProcessInfo.processInfo.activeProcessorCount
     try XCTSkipIf(cores < 2, "needs two cores")
