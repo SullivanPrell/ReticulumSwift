@@ -64,8 +64,8 @@ final class RNGitFilePagesVectorTests: XCTestCase {
     init(converts: Bool) { self.converts = converts }
 
     func convert(
-      producing: [String], in directory: String?, through encoding: [String], to path: String,
-      within timeout: TimeInterval
+      producing: [String], in directory: String?, through encoding: (Data) -> [String]?,
+      to path: String, within timeout: TimeInterval
     ) -> RNGitMediaOutcome {
       produced.append(producing)
       directories.append(directory)
@@ -76,7 +76,7 @@ final class RNGitFilePagesVectorTests: XCTestCase {
     }
 
     func convert(
-      reading source: String, through encoding: [String], to path: String,
+      reading source: String, through encoding: (Data) -> [String]?, to path: String,
       within timeout: TimeInterval
     ) -> RNGitMediaOutcome { .couldNotRun("not asked for") }
   }

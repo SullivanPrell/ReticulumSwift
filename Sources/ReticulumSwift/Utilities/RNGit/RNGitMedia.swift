@@ -43,24 +43,31 @@ public enum RNGitMediaOutcome: Equatable, Sendable {
 
   /// The run could not be started at all.
   case couldNotRun(String)
+
+  /// The input was refused before it reached an encoder: no supported format, or too large.
+  case refused(String)
 }
 
 /// Runs the two processes a conversion needs.
 ///
 /// A conversion is one program writing an image and a second encoding what the first wrote, so
 /// both are run together and neither is waited on alone.
+///
+/// `encoding` is handed the first ``RNGitMedia/sniffBytes`` of the input and answers the encoder
+/// to run, or `nil` to refuse the input. Input past ``RNGitMedia/conversionSizeMax`` is refused
+/// too, so no encoder sees input that was not first read and accepted.
 public protocol RNGitMediaConverter: Sendable {
 
-  /// Runs `producing` in `directory` and feeds what it writes into `encoding`, whose own output
-  /// goes to `path`.
+  /// Runs `producing` in `directory` and feeds what it writes into the encoder `encoding`
+  /// answers, whose own output goes to `path`.
   func convert(
-    producing: [String], in directory: String?, through encoding: [String], to path: String,
-    within timeout: TimeInterval
+    producing: [String], in directory: String?, through encoding: (Data) -> [String]?,
+    to path: String, within timeout: TimeInterval
   ) -> RNGitMediaOutcome
 
-  /// Feeds the file at `source` into `encoding`, whose output goes to `path`.
+  /// Feeds the file at `source` into the encoder `encoding` answers, whose output goes to `path`.
   func convert(
-    reading source: String, through encoding: [String], to path: String,
+    reading source: String, through encoding: (Data) -> [String]?, to path: String,
     within timeout: TimeInterval
   ) -> RNGitMediaOutcome
 }
@@ -74,6 +81,15 @@ public enum RNGitMedia {
 
   /// How long a conversion is given, in seconds.
   public static let conversionTimeout = 8
+
+  /// The most input a conversion takes, in bytes (`media.py` `CONV_SIZE_MAX`).
+  public static let conversionSizeMax = 32 * 1024 * 1024
+
+  /// How much of the input its format is read from (`media.py` `SNIFF_BYTES`).
+  public static let sniffBytes = 64
+
+  /// How much input is relayed to an encoder at a time (`media.py` `RELAY_CHUNK`).
+  static let relayChunk = 256 * 1024
 
   /// The environment variable one backend is forced with.
   public static let backendVariable = "RNGIT_MEDIA_BACKEND"
@@ -123,13 +139,39 @@ public enum RNGitMedia {
     return backends.first { found($0.executable) }
   }
 
-  /// `backend` with the words `quality` and `maxDimension` ask for.
+  /// The format `data` starts as, among those a conversion takes, or `nil` for any other.
+  ///
+  /// Mirrors `media.py` `_classify_image`. ImageMagick left to guess a format reaches coders
+  /// that read arbitrary files into the image (RNS security notice 2026-11-19), so only these
+  /// are converted, and the ImageMagick family is told which one it is reading.
+  public static func imageFormat(_ data: Data) -> String? {
+    if data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) { return "png" }
+    if data.starts(with: [0xFF, 0xD8, 0xFF]) { return "jpeg" }
+    if data.starts(with: Data("GIF87a".utf8)) || data.starts(with: Data("GIF89a".utf8)) {
+      return "gif"
+    }
+    if data.starts(with: [0x49, 0x49, 0x2A, 0x00]) || data.starts(with: [0x4D, 0x4D, 0x00, 0x2A]) {
+      return "tiff"
+    }
+    if webPSize(data) != nil { return "webp" }
+    if data.count >= 18, data.starts(with: Data("BM".utf8)),
+      [12, 40, 52, 56, 64, 108, 124].contains(little(byte(data, 14, 18)))
+    {
+      return "bmp"
+    }
+    return nil
+  }
+
+  /// `backend` with the words `quality` and `maxDimension` ask for, reading input of the format
+  /// `input` names where it names one.
   ///
   /// A quality outside one to a hundred is brought inside it, and a size below one pixel is not
   /// asked for at all. Each family takes its options at the one place the rest of its words still
-  /// read the same way afterwards.
+  /// read the same way afterwards. Only the ImageMagick family is told the input format, as in
+  /// `media.py`.
   public static func encoding(
-    _ backend: RNGitMediaBackend, quality: Int? = nil, maxDimension: Int? = nil
+    _ backend: RNGitMediaBackend, quality: Int? = nil, maxDimension: Int? = nil,
+    input: String? = nil
   ) -> RNGitMediaBackend {
     var options: [String] = []
     if let quality { options += ["-quality", String(min(100, max(1, quality)))] }
@@ -138,6 +180,7 @@ public enum RNGitMedia {
     var arguments = backend.arguments
 
     if imageMagickFamily.contains(backend.name) {
+      if let input, let stdin = arguments.firstIndex(of: "-") { arguments[stdin] = input + ":-" }
       if let size { options += ["-resize", "\(size)x\(size)>"] }
       arguments = arguments.dropLast() + options + arguments.suffix(1)
     } else if ffmpegFamily.contains(backend.name) {
@@ -219,6 +262,8 @@ public enum RNGitMedia {
       return "Media conversion via \(backend) failed." + detail
     case .couldNotRun(let reason):
       return "Error during media conversion: " + reason
+    case .refused(let reason):
+      return "Media conversion failed: " + reason
     }
   }
 
@@ -270,13 +315,14 @@ public final class RNGitMediaEncoder {
     producedBy producing: [String], in directory: String? = nil, to path: String,
     within timeout: Int? = nil, quality: Int? = nil, maxDimension: Int? = nil
   ) -> Bool {
-    guard let asked = ask(quality: quality, maxDimension: maxDimension) else { return false }
+    guard let backend = ask() else { return false }
     let seconds = timeout ?? RNGitMedia.conversionTimeout
     let outcome = converter.convert(
-      producing: producing, in: directory, through: asked.arguments, to: path,
-      within: TimeInterval(seconds))
+      producing: producing, in: directory,
+      through: { Self.encoding(backend, for: $0, quality: quality, maxDimension: maxDimension) },
+      to: path, within: TimeInterval(seconds))
     return settle(
-      outcome, from: asked.name, to: path, after: seconds,
+      outcome, from: backend.name, to: path, after: seconds,
       sayingInvalid: {
         "Media conversion via \($0) produced invalid WebP output"
       })
@@ -286,7 +332,7 @@ public final class RNGitMediaEncoder {
   public func convert(
     file source: String, quality: Int? = 85, maxDimension: Int? = nil, within timeout: Int? = nil
   ) -> String? {
-    guard let asked = ask(quality: quality, maxDimension: maxDimension) else { return nil }
+    guard let backend = ask() else { return nil }
     guard RNGitClientEnvironment.isFile(source) else {
       Reticulum.log(
         "Cannot convert media: source file does not exist: " + source, level: .warning)
@@ -297,17 +343,30 @@ public final class RNGitMediaEncoder {
       NSTemporaryDirectory() + "/rns_media_" + UUID().uuidString.prefix(8) + ".webp"
     let seconds = timeout ?? RNGitMedia.conversionTimeout
     let outcome = converter.convert(
-      reading: source, through: asked.arguments, to: path, within: TimeInterval(seconds))
+      reading: source,
+      through: { Self.encoding(backend, for: $0, quality: quality, maxDimension: maxDimension) },
+      to: path, within: TimeInterval(seconds))
     let converted = settle(
-      outcome, from: asked.name, to: path, after: seconds,
+      outcome, from: backend.name, to: path, after: seconds,
       sayingInvalid: {
         "Invalid media conversion output from \($0)"
       })
     return converted ? path : nil
   }
 
-  /// The backend to run, asked for what the caller asked for, or `nil` where there is none.
-  private func ask(quality: Int?, maxDimension: Int?) -> RNGitMediaBackend? {
+  /// The words `backend` runs as for input starting with `head`, or `nil` where `head` is no
+  /// supported format.
+  private static func encoding(
+    _ backend: RNGitMediaBackend, for head: Data, quality: Int?, maxDimension: Int?
+  ) -> [String]? {
+    RNGitMedia.imageFormat(head).map {
+      RNGitMedia.encoding(backend, quality: quality, maxDimension: maxDimension, input: $0)
+        .arguments
+    }
+  }
+
+  /// The backend to run, or `nil` where there is none.
+  private func ask() -> RNGitMediaBackend? {
     guard let backend = RNGitMedia.backend(forced: forced, preferring: winner, found: found) else {
       if !complainedAboutBackends {
         complainedAboutBackends = true
@@ -317,7 +376,7 @@ public final class RNGitMediaEncoder {
     }
     complainedAboutBackends = false
     if forced == nil { winner = backend.name }
-    return RNGitMedia.encoding(backend, quality: quality, maxDimension: maxDimension)
+    return backend
   }
 
   /// Whether `outcome` left a WebP file at `path`, having said what it was where it did not and
@@ -327,7 +386,11 @@ public final class RNGitMediaEncoder {
     sayingInvalid invalid: (String) -> String
   ) -> Bool {
     if let complaint = RNGitMedia.complaint(about: outcome, through: backend, after: timeout) {
-      Reticulum.log(complaint, level: .warning)
+      if case .refused = outcome {
+        Reticulum.log(complaint, level: .debug)
+      } else {
+        Reticulum.log(complaint, level: .warning)
+      }
       try? FileManager.default.removeItem(atPath: path)
       return false
     }
